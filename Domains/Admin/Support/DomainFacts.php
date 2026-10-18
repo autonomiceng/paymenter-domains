@@ -37,6 +37,7 @@ final class DomainFacts
         $holds=PaidUncertainty::for($d); if($holds){$result['Account spending holds']=$holds;}
         $reviews=PaidUncertainty::reviews($d); if($reviews){$result['Paid outcome review']=$reviews;}
         $activity=\Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::activity($d);if($activity){$result['Refunded debt review']=$activity;}
+        $result += ReminderFacts::for($d);
         $result['Data retention']='Encrypted contact and operation evidence is retained. Erasure requires a separately reviewed policy.';
         return $result;
     }

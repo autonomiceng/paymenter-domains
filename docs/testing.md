@@ -302,6 +302,17 @@ acceptance narrowing/recovery and fake-only credential/probe paths. Default setu
 `tests/staff-tld-render.php` emits native fixtures to its output argument. No panel registration is installed.
 Source layout/labels adapt Enom `444f31c` TldResource and EnomSetup (MIT).
 
+### Neutral reminders and obligation alerts
+
+`reminders-test.php`, `reminder-transfer-test.php` and `reminder-safety-test.php`
+use native mail/queue fakes, exact invoice evidence and both registrar accounts.
+They cover retained customization, unknown/missing/held alerts, below-cost invoices,
+UTC catch-up, fair bounded cursors, paid-code deadlines, real account credit,
+preferences and uncertain handoff without automatic replay. No provider transport.
+`PAYMENTER_TEST_APP=<pinned source> python3 scripts/render-reminders.py OUTPUT_DIR`
+renders all customer template branches as native HTML/text and the changed staff
+surfaces with the pinned mail shell and compiled Filament CSS. Output is external.
+
 ## Opt-in NameSilo OTE contract test
 
 Run only with separate authority for the sandbox account and (for `--write`) its funds.

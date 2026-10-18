@@ -7,7 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Caller owns HoldingLocks. No snapshot or status label grants spending authority. */
 final class RenewalFunding
 {
-    public static function requireCurrent(Operation $op, array $l, bool $sent = false): array
+    /** Read-only obligation eligibility; does not require payment or grant execution. */
+    public static function requireAuthority(Operation $op,array $l):void
     {
         FinancialAdjustments::requireHistory($op, $l);
         $d = $l['domain']; $s = $l['service']; $r = $op->policy['renewal'] ?? [];
@@ -32,6 +33,10 @@ final class RenewalFunding
             if ($other->safe_code === 'renewal_cancelled_unpaid' && ($l['invoices']->firstWhere('id', $other->invoice_id)?->status !== 'cancelled'
                 || $l['transactions']->contains('invoice_id', $other->invoice_id)) && !RefundPayment::retiredSettled($other, $l)) { throw new \DomainException('Retired renewal received financial activity.'); }
         }
+    }
+    public static function requireCurrent(Operation $op, array $l, bool $sent = false): array
+    {
+        self::requireAuthority($op,$l);$d=$l['domain'];$r=$op->policy['renewal']??[];
         if ($op->funding_basis === 'complimentary') {
             $a = $op->policy['complimentary'] ?? []; $current = $d->renewal_policy['complimentary'] ?? [];
             if ($op->invoice_id !== null || $op->invoice_item_id !== null || PricingRule::minor($op->amount) !== 0

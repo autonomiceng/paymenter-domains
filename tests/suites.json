@@ -90,7 +90,11 @@
     "tests/owner-record-errors-test.php",
     "tests/staff-tld-reads-test.php",
     "tests/staff-tld-writes-test.php",
-    "tests/staff-tld-actions-test.php"
+    "tests/staff-tld-actions-test.php",
+    "tests/reminders-test.php",
+    "tests/reminder-transfer-test.php",
+    "tests/reminder-safety-test.php",
+    "tests/reminder-review-test.php"
   ],
   "ui": [],
   "runner": [

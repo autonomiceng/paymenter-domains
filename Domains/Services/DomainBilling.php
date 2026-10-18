@@ -36,11 +36,9 @@ final class DomainBilling
             $existing = $l['operations']->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
             if ($existing && $existing->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($existing,$d)) { return $this->existing($existing, $l, $years); }
             $key = RenewalCycles::next($l);
-            $this->bindings->requireProcessingLocked($l['server'], $l['account']);
-            if ($d->renewal_policy['automatic_spend_paused'] ?? false) { throw new \DomainException('Renewal spending requires review.'); }
+            self::requireAuthority($l,$this->bindings);
             $settings = $l['settings']->pluck('value', 'key');
-            $issue = self::days($settings->get('domains_issue_days', 21)); $due = self::days($settings->get('domains_due_days', 7));
-            $calendar = self::calendar($d, $issue, $due); $years ??= 1;
+            $calendar = self::calendarFor($l); $years ??= 1;
             if (!self::enabled($settings->get($actor ? 'domains_manual_renewals_enabled' : 'domains_billing_enabled', false))) {
                 throw new \DomainException('Requested renewal billing gate is disabled.');
             }
@@ -49,16 +47,6 @@ final class DomainBilling
             if ($years < 1 || $years > 10 || $d->provider_expires_at->addYearsNoOverflow($years) > $this->clock->now()->modify('+10 years')) {
                 throw new \DomainException('Renewal term exceeds the registry horizon.');
             }
-            if ($s->status !== 'active' || !in_array($d->status, ['active', 'expired', 'grace'], true)
-                || $l['cancel']->contains('service_id', $s->id) || $d->price_mode !== 'standard') { throw new \DomainException('Renewal billing lifecycle requires review.'); }
-            $anchor = $d->renewal_policy['billing_anchor'] ?? [];
-            $prior = $l['operations']->firstWhere('operation_key', $anchor['operation_key'] ?? null);
-            if (($anchor['expiry'] ?? null) !== $calendar['expiry'] || !$prior
-                || !RenewalAuthority::completed($prior, $d, CatalogueAcceptances::binding($l['account']))
-                || $l['operations']->contains(fn ($op) => $op->id !== $prior->id && !RenewalAuthority::resolved($op, $d, CatalogueAcceptances::binding($l['account'])))) {
-                throw new \DomainException('Confirmed renewal anchor or prior outcome requires review.');
-            }
-            RenewalAuthority::requireCostAnchor($prior);
             // Holding retail is independent of current seller, sales/renew flags and provider cost.
             $price = $this->native->project($l);
             $amount = PricingRule::total($price['annual_gross'], $years);
@@ -89,6 +77,32 @@ final class DomainBilling
             }
             return $invoice->fresh();
         });
+    }
+
+
+    /** Validated saved calendar, shared by billing and its month-out notice. */
+    public static function calendarFor(array $l):array
+    {
+        $settings=$l['settings']->pluck('value','key');
+        return self::calendar($l['domain'],self::days($settings->get('domains_issue_days',21)),self::days($settings->get('domains_due_days',7)));
+    }
+
+    /** Read-only eligibility shared with scheduled-invoice notices; caller holds HoldingLocks. */
+    public static function requireAuthority(array $l,AccountBindings $bindings):void
+    {
+        $d=$l['domain'];$s=$l['service'];
+        $bindings->requireProcessingLocked($l['server'],$l['account']);
+        if($d->renewal_policy['automatic_spend_paused']??false){throw new \DomainException('Renewal spending requires review.');}
+        if ($s->status !== 'active' || !in_array($d->status, ['active', 'expired', 'grace'], true)
+            || $l['cancel']->contains('service_id', $s->id) || $d->price_mode !== 'standard') { throw new \DomainException('Renewal billing lifecycle requires review.'); }
+        $anchor = $d->renewal_policy['billing_anchor'] ?? [];
+        $prior = $l['operations']->firstWhere('operation_key', $anchor['operation_key'] ?? null);
+        if (($anchor['expiry'] ?? null) !== $d->provider_expires_at?->format('Y-m-d') || !$prior
+            || !RenewalAuthority::completed($prior, $d, CatalogueAcceptances::binding($l['account']))
+            || $l['operations']->contains(fn ($op) => $op->id !== $prior->id && !RenewalAuthority::resolved($op, $d, CatalogueAcceptances::binding($l['account'])))) {
+            throw new \DomainException('Confirmed renewal anchor or prior outcome requires review.');
+        }
+        RenewalAuthority::requireCostAnchor($prior);
     }
 
     private function existing(Operation $op, array $l, ?int $years): Invoice

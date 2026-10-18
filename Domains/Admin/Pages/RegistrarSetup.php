@@ -30,6 +30,7 @@ class RegistrarSetup extends Page
                 'Connection'=>app(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class)->connectionAvailable()?'Not tested this visit':'Unavailable','Retained domains'=>$a?\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count():0,
                 'Renewal safety'=>'Keep both registrar accounts serviced. Seller selection affects new sales only.',
                 'Credentials'=>'Saved credentials are never displayed. Processing stays off after configuration.'];
+            $facts += \Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule((int)$s->id);
             $entries=[];foreach($facts as $label=>$value){$entries[]=TextEntry::make('s'.$s->id.'_'.count($entries))->label($label)->state((string)$value);}
             $sections[]=Section::make(($a?TldFacts::registrar($a->registrar_key):'Registrar').' · account #'.$s->id)
                 ->key('account_'.$s->id)->description($s->enabled?'Viewing uses saved local facts.':'This server is off in Paymenter.')
