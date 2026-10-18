@@ -19,13 +19,15 @@ try {
         GuardedTransport::window((int) gmdate('G'));
         $output = (string) getenv('OTE_OUTPUT');
         if ($output === '' || realpath($output) !== $output || !is_dir($output) || (fileperms($output) & 077) !== 0) { throw new RuntimeException('Private receipt directory required.'); }
-        $wire = new GuardedTransport((string) getenv('NAMESILO_SANDBOX_API_KEY'), $mode === '--write', $output);
+        $limit = (string) getenv('OTE_REQUEST_LIMIT');
+        if (!preg_match('/^(?:[1-9]|[1-5][0-9]|60)$/D', $limit)) { throw new RuntimeException('Explicit request limit required.'); }
+        $wire = new GuardedTransport((string) getenv('NAMESILO_SANDBOX_API_KEY'), $mode === '--write', $output, limit: (int) $limit);
         $wire->receipt['phase'] = $mode === '--write' ? 'read+write' : 'read';
         $wire->receipt['reference'] = 'docs/design/api-contract.md; tests/fixtures/synthetic-success.json';
         $binding = new AccountBinding('namesilo', 1, Environment::Test, 'contract-local-fixture');
         $clock = new SystemClock;
         $client = new Client($binding, (string) getenv('NAMESILO_SANDBOX_API_KEY'), $wire);
-        $ctx = new RequestContext($binding, RequestOrigin::Interactive, $clock->now()->modify('+900 seconds'), new RequestBudget(60), $clock);
+        $ctx = new RequestContext($binding, RequestOrigin::Interactive, $clock->now()->modify('+900 seconds'), new RequestBudget((int) $limit), $clock);
         $read = static function (RegistrarRequest $request) use ($client, $ctx, $wire): RegistrarResult {
             try { $result = $client->read($request, $ctx); }
             catch (Throwable) { $result = new RegistrarResult(Outcome::Unknown); }
@@ -44,7 +46,7 @@ try {
         $wire->check('apibatch_supported', $batch);
         $wire->check('renew_auto_renew_reference', 'not_documented; requires_one_approved_synthetic_probe');
         if ($mode === '--write') {
-            if (!$batch) { $wire->check('registration', 'blocked_unaccepted_batch_route'); }
+            if (!$batch || $wire->receipt['mismatches']) { $wire->check('registration', 'blocked_read_gate'); }
             else { require __DIR__.'/registration.php'; }
         }
         if ($wire->receipt['checks']['purchase_unresolved'] ?? false) { throw new RuntimeException('OTE purchase needs investigation.'); }

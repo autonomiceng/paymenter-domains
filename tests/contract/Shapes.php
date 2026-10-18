@@ -46,6 +46,14 @@ final class Shapes
         };
         return $reply === null ? null : ['request' => ['operation' => $command, 'ip' => '192.0.2.1'], 'reply' => ['code' => 300, 'detail' => 'synthetic', 'message' => 'synthetic'] + $reply];
     }
+    private static function financialAmount(mixed $value): bool
+    {
+        // Numeric wire types are structural only; production validates their exact JSON lexemes.
+        return is_int($value) || is_float($value) || (is_string($value)
+            && preg_match('/^(?:[0-9]+(?:\.[0-9]{1,2})?|[1-9][0-9]{0,2}(?:,[0-9]{3})+\.[0-9]{2})$/D', $value) === 1);
+    }
+    private static function positiveInteger(mixed $value): bool
+    { return (is_int($value) || is_string($value)) && preg_match('/^[1-9][0-9]*$/D', (string) $value) === 1; }
     public static function check(string $command, mixed $data): array
     {
         $errors = [];
@@ -53,6 +61,20 @@ final class Shapes
             return ['envelope.operation'];
         }
         $r = $data['reply'];
+        if ($command === 'listDomains' && array_key_exists('domains', $r) && $r['domains'] === null
+            && in_array($r['code'] ?? null, [300, '300'], true) && is_string($r['detail'] ?? null)
+            && is_string($data['request']['ip'] ?? null) && is_array($r['pager'] ?? null)
+            && in_array($r['pager']['total'] ?? null, [0, '0'], true)
+            && self::positiveInteger($r['pager']['page'] ?? null) && self::positiveInteger($r['pager']['pageSize'] ?? null)) {
+            $r['domains'] = []; $data['reply']['domains'] = [];
+        }
+        if ($command === 'checkRegisterAvailability' && is_array($r['available'] ?? null)) {
+            // Explicitly ignored optional OTE metadata, matching production projection.
+            if (array_is_list($r['available'])) {
+                foreach ($r['available'] as &$row) { if (is_array($row)) { unset($row['renew']); } } unset($row);
+            } else { unset($r['available']['renew']); }
+            $data['reply']['available'] = $r['available'];
+        }
         if (!is_string($data['request']['ip'] ?? null)) { $errors[] = 'request.ip'; }
         if (!is_string($r['detail'] ?? null)) { $errors[] = 'reply.detail'; }
         $codes = match ($command) {
@@ -85,7 +107,7 @@ final class Shapes
         if ($command === 'getPrices') {
             foreach (array_intersect(['com', 'net'], array_keys($r)) as $tld) {
                 foreach (['registration', 'transfer', 'renew'] as $action) {
-                    if (!is_numeric($r[$tld][$action] ?? null)) { $errors[] = 'reply.'.$tld.'.'.$action.'.amount'; }
+                    if (!self::financialAmount($r[$tld][$action] ?? null)) { $errors[] = 'reply.'.$tld.'.'.$action.'.amount'; }
                 }
             }
         }
@@ -105,6 +127,10 @@ final class Shapes
             foreach ($rows as $row) {
                 if (!is_array($row)) { $errors[] = 'reply.'.$collection.'.row_not_object'; continue; }
                 foreach ($fields as $f) { if (!array_key_exists($f, $row)) { $errors[] = 'reply.'.$collection.'.[].'.$f.'.missing'; } }
+                if ($command === 'listDomains' && (!is_string($row['domain'] ?? null) || $row['domain'] === ''
+                    || self::strictDate($row['created'] ?? null) === null || self::strictDate($row['expires'] ?? null) === null)) {
+                    $errors[] = 'reply.domains.[].invalid';
+                }
             }
         }
         foreach (match ($command) { 'listDomains' => ['pager' => ['page', 'pageSize', 'total']],

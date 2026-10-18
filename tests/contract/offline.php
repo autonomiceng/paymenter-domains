@@ -46,6 +46,11 @@ $receipt = file_get_contents($output.'/receipt.json'); expect(!str_contains($rec
 same('[redacted]', $guard->receipt['requests'][0]['request']['key'], 'Key query capture redacted');
 for ($i = 1; $i < 60; $i++) { $guard->raw('https://ote.namesilo.com/api', 'getAccountBalance', []); }
 $refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getAccountBalance', [])); same(60, $calls, 'Hard budget');
+$limited = new GuardedTransport('offline-secret-token', false, $output, $fake, $clock, 1);
+$limited->raw('https://ote.namesilo.com/api', 'getAccountBalance', []); $beforeCalls = $calls;
+$refuse(fn () => $limited->raw('https://ote.namesilo.com/api', 'getAccountBalance', []));
+same($beforeCalls, $calls, 'Lower slice cap enforced before sender'); same(0, $limited->remaining(), 'Lower cap remaining');
+foreach ([0, 61] as $badLimit) { $refuse(fn () => new GuardedTransport('offline-secret-token', false, $output, $fake, $clock, $badLimit)); }
 $writer = new GuardedTransport('offline-secret-token', true, $output, $fake, $clock);
 $p = ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0, 'private' => 0];
 foreach ([['years' => 2], ['private' => 1], ['auto_renew' => 1], ['payment_id' => '1'], ['ns1' => 'ns1.other.test']] as $bad) {
@@ -100,6 +105,28 @@ $d = $diagnostic(['com' => ['registration' => '1.00', 'transfer' => '1.00']], Re
 same('prices.amount.renew', $d['predicate'], 'Missing amount predicate diagnosed');
 $d = $diagnostic(['com' => null], RegistrarRequest::prices());
 same('prices.entry_object', $d['predicate'], 'Malformed entry predicate diagnosed');
+$groupedCatalogue = ['request' => ['operation' => 'getPrices', 'ip' => '192.0.2.1'],
+    'reply' => ['code' => 300, 'detail' => 'synthetic', 'com' => $validPrices, 'net' => $validPrices]];
+$groupedCatalogue['reply']['com']['registration'] = '1,234.56';
+same([], Shapes::check('getPrices', $groupedCatalogue), 'Runner accepts observed strict grouping');
+foreach (['12,34.56', '0,123.45', '000,001.00', '1,234', '1,234.5'] as $bad) {
+    $groupedCatalogue['reply']['com']['registration'] = $bad;
+    expect(Shapes::check('getPrices', $groupedCatalogue) !== [], 'Runner rejects malformed or ambiguous grouping');
+}
+$inventory = ['request' => ['operation' => 'listDomains', 'ip' => '192.0.2.1'],
+    'reply' => ['code' => 300, 'detail' => 'synthetic', 'domains' => null, 'pager' => ['page' => 1, 'pageSize' => 10, 'total' => '0']]];
+same([], Shapes::check('listDomains', $inventory), 'Successful independently empty null inventory accepted');
+foreach ([['code' => 200], ['detail' => null], ['pager' => null], ['pager' => ['page' => 1, 'pageSize' => 10, 'total' => '1']],
+    ['pager' => ['page' => 0, 'pageSize' => 10, 'total' => '0']], ['pager' => ['page' => 1, 'pageSize' => false, 'total' => '0']],
+    ['pager' => ['page' => 1, 'pageSize' => 10]], ['domains' => ['broken']],
+    ['domains' => [['domain' => 'example.com', 'created' => 'bad', 'expires' => '2027-01-01']]]] as $bad) {
+    $rejected = $inventory; $rejected['reply'] = array_replace($rejected['reply'], $bad);
+    expect(Shapes::check('listDomains', $rejected) !== [], 'Unknown or malformed inventory cannot normalize to empty');
+}
+$rejected = $inventory; $rejected['request']['operation'] = 'getPrices';
+expect(Shapes::check('listDomains', $rejected) !== [], 'Wrong operation cannot establish empty inventory');
+$rejected = $inventory; unset($rejected['reply']['domains']);
+expect(Shapes::check('listDomains', $rejected) !== [], 'Missing inventory is unknown');
 $incomplete = ['request' => ['operation' => 'listDomains'], 'reply' => ['code' => 300, 'detail' => 'synthetic', 'domains' => [['domain' => 'synthetic.com']], 'pager' => ['page' => 1]]];
 expect(in_array('reply.domains.[].created.missing', Shapes::check('listDomains', $incomplete), true), 'Nested missing date detected');
 expect(in_array('reply.pager.pageSize.missing', Shapes::check('listDomains', $incomplete), true), 'Missing pager size detected');
@@ -155,13 +182,27 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
                 $r['resource_record'] = $state->record ? [['record_id' => 'txt-record', 'type' => 'TXT', 'host' => '_contract', 'value' => 'synthetic-contract', 'ttl' => 3600, 'distance' => 0]] : [];
             } elseif ($command !== 'changeNameServers') { throw new RuntimeException('Unexpected offline command'); }
             return new TransportResponse(200, json_encode(['request' => ['operation' => $command, 'ip' => '192.0.2.1'], 'reply' => $r], JSON_THROW_ON_ERROR));
-        }, static fn () => 21);
+        }, static fn () => 21, match (getenv('OTE_SELF_TEST_SCENARIO')) { 'limited-budget' => 28, 'short-budget' => 26, default => 60 });
+    if (in_array(getenv('OTE_SELF_TEST_SCENARIO'), ['limited-budget', 'short-budget'], true)) {
+        // Reserve the same six requests as write mode's initial read phase.
+        for ($i = 0; $i < 6; $i++) { $wire->raw('https://ote.namesilo.com/api', 'getAccountBalance', []); }
+    }
     require __DIR__.'/registration.php';
     same('accepted_via_real_admitted_protocol', $wire->receipt['checks']['registration'], 'Real registration path exercised offline');
     same(true, $wire->receipt['checks']['charge_evidence_shape_matches'], 'Charge correlation exercised offline');
+    if (in_array(getenv('OTE_SELF_TEST_SCENARIO'), ['limited-budget', 'short-budget'], true)) {
+        expect($wire->receipt['request_count'] <= (getenv('OTE_SELF_TEST_SCENARIO') === 'short-budget' ? 26 : 28), 'Constrained write never exceeds remaining slice allowance');
+        if (getenv('OTE_SELF_TEST_SCENARIO') === 'short-budget') {
+            same('skipped_budget', $wire->receipt['checks']['remove_auto_renew_readback'], 'Management reserves its complete readback group');
+        }
+        same('skipped_budget', $wire->receipt['checks']['txt_sequence'], 'TXT explicitly omitted under cap');
+        same('skipped_budget', $wire->receipt['checks']['renew_probe'], 'Renewal explicitly omitted under cap');
+        same(false, $wire->attempted('renewDomain'), 'No renewal without reserve');
+    } else {
     same(true, $wire->receipt['checks']['renew_added_one_year'], 'One renewal exercised offline');
     same(true, $wire->receipt['checks']['renewal_charge_evidence_shape_matches'], 'Renewal charge correlation exercised offline');
     same(true, $wire->receipt['checks']['txt_deleted'], 'TXT cleanup exercised offline');
+    }
     same([], $wire->receipt['mismatches'], 'Native fake matches all contract projections');
 }
 $summary = ['self_test' => 'passed', 'real_provider_calls' => 0, 'native_protocol_exercised' => (bool) getenv('OTE_SELF_TEST_NATIVE')];

@@ -66,7 +66,12 @@ def main():
     flags.add_argument('--read', action='store_true')
     flags.add_argument('--write', action='store_true')
     flags.add_argument('--self-test', action='store_true')
+    parser.add_argument('--max-requests', type=int, choices=range(1, 61), default=None, metavar='1..60')
     args = parser.parse_args()
+    if args.max_requests is None and not args.self_test:
+        parser.error('--max-requests is required for live phases')
+    if args.max_requests is None:
+        args.max_requests = 60
     os.umask(0o077)
     if not args.self_test and 18 <= datetime.datetime.now(datetime.timezone.utc).hour < 21:
         parser.exit(2, 'OTE time window closed.\n')
@@ -81,7 +86,7 @@ def main():
         with_native = args.write or (args.self_test and bool(source))
         runtime, binary, ext = prepare(native=with_native)
         env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'PHP_INI_SCAN_DIR': '', 'PHPRC': '',
-               'OTE_OUTPUT': str(output)}
+               'OTE_OUTPUT': str(output), 'OTE_REQUEST_LIMIT': str(args.max_requests)}
         if with_native:
             if not source:
                 raise ValueError('Pinned native dependency required for --write')
@@ -106,13 +111,18 @@ def main():
         # Never relay child stdout/stderr: native errors can contain raw responses or credentials.
         result = subprocess.run(argv, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
         if args.self_test and with_native and result.returncode == 0:
-            for scenario, renewals in [('malformed-registration', 0), ('renewal-transport-failure', 1)]:
+            for scenario, renewals in [('malformed-registration', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
                 uncertain_output = output/scenario
                 uncertain_output.mkdir(mode=0o700)
                 uncertain_env = dict(env, OTE_OUTPUT=str(uncertain_output), OTE_SELF_TEST_SCENARIO=scenario)
                 refused = subprocess.run(argv, cwd=ROOT, env=uncertain_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
                 evidence = json.loads((uncertain_output/'receipt.json').read_text())
                 commands = [row['command'] for row in evidence['requests']]
+                if scenario in ('limited-budget', 'short-budget'):
+                    limit = 28 if scenario == 'limited-budget' else 26
+                    if refused.returncode != 0 or evidence['request_count'] > limit or commands.count('renewDomain') != 0:
+                        raise ValueError('Constrained request budget failed')
+                    continue
                 if refused.returncode != 3 or evidence['checks'].get('purchase_unresolved') is not True or commands.count('registerDomain') != 1 or commands.count('renewDomain') != renewals:
                     raise ValueError('Uncertain purchase guard failed')
             receipt = output/'receipt.json'

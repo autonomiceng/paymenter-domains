@@ -47,16 +47,20 @@ $evidence = $driver->reconcile($attempt, $historyContext)->result()->evidence();
 $wire->check('production_history_complete_without_acceptance', $evidence->historyComplete);
 $wire->check('production_charge_candidate_count', count($evidence->candidates));
 
+if ($wire->remaining() >= 2) {
 $raw('changeNameServers', ['domain' => $wire->domain, 'ns1' => 'NS1.NAMESILO.COM', 'ns2' => 'NS2.NAMESILO.COM']);
 $get(RegistrarRequest::domainInfo($wire->domain));
 $ns = $wire->latest('getDomainInfo')['nameservers'] ?? [];
 if (is_array($ns) && !array_is_list($ns)) { $ns = [$ns]; }
 $hosts = array_map(static fn ($r) => strtolower($r['nameserver'] ?? ''), is_array($ns) ? $ns : []); sort($hosts);
 $wire->check('nameservers_readback', $hosts === ['ns1.namesilo.com', 'ns2.namesilo.com']);
+} else { $wire->check('nameservers_readback', 'skipped_budget'); }
 foreach (['domainUnlock' => 'No', 'domainLock' => 'Yes'] as $command => $flag) {
+    if ($wire->remaining() < 2) { $wire->check($command.'_readback', 'skipped_budget'); continue; }
     $raw($command, ['domain' => $wire->domain]); $info = $get(RegistrarRequest::domainInfo($wire->domain));
     $wire->check($command.'_readback', $info?->value('locked') === $flag);
 }
+if ($wire->remaining() >= 3) {
 foreach ([1, 2] as $i) {
     $raw('removeAutoRenewal', ['domain' => $wire->domain]);
     $code = (int) ($wire->latest('removeAutoRenewal')['code'] ?? 0);
@@ -64,6 +68,7 @@ foreach ([1, 2] as $i) {
     $wire->check('remove_auto_renew_code_expected_'.$i, in_array($code, [250, 251, 300], true));
 }
 $info = $get(RegistrarRequest::domainInfo($wire->domain)); $wire->check('remove_auto_renew_readback', $info?->value('auto_renew') === 'No');
+} else { $wire->check('remove_auto_renew_readback', 'skipped_budget'); }
 if ($wire->remaining() >= 4) {
 $raw('dnsAddRecord', ['domain' => $wire->domain, 'rrtype' => 'TXT', 'rrhost' => '_contract', 'rrvalue' => 'synthetic-contract', 'rrttl' => 3600]);
 $id = $wire->latest('dnsAddRecord')['record_id'] ?? null;
@@ -83,6 +88,7 @@ if ($id !== null) {
 } else { $wire->check('txt_sequence', 'skipped_budget'); }
 // The cached public API reference is silent about auto_renew on renewDomain.
 // Probe exactly once, for one year, only on this process's freshly registered name.
+if ($wire->remaining() < 9) { $wire->check('renew_probe', 'skipped_budget'); return; }
 $info = $get(RegistrarRequest::domainInfo($wire->domain)); $before = $info?->value('expires');
 $expiry = \OteContract\Shapes::strictDate($before);
 if ($wire->remaining() < 8) { $wire->check('renew_probe', 'skipped_budget'); }

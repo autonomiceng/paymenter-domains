@@ -114,8 +114,10 @@ final class ResponseParser
                     throw new \UnexpectedValueException('Uncorrelated availability result.');
                 }
                 $seen[$domain] = true;
+                // OTE renewal metadata is not an account quote; ignore it by name.
+                unset($record['renew']);
                 if ($field === 'available') {
-                    if (!$this->amount($record['price'] ?? null)) { throw new \UnexpectedValueException('Invalid availability price.'); }
+                    if (!$this->availabilityAmount($record['price'] ?? null)) { throw new \UnexpectedValueException('Invalid availability price.'); }
                     $premium = $record['premium'] ?? null;
                     if ($premium !== null && !in_array($premium, [0,1,'0','1'], true)) {
                         throw new \UnexpectedValueException('Invalid premium evidence.');
@@ -184,8 +186,12 @@ final class ResponseParser
     private function amount(mixed $value): bool
     {
         return is_string($value)
-            && preg_match('/^[0-9]+(?:\.[0-9]{1,2})?$/D', (string) $value) === 1;
+            && preg_match('/^(?:[0-9]+(?:\.[0-9]{1,2})?|[1-9][0-9]{0,2}(?:,[0-9]{3})+\.[0-9]{2})$/D', $value) === 1;
     }
+
+    /** Informational availability prices may have long fractions; preserve every digit. */
+    private function availabilityAmount(mixed $value): bool
+    { return is_string($value) && preg_match('/^[0-9]+(?:\.[0-9]+)?$/D', $value) === 1; }
 
     private function project(string $command, array $reply): array
     {
@@ -233,7 +239,7 @@ final class ResponseParser
                 throw new \UnexpectedValueException('Invalid registrar field shape.');
             }
         }
-        return $this->normalize($result);
+        return $this->normalize($result, in_array($command, ['checkRegisterAvailability', 'checkTransferAvailability'], true));
     }
 
     private function identifier(mixed $value): ?string
@@ -242,14 +248,16 @@ final class ResponseParser
             ? (string) $value : null;
     }
 
-    private function normalize(array $values): array
+    private function normalize(array $values, bool $availability = false): array
     {
         $amounts = ['registration', 'transfer', 'renew', 'balance', 'price', 'order_amount', 'total', 'subtotal', 'credited_amount'];
         foreach ($values as $field => &$value) {
-            if (is_array($value)) { $value = $this->normalize($value); continue; }
+            if (is_array($value)) { $value = $this->normalize($value, $availability); continue; }
             if (in_array($field, $amounts, true)) {
-                if (!$this->amount($value)) { throw new \UnexpectedValueException('Invalid registrar amount.'); }
-                [$whole, $fraction] = array_pad(explode('.', (string) $value, 2), 2, '');
+                if (!($availability && $field === 'price' ? $this->availabilityAmount($value) : $this->amount($value))) {
+                    throw new \UnexpectedValueException('Invalid registrar amount.');
+                }
+                [$whole, $fraction] = array_pad(explode('.', str_replace(',', '', $value), 2), 2, '');
                 $value = (ltrim($whole, '0') ?: '0').'.'.str_pad($fraction, 2, '0');
             } elseif ($field === 'order_number') {
                 $value = $this->identifier($value) ?? throw new \UnexpectedValueException('Invalid order identifier.');

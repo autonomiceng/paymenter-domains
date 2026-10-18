@@ -90,7 +90,13 @@ purchase evidence independently, without sending it. A later authorized write sl
 funding/ownership/premium/cost/prior-outcome admission before adding a purchase transport path.
 Availability collections normalize to lists and must cover exactly the requested names once;
 missing premium evidence is explicit null, never ordinary-name proof. Monetary JSON lexemes are
-preserved before float conversion and returned as canonical two-decimal strings; numeric IDs are
+preserved before float conversion. Grouping was observed only in balance and catalogue amounts. Financial amounts accept plain digits or strictly grouped thousands
+with a nonzero first group and exactly two fractional digits when commas are present. Ungrouped
+financial amounts allow at most two fractional digits. Normalize grouping away and pad to two decimals. Availability
+prices also accept plain decimal lexemes with longer fractions, preserving every digit; they are
+informational, never funded quote authority. Neutral Money and pricing admission limits are unchanged.
+The optional OTE availability `renew` field is explicitly ignored by name: it is not an independently
+accepted account renewal quote and cannot substitute for a missing price. Numeric IDs are
 normalized to digit strings. Unknown three-digit codes remain available for diagnosis.
 
 ## Search, lifecycle and evidence
@@ -111,7 +117,7 @@ All rows: **I/B**, common JSON envelope and code table above. Optional parameter
 | [transferUpdateResubmitToRegistry](https://www.namesilo.com/api-reference/pages?uid=transfers/transfer-update-resubmit-registry) | `domain` | Ack; staff-only reconciliation decision, no automatic resubmission. |
 | [retrieveAuthCode](https://www.namesilo.com/api-reference/pages?uid=transfers/retrieve-auth-code) | `domain` | Ack; **emails administrative contact**, does not return an auth code. Acceptance is not delivery. |
 | [getDomainInfo](https://www.namesilo.com/api-reference/pages?uid=domains/get-domain-info) | `domain` | `{created,expires,status,locked,private,auto_renew,traffic_type,email_verification_required,portfolio,forward_url,forward_type,nameservers:[{nameserver,position}],contact_ids:{registrant,administrative,technical,billing}}`. Flags are Yes/No; date-only expiry. |
-| [listDomains](https://www.namesilo.com/api-reference/pages?uid=domains/list-domains) | `portfolio?`, `pageSize?`, `page?`, `withBid?`, `skipExpired?`, `expiredGrace?` | `{domains:[{domain,created,expires,maxBid?}],pager:{page,pageSize,total}}`. Account inventory is not permission to adopt domains. |
+| [listDomains](https://www.namesilo.com/api-reference/pages?uid=domains/list-domains) | `portfolio?`, `pageSize?`, `page?`, `withBid?`, `skipExpired?`, `expiredGrace?` | `{domains:[{domain,created,expires,maxBid?}],pager:{page,pageSize,total}}`. The contract runner normalizes `domains:null` to empty only on matching-operation code 300, string detail/IP, and a pager with positive integer page/pageSize and explicit zero total. Missing/invalid pager, failed envelopes and malformed nonempty records still fail. This runner projection adds no production inventory capability. Account inventory is not permission to adopt domains. |
 | [getAccountBalance](https://www.namesilo.com/api-reference/pages?uid=account/get-account-balance) | none | `{balance}`. Read-only evidence, no funding command in this slice. |
 | [listOrders](https://www.namesilo.com/api-reference/pages?uid=account/list-orders) | `date_from?`, `date_to?`: date or date-time | `{order:[{order_number,order_date,method,total}]}`. Complete history advertised; timezone, pagination, consistency and lag unknown. |
 | [orderDetails](https://www.namesilo.com/api-reference/pages?uid=account/order-details) | `order_number` | `{order_number,order_date,method,total,order_details:[{description,years_qty,price,subtotal,status,credited_date?,credited_amount?}]}`. Example statuses Processed/Credited; description embeds domain/action rather than structured fields. No exhaustive status vocabulary. |
