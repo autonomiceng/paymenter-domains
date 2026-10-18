@@ -38,7 +38,9 @@ final class RegistrationProfiles
         $fields = ['fn' => 'first_name', 'ln' => 'last_name', 'cp' => 'company', 'ad' => 'address', 'ad2' => 'address2',
             'cy' => 'city', 'st' => 'state', 'zp' => 'zip', 'ct' => 'country', 'em' => 'email', 'ph' => 'phone'];
         foreach ($fields as $wire => $field) {
-            if (($row[$field] ?? null) !== $parameters[$wire]) { throw new WriteHeld('contact_profile_proof_required'); }
+            if ($field === 'phone'
+                ? !\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\ContactReadback::phoneMatches($row[$field] ?? null, $parameters[$wire], $parameters['ct'])
+                : ($row[$field] ?? null) !== $parameters[$wire]) { throw new WriteHeld('contact_profile_proof_required'); }
         }
         // Provider work is over. Recheck current claim before retaining its exact owner/payload proof.
         $this->authority($op, 'authority_after');

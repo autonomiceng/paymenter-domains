@@ -75,6 +75,10 @@ final class Shapes
             } else { unset($r['available']['renew']); }
             $data['reply']['available'] = $r['available'];
         }
+        if ($command === 'contactList' && is_array($r['contact'] ?? null) && !array_is_list($r['contact'])) {
+            // Targeted OTE readback uses one object; inventory uses a list. Preserve every field.
+            $r['contact'] = [$r['contact']]; $data['reply']['contact'] = $r['contact'];
+        }
         if (!is_string($data['request']['ip'] ?? null)) { $errors[] = 'request.ip'; }
         if (!is_string($r['detail'] ?? null)) { $errors[] = 'reply.detail'; }
         $codes = match ($command) {

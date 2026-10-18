@@ -193,3 +193,20 @@ DNS add/update say `rrdistance` is MX-only (default 10), leaving SRV **priority*
 weight/port/target are documented. TTL default is 7207; send an explicit validated TTL. Preserve
 TXT bytes and verify readback. Registered nameservers are IPv4 only (provider-confirmed);
 IPv6 glue is refused. SRV editing remains gated on its priority mapping.
+
+## NameSilo contact readback acceptance
+
+The contactAdd reference requires US/CA phone input as exactly ten digits without a country
+prefix. The contactList JSON examples return those phones as `NNN-NNN-NNNN`. Readback accepts
+that exact hyphen pattern for US/CA only when its ten digits equal the frozen submitted phone;
+other countries, prefixes, whitespace, missing values and changed digits get no normalization.
+All other identity fields stay exact strings, including empty optional company/address2.
+
+OTE targeted contactList returns a singleton object; inventory returns a list. The contract
+projection normalizes only this collection shape, preserving every field and unknown-field
+mismatch. `nickname` and `fax` are explicitly ignored for registration identity (retained in
+structural checks); no undocumented contact fields were observed or silently ignored. The
+contact ID must still correlate to this worker's fresh contactAdd acknowledgement, the profile
+must be non-default, and original claim/binding authority is rechecked. Inventory read probes
+never adopt profiles or constitute production creation proof. Their diagnostic gate requires
+exactly one non-default, valid-ID identity match; it grants no purchase authority by itself.

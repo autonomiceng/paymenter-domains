@@ -23,6 +23,11 @@ $exchange = static function ($origin, $command, $parameters, $timeout) use ($reg
         $row = array_combine($fields, array_values($registration->profile));
         $row += ['contact_id' => (string) $registration->id, 'default_profile' => $registration->mode === 'default' ? '1' : '0'];
         if ($registration->mode === 'wrongcontact') { $row['email'] = 'other@example.com'; }
+        if (in_array($registration->mode, ['hyphenphone', 'wrongphone'], true)) {
+            $row['phone'] = substr($row['phone'], 0, 3).'-'.substr($row['phone'], 3, 3).'-'.substr($row['phone'], 6);
+            if ($registration->mode === 'wrongphone') { $row['phone'][0] = $row['phone'][0] === '2' ? '3' : '2'; }
+        }
+        if ($registration->mode === 'missingphone') { unset($row['phone']); }
         $reply['contact'] = $row;
         if ($registration->mode === 'authoritydrift') {
             $current = Domain::where('domain', $registration->query->name)->sole()->operations()->sole();
@@ -45,10 +50,10 @@ $exchange = static function ($origin, $command, $parameters, $timeout) use ($reg
     } elseif ($command !== 'removeAutoRenewal') { throw new LogicException('Unexpected protocol command'); }
     return json_encode(['request' => ['operation' => $command], 'reply' => $reply], JSON_THROW_ON_ERROR);
 };
-foreach (['300', '301', '302', 'amount', 'badns', 'remove', 'stillon', 'lost', 'unknown', 'default', 'wrongcontact', 'authoritydrift'] as $mode) {
+foreach (['300', '301', '302', 'amount', 'badns', 'remove', 'stillon', 'lost', 'unknown', 'default', 'wrongcontact', 'authoritydrift', 'hyphenphone', 'wrongphone', 'missingphone'] as $mode) {
     $registration->mode = $mode; $registration->calls = []; $registration->diagnostics = []; $makeEngine($binding, $exchange);
     $result = $runRegistration($nsNew('ns-'.$mode.'.com'));
-    if (in_array($mode, ['default', 'wrongcontact', 'authoritydrift'], true)) {
+    if (in_array($mode, ['default', 'wrongcontact', 'authoritydrift', 'wrongphone', 'missingphone'], true)) {
         if ($mode === 'authoritydrift') {
             same(['authority_before' => true, 'authority_after' => false], $registration->diagnostics, 'Actual original claim snapshot detects policy drift');
         }

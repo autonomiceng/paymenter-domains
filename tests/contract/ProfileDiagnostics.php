@@ -30,9 +30,11 @@ final class ProfileDiagnostics
                 $flag === '' => 'empty-string', $flag === 'No' => 'no-string', $flag === 'Yes' => 'yes-string',
                 is_string($flag) => 'other-string', default => 'other-type' }, 'fields' => []];
         foreach (self::FIELDS as $wire => $field) {
-            $value = $row[$field] ?? null; $match = array_key_exists($wire, $parameters) && $value === $parameters[$wire];
+            $value = $row[$field] ?? null; $exact = array_key_exists($wire, $parameters) && $value === $parameters[$wire];
+            $match = $exact || ($field === 'phone' && is_string($parameters[$wire] ?? null)
+                && \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\ContactReadback::phoneMatches($value, $parameters[$wire], $parameters['ct'] ?? ''));
             $d['fields'][$field] = ['present' => array_key_exists($field, $row), 'type_ok' => is_string($value),
-                'expected_empty' => ($parameters[$wire] ?? null) === '', 'match' => $match,
+                'expected_empty' => ($parameters[$wire] ?? null) === '', 'exact_match' => $exact, 'match' => $match,
                 'category' => match (true) { !array_key_exists($field, $row) => 'missing', $value === null => 'null',
                     $value === '' => 'empty-string', !is_string($value) => 'other-type', $match => 'string-match', default => 'string-mismatch' }];
         }

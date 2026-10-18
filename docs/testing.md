@@ -384,3 +384,8 @@ receipt contains only closed field-presence/type/exact-match booleans, shape/def
 and current claim/binding checks. Inventory is diagnostic only, never creation or ownership proof.
 Write receipts separately name the first failed readback predicate, current authority checks,
 retained proof and a closed hold category. Production still requires fresh creation/readback.
+
+The profile probe now records `exact_match` separately from the documented US/CA hyphenated-phone
+equivalence and reports `profile_read_gate` only for one valid non-default identity match.
+The contact readback contract test covers singleton/list projection, missing identity, changed
+phone digits, malformed formatting, and unknown metadata without retaining live values.

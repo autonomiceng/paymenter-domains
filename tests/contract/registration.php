@@ -52,7 +52,7 @@ $exchange = static function ($origin, $command, $parameters, $ms) use ($wire, &$
         $profileId = is_string($id) || is_int($id) ? (string) $id : null;
     }
     if ($command === 'contactList') {
-        $wire->receipt['profile_verification'] = \OteContract\ProfileDiagnostics::inspect($data['reply'] ?? [], $profileParameters, $profileId);
+        $wire->receipt['profile_verification'] = \OteContract\ProfileDiagnostics::inspect(is_array($data['reply'] ?? null) ? $data['reply'] : [], $profileParameters, $profileId);
     }
     return $body;
 };
@@ -60,7 +60,11 @@ if (($mode ?? '') === '--profile-read') {
     [$op] = $claims->claim($op->id); $wire->check('profile_authority_before', $authority());
     $parameters = RegistrationProfiles::parameters(\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate('namesilo', $op->payload['contacts'])['registrant']);
     $body = $wire->raw('https://ote.namesilo.com/apibatch', 'contactList', []);
-    $wire->receipt['profile_inventory'] = \OteContract\ProfileDiagnostics::inventory(json_decode($body, true)['reply'] ?? [], $parameters);
+    $data = json_decode($body, true);
+    $inventory = \OteContract\ProfileDiagnostics::inventory(is_array($data['reply'] ?? null) ? $data['reply'] : [], $parameters);
+    $wire->receipt['profile_inventory'] = $inventory;
+    $matching = array_filter($inventory['rows'], static fn ($row) => $row['identity_match'] && $row['default_nondefault'] && $row['id_valid']);
+    $wire->check('profile_read_gate', count($matching) === 1);
     $wire->check('profile_authority_after', $authority());
     $wire->check('registration', 'profile_read_only_no_creation_or_purchase'); $nativeSuccessful = true; return;
 }

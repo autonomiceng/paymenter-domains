@@ -223,6 +223,7 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
         same(false, $wire->attempted('contactAdd'), 'Read-only probe creates no contact');
         same(false, $wire->attempted('registerDomain'), 'Read-only probe cannot purchase');
         same(true, $wire->receipt['profile_inventory']['rows'][0]['identity_match'], 'Frozen synthetic identity compared');
+        same(true, $wire->receipt['checks']['profile_read_gate'], 'Read-only identity gate');
         same(true, $wire->receipt['checks']['profile_authority_after'], 'Current authority checked after read');
     } else {
     same('accepted_via_real_admitted_protocol', $wire->receipt['checks']['registration'], 'Real registration path exercised offline');
