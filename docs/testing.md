@@ -259,3 +259,17 @@ The owner action/management suites cover exact encrypted code bytes, paid UTC cu
 immutable setup, purchase grammar, native CSRF, atomic replay, engine requests and synthetic readback.
 They also verify unresolved-peer/cooldown affordances and the explicit Enom default-DNS reset;
 empty nameservers never imply a reset, and NameSilo does not offer one.
+
+### Dormant staff views (35)
+
+`staff-domains-test.php` uses pinned native Filament list, view and activity components:
+16 permission combinations, deferred filters, current-role revocation, foreign binding exclusion,
+unknown evidence, exact nested costs and HTML/Livewire secret boundaries. The optional
+`staff-domains-render.php OUTPUT_DIRECTORY` renders static native panel fixtures with synthetic
+records and the pinned compiled Filament stylesheet. Browser captures cover 1440/1024, light/dark.
+No provider requests, staff writes, installed registration or production acceptance are established.
+The staff fixture also records Paymenter's native `*` role semantics (all read permissions,
+no mutation actions) and paid-rejection credit-review selection; that SQL queue includes already
+credited rows because funding is encrypted. Each row distinguishes credit markers from candidates.
+Adding the extension entry and a server row in slice 39 activates native admin discovery, even for a disabled
+row: permission registration and policy binding must ship with that installed activation.

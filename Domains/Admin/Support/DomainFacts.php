@@ -1,0 +1,48 @@
+<?php
+// Adapted from Enom 444f31c Admin/Support/DomainFacts and DomainAdministration read paths.
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
+/** Request-local allowlisted projection. Never cache across actors, call providers or serialize models. */
+final class DomainFacts
+{
+    public static function for(Domain $d): array
+    {
+        Staff::requireView();
+        $account = Account::where('server_id',$d->server_id)->where('registrar_key',$d->registrar_key)
+            ->where('account_fingerprint',$d->account_fingerprint)->first();
+        $result = ['Assigned registrar'=>match($d->registrar_key) {'enom'=>'Enom','namesilo'=>'NameSilo',default=>'Unknown'},
+            'Account'=>$account ? '#'.$account->id.' · Server #'.$account->server_id : 'Binding needs review',
+            'Environment'=>$account ? match($account->environment) {'test'=>'Test','live'=>'Live',default=>'Unknown'} : 'Unknown',
+            'Processing'=>$account ? Labels::flag($account->processing_enabled) : 'Unknown',
+            'Owner'=>'Customer #'.$d->user_id, 'Service'=>'#'.$d->service_id,
+            'Status'=>Labels::status($d->status), 'Confirmed expiry'=>$d->provider_expires_at?->format('Y-m-d') ?? 'Unknown',
+            'Renewal billing'=>Labels::flag($d->billing_managed),
+            'Who pays'=>match($d->price_mode) {'standard'=>'Standard','complimentary'=>'Complimentary',default=>'Review policy'},
+            'Assignment generation'=>(string)$d->authority_generation];
+        try {
+            $ob = $d->observation ?? []; $facts = $ob['facts'] ?? [];
+            $result += ['Observed ownership'=>Labels::flag($facts['owned']??null),
+                'Registrar auto-renew'=>Labels::flag($facts['auto_renew']??null),
+                'Transfer lock'=>Labels::flag($facts['locked']??null), 'Privacy'=>Labels::flag($facts['privacy']??null),
+                'Observation drift'=>Labels::flag($ob['drift']??null),
+                'Follow-up'=>match($ob['followup']['state']??null) {'observed'=>'Observed','pending'=>'Pending',default=>'Unknown'}];
+            $result['Automatic spending paused']=Labels::flag(($d->renewal_policy??[])['automatic_spend_paused']??null);
+        } catch (\Throwable) { $result['Encrypted facts']='Unavailable; review encryption access'; }
+        $jobs = DB::table('domains_observation_work')->where('domain_id',$d->id)->where('server_id',$d->server_id)
+            ->where('account_fingerprint',$d->account_fingerprint)->where('generation',$d->authority_generation)->orderByDesc('id')->limit(5)->get();
+        $result['Observation work'] = $jobs->map(fn($j)=>self::work($j))->all() ?: ['Not scheduled'];
+        $result['Data retention']='Encrypted contact and operation evidence is retained. Erasure requires a separately reviewed policy.';
+        return $result;
+    }
+    private static function work(object $job): string
+    {
+        $tries=(int)$job->tries; $resumes=(int)$job->resumes;
+        // Attempts include healthy pending checks; a matching refresh resets this counter.
+        return ($job->safe_code===null ? ($job->claim===null?'Waiting for next check':'Check in progress') : Labels::reason($job->safe_code))
+            .($job->safe_code==='refreshed'?'':' · '.$tries.' check'.($tries===1?'':'s'))
+            .($resumes>0?' · '.$resumes.' resume'.($resumes===1?'':'s'):'');
+    }
+}
