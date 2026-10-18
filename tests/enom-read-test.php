@@ -65,6 +65,26 @@ foreach ([str_replace('country_detail', 'missing_child', $field).$child, str_rep
     $wire->payloads['Attributes'] = '<Attributes>'.$bad.'</Attributes>';
     same('unknown', $driver->registrySchema('com', $context())->status, 'Malformed schema closes ending');
 }
+$registryFields = \Paymenter\Extensions\Servers\Domains\Registrars\Enom\RegistryFields::class;
+$parseFields = fn (string $xml) => $registryFields::normalize((new ResponseParser)->parse(ReadCommand::Attributes, body('GetExtAttributes', '<Attributes>'.$xml.'</Attributes>')));
+$optional = str_replace('<Required>1', '<Required>0', $field);
+foreach (['required' => $field, 'child' => str_replace('<IsChild>0', '<IsChild>1', $optional),
+    'text' => str_replace('<UserDefined>false', '<UserDefined>true', $optional),
+    'options' => str_replace('<Value>citizen', '<Value>resident', $optional)] as $conflict => $duplicate) {
+    try { $parseFields($optional.$duplicate.$child); throw new LogicException('Expected duplicate '.$conflict.' refusal'); }
+    catch (InvalidArgumentException) {}
+}
+$expectedFields = $parseFields($field.$child);
+same($expectedFields, $parseFields($field.$field.$child), 'Identical registry duplicates collapse');
+$withoutOptions = preg_replace('#<Options>.*?</Options>#', '', $field);
+same($expectedFields, $parseFields($withoutOptions.$field.$child), 'Later registry options fill an empty first entry');
+same($expectedFields, $parseFields($field.$withoutOptions.$child), 'Empty later registry options preserve existing choices');
+foreach (['required' => str_replace('<Required>1', '<Required>0', $withoutOptions),
+    'child' => str_replace('<IsChild>0', '<IsChild>1', $withoutOptions),
+    'text' => str_replace('<UserDefined>false', '<UserDefined>true', $withoutOptions)] as $conflict => $first) {
+    try { $parseFields($first.$field.$child); throw new LogicException('Expected option-fill '.$conflict.' refusal'); }
+    catch (InvalidArgumentException) {}
+}
 $wire->payloads['Attributes'] = '<Attributes/>'; same([], $driver->registrySchema('com', $context())->facts()['fields'], 'Explicit no registry requirements retained');
 foreach (['register' => 10, 'renew' => 16, 'transfer' => 19] as $action => $type) {
     $wire->payloads['ProductPrice'] = '<ProductPrice><ProductEnabled>true</ProductEnabled><Price>0.0000</Price></ProductPrice>';

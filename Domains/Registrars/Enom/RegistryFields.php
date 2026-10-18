@@ -46,10 +46,19 @@ final class RegistryFields
             $entry = ['name' => $name, 'label' => self::text($attribute['description'] ?? null) ?: ucfirst(str_replace('_', ' ', $name)),
                 'required' => (string) ($attribute['required'] ?? '0') === '1', 'child' => (string) ($attribute['ischild'] ?? '0') === '1',
                 'text' => strcasecmp((string) ($attribute['userdefined'] ?? ''), 'true') === 0, 'options' => $choices];
-            // Some endings list one field several times; keep the first, merge its options.
+            // Repeated names must agree; only an initially empty options list may be filled.
             $existing = array_search($name, array_column($schema, 'name'), true);
             if ($existing === false) { $schema[] = $entry; }
-            elseif ($choices && !$schema[$existing]['options']) { $schema[$existing]['options'] = $choices; }
+            else {
+                $previous = $schema[$existing];
+                foreach (['required', 'child', 'text'] as $flag) {
+                    if ($previous[$flag] !== $entry[$flag]) { throw new \InvalidArgumentException('Conflicting registry field flags.'); }
+                }
+                if ($choices && $previous['options'] && $choices !== $previous['options']) {
+                    throw new \InvalidArgumentException('Conflicting registry field options.');
+                }
+                if ($choices && !$previous['options']) { $schema[$existing]['options'] = $choices; }
+            }
         }
         $names = array_column($schema, 'name');
         foreach ($schema as $field) {
