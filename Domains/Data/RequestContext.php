@@ -11,10 +11,14 @@ final readonly class RequestContext
         public \DateTimeImmutable $deadline, public RequestBudget $budget, private Clock $clock = new SystemClock) {}
 
     /** Drivers must call before each wire request, not just once per logical operation. */
-    public function claimRead(AccountBinding $driver): void
+    public function claimRead(#[\SensitiveParameter] AccountBinding $driver): int
     {
         $driver->requireMatch($this->binding);
-        if ($this->clock->now() >= $this->deadline) { throw new \RuntimeException('Registrar request deadline reached.'); }
+        $now = $this->clock->now();
+        $remaining = intdiv(((int) $this->deadline->format('U') - (int) $now->format('U')) * 1000000
+            + (int) $this->deadline->format('u') - (int) $now->format('u'), 1000);
+        if ($remaining < 1) { throw new \RuntimeException('Registrar request deadline reached.'); }
         $this->budget->consume();
+        return $remaining;
     }
 }

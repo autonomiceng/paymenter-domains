@@ -70,3 +70,8 @@ tests/paymenter-test-app.php and tests/enom-native-app.php, preserving MIT notic
 Passing offline tests never establish real writes, sandbox acceptance, transfer completion,
 SMTP delivery, browser accessibility, installed ZIP compatibility or production pricing.
 See [API gates](design/parity.md). Provider/environment acceptance requires separate authority.
+
+Enom protocol tests (slice 10) require DOM in standalone/provider runs as well as native runs.
+The already pinned XML archive is now part of the base offline runtime; `php-test` loads DOM
+without loading the other native fixture extensions. Missing archives still fail without download.
+Its upstream hash provenance remains the locally pinned evidence described above.

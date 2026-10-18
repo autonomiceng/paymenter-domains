@@ -28,8 +28,7 @@
   },
   {
     "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-xml_8.4.26-1~deb13u1_amd64.deb",
-    "sha256": "1d43f586bb8fbbaa52c942a6dbf66b9e7562363bc68cfbd329b0d16a9203890d",
-    "native": true
+    "sha256": "1d43f586bb8fbbaa52c942a6dbf66b9e7562363bc68cfbd329b0d16a9203890d"
   },
   {
     "url": "https://deb.debian.org/debian/pool/main/i/icu/libicu76_76.1-4_amd64.deb",

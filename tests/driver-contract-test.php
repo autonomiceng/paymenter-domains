@@ -218,3 +218,16 @@ $other = new AccountBinding('enom', 12, Environment::Test, 'synthetic-other');
 refuses(fn () => new DriverResult($account, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved,
     new Evidence(domain: new DomainSnapshot($other, 'example.com'))), 'Wrong-account result evidence accepted');
 echo "Driver contracts: paired binding, precise/unknown evidence, outcomes, budgets and non-dispatchable writes passed.\n";
+
+// Driver timeout admission uses the engine clock and integer millisecond precision.
+$clock = new class implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock {
+    public function now(): DateTimeImmutable { return new DateTimeImmutable('2020-01-01T00:00:00Z'); }
+};
+foreach ([['+2 seconds', 2000], ['+1000 microseconds', 1]] as [$offset, $milliseconds]) {
+    $context = new RequestContext($account, RequestOrigin::Background, $clock->now()->modify($offset), new RequestBudget(1), $clock);
+    same($milliseconds, $context->claimRead($account), 'Remaining deadline returned using injected clock');
+    same(0, $context->budget->remaining(), 'Admitted read consumes exactly once');
+}
+$context = new RequestContext($account, RequestOrigin::Background, $clock->now()->modify('+999 microseconds'), new RequestBudget(1), $clock);
+try { $context->claimRead($account); throw new LogicException('Expected sub-millisecond refusal'); } catch (RuntimeException) {}
+same(1, $context->budget->remaining(), 'Sub-millisecond refusal preserves budget');
