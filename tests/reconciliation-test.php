@@ -33,4 +33,28 @@ foreach (['late', 'absent', 'null'] as $mode) {
     if ($mode === 'absent') { expect(!array_key_exists('execution', $result->attempt), 'Recovery never fabricates missing execution'); }
     if ($mode === 'null') { same(null, $result->attempt['execution'], 'Recorded-null distinction preserved'); }
 }
+[$op] = $prepare('timestamp-boundary.com');
+$beforeUpdate = Illuminate\Support\Carbon::parse($op->getRawOriginal('updated_at'));
+// Eloquent samples time for the model, then again for the UPDATE when the first
+// timestamp equals the original and is omitted from the dirty attributes.
+$nativeDates = new class($beforeUpdate) extends Carbon\Factory {
+    public int $reads = 0;
+    public function __construct(private Illuminate\Support\Carbon $start) { parent::__construct(); }
+    public function now($timezone = null): Illuminate\Support\Carbon
+    {
+        return $this->start->copy()->addSeconds($this->reads++ === 0 ? 0 : 1);
+    }
+};
+$observation->during = static function () use ($op, $beforeUpdate, $nativeDates): void {
+    same(2, $nativeDates->reads, 'Model and query builder sampled opposite sides of a second boundary');
+    same($beforeUpdate->copy()->addSecond()->format('Y-m-d H:i:s'), $op->fresh()->getRawOriginal('updated_at'),
+        'Unresolved alert persisted the later query-builder timestamp');
+};
+Illuminate\Support\Facades\Date::useFactory($nativeDates);
+try {
+    $result = $reconcile->run($op->id);
+    same('succeeded', $result->state, 'Real original charge and expiry anchor survive timestamp boundary');
+    same('8.95', $result->cost['actual']['amount'], 'Boundary completion retains proven charge');
+    same('2027-10-18', $result->domain->renewal_policy['billing_anchor']['expiry'], 'Boundary completion retains proven anchor');
+} finally { Illuminate\Support\Facades\Date::useDefault(); }
 echo "Original-attempt unique completion, correction selection and crash recovery passed\n"; $nativeSuccessful = true;

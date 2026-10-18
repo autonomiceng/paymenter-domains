@@ -15,6 +15,9 @@ final class OperationReconciliation
         $capture = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account): ?array {
             if (!$this->eligible($op)) { return null; }
             $this->unresolved($op);
+            // Eloquent's UPDATE can advance updated_at beyond the model's timestamp.
+            // Capture persisted values under these locks before reading the provider.
+            $op->refresh();
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
                 $attempt = ReconciliationEvidence::attempt($op, $domain, $binding);
