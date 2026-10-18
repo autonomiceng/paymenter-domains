@@ -20,5 +20,30 @@ enum ReadCommand: string
     case Privacy = 'GetWPPSInfo';
     case Renewal = 'GetRenew';
 
+    /** Exact parameters for the named read; no shared credential/mutation overrides. */
+    public function validate(#[\SensitiveParameter] array $parameters): void
+    {
+        $expected = match ($this) {
+            self::Balance, self::Tlds => [],
+            self::ProductPrice => ['TLD', 'ProductType', 'Years'],
+            self::TldInfo, self::Attributes => ['TLD'],
+            self::Check => ['SLD', 'TLD', 'Version', 'IncludePrice', 'IncludeProperties', 'IncludeEAP'],
+            default => ['SLD', 'TLD'],
+        };
+        if (array_diff(array_keys($parameters), $expected) || array_diff($expected, array_keys($parameters))) {
+            throw new \InvalidArgumentException('Invalid named read parameters.');
+        }
+        foreach ($parameters as $key => $value) {
+            $valid = match ($key) {
+                'SLD' => is_string($value) && preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/D', $value),
+                'TLD' => is_string($value) && strlen($value) <= 189 && preg_match('/^[a-z]{2,63}(?:\.[a-z]{2,63})*$/D', $value),
+                'ProductType' => in_array($value, [10, 16, 19], true),
+                'Years' => is_int($value) && $value >= 1 && $value <= 10,
+                'Version' => $value === 2,
+                default => $value === 1,
+            };
+            if (!$valid) { throw new \InvalidArgumentException('Invalid named read value.'); }
+        }
+    }
     public function bodyLimit(): int { return $this === self::Tlds ? 8388608 : 1048576; }
 }

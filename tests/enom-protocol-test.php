@@ -81,7 +81,7 @@ foreach ([$context(0), $context(1, null, '-1 second'), $context(1, new AccountBi
     }
     same($before, $transport->calls, 'Binding/deadline/budget refuses before transport');
 }
-foreach ([['UID' => 'override'], ['Command' => 'Purchase'], ['UseCreditCard' => 'yes'], ['TLD' => 'com', 'tld' => 'net'], ['SLD' => []]] as $bad) {
+foreach ([['UID' => 'override'], ['Command' => 'Purchase'], ['UseCreditCard' => 'yes'], ['TLD' => 'com', 'tld' => 'net'], ['SLD' => []], ['SLD' => str_repeat('x', 64), 'TLD' => 'com'], ['SLD' => 'example', 'TLD' => 'com', 'Years' => 11]] as $bad) {
     $before = $transport->calls;
     try { $client->read(ReadCommand::Info, $bad, $context()); throw new LogicException('Expected parameter refusal'); }
     catch (InvalidArgumentException) {}

@@ -57,3 +57,9 @@ catch (\RuntimeException) { same(0, $GLOBALS['enomCurl']['calls'], 'TLS key logg
 putenv('SSLKEYLOGFILE');
 }
 echo "Enom transport: synthetic HTTPS, POST, deadline cap, streaming, no retries and redaction passed.\n";
+
+foreach ([['command' => 'Purchase'], ['UID' => 'override'], ['Years' => 1]] as $unsafe) {
+    resetCurl();
+    try { $transport->send(Environment::Test, ReadCommand::Balance, $unsafe, 'uid', 'token', 25000); throw new \LogicException('Expected named parameter refusal'); }
+    catch (\RuntimeException) { same(0, $GLOBALS['enomCurl']['calls'], 'Direct transport rejects mutation/credential/unrelated parameters'); }
+}

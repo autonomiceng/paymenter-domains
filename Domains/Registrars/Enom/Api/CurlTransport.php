@@ -12,6 +12,7 @@ final class CurlTransport implements Transport
     {
         $handle = null;
         try {
+            $command->validate($parameters);
             if ($uid === '' || $token === '' || (getenv('SSLKEYLOGFILE') !== false && getenv('SSLKEYLOGFILE') !== '') || $timeoutMs < 1 || $timeoutMs > 25000) {
                 throw new \RuntimeException('Registrar transport unavailable.');
             }

@@ -21,15 +21,7 @@ final class Client
     }
     public function read(ReadCommand $command, #[\SensitiveParameter] array $parameters, #[\SensitiveParameter] RequestContext $context): ProtocolResult
     {
-        $seen = [];
-        foreach ($parameters as $key => $value) {
-            if (!is_string($key) || !preg_match('/^[a-z][a-z0-9_]*$/iD', $key)
-                || !in_array(strtolower($key), ['sld', 'tld', 'version', 'includeprice', 'includeproperties', 'includeeap', 'producttype', 'years'], true)
-                || isset($seen[strtolower($key)]) || (!is_string($value) && !is_int($value))) {
-                throw new \InvalidArgumentException('Invalid Enom read parameters.');
-            }
-            $seen[strtolower($key)] = true;
-        }
+        $command->validate($parameters);
         $remaining = $context->claimRead($this->binding);
         try {
             [$uid, $token, $transport] = self::$secrets[$this];

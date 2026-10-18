@@ -3,7 +3,8 @@
     "tests/api-test.php",
     "tests/curl-transport-test.php",
     "tests/enom-protocol-test.php",
-    "tests/enom-curl-test.php"
+    "tests/enom-curl-test.php",
+    "tests/enom-read-test.php"
   ],
   "contracts": [
     "tests/driver-contract-test.php"

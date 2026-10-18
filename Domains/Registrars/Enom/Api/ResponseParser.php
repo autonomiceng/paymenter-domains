@@ -7,7 +7,7 @@ final class ResponseParser
 {
     public function parse(ReadCommand $command, #[\SensitiveParameter] string $body): ProtocolResult
     {
-        if (strlen($body) > $command->bodyLimit() || preg_match('/<!DOCTYPE|<!ENTITY/i', $body)) {
+        if (strlen($body) > $command->bodyLimit() || str_contains($body, "\0") || preg_match('//u', $body) !== 1 || preg_match('/<!DOCTYPE|<!ENTITY/i', $body)) {
             return new ProtocolResult('unknown', 'invalid_response');
         }
         $previous = libxml_use_internal_errors(true);
@@ -51,7 +51,11 @@ final class ResponseParser
     {
         if ($depth > 16 || ++$count > $limit) { throw new \RuntimeException('Registrar response exceeds limits.'); }
         $data = []; $text = '';
-        foreach ($node->attributes as $attribute) { $data['@attributes'][strtolower($attribute->name)] = $attribute->value; }
+        foreach ($node->attributes as $attribute) {
+            $key = strtolower($attribute->name);
+            if (isset($data['@attributes']) && array_key_exists($key, $data['@attributes'])) { throw new \RuntimeException('Duplicate normalized attribute.'); }
+            $data['@attributes'][$key] = $attribute->value;
+        }
         foreach ($node->childNodes as $child) {
             if ($child instanceof \DOMElement) {
                 $key = strtolower($child->tagName);

@@ -75,3 +75,7 @@ Enom protocol tests (slice 10) require DOM in standalone/provider runs as well a
 The already pinned XML archive is now part of the base offline runtime; `php-test` loads DOM
 without loading the other native fixture extensions. Missing archives still fail without download.
 Its upstream hash provenance remains the locally pinned evidence described above.
+
+Enom named read normalization is exercised by `tests/enom-read-test.php` with synthetic XML and
+a synthetic accepted-binding factory. Price absence differs from failed reads; ownership, expiry
+precision, unknown flags, registry requirements and contact redaction have no provider dependency.
