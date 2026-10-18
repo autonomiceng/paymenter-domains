@@ -16,13 +16,15 @@ CACHE = ROOT / '.cache/php-runtime'
 LOCK = ROOT / 'scripts/php-runtime-packages.json'
 
 
-def prepare(download=False):
+def prepare(download=False, native=False):
     if platform.system() != 'Linux' or platform.machine() != 'x86_64':
         raise RuntimeError('The pinned runner requires Linux x86_64.')
     CACHE.mkdir(parents=True, exist_ok=True)
     source = os.environ.get('PHP_RUNTIME_ARCHIVE_CACHE')
     archives = []
     for package in json.loads(LOCK.read_text()):
+        if package.get('native', False) and not native:
+            continue
         archive = CACHE / package['url'].rsplit('/', 1)[1]
         if not archive.exists() and source and (Path(source) / archive.name).is_file():
             shutil.copyfile(Path(source) / archive.name, archive)
@@ -60,6 +62,7 @@ def prepare(download=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--download', action='store_true')
-    runtime, _, _ = prepare(parser.parse_args().download)
+    parser.add_argument('--native', action='store_true')
+    runtime, _, _ = prepare(**vars(parser.parse_args()))
     shutil.rmtree(runtime)
     print('PHP 8.4.26 archives verified and cached; offline runner ready.')

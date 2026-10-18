@@ -4,8 +4,14 @@ set -euo pipefail
 : "${PAYMENTER_TEST_PHP:?Run scripts/test.py}"
 : "${PAYMENTER_TEST_CURL_EXTENSION:?Run scripts/test.py}"
 export PHP_INI_SCAN_DIR=''
+extra=()
+if [[ -n "${PAYMENTER_TEST_NATIVE_EXTENSIONS:-}" ]]; then
+  for module in pdo pdo_sqlite sqlite3 mbstring intl dom xml xmlreader xmlwriter; do
+    extra+=(-d "extension=${PAYMENTER_TEST_NATIVE_EXTENSIONS}/$module.so")
+  done
+fi
 exec "$PAYMENTER_TEST_PHP" -n \
-  -d "extension=$PAYMENTER_TEST_CURL_EXTENSION" \
+  -d "extension=$PAYMENTER_TEST_CURL_EXTENSION" "${extra[@]}" \
   -d allow_url_fopen=0 -d ffi.enable=0 \
   -d zend.exception_ignore_args=1 \
   -d disable_functions=curl_exec,curl_multi_exec,fsockopen,pfsockopen,stream_socket_client,stream_socket_server,socket_connect,socket_sendto,exec,system,passthru,shell_exec,popen,proc_open,pcntl_exec,mail \

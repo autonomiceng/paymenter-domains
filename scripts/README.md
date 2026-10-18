@@ -1,9 +1,11 @@
 # Development tools
 
-- `python3 scripts/bootstrap.py --download`: cache and verify pinned PHP archives; network only here.
-- `PHP_RUNTIME_ARCHIVE_CACHE=/path/to/cache python3 scripts/bootstrap.py`: seed from verified local archives.
-- `scripts/test.py`: offline PHP lint and all `tests/**/*-test.php` suites; JSON receipt path on completion.
-- `scripts/php-test`: internal wrapper used by the runner, with network/process execution disabled.
+- `python3 scripts/bootstrap.py --download`: cache pinned PHP archives; network only on explicit bootstrap.
+- `python3 scripts/bootstrap.py --native`: verify/cache additional native modules, without downloading.
+- `scripts/test.py`: registered offline suites and lint; optional `--suite`, private JSON receipts.
+- `scripts/php-test`: runner-only wrapper disabling network/process functions.
+- `scripts/native.py`: pinned pristine dependency guard and disposable fixture copy; no downloads.
+- `scripts/build.py`: synthetic package boundary support; current foundation lacks an entry point.
 
-See [verification](../docs/testing.md) for supported OS, checksum sources, failure behavior and
-Paymenter coverage limits. The package builder and native Paymenter harness remain deferred.
+See [verification](../docs/testing.md) for native dependency selection, checksum provenance and
+coverage limits. Package tests are not native installation acceptance.

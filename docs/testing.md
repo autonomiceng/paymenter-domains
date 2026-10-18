@@ -1,50 +1,70 @@
 # Verification
 
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
-The pinned runtime is PHP **8.4.26**, Debian `8.4.26-1~deb13u1`, Linux x86_64. Bootstrap verifies
-SHA-256 for every archive against the committed lock; hashes were checked against Debian's
-[security package index](https://deb.debian.org/debian-security/dists/trixie-security/main/binary-amd64/Packages.xz)
-on 2026-10-17. Cached archives are verified and re-extracted before each test run. A missing or
-corrupt archive fails; the runner never downloads. `PHP_RUNTIME_ARCHIVE_CACHE` may point to an
-existing Enom PHP archive cache; files are copied and verified, never modified in that cache.
+PHP **8.4.26**, Debian `8.4.26-1~deb13u1`, Linux x86_64 is pinned by archive SHA-256.
+CLI/common/curl hashes were checked against the Debian security index on 2026-10-17.
+Optional native sqlite3/mbstring/intl/xml and ICU hashes are pinned from the existing local
+reference archives; their upstream index provenance has not been independently rechecked.
+Every run verifies and re-extracts archives; missing/corrupt cache fails without downloading.
+`PHP_RUNTIME_ARCHIVE_CACHE` copies verified archives from another cache without changing it.
+Python 3, dpkg-deb and compatible system libraries are required; no system PHP or Composer runs.
 
-Requires Python 3, dpkg-deb and compatible system libraries (Ubuntu 24.04 x86_64: libxml2,
-libargon2-1, libsodium23, libcurl4t64). PHP CLI/common/curl packages are extracted locally,
-not installed system-wide. No system PHP, Composer or JavaScript dependencies are used.
-Only PHP is pinned here; system library versions follow the runner OS.
+## Suites and receipts
 
-The runner lints all PHP and executes every `tests/**/*-test.php`. A clean environment and PHP
-settings disable URL streams, cURL execution, network sockets, process launching and mail;
-`zend.exception_ignore_args=1` keeps sensitive function arguments out of exception traces.
-Synthetic cURL functions may inspect transport configuration without a socket. These are runtime
-guards, not an OS security sandbox for hostile test code. A suite failure, timeout (60 seconds),
-missing suite or changed runtime source fails the run. Private `/tmp/namesilo-tests-*/receipt.json`
-receipts preserve command exits and source hashes. No registrar account or credentials are needed.
+`tests/suites.json` registers provider, contracts, native, UI, runner and package categories.
+All `*-test.php` and `test_*.py` paths must be registered exactly once and exist.
+Detected `*-test.cjs` files are refused until a JavaScript runner is implemented.
+Lint includes every runtime/test PHP file. Unknown, missing or explicit unimplemented suites fail.
+Default runs execute all implemented categories except native when no dependency is supplied;
+empty categories are reported as unimplemented. `--suite` selects categories; receipts disclose
+omissions. No UI suite exists yet. Synthetic provider tests do not establish provider acceptance.
 
-CI retains repository hygiene and runs bootstrap plus this runner without secrets. Downloads
-belong only to bootstrap; ordinary suites are offline. Passing tests establish local protocol
-interpretation, not registry acceptance, Paymenter installation or concurrency correctness.
+Clean environment and PHP settings disable URL streams, cURL execution, sockets, process launch
+and mail. Exception arguments are hidden by default; redaction cases explicitly enable them.
+Synthetic namespaced cURL functions inspect configuration without sockets. These are runtime
+guards, not an OS sandbox. SQLite is the only loaded PDO driver in native runs; no database sockets.
+Failure, timeout (60 seconds), or changed runtime bytes stops the run. Timeout termination
+kills the command process group, including nested children, before cleaning up the fixture. Private
+`/tmp/domains-tests-*/receipt.json` records command exits, partial outputs, hashes, omitted and
+unimplemented categories. Setup failures also leave a receipt; final dependency guard failures preserve command results. Laravel suites must explicitly
+mark completion because framework exception rendering can otherwise return status zero.
 
-The current synthetic suites cover documented response codes and success shapes, credential redaction,
-request bounds and purchase flags, and cURL routing/TLS/timeouts/stream limits without network execution.
-Purchase mappings are structurally excluded from client/transport dispatch; tests assert zero sends.
-Redaction cases explicitly enable exception arguments, and cover ordinary object casts/dumpers as well
-as serialization. Pure parser tests cover correlated fallbacks, per-operation refusals, canonical
-decimal amounts/IDs and exact availability coverage.
+## Offline native fixture
 
-## Reference and deferred coverage
+Provide an existing pristine development checkout with vendor, not an installed application:
 
-Adapted from Enom `d2c55e2` scripts/test.py and scripts/php-test. Its bootstrap accepts system
-PHP 8.3/8.4, verifies the official Paymenter Git remote/tag v1.5.9 and pristine files, installs
-Composer dependencies from the lock and fingerprints manifests for cache reuse. It does **not**
-ship a hash-pinned PHP downloader or lock the tag to a commit hash. This slice adds an explicit
-PHP archive/hash lock instead of describing that reference as stronger than it is.
+```sh
+PHP_RUNTIME_ARCHIVE_CACHE=/path/to/verified/php-archives \
+PAYMENTER_TEST_APP=/canonical/path/to/paymenter-1.5.9 scripts/test.py
+```
 
-Paymenter 1.5.9 remains the integration target. No Paymenter bootstrap or native harness is
-needed for a standalone provider client, so none is loaded or downloaded. Future native suites
-must pin the upstream commit and lockfile, verify a pristine disposable application with vendor,
-and reject installed apps, .env files and cached configuration. Add billing/ownership, concurrency,
-UI and package checks when those features exist. MySQL/MariaDB behavior needs separate evidence.
+Native archives may be seeded with `python3 scripts/bootstrap.py --native`; downloads still
+require the separate `--download` flag. The dependency guard pins Paymenter v1.5.9 commit
+`ee729f7d99ac18942625b79f3f93d8d8b21255e8` and lock SHA-256
+`fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be`.
+It checks every upstream tracked byte against that commit, rejects .env/cached config/symlinks,
+and checks installed package names/versions/dist references against the lock. The sole permitted
+source edit is the exact app.version development→1.5.9 substitution; the disposable export uses
+original upstream bytes. Vendor byte fingerprints prove source immutability during the run,
+not independent archive authentication of every dependency. No source dependency is written.
 
-See [API gates](design/parity.md). Sandbox calls, real purchases and environment access require
-separate task authority. No provider acceptance or installable package exists.
+The runner copies source and vendor to a private disposable fixture, uses synthetic environment
+values, migrates an in-memory database, blocks stray HTTP, and removes the copy afterward.
+Current native coverage is a **harness probe**: upstream schema/model/transaction/HTTP guards,
+including failure exits. There is no Domains entry point, billing, migration or installed extension.
+SQLite alone cannot establish MariaDB locking, concurrent checkout or financial correctness.
+CI uses cached pinned PHP and runs standalone categories; native checks need an explicitly supplied
+local dependency and are not claimed by CI. No dependency checkout/download/bootstrap is automatic.
+
+## Packaging and limits
+
+Package support is adapted from Enom `d2c55e2` scripts/build.py and synthetic package tests.
+Synthetic entry points exercise deterministic ZIP/member SHA manifests, license equality,
+canonical output, no overwrite, private-file/path and symlink refusal. The actual foundation
+**cannot build a release ZIP**; final native upload/install/reinstall evidence is deferred.
+Runner/native fixtures adapt that revision's scripts/test.py, tests/test_runner.py,
+tests/paymenter-test-app.php and tests/enom-native-app.php, preserving MIT notices.
+
+Passing offline tests never establish real writes, sandbox acceptance, transfer completion,
+SMTP delivery, browser accessibility, installed ZIP compatibility or production pricing.
+See [API gates](design/parity.md). Provider/environment acceptance requires separate authority.
