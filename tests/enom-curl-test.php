@@ -35,6 +35,16 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
         CURLOPT_FRESH_CONNECT => true, CURLOPT_FORBID_REUSE => true] as $key => $expected) { same($expected, $options[$key], 'Bounded transport options'); }
     same(1, $GLOBALS['enomCurl']['closed'], 'Handle closed');
 }
+foreach ([[0, 'uid', 'token'], [25001, 'uid', 'token'], [1200, '', 'token'], [1200, 'uid', '']] as [$timeout, $uid, $token]) {
+    resetCurl();
+    try { $transport->send(Environment::Test, ReadCommand::Balance, [], $uid, $token, $timeout); throw new \LogicException('Expected input guard refusal'); }
+    catch (\RuntimeException) {}
+    same(0, $GLOBALS['enomCurl']['calls'], 'Invalid transport input never dispatches');
+}
+resetCurl();
+$transport->send(Environment::Test, ReadCommand::Balance, [], 'uid', 'token', 25000);
+same(8000, $GLOBALS['enomCurl']['options'][CURLOPT_CONNECTTIMEOUT_MS], 'Long request caps connect timeout');
+same(25000, $GLOBALS['enomCurl']['options'][CURLOPT_TIMEOUT_MS], 'Long request preserves total timeout');
 foreach ([['status' => 302], ['status' => 500], ['configFail' => true], ['timeout' => true], ['chunks' => [str_repeat('x', 1048576), 'x']]] as $failure) {
     resetCurl($failure);
     try { $transport->send(Environment::Test, ReadCommand::Balance, [], 'private-uid', 'private-token', 25000); throw new \LogicException('Expected transport exception'); }

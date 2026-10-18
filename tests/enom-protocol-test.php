@@ -87,6 +87,12 @@ foreach ([['UID' => 'override'], ['Command' => 'Purchase'], ['UseCreditCard' => 
     catch (InvalidArgumentException) {}
     same($before, $transport->calls, 'Unsafe parameter has no dispatch path');
 }
+foreach ([[11, 10], [0, 10], [1, 99]] as [$years, $type]) {
+    $transport->calls = 0;
+    try { $client->read(ReadCommand::ProductPrice, ['TLD' => 'com', 'ProductType' => $type, 'Years' => $years], $context()); throw new LogicException('Expected product price bounds refusal'); }
+    catch (InvalidArgumentException) {}
+    same(0, $transport->calls, 'Invalid product price bounds never dispatch');
+}
 expect(ReadCommand::tryFrom('Purchase') === null && ReadCommand::tryFrom('Extend') === null, 'Purchase commands structurally unavailable');
 $transport->fail = true;
 $before = $transport->calls;
