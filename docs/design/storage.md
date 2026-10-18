@@ -192,3 +192,50 @@ a positive discounted cart line may be below cost. Currency conversion and provi
 `PricingRule` retains the source four-decimal wholesale/two-decimal retail bounds;
 provider evidence with greater precision requires a separately reviewed exact adapter.
 Slice 41 must rename the source `pricing_default_rule` setting to `domains_pricing_default_rule`.
+
+## Current prices and holder display (slice 08)
+
+`PriceCatalogue` refreshes a TLD atomically after provider reads finish. Exceptions, unknown
+reads, empty/malformed batches and older observations retain all that TLD's prior prices and
+revisions, report failure and continue. Only `CatalogueRate` with explicit null `perYear`
+withdraws acquisition terms; renewal keeps its last positive retail with an unknown_price alert.
+Omission retains prior evidence. A successful write increments revision. Failed reads
+never extend freshness. Defaults republish through `PriceCatalogue::republish` independently.
+`CatalogueRate` is a verified per-year rate for its specific registration term, preserving
+Enom rounding before multiplying retail by years. Renewal/transfer accept annual term one
+only. Adapters must establish a selected-term rate, never extrapolate an annual NameSilo
+listing. Rows store exact term-total wholesale/retail with source-unit provenance. Unsupported
+precision/currency/terms fail closed, retaining prior costs. No legacy TLD cost fallback exists.
+`current` requires known fresh prices; snapshots freeze ID/revision/binding/source/money for
+later encrypted obligation persistence. `HolderPricing` looks up the domain's frozen account,
+independent of seller flags; below-cost renewal prices remain usable with staff alert codes.
+`HolderPricing::renewal` returns a separate RenewalPrice: fresh/current or retained published
+annual retail, with a stale/unknown_price alert. A cost outage, rule failure or expired freshness
+never removes the last published positive renewal retail. This is billing retail authority;
+fresh `current` cost evidence is separate and is never a new dispatch/obligation floor.
+Slice 24 must project the locked holder retail into native service.price for future billing;
+native Paymenter bills from that field. Already-issued invoices retain their original amounts.
+The save guard allows lifecycle-only saves regardless of old price or price mode; it refuses
+binding changes and only checks dirty price against fresh current retail. Unknown evidence
+cannot authorize an arbitrary price edit. Trusted plan/config/complimentary transitions remain
+owned by the later integration. No observer is installed: 24/39 must invoke it under
+ordered locks and cover native config relations, annual plan transitions and complimentary
+permissions. Issued invoices are never recalculated by these services. Native UI remains open.
+
+Slices 12/13/14 must explicitly map neutral QuoteEvidence into CatalogueRate: verify matching
+account/action/term/currency, reject unknown/null quote costs (ResultReason has no confirmed
+no-price signal), and require separate positive no-price evidence before constructing null.
+Annual quotes prove one-year terms only; TermTotal must divide by the selected term exactly
+at four decimals, after trimming only zero excess digits from six-decimal Money. Do not round
+or extrapolate. Future observation timestamps must be refused by the adapter's accepted clock
+before sync, so faulty evidence cannot wedge later reads. These adapters do not ship here.
+Slice 14 couples acquisition eligibility to annual renewal, live term bounds and accepted
+TLD capabilities. Holder renew_enabled semantics must be decided for 23/24 independently
+of seller flags. Native-disabled servers are uniformly read-only for sync/republish; existing
+holder retail remains readable. lock=true requires server/account/policy/TLD locks first.
+Snapshots redact cost/binding from generic JSON/debug and refuse PHP serialization.
+Slice 24 must hold server/account/TLD locks before renewal(), neutralise upstream cart and
+RenewServiceService expires_at writes before installing the null-expiry guard, and update
+future native billing projections only. Slice 14 must skip retained out-of-range registration
+rows during republication when term bounds change, and precheck disabled native servers before
+provider reads; current write refusal alone deliberately does not avoid the read callback.

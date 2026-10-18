@@ -15,7 +15,8 @@
     "tests/schema-test.php",
     "tests/reservation-test.php",
     "tests/binding-test.php",
-    "tests/pricing-rules-test.php"
+    "tests/pricing-rules-test.php",
+    "tests/catalogue-test.php"
   ],
   "ui": [],
   "runner": [

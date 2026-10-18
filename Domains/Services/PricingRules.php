@@ -19,7 +19,7 @@ final class PricingRules
     /** One shared default across an account's TLDs; another account has its own retail table/rule. */
     public function defaultRule(int $serverId): array
     {
-        $server = $this->server($serverId);
+        $server = $this->server($serverId, false, false);
         $setting = $server->settings()->where('key', 'domains_pricing_default_rule')->first();
         $rule = $setting ? $setting->value : PricingRule::DEFAULT;
         if (!is_array($rule)) { throw new \DomainException('Invalid default pricing rule.'); }
@@ -44,11 +44,11 @@ final class PricingRules
         return $summary;
     }
 
-    private function server(int $id, bool $lock = false): Server
+    private function server(int $id, bool $lock = false, bool $requireEnabled = true): Server
     {
         $query = Server::whereKey($id); if ($lock) { $query->lockForUpdate(); }
         $server = $query->firstOrFail();
-        if ($server->extension !== 'Domains' || !$server->enabled || !Account::where('server_id', $id)->exists()) {
+        if ($server->extension !== 'Domains' || ($requireEnabled && !$server->enabled) || !Account::where('server_id', $id)->exists()) {
             throw new \DomainException('Bound Domains account required.');
         }
         return $server;
