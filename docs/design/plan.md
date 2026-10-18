@@ -17,10 +17,11 @@ provider acceptance and a usable extension remain future gates.
 - One `domains_domains` ledger with globally unique nullable canonical `reservation_name`, plus
   `domains_operations`. Freeze account/generation/attempt/funding evidence. Missing execution and
   sent-null differ. Unknown never authorizes replay, auto-refund or another registrar fallback.
-- `domains_tlds` and `domains_prices` belong to registrar accounts. Assume per-account price tables
-  and per-TLD rules pending retail confirmation. Rules may be shared; build no unified retail mode.
-- Below-cost prices and renewals are allowed with staff margin alerts. Remove retail-cost floors
-  at publication, obligation creation and dispatch, held shortfalls and subsidy workflows.
+- `domains_tlds` and `domains_prices` belong to registrar accounts: one price table per account,
+  a shared default rule and per-TLD overrides. Build no unified retail mode.
+- Keep Enom 0.5 margin behavior: a registration or transfer term priced below cost is held from
+  sale with a staff alert; a below-cost renewal is still billed and only alerts staff. No floors at
+  obligation creation or dispatch, no held shortfalls and no subsidy workflows.
   Keep per-term registration costs and annual renewal/transfer semantics unless a driver needs
   verified additional terms. Unknown cost is not zero. Margin policy does not remove premium,
   eligibility, funding, prior-outcome, complimentary-cap or ownership safeguards.
@@ -95,6 +96,12 @@ as full additions. Split oversized slices before merging. Numbers denote local s
 | 43 | 1,300 | **Separate theme PR:** neutral presenter consumption across home/login/cart/checkout/service/dashboard/invoice/nav/palette/CSS; absent engine and both holder cases. Develop against DTO early, merge after 32–34,39. |
 | 44 | 1,200 | Paired-driver end-to-end parity and repeated seller-switch scenarios; installed candidate/converter/theme coordination, race-test harness and release/rollback/support docs. Close source-scenario inventory gaps. Depends all. |
 
+Follow-up after 28 (not in the totals below): **move to save**, 2–3 slices / ~3,000 lines. When a
+held domain renews for less at another configured account, offer a one-click move between our own
+accounts (a transfer that adds a year). Offer from ~90 to 14 days before expiry, only past the
+transfer lock and where the cheaper account sells the TLD; copy registrar-hosted DNS first.
+Customer wording never names a registrar.
+
 Future stack: **44 slices / 47,450 lines**, down **1,000** from 48,450.
 Changed allowances: 07 1,100→700; 08 1,250→1,000; 23 1,200→1,100;
 24 1,250→1,050; 37 1,050→900. PR03 1,000→1,100 covers sealed-attempt/reference
@@ -132,5 +139,5 @@ revision before importing behavior; record MIT provenance and a source-scenario�
 - Provider acceptance remains open: stable binding, routing/rates, term/premium pricing, contacts,
   auto-renew-off, restore refusal, order/time/charge correlation and transfer terminal evidence.
   NameSilo new sales require an accepted holding-registrar renewal path as well as registration.
-- Confirm retail policy and initial TLD/terms; per-account tables remain the assumption.
+- Confirm initial TLD/terms per account before staging.
   Test conversion feasibility against the final accepted schema before any staging cutover.
