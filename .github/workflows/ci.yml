@@ -1,0 +1,57 @@
+name: Repository checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scaffold:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check whitespace
+        shell: bash
+        run: |
+          empty_tree=$(git hash-object -t tree /dev/null)
+          git diff --check "$empty_tree" HEAD
+
+      - name: Check scaffold and tracked file boundaries
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+
+          required = [
+              'README.md', 'LICENSE', 'AGENTS.md', 'CONTRIBUTING.md',
+              'SECURITY.md', '.gitignore', '.coderabbit.yaml', 'NameSilo/LICENSE',
+              'docs/paymenter-extension-conventions.md', 'docs/testing.md',
+          ]
+          for name in required:
+              assert Path(name).is_file(), f'Missing required file: {name}'
+          license_text = Path('LICENSE').read_text()
+          assert license_text.startswith('MIT License\n'), 'Expected MIT license'
+          assert Path('NameSilo/LICENSE').read_text() == license_text, 'License copies differ'
+
+          paths = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')
+          private_dirs = {'.local', '.scratch', '.cache', 'private', 'backups', 'node_modules', 'vendor', 'dist', '__pycache__'}
+          for name in filter(None, paths):
+              path = Path(name)
+              assert not private_dirs.intersection(path.parts[:-1]), f'Private/build path tracked: {name}'
+              assert not (path.name == '.env' or (path.name.startswith('.env.') and path.name != '.env.example')), f'Environment file tracked: {name}'
+              assert not path.name.endswith(('.pem', '.key', '.sql', '.sqlite', '.cnf', '.private')), f'Private file tracked: {name}'
+              assert '.private.' not in path.name, f'Private file tracked: {name}'
+          print('Repository hygiene passed. No runtime compatibility tests exist yet.')

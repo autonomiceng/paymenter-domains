@@ -1,0 +1,30 @@
+# Local handoffs, research, credentials, and operational evidence
+/.local/
+/.scratch/
+/.cache/
+/private/
+/backups/
+.env
+.env.*
+!.env.example
+*.private
+*.private.*
+*.sqlite
+*.sqlite-*
+*.sql
+*.cnf
+*.pem
+*.key
+
+# Dependencies and build outputs
+node_modules/
+vendor/
+dist/
+__pycache__/
+*.pyc
+
+# Editor files
+.idea/
+.vscode/
+*.swp
+.DS_Store

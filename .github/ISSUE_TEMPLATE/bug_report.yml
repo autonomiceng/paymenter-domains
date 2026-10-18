@@ -1,0 +1,19 @@
+name: Bug report
+description: Report a repository or future extension defect using synthetic data.
+body:
+  - type: markdown
+    attributes:
+      value: "The extension is not implemented yet. Keep credentials, customer data, transfer codes, and raw account responses out of public reports."
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the revision and relevant environment versions, with synthetic examples.
+    validations:
+      required: true
