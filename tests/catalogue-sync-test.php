@@ -19,7 +19,7 @@ $clock = new class implements Clock {
     public function now(): DateTimeImmutable { return $this->at; }
 };
 $ns = new class implements DeadlineTransport {
-    public int $calls = 0; public bool $fail = false; public bool $omit = false; public ?Closure $during = null;
+    public int $calls = 0; public bool $fail = false; public bool $omit = false; public bool $quarantine = false; public ?Closure $during = null;
     public function send(WireEnvironment $env, WireContext $origin, RegistrarRequest $request, string $key): TransportResponse { throw new LogicException; }
     public function sendWithin(WireEnvironment $env, WireContext $origin, RegistrarRequest $request, string $key, int $timeoutMs): TransportResponse
     {
@@ -29,7 +29,8 @@ $ns = new class implements DeadlineTransport {
         if ($this->fail) { throw new RuntimeException('synthetic-private-key'); }
         $row = ['registration' => '8.25', 'renew' => '10.00', 'transfer' => '9.00'];
         return new TransportResponse(200, json_encode(['request' => ['operation' => 'getPrices'], 'reply' => ['code' => 300, 'detail' => 'synthetic',
-            'com' => $row, ...($this->omit ? [] : ['co.uk' => $row])]]));
+            'com' => $this->quarantine ? array_diff_key($row, ['registration' => true]) : $row,
+            ...($this->omit ? [] : ['co.uk' => $row])]]));
     }
 };
 $enom = new class implements Transport {
@@ -134,11 +135,51 @@ same(null, Price::where('server_id', 1)->where('action', 'register')->where('ter
 same($beforeRenewal->retail, $prices->renewal(1, $bound[1]->fingerprint, 'com', 'USD', $clock->now())->retail, 'No-price retains holder retail');
 same(false, Tld::where('server_id', 1)->firstOrFail()->register_enabled, 'No current annual renewal closes acquisitions');
 $oldCart = $sellers->selection('com', 'register', 1, $clock->now());
-$revoked = CatalogueAcceptances::save($bound[2], 1, ['com' => [...$row, 'renewal_safe' => false], 'co.uk' => $row]);
+// Explicit malformed evidence invalidates previously sellable rows, unlike an omission/read failure.
+$priorRenewal = $prices->renewal(2, $bound[2]->fingerprint, 'com', 'USD', $clock->now());
+$ns->quarantine = true;
+same(['synced' => 1, 'failed' => [], 'quarantined' => ['.com']], $sync->refresh(2, $context(2)), 'Malformed sold ending quarantines while valid compound ending imports');
+$reject(fn () => $sellers->selection('com', 'register', 1, $clock->now()));
+$reject(fn () => DB::transaction(fn () => $sellers->admit([$oldCart], $clock->now())));
+$quarantined = Price::where('server_id', 2)->where('tld', 'com')->orderBy('id')->get();
+foreach ($quarantined as $price) {
+    same(null, $price->wholesale, 'Quarantined unknown never becomes zero');
+    same(null, $price->fresh_until, 'Quarantined cost carries no freshness authority');
+    same('unknown_price', $price->hold_reason, 'Quarantined action refuses price admission');
+    same('Price unavailable', $price->eligibility['staff_label'], 'Staff has explicit unavailable label');
+    if ($price->action !== 'renew') { same(null, $price->retail, 'Quarantined acquisition is not offered'); }
+}
+$retainedUnknown = $prices->renewal(2, $bound[2]->fingerprint, 'com', 'USD', $clock->now());
+same($priorRenewal->retail, $retainedUnknown->retail, 'Quarantine preserves holder renewal retail');
+expect($retainedUnknown->retained && $retainedUnknown->revision > $priorRenewal->revision, 'Quarantine advances retained holder revision');
+same('unknown_price', $retainedUnknown->staffAlert, 'Holder unknown cost alerts staff');
+same(false, Tld::where('server_id', 2)->where('tld', 'com')->firstOrFail()->transfer_enabled, 'Quarantine closes transfer sale');
+$snapshot = $quarantined->toJson();
+$rules->saveDefaultRule(2, PricingRule::DEFAULT, $prices->republish(...));
+same($snapshot, Price::where('server_id', 2)->where('tld', 'com')->orderBy('id')->get()->toJson(), 'Republication cannot turn malformed evidence into confirmed no-price');
+$unavailable = static fn (string $ending, DateTimeImmutable $at) => new \Paymenter\Extensions\Servers\Domains\Data\CatalogueUnavailable($bound[2], $ending, $at);
+$accepted = CatalogueAcceptances::load($bound[2]);
+foreach ([$clock->now()->modify('-1 second'), $clock->now()->modify('+1 second')] as $invalidAt) {
+    $reject(fn () => $prices->unavailable($unavailable('com', $invalidAt), $accepted, static fn () => null, $clock->now()));
+}
+same($snapshot, Price::where('server_id', 2)->where('tld', 'com')->orderBy('id')->get()->toJson(), 'Stale/future quarantine keeps revisions and evidence');
+$reject(fn () => $prices->unavailable($unavailable('com', $clock->now()), $a1, static fn () => null, $clock->now()));
+$neverPriced = new CatalogueAcceptance($bound[2], $accepted->revision, ['feedback' => $row]);
+$prices->unavailable($unavailable('feedback', $clock->now()), $neverPriced, static fn () => null, $clock->now());
+same(3, Price::where('server_id', 2)->where('tld', 'feedback')->whereNull('wholesale')->count(), 'Never-priced quarantine records all accepted actions as unknown');
+$reject(fn () => $prices->current(2, $bound[2]->fingerprint, 'feedback', 'register', 1, 'USD', $clock->now()));
+$prior = DB::table('domains_prices')->where('server_id', 2)->get()->toJson();
+$ns->during = fn () => CatalogueAcceptances::save($bound[2], 1, ['com' => $row, 'co.uk' => $row]);
+same(0, $sync->refresh(2, $context(2))['synced'], 'Quarantine cannot bypass acceptance revision race');
+same($prior, DB::table('domains_prices')->where('server_id', 2)->get()->toJson(), 'Raced quarantine preserves every price byte');
+$ns->quarantine = false;
+same(2, $sync->refresh(2, $context(2))['synced'], 'Fresh valid evidence recovers quarantined ending');
+$oldCart = $sellers->selection('com', 'register', 1, $clock->now());
+$revoked = CatalogueAcceptances::save($bound[2], 2, ['com' => [...$row, 'renewal_safe' => false], 'co.uk' => $row]);
 $reject(fn () => $sellers->selection('com', 'register', 1, $clock->now()));
 $reject(fn () => DB::transaction(fn () => $sellers->admit([$oldCart], $clock->now())));
 $prior = DB::table('domains_prices')->where('server_id', 2)->get()->toJson();
-$ns->during = fn () => CatalogueAcceptances::save($bound[2], 2, ['com' => $row, 'co.uk' => $row]);
+$ns->during = fn () => CatalogueAcceptances::save($bound[2], 3, ['com' => $row, 'co.uk' => $row]);
 same(0, $sync->refresh(2, $context(2))['synced'], 'Revision change during read rejects all stale results');
 same($prior, DB::table('domains_prices')->where('server_id', 2)->get()->toJson(), 'Acceptance race retains old evidence');
 $calls = $ns->calls;

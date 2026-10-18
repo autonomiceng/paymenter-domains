@@ -105,7 +105,7 @@ $d = $diagnostic(['com' => ['registration' => '1.00', 'transfer' => '1.00']], Re
 same('prices.amount.renew', $d['predicate'], 'Missing amount predicate diagnosed');
 $d = $diagnostic(['com' => null], RegistrarRequest::prices());
 same('prices.entry_object', $d['predicate'], 'Malformed entry predicate diagnosed');
-foreach (['missing' => [], 'null' => ['registration' => null], 'json-type' => ['registration' => false],
+foreach (['missing' => [], 'null' => ['registration' => null], 'zero' => ['registration' => '0.00'], 'json-type' => ['registration' => false],
     'empty-string' => ['registration' => ''], 'grouped-ambiguous' => ['registration' => '1,234'],
     'fraction-digits>2' => ['registration' => '1.234'], 'negative' => ['registration' => '-1.00'],
     'fraction-trailing-zeros' => ['registration' => '1.2300'], 'whitespace' => ['registration' => ' 1.00'],
@@ -125,11 +125,15 @@ $d = $diagnostic(['invalid-key' => null], RegistrarRequest::prices());
 same('[invalid-tld]', $d['catalogue_failures'][0]['tld'], 'Invalid key never retained');
 same('tld-key', $d['catalogue_failures'][0]['categories']['tld_key'], 'Bad key classified');
 same('json-type', $d['catalogue_failures'][0]['categories']['row'], 'Bad row independently classified');
+$d = $diagnostic(['com' => $validPrices, 'feedback' => ['transfer' => '1.00', 'renew' => '1.00']], RegistrarRequest::prices());
+same('Success', $d['outcome'], 'Valid catalogue row survives unrelated quarantine');
+same(null, $d['predicate'], 'Successful catalogue does not falsely fail its envelope');
+same('feedback', $d['catalogue_failures'][0]['tld'], 'Successful catalogue still diagnoses quarantined rows');
 $groupedCatalogue = ['request' => ['operation' => 'getPrices', 'ip' => '192.0.2.1'],
     'reply' => ['code' => 300, 'detail' => 'synthetic', 'com' => $validPrices, 'net' => $validPrices]];
 $groupedCatalogue['reply']['com']['registration'] = '1,234.56';
 same([], Shapes::check('getPrices', $groupedCatalogue), 'Runner accepts observed strict grouping');
-foreach (['12,34.56', '0,123.45', '000,001.00', '1,234', '1,234.5'] as $bad) {
+foreach (['12,34.56', '0,123.45', '000,001.00', '1,234', '1,234.5', '0', '0.00', null] as $bad) {
     $groupedCatalogue['reply']['com']['registration'] = $bad;
     expect(Shapes::check('getPrices', $groupedCatalogue) !== [], 'Runner rejects malformed or ambiguous grouping');
 }

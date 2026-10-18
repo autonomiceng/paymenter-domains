@@ -40,6 +40,8 @@ own completion. Constructor consistency cannot prove the provider's rejection/co
 `Evidence` contains normalized server-only facts, no raw response or wire/contact/credential fields.
 Array values are copied to sever external PHP references before freezing facts/capabilities.
 Null money, premium, availability and domain flags mean unknown; known zero and false remain values.
+NameSilo catalogue prices specifically require positive amounts: a provider-level zero price
+quarantines that row as unpriceable before neutral quote evidence is created (see [catalogue.md](catalogue.md)).
 Order candidates include binding/name/action/term/date/charge and optional opaque reference; zero
 or multiple candidates never become unique financial proof. `AttemptEvidence` distinguishes absent,
 recorded-null and recorded execution; any recorded execution refuses definitely-unsent attribution.

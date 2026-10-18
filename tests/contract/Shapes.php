@@ -107,7 +107,10 @@ final class Shapes
         if ($command === 'getPrices') {
             foreach (array_intersect(['com', 'net'], array_keys($r)) as $tld) {
                 foreach (['registration', 'transfer', 'renew'] as $action) {
-                    if (!self::financialAmount($r[$tld][$action] ?? null)) { $errors[] = 'reply.'.$tld.'.'.$action.'.amount'; }
+                    $amount = $r[$tld][$action] ?? null;
+                    if (!self::financialAmount($amount) || preg_match('/[1-9]/', (string) $amount) !== 1) {
+                        $errors[] = 'reply.'.$tld.'.'.$action.'.amount';
+                    }
                 }
             }
         }

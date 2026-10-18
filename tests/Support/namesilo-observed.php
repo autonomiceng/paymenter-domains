@@ -14,7 +14,10 @@ $rates = ['registration' => '1,234.56', 'transfer' => '2,345.67', 'renew' => '3,
 same('1234.56', $observed('getPrices', ['com' => $rates])->catalogueRows()['com']['registration'] ?? null, 'Whole grouped catalogue exact');
 foreach (['12,34.56', '1234,567.89', '1,,234.56', ',123.45', '1,234.567', '0,123.45', '000,001.00', '1,234', '1,234.5', ' 1,234.56', '-1,234.56', '', null, false] as $bad) {
     same(Outcome::Unknown, $observed('getAccountBalance', ['balance' => $bad])->outcome, 'Malformed grouped balance rejected');
-    same(Outcome::Unknown, $observed('getPrices', ['com' => $rates, 'net' => array_replace($rates, ['renew' => $bad])])->outcome, 'Malformed catalogue row rejects whole reply');
+    $partial = $observed('getPrices', ['com' => $rates, 'net' => array_replace($rates, ['renew' => $bad])]);
+    same(Outcome::Success, $partial->outcome, 'Valid row survives malformed neighbour');
+    same(null, $partial->catalogueRows()['net'], 'Malformed catalogue row quarantines every action');
+    same('1234.56', $partial->catalogueRows()['com']['registration'], 'Valid neighbour retains exact money');
 }
 $available = ['domain' => 'example.com', 'price' => '7.12345678901234567', 'premium' => 0, 'duration' => 1, 'renew' => '9.98765432109876543'];
 $result = $observed('checkRegisterAvailability', ['available' => [$available]]);

@@ -130,7 +130,8 @@ final class ObservationWork
         if (!$claim) { return; } $cursor=$claim->catalogue_cursor%count($keys); $deferred=false; $ok=false;
         try {
             $ctx=new RequestContext($b,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true);
-            $summary=$this->catalogue->refresh($b->serverId,$ctx,$fresh,[$keys[$cursor]]); $ok=$summary['failed']===[]&&$summary['synced']===1;
+            $summary=$this->catalogue->refresh($b->serverId,$ctx,$fresh,[$keys[$cursor]]);
+            $ok=$summary['failed']===[]&&$summary['synced']+count($summary['quarantined']??[])===1;
         } catch (ReadDeferred) { $deferred=true; } catch (\Throwable) {}
         DB::table('domains_observation_queues')->where('id',$queue->id)->where('catalogue_claim',$claim->catalogue_claim)->update([
             'catalogue_claim'=>null,'catalogue_lease'=>0,'catalogue_hold'=>$ok||$deferred?null:'read_unavailable',

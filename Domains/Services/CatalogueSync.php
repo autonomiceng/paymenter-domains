@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader;
-use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry, CatalogueFreshness, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry, CatalogueFreshness, CatalogueUnavailable, RequestContext};
 
 final class CatalogueSync
 {
@@ -36,6 +36,16 @@ final class CatalogueSync
         foreach ($accepted->endings as $tld => $_) {
             try {
                 $entry = $batch[$tld] ?? null;
+                $recheck = function ($server, $account) use ($accepted): void {
+                    $this->bindings->requireReadableLocked($server, $account);
+                    if (CatalogueAcceptances::load($accepted->binding, true)->revision !== $accepted->revision) {
+                        throw new \DomainException('Acceptance changed during refresh.');
+                    }
+                };
+                if ($entry instanceof CatalogueUnavailable && $entry->tld === $tld) {
+                    $this->prices->unavailable($entry, $accepted, $recheck, $context->now());
+                    $summary['quarantined'][] = '.'.$tld; continue;
+                }
                 if (!$entry instanceof CatalogueEntry || $entry->tld !== $tld) { throw new \DomainException('No catalogue evidence.'); }
                 foreach ($entry->rates as $rate) {
                     if ($rate->observedAt > $context->now() || !$rate->freshUntil || $rate->freshUntil <= $context->now()
@@ -44,13 +54,7 @@ final class CatalogueSync
                         throw new \DomainException('Unaccepted catalogue evidence.');
                     }
                 }
-                $this->prices->import($entry, $accepted, function ($server, $account) use ($accepted): void {
-                    // Server/account locks already held. Local configuration only; never a wire read.
-                    $this->bindings->requireReadableLocked($server, $account);
-                    if (CatalogueAcceptances::load($accepted->binding, true)->revision !== $accepted->revision) {
-                        throw new \DomainException('Acceptance changed during refresh.');
-                    }
-                }, $context->now());
+                $this->prices->import($entry, $accepted, $recheck, $context->now());
                 $summary['synced']++;
             } catch (\Throwable) { $summary['failed'][] = '.'.$tld; }
         }

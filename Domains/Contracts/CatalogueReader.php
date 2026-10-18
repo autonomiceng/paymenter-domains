@@ -8,7 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Data\{CatalogueAcceptance, CatalogueFre
 interface CatalogueReader extends RegistrarDriver
 {
     /** Accepted endings only; one batch per refresh. Missing/null entries retain prior state.
-     * @return array<string, \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry|null>
+     * Explicit CatalogueUnavailable invalidates cost/sale evidence without inventing a no-price quote.
+     * @return array<string, \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry|\Paymenter\Extensions\Servers\Domains\Data\CatalogueUnavailable|null>
      */
     public function catalogueBatch(CatalogueAcceptance $accepted, CatalogueFreshness $freshness, RequestContext $context): array;
 }

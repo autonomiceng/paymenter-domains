@@ -45,7 +45,7 @@ final class ParserDiagnostics
             unset($matches);
             foreach ($facts['money_structure'] as &$profiles) { $profiles = array_values(array_unique($profiles, SORT_REGULAR)); }
             unset($profiles);
-            if ($facts['outcome'] === Outcome::Success->name) { return $facts; }
+            if ($facts['outcome'] === Outcome::Success->name && $request->command !== 'getPrices') { return $facts; }
             // decode throws before parse's catch; never retain its message or arguments.
             $result = $call('decode', $body, $request, $key);
             if (($data['request']['operation'] ?? null) !== $request->command || !is_array($reply) || !is_string($reply['detail'] ?? null)) {
@@ -64,7 +64,7 @@ final class ParserDiagnostics
                     $valid = ['registration' => '1.00', 'transfer' => '1.00', 'renew' => '1.00'];
                     $checks = ['tld_key' => $call('prices', [$tld => $valid]), 'entry_object' => is_array($prices)];
                     foreach (['registration', 'transfer', 'renew'] as $field) {
-                        $checks['amount.'.$field] = is_array($prices) && $call('amount', $prices[$field] ?? null);
+                        $checks['amount.'.$field] = is_array($prices) && $call('priceAmount', $prices[$field] ?? null);
                     }
                     $bucket = in_array($tld, ['com', 'net'], true) ? $tld : '[other-field]';
                     $facts['price_predicates'][$bucket][] = $checks;
@@ -92,7 +92,7 @@ final class ParserDiagnostics
                 foreach ($facts['price_predicates'] as &$checks) { $checks = array_values(array_unique($checks, SORT_REGULAR)); }
                 unset($checks);
                 foreach ($facts['price_key_structure'] ?? [] as $bucket => $profiles) { $facts['price_key_structure'][$bucket] = array_values(array_unique($profiles, SORT_REGULAR)); }
-                $facts['predicate'] = $first ?? 'prices.nonempty';
+                $facts['predicate'] = $facts['outcome'] === Outcome::Success->name ? null : ($first ?? 'prices.nonempty');
             }
         } catch (\Throwable $error) {
             $facts['exception_class'] = match (get_class($error)) {
@@ -119,6 +119,7 @@ final class ParserDiagnostics
         if ($value === null) { return 'null'; }
         if (!is_string($value)) { return 'json-type'; }
         if ($value === '') { return 'empty-string'; }
+        if (preg_match('/^0+(?:\.0+)?$/D', $value)) { return 'zero'; }
         if (str_contains($value, ',')) { return 'grouped-ambiguous'; }
         if (trim($value) !== $value) { return 'whitespace'; }
         if (preg_match('/^-[0-9]+(?:\.[0-9]+)?$/D', $value)) { return 'negative'; }

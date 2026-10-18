@@ -166,13 +166,22 @@ final class ResponseParser
         $count = 0;
         foreach ($reply as $tld => $prices) {
             if (in_array($tld, ['code', 'detail', 'message'], true)) { continue; }
-            if (!preg_match('/^[a-z]{2,63}(?:\.[a-z]{2,63})*$/D', (string) $tld) || !is_array($prices)) { return false; }
-            foreach (['registration', 'transfer', 'renew'] as $field) {
-                if (!$this->amount($prices[$field] ?? null)) { return false; }
-            }
-            ++$count;
+            if (!preg_match('/^[a-z]{2,63}(?:\.[a-z]{2,63})*$/D', (string) $tld)) { return false; }
+            if ($this->priceRow($prices)) { ++$count; }
         }
         return $count > 0;
+    }
+
+    private function priceAmount(mixed $value): bool
+    { return $this->amount($value) && preg_match('/[1-9]/', $value) === 1; }
+
+    private function priceRow(mixed $row): bool
+    {
+        if (!is_array($row)) { return false; }
+        foreach (['registration', 'transfer', 'renew'] as $field) {
+            if (!$this->priceAmount($row[$field] ?? null)) { return false; }
+        }
+        return true;
     }
 
     private function flags(array $reply): bool
@@ -209,9 +218,11 @@ final class ResponseParser
         if ($command === 'getPrices') {
             $result = [];
             foreach ($reply as $tld => $prices) {
-                if (is_array($prices)) { $result[$tld] = array_intersect_key($prices, array_flip(['registration', 'transfer', 'renew'])); }
+                // Null is an explicit whole-row quarantine, never a zero or confirmed no-price quote.
+                $result[$tld] = $this->priceRow($prices)
+                    ? $this->normalize(array_intersect_key($prices, array_flip(['registration', 'transfer', 'renew']))) : null;
             }
-            return $this->normalize($result);
+            return $result;
         }
         $result = array_intersect_key($reply, array_flip($fields));
         if (in_array($command, ['listOrders', 'orderDetails'], true)) {

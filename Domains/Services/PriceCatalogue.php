@@ -91,6 +91,7 @@ final class PriceCatalogue
     {
         if (DB::transactionLevel() !== 1) { throw new \LogicException('Locked republication requires the outer writer.'); }
         foreach (Price::where('server_id', $locked->server_id)->where('tld', $locked->tld)->orderBy('id')->lockForUpdate()->get() as $price) {
+            if ($price->eligibility['price_unavailable'] ?? false) { continue; }
             if ($price->action === 'register' && ($price->term < $locked->min_years || $price->term > $locked->max_years)) { continue; }
             $total = $price->wholesale === null ? null : self::cost($price->wholesale);
             $units = $total === null ? null : PricingRule::units($total);
@@ -99,6 +100,42 @@ final class PriceCatalogue
                 $price->source, $price->observed_at->toDateTimeImmutable(), $price->fresh_until?->toDateTimeImmutable(), $price->currency);
             $this->write($locked, $rate, array_intersect_key($price->eligibility, array_flip(['catalogue_revision', 'accepted_terms', 'registry', 'renewal_safe'])));
         }
+    }
+
+    /** Quarantine an explicit malformed row, preserving holder retail and price identities. */
+    public function unavailable(\Paymenter\Extensions\Servers\Domains\Data\CatalogueUnavailable $entry,
+        \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, \Closure $recheck, \DateTimeImmutable $now): void
+    {
+        if (DB::transactionLevel() !== 0) { throw new \LogicException('Quarantine owns its locks.'); }
+        $accepted->binding->requireMatch($entry->binding);
+        if (!isset($accepted->endings[$entry->tld]) || $entry->observedAt > $now) { throw new \DomainException('Unaccepted quarantine.'); }
+        $tld = new Tld(['server_id' => $entry->binding->serverId, 'registrar_key' => $entry->binding->registrarKey,
+            'account_fingerprint' => $entry->binding->fingerprint, 'tld' => $entry->tld]);
+        $this->locked($tld, function (Tld $locked, Server $server, Account $account) use ($entry, $accepted, $recheck): void {
+            $recheck($server, $account);
+            $rows = Price::where('server_id', $server->id)->where('tld', $entry->tld)->orderBy('id')->lockForUpdate()->get();
+            foreach ($rows as $price) {
+                if ($price->observed_at > $entry->observedAt) { throw new \DomainException('Stale quarantine.'); }
+            }
+            // Even a never-priced ending gets nullable current rows for staff inspection.
+            foreach (['register', 'renew', 'transfer'] as $action) {
+                foreach ($accepted->endings[$entry->tld][$action] as $term) {
+                    if (!$rows->contains(fn (Price $price): bool => $price->action === $action && $price->term === $term && $price->currency === 'USD')) {
+                        $rows->push(new Price(['server_id' => $server->id, 'registrar_key' => $entry->binding->registrarKey,
+                            'account_fingerprint' => $entry->binding->fingerprint, 'tld' => $entry->tld,
+                            'action' => $action, 'term' => $term, 'currency' => 'USD', 'revision' => 0]));
+                    }
+                }
+            }
+            foreach ($rows as $price) {
+                $price->fill(['wholesale' => null, 'retail' => $price->action === 'renew' ? $price->retail : null,
+                    'unit' => 'term_total', 'source' => 'namesilo_account_annual', 'observed_at' => $entry->observedAt,
+                    'fresh_until' => null, 'revision' => $price->revision + 1, 'hold_reason' => 'unknown_price',
+                    'eligibility' => ['staff_alert' => 'unknown_price', 'price_unavailable' => true,
+                        'staff_label' => 'Price unavailable']])->save();
+            }
+            $locked->fill(['register_enabled' => false, 'transfer_enabled' => false])->save();
+        });
     }
 
     /** Published annual retail survives unknown/stale costs and rule republication failures.

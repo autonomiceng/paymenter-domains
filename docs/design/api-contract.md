@@ -95,6 +95,12 @@ with a nonzero first group and exactly two fractional digits when commas are pre
 financial amounts allow at most two fractional digits. Normalize grouping away and pad to two decimals. Availability
 prices also accept plain decimal lexemes with longer fractions, preserving every digit; they are
 informational, never funded quote authority. Neutral Money and pricing admission limits are unchanged.
+`getPrices` requires a successful correlated envelope and at least one well-formed row. Each row
+requires all three positive exact prices. A valid TLD with a missing, null, zero or malformed price
+is quarantined as a whole row with unknown cost; valid rows remain usable. Invalid TLD keys and
+entirely unpriceable catalogues remain unknown. Quarantine never supplies a quote or a zero price.
+The OTE runner additionally requires complete positive com/net rows before any write. See
+[catalogue quarantine and revision handling](catalogue.md).
 The optional OTE availability `renew` field is explicitly ignored by name: it is not an independently
 accepted account renewal quote and cannot substitute for a missing price. Numeric IDs are
 normalized to digit strings. Unknown three-digit codes remain available for diagnosis.

@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransp
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,AccountReadBudget,CatalogueSync,DomainObservation,ObservationSchema,ObservationWork,RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 extract(commerceFixture());ObservationSchema::install();$clock=new FakeClock($now);$enom=$tlds[0]->server_id;$ns=$tlds[1]->server_id;
-$state=(object)['calls'=>0,'fail'=>false,'during'=>null];
+$state=(object)['calls'=>0,'fail'=>false,'during'=>null,'quarantine'=>false];
 $wire=new class($state) implements DeadlineTransport {
     public function __construct(private object $s){}
     public function send($e,$c,$r,#[SensitiveParameter] string $key):TransportResponse{throw new LogicException;}
@@ -19,7 +19,8 @@ $wire=new class($state) implements DeadlineTransport {
         if($this->s->during){$hook=$this->s->during;$this->s->during=null;$hook();}
         if($this->s->fail){throw new RuntimeException('Synthetic failure');}
         $row=['registration'=>'8.00','renew'=>'9.00','transfer'=>'8.00'];
-        return new TransportResponse(200,json_encode(['request'=>['operation'=>'getPrices'],'reply'=>['code'=>300,'detail'=>'synthetic','com'=>$row,'net'=>$row,'org'=>$row]]));
+        return new TransportResponse(200,json_encode(['request'=>['operation'=>'getPrices'],'reply'=>['code'=>300,'detail'=>'synthetic','com'=>$row,
+            'net'=>$this->s->quarantine?array_diff_key($row,['registration'=>true]):$row,'org'=>$row]]));
     }
 };
 $registry=new RegistrarRegistry;$verifier=new class implements Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier{public function verify(Environment $e,array $c):string{return $c['token'];}};
@@ -30,7 +31,11 @@ $budget=new AccountReadBudget($clock);$observer=new DomainObservation($reads,$cl
 $work->enroll($enom);$work->enroll($ns);$bindings->setProcessing($ns,false);$work->tick(1);same(0,$state->calls,'Broken first account bounded');
 $work->tick(1);same(1,$state->calls,'Second account refreshes while paused and not current seller');
 $work->tick(2);same(1,$state->calls,'Catalogue due time durable');
+$state->quarantine=true;
 $clock->instant=$now->modify('+600 seconds');$work->tick(2);expect(Price::where('server_id',$ns)->where('tld','net')->exists(),'Next bounded suffix drains');
+same(3,Price::where('server_id',$ns)->where('tld','net')->whereNull('wholesale')->count(),'Quarantined suffix has unknown cost');
+same(null,DB::table('domains_observation_queues')->where('server_id',$ns)->value('catalogue_hold'),'Persisted quarantine never holds healthy account refresh');
+same(2,DB::table('domains_observation_queues')->where('server_id',$ns)->value('catalogue_cursor'),'Quarantine advances durable cursor');
 $clock->instant=$now->modify('+1200 seconds');$work->tick(2);expect(Price::where('server_id',$ns)->where('tld','org')->exists(),'Tail suffix drains within cadence');
 $prior=DB::table('domains_prices')->where('server_id',$ns)->orderBy('id')->get()->toJson();$state->fail=true;
 $clock->instant=$now->modify('+1800 seconds');$work->tick(2);same($prior,DB::table('domains_prices')->where('server_id',$ns)->orderBy('id')->get()->toJson(),'Failed refresh preserves price bytes/freshness');

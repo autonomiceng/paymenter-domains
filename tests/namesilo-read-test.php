@@ -96,7 +96,17 @@ foreach ([Action::Renew, Action::Transfer] as $action) {
     same($action->value, Prices::rate($r, $binding, $q, 'com', $clock)->action, 'Exact annual action mapping');
 }
 $wire->fixtures['getPrices']['reply']['com']['registration'] = '0';
-same('0.0000', Prices::rate($driver->quote($query, $context()), $binding, $query, 'com', $clock)->perYear, 'Known zero preserved');
+$zero = $driver->quote($query, $context());
+same(Disposition::Unknown, $zero->disposition, 'Zero catalogue row is unavailable, never complimentary authority');
+$reject(fn () => Prices::rate($zero, $binding, $query, 'com', $clock));
+same(null, $zero->evidence()->quote, 'Unavailable catalogue cost is never zero');
+// One malformed ending cannot poison valid rows, nor become a sale quote itself.
+$wire->fixtures['getPrices']['reply']['com']['registration'] = '12.34';
+$wire->fixtures['getPrices']['reply']['feedback'] = ['renew' => '12.34', 'transfer' => '12.34'];
+same('12.34', $driver->quote($query, $context())->evidence()->quote?->cost?->amount, 'Valid ending survives a missing unrelated registration');
+same(Disposition::Unknown, $driver->quote(new Query('example.feedback', Action::Register, 1), $context())->disposition, 'Quarantined ending refuses quote');
+unset($wire->fixtures['getPrices']['reply']['com']['registration']);
+same(Disposition::Unknown, $driver->quote($query, $context())->disposition, 'Malformed sold ending still refuses');
 $wire->fixtures['getPrices']['reply']['com']['registration'] = '1e3';
 $unknown = $driver->quote($query, $context()); $reject(fn () => Prices::rate($unknown, $binding, $query, 'com', $clock));
 same(null, $unknown->evidence()->quote, 'Bad cost never null withdrawal');

@@ -136,6 +136,22 @@ foreach ([301,302,119,262,400] as $code) {
     }
 }
 
+// Catalogue quarantine retains valid rows without treating malformed evidence as zero or no-price.
+$validPriceRow = ['registration' => '8.95', 'transfer' => '9.00', 'renew' => '10.00'];
+foreach ([null, false, [], ['registration' => null], ['registration' => '0'], ['registration' => 'nonsense'],
+    ['registration' => '1.234'], ['registration' => '1e2']] as $badRow) {
+    $badRow = is_array($badRow) ? $badRow + ['transfer' => '9.00', 'renew' => '10.00'] : $badRow;
+    $catalogueBody = ['request' => ['operation' => 'getPrices'], 'reply' => ['code' => 300, 'detail' => 'synthetic',
+        'com' => $badRow, 'net' => $validPriceRow]];
+    $result = $parser->parse(json_encode($catalogueBody), Request::prices(), 'test-api-key');
+    same(Outcome::Success, $result->outcome, 'Valid row survives quarantined sold ending');
+    same(['com' => null, 'net' => $validPriceRow], $result->catalogueRows(), 'Whole malformed row is unknown, with no amount invented');
+    unset($catalogueBody['reply']['net']);
+    same(Outcome::Unknown, $parser->parse(json_encode($catalogueBody), Request::prices(), 'test-api-key')->outcome, 'Entirely malformed catalogue remains unknown');
+}
+$catalogueBody['reply'] = ['code' => 300, 'detail' => 'synthetic', 'com' => $validPriceRow];
+same($validPriceRow, $parser->parse(json_encode($catalogueBody), Request::prices(), 'test-api-key')->catalogueRows()['com'], 'Valid sold row remains exact');
+
 foreach (['', '{', 'null', '[]', str_repeat('x', CurlTransport::BODY_LIMIT + 1),
     '{"namesilo":{"reply":{"code":300,"detail":"success"}}}',
     '{"request":{"operation":"getPrices"},"reply":{"code":300,"detail":"success","balance":1}}',

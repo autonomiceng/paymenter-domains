@@ -31,11 +31,16 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $entries = [];
         $started = $context->now(); $reply = $this->read(Request::prices(), $context);
         if ($reply->outcome !== Outcome::Success) { throw new \DomainException('Catalogue batch read failed.'); }
+        $rows = $reply->catalogueRows();
         foreach ($accepted->endings as $tld => $row) {
+            if (array_key_exists($tld, $rows) && $rows[$tld] === null) {
+                $entries[$tld] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueUnavailable($this->binding(), $tld, $started);
+                continue;
+            }
             try {
                 $rates = [];
                 // Dotted suffix keys are literal provider keys, never dot-path traversal.
-                $prices = $reply->catalogueRows()[$tld] ?? null;
+                $prices = $rows[$tld] ?? null;
                 foreach (['register' => 'registration', 'renew' => 'renew', 'transfer' => 'transfer'] as $action => $key) {
                     foreach ($row[$action] as $term) {
                         $amount = $prices[$key] ?? null;
