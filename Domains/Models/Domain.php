@@ -32,6 +32,8 @@ class Domain extends Model
         });
         static::deleting(static function (): void { throw new \DomainException('Domain ledger rows are retained.'); });
         static::updating(static function (self $domain): void {
+            $checkout = ($domain->getOriginal('snapshot') ?? [])['checkout'] ?? null;
+            if ($checkout !== null && ($domain->snapshot['checkout'] ?? null) !== $checkout) { throw new \DomainException('Domain checkout evidence is frozen.'); }
             if ($domain->isDirty(['id', 'domain', 'sld', 'tld', 'reservation_name', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'service_id', 'user_id'])) {
                 throw new \DomainException('Domain identity and reservation require the reservation service.');
             }

@@ -399,3 +399,30 @@ validation, and offer an explicit re-edit/recheck path after receipt expiry outs
 transaction. Generic DomainException handling is not ready for installation. Slice39 must install
 exactly one shared CartAdmission instance before InvoiceBinding; the double-adapter test only
 simulates an earlier listener changing cached native prices.
+
+Slice 17's internal InvoiceBinding boot follows CartAdmission boot (installation39 still closed).
+Order Creating preflights ALL annual renewal projections, then locks ALL reservation-name matches ordered by
+Domain ID and operations by ID. Native Service creating consumes only the current admitted batch;
+InvoiceItem Created synchronously reserves the global name, inserts its immutable account/generation
+operation and projects the same product's annual plan/service.price and null native expiry. The native coupon association
+is retained for usage limits;24/39 must intercept coupon repricing before installation.
+The original invoice total/description/checkout term and product/plan IDs remain frozen in encrypted
+snapshots; estimated wholesale is separate. Contacts/registry18 remain setup_required; no spending,
+jobs or provider writes occur. Duplicate item events only validate current binding and return; they
+never reprice, recreate history or replace snapshots. New bindings outside admission refuse.
+
+InvoiceFunding::lock captures the COMPLETE native invoice/items/transactions/services/products prefix
+before domain/operation locks. Its private context cannot accept selected subsets and expires on
+outer commit/rollback. requirePaid validates frozen native/owner/account/generation/name identity,
+USD and positive domain amount; only succeeded signed payment amounts count toward the FULL native
+invoice total, including hosting and other lines. Paid status alone is insufficient. This yields
+funding evidence only: engine19 must revalidate it under ordered claim locks alongside processing,
+ownership, reservation, generation, prior outcomes and leases/seals. A copied snapshot never grants
+spending authority. 24/39 still own annual repricing/native save guards before installation.
+
+Slice24 must reconcile holder-price tax basis: native service.price includes exclusive tax while
+HolderPricing currently compares untaxed retail. It must also intercept native paid-invoice renewal
+activation/expiry and route renewal invoice items, preserving the purchased term and provider expiry.
+MariaDB acceptance must cover reservation-name range/gap locks, neighbouring-name deadlocks and
+1062/1213/1205 whole-checkout aborts. Existing-name conflicts currently refuse during binding;39 must
+ensure no native jobs escape the outer transaction (or add an earlier reservation preflight).

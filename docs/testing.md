@@ -109,3 +109,11 @@ premium=false. Native tokenizer is enabled from the already pinned common packag
 Source map: Enom `444f31c` CartOrdering fields/admit → CartAdmission + CheckoutEligibility;
 native mixed-cart/coupon/quantity/source scenarios → cart-admission-test. Transfer eligibility/RDAP,
 contacts/registry and installed extension entry remain 27/18/39; these tests register internal hooks only.
+
+Slice17 native invoice-binding-test exercises real mixed/multi-year checkout, synchronous immutable
+ledger creation, encrypted checkout/estimated-cost facts, same-product annual holder retail, retained
+coupon usage accounting and null expiry. Repeated item events are read-only; a second-line exception or global cross-account
+name conflict rolls back all invoice/service/ledger/stock writes. Full-invoice funding excludes
+pending/failed payments, nets succeeded reversals, refuses paid-status-only/partial funds, changed
+native routes/owners/references and expired transaction contexts. Synthetic SQLite evidence does
+not establish MariaDB paired races or provider/installed-engine acceptance (19/20+/39 gates remain).

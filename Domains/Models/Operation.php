@@ -18,8 +18,18 @@ class Operation extends Model
     protected static function booted(): void
     {
         static::updating(static function (self $operation): void {
-            if ($operation->isDirty(['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action'])) {
+            if ($operation->isDirty(['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis'])) {
                 throw new \DomainException('Operation binding and action are immutable.');
+            }
+        });
+        static::updating(static function (self $operation): void {
+            $old = $operation->getOriginal('policy') ?? []; $new = $operation->policy ?? [];
+            foreach (['checkout', 'price', 'seller_revision'] as $key) {
+                if (array_key_exists($key, $old) && ($new[$key] ?? null) !== $old[$key]) { throw new \DomainException('Checkout evidence is frozen.'); }
+            }
+            $old = $operation->getOriginal('cost') ?? []; $new = $operation->cost ?? [];
+            foreach (['estimated', 'currency', 'unit'] as $key) {
+                if (array_key_exists($key, $old) && ($new[$key] ?? null) !== $old[$key]) { throw new \DomainException('Estimated cost evidence is frozen.'); }
             }
         });
         static::deleting(static function (): never { throw new \DomainException('Operation ledger rows are retained.'); });

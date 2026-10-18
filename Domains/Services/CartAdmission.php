@@ -81,7 +81,8 @@ final class CartAdmission
             $retail = RetailLine::native($item->price);
             $selections[] = $selection;
             $lines[] = ['item_id' => $item->id, 'product_id' => $product->id, 'plan_id' => $item->plan_id, 'name' => $name,
-                'mapping' => $mapping, 'retail' => $retail, 'selection' => $selection];
+                'mapping' => $mapping, 'retail' => $retail, 'selection' => $selection,
+                'admitted_user_id' => (int) $order->user_id, 'check' => $item->checkout_config['domains_check'], 'identity' => $this->identity($item)];
         }
         if (!$lines) { return; }
         // Exactly one call for the whole checkout. Any exception aborts the native outer transaction.
@@ -101,6 +102,20 @@ final class CartAdmission
         $this->order = $order; $this->lines = $lines;
     }
 
+    /** Server-only view for prelocking the entire admitted batch before native inserts. */
+    public function batch(Order $order): array
+    {
+        if (!$this->order) { return []; }
+        if (DB::transactionLevel() !== 1 || $this->order !== $order) { throw new \DomainException('No current native batch.'); }
+        return array_values($this->lines);
+    }
+    public function recheck(array $line): void
+    {
+        if (DB::transactionLevel() !== 1 || !$this->order?->exists) { throw new \DomainException('No current native checkout.'); }
+        $this->eligibility->require($line['check'], $line['name'], $line['identity']);
+        if ($line['snapshot']->freshUntil <= $this->clock->now()) { throw new \DomainException('Admitted evidence expired.'); }
+    }
+
     /** Binding can consume only this transaction's admitted batch; externally constructed DTOs have no authority. */
     public function take(Service $service): array
     {
@@ -110,7 +125,7 @@ final class CartAdmission
         }
         foreach ($this->lines as $index => $line) {
             if ((int) $line['product_id'] === (int) $service->product_id && (int) $line['plan_id'] === (int) $service->plan_id) {
-                unset($this->lines[$index]); return $line;
+                unset($this->lines[$index]); return [...$line, 'order_id' => (int) $this->order->id];
             }
         }
         throw new \DomainException('Domain line was not admitted.');

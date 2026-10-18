@@ -24,7 +24,8 @@
     "tests/namesilo-pricing-test.php",
     "tests/catalogue-sync-test.php",
     "tests/native-catalogue-test.php",
-    "tests/cart-admission-test.php"
+    "tests/cart-admission-test.php",
+    "tests/invoice-binding-test.php"
   ],
   "ui": [],
   "runner": [
