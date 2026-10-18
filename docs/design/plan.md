@@ -52,7 +52,7 @@ as full additions. Split oversized slices before merging. Numbers denote local s
 | --- | ---: | --- |
 | 01 | 450 | **Mechanical only:** relocate existing NameSilo API into Domains registrar namespace; autoload/test/doc path updates. All existing N checks unchanged semantically; no spending or parser changes. |
 | 02 | 1,000 | Port offline native fixture/runner/package-test support; pristine P guard, manifests/receipts and runtime-byte checks. Register all suite categories honestly. Depends 01. |
-| 03 | 1,000 | Neutral contract/context/result/evidence/capability DTOs and fake drivers; unknown, discrepancy, precision, binding and no-generic-execute tests. Depends 01–02. |
+| 03 | 1,100 | Neutral contract/context/result/evidence/capability DTOs and fake drivers; unknown, discrepancy, precision, binding and no-generic-execute tests. Depends 01–02. |
 | 04 | 950 | Neutral models, retained-data migrations, uniqueness/schema verification, encryption and reinstall fixtures. No native hooks. Depends 02–03. |
 | 05 | 900 | One reservation service/terminal release rules and shared canonical-name validation; cross-registrar/action/owner duplicate tests and transaction rollback. Depends 04. |
 | 06 | 1,000 | Registrar registry and immutable native-server/account/environment/live-site binding; first-save encryption and key-rotation guards. Depends 03–04. |
@@ -95,11 +95,12 @@ as full additions. Split oversized slices before merging. Numbers denote local s
 | 43 | 1,300 | **Separate theme PR:** neutral presenter consumption across home/login/cart/checkout/service/dashboard/invoice/nav/palette/CSS; absent engine and both holder cases. Develop against DTO early, merge after 32–34,39. |
 | 44 | 1,200 | Paired-driver end-to-end parity and repeated seller-switch scenarios; installed candidate/converter/theme coordination, race-test harness and release/rollback/support docs. Close source-scenario inventory gaps. Depends all. |
 
-Future stack: **44 slices / 47,350 lines**, down **1,100** from 48,450.
+Future stack: **44 slices / 47,450 lines**, down **1,000** from 48,450.
 Changed allowances: 07 1,100→700; 08 1,250→1,000; 23 1,200→1,100;
-24 1,250→1,050; 37 1,050→900. Existing four client slices contribute 1,708 cumulative
-lines: **48 slices / 49,058 lines** combined. Optional NameSilo DNS/glue/DS adds three slices /
-3,600 lines: **51 / 52,658**. Enom release review is outside these totals. Preparatory plan docs
+24 1,250→1,050; 37 1,050→900. PR03 1,000→1,100 covers sealed-attempt/reference
+and immutable evidence regression depth; floor removal saves 1,100 before this 100 allowance. Existing four client slices contribute 1,708 cumulative
+lines: **48 slices / 49,158 lines** combined. Optional NameSilo DNS/glue/DS adds three slices /
+3,600 lines: **51 / 52,758**. Enom release review is outside these totals. Preparatory plan docs
 are charged to foundation allowance; estimates remain ±25%, and hard limits require extra commits.
 
 ## Parallel worktrees and owners

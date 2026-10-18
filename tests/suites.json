@@ -1,8 +1,21 @@
 {
-  "provider": ["tests/api-test.php", "tests/curl-transport-test.php"],
-  "contracts": [],
-  "native": ["tests/native-fixture-test.php"],
+  "provider": [
+    "tests/api-test.php",
+    "tests/curl-transport-test.php"
+  ],
+  "contracts": [
+    "tests/driver-contract-test.php"
+  ],
+  "native": [
+    "tests/native-fixture-test.php"
+  ],
   "ui": [],
-  "runner": ["tests/runner-test.php", "tests/test_runner.py", "tests/test_native.py"],
-  "package": ["tests/test_package.py"]
+  "runner": [
+    "tests/runner-test.php",
+    "tests/test_runner.py",
+    "tests/test_native.py"
+  ],
+  "package": [
+    "tests/test_package.py"
+  ]
 }
