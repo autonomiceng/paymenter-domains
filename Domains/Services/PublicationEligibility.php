@@ -10,6 +10,7 @@ final class PublicationEligibility
     /** Called under the seller's server/account/policy/TLD prefix for admission; no provider reads. */
     public static function require(Tld $tld, string $action, int $term, bool $lock = false): void
     {
+        if (!RegistryInputs::supported($tld->registrar_key, $tld->tld, $tld->registry_fields)) { throw new \DomainException('Registry details are not supported for this ending.'); }
         $account = Account::where('server_id', $tld->server_id)->firstOrFail();
         $binding = CatalogueAcceptances::binding($account);
         $accepted = CatalogueAcceptances::load($binding, $lock); $row = $accepted->endings[$tld->tld] ?? [];

@@ -63,7 +63,7 @@ final class InvoiceBinding
             $product = Product::findOrFail($line['product_id']); $annual = $this->native->annualPlan($product);
             $price = new \App\Classes\Price(['price' => $renew->retail, 'currency' => $order->currency],
                 apply_exclusive_tax: true, tax: \App\Classes\Settings::tax($order->user));
-            $this->prepared[$line['item_id']] = ['annual_plan_id' => $annual->id, 'annual_price' => RetailLine::decimal($price->price), 'renewal' => self::price($renew)];
+            $this->prepared[$line['item_id']] = ['annual_plan_id' => $annual->id, 'annual_price' => RetailLine::decimal($price->price), 'renewal' => self::price($renew), 'setup_tld' => $tld];
         }
         // Reentrant reservation checks may lock these rows later; never first acquire another
         // domain after operations for an earlier cart line. Global unique name arbitrates absence.
@@ -106,7 +106,7 @@ final class InvoiceBinding
             'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id, 'operation_key' => 'invoice-item:'.$item->id,
             'action' => $s->action, 'term' => $s->term, 'funding_basis' => 'paid_invoice', 'state' => 'awaiting_payment',
             'amount' => $line['retail']['total'], 'currency' => 'USD', 'policy' => ['checkout' => $checkout, 'price' => self::price($s), 'seller_revision' => $line['selection']->policyRevision],
-            'cost' => ['estimated' => $s->wholesale, 'currency' => 'USD', 'unit' => 'term_total'], 'payload' => ['setup_required' => true]]);
+            'cost' => ['estimated' => $s->wholesale, 'currency' => 'USD', 'unit' => 'term_total'], 'payload' => ContactSetup::capture($service->user()->firstOrFail(), $line['setup_tld'])]);
         $service->forceFill(['plan_id' => $line['annual_plan_id'], 'price' => $line['annual_price'],
             'label' => $line['name'], 'expires_at' => null])->save();
         self::requireIdentity($operation, $domain, $service->fresh(), $invoice, $item);

@@ -32,6 +32,7 @@ class Operation extends Model
                 if (array_key_exists($key, $old) && ($new[$key] ?? null) !== $old[$key]) { throw new \DomainException('Estimated cost evidence is frozen.'); }
             }
         });
+        static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::guardSnapshot($operation));
         static::deleting(static function (): never { throw new \DomainException('Operation ledger rows are retained.'); });
     }
 

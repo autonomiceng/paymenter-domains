@@ -426,3 +426,53 @@ activation/expiry and route renewal invoice items, preserving the purchased term
 MariaDB acceptance must cover reservation-name range/gap locks, neighbouring-name deadlocks and
 1062/1213/1205 whole-checkout aborts. Existing-name conflicts currently refuse during binding;39 must
 ensure no native jobs escape the outer transaction (or add an earlier reservation preflight).
+
+## Contact setup and retained profiles (slice 18)
+
+Invoice binding now captures four native-owner contact roles and the exact accepted registry schema
+in encrypted operation.payload. Later native profile edits never replace a held/queued snapshot.
+ContactSetup validates frozen values; its model guard permits only the internal audited recovery scope
+to change contact setup. That scope is privileged internal PHP, not a route authorization boundary.
+No registry-specific inputs are accepted: `.us/.ca/.eu` and nonempty/missing schemas stay off at
+publication and validation until separately accepted. An explicit empty ordinary schema is required.
+
+ContactRecovery owns its transaction: native users, full InvoiceFunding prefix for acquisitions
+(service/product for nonbillable contacts), server/account, domain, all operations in numeric order.
+Paid invalid acquisitions can be held; owners or fresh `admin.domains.manage` staff may recollect
+the OWNER's details with a reason and bounded audit, only for the same contact-held definitely-unsent
+obligation. Register returns queued; transfer stays held for 27. Registry/EPP/NS/deadlines and financial
+rows are preserved. Staff may terminally reject held nonbillable contacts as audited definitely-unsent,
+never credit or release the name. Any send, claim/lease, recorded execution (including null), provider
+reference, charge, candidate, unknown attempt field or financial refund blocks recovery.19 must align
+this refusal contract with its sealed-attempt representation; neither API creates claims/jobs or spends.
+
+`domains_contact_profiles` is retained on down, encrypted, immutable and unique by server/provider-ID
+fingerprint, with owner and immutable account identity. ContactProfiles is an internal evidence sink:
+20/30 must prove fresh contactAdd and non-default readback before recording, never adopt account
+inventory/customer IDs. Four roles resolve LOCAL IDs through owner/account predicates to provider IDs.
+No profile update is allowed; changed contacts require a new provider profile and confirmed association
+in 30, so another customer's domains cannot be changed through a shared/default profile.301/302 remain
+purchased discrepancies needing reconciliation/correction (21/30), never refund/replay/unsent proof.
+39/42 must invoke ContactProfileSchema::verify after Migrator even when migration bookkeeping skips;
+this slice adds no entry point, provider writes, routes or production identity/profile acceptance.
+
+This section supersedes17's setup_required placeholder statement above. Before ANY acquisition
+claim/seal,19/20 must call ContactSetup::requireReady under their current locks: explicit false
+setup_required, true registry_supported, and validated frozen contacts/registry. Queued is not
+dispatch permission. Only ContactRecovery may release contact_details_required; it refuses foreign
+held codes. Registry-unsupported paid holds stay held for26 disposition (27 for transfer inputs).
+Native identity checks consume current locked models, never a plain repeatable-read re-query after
+permission reads. MariaDB acceptance must test that older read-view/cancellation/owner/route race.
+Profile fingerprints use an HMAC keyed by a random secret in encrypted retained profile details.
+The first retained server profile anchors that key under the server/account lock; APP_KEY rotation
+with previous decryption keys preserves uniqueness. Missing decryption keys or corrupt anchors refuse
+recording.39/42 must preserve encrypted keys during rotation/re-encryption; never delete the anchor.
+Sequential provider IDs cannot be enumerated from the index alone. NameSilo's empty schema originates from per-ending durable registry acceptance,
+not a live schema probe; that acceptance and the local blocked endings still apply.39 must register
+admin.domains.manage and coordinate migration000003 with the finance lane before installation.
+
+19/20 must schedule ContactRecovery::hold after a contact-refused claim transaction commits (e.g.
+DB::afterCommit); it owns its transaction. Stale setup flags also enter a recoverable contact hold;
+audited recollection reasserts readiness only after frozen registry and fresh owner contacts validate.
+Paid awaiting_payment may become held then queued here;19 must still confirm full native funding
+under its current claim locks. Preserve BOTH independent Operation updating guards on rebase.

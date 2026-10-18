@@ -117,3 +117,11 @@ name conflict rolls back all invoice/service/ledger/stock writes. Full-invoice f
 pending/failed payments, nets succeeded reversals, refuses paid-status-only/partial funds, changed
 native routes/owners/references and expired transaction contexts. Synthetic SQLite evidence does
 not establish MariaDB paired races or provider/installed-engine acceptance (19/20+/39 gates remain).
+
+Slice 18 `contact-setup-test.php` adapts Enom `444f31c` registration-setup and contact recovery
+scenarios: native four-role collection, Enom/NameSilo field and phone differences, frozen encrypted
+invoice snapshots, paid-only audited correction, owner/account profile isolation and retained schema.
+Recorded-null execution, seals, sends, ambiguous evidence and NameSilo 301/302 purchased discrepancies
+cannot become unsent recovery/refund. Contacts close without credit; `.us/.ca/.eu`, unknown/nonempty
+registry schemas and arbitrary attributes remain disabled. Fixtures make no provider calls. Profile
+creation/association/readback (20/30), transfer admission (27), routes (33) and installation (39) remain open.

@@ -27,7 +27,7 @@ same('10.40', number_format((float) $service->price, 2, '.', ''), 'Annual renewa
 same(null, $service->expires_at, 'No native expiry before confirmed provider expiry'); same(null, $service->coupon_id, 'Checkout coupons do not reprice renewals');
 same('three.com', $service->label, 'Native service label is the name'); same('Register three.com (3 years)', $item->description, 'Native invoice summary includes name and checkout term');
 same('18.0000', $op->cost['estimated'], 'Estimated wholesale remains separate from final retail');
-same(['setup_required' => true], $op->payload, 'Contacts/registry remain pending18; no EPP persisted');
+expect($op->payload['setup_required'] && count($op->payload['contacts']) === 4 && !array_key_exists('epp', $op->payload), 'Contact setup snapshot bound without EPP');
 expect(!$service->properties()->where('key', 'domains_check')->exists(), 'Temporary receipt removed from service');
 $raw = DB::table('domains_operations')->where('id', $op->id)->first(); expect(!str_contains($raw->cost, '18.0000') && !str_contains($raw->policy, 'three.com'), 'Snapshots encrypted at rest');
 expect(!array_key_exists('cost', $op->toArray()) && !array_key_exists('policy', $op->toArray()), 'Internal evidence hidden from serialization');
