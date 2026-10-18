@@ -38,12 +38,9 @@ $original = $make(' X.COM. ');
 same('x.com', $original->reservation_name, 'Single-character label reserved');
 foreach (['register', 'transfer'] as $action) {
     foreach ([['server_id' => 2, 'registrar_key' => 'namesilo'], ['user_id' => 2], []] as $binding) {
-        $reject(static function () use ($make, $action, $binding): void {
-            DB::transaction(static function () use ($make, $action, $binding): void {
-                $domain = $make('x.com', $binding);
-                $domain->operations()->create(['operation_key' => 'duplicate:'.$action]);
-            });
-        });
+        try { $make('x.com', $binding); expect(false, 'Duplicate '.$action.' reservation accepted'); }
+        catch (DomainException $e) { same('This domain already has an order.', $e->getMessage(), 'Specific duplicate '.$action.' refusal'); }
+        same('x.com', $original->fresh()->reservation_name, 'Duplicate '.$action.' attempt retains original reservation');
     }
 }
 same(1, Domain::count(), 'Duplicates across action/account/owner create no row');

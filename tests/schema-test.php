@@ -105,5 +105,25 @@ Schema::drop('domains_operations');
 try { FoundationSchema::install(); expect(false, 'Partial retained installation accepted'); }
 catch (RuntimeException $e) { expect(str_contains($e->getMessage(), 'Partial retained'), 'Partial installation refusal'); }
 expect(!Schema::hasTable('domains_operations'), 'Missing history was not silently recreated');
+// A connection prefix must not hide missing or weakened reservation constraints.
+$connection = DB::getDefaultConnection();
+$schema = Schema::getFacadeRoot();
+config(['database.connections.prefixed' => array_replace(config('database.connections.sqlite'), ['prefix' => 'fixture_'])]);
+DB::setDefaultConnection('prefixed');
+Schema::swap(DB::connection()->getSchemaBuilder());
+try {
+    FoundationSchema::install();
+    FoundationSchema::verify();
+    Schema::table('domains_domains', static fn (Blueprint $t) => $t->dropUnique(['reservation_name']));
+    try { FoundationSchema::verify(); expect(false, 'Prefixed missing reservation index accepted'); }
+    catch (RuntimeException $e) { same('Retained Domains schema mismatch: domains_domains', $e->getMessage(), 'Prefixed missing index refusal'); }
+    DB::statement("CREATE UNIQUE INDEX fixture_partial_reservation ON fixture_domains_domains (reservation_name) WHERE status = 'active'");
+    try { FoundationSchema::verify(); expect(false, 'Prefixed partial reservation index accepted'); }
+    catch (RuntimeException $e) { same('Retained Domains schema mismatch: partial index', $e->getMessage(), 'Prefixed partial index refusal'); }
+} finally {
+    Schema::swap($schema);
+    DB::setDefaultConnection($connection);
+    DB::purge('prefixed');
+}
 echo "Domains schema: retained IDs, exact values, encryption, uniqueness and reinstall guards passed.\n";
 $nativeSuccessful = true;

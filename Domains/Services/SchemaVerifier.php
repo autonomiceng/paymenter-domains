@@ -32,18 +32,19 @@ final class SchemaVerifier
     private static function indexes(string $table): array
     {
         $connection = DB::connection();
+        $physical = $connection->getTablePrefix().$table;
         // Laravel's portable metadata omits predicates/prefixes that can weaken uniqueness.
         if ($connection->getDriverName() === 'sqlite') {
-            foreach ($connection->select('PRAGMA index_list("'.$table.'")') as $index) {
+            foreach ($connection->select('PRAGMA index_list("'.$physical.'")') as $index) {
                 if ((int) $index->partial !== 0) { throw new \RuntimeException('Retained Domains schema mismatch: partial index'); }
             }
         } elseif (in_array($connection->getDriverName(), ['mysql', 'mariadb'], true)) {
             $metadata = $connection->selectOne('SELECT ENGINE AS engine FROM information_schema.tables WHERE table_schema = ? AND table_name = ?',
-                [$connection->getDatabaseName(), $connection->getTablePrefix().$table]);
+                [$connection->getDatabaseName(), $physical]);
             if (!$metadata || strcasecmp((string) $metadata->engine, 'InnoDB') !== 0) {
                 throw new \RuntimeException('Retained Domains schema requires InnoDB.');
             }
-            foreach ($connection->select('SHOW INDEX FROM `'.$table.'`') as $index) {
+            foreach ($connection->select('SHOW INDEX FROM `'.$physical.'`') as $index) {
                 if ($index->Sub_part !== null) { throw new \RuntimeException('Retained Domains schema mismatch: prefix index'); }
             }
         } else { throw new \RuntimeException('Domains schema verification requires SQLite or MySQL/MariaDB.'); }
