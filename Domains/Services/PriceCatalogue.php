@@ -12,12 +12,16 @@ final class PriceCatalogue
 {
     public function __construct(private readonly PricingRules $rules) {}
 
-    /** Reads finish before locking. Non-selling TLDs retain holder cost data; native-disabled servers are read-only.
+    /** Cost-only legacy import: deliberately drops publication proof on touched rows. Reads finish before locking. Non-selling TLDs retain holder cost data; native-disabled servers are read-only.
      * Callback returns explicit rate/no-price entries; omissions NEVER withdraw existing terms.
      */
     public function sync(int $serverId, \Closure $read): array
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Provider reads cannot hold database locks.'); }
+        $server = Server::findOrFail($serverId);
+        if (!$server->enabled || $server->extension !== 'Domains' || !Account::where('server_id', $serverId)->exists()) {
+            return ['synced' => 0, 'failed' => Tld::where('server_id', $serverId)->orderBy('id')->get()->map(static fn (Tld $tld): string => '.'.$tld->tld)->all()];
+        }
         $summary = ['synced' => 0, 'failed' => []];
         foreach (Tld::where('server_id', $serverId)->orderBy('id')->get() as $tld) {
             try {
@@ -25,7 +29,7 @@ final class PriceCatalogue
                 if (!is_array($rates) || $rates === []) { throw new \DomainException('Explicit price evidence required.'); }
                 $seen = [];
                 foreach ($rates as $rate) {
-                    if (!$rate instanceof CatalogueRate || isset($seen[$rate->action.':'.$rate->term])) {
+                    if (!$rate instanceof CatalogueRate || !$rate->persistable || isset($seen[$rate->action.':'.$rate->term])) {
                         throw new \DomainException('Invalid or duplicate rate evidence.');
                     }
                     $seen[$rate->action.':'.$rate->term] = true;
@@ -39,17 +43,53 @@ final class PriceCatalogue
         return $summary;
     }
 
+    /** Shared batch import; no native product locks/writes here. */
+    public function import(\Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry $entry,
+        \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, \Closure $recheck, \DateTimeImmutable $now): void
+    {
+        if (DB::transactionLevel() !== 0) { throw new \LogicException('Import owns its locks.'); }
+        $accepted->binding->requireMatch($entry->binding);
+        $tld = new Tld(['server_id' => $entry->binding->serverId, 'registrar_key' => $entry->binding->registrarKey,
+            'account_fingerprint' => $entry->binding->fingerprint, 'tld' => $entry->tld]);
+        $this->locked($tld, function (Tld $locked, Server $server, Account $account) use ($entry, $accepted, $recheck, $now): void {
+            $recheck($server, $account); $row = $accepted->endings[$entry->tld];
+            $rates = array_filter($entry->rates, static fn (CatalogueRate $rate): bool => $rate->action !== 'register'
+                || ($rate->term >= $locked->min_years && $rate->term <= $locked->max_years));
+            $terms = array_values(array_intersect($entry->terms, $row['register']));
+            $terms = array_values(array_filter($terms, static fn (int $term): bool => $term >= $locked->min_years && $term <= $locked->max_years));
+            $renewal = $row['renewal_safe'] && $entry->renewalSupported && in_array(1, $row['renew'], true);
+            $registry = $row['registry'] && $entry->registrySupported;
+            $proof = ['catalogue_revision' => $accepted->revision, 'accepted_terms' => $terms, 'registry' => $registry, 'renewal_safe' => $renewal];
+            foreach ($rates as $rate) {
+                if (!in_array($rate->term, $row[$rate->action], true)) { throw new \DomainException('Unaccepted action term.'); }
+                $this->write($locked, $rate, $proof);
+            }
+            if ($terms) { $locked->min_years = min($terms); $locked->max_years = max($terms); }
+            $locked->fill(['register_enabled' => false, 'transfer_enabled' => false, 'renew_enabled' => $renewal,
+                'registry_fields' => $entry->registryFields])->save();
+            $eligible = function (string $action, int $term) use ($locked, $now): bool {
+                try { $this->current((int) $locked->server_id, $locked->account_fingerprint, $locked->tld, $action, $term, 'USD', $now, true, $locked); return true; }
+                catch (\DomainException) { return false; }
+            };
+            $annual = $renewal && $eligible('renew', 1);
+            $locked->register_enabled = $registry && $annual && array_any($terms, static fn (int $term): bool => $eligible('register', $term));
+            $locked->transfer_enabled = $registry && $annual && in_array(1, $row['transfer'], true) && $eligible('transfer', 1);
+            $locked->save();
+        });
+    }
+
     public function republish(Tld $tld): void
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Republication owns its lock order.'); }
         $this->locked($tld, function (Tld $locked): void {
             foreach (Price::where('server_id', $locked->server_id)->where('tld', $locked->tld)->orderBy('id')->lockForUpdate()->get() as $price) {
+                if ($price->action === 'register' && ($price->term < $locked->min_years || $price->term > $locked->max_years)) { continue; }
                 $total = $price->wholesale === null ? null : self::cost($price->wholesale);
                 $units = $total === null ? null : PricingRule::units($total);
                 if ($units !== null && $units % $price->term !== 0) { throw new \DomainException('Unsupported per-year precision.'); }
                 $rate = new CatalogueRate($price->action, $price->term, $units === null ? null : PricingRule::decimal(intdiv($units, $price->term), 4),
                     $price->source, $price->observed_at->toDateTimeImmutable(), $price->fresh_until?->toDateTimeImmutable(), $price->currency);
-                $this->write($locked, $rate);
+                $this->write($locked, $rate, array_intersect_key($price->eligibility, array_flip(['catalogue_revision', 'accepted_terms', 'registry', 'renewal_safe'])));
             }
         });
     }
@@ -106,15 +146,17 @@ final class PriceCatalogue
             if (!$server->enabled || $server->extension !== 'Domains' || $account->account_fingerprint !== $tld->account_fingerprint) {
                 throw new \DomainException('Catalogue binding mismatch.');
             }
-            $locked = Tld::whereKey($tld->id)->lockForUpdate()->firstOrFail();
+            $locked = Tld::where(['server_id' => $tld->server_id, 'tld' => $tld->tld])->lockForUpdate()->first();
+            if (!$locked && !$tld->exists) { $locked = $tld; $locked->save(); $locked->refresh(); }
+            if (!$locked) { throw new \DomainException('Catalogue ending disappeared.'); }
             if ($locked->account_fingerprint !== $account->account_fingerprint || $locked->registrar_key !== $account->registrar_key) {
                 throw new \DomainException('Catalogue account mismatch.');
             }
-            $write($locked);
+            $write($locked, $server, $account);
         });
     }
 
-    private function write(Tld $tld, CatalogueRate $rate): void
+    private function write(Tld $tld, CatalogueRate $rate, array $publication = []): void
     {
         if ($rate->action === 'register' && ($rate->term < $tld->min_years || $rate->term > $tld->max_years)) {
             throw new \DomainException('Unsupported registration term.');
@@ -132,7 +174,7 @@ final class PriceCatalogue
             'tld' => $tld->tld, 'action' => $rate->action, 'term' => $rate->term, 'currency' => $rate->currency, 'revision' => 0]);
         $price->fill(['wholesale' => $wholesale, 'retail' => $retail, 'unit' => 'term_total', 'source' => $rate->source,
             'observed_at' => $rate->observedAt, 'fresh_until' => $rate->freshUntil, 'revision' => $price->revision + 1,
-            'eligibility' => ['source_unit' => $rate->action === 'register' ? 'exact_term_annual_rate' : 'annual', 'staff_alert' => $margin->staffAlert, 'rule_hash' => $this->ruleHash($tld)],
+            'eligibility' => [...$publication, 'source_unit' => $rate->action === 'register' ? 'exact_term_annual_rate' : 'annual', 'staff_alert' => $margin->staffAlert, 'rule_hash' => $this->ruleHash($tld)],
             'hold_reason' => $margin->hold])->save();
     }
 

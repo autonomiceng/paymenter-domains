@@ -36,20 +36,7 @@ final class Pricing
     /** A null neutral quote is unknown, never positive no-price evidence. */
     public static function catalogue(DriverResult $result, AccountBinding $binding, Query $query, \DateTimeImmutable $now): CatalogueRate
     {
-        $binding->requireMatch($result->binding); $quote = $result->evidence()->quote;
-        if ($binding->registrarKey !== 'enom' || $result->disposition !== Disposition::Accepted || !$quote
-            || !$query->matches($quote->query) || !$quote->cost || $quote->cost->currency !== 'USD'
-            || $quote->observedAt > $now || ($quote->validUntil !== null && $quote->validUntil <= $now)) {
-            throw new \DomainException('No current matching Enom quote.');
-        }
-        $amount = self::annual($quote->cost->amount);
-        if ($amount === null) { throw new \DomainException('Unsupported Enom precision.'); }
-        $units = PricingRule::units($amount);
-        if ($quote->unit === CostUnit::TermTotal) {
-            if ($units % $query->years !== 0) { throw new \DomainException('Inexact selected-term rate.'); }
-            $amount = PricingRule::decimal(intdiv($units, $query->years), 4);
-        }
-        return new CatalogueRate($query->action->value, $query->years, $amount, $quote->source,
-            $quote->observedAt, $quote->validUntil, $quote->cost->currency);
+        $tld = substr($query->name, strpos($query->name, '.') + 1);
+        return \Paymenter\Extensions\Servers\Domains\Services\CatalogueMapper::quote($result, $binding, $query, $tld, $now);
     }
 }

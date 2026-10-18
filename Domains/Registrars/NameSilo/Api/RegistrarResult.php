@@ -23,6 +23,8 @@ final class RegistrarResult implements \JsonSerializable
         }
         return $value;
     }
+    /** Sanitized literal suffix keys, including compound endings; server-side only. */
+    public function catalogueRows(): array { return $this->payload->getValue(); }
     public function jsonSerialize(): array { return ['outcome' => $this->outcome->value, 'code' => $this->code, 'scope' => $this->scope?->value]; }
     public function __debugInfo(): array { return $this->jsonSerialize(); }
     public function __serialize(): array { return $this->jsonSerialize(); }

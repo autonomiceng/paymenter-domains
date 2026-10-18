@@ -20,12 +20,16 @@ $wire = new class implements Transport {
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
     {
         if ($this->fail) { throw new RuntimeException('offline timeout'); }
+        if ($command === ReadCommand::TldInfo) { return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><TLDs><TLD><TLD>com</TLD><Registration><Minimum>1</Minimum><Maximum>3</Maximum><Unit>year</Unit><DNSRequired>false</DNSRequired></Registration><ExtAttributes>false</ExtAttributes><Renewal><AutoRenewOnly>false</AutoRenewOnly></Renewal></TLD></TLDs></interface-response>'; }
+        if ($command === ReadCommand::Attributes) { return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><ResponseCount>0</ResponseCount></interface-response>'; }
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><ProductPrice><ProductEnabled>'.($this->enabled ? 'true' : 'false').'</ProductEnabled><Price>'.$this->price.'</Price></ProductPrice></interface-response>';
     }
 };
 $driver = new Driver(new Client($binding, 'offline', 'synthetic', $wire), ['com']);
 $rules = new PricingRules; $catalogue = new PriceCatalogue($rules); $query = new Query('example.com', Action::Register, 3);
-$read = fn () => [$driver->catalogueRate('com', 'register', 3, $context(), 172800), $driver->catalogueRate('com', 'renew', 1, $context(), 172800)];
+$accepted = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance($binding, 1, ['com' => ['register' => [3], 'renew' => [1], 'transfer' => [], 'registry' => true, 'renewal_safe' => true]]);
+$read = fn () => $driver->catalogueBatch($accepted, new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness(86400, 86400), $context())['com']?->rates ?? throw new DomainException;
+
 same(['synced' => 1, 'failed' => []], $catalogue->sync(1, $read), 'Real Enom adapter feeds neutral pricing service');
 $snapshot = $catalogue->current(1, $account['account_fingerprint'], 'com', 'register', 3, 'USD', $clock->now());
 same('26.86500000', Price::where('action', 'register')->firstOrFail()->wholesale, 'Database zero padding alone is normalized by catalogue');
@@ -43,7 +47,7 @@ $rules->saveDefaultRule(1, [...PricingRule::DEFAULT, 'mode' => 'fixed', 'fixed' 
 $renew = $catalogue->current(1, $account['account_fingerprint'], 'com', 'renew', 1, 'USD', $clock->now());
 same('1.00', $renew->retail, 'Below-cost renewals remain priced'); same('below_cost', $renew->staffAlert, 'Below-cost renewal only alerts staff');
 $wire->enabled = false;
-same(1, $catalogue->sync(1, fn () => [$driver->catalogueRate('com', 'register', 3, $context(), 172800), $driver->catalogueRate('com', 'renew', 1, $context(), 172800)])['synced'], 'Positive source no-price can refresh');
+same(1, $catalogue->sync(1, $read)['synced'], 'Positive source no-price can refresh');
 same(null, Price::where('action', 'register')->firstOrFail()->wholesale, 'Acquisition no-price withdraws term');
 same('1.00', $catalogue->renewal(1, $account['account_fingerprint'], 'com', 'USD', $clock->now())->retail, 'No-price preserves published holding renewal retail');
 same('34.92', $snapshot->retail, 'Frozen snapshot never repriced');

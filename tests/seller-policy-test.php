@@ -6,9 +6,9 @@ require __DIR__.'/Support/FakeRegistrar.php';
 use App\Models\Server;
 use Illuminate\Support\Facades\{DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CatalogueRate, Disposition, DriverResult, Environment, ResultReason, SaleSelection, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CatalogueEntry, CatalogueRate, Disposition, DriverResult, Environment, ResultReason, SaleSelection, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, SalesPolicy, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainReservations, FoundationSchema, HolderPricing, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, DomainReservations, FoundationSchema, HolderPricing, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 FoundationSchema::install(); SalesPolicySchema::install();
 $registry = new RegistrarRegistry;
@@ -31,6 +31,19 @@ $now = new DateTimeImmutable('2026-10-18T12:00:00Z');
 $rate = static fn (string $action, int $term, string $cost): CatalogueRate => new CatalogueRate($action, $term, $cost, 'synthetic', $now, $now->modify('+1 day'));
 $prices = new PriceCatalogue(new PricingRules); $holder = new HolderPricing($prices);
 foreach ([1, 2] as $id) { $prices->sync($id, static fn (): array => [$rate('register', 1, (string) ($id * 5)), $rate('register', 3, '4.00'), $rate('renew', 1, (string) ($id * 6)), $rate('transfer', 1, '5.00')]); }
+foreach ([1, 2] as $id) {
+    $binding = $bindings->reader($id)->binding();
+    $row = ['register' => $id === 1 ? [1, 3] : [1], 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true];
+    $accepted = CatalogueAcceptances::save($binding, 0, $id === 1 ? ['com' => $row] : ['com' => $row, 'net' => $row]);
+    foreach (array_keys($accepted->endings) as $tld) {
+        $prices->import(new CatalogueEntry($binding, $tld, [$rate('register', 1, (string) ($id * 5)), ...($id === 1 ? [$rate('register', 3, '4.00')] : []),
+            $rate('renew', 1, (string) ($id * 6)), $rate('transfer', 1, '5.00')], $row['register'], true, true), $accepted, static fn () => null, $now);
+    }
+}
+$publish = static function (array $rates) use ($bindings, $prices, $now): void {
+    $b = $bindings->reader(1)->binding(); $accepted = CatalogueAcceptances::load($b);
+    $prices->import(new CatalogueEntry($b, 'com', $rates, [1, 3], true, true), $accepted, static fn () => null, $now);
+};
 $sellers = new SellerPolicies($prices, $bindings);
 $admit = static function (SaleSelection $line, ?Closure $after = null) use ($sellers, $now): mixed {
     return DB::transaction(static function () use ($sellers, $line, $now, $after): mixed {
@@ -84,7 +97,7 @@ $bindings->setProcessing(2, true);
 $reject(static fn () => $admit($oldCart, $acquire));
 same(4, $p->revision, 'Switch-back does not revive old tokens');
 $current = $sellers->selection('com', 'register', 1, $now);
-$prices->sync(1, static fn (): array => [$rate('register', 1, '6.00')]);
+$publish([$rate('register', 1, '6.00')]);
 $reject(static fn () => $admit($current, static fn () => null));
 $reject(static fn () => $sellers->change('com', 3, 2, true, true, $now));
 $liveCart = $sellers->selection('com', 'register', 1, $now);
@@ -145,7 +158,7 @@ $reject(static fn () => $sellers->selection('com', 'register', 1, $now));
 $eligible = $sellers->selection('com', 'register', 3, $now);
 same('21.00', $admit($eligible)->retail, 'Eligible term survives held annual acquisition');
 same('below_cost', $holder->renewal($domain, 'USD', $now)->staffAlert, 'Renewal below cost is alert only');
-$prices->sync(1, static fn (): array => [new CatalogueRate('register', 3, '4.00', 'synthetic', $now, $now->modify('+3 days'))]);
+$publish([new CatalogueRate('register', 3, '4.00', 'synthetic', $now, $now->modify('+3 days'))]);
 $eligible = $sellers->selection('com', 'register', 3, $now);
 $future = $now->modify('+2 days');
 $prices->current(1, $accounts[1]['account_fingerprint'], 'com', 'register', 3, 'USD', $future);

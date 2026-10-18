@@ -88,3 +88,8 @@ native SQLite; failed quotes retain price revisions/freshness. Fixtures are synt
 Enom slice 12 adds `enom-money-test.php` for exact source quote/renewal/order-charge evidence
 and `enom-pricing-test.php` for its real CatalogueRate → PriceSnapshot persistence, failed-read
 retention and below-cost renewal behavior. All transport is synthetic; no provider calls occur.
+
+Slice 14 `catalogue-sync-test.php` exercises both real read adapters through shared acceptance,
+import and seller eligibility: encrypted revisions/revocation, one NameSilo batch, compound suffixes,
+live term narrowing, positive no-price, omission/failure retention and non-selling holder renewals.
+All wire transports are synthetic; native SQLite does not establish provider or MariaDB acceptance.

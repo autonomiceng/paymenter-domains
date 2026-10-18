@@ -21,7 +21,7 @@ final class RegistrarRequest implements \JsonSerializable
         $names = [];
         foreach ($domains as $domain) {
             if (!is_string($domain)) { throw new \InvalidArgumentException('Invalid domain input.'); }
-            $names[] = DomainName::parse($domain)['domain'];
+            $names[] = \Paymenter\Extensions\Servers\Domains\Data\CanonicalName::normalize($domain);
         }
         return new self($transfer ? 'checkTransferAvailability' : 'checkRegisterAvailability',
             ['domains' => implode(',', array_unique($names))]);
@@ -37,7 +37,7 @@ final class RegistrarRequest implements \JsonSerializable
 
     public static function domainInfo(string $domain): self
     {
-        return new self('getDomainInfo', ['domain' => DomainName::parse($domain)['domain']]);
+        return new self('getDomainInfo', ['domain' => \Paymenter\Extensions\Servers\Domains\Data\CanonicalName::normalize($domain)]);
     }
 
     public static function balance(): self { return new self('getAccountBalance', []); }

@@ -100,6 +100,14 @@ final class AccountBindings
         if (!$account->processing_enabled) { throw new \DomainException('Registrar processing is disabled.'); }
     }
 
+    /** Local sync commit recheck against current locked credentials, independent of spending pause. */
+    public function requireReadableLocked(Server $server, Account $account): void
+    {
+        if (DB::transactionLevel() === 0 || !$server->enabled || $server->extension !== 'Domains'
+            || (int) $account->server_id !== (int) $server->id) { throw new \DomainException('Unavailable catalogue account.'); }
+        $this->binding($account); $this->configuration($account, true, $server);
+    }
+
     private function server(int $id, bool $lock = false): Server
     {
         $query = Server::whereKey($id); if ($lock) { $query->lockForUpdate(); }

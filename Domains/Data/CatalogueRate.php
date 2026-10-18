@@ -13,7 +13,7 @@ final readonly class CatalogueRate
 {
     public function __construct(public string $action, public int $term, public ?string $perYear,
         public string $source, public \DateTimeImmutable $observedAt, public ?\DateTimeImmutable $freshUntil,
-        public string $currency = 'USD')
+        public string $currency = 'USD', public bool $persistable = true)
     {
         if (!in_array($action, ['register', 'renew', 'transfer'], true) || $term < 1 || $term > 10
             || ($action !== 'register' && $term !== 1) || $currency !== 'USD'

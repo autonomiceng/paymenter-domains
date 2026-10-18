@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEv
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DomainName, Outcome, RegistrarRequest as Request, RegistrarResult};
 
 /** Named reads only. Construction/quotes do not prove provider identity, sale eligibility or renewal safety. */
-final class Driver implements RegistrarDriver
+final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader
 {
     private readonly array $annualActions;
     /** Annual catalogue units/currency require independent account acceptance, default none. */
@@ -22,6 +22,32 @@ final class Driver implements RegistrarDriver
         }
         if ($freshSeconds < 1 || $freshSeconds > 3600) { throw new \InvalidArgumentException('Invalid quote lifetime.'); }
         $copy = []; foreach ($acceptedAnnualActions as $action) { $copy[] = $action; } $this->annualActions = $copy;
+    }
+    public function catalogueBatch(\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted,
+        \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness $freshness, RequestContext $context): array
+    {
+        $this->binding()->requireMatch($accepted->binding); $this->binding()->requireMatch($context->binding);
+        $entries = [];
+        $started = $context->now(); $reply = $this->read(Request::prices(), $context);
+        if ($reply->outcome !== Outcome::Success) { throw new \DomainException('Catalogue batch read failed.'); }
+        foreach ($accepted->endings as $tld => $row) {
+            try {
+                $rates = [];
+                // Dotted suffix keys are literal provider keys, never dot-path traversal.
+                $prices = $reply->catalogueRows()[$tld] ?? null;
+                foreach (['register' => 'registration', 'renew' => 'renew', 'transfer' => 'transfer'] as $action => $key) {
+                    foreach ($row[$action] as $term) {
+                        $amount = $prices[$key] ?? null;
+                        if (!is_string($amount)) { throw new \DomainException('No explicit account price.'); }
+                        $rates[] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueRate($action, $term, $amount,
+                            'namesilo_account_annual', $started, $started->modify('+'.$freshness->maxAge().' seconds'));
+                    }
+                }
+                $entries[$tld] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($this->binding(), $tld, $rates,
+                    $row['register'], $row['registry'], $row['renewal_safe']);
+            } catch (\Throwable) { $entries[$tld] = null; }
+        }
+        return $entries;
     }
     public function binding(): AccountBinding { return $this->client->binding; }
     public function accountCapabilities(#[\SensitiveParameter] RequestContext $context): Capabilities
@@ -75,14 +101,16 @@ final class Driver implements RegistrarDriver
     public function quote(Query $query, #[\SensitiveParameter] RequestContext $context): DriverResult
     {
         $this->binding()->requireMatch($context->binding);
-        $parts = DomainName::parse($query->name);
         if ($query->years !== 1) { return $this->unsent(ResultReason::Unsupported); }
         if (!in_array($query->action->value, $this->annualActions, true)) { return $this->unsent(ResultReason::Unverified); }
         $reply = $this->read(Request::prices(), $context);
         if ($reply->outcome !== Outcome::Success) { return $this->neutral($reply); }
-        $amount = $reply->value($parts['tld'].'.'.match ($query->action) {
+        $rows = $reply->catalogueRows();
+        try { $parts = DomainName::parse($query->name, array_keys($rows)); }
+        catch (\InvalidArgumentException) { return $this->unknown(SendState::Sent); }
+        $amount = $rows[$parts['tld']][match ($query->action) {
             Action::Register => 'registration', Action::Renew => 'renew', Action::Transfer => 'transfer',
-        });
+        }] ?? null;
         // No-price has no positive signal here: null/missing is a failed quote, never withdrawal.
         if (!is_string($amount)) { return $this->unknown(SendState::Sent); }
         try {

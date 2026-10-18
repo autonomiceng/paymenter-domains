@@ -142,6 +142,16 @@ same([], $reconcile()->result()->evidence()->candidates, 'Zero candidates unreso
 $wire->fixtures['listOrders']['reply']['order'] = array_map(fn ($id) => ['order_number' => (string) $id], range(1, 21));
 $before = count($wire->calls); same([], $reconcile()->result()->evidence()->candidates, 'Oversize discovery refuses whole search');
 same($before + 1, count($wire->calls), 'Discovery bound makes no detail reads');
+// Compound suffixes work through all read paths, independent of purchase mapping restrictions.
+$wire->fixtures['getPrices']['reply']['co.uk'] = ['registration' => '8.25', 'renew' => '10.00', 'transfer' => '9.00'];
+$wire->fixtures['getPrices']['reply']['com']['registration'] = '12.34';
+$compoundQuery = new Query('example.co.uk', Action::Register, 1);
+same('8.25', $driver->quote($compoundQuery, $context())->evidence()->quote?->cost?->amount, 'Compound quote uses literal suffix price');
+$wire->fixtures['checkRegisterAvailability']['reply']['available'][0]['domain'] = 'example.co.uk';
+same(true, $driver->availability($compoundQuery, $context())->evidence()->available, 'Compound availability read');
+same(['domains' => 'example.co.uk'], end($wire->calls)[3], 'Compound availability mapping');
+same(true, $driver->readDomain('example.co.uk', $context())->evidence()->domain?->owned, 'Compound holder read');
+same(['domain' => 'example.co.uk'], end($wire->calls)[3], 'Compound holder mapping');
 $wire->fail = true;
 $result = $driver->balance($context()); same(Disposition::Unknown, $result->disposition, 'Throwing transport stays unknown');
 $diagnostic = json_encode($result).print_r($result, true).var_export((array) $driver, true).print_r($driver, true).print_r($rec, true);

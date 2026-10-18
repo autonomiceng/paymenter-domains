@@ -297,3 +297,58 @@ at the native order-creation boundary after ALL product locks and before service
 there is no existing between-locks hook, and per-item admission is unsafe.
 MariaDB acceptance must EXPLAIN batch TLD/price locking queries: require suitable indexed range
 access, not broad primary-key scans that lock unrelated accounts under repeatable read.
+
+## Shared catalogue acceptance and sync (slice 14)
+
+`CatalogueAcceptances` retains an encrypted native setting per immutable account, with optimistic
+revision, accepted suffix/action/exact-term USD unit evidence, registry support and safe annual
+renewal acceptance. Empty actions/endings revoke acceptance; missing/corrupt/unreadable evidence
+fails closed. This internal service is not a provider verifier or staff authorization boundary.
+No production acceptance or account verifier is supplied. Native admin must exclude this internal
+setting from public state (37/39). Acceptance changes immediately invalidate acquisition admission;
+a successful new sync is required before the new revision can publish. Holder retail stays readable.
+
+`CatalogueReader::catalogueBatch` returns neutral bound entries, with null/missing entries meaning
+failure, never no-price. NameSilo reads getPrices once for all accepted suffixes/actions, using literal
+compound keys and verified annual units only. NameSilo full-domain read requests validate canonical
+syntax; quotes resolve the longest literal suffix in sanitized account prices. These reads grant no sale
+authority; publication still requires durable acceptance. Enom reads live term/registry facts and exact selected
+term prices. Enom source positive no-price alone produces null rates; NameSilo omission has no such
+signal. Shared `CatalogueMapper` consolidates advisory quote conversion; its nonpersistable rates
+are refused by sync/import. Quotes cannot substitute their short lifetime for catalogue freshness.
+
+`CatalogueSync` prechecks enabled server, verified credentials/binding/site and durable acceptance,
+then finishes all provider reads before transactions. It rechecks locked current configuration and
+acceptance revision under server/account/TLD locks before committing each ending independently.
+New TLD rows start disabled; import does not select sellers. Accepted capability/registry/safe-renewal
+facts qualify publication, which also needs current annual renewal and an eligible exact acquisition
+term. Seller change, selection and batch admission recheck current acceptance, stored revision and the
+latest annual renewal row’s live term proof, so widening configured bounds cannot revive old terms.
+Configured bounds are reread under locks; live narrowing never automatically broadens them again.
+Staff may deliberately widen them within accepted live terms in 37. Out-of-range retained prices
+are skipped during rule republication, preserving their bytes; omission/failure never withdraws prices.
+
+The default local cadence is 1,800 seconds plus a 1,800-second failure margin (one-hour freshness),
+shared by both drivers, independent of NameSilo's short quote horizon. Observation starts before the
+batch/read, so latency cannot extend freshness. Acquisition stops at expiry; retained holder retail
+continues with stale/unknown alerts. The future account-fair scheduler (31/38/39) must use this cadence;
+no scheduling/hook/native product publication exists here. Rule and margin semantics are unchanged.
+
+The legacy cost-only `PriceCatalogue::sync` drops publication proof on every touched row; it cannot
+renew accepted sale eligibility or substitute a longer lifetime. Enom's direct source-rate helper is
+also nonpersistable and takes the shared policy type. Only accepted batch import stamps publication;
+rule republication preserves those stamps without changing observation time. Price revisions advance
+once per imported rate. Native acceptance envelopes explicitly retain USD/exact-term annual units and
+are bounded to 32 KiB plaintext before any write, safely below encrypted native TEXT capacity.
+Corrupt acceptance remains unavailable; authorized repair/revocation and audit tooling belong to 37.
+
+`CatalogueSync::refresh` accepts an optional trusted subset of accepted suffixes for bounded scheduler
+chunks. Default Enom ordering rotates each cadence; the scheduler must drain all accepted suffixes
+with fresh contexts/budgets before expiry, servicing holders independently of sellers. A slow batch
+plus a missed refresh can cause a fail-closed sales gap; the failure margin is not an uptime promise.
+No expiry is extended to hide that gap. Slices 31/38/39 own durable cursors, retries and account fairness.
+NameSilo registry/renewal support here is explicit durable account acceptance, not a live capability
+probe. Its advisory constructor quote acceptance grants no publication authority. Slices 18/37 must
+refuse unsupported registry attributes; one malformed account price row fails the whole NameSilo batch.
+Enom transfer allowlists/TransferOrders support remain mandatory 27/28 acceptance gates. Settings
+locks occur after the TLD lock during import; the common server lock serializes cooperating writers.

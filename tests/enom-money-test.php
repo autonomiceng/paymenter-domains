@@ -33,7 +33,7 @@ same(['TLD' => 'com', 'ProductType' => 10, 'Years' => 3], end($wire->calls)[1], 
 $rate = Pricing::catalogue($quote, $binding, $query, $clock->now());
 same('8.9550', $rate->perYear, 'Quote maps back to exact per-year selected-term rate');
 same('2026-10-18T12:05:00+00:00', $rate->freshUntil?->format(DATE_ATOM), 'Explicit local five-minute freshness');
-same('8.9550', $driver->catalogueRate('com', 'register', 3, $context(), 172800)->perYear, 'Direct source rate mapping');
+same('8.9550', $driver->catalogueRate('com', 'register', 3, $context(), new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness(86400, 86400))->perYear, 'Direct source rate mapping');
 foreach (['0' => '0.0000', '0008.95' => '8.9500', '8.95000000' => '8.9500'] as $input => $expected) {
     same($expected, Pricing::annual((string) $input), 'Exact zero/padding normalization');
 }
@@ -43,15 +43,15 @@ foreach (['8.95000', '8.95000000', '8.95001', '8.95000001'] as $unsupported) {
     same('unknown', $driver->productPrice('com', 'register', 3, $context())->status, 'Unsupported precision is failed read, never withdrawal');
 }
 $wire->data['ProductPrice'] = '<ProductPrice><ProductEnabled>false</ProductEnabled></ProductPrice>';
-same(null, $driver->catalogueRate('com', 'register', 3, $context(), 172800)->perYear, 'Source confirmed no-price alone withdraws');
+same(null, $driver->catalogueRate('com', 'register', 3, $context(), new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness(86400, 86400))->perYear, 'Source confirmed no-price alone withdraws');
 same(Disposition::Unknown, $driver->quote($query, $context())->disposition, 'No-price is not a known zero quote');
 $wire->fail = true;
-try { $driver->catalogueRate('com', 'register', 3, $context(), 172800); throw new LogicException('Expected failed read'); } catch (DomainException) {}
+try { $driver->catalogueRate('com', 'register', 3, $context(), new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness(86400, 86400)); throw new LogicException('Expected failed read'); } catch (DomainException) {}
 $wire->fail = false; $wire->reject = true;
-try { $driver->catalogueRate('com', 'register', 3, $context(), 172800); throw new LogicException('Expected failed read'); } catch (DomainException) {}
+try { $driver->catalogueRate('com', 'register', 3, $context(), new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness(86400, 86400)); throw new LogicException('Expected failed read'); } catch (DomainException) {}
 $wire->reject = false;
 $wire->data['ProductPrice'] = '<ProductPrice><ProductEnabled>true</ProductEnabled><Price>0.0000</Price></ProductPrice>';
-same('0.0000', $driver->catalogueRate('com', 'renew', 1, $context(), 172800)->perYear, 'Known annual zero survives');
+same('0.0000', $driver->catalogueRate('com', 'renew', 1, $context(), new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness(86400, 86400))->perYear, 'Known annual zero survives');
 $wire->data['ProductPrice'] = str_replace('</ProductPrice>', '<Currency>CAD</Currency></ProductPrice>', $wire->data['ProductPrice']);
 same('unknown', $driver->productPrice('com', 'renew', 1, $context())->status, 'Currency contradiction cannot withdraw');
 foreach ([['query' => new Query('other.com', Action::Register, 3)], ['currency' => 'CAD'], ['cost' => null], ['total' => '26.865001'],

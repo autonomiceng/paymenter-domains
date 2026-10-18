@@ -43,7 +43,7 @@ final class SellerPolicies
                     $terms = $action === 'transfer' ? [1] : array_filter(range(1, 10), static fn (int $term): bool => $term >= $catalogue->min_years && $term <= $catalogue->max_years);
                     $available = false;
                     foreach ($terms as $term) {
-                        try { $this->prices->current($serverId, $account->account_fingerprint, $tld, $action, $term, 'USD', $now, true, $catalogue); $available = true; }
+                        try { PublicationEligibility::require($catalogue, $action, $term, true); $this->prices->current($serverId, $account->account_fingerprint, $tld, $action, $term, 'USD', $now, true, $catalogue); $available = true; }
                         catch (\DomainException) { /* Another supported registration term may still be available. */ }
                     }
                     if (!$available) { throw new \DomainException('Seller has no eligible action price.'); }
@@ -64,6 +64,7 @@ final class SellerPolicies
         $account = $this->account($policy->server_id, false);
         $catalogue = $this->tld($account, $tld, false);
         $this->requireTld($catalogue, $action, $term);
+        PublicationEligibility::require($catalogue, $action, $term);
         $this->prices->current($policy->server_id, $policy->account_fingerprint, $tld, 'renew', 1, 'USD', $now);
         $price = $this->prices->current($policy->server_id, $policy->account_fingerprint, $tld, $action, $term, 'USD', $now);
         return new SaleSelection($tld, $policy->server_id, $policy->registrar_key, $policy->account_fingerprint,
@@ -112,6 +113,7 @@ final class SellerPolicies
             $tld = $catalogues->get($selected->serverId.':'.$selected->tld);
             if (!$tld || $tld->registrar_key !== $selected->registrar) { throw new \DomainException('Unsupported seller TLD.'); }
             $this->requireTld($tld, $selected->action, $selected->term);
+            PublicationEligibility::require($tld, $selected->action, $selected->term, true);
             $this->prices->current($selected->serverId, $selected->fingerprint, $selected->tld, 'renew', 1, 'USD', $now, true, $tld);
             $price = $this->prices->current($selected->serverId, $selected->fingerprint, $selected->tld, $selected->action, $selected->term, 'USD', $now, true, $tld);
             if ($price->id !== $selected->priceId || $price->revision !== $selected->priceRevision) { throw new \DomainException('Stale price revision.'); }

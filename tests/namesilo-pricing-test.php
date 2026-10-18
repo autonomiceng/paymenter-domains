@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier, Clock};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, Environment, Query, RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, CatalogueAcceptance, CatalogueFreshness, Environment, Query, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, Tld};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client, Driver, Prices};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as WireEnvironment, RegistrarRequest, RequestContext as WireContext, TransportResponse};
@@ -42,9 +42,11 @@ $binding->requireMatch($rotated); same(false, Account::firstOrFail()->processing
 Tld::create(['server_id' => 1, 'registrar_key' => 'namesilo', 'account_fingerprint' => $binding->fingerprint, 'tld' => 'com', 'enabled' => false, 'renew_enabled' => true]);
 $catalogue = new PriceCatalogue(new PricingRules);
 $query = new Query('example.com', Action::Register, 1);
-$read = static function (Tld $tld) use ($driver, $binding, $query, $clock): array {
+$read = static function (Tld $tld) use ($driver, $binding, $clock): array {
     $context = new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+1 minute'), new RequestBudget(1), $clock);
-    return [Prices::rate($driver->quote($query, $context), $binding, $query, $tld->tld, $clock)];
+    $accepted = new CatalogueAcceptance($binding, 1, [$tld->tld => ['register' => [1], 'renew' => [], 'transfer' => [], 'registry' => false, 'renewal_safe' => false]]);
+    $entry = $driver->catalogueBatch($accepted, new CatalogueFreshness, $context)[$tld->tld] ?? null;
+    return $entry?->rates ?? throw new DomainException('Missing catalogue row.');
 };
 same(['synced' => 1, 'failed' => []], $catalogue->sync(1, $read), 'Accepted annual account quote persists');
 $snapshot = $catalogue->current(1, $binding->fingerprint, 'com', 'register', 1, 'USD', $clock->now());
@@ -60,5 +62,11 @@ $otherTld->delete();
 $wire->price = '1.00'; $catalogue->sync(1, $read);
 same('12.3400', $snapshot->wholesale, 'Old snapshot remains frozen');
 same(3, Price::firstOrFail()->revision, 'Fresh observation increments revision');
+$advisory = Prices::rate($driver->quote($query, new RequestContext($binding, RequestOrigin::Background,
+    $clock->now()->modify('+1 minute'), new RequestBudget(1), $clock)), $binding, $query, 'com', $clock);
+same(false, $advisory->persistable, 'Short-lived advisory mapping fenced from persisted sync');
+$beforeFence = DB::table('domains_prices')->get()->toJson();
+same(0, $catalogue->sync(1, static fn () => [$advisory])['synced'], 'Advisory rates cannot persist');
+same($beforeFence, DB::table('domains_prices')->get()->toJson(), 'Fence retains all persisted price bytes');
 $nativeSuccessful = true;
 echo "NameSilo pricing: accepted binding, stable key rotation, quote-to-rate-to-snapshot and failed-refresh retention passed.\n";
