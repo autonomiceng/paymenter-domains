@@ -1,0 +1,87 @@
+# Retained foundation storage
+
+Slice 04 introduces models and a manually invoked retained-data migration. No extension entry,
+listeners, native schema edits or automatic install/uninstall hooks exist yet. `down()` retains all
+rows. `FoundationSchema::verify()` checks complete column metadata and index constraints against fresh declarations;
+it refuses a mismatch or partial table set rather than repairing financial history. Partial indexes, non-InnoDB MySQL/MariaDB tables
+and MySQL index prefixes are refused because portable metadata omits their weakened constraints. Verification uses a random empty
+reference table on the same connection and removes it in `finally`; DDL privileges are required.
+SQLite is exercised offline; MariaDB DDL/locking acceptance remains a release gate.
+
+## Slice 41 mapping from Enom d2c55e2
+
+- `enom_domains` → `domains_domains`, `enom_operations` → `domains_operations`, `enom_tlds` →
+  `domains_tlds`: preserve IDs, native service/user/server/invoice/item references, operation keys,
+  states, dates, generations and decimal meanings. No cascading foreign keys delete retained history.
+- Existing columns preserve their Enom meanings, including encrypted snapshot/renewal policy/
+  observation and payload/policy/cost, provider IDs, nullable global reservation, exact-term
+  registration costs, annual renewal/transfer costs, sale holds and per-TLD rule overrides.
+  `reminders` remains the source JSON-in-text representation; casts do not rewrite source bytes.
+- All bound rows add `registrar_key` and `account_fingerprint`; operations also freeze generation,
+  encrypted `attempt` and `funding`. Conversion must derive these from accepted binding and source
+  evidence, preserving absent versus recorded-null execution, seals, refunds and obligations.
+  Historical operation fingerprint/generation can be null when source proof is absent; new
+  admission must require both and cannot treat null as generation zero. It
+  must not invent evidence from current state. Unchanged encrypted columns retain ciphertext under the original key. Restructured encrypted
+  fields require explicit decrypt/re-encrypt validation; original Enom rows stay read-only.
+- `domains_accounts` is one immutable native-server identity record, with encrypted stable identity,
+  explicit environment, nullable live-site binding and processing off by default. Credentials stay
+  in encrypted native settings; no duplicate credential store. Binding guards follow in slice 06.
+- `domains_prices` has one exact current price per server/TLD/action/term/currency, nullable unknown
+  cost/retail, unit/source, freshness and revision. Account identity qualifies the row; unique server
+  binding makes an additional registrar column in the price unique key redundant. Conversion of
+  native acquisition prices and catalogue costs must retain units rather than guess annual totals.
+- Shared default rule remains a native setting, as in Enom; `use_default_rule` and overrides stay
+  per TLD/account. No unified retail table or cost floor is introduced. Seller policy arrives in 09.
+
+This is a mapping design, not the converter or accepted installed-schema evidence. Customized
+notifications/native financial rows remain upstream and must be explicitly covered by slice 41.
+
+## Authoritative conversion and evolution rules
+
+Slice 39 must call native Migrator followed by `FoundationSchema::verify()` directly on every
+install/upgrade; migration history can skip `up()`. Do not use the exception-swallowing native
+`ExtensionHelper::runMigrations`. Fixtures exercise a recorded migration followed by standalone
+verification. No native hook exists in this slice, so installed compatibility is still unproved.
+
+The converter moves `policy.dispatch_attempted_at` to `attempt.dispatch_attempted_at` and
+`cost.execution` to `attempt.execution`, then removes those source keys from the new rows.
+It moves `policy.authority_generation` to the nullable column and removes the source key. Preserve
+key absence versus present-null exactly. Historical account fingerprint comes from proven source
+binding; unknown operation binding/generation stays null and cannot authorize new work. Domain,
+TLD and account binding must be independently proven at conversion or conversion stops. The
+original Enom tables preserve ciphertext as read-only audit; new operation policy/cost are
+re-encrypted after restructuring, with no runtime alias or dual write. Contradictions stay unresolved.
+`funding` is the sole settled-funding and refund evidence snapshot. Move `cost.refund` to
+`funding.refund` preserving the complete double-refund guard, then remove the source key; absence
+and recorded-null remain distinct. No runtime refund fallback reads the old cost field. Plain funding_basis/reason/authorized_by
+retain their administrative meanings as checked projections and cannot independently authorize
+spending. Slice 41 must enumerate/map source funding keys against the accepted final source schema.
+
+`domains_prices` is authoritative for new exact wholesale/retail/source/hold facts. Retained TLD
+cost/renew_price/sale_holds fields are conversion-source audit data, never a runtime price fallback;
+TLD rule/override columns remain live inputs. Native plan prices are publication projections of
+price rows. Slices 07/08 must implement revisions/refresh and avoid updating competing authorities.
+Account identity fingerprint is SHA-256 of registrar/environment/stable identity, independent of
+server ID and APP_KEY; its global unique constraint prevents duplicate account/server bindings.
+The full AccountBinding fingerprint still includes server ID. These unsalted hashes can expose
+low-entropy login guesses to database readers; identity encryption does not conceal that
+correlation. Hide both from generic serialization; neither proves provider ownership.
+
+Binding columns are the sole authority. Validate embedded `account_fingerprint`, `server_id`,
+`authority_generation`, `confirmed_revision` and `provider_domain_id` in operation policy, domain
+renewal_policy and observation against proven source state, then remove those embedded keys in
+converted rows. Preserve other policy/observation facts; restructure and re-encrypt where needed.
+Never copy an Enom fingerprint as the new fingerprint. Prove it by recomputing
+SHA-256 of `environment + ':' + strtolower(uid)` from the bound native server and comparing
+exactly with every source fingerprint present; contradictions stop conversion. Positive provider
+verification must establish that same account before deriving the new hashes. Enom stable identity
+is its lowercase uid; NameSilo requires a positively verified stable account identifier with its
+provider-defined canonical spelling, never the API key or a caller-supplied label. Unknown
+normalization or identity blocks conversion. Slice 41 must enumerate all embedded source keys.
+
+This unreleased schema can evolve with coordinated declarations/migrations. Before release the
+verifier must describe the final combined schema, with explicit versioned upgrade acceptance;
+never run an obsolete foundation verifier against a later schema. Collation/type drift fails closed.
+Partial DDL failure requires restoring/verifying the full retained backup (or an audited proof that
+all affected tables are empty before restarting fresh, with a reviewed recovery tool in slice 39); reinstall never invents lost history.
