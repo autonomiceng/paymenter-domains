@@ -17,6 +17,7 @@ abstract class ManagementProtocol
     final public function bindsTo(AccountBinding $binding): bool { return $this->binding->matches($binding); }
     abstract public function capabilities(): Capabilities;
     abstract public function validate(string $action, #[\SensitiveParameter] array $payload, string $name): array;
+    public function freeze(string $key, string $name, string $action, #[\SensitiveParameter] array $payload, int $domainId): array { return $payload; }
     abstract public function prepare(ManagementRequest $request, RequestContext $context): array;
     abstract public function observe(ManagementRequest $request, RequestContext $context): ManagementResult;
     abstract protected function apply(ManagementRequest $request, RequestContext $context): ManagementResult;
@@ -24,6 +25,7 @@ abstract class ManagementProtocol
     abstract protected function validateRead(string $command, #[\SensitiveParameter] array $parameters): void;
     abstract protected function writeCommand(string $action): string;
     abstract protected function origin(RequestContext $context): string;
+    protected function requestCommand(ManagementRequest $request): string { return $this->writeCommand($request->action); }
     public function billingTerms(ManagementRequest $request, RequestContext $context): array
     { throw new \DomainException('Paid privacy unsupported.'); }
     final public function perform(ManagementRequest $request, RequestContext $context, DomainManagement $engine): ManagementResult
@@ -42,7 +44,7 @@ abstract class ManagementProtocol
     }
     final protected function write(ManagementRequest $r, RequestContext $c, string $command, #[\SensitiveParameter] array $parameters): string
     {
-        if ($this->active !== $r || $this->context !== $c || $this->sent || !$this->engine || $command!==$this->writeCommand($r->action)) { throw new \DomainException('No live management grant.'); }
+        if ($this->active !== $r || $this->context !== $c || $this->sent || !$this->engine || $command!==$this->requestCommand($r)) { throw new \DomainException('No live management grant.'); }
         $this->engine->consume($r, $c, $this); $this->sent = true;
         return $this->exchange($r, $c, $command, $parameters);
     }

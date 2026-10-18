@@ -17,6 +17,7 @@ final class ManagementEvidence
             &&($r['operation_key']??null)===$op->operation_key&&($r['generation']??null)===$op->authority_generation&&($r['action']??null)===$op->action
             &&(($r['confirmed']??null)===true||$op->action==='auth_code_email'&&($r['email_accepted']??null)===true)
             &&($op->action!=='auth_code_email'||($op->attempt['management_ack']['email_accepted']??null)===true)
+            &&($op->action!=='contact_profile'||isset($op->attempt['management_ack']['profile_id']))
             &&(!in_array($op->action,['privacy_purchase','privacy_renew'],true)||isset($op->attempt['management_ack']['order_id']));
     }
     /** No dispatch authority: unsent management debt never blocks the domain's renewal. */

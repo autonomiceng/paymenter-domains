@@ -130,7 +130,8 @@ final class OperationReconciliation
             || $op->account_fingerprint !== $binding->fingerprint || $domain->account_fingerprint !== $binding->fingerprint
             || $op->registrar_key !== $binding->registrarKey || $domain->registrar_key !== $binding->registrarKey
             || (int) $op->server_id !== $binding->serverId || (int) $domain->server_id !== $binding->serverId
-            || $all->contains(static fn ($other) => $other->id !== $op->id && !OperationTerminalProof::safe($other, $domain))) {
+            || $all->contains(static fn ($other) => $other->id !== $op->id && !OperationTerminalProof::safe($other, $domain)
+                && !ManagementCorrections::resolvedFor($other, $op, $domain))) {
             throw new \DomainException('Reconciliation authority changed.');
         }
         $funding->requireInitial($op, $domain); return $binding;

@@ -66,7 +66,11 @@
     "tests/management-test.php",
     "tests/management-records-test.php",
     "tests/management-privacy-test.php",
-    "tests/management-refusal-test.php"
+    "tests/management-refusal-test.php",
+    "tests/management-namesilo-test.php",
+    "tests/management-namesilo-contacts-test.php",
+    "tests/management-namesilo-boundary-test.php",
+    "tests/management-preparation-test.php"
   ],
   "ui": [],
   "runner": [

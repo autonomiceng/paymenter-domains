@@ -19,13 +19,14 @@ final class DomainManagement
     {
         return match ($action) {
             'privacy_enable', 'privacy_disable', 'privacy_purchase', 'privacy_renew' => 'privacy',
+            'contact_profile' => 'contacts',
             'ds_add', 'ds_delete' => 'ds', 'glue_add', 'glue_update', 'glue_delete' => 'glue', 'srv' => 'dns',
             'nameservers', 'contacts', 'lock', 'dns', 'auto_renew_off', 'auth_code_email' => $action,
             default => throw new \DomainException('Unsupported management action.'),
         };
     }
     public function request(User $actor, int $id, string $action, #[\SensitiveParameter] array $payload, string $nonce,
-        ManagementProtocol $driver, string $reason = 'owner_request'): Operation
+        ManagementProtocol $driver, string $reason = 'owner_request', ?string $correction = null): Operation
     {
         OperationClaims::outside(); self::capability($action);
         if (!preg_match('/^[a-f0-9]{64}$/D', $nonce) || !in_array($reason,['owner_request','staff_correction'],true)) { throw new \DomainException('Invalid management request identity.'); }
@@ -40,22 +41,24 @@ final class DomainManagement
             if ($existing) { if ($existing->action !== $action || (int)$existing->authorized_by !== (int)$actor->id) { throw new \DomainException('Management key reused.'); } return $existing; }
             $terms = $driver->billingTerms($request, new RequestContext($request->binding, RequestOrigin::Interactive, $this->clock->now()->modify('+250 seconds'), new RequestBudget(10), $this->clock));
         }
-        return DB::transaction(function () use ($seed, $actor, $action, $payload, $nonce, $driver, $reason, $terms, $initial): Operation {
-            $l = HoldingLocks::take($seed, (int) $actor->id); $d = $l['domain']; $this->authority($l, (int) $actor->id, $action, $driver);
+        return DB::transaction(function () use ($seed, $actor, $action, $payload, $nonce, $driver, $reason, $terms, $initial, $correction): Operation {
+            $l = HoldingLocks::take($seed, (int) $actor->id); $d = $l['domain']; $this->authority($l, (int) $actor->id, $action, $driver, correction: $correction);
             $clean = $terms ?? $driver->validate($action, $payload, $d->domain); $key = 'manage:'.$seed->id.':'.$nonce;
+            $clean = $driver->freeze($key, $d->domain, $action, $clean, (int) $d->id);
+            if ($correction !== null) { ManagementCorrections::require($l, $action, $clean, $correction); }
             $old = $l['operations']->firstWhere('operation_key', $key);
             if ($old) {
-                if ($old->action !== $action || (int)$old->authorized_by !== (int) $actor->id || ($terms===null && ($old->policy['management']['input'] ?? null) !== $clean)) { throw new \DomainException('Management key reused.'); }
+                if (($old->policy['management']['correction'] ?? null) !== $correction || $old->action !== $action || (int)$old->authorized_by !== (int) $actor->id || ($terms===null && ($old->policy['management']['input'] ?? null) !== $clean)) { throw new \DomainException('Management key reused.'); }
                 return $old;
             }
             if($terms!==null&&($pending=ManagementPrivacy::pending($l,$action))){return $pending;}
             if ($initial !== null && $l['stamp'] !== $initial) { throw new \DomainException('Privacy authority changed.'); }
-            $this->peers($l);
+            $this->peers($l, correction: $correction, action: $action);
             if ($action === 'auth_code_email' && $l['operations']->contains(fn ($op) => $op->action === $action
                 && in_array($op->state, ['queued', 'running', 'succeeded', 'uncertain'], true)
                 && $op->created_at->toDateTimeImmutable() > $this->clock->now()->modify('-10 minutes'))) { throw new \DomainException('Transfer code cooldown active.'); }
             $policy = ['management' => ['actor_id' => (int) $actor->id, 'reason' => (int)$actor->id===(int)$d->user_id?'owner_request':'staff_correction', 'input' => $clean,
-                'at' => $this->clock->now()->format(DATE_ATOM), 'generation' => $d->authority_generation]];
+                'at' => $this->clock->now()->format(DATE_ATOM), 'generation' => $d->authority_generation, ...($correction !== null ? ['correction' => $correction] : [])]];
             $data = ['domain_id' => $d->id, 'service_id' => $d->service_id, 'server_id' => $d->server_id, 'registrar_key' => $d->registrar_key,
                 'account_fingerprint' => $d->account_fingerprint, 'authority_generation' => $d->authority_generation, 'authorized_by' => (int) $actor->id,
                 'operation_key' => $key, 'action' => $action, 'term' => 1, 'currency' => 'USD', 'amount' => '0.00',
@@ -97,7 +100,7 @@ final class DomainManagement
             [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver,$claim): array {
                 $this->features->requireManagement();
                 if (!$this->accepted || $this->intervalSeconds < 25 || $this->intervalSeconds > 86400) { throw new \DomainException('Management acceptance required.'); }
-                $this->peers($l, $op->id);
+                $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action);
                 if (!ManagementEvidence::retryable($op) && ($op->payload??[]) !== ($op->policy['management']['input']??null)) { throw new \DomainException('Management desired state changed.'); }
                 if ((($op->attempt ?? []) !== []&&!ManagementEvidence::retryable($op)) || !in_array($op->state, ['queued', 'awaiting_payment'], true)) { throw new \DomainException('Management attempt already exists.'); }
                 if ($op->funding_basis === 'paid_invoice') { RefundPayment::requireCurrent($op, $l); $this->noInflight($op); }
@@ -112,8 +115,9 @@ final class DomainManagement
             [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($prepared, $driver, $stamp): array {
                 if ($l['stamp'] !== $stamp) { throw new \DomainException('Management authority changed during preparation.'); }
                 if ($op->state !== 'running' || ($op->attempt['seal'] ?? null) !== 'absent') { throw new \DomainException('Management claim changed.'); }
-                $this->peers($l, $op->id); $this->features->requireManagement();
+                $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action); $this->features->requireManagement();
                 $this->noInflight($op);
+                ManagementPreparation::requireFrozen($op, $prepared);
                 $op->update(['payload' => $prepared]);
                 return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int)$op->authorized_by)['stamp']];
             });
@@ -138,7 +142,7 @@ final class DomainManagement
         $g = $this->grant; $this->grant = null;
         if (!$g || $g[0] !== $r || $g[1] !== $ctx || $g[2] !== $driver) { throw new \DomainException('No live management grant.'); }
         $this->locked($g[4], $g[5], $driver, function ($l, $op) use ($g, $ctx): void {
-            $this->features->requireManagement(); $this->peers($l, $op->id);
+            $this->features->requireManagement(); $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action);
             if (!$this->accepted || $l['stamp'] !== $g[3] || $ctx->deadline->getTimestamp() - $this->clock->now()->getTimestamp() < 25
                 || $op->state !== 'running' || ($op->attempt['seal'] ?? null) !== 'absent') { throw new \DomainException('Management authority changed.'); }
             if($op->action==='auth_code_email'){foreach($l['operations'] as $peer){$at=$peer->attempt['dispatch_attempted_at']??null;if($peer->id!==$op->id&&$peer->action===$op->action&&is_string($at)&&new \DateTimeImmutable($at)>$this->clock->now()->modify('-10 minutes')){throw new \DomainException('Transfer code cooldown active.');}}}
@@ -156,6 +160,8 @@ final class DomainManagement
         $this->locked($g[3],$g[4],$driver,function($l,$op)use($facts):void{
             if(!in_array($op->state,['running','uncertain'],true)||($op->attempt['seal']??null)!=='sealed'||array_key_exists('management_ack',$op->attempt)){throw new \DomainException('Acknowledgement unavailable.');}
             $valid=$op->action==='auth_code_email' ? $facts===['email_accepted'=>true] : in_array($op->action,['privacy_purchase','privacy_renew'],true)&&count($facts)===1&&is_string($facts['order_id']??null)&&preg_match('/^[1-9][0-9]{0,19}$/D',$facts['order_id']);
+            // NameSilo is the only accepted durable profile creator; no generic inventory acknowledgement.
+            if($op->action==='contact_profile'&&$op->registrar_key==='namesilo'){$valid=count($facts)===1&&is_string($facts['profile_id']??null)&&preg_match('/^[1-9][0-9]{0,19}$/D',$facts['profile_id']);}
             if(!$valid){throw new \DomainException('Invalid management acknowledgement.');}
             $op->update(['attempt'=>[...$op->attempt,'management_ack'=>$facts]]);
         },false,false);
@@ -183,7 +189,7 @@ final class DomainManagement
             if ($stamp !== null && $l['stamp'] !== $stamp) { throw new \DomainException('Management changed during readback.'); }
             $facts = $result->facts(); $ack = $op->attempt['management_ack'] ?? [];
             $email=$op->action==='auth_code_email'&&($ack['email_accepted']??null)===true&&($result->confirmed||$result->emailAccepted); $confirmed=$result->confirmed&&$op->action!=='auth_code_email';
-            $ok = ($confirmed || $email) && (!in_array($op->action,['privacy_purchase','privacy_renew'],true) || isset($ack['order_id']));
+            $ok = ($confirmed || $email) && ($op->action!=='contact_profile'||isset($ack['profile_id'])) && (!in_array($op->action,['privacy_purchase','privacy_renew'],true) || isset($ack['order_id']));
             $entry = ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'action' => $op->action,
                 'at' => $this->clock->now()->format(DATE_ATOM), 'confirmed' => $confirmed, 'email_accepted' => $email, 'facts' => $result->facts()];
             $refused=$writeResult&&$result->refused&&!$confirmed&&!$email;$terminal=$refused&&$op->funding_basis==='non_billable_management';
@@ -195,7 +201,7 @@ final class DomainManagement
         }, false, false);
     }
     private function descriptor(Operation $op, array $l): ManagementRequest
-    { return new ManagementRequest(CatalogueAcceptances::binding($l['account']), $op->operation_key, $l['domain']->domain, $op->action, $op->payload ?? [], $l['domain']->provider_domain_id,$op->attempt['management_ack']['order_id']??null); }
+    { return new ManagementRequest(CatalogueAcceptances::binding($l['account']), $op->operation_key, $l['domain']->domain, $op->action, $op->payload ?? [], $l['domain']->provider_domain_id,$op->attempt['management_ack']['order_id']??null,$op->attempt['management_ack']['profile_id']??null, (int) $l['domain']->id); }
     private function locked(Domain $seed, int $id, ManagementProtocol $driver, \Closure $use, bool $processing = true, bool $authorize = true): mixed
     {
         return DB::transaction(function () use ($seed, $id, $driver, $use, $processing, $authorize): mixed {
@@ -204,10 +210,11 @@ final class DomainManagement
             if (!$op || !isset($op->policy['management']) || $op->authority_generation !== $l['domain']->authority_generation
                 || $op->account_fingerprint !== $l['domain']->account_fingerprint || $op->service_id !== $l['domain']->service_id
                 || $op->registrar_key !== $l['domain']->registrar_key || $op->server_id !== $l['domain']->server_id) { throw new \DomainException('Management binding changed.'); }
-            if ($authorize) { $this->authority($l, (int)$op->authorized_by, $op->action, $driver, $processing); } return $use($l, $op);
+            if ($authorize) { $this->authority($l, (int)$op->authorized_by, $op->action, $driver, $processing, $op->policy['management']['correction'] ?? null);
+                if (isset($op->policy['management']['correction'])) { ManagementCorrections::require($l, $op->action, $op->policy['management']['input'], $op->policy['management']['correction']); } } return $use($l, $op);
         });
     }
-    private function authority(array $l, int $actor, string $action, ManagementProtocol $driver, bool $processing = true): void
+    private function authority(array $l, int $actor, string $action, ManagementProtocol $driver, bool $processing = true, ?string $correction = null): void
     {
         $d = $l['domain']; $b = CatalogueAcceptances::binding($l['account']);
         if(in_array($action,['privacy_purchase','privacy_renew'],true)){
@@ -219,7 +226,7 @@ final class DomainManagement
             || $driver->capabilities()->get(self::capability($action))->support !== Support::Supported) { throw new \DomainException('Management capability unsupported.'); }
         if ($processing) { $this->bindings->requireProcessingLocked($l['server'], $l['account']); }
         else { $this->bindings->requireReadableLocked($l['server'], $l['account']); }
-        if ($d->status !== 'active' || $l['service']->status !== 'active' || $l['cancel']->contains('service_id', $d->service_id)
+        if ((($d->status !== 'active' || $l['service']->status !== 'active') && !ManagementCorrections::pending($l, $action, $correction)) || $l['cancel']->contains('service_id', $d->service_id)
             || ($d->renewal_policy['automatic_spend_paused'] ?? false)) { throw new \DomainException('Management lifecycle held.'); }
         if (in_array($action, ['dns', 'srv', 'ds_add', 'ds_delete'], true)
             && !filter_var($l['settings']->firstWhere('key', 'domains_dns_tools')?->value ?? false, FILTER_VALIDATE_BOOLEAN)) { throw new \DomainException('DNS tools disabled.'); }
@@ -229,10 +236,11 @@ final class DomainManagement
         if ($op->funding_basis === 'paid_invoice' && Operation::where('account_fingerprint',$op->account_fingerprint)->where('id','!=',$op->id)
             ->whereIn('state',['running','pending','uncertain'])->where(fn($q)=>$q->where('funding_basis','paid_invoice')->orWhereIn('action',['register','renew','transfer','privacy_purchase','privacy_renew']))->orderBy('id')->lockForUpdate()->get(['id'])->isNotEmpty()) { throw new WriteHeld('write_rate_limited'); }
     }
-    private function peers(array $l, ?int $except = null): void
+    private function peers(array $l, ?int $except = null, ?string $correction = null, ?string $action = null): void
     {
         $b = CatalogueAcceptances::binding($l['account']);
         foreach ($l['operations'] as $op) {
+            if ($correction !== null && $op->operation_key === $correction && ManagementCorrections::pending($l, $action ?? '', $correction)) { continue; }
             if($op->id!==$except&&$op->action==='renew'&&in_array($op->state,['awaiting_payment','queued','held'],true)&&($op->attempt??[])===[]){continue;}
             if ($op->id !== $except && !ManagementEvidence::resolved($op, $l['domain']) && !RenewalAuthority::resolved($op, $l['domain'], $b)) { throw new \DomainException('Prior operation unresolved.'); }
         }

@@ -137,3 +137,52 @@ holds caused by paid uncertainty; releasing a domain/renewal peer block alone gr
 spending authority.39 must test domain, renewal and account-spending blocks independently.
 39 must verify WPPSAllowed remains true after purchase/renewal for this strict readback contract;
 otherwise revise the accepted adapter contract explicitly before enablement, never fail open.
+
+## NameSilo management (slice30b)
+
+The account-bound NameSilo port declares free privacy and supports nameservers, contacts,
+lock/unlock, privacy toggles, auto-renewal off and auth-code email. Paid privacy, advanced
+DNS/DS/glue and auth-code display refuse before I/O or billing. Interactive calls use `/api`,
+background/reconciliation `/apibatch`; the injected sender inherits deadlines, budgets and the
+1 MiB response bound. Preparation preserves every frozen desired key; the engine permits only
+Enom's existing `old_ip` and paid `privacy_terms` enrichment (base remains frozen; renewal expected date follows that base, purchase target follows dispatch day).
+
+Contacts require two explicitly authorized operations. `contact_profile` takes role/contact,
+creates one non-default profile, retains its original acknowledged ID and exact field readback
+in owner/account-bound encrypted evidence. `contacts` takes the same role/contact and reserves
+that stage once, internally freezing its operation key; callers cannot supply a profile ID.
+Association requires durable creation proof plus fresh named non-default field readback,
+then spends its own single grant on `contactDomainAssociate`. Delayed association confirmation
+uses read-only reconciliation without reusing either write grant. Profiles are never updated,
+shared or selected by caller ID; lost creation acknowledgement cannot be reconstructed.
+
+An explicit `correction` acquisition key authorizes only separately requested NameSilo
+nameserver/contact/privacy/auto-renewal corrections matching the sealed original input. Current
+native net payment, owner/staff permission, holding/account/generation and lifecycle are checked
+again before seal, including while an owned transfer remains pending for correction. This does
+not complete, replay, settle or modify the acquisition, its corrections, expiry or billing anchor.
+31/33 still own correction scheduling, named-section projection and separate progress records.
+
+All response vocabularies remain synthetic acceptance gates for39, including exact profile
+shape/default flags, asynchronous association outcomes and TLD privacy eligibility. Email success
+means request acceptance only. Readback failure/unknown sends remain unresolved without replay;
+36's audited uncertain disposition remains a prerequisite to enabling management writes.
+Completed, key-linked correction siblings may pass acquisition reconciliation's peer check only
+with matching management evidence; independently proven original charge/ownership/expiry/flags
+still control acquisition completion. Definitely-unsent linked corrections (queued, held or retired) also release
+that peer check; consume still checks current acquisition authority. Sealed uncertain corrections
+continue to block, pending36 disposition. Unrelated management does not gain this exception. Idempotent association retries
+reuse the originally frozen stage even when a newer matching stage has since been created.
+Contact staging/association recheck an explicitly empty supported ordinary registry schema.
+
+NameSilo support reply 2026-10-18: registered-nameserver glue is IPv4 only for now;
+any IPv6 glue input must refuse before a write. This adapter leaves all glue unsupported,
+including IPv4. There is no provider idempotency key: unknown-after-send stays read-only
+reconciliation and never replays. Slice31 must enforce per-account `/api` concurrency1 with
+at least1-second spacing and `/apibatch` concurrency2 (conservative end of the stated2–4).
+This slice adds no scheduling and assumes no higher concurrency. Gate39 still owns acceptance.
+
+The31/39 shared per-account exchange limiter must apply those limits to every wire request,
+including multiple reads/writes within one management operation and registration/transfer flows.
+Gate39 and any future NameSilo glue slice must retain an explicit IPv6-input rejection test
+before write admission, even if the glue capability is later enabled for IPv4.

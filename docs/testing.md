@@ -232,3 +232,11 @@ All exchanges are injected; no provider or installed-extension acceptance is cla
 Runner timeout correction: native offline suites have a 120-second per-process deadline on shared,
 nice/ionice-limited hosts. The 60-second summary above applies to other categories.
 Provider request deadlines remain independent.
+
+NameSilo management: `management-namesilo-test`, `management-namesilo-contacts-test` and
+`management-namesilo-boundary-test` cover free capabilities, bounded routes/readback, separate
+one-write profile staging/association, uncertain recovery, frozen preparation and paid-acquisition
+correction authority. All inputs and transport responses are synthetic; installed/provider acceptance remains open.
+
+`management-preparation-test` preserves next-day Enom paid privacy dispatch targets and refuses
+wrong-action enrichment or changes to frozen renewal obligations.
