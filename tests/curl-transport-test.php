@@ -80,4 +80,10 @@ putenv('SSLKEYLOGFILE=synthetic-keylog');
 same(Outcome::Unknown, $client->execute(RegistrarRequest::balance(), RequestContext::Background)->outcome, 'TLS key logging guard');
 same(0, $GLOBALS['curlFake']['calls'], 'TLS logging blocks before dispatch');
 putenv('SSLKEYLOGFILE');
+
+fake();
+$transport->sendWithin(Environment::Sandbox, RequestContext::Background, RegistrarRequest::balance(), 'test-api-key', 1750);
+same(1750, $GLOBALS['curlFake']['options'][CURLOPT_CONNECTTIMEOUT_MS], 'Connect obeys remaining neutral deadline');
+same(1750, $GLOBALS['curlFake']['options'][CURLOPT_TIMEOUT_MS], 'Total obeys remaining neutral deadline');
+same(1, $GLOBALS['curlFake']['calls'], 'Deadline path is one read');
 echo "Transport: synthetic HTTPS options, routing, streaming cap, redirects and timeouts passed.\n";

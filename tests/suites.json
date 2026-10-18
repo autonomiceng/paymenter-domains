@@ -4,7 +4,8 @@
     "tests/curl-transport-test.php",
     "tests/enom-protocol-test.php",
     "tests/enom-curl-test.php",
-    "tests/enom-read-test.php"
+    "tests/enom-read-test.php",
+    "tests/namesilo-read-test.php"
   ],
   "contracts": [
     "tests/driver-contract-test.php",
@@ -17,7 +18,8 @@
     "tests/binding-test.php",
     "tests/pricing-rules-test.php",
     "tests/catalogue-test.php",
-    "tests/seller-policy-test.php"
+    "tests/seller-policy-test.php",
+    "tests/namesilo-pricing-test.php"
   ],
   "ui": [],
   "runner": [

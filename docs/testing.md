@@ -79,3 +79,8 @@ Its upstream hash provenance remains the locally pinned evidence described above
 Enom named read normalization is exercised by `tests/enom-read-test.php` with synthetic XML and
 a synthetic accepted-binding factory. Price absence differs from failed reads; ownership, expiry
 precision, unknown flags, registry requirements and contact redaction have no provider dependency.
+
+NameSilo slice 13 uses `namesilo-read-test.php` for bound deadline reads, explicit annual account
+price acceptance, null premium, date-only expiry and bounded unresolved history candidates.
+`namesilo-pricing-test.php` exercises the real accepted-binding and quote→rate→snapshot path in
+native SQLite; failed quotes retain price revisions/freshness. Fixtures are synthetic only.

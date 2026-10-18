@@ -3,13 +3,20 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api;
 
-final class CurlTransport implements Transport
+final class CurlTransport implements DeadlineTransport
 {
     public const BODY_LIMIT = 1048576;
 
     public function send(Environment $environment, RequestContext $context, RegistrarRequest $request,
         #[\SensitiveParameter] string $apiKey): TransportResponse
     {
+        return $this->sendWithin($environment, $context, $request, $apiKey, 25000);
+    }
+
+    public function sendWithin(Environment $environment, RequestContext $context, RegistrarRequest $request,
+        #[\SensitiveParameter] string $apiKey, int $timeoutMs): TransportResponse
+    {
+        if ($timeoutMs < 1 || $timeoutMs > 25000) { throw new \InvalidArgumentException('Invalid read deadline.'); }
         if (!function_exists('curl_init') || $apiKey === '' || getenv('SSLKEYLOGFILE')) {
             throw new \RuntimeException('Registrar transport unavailable.');
         }
@@ -37,6 +44,8 @@ final class CurlTransport implements Transport
                 CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
                 CURLOPT_CONNECTTIMEOUT => 8,
                 CURLOPT_TIMEOUT => 25,
+                CURLOPT_CONNECTTIMEOUT_MS => min(8000, $timeoutMs),
+                CURLOPT_TIMEOUT_MS => $timeoutMs,
                 CURLOPT_LOW_SPEED_LIMIT => 32,
                 CURLOPT_LOW_SPEED_TIME => 10,
                 CURLOPT_FRESH_CONNECT => true,

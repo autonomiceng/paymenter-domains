@@ -18,11 +18,14 @@ final class RegistrarClient implements \JsonSerializable
         $this->transport = new \SensitiveParameterValue($transport);
     }
 
-    public function execute(RegistrarRequest $request, RequestContext $context): RegistrarResult
+    public function execute(RegistrarRequest $request, RequestContext $context, ?int $timeoutMs = null): RegistrarResult
     {
         try {
             $key = $this->credential->getValue();
-            $response = $this->transport->getValue()->send($this->environment, $context, $request, $key);
+            $transport = $this->transport->getValue();
+            if ($timeoutMs !== null && !$transport instanceof DeadlineTransport) { return new RegistrarResult(Outcome::Unknown); }
+            $response = $timeoutMs === null ? $transport->send($this->environment, $context, $request, $key)
+                : $transport->sendWithin($this->environment, $context, $request, $key, $timeoutMs);
             if ($response->httpStatus !== 200 || strlen($response->body()) > CurlTransport::BODY_LIMIT) {
                 return new RegistrarResult(Outcome::Unknown);
             }
