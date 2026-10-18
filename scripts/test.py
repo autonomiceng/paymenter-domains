@@ -45,7 +45,11 @@ def execute(argv, *, cwd, env, timeout=60):
         except subprocess.TimeoutExpired:
             # Descendants share the group: stop all of them before fixture cleanup.
             os.killpg(process.pid, signal.SIGKILL)
-            stdout, stderr = process.communicate()
+            try:
+                stdout, stderr = process.communicate(timeout=1)
+            except subprocess.TimeoutExpired as drain:
+                # An escaped session may still own the pipes. Keep cumulative output.
+                stdout, stderr = drain.output or b'', drain.stderr or b''
             return stdout, stderr, 124, True
 
 

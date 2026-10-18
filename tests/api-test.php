@@ -86,6 +86,31 @@ foreach ([...$rejected, ...$otherRefusals, ...$unknown, 300,301,302,999] as $cod
         same(1, $fake->calls, 'Never retry mapped response');
     }
 }
+$refusalCases = [
+    [Request::domainInfo('example.com'), [200 => RejectionScope::Domain]],
+    [Request::availability(['example.com'], false), [267 => RejectionScope::Request]],
+    [Request::availability(['example.com'], true), [267 => RejectionScope::Request]],
+    [$purchases[0], [263 => RejectionScope::Request, 267 => RejectionScope::Request]],
+    [$purchases[1], [265 => RejectionScope::Domain, 266 => RejectionScope::Domain,
+        263 => RejectionScope::Request, 267 => RejectionScope::Request]],
+    [Purchase::renew('example.com', 1, false), [264 => RejectionScope::Domain, 263 => RejectionScope::Request]],
+];
+foreach ($refusalCases as [$request, $codes]) {
+    foreach ($codes as $code => $scope) {
+        foreach ([$code, (string) $code] as $wireCode) {
+            $body = ['request' => ['operation' => $request->command],
+                'reply' => ['code' => $wireCode, 'detail' => 'synthetic refusal']];
+            $result = $parser->parse(json_encode($body), $request, 'test-api-key');
+            same(Outcome::Rejected, $result->outcome, $request->command.' refusal '.$code);
+            same($scope, $result->scope, $request->command.' refusal scope '.$code);
+        }
+    }
+}
+$body = ['request' => ['operation' => 'registerDomain'], 'reply' => ['code' => 264, 'detail' => 'synthetic refusal']];
+$result = $parser->parse(json_encode($body), $purchases[0], 'test-api-key');
+same(Outcome::Unknown, $result->outcome, 'Renew-only 264 is unknown for registration');
+same(null, $result->scope, 'Inapplicable renewal refusal has no rejection scope');
+
 foreach ([301,302,119,262,400] as $code) {
     $fixture = $fixtures['registerDomain'];
     $fixture['reply']['code'] = $code;

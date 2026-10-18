@@ -28,6 +28,35 @@ class PackageTests(unittest.TestCase):
     def test_foundation_is_not_a_release_package(self):
         with self.assertRaises(ValueError): builder.runtime_members(ROOT/'Domains')
 
+    def test_version_comes_only_from_literal_extension_metadata(self):
+        decoys = "// version: '9.9.9'\n/* #[ExtensionMeta(version: '8.8.8')] */\n$text = \"version: '7.7.7'\";\n"
+        with tempfile.TemporaryDirectory(prefix='domains-package-version-') as temp:
+            source = Path(temp)/'Domains'; source.mkdir()
+            (source/'LICENSE').write_bytes((ROOT/'LICENSE').read_bytes())
+            for declaration in ["#[ExtensionMeta(version: '0.2.6')]",
+                                '#[\\App\\Attributes\\ExtensionMeta(name: "Domains", version: "0.2.6",)]',
+                                "#[Other(['version' => '1.0.0']), ExtensionMeta(description: 'a,b)', /* note */ version: '0.2.6')]"]:
+                with self.subTest(declaration=declaration):
+                    (source/'Domains.php').write_text('<?php\n' + decoys + declaration)
+                    self.assertEqual(builder.runtime_members(source)[0], '0.2.6')
+            for declaration in ["// version: '9.9.9'\n#[ExtensionMeta(version: VERSION)]",
+                                "$text = \"version: '9.9.9'\"; #[ExtensionMeta(version: VERSION)]",
+                                "#[ExtensionMeta(version: '0.2.6' . '-dev')]",
+                                "#[ExtensionMeta(name: \"version: '0.2.6'\")]",
+                                "#[Other(version: '0.2.6')]",
+                                "// #[ExtensionMeta(version: '0.2.6')]",
+                                "$text = \"#[ExtensionMeta(version: '0.2.6')]\";",
+                                '$text = "{$items["#[ExtensionMeta(version: \'0.2.6\')]"]}";',
+                                "?> #[ExtensionMeta(version: '0.2.6')]",
+                                "// ?> #[ExtensionMeta(version: '0.2.6')]",
+                                "#[ExtensionMeta(version: '0.2.6', version: '0.2.6')]",
+                                "#[ExtensionMeta(version: '0.2.6')] #[ExtensionMeta(version: '0.2.6')]",
+                                "#[ExtensionMeta(version: '0.2.6-dev')]",
+                                "#[ExtensionMeta(version: '0.2.6')"]:
+                with self.subTest(declaration=declaration):
+                    (source/'Domains.php').write_text('<?php\n' + declaration)
+                    with self.assertRaises(ValueError): builder.runtime_members(source)
+
     def test_missing_license_or_development_member_fails(self):
         with tempfile.TemporaryDirectory(prefix='domains-package-boundary-') as temp:
             source = Path(temp)/'Domains'; source.mkdir()

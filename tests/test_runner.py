@@ -3,10 +3,13 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -66,13 +69,42 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(receipt['dependency_error'], error_type.__name__)
 
     def test_timeout_kills_nested_process_group(self):
-        command = [sys.executable, '-c', "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(10)']); print(p.pid,flush=True); time.sleep(10)"]
-        stdout, _, code, timed_out = runner.execute(command, cwd=ROOT, env=None, timeout=0.3)
+        child_script = 'import os,time; print(os.getpid(),flush=True); time.sleep(15)'
+        command = [sys.executable, '-c', f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child_script!r}]); time.sleep(15)"]
+        stdout, _, code, timed_out = runner.execute(command, cwd=ROOT, env=None, timeout=3)
         self.assertTrue(timed_out); self.assertEqual(code, 124)
-        child = Path('/proc')/stdout.decode().strip()/'stat'
+        pid = stdout.decode().strip()
+        self.assertTrue(pid.isdigit(), 'Nested child PID was not captured before timeout')
+        child = Path('/proc')/pid/'stat'
         try: state = child.read_text().split()[2]
         except (FileNotFoundError, ProcessLookupError): state = None
         self.assertIn(state, [None, 'Z'], 'Nested child is still running')
+
+    def test_escaped_session_pipe_drain_is_bounded_and_receipted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); (root/'Domains').mkdir(); (root/'output').mkdir()
+            pid_file = root/'escaped.pid'
+            child_script = (f"import os,sys,time; from pathlib import Path; Path({str(pid_file)!r}).write_text(str(os.getpid())); "
+                            "print('escaped-stdout',flush=True); print('escaped-stderr',file=sys.stderr,flush=True); time.sleep(15)")
+            command = [sys.executable, '-c', f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child_script!r}],start_new_session=True); time.sleep(15)"]
+            execute = runner.execute
+            started = time.monotonic()
+            try:
+                with mock.patch.object(runner, 'ROOT', root), \
+                     mock.patch.object(runner, 'execute', side_effect=lambda argv, **kw: execute(argv, **dict(kw, timeout=3))), \
+                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(runner.run([('runner', command)], None, root/'output', ['runner'], {}), 1)
+                self.assertLess(time.monotonic() - started, 8, 'Escaped pipe owner blocked timeout cleanup')
+                receipt = json.loads((root/'output/receipt.json').read_text())
+                self.assertFalse(receipt['complete'])
+                self.assertEqual(receipt['results'][0]['exit'], 124)
+                self.assertTrue(receipt['results'][0]['timed_out'])
+                self.assertEqual((root/'output/000.stdout.txt').read_bytes(), b'escaped-stdout\n')
+                self.assertEqual((root/'output/000.stderr.txt').read_bytes(), b'escaped-stderr\n')
+            finally:
+                if pid_file.exists():
+                    try: os.kill(int(pid_file.read_text()), signal.SIGKILL)
+                    except ProcessLookupError: pass
 
     def test_registered_javascript_is_explicitly_refused(self):
         with tempfile.TemporaryDirectory() as temp:
