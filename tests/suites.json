@@ -45,7 +45,13 @@
     "tests/renewal-admission-test.php",
     "tests/renewal-namesilo-test.php",
     "tests/renewal-billing-test.php",
-    "tests/native-renewal-guard-test.php"
+    "tests/native-renewal-guard-test.php",
+    "tests/renewal-execution-test.php",
+    "tests/renewal-safety-test.php",
+    "tests/renewal-cycles-test.php",
+    "tests/renewal-execution-namesilo-test.php",
+    "tests/renewal-completion-test.php",
+    "tests/renewal-read-recovery-test.php"
   ],
   "ui": [],
   "runner": [

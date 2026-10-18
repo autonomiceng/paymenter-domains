@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use App\Models\{Invoice, InvoiceItem, Order, Plan, Product, Service, ServiceConfig, User};
+use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Order, Plan, Product, Service, ServiceConfig, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
@@ -22,6 +22,18 @@ final class NativeDomainGuard
         Domain::updating(static function (Domain $d): void {
             if ($d->isDirty(['price_mode', 'billing_managed'])) { throw new \DomainException('Managed pricing authority requires a dedicated audited transition.'); }
         });
+        foreach (['updating', 'deleting'] as $event) {
+            InvoiceTransaction::$event(static function (InvoiceTransaction $payment) use ($event): void {
+                if (Operation::whereIn('invoice_id', [$payment->invoice_id, $payment->getRawOriginal('invoice_id')])->exists()) {
+                    // Native gateways settle an existing processing row; signed financial fields stay fixed.
+                    $dirty = array_diff(array_keys($payment->getDirty()), ['status', 'fee', 'updated_at', 'is_credit_transaction']);
+                    if ($event === 'updating' && $dirty === [] && (int) $payment->is_credit_transaction === (int) $payment->getRawOriginal('is_credit_transaction')
+                        && ($payment->status->value === $payment->getRawOriginal('status') || ($payment->getRawOriginal('status') !== 'succeeded'
+                            && in_array($payment->status->value, ['processing', 'succeeded', 'failed'], true)))) { return; }
+                    throw new \DomainException('Domain financial evidence is retained; append an audited adjustment.');
+                }
+            });
+        }
         Service::updating(fn (Service $s) => $this->saving($s));
         Service::deleting(static function (Service $s): void {
             if (Domain::whereIn('service_id', self::ids($s))->exists()) { throw new \DomainException('Managed holding services are retained.'); }

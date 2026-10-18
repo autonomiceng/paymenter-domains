@@ -2,11 +2,10 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\{Plan, Product, Server, Service, ServiceCancellation, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Money, RenewalCode, RenewalRequest};
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Price, Tld};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Owns the renewal-specific ordered prefix. No general callback or write-authority scope is exposed. */
 final readonly class RenewalAuthority
 {
@@ -20,50 +19,15 @@ final readonly class RenewalAuthority
     {
         OperationClaims::outside();
         try {
-            $seed = Domain::findOrFail($request->domainId); $route = Service::findOrFail($seed->service_id);
-            return DB::transaction(function () use ($seed, $route, $request, $stamp, $accepted, $until): array {
-                $user = User::whereKey($seed->user_id)->lockForUpdate()->firstOrFail();
-                $service = Service::whereKey($seed->service_id)->lockForUpdate()->firstOrFail();
-                $product = Product::whereKey($route->product_id)->lockForUpdate()->firstOrFail();
-                $plan = Plan::whereKey($route->plan_id)->lockForUpdate()->firstOrFail();
-                $cancel = ServiceCancellation::where('service_id', $service->id)->orderBy('id')->lockForUpdate()->get();
-                $properties = $service->properties()->orderBy('id')->lockForUpdate()->get();
-                $markers = $product->settings()->orderBy('id')->lockForUpdate()->get();
-                $server = Server::whereKey($seed->server_id)->lockForUpdate()->firstOrFail();
-                $account = Account::where('server_id', $seed->server_id)->lockForUpdate()->firstOrFail();
-                $settings = $server->settings()->orderBy('id')->lockForUpdate()->get();
-                $tld = Tld::where(['server_id' => $seed->server_id, 'tld' => $seed->tld])->lockForUpdate()->firstOrFail();
-                $prices = Price::where(['server_id' => $seed->server_id, 'tld' => $seed->tld, 'action' => 'renew'])->orderBy('id')->lockForUpdate()->get();
-                $domain = Domain::whereKey($seed->id)->lockForUpdate()->firstOrFail();
-                $all = Operation::where('domain_id', $seed->id)->orderBy('id')->lockForUpdate()->get();
-                if ($domain->user_id !== $seed->user_id || $domain->service_id !== $seed->service_id || $domain->server_id !== $seed->server_id
-                    || $domain->tld !== $seed->tld || $service->product_id !== $route->product_id || $service->plan_id !== $route->plan_id) {
-                    throw new RenewalRefused(RenewalCode::Changed);
-                }
-                $this->bindings->requireProcessingLocked($server, $account); $binding = CatalogueAcceptances::binding($account);
-                $accepted?->requireCurrent($binding);
-                $c = $domain->snapshot['checkout'] ?? [];
-                if ($domain->account_fingerprint !== $binding->fingerprint || $domain->registrar_key !== $binding->registrarKey
-                    || !$domain->billing_managed || $domain->reservation_name !== $domain->domain
-                    || !in_array($domain->status, ['active', 'expired', 'grace'], true)
-                    || (int) $service->user_id !== (int) $user->id || $service->status !== Service::STATUS_ACTIVE
-                    || $service->expires_at !== null || $service->currency_code !== 'USD' || (string) $service->quantity !== '1'
-                    || $cancel->isNotEmpty() || (int) $product->server_id !== (int) $domain->server_id
-                    || ($c['service_id'] ?? null) !== (int) $service->id || ($c['user_id'] ?? null) !== (int) $user->id
-                    || ($c['product_id'] ?? null) !== (int) $product->id || ($c['annual_plan_id'] ?? null) !== (int) $plan->id
-                    || ($c['name'] ?? null) !== $domain->domain || ($c['order_id'] ?? null) !== (int) $service->order_id
-                    || $plan->priceable_type !== $product->getMorphClass() || (int) $plan->priceable_id !== (int) $product->id
-                    || $plan->type !== 'recurring' || $plan->billing_unit !== 'year' || (int) $plan->billing_period !== 1
-                    || $tld->account_fingerprint !== $binding->fingerprint || $tld->registrar_key !== $binding->registrarKey
-                    || $properties->where('key', 'domain')->count() !== 1 || $properties->firstWhere('key', 'domain')->value !== $domain->domain) {
-                    throw new RenewalRefused(RenewalCode::Authority);
-                }
-                foreach (['domains_catalogue' => '1', 'domains_tld_id' => (string) $tld->id, 'domains_action' => $c['action'] ?? null, 'domains_registrar' => $binding->registrarKey] as $key => $value) {
-                    $rows = $markers->where('key', $key);
-                    if ($value === null || $rows->count() !== 1 || $rows->first()->value !== $value || $rows->first()->encrypted || $rows->first()->type !== 'string') {
-                        throw new RenewalRefused(RenewalCode::Authority);
-                    }
-                }
+            $seed = Domain::findOrFail($request->domainId);
+            return DB::transaction(function () use ($seed, $request, $stamp, $accepted, $until): array {
+                $l = HoldingLocks::take($seed); $domain = $l['domain'];
+                $binding = CatalogueAcceptances::binding($l['account']);
+                try { $this->bindings->requireProcessingLocked($l['server'], $l['account']); $accepted?->requireCurrent($binding); }
+                catch (\Throwable) { throw new RenewalRefused(RenewalCode::Acceptance); }
+                if (!in_array($domain->status, ['active', 'expired', 'grace'], true) || $l['service']->status !== 'active'
+                    || $l['cancel']->contains('service_id', $domain->service_id)) { throw new RenewalRefused(RenewalCode::Authority); }
+                $all = $l['operations']; $prices = $l['prices'];
                 if ($domain->authority_generation !== $request->generation || $domain->confirmed_revision !== $request->revision
                     || $domain->provider_expires_at?->format('Y-m-d') !== $request->expiry || $domain->provider_domain_id !== $request->providerId
                     || ($binding->registrarKey === 'enom' && !preg_match('/^[1-9][0-9]{0,19}$/D', $request->providerId ?? ''))) {
@@ -73,18 +37,19 @@ final readonly class RenewalAuthority
                 $anchor = $domain->renewal_policy['billing_anchor'] ?? [];
                 $prior = $all->firstWhere('operation_key', $anchor['operation_key'] ?? null);
                 if (($anchor['expiry'] ?? null) !== $request->expiry || !$prior || !self::completed($prior, $domain, $binding)
-                    || $all->contains(fn ($op) => $op->id !== $prior->id && !OperationTerminalProof::safe($op, $domain))) {
+                    || $all->contains(fn ($op) => $op->id !== $prior->id && !self::resolved($op, $domain, $binding) && !self::expected($op, $request))) {
                     throw new RenewalRefused(RenewalCode::Prior);
                 }
-                // Ciphertext hashes detect even same-account verified credential rotation during the read window.
-                $rows = [$user, $service, $product, $plan, $server, $account, $tld, $domain,
-                    ...$cancel, ...$properties, ...$markers, ...$settings, ...$prices, ...$all];
-                $current = hash('sha256', json_encode(array_map(static fn ($row) => $row->getRawOriginal(), $rows), JSON_THROW_ON_ERROR));
+                self::requireCostAnchor($prior);
+                $current = $l['stamp'];
                 if (($stamp !== null && $stamp !== $current) || ($until !== null && $until <= $this->clock->now())) {
                     throw new RenewalRefused(RenewalCode::Changed);
                 }
                 $annual = $prices->where('term', 1)->where('currency', 'USD')->where('account_fingerprint', $binding->fingerprint)->first();
                 $retail = $annual?->retail !== null ? PricingRule::total(PriceCatalogue::retail($annual->retail), $request->years) : null;
+                // Resolve original registration proof after the latest anchor advances to a renewal.
+                $registration = $all->first(fn ($op) => $op->action === 'register' && $op->state === 'succeeded' && self::resolved($op, $domain, $binding));
+                $prior = $registration ?? $prior;
                 $admission = $prior->attempt['registration_admission'] ?? [];
                 $nonpremium = false;
                 try {
@@ -100,11 +65,31 @@ final readonly class RenewalAuthority
         } catch (RenewalRefused $error) { throw $error; }
         catch (\Throwable) { throw new RenewalRefused(RenewalCode::Authority); }
     }
+    public static function requireCostAnchor(Operation $op): void
+    {
+        if ($op->action === 'renew' && WriteMoney::compare($op->cost['actual']['amount'] ?? '', $op->attempt['authorized_cost']['amount'] ?? '') !== 0) { throw new RenewalRefused(RenewalCode::Cost); }
+    }
+    /** Exactly the named virgin obligation may coexist with prospective admission. */
+    private static function expected(Operation $op, RenewalRequest $r): bool
+    {
+        return $r->obligationKey !== null && $op->operation_key === $r->obligationKey && $op->action === 'renew'
+            && in_array($op->state, ['awaiting_payment', 'queued'], true) && ($op->attempt ?? []) === []
+            && ($op->funding ?? []) === [] && ($op->cost ?? []) === [] && $op->provider_order_id === null
+            && $op->confirmed_expires_at === null && $op->authority_generation === $r->generation
+            && $op->base_expires_at?->format('Y-m-d') === $r->expiry && (int) $op->term === $r->years;
+    }
+    public static function resolved(Operation $op, Domain $domain, \Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): bool
+    {
+        if (OperationTerminalProof::safe($op, $domain)) { return true; }
+        if (!$op->confirmed_expires_at || $op->confirmed_expires_at > $domain->provider_expires_at) { return false; }
+        $historical = clone $domain; $historical->provider_expires_at = $op->confirmed_expires_at;
+        return self::completed($op, $historical, $binding);
+    }
     /** Retained completion proof only; reusable by invoice creation and grants no execution authority. */
     public static function completed(Operation $op, Domain $domain, \Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): bool
     {
         $p = $op->attempt['reconciliation'] ?? [];
-        if ($op->state !== 'succeeded' || $op->action !== 'register' || $op->service_id !== $domain->service_id
+        if ($op->state !== 'succeeded' || !in_array($op->action, ['register', 'renew'], true) || $op->service_id !== $domain->service_id
             || $op->server_id !== $domain->server_id || $op->registrar_key !== $domain->registrar_key
             || $op->account_fingerprint !== $binding->fingerprint || $op->authority_generation !== $domain->authority_generation
             || $op->confirmed_expires_at?->format('Y-m-d') !== $domain->provider_expires_at?->format('Y-m-d')
@@ -118,7 +103,7 @@ final readonly class RenewalAuthority
         try {
             // A history-discovered ID is completion proof, not a retroactive original response ID.
             $original = clone $op;
-            $reference = $op->attempt['registration']['order_reference'] ?? $op->attempt['evidence']['registration']['orderReference'] ?? null;
+            $reference = $op->attempt[$op->action === 'renew' ? 'renewal' : 'registration']['order_reference'] ?? $op->attempt['evidence']['registration']['orderReference'] ?? null;
             if ($p['source'] === 'accepted_history' && $reference === null) { $original->provider_order_id = null; }
             $attempt = ReconciliationEvidence::attempt($original, $domain, $binding);
             $processed = new \DateTimeImmutable($p['processed_at'] ?? 'invalid');

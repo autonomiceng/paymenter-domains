@@ -175,6 +175,9 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $renew = $this->read(ReadCommand::Renewal, $parts, $context);
         $lock = $this->read(ReadCommand::Lock, $parts, $context);
         $privacy = $this->read(ReadCommand::Privacy, $parts, $context);
+        foreach ([$renew, $lock, $privacy] as $required) {
+            if ($required->status !== 'success') { return $this->neutral($required, new Evidence(domain: $domain)); }
+        }
         $auto = self::flag($renew->value('auto-renew', $renew->value('renewname')));
         if ($renew->value('auto-renew') !== null && $renew->value('renewname') !== null && self::flag($renew->value('renewname')) !== $auto) { $auto = null; }
         $privacyFlag = self::flag($privacy->value('getwppsinfo.wppsenabled'));
@@ -219,7 +222,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         return $reply->status === 'success'
             ? new DriverResult($this->binding(), Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged, $facts)
             : new DriverResult($this->binding(), Disposition::Unknown, in_array($reply->code, ['transport', 'context_refused'], true)
-                ? SendState::PossiblySent : SendState::Sent, ResultReason::Unresolved);
+                ? SendState::PossiblySent : SendState::Sent, ResultReason::Unresolved, $facts);
     }
     private function unsupported(#[\SensitiveParameter] RequestContext $context): DriverResult
     {
@@ -296,7 +299,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             $candidates = $charge->evidence()->candidates;
         }
         $complete = false;
-        if (!$attempt->executionFacts && $attempt->historyAcceptance?->covers($attempt, $context->now())) {
+        if ((!$attempt->executionFacts || $attempt->providerReference === null) && $attempt->historyAcceptance?->covers($attempt, $context->now())) {
             $history = new History($this->client);
             $facts = $history->inspect($attempt, $context); $candidates = $facts->candidates; $complete = $facts->historyComplete;
         }

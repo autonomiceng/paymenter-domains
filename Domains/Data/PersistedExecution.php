@@ -17,7 +17,7 @@ final readonly class PersistedExecution
     public function requireAttempt(AttemptEvidence $attempt): void
     {
         $this->binding->requireMatch($attempt->binding);
-        if (($this->query->action === Action::Renew && $this->renewalMode !== 'ordinary') || !$this->query->matches($attempt->query) || $this->operationKey !== $attempt->operationKey
+        if (($this->query->action === Action::Renew && !in_array($this->renewalMode, ['ordinary', 'grace'], true)) || !$this->query->matches($attempt->query) || $this->operationKey !== $attempt->operationKey
             || $this->orderReference !== $attempt->providerReference || $attempt->execution !== ExecutionRecord::Recorded
             || $this->sendState !== SendState::Sent
             || !in_array($this->disposition, [Disposition::Accepted, Disposition::AcceptedWithDiscrepancy], true)) {

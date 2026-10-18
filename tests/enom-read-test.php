@@ -110,7 +110,8 @@ same(true, $domain?->providerAutoRenew, 'Auto-renew independently read'); same(f
 $wire->payloads['Renewal'] = '<auto-renew>1</auto-renew><renewname>0</renewname>';
 $wire->payloads['Privacy'] = '<GetWPPSInfo><WPPSAllowed>0</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>1</WPPSEnabled></GetWPPSInfo>';
 $domain = $driver->readDomain('example.com', $context())->evidence()->domain; same(null, $domain?->providerAutoRenew, 'Conflicting renew flags unknown'); same(null, $domain?->privacy, 'Contradictory privacy unknown');
-$before = count($wire->calls); $domain = $driver->readDomain('example.com', $context(1))->evidence()->domain;
+$before = count($wire->calls); $partial = $driver->readDomain('example.com', $context(1)); $domain = $partial->evidence()->domain;
+same(Disposition::Unknown,$partial->disposition,'Incomplete flags never grant admission'); same(SendState::PossiblySent,$partial->sendState,'Budget failure provenance retained');
 same(true, $domain?->owned, 'Partial read preserves proven owner'); same(null, $domain?->locked, 'Budget exhaustion leaves flag unknown'); same($before + 1, count($wire->calls), 'Each extra read checks shared budget');
 foreach ([str_replace('example.com', 'other.com', $info), str_replace('SLD="example"', 'SLD="other"', $info), str_replace('DomainNameID="123"', 'DomainNameID="0"', $info), str_replace('</GetDomainInfo>', '<DomainNameID>456</DomainNameID></GetDomainInfo>', $info), str_replace('<Belongs-To>SyNtHeTiC-uId</Belongs-To>', '', $info)] as $bad) {
     $wire->payloads['Info'] = $bad; same(Disposition::Unknown, $driver->readDomain('example.com', $context())->disposition, 'Unproven ownership never positive');

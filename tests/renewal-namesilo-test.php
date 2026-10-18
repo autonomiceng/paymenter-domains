@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/reconciliation-namesilo-test.php';
 $nativeSuccessful = false;
 use Illuminate\Support\Facades\{Cache, DB};
-use Paymenter\Extensions\Servers\Domains\Data\{Action, Disposition, Query, RenewalCode, RenewalRequest, RenewalStatus, RequestBudget, RequestContext, RequestOrigin, ResultReason};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, Disposition, Query, RenewalCode, RenewalRequest, RenewalStatus, RequestBudget, RequestContext, RequestOrigin, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RenewalAcceptance, RenewalAdmission, RenewalAuthority};
 // Ordinary admission uses the completed nonpremium purchase, never a fabricated provider domain ID.
 $renewBindings = new AccountBindings($registry);
@@ -115,7 +115,8 @@ $query = new Query($holding->domain, Action::Renew, 1);
 foreach ([0, 1] as $budget) {
     $assessment = $reader->renewalAssessment($query, $ctx($budget));
     same(Disposition::Unknown, $assessment->disposition, 'Exhausted read budget remains unknown');
-    same(ResultReason::Unverified, $assessment->reason, 'Exhausted budget remains unverified');
+    same(ResultReason::Unresolved, $assessment->reason, 'Exhausted subread budget preserves transient uncertainty');
+    same(SendState::PossiblySent, $assessment->sendState, 'Exhausted subread never claims a confirmed provider response');
 }
 $assessment = $reader->renewalAssessment($query, $ctx(2));
 same(null, $assessment->evidence()->premium, 'Provider never fabricates nonpremium evidence');

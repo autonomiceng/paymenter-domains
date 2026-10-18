@@ -130,3 +130,10 @@ disabled servers, publish accepted capabilities and validate annual renewal;
 contracts; 23 owns saved expected-ID/expiry, auto-renew-off, balance, funding, grace enablement
 and complimentary caps. Neither billing nor dispatch gains a cost floor. Provider acceptance,
 installed hooks and production account identity remain open.
+
+Slice25 supersedes the earlier expired-command charge exclusion: explicitly admitted one-year
+UpdateExpiredDomains accepts its nested ReactivateDomainName acknowledgement/order ID, then
+requires the same exact singleton successful closed Renew item, original order/time binding and
+owned full-term expiry as ordinary renewal. An acknowledgement never supplies actual cost or
+expiry. Unknown mode/product/charge remains unresolved; real grace/order-vocabulary acceptance
+is still required before installed processing. Enom acceptance without an ID needs accepted history.

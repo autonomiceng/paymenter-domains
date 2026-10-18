@@ -4,15 +4,15 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, HistoryAcceptance};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, HistoryAcceptance};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 /** Explicit, revocable account contract; future install/staff workflows supply validated acceptance. */
 final class HistoryAcceptances
 {
     public const KEY = 'domains_history_acceptance';
-    public static function load(AccountBinding $binding): ?HistoryAcceptance
+    public static function load(AccountBinding $binding, Action $action = Action::Register): ?HistoryAcceptance
     {
-        $query = Server::findOrFail($binding->serverId)->settings()->where('key', self::KEY);
+        $query = Server::findOrFail($binding->serverId)->settings()->where('key', self::KEY.($action === Action::Renew ? '_renewal' : ''));
         if (DB::transactionLevel() > 0) { $query->lockForUpdate(); }
         $setting = $query->first();
         if (!$setting) { return null; }
@@ -32,8 +32,9 @@ final class HistoryAcceptances
             $account = Account::where('server_id', $binding->serverId)->lockForUpdate()->firstOrFail();
             $binding->requireMatch(CatalogueAcceptances::binding($account));
             if (!$server->enabled || $server->extension !== 'Domains') { throw new \DomainException('Unavailable server.'); }
-            $setting = $server->settings()->where('key', self::KEY)->lockForUpdate()->first()
-                ?? $server->settings()->make(['key' => self::KEY]);
+            $key = self::KEY.(str_ends_with($acceptance->vocabulary, '_renewal_v1') ? '_renewal' : '');
+            $setting = $server->settings()->where('key', $key)->lockForUpdate()->first()
+                ?? $server->settings()->make(['key' => $key]);
             $setting->encrypted = true; $setting->type = 'string';
             $setting->value = json_encode(['fingerprint' => $binding->fingerprint, 'complete' => true, 'currency' => 'USD',
                 'timezone' => $acceptance->timezone, 'lag' => $acceptance->lagSeconds, 'retention' => $acceptance->retentionSeconds,

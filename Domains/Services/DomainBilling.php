@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 
-/** Native debts only. No provider admission, grants, auto-pay, dispatch or notification delivery. */
+/** Native debts only. Native full-credit settlement only; no provider admission, grants, dispatch or notification delivery. */
 final class DomainBilling
 {
     public function __construct(private readonly AccountBindings $bindings, private readonly NativeDomainGuard $native, private readonly Clock $clock) {}
@@ -31,10 +31,11 @@ final class DomainBilling
             $l = HoldingLocks::take($seed); $d = $l['domain']; $s = $l['service'];
             if ($actor && (int) $actor->id !== (int) $l['user']->id) { throw new \DomainException('Domain renewal is unavailable.'); }
             if (!$d->provider_expires_at) { throw new \DomainException('Confirmed expiry required.'); }
-            $key = 'renew:'.$d->id.':g'.$d->authority_generation.':'.$d->provider_expires_at->format('Y-m-d');
+            $key = RenewalCycles::key($d);
             // Issued debt keeps its calendar, term and amount through later configuration changes.
-            $existing = $l['operations']->firstWhere('operation_key', $key);
-            if ($existing) { return $this->existing($existing, $l, $years); }
+            $existing = $l['operations']->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
+            if ($existing && $existing->safe_code !== 'renewal_cancelled_unpaid') { return $this->existing($existing, $l, $years); }
+            $key = RenewalCycles::next($l);
             $this->bindings->requireProcessingLocked($l['server'], $l['account']);
             if ($d->renewal_policy['automatic_spend_paused'] ?? false) { throw new \DomainException('Renewal spending requires review.'); }
             $settings = $l['settings']->pluck('value', 'key');
@@ -54,9 +55,10 @@ final class DomainBilling
             $prior = $l['operations']->firstWhere('operation_key', $anchor['operation_key'] ?? null);
             if (($anchor['expiry'] ?? null) !== $calendar['expiry'] || !$prior
                 || !RenewalAuthority::completed($prior, $d, CatalogueAcceptances::binding($l['account']))
-                || $l['operations']->contains(fn ($op) => $op->id !== $prior->id && !OperationTerminalProof::safe($op, $d))) {
+                || $l['operations']->contains(fn ($op) => $op->id !== $prior->id && !RenewalAuthority::resolved($op, $d, CatalogueAcceptances::binding($l['account'])))) {
                 throw new \DomainException('Confirmed renewal anchor or prior outcome requires review.');
             }
+            RenewalAuthority::requireCostAnchor($prior);
             // Holding retail is independent of current seller, sales/renew flags and provider cost.
             $price = $this->native->project($l);
             $amount = PricingRule::total($price['annual_gross'], $years);
@@ -64,17 +66,26 @@ final class DomainBilling
             $invoice->send_create_email = false; $invoice->save();
             $item = $invoice->items()->create(['reference_type' => null, 'reference_id' => null, 'quantity' => 1, 'price' => $amount,
                 'description' => 'Renew '.$d->domain.' ('.$years.' '.($years === 1 ? 'year' : 'years').')']);
+            $rate = $l['prices']->where('term', 1)->where('currency', 'USD')->where('account_fingerprint', $d->account_fingerprint)->first();
+            $cap = $rate?->wholesale !== null ? ['amount' => PricingRule::decimal(PricingRule::units(PriceCatalogue::cost($rate->wholesale)) * $years, 4), 'currency' => 'USD'] : null;
             Operation::create(['domain_id' => $d->id, 'service_id' => $s->id, 'server_id' => $d->server_id,
                 'registrar_key' => $d->registrar_key, 'account_fingerprint' => $d->account_fingerprint, 'authority_generation' => $d->authority_generation,
                 'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id, 'operation_key' => $key, 'action' => 'renew', 'term' => $years,
                 'funding_basis' => 'paid_invoice', 'state' => 'awaiting_payment', 'amount' => $amount, 'currency' => 'USD',
                 'base_expires_at' => $calendar['expiry'], 'expected_expires_at' => $d->provider_expires_at->addYearsNoOverflow($years)->format('Y-m-d'),
                 'policy' => ['calendar' => $calendar, 'price' => $price, 'renewal' => ['confirmed_revision' => $d->confirmed_revision,
-                    'provider_domain_id' => $d->provider_domain_id, 'term' => $years, 'product_id' => (int) $s->product_id, 'annual_plan_id' => (int) $s->plan_id,
+                    'provider_domain_id' => $d->provider_domain_id, 'cost_cap' => $cap, 'term' => $years, 'product_id' => (int) $s->product_id, 'annual_plan_id' => (int) $s->plan_id,
                     'user_id' => (int) $s->user_id, 'order_id' => (int) $s->order_id]], 'payload' => []]);
             if ($price['staff_alert'] !== null || $price['retained']) {
                 $d->update(['observation' => [...($d->observation ?? []), 'renewal_price_alert' => ['operation_key' => $key,
                     'code' => $price['staff_alert'] ?? 'unknown_margin', 'at' => $this->clock->now()->format(DATE_ATOM)]]]);
+            }
+            // Source parity: full native account credit only; never create an extension settlement row.
+            $credit = $l['credit'];
+            if (self::enabled($settings->get('credits_auto_use', false)) && self::enabled(config('settings.credits_auto_use', false))
+                && $credit && PricingRule::minor($credit->amount) >= PricingRule::minor($amount)) {
+                $credit->amount = PricingRule::decimal(PricingRule::minor($credit->amount) - PricingRule::minor($amount)); $credit->save();
+                \App\Helpers\ExtensionHelper::addPayment($invoice, null, $amount, isCreditTransaction: true);
             }
             return $invoice->fresh();
         });

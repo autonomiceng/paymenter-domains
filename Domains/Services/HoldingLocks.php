@@ -10,16 +10,20 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Pri
 /** Internal billing/save prefix, joining exactly one caller-owned transaction. Never performs I/O. */
 final class HoldingLocks
 {
-    public static function take(Domain $seed): array
+    public static function take(Domain $seed, ?int $staffId = null): array
     {
         if (DB::transactionLevel() !== 1) { throw new \LogicException('Holding locks require the outer transaction.'); }
-        $user = User::whereKey($seed->user_id)->lockForUpdate()->firstOrFail();
+        $users = User::whereKey(array_filter([$seed->user_id, $staffId]))->orderBy('id')->lockForUpdate()->get();
+        $user = $users->firstWhere('id', $seed->user_id) ?? throw new \DomainException('Missing owner.');
+        $staff = $staffId === null ? null : $users->firstWhere('id', $staffId);
+        if ($staff) { $staff->setRelation('role', $staff->role()->lockForUpdate()->first()); }
         $user->setRelation('properties', $user->properties()->orderBy('id')->lockForUpdate()->get());
+        $credit = $user->credits()->where('currency_code', 'USD')->lockForUpdate()->first();
         // Current locking reads also see invoices committed after an older native cron read view.
         // All owner invoices precede ALL services, matching InvoiceFunding, including mixed invoices.
         $invoices = Invoice::where('user_id', $user->id)->orderBy('id')->lockForUpdate()->get(); $ids = $invoices->pluck('id');
         $items = InvoiceItem::whereIn('invoice_id', $ids)->orderBy('id')->lockForUpdate()->get();
-        InvoiceTransaction::whereIn('invoice_id', $ids)->orderBy('id')->lockForUpdate()->get();
+        $transactions = InvoiceTransaction::whereIn('invoice_id', $ids)->orderBy('id')->lockForUpdate()->get();
         $serviceIds = $items->where('reference_type', (new Service)->getMorphClass())->pluck('reference_id')->push($seed->service_id)->unique();
         $services = Service::whereKey($serviceIds)->orderBy('id')->lockForUpdate()->get();
         $products = Product::whereKey($services->pluck('product_id'))->orderBy('id')->lockForUpdate()->get();
@@ -41,7 +45,7 @@ final class HoldingLocks
         $account = Account::where('server_id', $seed->server_id)->lockForUpdate()->firstOrFail();
         $settings = $server->settings()->orderBy('id')->lockForUpdate()->get();
         $tld = Tld::where(['server_id' => $seed->server_id, 'tld' => $seed->tld])->lockForUpdate()->firstOrFail();
-        Price::where(['server_id' => $seed->server_id, 'tld' => $seed->tld, 'action' => 'renew'])->orderBy('id')->lockForUpdate()->get();
+        $prices = Price::where(['server_id' => $seed->server_id, 'tld' => $seed->tld, 'action' => 'renew'])->orderBy('id')->lockForUpdate()->get();
         $domain = Domain::whereKey($seed->id)->lockForUpdate()->firstOrFail();
         $operations = Operation::where('domain_id', $seed->id)->orderBy('id')->lockForUpdate()->get();
         $c = $domain->snapshot['checkout'] ?? [];
@@ -68,6 +72,8 @@ final class HoldingLocks
             }
         }
         $service->setRelation('user', $user);
-        return compact('domain', 'service', 'product', 'plan', 'user', 'tax', 'server', 'account', 'settings', 'tld', 'operations', 'invoices', 'items', 'cancel');
+        $rows = [$user, ...$user->properties, ...$invoices, ...$items, ...$transactions, ...$services, ...$products, ...$plans, ...$cancel, ...$configs, ...$properties, ...$markers, $server, $account, ...$settings, $tld, ...$prices, $domain, ...$operations];
+        $stamp = hash('sha256', json_encode(array_map(static fn ($row) => $row->getRawOriginal(), $rows), JSON_THROW_ON_ERROR));
+        return compact('credit', 'staff', 'stamp', 'prices', 'transactions', 'domain', 'service', 'product', 'plan', 'user', 'tax', 'server', 'account', 'settings', 'tld', 'operations', 'invoices', 'items', 'cancel');
     }
 }

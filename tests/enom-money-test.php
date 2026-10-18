@@ -165,7 +165,8 @@ foreach (['11/1/2026 1:30:00 AM', '3/8/2026 2:30:00 AM', '11/7/2026 5:40 AM', '2
 }
 $renewHeader = $header; $renewHeader['orderdetail']['producttype'] = 'Renew';
 same('8.95', OrderCharge::read($attempt(Action::Renew), new PersistedExecution($binding, new Query('example.com', Action::Renew, 1), 'original', Disposition::Accepted, SendState::Sent, '9001', 'ordinary'), $order($renewHeader))?->charge?->amount, 'Exact Extend/Renew pair accepted');
-same(null, OrderCharge::read($attempt(Action::Renew), new PersistedExecution($binding, new Query('example.com', Action::Renew, 1), 'original', Disposition::Accepted, SendState::Sent, '9001', 'grace'), $order($renewHeader)), 'Grace has no invented ordinary order-charge contract');
+same('8.95', OrderCharge::read($attempt(Action::Renew), new PersistedExecution($binding, new Query('example.com', Action::Renew, 1), 'original', Disposition::Accepted, SendState::Sent, '9001', 'grace'), $order($renewHeader))?->charge?->amount, 'Explicit grace execution requires the same exact singleton Renew charge evidence');
+same(null, OrderCharge::read($attempt(Action::Renew), new PersistedExecution($binding, new Query('example.com', Action::Renew, 1), 'original', Disposition::Accepted, SendState::Sent, '9001'), $order($renewHeader)), 'Unknown renewal mode cannot invent an ordinary charge contract');
 same(null, OrderCharge::read($attempt(Action::Renew), $execution, $order($renewHeader)), 'Retained registration cannot authorize a renewal charge');
 $wire->data['Order'] = '<Order><OrderID>9001</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><OrderDetail><Description>example.com</Description><ProductType>Register</ProductType><Quantity>1</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>8.95</AmountPaid></OrderDetail></Order>';
 $result = $driver->orderCharge($attempt(expected: new Money('8.9400', 'USD')), $execution, $context(1));

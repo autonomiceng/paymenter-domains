@@ -21,6 +21,7 @@ $claims->finish($sealed, new DriverResult($binding, Disposition::Accepted, SendS
     new Evidence(registration: new RegistrationEvidence(Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op, $domain), null, null, null, ['auto_renew']))));
 $wire = new class implements DeadlineTransport {
     public int $calls = 0; public array $commands = []; public string $status = 'Active';
+    public string $historyId = '901'; public string $historyAction = 'registration'; public string $historyDate = '2026-10-18 05:00:01';
     public string $expiry = '2027-10-18'; public string $auto = 'No'; public bool $quote = true;
     public string $balance = '100.00'; public string $price = '8.95'; public array $omit = []; public $during = null;
     public function send(WireEnvironment $e, WireContext $c, RegistrarRequest $r, string $key): TransportResponse { throw new LogicException; }
@@ -30,9 +31,9 @@ $wire = new class implements DeadlineTransport {
         if ($r->command === 'getDomainInfo') { same(['domain' => 'native-history.com'], $r->parameters(), 'Exact account-scoped name read'); }
         if ($this->during) { $hook = $this->during; $this->during = null; $hook($r->command); }
         $reply = match ($r->command) {
-            'listOrders' => ['order' => [['order_number' => '901']]],
-            'orderDetails' => ['order_number' => '901', 'order_date' => '2026-10-18 05:00:01', 'total' => '8.95',
-                'order_details' => [['description' => 'native-history.com - registration', 'years_qty' => '1', 'status' => 'Processed', 'subtotal' => '8.95']]],
+            'listOrders' => ['order' => [['order_number' => $this->historyId]]],
+            'orderDetails' => ['order_number' => $this->historyId, 'order_date' => $this->historyDate, 'total' => '8.95',
+                'order_details' => [['description' => 'native-history.com - '.$this->historyAction, 'years_qty' => '1', 'status' => 'Processed', 'subtotal' => '8.95']]],
             'getDomainInfo' => ['created' => '2026-10-18', 'expires' => $this->expiry, 'status' => $this->status, 'locked' => 'Yes', 'private' => 'No', 'auto_renew' => $this->auto],
             'getPrices' => [$this->quote ? 'com' : 'net' => ['registration' => '8.95', 'renew' => $this->price, 'transfer' => '8.95']],
             'getAccountBalance' => ['balance' => $this->balance],

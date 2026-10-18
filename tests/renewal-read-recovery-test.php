@@ -1,0 +1,32 @@
+<?php
+// Required renewal subread recovery; MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/Support/renewal-execution.php';
+use Illuminate\Support\Facades\Cache;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
+foreach(['assessment','flags','renewal','lock','privacy','extend','quote','expired','balance'] as $phase){
+    [$op,$d,$b]=$makeRenewal('renew-read-'.$phase.'.com'); [$engine,$writer]=$compose($b); $writes=$state->writes;
+    if($phase==='assessment'){ $state->fail=ReadCommand::Info; }
+    elseif($phase==='flags'){ $state->duringCommand=ReadCommand::Check; $state->during=static fn()=>$state->fail=ReadCommand::Info; }
+    else{ $state->fail=match($phase){ 'renewal'=>ReadCommand::Renewal,'lock'=>ReadCommand::Lock,'privacy'=>ReadCommand::Privacy,'extend'=>ReadCommand::RenewalInfo,'quote'=>ReadCommand::Check,'expired'=>ReadCommand::Expired,'balance'=>ReadCommand::Balance }; }
+    if($phase==='expired'){ $clock->instant=new DateTimeImmutable('2027-10-18T12:00:01Z'); }
+    same('queued',$engine->run($op->id,$writer)->state,'Normalized '.$phase.' transport outage stays retryable');
+    same($phase==='balance'?'registrar_balance_insufficient_or_unknown':'renewal_reads_unavailable',$op->fresh()->safe_code,'Typed transient read reason retained'); same($writes,$state->writes,'Outage sends nothing');
+    $state->fail=null; $state->duringCommand=null; Cache::flush();
+    same('pending',$engine->run($op->id,$writer)->state,'Recovered '.$phase.' reads allow the original paid obligation');
+    same($writes+1,$state->writes,'Recovery sends once');
+}
+foreach ([1,2] as $pass) {
+    [$op,$d,$b]=$makeRenewal('renew-pause-'.$pass.'.com'); [$engine,$writer]=$compose($b); $writes=$state->writes;
+    $hook=static function () use (&$hook,$state,$pass,$renewBindings,$b) {
+        if (count(array_filter($state->calls,static fn($c)=>$c===ReadCommand::Balance))===$pass) { $renewBindings->setProcessing($b->serverId,false); }
+        else { $state->during=$hook; }
+    };
+    $state->duringCommand=ReadCommand::Balance; $state->during=$hook;
+    same('queued',$engine->run($op->id,$writer)->state,'Processing pause during admission pass '.$pass.' stays retryable');
+    same('renewal_acceptance_required',$op->fresh()->safe_code,'Configuration reason survives authority recheck'); same($writes,$state->writes,'Paused processing sends nothing');
+    same([],$op->fresh()->attempt??[],'Pause precedes sealing');
+    $renewBindings->setProcessing($b->serverId,true); $state->during=null; $state->duringCommand=null; Cache::flush();
+    same('pending',$engine->run($op->id,$writer)->state,'Resumed processing recovers the same obligation'); same($writes+1,$state->writes,'Resumption sends exactly once');
+}
+echo "Every required Enom renewal subread recovers without holding or replay\n"; $nativeSuccessful=true;

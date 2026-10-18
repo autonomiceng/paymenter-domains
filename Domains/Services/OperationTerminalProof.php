@@ -29,9 +29,13 @@ final class OperationTerminalProof
     public static function safe(Operation $op, Domain $domain): bool
     {
         $a = $op->attempt ?? [];
-        return $op->authority_generation > 0 && is_string($op->account_fingerprint) && $op->state === 'rejected' && $op->action === 'register' && $op->account_fingerprint === $domain->account_fingerprint
+        return $op->authority_generation > 0 && is_string($op->account_fingerprint) && $op->state === 'rejected' && in_array($op->action, ['register', 'renew'], true) && $op->account_fingerprint === $domain->account_fingerprint
             && $op->registrar_key === $domain->registrar_key && $op->server_id === $domain->server_id && $op->service_id === $domain->service_id
             && $op->authority_generation === $domain->authority_generation && $op->confirmed_expires_at === null && $op->provider_order_id === null
+            && (
+                $op->action === 'register' || (($a['terminal']['operation_key'] ?? null) === $op->operation_key
+                && ($a['terminal']['generation'] ?? null) === $op->authority_generation
+                && $op->safe_code === 'renewal_cancelled_unpaid' && ($a['terminal']['invoice_id'] ?? null) === $op->invoice_id))
             && ($a['disposition'] ?? null) === 'rejected' && ($a['rejection_basis'] ?? null) === 'definitely_unsent'
             && ($a['send_state'] ?? null) === 'definitely_unsent' && ($a['seal'] ?? null) === 'absent'
             && !array_intersect(array_keys($a), ['execution', 'dispatch_attempted_at', 'provider_reference', 'evidence', 'registration'])

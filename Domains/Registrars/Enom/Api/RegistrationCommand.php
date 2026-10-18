@@ -6,6 +6,8 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api;
 enum RegistrationCommand: string
 {
     case Purchase = 'Purchase';
+    case Renew = 'Extend';
+    case GraceRenew = 'UpdateExpiredDomains';
     case Nameservers = 'ModifyNS';
     case NameserverReadback = 'GetDNS';
     public function bodyLimit(): int { return 1048576; }

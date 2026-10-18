@@ -18,7 +18,7 @@ class Operation extends Model
     protected static function booted(): void
     {
         static::updating(static function (self $operation): void {
-            if ($operation->isDirty(['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis'])) {
+            if ($operation->isDirty(['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis', 'authorized_by', 'funding_reason'])) {
                 throw new \DomainException('Operation binding and action are immutable.');
             }
         });
@@ -27,7 +27,7 @@ class Operation extends Model
             if (isset($old['renewal']) && $operation->isDirty(['base_expires_at', 'expected_expires_at'])) {
                 throw new \DomainException('Issued renewal expiry obligations are frozen.');
             }
-            foreach (['checkout', 'price', 'seller_revision', 'calendar', 'renewal'] as $key) {
+            foreach (['checkout', 'price', 'seller_revision', 'calendar', 'renewal', 'complimentary'] as $key) {
                 if (array_key_exists($key, $old) && ($new[$key] ?? null) !== $old[$key]) { throw new \DomainException('Checkout evidence is frozen.'); }
             }
             $old = $operation->getOriginal('cost') ?? []; $new = $operation->cost ?? [];
@@ -57,7 +57,7 @@ class Operation extends Model
                 && (($old['seal'] ?? null) !== 'absent' || ($new['seal'] ?? null) !== 'sealed' || $operation->action !== 'register')) {
                 throw new \DomainException('Registration admission can only be recorded at the original seal.');
             }
-            foreach (['claim_key', 'dispatch_attempted_at', 'authorized_cost', 'registration_admission', 'execution', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections', 'reconciliation', 'terminal'] as $key) {
+            foreach (['claim_key', 'dispatch_attempted_at', 'authorized_cost', 'renewal_mode', 'renewal', 'registration_admission', 'execution', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections', 'reconciliation', 'terminal'] as $key) {
                 if (array_key_exists($key, $old) && (!array_key_exists($key, $new) || $new[$key] !== $old[$key])) {
                     throw new \DomainException('Attempt evidence is write-once.');
                 }

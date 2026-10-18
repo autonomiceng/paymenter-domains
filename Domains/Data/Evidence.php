@@ -10,7 +10,7 @@ final readonly class Evidence
     public function __construct(public ?DomainSnapshot $domain = null, public ?QuoteEvidence $quote = null,
         public ?Money $charge = null, public ?Money $balance = null, public ?bool $available = null,
         public ?bool $premium = null, public RenewalStatus $renewal = RenewalStatus::Unknown,
-        array $candidates = [], public ?RegistrationEvidence $registration = null, public bool $historyComplete = false)
+        array $candidates = [], public ?RegistrationEvidence $registration = null, public bool $historyComplete = false, public ?RenewalEvidence $renewalExecution = null)
     {
         if (count($candidates) > 200) { throw new \InvalidArgumentException('Reconciliation candidates exceed the bounded budget.'); }
         $copy = [];

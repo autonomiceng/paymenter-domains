@@ -40,7 +40,7 @@ final class ResponseParser
         if (isset($data['responsecode']) && (!is_string($data['responsecode']) || !preg_match('/^1[0-9]{5}$/D', $data['responsecode']))) {
             return new ProtocolResult('unknown', $code);
         }
-        $codes = $command === ReadCommand::Check ? ['200', '210', '211'] : ($command === RegistrationCommand::Purchase ? ['200', '1300'] : ['200']);
+        $codes = $command === ReadCommand::Check ? ['200', '210', '211'] : ($command instanceof RegistrationCommand && in_array($command, [RegistrationCommand::Purchase, RegistrationCommand::Renew, RegistrationCommand::GraceRenew], true) ? ['200', '1300'] : ['200']);
         if (isset($data['rrpcode']) && !in_array($data['rrpcode'], $codes, true)) {
             return new ProtocolResult('unknown', $code);
         }

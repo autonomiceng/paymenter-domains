@@ -743,3 +743,41 @@ original retained service ID as well as the proposed ID, preventing primary-key 
 the binding guard. Bound invoice-item protection likewise checks original and proposed item IDs.
 Deletion guards check both original and proposed native IDs: Eloquent deletes using the original
 primary key even when a caller changes the in-memory ID before delete(). No key spoof bypass is allowed.
+
+## Renewal execution and completion (slice25)
+
+RenewalAuthority now shares HoldingLocks, including signed current payments. The request names
+exactly its virgin obligation; all other unresolved work refuses. Paid null-reference renewal
+lines require the current full native invoice and net succeeded transactions, never paid status
+alone. Bound InvoiceTransaction financial edits/deletes refuse; native callbacks may update status/fees without changing signed fields.
+Native full account credit can settle newly issued debt through ExtensionHelper::addPayment.
+Retiring a transaction-free, unsealed unpaid cycle cancels/retains its debt and records
+renewal_cancelled_unpaid; a distinct :replacement:N key preserves each original obligation.
+Any later financial activity on retired debt prevents replacement execution.
+
+RenewalCycles authorizes complimentary terms with fresh staff manage/fund permission, reason,
+exact expiry/generation/years and explicit USD cap. A cycle gift preserves native price/mode.
+Zero service price alone grants nothing; expired preflight leases may retry before sealing.
+RenewalExecution reserves one account slot, repeats complete fresh admission, checks frozen cap
+and current native authority, then commits one seal before opening an exact-object, single-use
+RenewalWriter grant. Final consume repeats local acceptance/funding/binding/deadline checks.
+Named Extend/UpdateExpiredDomains or annual renewDomain ports have no default network sender.
+Below-cost retail never holds dispatch; fresh cost over the fixed obligation cap pauses spending
+and retains a staff alert. Typed transient admission refusals stay queued; paid unsendable debts retain net-funding
+refund candidates for26. Exact-live-grant prewire refusal records definitely_unsent; no refund occurs.
+Issued paid obligations survive renew preferences, tariff and calendar changes; service cancellation requires review.
+Credit auto-use requires server `credits_auto_use` (default off) and native `settings.credits_auto_use`; both must be true. Unknown costs refuse.
+
+Unpaid pending invoices remain payable after an early execution check. Acknowledgements become pending.
+RenewalCompletion counts at most five covered original-attempt polls (25 reads/250 seconds each), requiring one exact USD order charge/time/term plus current
+owned full-term provider expiry and matching provider ID. No-ID outcomes require separately
+accepted renewal history vocabulary/timezone/lag/retention. Completion advances the billing anchor
+and revision; native expiry stays null. Original registration nonpremium proof stays on registration;
+actual charge differences retain Cost refusal before future billing or admission. An incurred overrun
+completes evidence and pauses future spending. Revocation after send cannot erase that outcome.
+Expired running attempts quarantine without replay, including when writes are disabled.
+
+These are internal, default-off seams.26 owns refunds;27/28 transfer anchors;31/35 scheduling,
+held readmission and audited policy workflows;36/37 staff acceptance/history recovery;38 delivery;
+39 installed singleton hooks, fresh binding-scoped policy, restores-disabled acceptance, native
+financial transition integration, queue/deadline/shared-cache and paired MariaDB lock acceptance.

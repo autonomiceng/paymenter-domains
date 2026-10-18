@@ -133,20 +133,22 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         catch (\InvalidArgumentException) {}
         // Successful account-scoped getDomainInfo observes ownership, not this attempt's execution.
         return new DomainSnapshot($this->binding(), $name, true, $expiry,
-            $reply->value('auto_renew') === 'Yes', $reply->value('private') === 'Yes', $reply->value('locked') === 'Yes');
+            $reply->value('auto_renew') === 'Yes', $reply->value('private') === 'Yes', $reply->value('locked') === 'Yes', active: $reply->value('status') === 'Active');
     }
     public function renewalAssessment(Query $query, #[\SensitiveParameter] RequestContext $context): DriverResult
     {
         $this->binding()->requireMatch($context->binding);
         if ($query->action !== Action::Renew) { return $this->unsent(ResultReason::Unsupported); }
         $reply = $this->read(Request::domainInfo($query->name), $context);
-        $domain = $reply->outcome === Outcome::Success ? $this->snapshot($query->name, $reply) : null;
+        if ($reply->outcome !== Outcome::Success) { return $this->neutral($reply); }
+        $domain = $this->snapshot($query->name, $reply);
         $facts = new Evidence(domain: $domain);
         // Only exact Active plus a safely future UTC calendar date excludes grace/restoration.
         $today = $context->now()->setTimezone(new \DateTimeZone('UTC'))->setTime(0, 0);
         if ($domain?->expiry && $reply->value('status') === 'Active'
             && $domain->expiry->value >= $today->modify('+'.self::ORDINARY_EXPIRY_MARGIN_DAYS.' days')->format('Y-m-d')) {
             $quote = $this->quote($query, $context);
+            if ($quote->disposition !== Disposition::Accepted && $quote->sendState === SendState::PossiblySent) { return $quote; }
             if ($quote->disposition === Disposition::Accepted && $quote->evidence()->quote) {
                 $q = $quote->evidence()->quote;
                 // The margin must still hold when the engine finishes its unlocked read window.

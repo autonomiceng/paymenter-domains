@@ -196,3 +196,9 @@ manual/scheduled gates, old-seller retail, below-cost/unknown-margin alerts, nat
 immutable issued debt and actual Filament recalc/persistence methods under an explicit transaction. Tax, plan-null/coupon, configs,
 annual mapping, zero-price and stale-price/lifecycle scenarios run offline against Paymenter1.5.9.
 Provider renewal25, refunds26, reminders38 and installed39/MariaDB races remain unproved.
+
+Slice25 adds split offline renewal execution, safety, cycles, completion and NameSilo execution suites.
+They cover real native payment/credit routing, late/preference/stale obligations, retained unpaid
+replacement keys, audited complimentary fixed terms/caps, final provider rechecks, one-attempt
+writes and unique charge/expiry completion across repeated anchors. Provider ports are injected
+synthetic exchanges; no registrar network or installed scheduler acceptance is claimed.

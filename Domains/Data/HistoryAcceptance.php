@@ -11,14 +11,15 @@ final readonly class HistoryAcceptance
     {
         if (($binding->registrarKey === 'enom' && $timezone !== 'America/Los_Angeles') || !in_array($timezone, \DateTimeZone::listIdentifiers(), true) || $lagSeconds < 0 || $lagSeconds > 86400
             || $retentionSeconds < 86400 || $retentionSeconds > 31536000
-            || $vocabulary !== $binding->registrarKey.'_registration_v1') {
+            || !in_array($vocabulary, [$binding->registrarKey.'_registration_v1', $binding->registrarKey.'_renewal_v1'], true)) {
             throw new \InvalidArgumentException('History contract is unavailable.');
         }
     }
     public function covers(AttemptEvidence $attempt, \DateTimeImmutable $now): bool
     {
         $this->binding->requireMatch($attempt->binding);
-        return $attempt->query->action === Action::Register && $attempt->windowEnd >= $attempt->windowStart
+        return in_array($attempt->query->action, [Action::Register, Action::Renew], true)
+            && $this->vocabulary === $this->binding->registrarKey.($attempt->query->action === Action::Renew ? '_renewal_v1' : '_registration_v1') && $attempt->windowEnd >= $attempt->windowStart
             && $attempt->windowEnd->getTimestamp() - $attempt->windowStart->getTimestamp() <= 300
             && $now->getTimestamp() >= $attempt->windowEnd->getTimestamp() + $this->lagSeconds
             && $now->getTimestamp() - $attempt->windowStart->getTimestamp() < $this->retentionSeconds;
