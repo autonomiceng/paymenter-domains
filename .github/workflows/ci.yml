@@ -54,4 +54,28 @@ jobs:
               assert not (path.name == '.env' or (path.name.startswith('.env.') and path.name != '.env.example')), f'Environment file tracked: {name}'
               assert not path.name.endswith(('.pem', '.key', '.sql', '.sqlite', '.cnf', '.private')), f'Private file tracked: {name}'
               assert '.private.' not in path.name, f'Private file tracked: {name}'
-          print('Repository hygiene passed. No runtime compatibility tests exist yet.')
+          print('Repository hygiene passed.')
+
+  offline:
+    name: Offline PHP suites
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install runtime system libraries
+        run: sudo apt-get update && sudo apt-get install -y libxml2 libargon2-1 libsodium23 libcurl4t64
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .cache/php-runtime/*.deb
+          key: namesilo-php-${{ runner.os }}-${{ hashFiles('scripts/php-runtime-packages.json') }}
+      - run: python3 scripts/bootstrap.py --download
+      - run: scripts/test.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: offline-test-failures
+          path: /tmp/namesilo-tests-*
+          include-hidden-files: true
+          if-no-files-found: ignore

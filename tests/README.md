@@ -1,5 +1,12 @@
 # Offline tests
 
-No extension tests exist yet. Repository CI checks scaffolding only.
+Run `scripts/test.py` after [bootstrap](../docs/testing.md). Every `*-test.php` under this directory
+is discovered; no missing-suite success. `bootstrap.php` supplies the standalone autoloader and
+strict assertions. The runner suite verifies pinned PHP and disabled network/process entry points.
 
-Implementation should introduce synthetic provider-response contracts, isolated native Paymenter billing/ownership tests, UI permission checks, and package inventory checks. Network access must be disabled in ordinary runtime test suites. Account/provider acceptance is a separate authorized activity, and synthetic fixtures must be described as synthetic.
+Provider JSON fixtures must be labelled **synthetic** and use example.com/.net/.org/.us,
+documentation IPs and placeholder keys. Fake transport/cURL functions inspect requests without
+network access. Tests never load credentials, an installed Paymenter app or customer data.
+
+No native Paymenter, database, billing, UI or provider acceptance is claimed. Add those harnesses
+with their implementation; keep ordinary runtime suites offline.
