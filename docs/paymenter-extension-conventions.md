@@ -26,4 +26,4 @@ Use extension-owned tables and identifiers, with a reviewed schema. Preserve reg
 
 ## Attribution
 
-New scaffold material is MIT-licensed to Autonomic Engineering. Future source adapted from Enom must retain its original MIT notices, including Beco Technologies attribution where applicable, with source revision and contribution provenance recorded. No runtime source has been copied into this scaffold.
+New scaffold material is MIT-licensed to Autonomic Engineering. Future source adapted from Enom must retain its original MIT notices, with source revision and contribution provenance recorded. No runtime source has been copied into this scaffold.
