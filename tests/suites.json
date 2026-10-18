@@ -74,7 +74,8 @@
     "tests/observation-budget-test.php",
     "tests/observation-test.php",
     "tests/observation-namesilo-test.php",
-    "tests/observation-catalogue-test.php"
+    "tests/observation-catalogue-test.php",
+    "tests/storefront-test.php"
   ],
   "ui": [],
   "runner": [
