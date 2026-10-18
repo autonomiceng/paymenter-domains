@@ -8,7 +8,8 @@
   ],
   "native": [
     "tests/native-fixture-test.php",
-    "tests/schema-test.php"
+    "tests/schema-test.php",
+    "tests/reservation-test.php"
   ],
   "ui": [],
   "runner": [

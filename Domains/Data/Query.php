@@ -17,9 +17,6 @@ final readonly class Query
     }
     public static function requireName(string $name): void
     {
-        if (strlen($name) > 253 || !preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/D', $name)
-            || preg_match('/(?:^|\.)[a-z0-9]{2}--/', $name)) {
-            throw new \InvalidArgumentException('Canonical ordinary ASCII name required.');
-        }
+        \Paymenter\Extensions\Servers\Domains\Data\CanonicalName::requireCanonical($name);
     }
 }

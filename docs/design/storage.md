@@ -12,7 +12,7 @@ SQLite is exercised offline; MariaDB DDL/locking acceptance remains a release ga
 
 - `enom_domains` → `domains_domains`, `enom_operations` → `domains_operations`, `enom_tlds` →
   `domains_tlds`: preserve IDs, native service/user/server/invoice/item references, operation keys,
-  states, dates, generations and decimal meanings. No cascading foreign keys delete retained history.
+  states, dates and decimal meanings; map proven source generation zero as specified below. No cascading foreign keys delete retained history.
 - Existing columns preserve their Enom meanings, including encrypted snapshot/renewal policy/
   observation and payload/policy/cost, provider IDs, nullable global reservation, exact-term
   registration costs, annual renewal/transfer costs, sale holds and per-TLD rule overrides.
@@ -85,3 +85,39 @@ verifier must describe the final combined schema, with explicit versioned upgrad
 never run an obsolete foundation verifier against a later schema. Collation/type drift fails closed.
 Partial DDL failure requires restoring/verifying the full retained backup (or an audited proof that
 all affected tables are empty before restarting fresh, with a reviewed recovery tool in slice 39); reinstall never invents lost history.
+
+## Reservation authority (slice 05)
+
+`CanonicalName` is shared by neutral queries, NameSilo parsing and domain creation. It accepts
+one-character labels, ordinary ASCII, case/one trailing dot normalization and explicit compound
+TLD suffixes. It refuses IDNs, reserved hyphen forms, subdomains for a selected TLD and control
+characters. Syntax never establishes availability, premium eligibility or ownership.
+
+`DomainReservations::reserve` creates the ledger reservation in a transaction. Checkout must wrap
+native service/invoice/operation writes in its outer transaction, acquire policy/catalogue locks
+first, and roll back on its duplicate exception. The global unique key arbitrates absent-row races.
+Release locks the domain then all operations in ID order. Every operation must be rejected with
+matching service/account and positive generation and explicit encrypted terminal proof. Missing
+proof, domain-level provider IDs/expiry, active/pending/unknown work and ownership block both paths.
+The unsent path also refuses any execution, seal ambiguity or operation-level provider reference/ID.
+The sent/provider-proof path may retain operation IDs, execution and seals; explicit rejection and
+no-charge proof must resolve them.
+Cancelled records only release with definitely-unsent proof. A provider-proven rejection can
+release an acquisition with explicit sent/no-charge proof. Native cancellation alone never releases.
+No automatic refund, fallback, replay or invoice cancellation behavior is added.
+
+Normalized `attempt` terminal proof fields are `disposition`, `rejection_basis`, `send_state`,
+`seal` (unsent path), and `charge_absent` (provider proof). Presence of `execution` or
+`provider_reference` or `dispatch_attempted_at`, even null, blocks unsent classification; legacy `cost.execution` and
+`policy.dispatch_attempted_at` also block it. Conversion must positively derive terminal proof,
+never seed it merely from a rejected status. Slice 19/22 owns authoritative evidence recording.
+Contradictory charges, order candidates or actual cost block both paths. Domain and operation
+rows refuse ordinary deletion; operation bindings/actions and holding bindings are immutable.
+New holdings start at generation one; historical zero/null generations cannot release.
+Slice 41 atomically maps a proven Enom generation-zero authority to generation one on the domain
+and every operation proven to belong to that authority, keeping zero in the read-only source audit.
+This is an epoch translation, not proof of an operation's account/terminal outcome. Unknown
+operation authority stays null; incomplete/contradictory mappings stop conversion, never default
+to one. Valid converted terminal reservations can release only after all ordinary proof gates pass. Only the reservation service clears reservations in ordinary runtime. Raw SQL/quiet saves are
+reserved for reviewed conversion/maintenance and can bypass model guards. These SQLite fixtures
+prove transaction rollback and uniqueness, not MariaDB concurrent checkout or lock ordering.

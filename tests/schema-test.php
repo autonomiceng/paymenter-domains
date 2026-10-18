@@ -25,7 +25,7 @@ $domain = Domain::create($binding + ['id' => 41, 'service_id' => 51, 'user_id' =
     'domain' => 'example.com', 'reservation_name' => 'example.com', 'sld' => 'example', 'tld' => 'com', 'status' => 'pending',
     'snapshot' => ['contact' => 'synthetic'], 'renewal_policy' => ['cap' => '10.00'], 'observation' => ['execution' => null]]);
 $operation = Operation::create($binding + ['id' => 71, 'domain_id' => 41, 'service_id' => 51,
-    'invoice_id' => 81, 'invoice_item_id' => 91, 'operation_key' => 'fixture:register', 'authority_generation' => 0,
+    'invoice_id' => 81, 'invoice_item_id' => 91, 'operation_key' => 'fixture:register', 'authority_generation' => 1,
     'action' => 'register', 'state' => 'uncertain', 'currency' => 'USD', 'amount' => '12.34',
     'payload' => ['epp' => 'synthetic-code'], 'policy' => ['refund' => null], 'cost' => ['amount' => '9.1234'],
     'attempt' => ['execution' => null], 'funding' => ['invoice' => 81]]);
@@ -76,8 +76,8 @@ $rejectDuplicate('domains_tlds', array_replace($tldRow, ['registrar_key' => 'nam
 $accountRow = $account->getAttributes(); unset($accountRow['id']);
 $rejectDuplicate('domains_accounts', array_replace($accountRow, ['server_id' => 2, 'account_fingerprint' => str_repeat('c', 64)]));
 // Released history can coexist without weakening the non-null global identity.
-Domain::create(array_replace($domain->getAttributes(), ['id' => 42, 'service_id' => 52, 'reservation_name' => null]));
-Domain::create(array_replace($domain->getAttributes(), ['id' => 43, 'service_id' => 53, 'reservation_name' => null]));
+DB::table('domains_domains')->insert(array_replace($domain->getAttributes(), ['id' => 42, 'service_id' => 52, 'reservation_name' => null]));
+DB::table('domains_domains')->insert(array_replace($domain->getAttributes(), ['id' => 43, 'service_id' => 53, 'reservation_name' => null]));
 $before = [];
 foreach (['domains_domains', 'domains_operations', 'domains_tlds', 'domains_prices', 'domains_accounts'] as $table) {
     $before[$table] = DB::table($table)->orderBy('id')->get()->toJson();

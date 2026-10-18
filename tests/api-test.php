@@ -195,7 +195,7 @@ expect(!str_contains($error->getMessage().print_r($error->getTrace(), true).$err
 foreach (['EXAMPLE.COM', ' example.com '] as $domain) {
     same('example.com', DomainName::parse($domain)['domain'], 'ASCII normalization');
 }
-foreach (['https://example.com', 'example.com.', 'a.example.com', 'éxample.com', 'xn--example.com',
+foreach (['https://example.com', 'a.example.com', 'éxample.com', 'xn--example.com',
     'ab--example.com', '-example.com', 'example-.com', 'example..com', 'example.invalid',
     str_repeat('a', 64).'.com', "example.com\0"] as $domain) {
     throws(fn () => DomainName::parse($domain), 'Invalid/IDN domain rejected');
