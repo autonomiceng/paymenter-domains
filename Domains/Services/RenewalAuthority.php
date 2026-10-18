@@ -72,7 +72,7 @@ final readonly class RenewalAuthority
                 if ($domain->renewal_policy['automatic_spend_paused'] ?? false) { throw new RenewalRefused(RenewalCode::Paused); }
                 $anchor = $domain->renewal_policy['billing_anchor'] ?? [];
                 $prior = $all->firstWhere('operation_key', $anchor['operation_key'] ?? null);
-                if (($anchor['expiry'] ?? null) !== $request->expiry || !$prior || !$this->completed($prior, $domain, $binding)
+                if (($anchor['expiry'] ?? null) !== $request->expiry || !$prior || !self::completed($prior, $domain, $binding)
                     || $all->contains(fn ($op) => $op->id !== $prior->id && !OperationTerminalProof::safe($op, $domain))) {
                     throw new RenewalRefused(RenewalCode::Prior);
                 }
@@ -100,7 +100,8 @@ final readonly class RenewalAuthority
         } catch (RenewalRefused $error) { throw $error; }
         catch (\Throwable) { throw new RenewalRefused(RenewalCode::Authority); }
     }
-    private function completed(Operation $op, Domain $domain, $binding): bool
+    /** Retained completion proof only; reusable by invoice creation and grants no execution authority. */
+    public static function completed(Operation $op, Domain $domain, \Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): bool
     {
         $p = $op->attempt['reconciliation'] ?? [];
         if ($op->state !== 'succeeded' || $op->action !== 'register' || $op->service_id !== $domain->service_id

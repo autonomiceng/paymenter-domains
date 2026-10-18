@@ -189,3 +189,10 @@ two-day UTC margin/offset/midnight boundaries, exact Active vocabulary, missing 
 nonpremium local proof/immutability, auto-renew/balance and post-read authority checks. Reads are
 synthetic, bounded and outside transactions; admission changes no invoice, operation or native expiry.
 Enom ordinary/grace/restore regressions remain in `renewal-admission-test`.
+
+Slice24 renewal-billing/native-renewal-guard tests adapt Enom444f31c (DomainBilling revision b561b9f):
+confirmed21/7 calendar, native null-reference invoices, fixed multi-year obligations, repeated billing,
+manual/scheduled gates, old-seller retail, below-cost/unknown-margin alerts, native paid/cron expiry,
+immutable issued debt and actual Filament recalc/persistence methods under an explicit transaction. Tax, plan-null/coupon, configs,
+annual mapping, zero-price and stale-price/lifecycle scenarios run offline against Paymenter1.5.9.
+Provider renewal25, refunds26, reminders38 and installed39/MariaDB races remain unproved.

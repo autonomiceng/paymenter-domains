@@ -666,3 +666,80 @@ recheck per-TLD renewal-safe acceptance, including revocation, beyond today's ac
 Only annual NameSilo costs are accepted; other terms currently refuse State rather than Term.
 When24/25 advance the anchor to a completed renewal, retain or resolve the original registration's
 nonpremium proof; never backfill registration_admission onto renewal operation rows.
+
+## Renewal invoices and native lifecycle (slice24)
+
+`DomainBilling::invoice` owns a transaction. `HoldingLocks` takes the owner, all current owner
+invoices/items/payments, every referenced service/product/plan, cancellations/configs/properties/
+product markers/links, server/account/settings, TLD/prices, domain and ordered operations. Native
+invoice locks precede services, matching InvoiceFunding. All billing price/rule reads are current
+locking reads, including within an older native cron read view. MariaDB paired-connection tests
+and EXPLAIN remain39: verify owner-invoice range locks, mixed-service ordering, concurrent native
+cancellation/config writers and publication; SQLite establishes sequential behavior only.
+
+Scheduled `domains_billing_enabled` and owner-requested `domains_manual_renewals_enabled` default
+false and are independent. `domains_issue_days`/`domains_due_days` default21/7; new scheduled debts
+require issue <= today < due, manual debts may issue earlier but never at/after due. Existing
+obligations retain their term/calendar/amount through price, policy, date and gate changes. A unique
+`renew:{domain}:g{generation}:{expiry}` key arbitrates the cycle under the domain lock. Obligations
+freeze exact years, base/expected expiry, native route, confirmed revision and holder price evidence.
+No provider admission is performed to bill. Non-selling holders still bill; account processing and
+automatic spending pauses refuse new debt. Existing obligations remain frozen. Billing uses validated positive USD term-total RenewalPrice retail; unknown/stale costs and rule failures retain
+published retail with an encrypted staff-alert marker. Below-cost renewal bills without a floor.
+
+`NativeDomainGuard::boot` is dormant until39. Install once before CartAdmission/InvoiceBinding;
+it binds ManagedPaidInvoice so native payment processing skips managed Service items, while other
+native items retain upstream behavior. Renewal items have null native references. Payment grants no
+activation, expiry, claim or execution: provider-confirmed completion remains22/25. Initial checkout
+uses a narrow validated annual transition; future projections use the locked holding annual retail
+plus native exclusive tax once. Coupon associations remain usage accounting, never renewal pricing.
+Dirty native price saves require an outer transaction and fresh holder retail; stale forms, zero,
+retained-only evidence, acquisition recalc, native configs and binding/annual mapping changes refuse.
+Lifecycle-only status saves proceed without current price evidence and preserve null native expiry.
+Ordinary price_mode/billing_managed edits cannot create complimentary authority; audited transitions
+and complimentary cycles/caps remain25/35. Issued bound items and their invoice routing/calendar are
+immutable. Privileged SQL/quiet/bulk edits remain outside these model-event guards.
+
+Slice25 must compose action-specific paid funding (renewal items intentionally have null references),
+expected-obligation-key admission, latest completed-renewal anchors, fixed terms/caps, stale/late paid
+obligations/preferences, overrun pause and provider execution/completion. No operation dispatch, credit
+auto-use, refund, reminders, notification delivery, scheduler, public routes or extension entry ships
+here.26 owns financial disposition;27–28 transfer anchors;39 installed single-authority hooks, native
+queue transaction behavior and MariaDB acceptance;41 independently proven converted holding anchors.
+
+Billing reuses the full sealed registration-completion proof, not a succeeded state label. Historical
+completed-renewal/transfer anchors remain25/28. Tax selection mirrors native Settings::tax using
+locked owner properties and tax rows. Parent invoice deletion is refused before native cascade;
+renewal base/expected expiry are frozen with the term. Native service/product/annual-plan deletion refuses.
+The native panel currently defaults database transactions off: dirty price edits fail closed without
+an outer transaction.39 must wrap the installed admin save before taking the ordered prefix. The
+slice24 regression executes the real recalc action and persistence method inside that transaction;
+it does not establish mounted-panel/browser acceptance or change native panel configuration.
+
+User/order deletion also refuses before native cascades can erase holding records. Renewal invoice
+membership is frozen after issuance, including null-reference additions and reparented adjustments.
+HolderPricing::assertSave delegates to NativeDomainGuard's single locked, tax-aware save authority.
+The positive dirty-price regression changes9.99 to fresh gross11.44; it is not an unchanged-price save.
+Native InvoiceTransaction edit/delete authority remains25/26/35/39: execution must reacquire signed
+current payments and funding, and installed staff financial mutations need explicit audited policy.
+DomainBilling's prior-anchor checks must be extended in25 for completed renewal cycles. Latest
+observation alerts are health summaries; immutable operation policy.price retains each cycle's alert
+and retained flag. Delivery38 must consume operation evidence rather than the latest summary alone.
+Installed39 must also prove no caller already holds later rows before taking HoldingLocks, and
+EXPLAIN the product_upgrades OR query. Shared tax-row exclusive locking is safe but may serialize.
+
+Cancelled unpaid renewal invoices refuse further billing for that cycle until25/26 implements a
+verified terminal unpaid disposition plus a replacement-key suffix, preserving the original unique
+expiry/generation obligation and all issued evidence (Enom b561b9f renewal_cancelled_unpaid parity).
+Slice25 should consolidate RenewalAuthority's duplicated route checks onto the ordered HoldingLocks
+prefix.39 must bind NativeDomainGuard as a singleton; boot-once is per instance. Calendar cutoffs
+refuse new overdue debt even if retained domain status says expired/grace. Scheduled callers default
+to one year; an explicit fixed paid term is internal policy input. Enom's actor-only multi-year rule
+is in complimentary(), whose distinct audited cycle/term authority remains25, not paid invoicing.
+
+Holding order ownership cannot be reparented; user deletion also checks indirect holding orders,
+including already-drifted historical parents, before native cascades. Service saves resolve the
+original retained service ID as well as the proposed ID, preventing primary-key edits from escaping
+the binding guard. Bound invoice-item protection likewise checks original and proposed item IDs.
+Deletion guards check both original and proposed native IDs: Eloquent deletes using the original
+primary key even when a caller changes the in-memory ID before delete(). No key spoof bypass is allowed.

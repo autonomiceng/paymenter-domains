@@ -43,7 +43,9 @@
     "tests/reconciliation-namesilo-test.php",
     "tests/reconciliation-recovery-test.php",
     "tests/renewal-admission-test.php",
-    "tests/renewal-namesilo-test.php"
+    "tests/renewal-namesilo-test.php",
+    "tests/renewal-billing-test.php",
+    "tests/native-renewal-guard-test.php"
   ],
   "ui": [],
   "runner": [

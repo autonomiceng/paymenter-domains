@@ -1,0 +1,107 @@
+<?php
+// Adapted from Enom 444f31c/b561b9f Services/DomainBilling.php; MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Services;
+
+use App\Models\{Invoice, User};
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+
+/** Native debts only. No provider admission, grants, auto-pay, dispatch or notification delivery. */
+final class DomainBilling
+{
+    public function __construct(private readonly AccountBindings $bindings, private readonly NativeDomainGuard $native, private readonly Clock $clock) {}
+
+    public static function calendar(Domain $domain, int $issueDays = 21, int $dueDays = 7): array
+    {
+        if (!$domain->provider_expires_at || $issueDays <= $dueDays || $dueDays < 1 || $issueDays > 365) {
+            throw new \DomainException('Confirmed expiry and valid billing calendar required.');
+        }
+        return ['expiry' => $domain->provider_expires_at->format('Y-m-d'),
+            'issue' => $domain->provider_expires_at->subDays($issueDays)->format('Y-m-d'),
+            'due' => $domain->provider_expires_at->subDays($dueDays)->format('Y-m-d')];
+    }
+
+    /** A null actor selects scheduled billing; manual billing requires the current native owner. */
+    public function invoice(int $domainId, ?User $actor = null, ?int $years = null): Invoice
+    {
+        OperationClaims::outside(); $seed = Domain::findOrFail($domainId);
+        return DB::transaction(function () use ($seed, $actor, $years): Invoice {
+            $l = HoldingLocks::take($seed); $d = $l['domain']; $s = $l['service'];
+            if ($actor && (int) $actor->id !== (int) $l['user']->id) { throw new \DomainException('Domain renewal is unavailable.'); }
+            if (!$d->provider_expires_at) { throw new \DomainException('Confirmed expiry required.'); }
+            $key = 'renew:'.$d->id.':g'.$d->authority_generation.':'.$d->provider_expires_at->format('Y-m-d');
+            // Issued debt keeps its calendar, term and amount through later configuration changes.
+            $existing = $l['operations']->firstWhere('operation_key', $key);
+            if ($existing) { return $this->existing($existing, $l, $years); }
+            $this->bindings->requireProcessingLocked($l['server'], $l['account']);
+            if ($d->renewal_policy['automatic_spend_paused'] ?? false) { throw new \DomainException('Renewal spending requires review.'); }
+            $settings = $l['settings']->pluck('value', 'key');
+            $issue = self::days($settings->get('domains_issue_days', 21)); $due = self::days($settings->get('domains_due_days', 7));
+            $calendar = self::calendar($d, $issue, $due); $years ??= 1;
+            if (!self::enabled($settings->get($actor ? 'domains_manual_renewals_enabled' : 'domains_billing_enabled', false))) {
+                throw new \DomainException('Requested renewal billing gate is disabled.');
+            }
+            $today = $this->clock->now()->format('Y-m-d');
+            if ($today >= $calendar['due'] || (!$actor && $today < $calendar['issue'])) { throw new \DomainException('Outside renewal invoice calendar.'); }
+            if ($years < 1 || $years > 10 || $d->provider_expires_at->addYearsNoOverflow($years) > $this->clock->now()->modify('+10 years')) {
+                throw new \DomainException('Renewal term exceeds the registry horizon.');
+            }
+            if ($s->status !== 'active' || !in_array($d->status, ['active', 'expired', 'grace'], true)
+                || $l['cancel']->contains('service_id', $s->id) || $d->price_mode !== 'standard') { throw new \DomainException('Renewal billing lifecycle requires review.'); }
+            $anchor = $d->renewal_policy['billing_anchor'] ?? [];
+            $prior = $l['operations']->firstWhere('operation_key', $anchor['operation_key'] ?? null);
+            if (($anchor['expiry'] ?? null) !== $calendar['expiry'] || !$prior
+                || !RenewalAuthority::completed($prior, $d, CatalogueAcceptances::binding($l['account']))
+                || $l['operations']->contains(fn ($op) => $op->id !== $prior->id && !OperationTerminalProof::safe($op, $d))) {
+                throw new \DomainException('Confirmed renewal anchor or prior outcome requires review.');
+            }
+            // Holding retail is independent of current seller, sales/renew flags and provider cost.
+            $price = $this->native->project($l);
+            $amount = PricingRule::total($price['annual_gross'], $years);
+            $invoice = new Invoice(['user_id' => $d->user_id, 'currency_code' => 'USD', 'status' => Invoice::STATUS_PENDING, 'due_at' => $calendar['due']]);
+            $invoice->send_create_email = false; $invoice->save();
+            $item = $invoice->items()->create(['reference_type' => null, 'reference_id' => null, 'quantity' => 1, 'price' => $amount,
+                'description' => 'Renew '.$d->domain.' ('.$years.' '.($years === 1 ? 'year' : 'years').')']);
+            Operation::create(['domain_id' => $d->id, 'service_id' => $s->id, 'server_id' => $d->server_id,
+                'registrar_key' => $d->registrar_key, 'account_fingerprint' => $d->account_fingerprint, 'authority_generation' => $d->authority_generation,
+                'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id, 'operation_key' => $key, 'action' => 'renew', 'term' => $years,
+                'funding_basis' => 'paid_invoice', 'state' => 'awaiting_payment', 'amount' => $amount, 'currency' => 'USD',
+                'base_expires_at' => $calendar['expiry'], 'expected_expires_at' => $d->provider_expires_at->addYearsNoOverflow($years)->format('Y-m-d'),
+                'policy' => ['calendar' => $calendar, 'price' => $price, 'renewal' => ['confirmed_revision' => $d->confirmed_revision,
+                    'provider_domain_id' => $d->provider_domain_id, 'term' => $years, 'product_id' => (int) $s->product_id, 'annual_plan_id' => (int) $s->plan_id,
+                    'user_id' => (int) $s->user_id, 'order_id' => (int) $s->order_id]], 'payload' => []]);
+            if ($price['staff_alert'] !== null || $price['retained']) {
+                $d->update(['observation' => [...($d->observation ?? []), 'renewal_price_alert' => ['operation_key' => $key,
+                    'code' => $price['staff_alert'] ?? 'unknown_margin', 'at' => $this->clock->now()->format(DATE_ATOM)]]]);
+            }
+            return $invoice->fresh();
+        });
+    }
+
+    private function existing(Operation $op, array $l, ?int $years): Invoice
+    {
+        $invoice = $l['invoices']->firstWhere('id', $op->invoice_id); $item = $l['items']->firstWhere('id', $op->invoice_item_id); $d = $l['domain'];
+        if (!$invoice || !$item || $l['items']->where('invoice_id', $op->invoice_id)->count() !== 1 || $op->action !== 'renew' || $op->funding_basis !== 'paid_invoice' || ($years !== null && (int) $op->term !== $years)
+            || $op->service_id !== $d->service_id || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key
+            || $op->account_fingerprint !== $d->account_fingerprint || $op->authority_generation !== $d->authority_generation
+            || $invoice->status === Invoice::STATUS_CANCELLED || (int) $invoice->user_id !== (int) $d->user_id || $invoice->currency_code !== 'USD'
+            || (int) $item->invoice_id !== (int) $invoice->id || $item->reference_type !== null || $item->reference_id !== null
+            || (string) $item->quantity !== '1' || PricingRule::minor($item->price) !== PricingRule::minor($op->amount)
+            || PricingRule::minor($op->amount) <= 0 || $op->currency !== 'USD'
+            || $op->base_expires_at?->format('Y-m-d') !== ($op->policy['calendar']['expiry'] ?? null)
+            || $op->expected_expires_at?->format('Y-m-d') !== $op->base_expires_at?->addYearsNoOverflow((int) $op->term)->format('Y-m-d')
+            || $invoice->due_at->format('Y-m-d') !== ($op->policy['calendar']['due'] ?? null)) { throw new \DomainException('Existing renewal obligation requires review.'); }
+        return $invoice;
+    }
+
+    private static function days(mixed $value): int
+    {
+        if (filter_var($value, FILTER_VALIDATE_INT) === false) { throw new \DomainException('Invalid renewal timing.'); } return (int) $value;
+    }
+    private static function enabled(mixed $value): bool
+    {
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) === true;
+    }
+}

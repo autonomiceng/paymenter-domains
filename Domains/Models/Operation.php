@@ -24,7 +24,10 @@ class Operation extends Model
         });
         static::updating(static function (self $operation): void {
             $old = $operation->getOriginal('policy') ?? []; $new = $operation->policy ?? [];
-            foreach (['checkout', 'price', 'seller_revision'] as $key) {
+            if (isset($old['renewal']) && $operation->isDirty(['base_expires_at', 'expected_expires_at'])) {
+                throw new \DomainException('Issued renewal expiry obligations are frozen.');
+            }
+            foreach (['checkout', 'price', 'seller_revision', 'calendar', 'renewal'] as $key) {
                 if (array_key_exists($key, $old) && ($new[$key] ?? null) !== $old[$key]) { throw new \DomainException('Checkout evidence is frozen.'); }
             }
             $old = $operation->getOriginal('cost') ?? []; $new = $operation->cost ?? [];

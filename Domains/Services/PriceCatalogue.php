@@ -97,15 +97,19 @@ final class PriceCatalogue
     /** Published annual retail survives unknown/stale costs and rule republication failures.
      * Slice 24 projects this into native service.price under locks; issued invoices remain frozen.
      */
-    public function renewal(int $serverId, string $fingerprint, string $tld, string $currency, \DateTimeImmutable $now): RenewalPrice
+    public function renewal(int $serverId, string $fingerprint, string $tld, string $currency, \DateTimeImmutable $now, bool $lock = false, ?Tld $locked = null): RenewalPrice
     {
-        $price = Price::where(['server_id' => $serverId, 'account_fingerprint' => $fingerprint, 'tld' => $tld,
-            'action' => 'renew', 'term' => 1, 'currency' => $currency])->first();
+        if ($lock && (DB::transactionLevel() !== 1 || !$locked || (int) $locked->server_id !== $serverId
+            || $locked->account_fingerprint !== $fingerprint || $locked->tld !== $tld)) { throw new \LogicException('Locked holding TLD required.'); }
+        $query = Price::where(['server_id' => $serverId, 'account_fingerprint' => $fingerprint, 'tld' => $tld,
+            'action' => 'renew', 'term' => 1, 'currency' => $currency]);
+        if ($lock) { $query->lockForUpdate(); }
+        $price = $query->first();
         if (!$price || $price->retail === null || $currency !== 'USD' || $price->unit !== 'term_total') { throw new \DomainException('No published annual retail.'); }
         $retail = self::retail($price->retail);
         if (PricingRule::minor($retail) <= 0) { throw new \DomainException('Positive published retail required; complimentary authority is separate.'); }
         try {
-            $current = $this->current($serverId, $fingerprint, $tld, 'renew', 1, $currency, $now);
+            $current = $this->current($serverId, $fingerprint, $tld, 'renew', 1, $currency, $now, $lock, $locked);
             return new RenewalPrice($current->id, $current->revision, $current->retail, $currency, false, $current->staffAlert);
         } catch (\DomainException|\InvalidArgumentException|\Illuminate\Database\Eloquent\ModelNotFoundException) {
             return new RenewalPrice($price->id, $price->revision, $retail, $currency, true, $price->wholesale === null ? 'unknown_price' : 'stale');

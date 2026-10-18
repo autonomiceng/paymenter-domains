@@ -107,8 +107,8 @@ final class InvoiceBinding
             'action' => $s->action, 'term' => $s->term, 'funding_basis' => 'paid_invoice', 'state' => 'awaiting_payment',
             'amount' => $line['retail']['total'], 'currency' => 'USD', 'policy' => ['checkout' => $checkout, 'price' => self::price($s), 'seller_revision' => $line['selection']->policyRevision],
             'cost' => ['estimated' => $s->wholesale, 'currency' => 'USD', 'unit' => 'term_total'], 'payload' => ContactSetup::capture($service->user()->firstOrFail(), $line['setup_tld'])]);
-        $service->forceFill(['plan_id' => $line['annual_plan_id'], 'price' => $line['annual_price'],
-            'label' => $line['name'], 'expires_at' => null])->save();
+        $service->forceFill(['plan_id' => $line['annual_plan_id'], 'price' => $line['annual_price'], 'label' => $line['name'], 'expires_at' => null]);
+        NativeDomainGuard::initial($service, $domain);
         self::requireIdentity($operation, $domain, $service->fresh(), $invoice, $item);
         // Opaque cart evidence is temporary; never persist it as native customer properties.
         $service->properties()->where('key', 'domains_check')->delete();

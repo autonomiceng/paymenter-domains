@@ -60,7 +60,7 @@ $revision = $holder->renewal($domain, 'USD', $now)->revision;
 $older = new CatalogueRate('renew', 1, '1.0000', 'synthetic', $now->modify('-1 hour'), $now->modify('+1 day'));
 same(0, $catalogue->sync(1, static fn (): array => [$older])['synced'], 'Older in-flight read cannot overwrite newer observation');
 same($revision, $holder->renewal($domain, 'USD', $now)->revision, 'Stale read keeps revision');
-// Test the save contract against native models, without installing global observers in this slice.
+// The compatibility save contract delegates: dirty prices require the real locked native context.
 $service = new App\Models\Service(['product_id' => 101, 'plan_id' => 102, 'user_id' => 21, 'quantity' => 1, 'currency_code' => 'USD', 'price' => '1.00']);
 $service->id = 11; $service->exists = true; $service->syncOriginal();
 $service->setRelation('product', new App\Models\Product(['server_id' => 1]));
@@ -72,7 +72,7 @@ $service->price = '9.00'; $service->syncOriginal(); $service->status = 'cancelle
 $holder->assertSave($service, $domain->fresh(), $now); // unchanged old retail must not block lifecycle saves
 $nonstandard = $domain->fresh(); $nonstandard->price_mode = 'complimentary';
 $holder->assertSave($service, $nonstandard, $now);
-$service->price = '1.00'; $holder->assertSave($service, $domain->fresh(), $now);
+$service->price = '1.00'; $reject(static fn () => $holder->assertSave($service, $domain->fresh(), $now));
 $service->plan_id = 103; $reject(static fn () => $holder->assertSave($service, $domain->fresh(), $now));
 App\Models\Server::findOrFail(1)->update(['enabled' => false]);
 same('1.00', $holder->renewal($domain, 'USD', $now)->retail, 'Disabled native seller retains holder price access');
