@@ -38,9 +38,35 @@ $verifier = new class implements AccountVerifier {
 $registry->register('namesilo', ['token'], $verifier, static fn ($b, $c) =>
     new Driver(new Client($b, (string) getenv('NAMESILO_SANDBOX_API_KEY'), $wire), ['register', 'renew'], $clock, 120));
 $realBindings = new AccountBindings($registry); $claims = new OperationClaims($realBindings, $clock);
-$exchange = static fn ($origin, $command, $parameters, $ms) => $wire->raw($origin, $command, $parameters, $ms);
+$profileParameters = []; $profileId = null;
+$authority = static function () use ($claims, &$op, $binding): bool {
+    try { [$current] = $claims->profileAuthority($op); $binding->requireMatch($current); return true; }
+    catch (Throwable) { return false; }
+};
+$exchange = static function ($origin, $command, $parameters, $ms) use ($wire, &$profileParameters, &$profileId): string {
+    if ($command === 'contactAdd') { $profileParameters = $parameters; }
+    $body = $wire->raw($origin, $command, $parameters, $ms);
+    $data = json_decode($body, true);
+    if ($command === 'contactAdd') {
+        $id = $data['reply']['contact_id'] ?? null;
+        $profileId = is_string($id) || is_int($id) ? (string) $id : null;
+    }
+    if ($command === 'contactList') {
+        $wire->receipt['profile_verification'] = \OteContract\ProfileDiagnostics::inspect($data['reply'] ?? [], $profileParameters, $profileId);
+    }
+    return $body;
+};
+if (($mode ?? '') === '--profile-read') {
+    [$op] = $claims->claim($op->id); $wire->check('profile_authority_before', $authority());
+    $parameters = RegistrationProfiles::parameters(\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate('namesilo', $op->payload['contacts'])['registrant']);
+    $body = $wire->raw('https://ote.namesilo.com/apibatch', 'contactList', []);
+    $wire->receipt['profile_inventory'] = \OteContract\ProfileDiagnostics::inventory(json_decode($body, true)['reply'] ?? [], $parameters);
+    $wire->check('profile_authority_after', $authority());
+    $wire->check('registration', 'profile_read_only_no_creation_or_purchase'); $nativeSuccessful = true; return;
+}
 $features = new WriteFeatures(registration: true);
-$profiles = new RegistrationProfiles($binding, $claims, $clock, $exchange);
+$profiles = new RegistrationProfiles($binding, $claims, $clock, $exchange,
+    static fn (string $predicate, bool $passed) => $wire->check('profile_'.$predicate, $passed));
 $acceptance = new WriteAcceptance($binding, true, true, 25, $profiles);
 $preflight = new RegistrationPreflight($realBindings, $features, $acceptance, $profiles);
 $protocol = new Registration($binding, $profiles, $exchange);
@@ -50,6 +76,9 @@ $started = new DateTimeImmutable('now', new DateTimeZone('UTC'));
 $wire->check('stage', 'production_registration');
 $result = $engine->execute($op->id);
 $wire->check('registration_engine_state', $result->state);
+$wire->check('profile_proof_retained', $profiles->hasProof($result));
+$wire->check('profile_hold_category', $result->safe_code === 'contact_profile_proof_required' ? 'contact_profile_proof_required'
+    : ($result->state === 'held' ? 'other_hold' : 'none'));
 $registered = GuardedTransport::durableRegistration($result->fresh()->attempt, $wire->domain);
 $wire->authorizeRenewal($registered);
 $wire->check('registration', $registered ? 'accepted_via_real_admitted_protocol'

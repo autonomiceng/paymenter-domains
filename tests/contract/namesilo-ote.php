@@ -4,7 +4,7 @@ declare(strict_types=1);
 ob_start(); // Never expose native framework output or error traces.
 ini_set('display_errors', '0'); ini_set('log_errors', '0'); ini_set('zend.exception_ignore_args', '1');
 require_once dirname(__DIR__).'/bootstrap.php';
-require __DIR__.'/Shapes.php'; require __DIR__.'/ParserDiagnostics.php'; require __DIR__.'/GuardedTransport.php';
+require __DIR__.'/ProfileDiagnostics.php'; require __DIR__.'/Shapes.php'; require __DIR__.'/ParserDiagnostics.php'; require __DIR__.'/GuardedTransport.php';
 use OteContract\GuardedTransport;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RequestBudget, RequestContext, RequestOrigin, SystemClock};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client;
@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Outcome, Regis
 $wire = null; $exit = 1;
 try {
     $mode = $argv[1] ?? '';
-    if ($argc !== 2 || !in_array($mode, ['--read', '--write', '--self-test'], true)) { throw new RuntimeException('Explicit phase required.'); }
+    if ($argc !== 2 || !in_array($mode, ['--read', '--write', '--profile-read', '--self-test'], true)) { throw new RuntimeException('Explicit phase required.'); }
     if ($mode === '--self-test') { require __DIR__.'/offline.php'; $exit = 0; }
     else {
         GuardedTransport::window((int) gmdate('G'));
@@ -22,7 +22,7 @@ try {
         $limit = (string) getenv('OTE_REQUEST_LIMIT');
         if (!preg_match('/^(?:[1-9]|[1-5][0-9]|60)$/D', $limit)) { throw new RuntimeException('Explicit request limit required.'); }
         $wire = new GuardedTransport((string) getenv('NAMESILO_SANDBOX_API_KEY'), $mode === '--write', $output, limit: (int) $limit);
-        $wire->receipt['phase'] = $mode === '--write' ? 'read+write' : 'read';
+        $wire->receipt['phase'] = $mode === '--write' ? 'read+write' : ($mode === '--profile-read' ? 'read+profile' : 'read');
         $wire->receipt['reference'] = 'docs/design/api-contract.md; tests/fixtures/synthetic-success.json';
         $binding = new AccountBinding('namesilo', 1, Environment::Test, 'contract-local-fixture');
         $clock = new SystemClock;
@@ -45,7 +45,7 @@ try {
         } catch (Throwable) { $batch = false; }
         $wire->check('apibatch_supported', $batch);
         $wire->check('renew_auto_renew_reference', 'not_documented; requires_one_approved_synthetic_probe');
-        if ($mode === '--write') {
+        if (in_array($mode, ['--write', '--profile-read'], true)) {
             if (!$batch || $wire->receipt['mismatches']) { $wire->check('registration', 'blocked_read_gate'); }
             else { require __DIR__.'/registration.php'; }
         }

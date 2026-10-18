@@ -24,6 +24,10 @@ $exchange = static function ($origin, $command, $parameters, $timeout) use ($reg
         $row += ['contact_id' => (string) $registration->id, 'default_profile' => $registration->mode === 'default' ? '1' : '0'];
         if ($registration->mode === 'wrongcontact') { $row['email'] = 'other@example.com'; }
         $reply['contact'] = $row;
+        if ($registration->mode === 'authoritydrift') {
+            $current = Domain::where('domain', $registration->query->name)->sole()->operations()->sole();
+            $current->update(['policy' => $current->policy + ['diagnostic_drift' => true]]);
+        }
     } elseif ($command === 'registerDomain') {
         same((string) $registration->id, $parameters['contact_id'], 'Fresh proven profile only');
         same(0, $parameters['auto_renew'], 'Purchase disables auto-renew'); same(0, $parameters['private'], 'Frozen privacy policy');
@@ -41,10 +45,13 @@ $exchange = static function ($origin, $command, $parameters, $timeout) use ($reg
     } elseif ($command !== 'removeAutoRenewal') { throw new LogicException('Unexpected protocol command'); }
     return json_encode(['request' => ['operation' => $command], 'reply' => $reply], JSON_THROW_ON_ERROR);
 };
-foreach (['300', '301', '302', 'amount', 'badns', 'remove', 'stillon', 'lost', 'unknown', 'default', 'wrongcontact'] as $mode) {
-    $registration->mode = $mode; $registration->calls = []; $makeEngine($binding, $exchange);
+foreach (['300', '301', '302', 'amount', 'badns', 'remove', 'stillon', 'lost', 'unknown', 'default', 'wrongcontact', 'authoritydrift'] as $mode) {
+    $registration->mode = $mode; $registration->calls = []; $registration->diagnostics = []; $makeEngine($binding, $exchange);
     $result = $runRegistration($nsNew('ns-'.$mode.'.com'));
-    if (in_array($mode, ['default', 'wrongcontact'], true)) {
+    if (in_array($mode, ['default', 'wrongcontact', 'authoritydrift'], true)) {
+        if ($mode === 'authoritydrift') {
+            same(['authority_before' => true, 'authority_after' => false], $registration->diagnostics, 'Actual original claim snapshot detects policy drift');
+        }
         same('held', $result->state, 'Invalid profile proof holds'); same('absent', $result->attempt['seal'], 'No purchase seal on invalid proof');
         same(['contactAdd', 'contactList'], $registration->calls, 'Default/mismatched profile never reaches purchase'); continue;
     }

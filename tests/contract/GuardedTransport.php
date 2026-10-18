@@ -66,7 +66,7 @@ final class GuardedTransport implements DeadlineTransport
             default => throw new \RuntimeException('OTE command refused.'),
         };
         if (array_diff(array_keys($p), $keys)) { throw new \RuntimeException('OTE parameters refused.'); }
-        $reads = ['getAccountBalance', 'getPrices', 'checkRegisterAvailability', 'getDomainInfo', 'listOrders', 'orderDetails', 'listDomains'];
+        $reads = ['getAccountBalance', 'getPrices', 'checkRegisterAvailability', 'getDomainInfo', 'listOrders', 'orderDetails', 'listDomains', 'contactList'];
         if (!$this->write && !in_array($command, $reads, true)) { throw new \RuntimeException('OTE write flag required.'); }
         if (in_array('domain', $keys, true) && ($p['domain'] ?? null) !== $this->domain) { throw new \RuntimeException('OTE domain scope refused.'); }
         if ($command === 'checkRegisterAvailability' && (!is_string($p['domains'] ?? null) || $p['domains'] === '')) { throw new \RuntimeException('OTE availability scope required.'); }

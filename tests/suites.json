@@ -13,6 +13,7 @@
     "tests/transfer-status-test.php"
   ],
   "contracts": [
+    "tests/profile-diagnostics-test.php",
     "tests/driver-contract-test.php",
     "tests/pricing-test.php"
   ],

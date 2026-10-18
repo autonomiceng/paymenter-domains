@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 use OteContract\{GuardedTransport, Shapes};
+require __DIR__.'/profile-diagnostics.php';
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Environment as WireEnvironment, RegistrarRequest, RequestContext as WireContext, TransportResponse};
 
 $output = (string) getenv('OTE_OUTPUT'); $calls = 0;
@@ -173,11 +174,15 @@ same(false, GuardedTransport::durableRegistration(['registration' => ['accepted'
 if (getenv('OTE_SELF_TEST_NATIVE')) {
     putenv('NAMESILO_SANDBOX_API_KEY=offline-secret-token');
     $state = (object) ['profile' => [], 'locked' => 'Yes', 'expiry' => gmdate('Y-m-d', strtotime('+1 year')), 'record' => false, 'renewed' => false];
-    $wire = new GuardedTransport('offline-secret-token', true, $output,
-        static function ($command, $p) use ($state, &$wire): TransportResponse {
+    $wire = new GuardedTransport('offline-secret-token', getenv('OTE_SELF_TEST_SCENARIO') !== 'profile-read', $output,
+        static function ($command, $p) use ($state, &$wire, &$op): TransportResponse {
             $r = ['code' => 300, 'detail' => 'synthetic'];
             if ($command === 'contactAdd') { $state->profile = $p; $r['contact_id'] = '101'; }
             elseif ($command === 'contactList') {
+                if (getenv('OTE_SELF_TEST_SCENARIO') === 'profile-read') {
+                    $state->profile = \Paymenter\Extensions\Servers\Domains\Services\RegistrationProfiles::parameters(
+                        \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate('namesilo', $op->payload['contacts'])['registrant']);
+                }
                 $fields = ['first_name','last_name','company','address','address2','city','state','zip','country','email','phone'];
                 $r['contact'] = [array_combine($fields, array_values($state->profile)) + ['contact_id' => '101', 'default_profile' => '0', 'nickname' => '', 'fax' => '']];
             } elseif ($command === 'getAccountBalance') { $r['balance'] = '100.00'; }
@@ -211,7 +216,15 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
         // Reserve the same six requests as write mode's initial read phase.
         for ($i = 0; $i < 6; $i++) { $wire->raw('https://ote.namesilo.com/api', 'getAccountBalance', []); }
     }
+    $mode = getenv('OTE_SELF_TEST_SCENARIO') === 'profile-read' ? '--profile-read' : '--write';
     require __DIR__.'/registration.php';
+    if ($mode === '--profile-read') {
+        same(1, $wire->receipt['request_count'], 'Read-only probe reuses existing synthetic contact');
+        same(false, $wire->attempted('contactAdd'), 'Read-only probe creates no contact');
+        same(false, $wire->attempted('registerDomain'), 'Read-only probe cannot purchase');
+        same(true, $wire->receipt['profile_inventory']['rows'][0]['identity_match'], 'Frozen synthetic identity compared');
+        same(true, $wire->receipt['checks']['profile_authority_after'], 'Current authority checked after read');
+    } else {
     same('accepted_via_real_admitted_protocol', $wire->receipt['checks']['registration'], 'Real registration path exercised offline');
     same(true, $wire->receipt['checks']['charge_evidence_shape_matches'], 'Charge correlation exercised offline');
     if (in_array(getenv('OTE_SELF_TEST_SCENARIO'), ['limited-budget', 'short-budget'], true)) {
@@ -228,6 +241,7 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
     same(true, $wire->receipt['checks']['txt_deleted'], 'TXT cleanup exercised offline');
     }
     same([], $wire->receipt['mismatches'], 'Native fake matches all contract projections');
+    }
 }
 $summary = ['self_test' => 'passed', 'real_provider_calls' => 0, 'native_protocol_exercised' => (bool) getenv('OTE_SELF_TEST_NATIVE')];
 if ($wire) { $wire->receipt += $summary; $wire->save(); }

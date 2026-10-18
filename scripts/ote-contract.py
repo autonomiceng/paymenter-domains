@@ -65,6 +65,7 @@ def main():
     flags = parser.add_mutually_exclusive_group(required=True)
     flags.add_argument('--read', action='store_true')
     flags.add_argument('--write', action='store_true')
+    flags.add_argument('--profile-read', action='store_true')
     flags.add_argument('--self-test', action='store_true')
     parser.add_argument('--max-requests', type=int, choices=range(1, 61), default=None, metavar='1..60')
     args = parser.parse_args()
@@ -83,7 +84,7 @@ def main():
     try:
         if args.self_test:
             verify_wrapper_guards(output)
-        with_native = args.write or (args.self_test and bool(source))
+        with_native = args.write or args.profile_read or (args.self_test and bool(source))
         runtime, binary, ext = prepare(native=with_native)
         env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'PHP_INI_SCAN_DIR': '', 'PHPRC': '',
                'OTE_OUTPUT': str(output), 'OTE_REQUEST_LIMIT': str(args.max_requests)}
@@ -107,17 +108,21 @@ def main():
         if args.self_test:
             disabled += ',curl_exec,curl_multi_exec'
         argv += ['-d', 'disable_functions='+disabled, str(ROOT/'tests/contract/namesilo-ote.php'),
-                 '--self-test' if args.self_test else '--write' if args.write else '--read']
+                 '--self-test' if args.self_test else '--write' if args.write else '--profile-read' if args.profile_read else '--read']
         # Never relay child stdout/stderr: native errors can contain raw responses or credentials.
         result = subprocess.run(argv, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
         if args.self_test and with_native and result.returncode == 0:
-            for scenario, renewals in [('malformed-registration', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
+            for scenario, renewals in [('profile-read', 0), ('malformed-registration', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
                 uncertain_output = output/scenario
                 uncertain_output.mkdir(mode=0o700)
                 uncertain_env = dict(env, OTE_OUTPUT=str(uncertain_output), OTE_SELF_TEST_SCENARIO=scenario)
                 refused = subprocess.run(argv, cwd=ROOT, env=uncertain_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
                 evidence = json.loads((uncertain_output/'receipt.json').read_text())
                 commands = [row['command'] for row in evidence['requests']]
+                if scenario == 'profile-read':
+                    if refused.returncode != 0 or commands != ['contactList']:
+                        raise ValueError('Read-only contact probe guard failed')
+                    continue
                 if scenario in ('limited-budget', 'short-budget'):
                     limit = 28 if scenario == 'limited-budget' else 26
                     if refused.returncode != 0 or evidence['request_count'] > limit or commands.count('renewDomain') != 0:

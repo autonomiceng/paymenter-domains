@@ -376,3 +376,11 @@ account identity, full history coverage/timezone/lag/retention, exact-term/premi
 restore safety, MariaDB races, installed integration or causal renewal-flag support. The real
 reconciliation adapter is exercised without inventing history acceptance; incomplete evidence stays
 unresolved. Production behavior changes belong in separate reviewed slices.
+
+Contact-profile diagnostics: `--profile-read --max-requests 7` repeats the six read probes,
+then reads contact inventory without creating a profile or attempting a purchase. It needs the
+same pinned native fixture as write mode to reconstruct the synthetic frozen contact. Its private
+receipt contains only closed field-presence/type/exact-match booleans, shape/default categories
+and current claim/binding checks. Inventory is diagnostic only, never creation or ownership proof.
+Write receipts separately name the first failed readback predicate, current authority checks,
+retained proof and a closed hold category. Production still requires fresh creation/readback.

@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, DomainOperations, OperationClaims, RegistrarRegistry, RegistrationPreflight, RegistrationProfiles, WriteAcceptance, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 \Paymenter\Extensions\Servers\Domains\Services\ContactProfileSchema::install();
-$registration = (object) ['query' => null, 'calls' => [], 'mode' => '', 'profile' => [], 'id' => 100];
+$registration = (object) ['query' => null, 'calls' => [], 'mode' => '', 'profile' => [], 'id' => 100, 'diagnostics' => []];
 $registry = new RegistrarRegistry;
 $verifier = new class implements AccountVerifier {
     public function verify(Environment $e, #[SensitiveParameter] array $credentials): string { return $credentials['token']; }
@@ -23,9 +23,10 @@ foreach (['enom', 'namesilo'] as $key) {
     });
 }
 $freshBindings = new AccountBindings($registry);
-$makeEngine = static function ($binding, $exchange, ?WriteFeatures $features = null) use (&$engine, &$bridge, &$protocol, &$fresh, &$acceptance, &$profiles, $claims, $freshBindings, $clock) {
+$makeEngine = static function ($binding, $exchange, ?WriteFeatures $features = null) use (&$engine, &$bridge, &$protocol, &$fresh, &$acceptance, &$profiles, $claims, $freshBindings, $clock, $registration) {
     $features ??= new WriteFeatures(registration: true);
-    $profiles = new RegistrationProfiles($binding, $claims, $clock, $exchange);
+    $profiles = new RegistrationProfiles($binding, $claims, $clock, $exchange,
+        static function (string $predicate, bool $passed) use ($registration): void { $registration->diagnostics[$predicate] = $passed; });
     $acceptance = new WriteAcceptance($binding, true, true, 25, $profiles);
     $fresh = new RegistrationPreflight($freshBindings, $features, $acceptance, $profiles);
     $class = 'Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo').'\\';

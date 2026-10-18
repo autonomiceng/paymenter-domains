@@ -10,14 +10,15 @@ final class RegistrationProfiles
 {
     private readonly \SensitiveParameterValue $exchange;
     private array $created = [];
+    private readonly \SensitiveParameterValue $diagnostic;
     public function __construct(private readonly AccountBinding $binding, private readonly OperationClaims $claims,
-        private readonly Clock $clock, #[\SensitiveParameter] \Closure $exchange)
-    { $this->exchange = new \SensitiveParameterValue($exchange); }
+        private readonly Clock $clock, #[\SensitiveParameter] \Closure $exchange, #[\SensitiveParameter] ?\Closure $diagnostic = null)
+    { $this->exchange = new \SensitiveParameterValue($exchange); $this->diagnostic = new \SensitiveParameterValue($diagnostic); }
     public function prepare(Operation $op, RequestContext $ctx): void
     {
         OperationClaims::outside(); $this->binding->requireMatch($ctx->binding);
         if ($ctx->origin !== RequestOrigin::Background || $this->binding->registrarKey !== 'namesilo') { throw new \DomainException('Profile context unavailable.'); }
-        [$binding, $owner] = $this->claims->profileAuthority($op); $this->binding->requireMatch($binding);
+        [$binding, $owner] = $this->authority($op, 'authority_before');
         if ($this->hasProof($op)) { return; }
         $contacts = ContactDetails::validate('namesilo', $op->payload['contacts'] ?? null);
         if (count(array_unique(array_map(static fn ($row) => json_encode($row, JSON_THROW_ON_ERROR), $contacts))) !== 1) {
@@ -40,11 +41,20 @@ final class RegistrationProfiles
             if (($row[$field] ?? null) !== $parameters[$wire]) { throw new WriteHeld('contact_profile_proof_required'); }
         }
         // Provider work is over. Recheck current claim before retaining its exact owner/payload proof.
-        $this->claims->profileAuthority($op);
+        $this->authority($op, 'authority_after');
         $profile = ContactProfiles::recordCreated($binding, $owner, $id, $contact, false,
             ['operation' => $op->operation_key, 'payload' => OperationClaims::payloadDigest($op), 'observed_at' => $ctx->now()->format(DATE_ATOM)]);
         $this->created[$op->operation_key] = (int) $profile->id;
     }
+    /** Observer receives only a fixed predicate name and boolean, never claim/contact data. */
+    private function authority(Operation $op, string $predicate): array
+    {
+        try { $result = $this->claims->profileAuthority($op); $this->binding->requireMatch($result[0]); }
+        catch (\Throwable $error) { $this->signal($predicate, false); throw $error; }
+        $this->signal($predicate, true); return $result;
+    }
+    private function signal(string $predicate, bool $passed): void
+    { if ($observer = $this->diagnostic->getValue()) { $observer($predicate, $passed); } }
     public function hasProof(Operation $op): bool
     {
         try { $this->profiles($op); return true; } catch (\Throwable) { return false; }
