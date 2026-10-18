@@ -2,7 +2,7 @@
 
 The standalone API foundation is in progress; Paymenter integration remains unimplemented. Agree on implementation scope before adding billing, jobs or UI.
 
-Read [extension conventions](docs/paymenter-extension-conventions.md) and [verification guidance](docs/testing.md). Keep runtime in `NameSilo/`, offline tests in `tests/`, and development tools in `scripts/`. Record design decisions and evidence in `docs/` once implementation begins.
+Read [extension conventions](docs/paymenter-extension-conventions.md) and [verification guidance](docs/testing.md). Keep runtime in `Domains/`, offline tests in `tests/`, and development tools in `scripts/`. Record design decisions and evidence in `docs/` once implementation begins.
 
 Use native Paymenter billing and extension interfaces. Changes involving registrar spending must cover funding, ownership, concurrent jobs, price changes, definite failures, and uncertain outcomes. Domain mutations require authorization and bounded, sanitized provider input/output. Keep internal costs out of unauthorized views and all secrets out of logs.
 

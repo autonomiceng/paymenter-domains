@@ -37,14 +37,14 @@ jobs:
 
           required = [
               'README.md', 'LICENSE', 'AGENTS.md', 'CONTRIBUTING.md',
-              'SECURITY.md', '.gitignore', '.coderabbit.yaml', 'NameSilo/LICENSE',
+              'SECURITY.md', '.gitignore', '.coderabbit.yaml', 'Domains/LICENSE',
               'docs/paymenter-extension-conventions.md', 'docs/testing.md',
           ]
           for name in required:
               assert Path(name).is_file(), f'Missing required file: {name}'
           license_text = Path('LICENSE').read_text()
           assert license_text.startswith('MIT License\n'), 'Expected MIT license'
-          assert Path('NameSilo/LICENSE').read_text() == license_text, 'License copies differ'
+          assert Path('Domains/LICENSE').read_text() == license_text, 'License copies differ'
 
           paths = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')
           private_dirs = {'.local', '.scratch', '.cache', 'private', 'backups', 'node_modules', 'vendor', 'dist', '__pycache__'}

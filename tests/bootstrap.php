@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 spl_autoload_register(static function (string $name): void {
-    $prefix = 'Paymenter\\Extensions\\Servers\\NameSilo\\';
+    $prefix = 'Paymenter\\Extensions\\Servers\\Domains\\';
     if (str_starts_with($name, $prefix)) {
-        require dirname(__DIR__).'/NameSilo/'.str_replace('\\', '/', substr($name, strlen($prefix))).'.php';
+        require dirname(__DIR__).'/Domains/'.str_replace('\\', '/', substr($name, strlen($prefix))).'.php';
     }
 });
 

@@ -1,7 +1,7 @@
 <?php
 // Synthetic cURL functions: no sockets. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\NameSilo\Api;
+namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api;
 require dirname(__FILE__).'/bootstrap.php';
 // Exercise redaction even when the host includes arguments in exception traces.
 ini_set('zend.exception_ignore_args', '0');

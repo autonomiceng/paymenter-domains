@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def hashes():
     return {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted((ROOT / 'NameSilo').rglob('*')) if p.is_file()}
+            for p in sorted((ROOT / 'Domains').rglob('*')) if p.is_file()}
 
 
 def main():
@@ -30,7 +30,7 @@ def main():
     if not suites:
         raise RuntimeError('No PHP suites found.')
     commands = [('lint', [php, '-l', str(p.relative_to(ROOT))])
-                for area in ['NameSilo', 'tests'] for p in sorted((ROOT / area).rglob('*.php'))]
+                for area in ['Domains', 'tests'] for p in sorted((ROOT / area).rglob('*.php'))]
     commands += [('suite', [php, str(p.relative_to(ROOT))]) for p in suites]
     before, results = hashes(), []
     try:

@@ -1,6 +1,6 @@
 # API foundation
 
-`Api/` contains the standalone NameSilo protocol client. It has no Paymenter entry point,
+`Registrars/NameSilo/Api/` contains the standalone NameSilo protocol client. It has no Paymenter entry point,
 service, billing or management integration and is not installable or usable yet.
 
 Construct `RegistrarClient` with an explicit `Environment` and `Transport` (production:

@@ -1,6 +1,6 @@
-# NameSilo for Paymenter
+# Domains for Paymenter
 
-An in-development [Paymenter](https://paymenter.org) extension for selling and managing domain names through NameSilo.
+An in-development [Paymenter](https://paymenter.org) extension for selling and managing domain names through supported registrars.
 
 **API client in progress, not usable yet.** A standalone bounded API client and synthetic offline tests exist. There is no Paymenter entry point, installable ZIP, release, billing or domain-management integration, or verified provider/Paymenter compatibility.
 
@@ -9,7 +9,7 @@ The repository follows the layout of [Paymenter Enom](https://github.com/autonom
 ## Layout
 
 ```text
-NameSilo/   Standalone API foundation and distributable license
+Domains/    Registrar foundations and distributable license
 docs/       Public development conventions and verification guidance
 scripts/    Pinned PHP bootstrap and offline test runner
 tests/      Synthetic provider and transport tests

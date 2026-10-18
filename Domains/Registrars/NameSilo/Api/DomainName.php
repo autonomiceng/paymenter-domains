@@ -1,7 +1,7 @@
 <?php
 // Adapted from Enom Api/DomainName.php; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-namespace Paymenter\Extensions\Servers\NameSilo\Api;
+namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api;
 
 final class DomainName
 {

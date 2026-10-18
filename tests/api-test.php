@@ -5,7 +5,7 @@ require __DIR__.'/bootstrap.php';
 // Exercise redaction even when the host includes arguments in exception traces.
 ini_set('zend.exception_ignore_args', '0');
 
-use Paymenter\Extensions\Servers\NameSilo\Api\{DomainName, Environment, Outcome, RegistrarClient,
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DomainName, Environment, Outcome, RegistrarClient,
     RegistrarRequest as Request, PurchaseMapping as Purchase, ResponseParser, RejectionScope, RequestContext, Transport, TransportResponse, UsNexus, CurlTransport};
 
 final class FakeTransport implements Transport

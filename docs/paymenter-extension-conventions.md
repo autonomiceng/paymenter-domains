@@ -4,7 +4,7 @@ These are implementation constraints, not claims of implemented or tested behavi
 
 ## Native integration
 
-Use a native server extension under `NameSilo/`. The planned class is `Paymenter\Extensions\Servers\NameSilo\NameSilo`, extending Paymenter's `App\Classes\Extension\Server`. Confirm the actual `ExtensionMeta` signature and extension discovery in the supported Paymenter version before implementation.
+Use a native server extension under `Domains/`. The planned class is `Paymenter\Extensions\Servers\Domains\Domains`, extending Paymenter's `App\Classes\Extension\Server`. Confirm the actual `ExtensionMeta` signature and extension discovery in the supported Paymenter version before implementation.
 
 Expose configuration under Paymenter's native Servers interface and extension-owned administration resources. Keep Paymenter application, authentication, gateways, themes, and native table definitions unchanged. Each managed domain uses one native Service and the normal native invoice/payment lifecycle. A second subscription or direct registrar payment flow would duplicate billing authority.
 
@@ -20,7 +20,7 @@ Use native encrypted settings for credentials, explicit test/live account bindin
 
 ## Packaging and retained data
 
-The planned ZIP has a single `NameSilo/` wrapper, not `extensions/Servers/NameSilo/`. Verify the supported Paymenter uploader and lifecycle hooks before claiming installation compatibility. Include the distributable MIT license. Exclude documentation placeholders from release archives once a package builder exists.
+The planned ZIP has a single `Domains/` wrapper, not `extensions/Servers/Domains/`. Verify the supported Paymenter uploader and lifecycle hooks before claiming installation compatibility. Include the distributable MIT license. Exclude documentation placeholders from release archives once a package builder exists.
 
 Use extension-owned tables and identifiers, with a reviewed schema. Preserve registrations, invoices, and operation evidence through upgrades and uninstall. NameSilo must never write Enom-owned tables or take over existing Enom domains implicitly.
 
