@@ -93,3 +93,11 @@ Slice 14 `catalogue-sync-test.php` exercises both real read adapters through sha
 import and seller eligibility: encrypted revisions/revocation, one NameSilo batch, compound suffixes,
 live term narrowing, positive no-price, omission/failure retention and non-selling holder renewals.
 All wire transports are synthetic; native SQLite does not establish provider or MariaDB acceptance.
+
+Slice 15 `native-catalogue-test.php` covers permanent native identities, account-specific products,
+exact-term projections, annual holding plans, withdrawals and malformed mapping refusals.
+Synthetic SQLite publication is not MariaDB concurrency or installed hook acceptance.
+
+Slice 15 also refuses incoming/outgoing native upgrade and config-option links, tests withdrawn-plan
+sort order, and discovers product IDs before primary-key locking to avoid a broad native products scan.
+The exact staged slice is tested separately before its signed commit; subsequent slice work is excluded.

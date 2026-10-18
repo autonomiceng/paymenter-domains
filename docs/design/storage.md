@@ -352,3 +352,30 @@ probe. Its advisory constructor quote acceptance grants no publication authority
 refuse unsupported registry attributes; one malformed account price row fails the whole NameSilo batch.
 Enom transfer allowlists/TransferOrders support remain mandatory 27/28 acceptance gates. Settings
 locks occur after the TLD lock during import; the common server lock serializes cooperating writers.
+
+## Native catalogue projections (slice 15)
+
+`NativeCatalogue` publishes permanent hidden account/TLD/action products, four neutral markers,
+account-qualified slugs and exact-term recurring annual-unit plans. The native category is created if absent.
+The native category lock serializes first creation (upstream slugs are not unique), then existing
+products/plans/prices lock before server/account/TLD/price evidence. Checkout never locks category.
+Publication uses PublicationEligibility and current annual renewal; it never repoints servers.
+Withdrawals remove acquisition price projections, retaining product/plan identities and an annual
+plan on each product for holders. These projections grant no checkout or spending authority.
+No publication hook or installed entry is registered yet; 37/39 own authorized invocation and
+native marker/product editing guards. SQL/privileged edits remain outside the service boundary.
+
+Native plan prices are acquisition projections, including the one-year plan; holder renewal display
+uses service.price on that same product, not its plan price. Slice 17 freezes checkout and sets the
+annual holder price. Slice 24/39 must intercept native coupon calculatePrice/save and null-price
+free-renewal paths before installation; acquisition withdrawal must never become a free renewal.
+Publication uses stock=0 to withdraw sales while retaining all product/plan identities. It refuses
+upgrade links in both directions and config-option links before Domains locks; mapping also refuses
+these links. Slice 39 must prevent them and presentation/identity edits being re-added. Existing
+invalid hidden/quantity/slug edits deliberately fail closed pending those guards. Creation of hidden
+projections for disabled TLDs is bounded operationally by authorized publication in 37/39; avoiding
+unused first projections is a later optimization. Native publication invocation moved from cat14's
+15 hook gate to 37/39. Scheduler31/38/39 must republish on sync and freshness expiry. MariaDB EXPLAIN
+must verify publication's unlocked slug/marker discovery followed by primary-key product locks;
+no FOR UPDATE over the unindexed slug/marker OR scan. Native product locks still follow native
+checkout order; deadlocks/timeouts abort the entire checkout, never resume a partial batch.
