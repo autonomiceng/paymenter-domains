@@ -157,7 +157,8 @@ foreach (['enom' => PrivacyMode::Paid, 'namesilo' => PrivacyMode::Free] as $regi
         same(Disposition::Unknown, $unknownFake->reconcile($attempt, $makeContext())->disposition, 'Uncertain attempt guessed resolved');
         same(['reconcile'], $unknownFake->calls, 'Reconciliation replayed mutation');
         if ($execution !== ExecutionRecord::Absent) {
-            refuses(fn () => new AttemptEvidence($account, $query, 'operation-1', 7, $execution, SendState::DefinitelyUnsent, $now, $now), 'Recorded-null marked definitely unsent');
+            refuses(fn () => new AttemptEvidence($account, $query, 'operation-1', 7, $execution, SendState::DefinitelyUnsent,
+                $now, $now, seal: DispatchSeal::Absent), 'Recorded execution marked definitely unsent');
         }
     }
     $sentAttempt = new AttemptEvidence($account, $query, 'operation-sent', 7, ExecutionRecord::Recorded, SendState::Sent,
@@ -174,6 +175,12 @@ foreach (['enom' => PrivacyMode::Paid, 'namesilo' => PrivacyMode::Free] as $regi
     $keyedFake = new FakeRegistrar($account, $capabilities, $keyed);
     $matched = $keyedFake->reconcile($sentAttempt, $makeContext()); $matched->requireAttempt($sentAttempt);
     same(['order-42'], $keyedFake->reconciliationReferences, 'Original Enom order reference lost');
+    $exhausted = $makeContext(1); $exhausted->claimRead($account);
+    foreach (['budget' => $exhausted, 'deadline' => $expired, 'binding' => $cross] as $reason => $refusedContext) {
+        refuses(fn () => $keyedFake->reconcile($sentAttempt, $refusedContext), 'Reconciliation bypassed '.$reason.' refusal');
+        same(['reconcile'], $keyedFake->calls, 'Refused reconciliation recorded a wire call: '.$reason);
+        same(['order-42'], $keyedFake->reconciliationReferences, 'Refused reconciliation recorded a reference: '.$reason);
+    }
     same($expiry, $matched->attempt()->expectedExpiry, 'Expected post-operation expiry lost');
     $differentAttempt = new AttemptEvidence($account, $query, 'different-operation', 7, ExecutionRecord::Recorded, SendState::Sent, $now, $now);
     refuses(fn () => $matched->requireAttempt($differentAttempt), 'Different operation consumed reconciliation');

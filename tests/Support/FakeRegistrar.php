@@ -44,8 +44,9 @@ final class FakeRegistrar implements RegistrarDriver
     public function reconcile(AttemptEvidence $attempt, RequestContext $context): ReconciliationResult
     {
         $this->account->requireMatch($attempt->binding);
+        $response = $this->read('reconcile', $context);
         $this->reconciliationReferences[] = $attempt->providerReference;
-        return new ReconciliationResult($attempt, $this->read('reconcile', $context));
+        return new ReconciliationResult($attempt, $response);
     }
 }
 

@@ -18,7 +18,9 @@ provider acceptance and a usable extension remain future gates.
   `domains_operations`. Freeze account/generation/attempt/funding evidence. Missing execution and
   sent-null differ. Unknown never authorizes replay, auto-refund or another registrar fallback.
 - `domains_tlds` and `domains_prices` belong to registrar accounts: one price table per account,
-  a shared default rule and per-TLD overrides. Build no unified retail mode.
+  per TLD, `use_default_rule` selects either the account's shared default rule or that TLD's
+  override, never both combined. This yields one exact price per account/TLD/action/term/currency;
+  see [retained storage and pricing rules](storage.md). Build no unified retail mode.
 - Keep Enom 0.5 margin behavior: a registration or transfer term priced below cost is held from
   sale with a staff alert; a below-cost renewal is still billed and only alerts staff. No floors at
   obligation creation or dispatch, no held shortfalls and no subsidy workflows.
@@ -97,9 +99,11 @@ as full additions. Split oversized slices before merging. Numbers denote local s
 | 44 | 1,200 | Paired-driver end-to-end parity and repeated seller-switch scenarios; installed candidate/converter/theme coordination, race-test harness and release/rollback/support docs. Close source-scenario inventory gaps. Depends all. |
 
 Follow-up after 28 (not in the totals below): **move to save**, 2–3 slices / ~3,000 lines. When a
-held domain renews for less at another configured account, offer a one-click move between our own
-accounts (a transfer that adds a year). Offer from ~90 to 14 days before expiry, only past the
-transfer lock and where the cheaper account sells the TLD; copy registrar-hosted DNS first.
+held domain renews for less at another configured account at a different registrar, offer a
+one-click move between our own configured accounts via a registry transfer that adds one year.
+Offer from ~90 to 14 days before expiry, only past the transfer lock and where the cheaper
+account sells the TLD; copy registrar-hosted DNS first. Same-registrar account moves are not
+registry transfers, add no year and remain out of scope unless separately verified.
 Customer wording never names a registrar.
 
 Future stack: **44 slices / 47,450 lines**, down **1,000** from 48,450.
