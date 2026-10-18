@@ -281,3 +281,56 @@ row: permission registration and policy binding must ship with that installed ac
 `render-owned.py SHELL_DIR OUTPUT_DIR records` adds synthetic record/error/held/max-record and shared regression fixtures to the existing owner renderer. Paths are CLI arguments; the supplied site shell and assets remain external. Reference: MIT Enom `444f31ce0bfd07216e5200544bffe863119d0e7d`, DNS/glue partials, DomainController record paths, shared styles/script and glue/single-DS regressions.
 
 These are presentation checks, not installed provider acceptance. DNS/SRV editing is unreachable without an initial complete current-generation record readback producer. A plan amendment is requested for a new observation row, proposed 31R, to own bounded durable record refresh with current authority binding; installation alone does not supply it. DNS tools remain opt-in. Glue shows only confirmed changes made here, not a complete provider inventory; unknown DS lists are explicit while additions retain fresh engine preflight. Routes, factories and writes stay dormant until installation; shared session/cache locks, bounded observation history, GET lock contention, provider registry behavior and theme navigation still require their acceptance gates.
+
+## Opt-in NameSilo OTE contract test
+
+Run only with separate authority for the sandbox account and (for `--write`) its funds.
+The runner is excluded from `tests/suites.json`, default suites and CI. Prepare the pinned
+PHP archives offline and supply the key through `NAMESILO_SANDBOX_API_KEY` in the environment;
+never pass it as an argument. No credential file is loaded by the runner.
+
+```sh
+# Offline guards; with PAYMENTER_TEST_APP this also exercises the actual registration path.
+PHP_RUNTIME_ARCHIVE_CACHE=/path/to/verified/php-archives \
+PAYMENTER_TEST_APP=/canonical/path/to/paymenter-1.5.9 scripts/ote-contract.sh --self-test
+# Check the UTC clock before each authorized run.
+date -u
+scripts/ote-contract.sh --read
+date -u
+PAYMENTER_TEST_APP=/canonical/path/to/paymenter-1.5.9 scripts/ote-contract.sh --write
+```
+
+Both live flags refuse 18:00–21:00 UTC, with another check before every request and after
+spacing waits. The sender permits only HTTPS `ote.namesilo.com`, exact Sandbox `/api` or
+`/apibatch` origins, no redirects, proxies or retries, at most 60 sequential requests with
+at least 1 second between starts. Purchases are limited to one generated random .com,
+one registration year and at most one renewal year; explicit `auto_renew=0` and registration
+`private=0` are enforced. Nameserver changes use NS1/NS2.NAMESILO.COM; DNS work is one TXT.
+No caller-provided name, URL or command is accepted by the CLI.
+
+`--read` checks balance, .com/.net prices and availability, bounded domain/order inventory
+and the OTE `/apibatch/getAccountBalance` route. `--write` repeats reads before composing
+the real registration preflight, sealed engine grant, profile proof, purchase mapping,
+parser and adapter inside a disposable native SQLite fixture. Local identity, funding and
+catalogue policy are explicitly synthetic; actual preflight reads remain real and missing
+premium/contact/quote proof holds the write. The fixture never adopts another account domain.
+A durably accepted production registration is followed by owned readback, bounded order/charge correlation,
+NS, lock/unlock, repeated auto-renewal removal and TXT add/list/delete with readback.
+Since the public renewal reference omits `auto_renew`, the write phase probes exactly one
+annual renewal with that parameter only after active owned, future-expiry, auto-renew-off
+readback. Request acceptance cannot establish whether an undocumented parameter was honored.
+A blocked production gate is recorded; the runner does not fabricate proof to force a write.
+
+A private `$TMPDIR/domains-ote-*/receipt.json` records request attempts before sending, shapes,
+code values, parser/fixture mismatches and boolean evidence checks. Captures replace the query
+key with `[redacted]`, omit all scalar account/contact/order/DNS values and unknown field names,
+and assert credential variants are absent. Child output/errors are discarded; raw replies remain
+in memory only. Receipts are never fixtures or committed. No account identifiers or domain names
+are stored. Possibly sent purchases exit 3 and print `purchase_unresolved: true`; investigate before
+another authorized write run. Exit 0 means observation completed; inspect mismatches separately.
+
+This proves only the observed OTE contract. It does not enable production processing or establish
+account identity, full history coverage/timezone/lag/retention, exact-term/premium guarantees,
+restore safety, MariaDB races, installed integration or causal renewal-flag support. The real
+reconciliation adapter is exercised without inventing history acceptance; incomplete evidence stays
+unresolved. Production behavior changes belong in separate reviewed slices.
