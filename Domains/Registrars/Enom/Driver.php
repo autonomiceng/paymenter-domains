@@ -4,16 +4,17 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, CanonicalName, Capabilities, Disposition, DomainSnapshot,
-    DriverResult, Evidence, Money, PrivacyMode, Query, ReconciliationResult, RejectionBasis, RequestContext, ResultReason, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, CanonicalName, Capabilities, CatalogueRate, CostUnit, Discrepancy, Disposition, DomainSnapshot,
+    DriverResult, Evidence, ExpiryPrecision, Money, PrivacyMode, Query, QuoteEvidence, ReconciliationResult, RejectionBasis, RequestContext, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand};
 
 /** Named read adapter only; no admission, charging, persistence or account adoption. */
 final class Driver implements RegistrarDriver
 {
     private array $suffixes;
-    public function __construct(private readonly Client $client, array $suffixes)
+    public function __construct(private readonly Client $client, array $suffixes, private readonly int $priceMaxAgeSeconds = 300)
     {
+        if ($priceMaxAgeSeconds < 1 || $priceMaxAgeSeconds > 86400) { throw new \InvalidArgumentException('Invalid local price freshness policy.'); }
         foreach ($suffixes as $tld) { if (!is_string($tld)) { throw new \InvalidArgumentException('Invalid ending.'); } Catalogue::tld($tld); }
         $this->suffixes = array_values(array_unique($suffixes));
     }
@@ -71,7 +72,7 @@ final class Driver implements RegistrarDriver
         catch (\Throwable) { return $this->result(null); }
         return $this->result(['fields' => $schema, 'supported' => RegistryFields::supported($schema)]);
     }
-    /** Catalogue lexical value only. Exact quote/unit/currency authority arrives in slice 12. */
+    /** Selected-term annual account rate; source product_price_unavailable alone means no price. */
     public function productPrice(string $tld, string $action, int $years, #[\SensitiveParameter] RequestContext $context): ReadResult
     {
         Catalogue::tld($tld);
@@ -80,8 +81,11 @@ final class Driver implements RegistrarDriver
         $reply = $this->read(ReadCommand::ProductPrice, ['TLD' => $tld, 'ProductType' => $type, 'Years' => $years], $context);
         if ($reply->status !== 'success') { return $this->result(null); }
         $enabled = $reply->value('productprice.productenabled'); $price = $reply->value('productprice.price');
-        // Source EnomApi::productPrice's sole no-price condition; all other non-success reads fail.
-        if (!is_string($enabled) || !in_array(strtolower($enabled), ['true', '1'], true) || !is_string($price) || !preg_match('/^[0-9]{1,8}(?:\.[0-9]{1,4})?$/D', $price)) {
+        // Unlike malformed source no-price, unsupported extra precision must retain prior costs.
+        if (is_string($price) && preg_match('/^[0-9]+\.[0-9]{5,}$/D', $price)) { return $this->result(null); }
+        $currency = $reply->value('productprice.currency');
+        if ($currency !== null && (!is_string($currency) || strtoupper($currency) !== 'USD')) { return $this->result(null); }
+        if (!is_string($enabled) || !in_array(strtolower($enabled), ['true', '1'], true) || !is_string($price) || Pricing::annual($price) === null) {
             return new ReadResult($this->binding(), 'no_price');
         }
         return $this->result(['tld' => $tld, 'action' => $action, 'years' => $years, 'price' => $price]);
@@ -183,8 +187,60 @@ final class Driver implements RegistrarDriver
         $this->binding()->requireMatch($context->binding);
         return new DriverResult($this->binding(), Disposition::Rejected, SendState::DefinitelyUnsent, ResultReason::Unsupported, rejectionBasis: RejectionBasis::DefinitelyUnsent);
     }
-    public function quote(Query $query, #[\SensitiveParameter] RequestContext $context): DriverResult { return $this->unsupported($context); }
-    public function renewalAssessment(Query $query, #[\SensitiveParameter] RequestContext $context): DriverResult { return $this->unsupported($context); }
+    public function quote(Query $query, #[\SensitiveParameter] RequestContext $context): DriverResult
+    {
+        if ($query->action === Action::Renew) { return $this->renewalAssessment($query, $context); }
+        if ($query->action === Action::Transfer && $query->years !== 1) { return $this->unsupported($context); }
+        $parts = $this->parts($query->name);
+        $price = $this->productPrice($parts['TLD'], $query->action->value, $query->years, $context);
+        if ($price->status !== 'success') { return $this->neutral(new ProtocolResult('unknown', 'price_unconfirmed')); }
+        $quote = new QuoteEvidence($query, Pricing::total(Pricing::annual($price->facts()['price']), $query->years), CostUnit::TermTotal,
+            'enom_product_price', $now = $context->now(), $now->modify('+'.$this->priceMaxAgeSeconds.' seconds'));
+        // Account/TLD price is advisory: it proves neither ordinary-name nor availability eligibility.
+        return new DriverResult($this->binding(), Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged, new Evidence(quote: $quote));
+    }
+    public function catalogueRate(string $tld, string $action, int $years, #[\SensitiveParameter] RequestContext $context, int $catalogueMaxAgeSeconds): CatalogueRate
+    {
+        if ($catalogueMaxAgeSeconds < 1 || $catalogueMaxAgeSeconds > 2678400) { throw new \InvalidArgumentException('Invalid catalogue freshness policy.'); }
+        if ($action !== 'register' && $years !== 1) { throw new \DomainException('Only annual renewal/transfer catalogue rates are supported.'); }
+        $read = $this->productPrice($tld, $action, $years, $context); $now = $context->now();
+        if ($read->status === 'unknown') { throw new \DomainException('Enom price read failed.'); }
+        return new CatalogueRate($action, $years, $read->status === 'no_price' ? null : Pricing::annual($read->facts()['price']),
+            'enom_product_price', $now, $now->modify('+'.$catalogueMaxAgeSeconds.' seconds'));
+    }
+    public function renewalAssessment(Query $query, #[\SensitiveParameter] RequestContext $context): DriverResult
+    {
+        if ($query->action !== Action::Renew) { return $this->unsupported($context); }
+        [$reply, $parts, $domain] = $this->identity($query->name, $context);
+        if ($domain?->owned !== true) { return $this->neutral($reply, new Evidence(domain: $domain)); }
+        $extend = $this->read(ReadCommand::RenewalInfo, $parts, $context);
+        $check = $this->read(ReadCommand::Check, $parts + ['Version' => 2, 'IncludePrice' => 1, 'IncludeProperties' => 1, 'IncludeEAP' => 1], $context);
+        $now = $context->now(); $expired = null;
+        if ($domain->expiry?->precision === ExpiryPrecision::Instant && new \DateTimeImmutable($domain->expiry->value) <= $now) {
+            $expired = $this->read(ReadCommand::Expired, [], $context);
+        }
+        foreach ([$extend, $check, $expired] as $required) {
+            if ($required !== null && $required->status !== 'success') { return $this->neutral($required); }
+        }
+        return new DriverResult($this->binding(), Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
+            Renewal::assess($query, $domain, $reply, $extend, $check, $expired, $now, $now->modify('+'.$this->priceMaxAgeSeconds.' seconds')));
+    }
+    /** Actual charge read for an original attempt plus retained successful execution, never a purchase path. */
+    public function orderCharge(AttemptEvidence $attempt, #[\SensitiveParameter] ProtocolResult $execution,
+        #[\SensitiveParameter] RequestContext $context): DriverResult
+    {
+        $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);
+        $id = $attempt->providerReference;
+        if (!is_string($id) || !preg_match('/^[1-9][0-9]{0,19}$/D', $id)) { return $this->neutral(new ProtocolResult('unknown', 'order_unconfirmed')); }
+        $order = $this->read(ReadCommand::Order, ['OrderID' => $id], $context);
+        $candidate = OrderCharge::read($attempt, $execution, $order);
+        if (!$candidate) { return $this->neutral(new ProtocolResult('unknown', 'order_unconfirmed')); }
+        $expected = $attempt->expectedCharge;
+        $difference = $expected && ($expected->currency !== 'USD' || rtrim(rtrim($expected->amount, '0'), '.') !== rtrim(rtrim($candidate->charge->amount, '0'), '.'));
+        return new DriverResult($this->binding(), $difference ? Disposition::AcceptedWithDiscrepancy : Disposition::Accepted,
+            SendState::Sent, $difference ? ResultReason::Fallback : ResultReason::Acknowledged,
+            new Evidence(charge: $candidate->charge, candidates: [$candidate]), $difference ? [Discrepancy::Charge] : []);
+    }
     public function reconcile(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
     {
         $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);

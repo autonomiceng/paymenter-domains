@@ -84,3 +84,7 @@ NameSilo slice 13 uses `namesilo-read-test.php` for bound deadline reads, explic
 price acceptance, null premium, date-only expiry and bounded unresolved history candidates.
 `namesilo-pricing-test.php` exercises the real accepted-binding and quote→rate→snapshot path in
 native SQLite; failed quotes retain price revisions/freshness. Fixtures are synthetic only.
+
+Enom slice 12 adds `enom-money-test.php` for exact source quote/renewal/order-charge evidence
+and `enom-pricing-test.php` for its real CatalogueRate → PriceSnapshot persistence, failed-read
+retention and below-cost renewal behavior. All transport is synthetic; no provider calls occur.

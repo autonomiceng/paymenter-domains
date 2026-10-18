@@ -4,6 +4,7 @@
     "tests/curl-transport-test.php",
     "tests/enom-protocol-test.php",
     "tests/enom-curl-test.php",
+    "tests/enom-money-test.php",
     "tests/enom-read-test.php",
     "tests/namesilo-read-test.php"
   ],
@@ -18,6 +19,7 @@
     "tests/binding-test.php",
     "tests/pricing-rules-test.php",
     "tests/catalogue-test.php",
+    "tests/enom-pricing-test.php",
     "tests/seller-policy-test.php",
     "tests/namesilo-pricing-test.php"
   ],

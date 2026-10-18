@@ -40,6 +40,7 @@ final class Expiry
         try {
             $date = new \DateTimeImmutable($input, $zone); $errors = \DateTimeImmutable::getLastErrors();
             if ($errors && ($errors['warning_count'] || $errors['error_count'])) { return null; }
+            if ($date->format('u') !== '000000') { return null; } // Neutral instants cannot retain nonzero fractions.
             if (!str_contains($input, ':')) { return new DateEvidence($date->format('Y-m-d'), ExpiryPrecision::Date, 'enom_expiry'); }
             // The neutral instant contract is second precision. Never invent fractional precision.
             return new DateEvidence($date->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM), ExpiryPrecision::Instant, 'enom_expiry', 'UTC');

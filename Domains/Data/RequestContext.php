@@ -21,4 +21,7 @@ final readonly class RequestContext
         $this->budget->consume();
         return $remaining;
     }
+
+    /** Observation/freshness checks must use the same accepted clock as request deadlines. */
+    public function now(): \DateTimeImmutable { return $this->clock->now(); }
 }

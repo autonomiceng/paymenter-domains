@@ -79,3 +79,54 @@ fail the whole catalogue closed. Registry flag requirements are stricter than th
 Typed consumer DTOs must precede catalogue/contact consumers; this server-only intermediate bag
 cannot authorize writes. Registration/purchase status and restorable facts remain for operation
 and reconciliation slices; owned=true by itself never establishes registration completion.
+
+## Slice 12 price and order evidence
+
+Adapted from the same frozen revision's `Services/Catalogue.php::productCost`,
+`RegistrarMoney.php`, `RenewalAdmission.php` and `Api/EnomApi.php` price/order reads.
+`catalogueRate` retains selected-term annual registration rates and annual renewal/transfer,
+using source USD semantics. `quote` exposes exact term totals, advisory for acquisition:
+ordinary/premium/availability acceptance remains separate. A failed neutral quote never means
+no-price. Only the successful source `product_price_unavailable` shape supplies explicit null
+catalogue rates; unsupported decimal precision/currency fails instead. Live prices retain the source four-decimal limit; extra precision fails the read
+instead of withdrawing a prior price. Only database padding is trimmed when excess digits
+are zero (the neutral pricing lane owns that mapping). No floats or rounding are used.
+`Pricing::catalogue` checks binding/query/currency/future observation/expiry and divides totals
+exactly. Persisted PriceSnapshot contracts remain unchanged. Quotes use a local age
+(default 300 seconds, maximum one day), not a provider charge guarantee. Catalogue reads
+require a separate caller-selected age (1 second to 31 days); slice 14 must choose it from
+the accepted sync interval and failure margin. The source daily sync did not expire prices;
+this explicit policy is required by the neutral catalogue contract.
+RequestContext's additive `now()` accessor uses its accepted deadline clock for these checks.
+
+Renewal assessment authenticates membership then reads GetExtendInfo/Check and, if expired,
+GetExpiredDomains using precise instant comparison. Complete quotes require matching ordinary-name prices/currency, term limits,
+known hold and corroborated precise expiry. Only the frozen scalar US local-date shape reconciles
+against a scalar authenticated precise Pacific expiry across UTC dates; attributed authenticated
+expiration shapes fail closed as in the frozen source. Date-only/unknown/restorable
+facts never infer grace. Grace requires one matching Expired row and one year; restoration is
+not authorized. Missing cost stays unknown independently of ordinary provider state. Failed required reads
+return Unknown. Unobserved redemption vocabulary stays Unknown; Ineligible reflects the
+source term/hold refusals without granting admission. Expired inventory is capped at 200 rows.
+
+OrderCharge reads GetOrderDetail for a captured ID and requires a retained successful matching
+Purchase/Register or Extend/Renew execution plus one exact successful closed item. Equal header
+and item amounts prove USD using source OrderBillAmount semantics; different authorized charge
+is retained as a discrepancy. Split/unknown/pending orders and UpdateExpiredDomains remain
+unconfirmed. BillDate/expiry retain date precision and Pacific provenance. This is read evidence,
+not completion, no-charge proof, unique attempt correlation, replay/refund or spending authority.
+The internal execution input is only a consistency check; slice 22 must replace it with a
+neutral persisted execution record and decide unique original-attempt charge acceptance.
+
+| Frozen source scenario | Target test |
+| --- | --- |
+| Catalogue product_price_unavailable vs other read failure, selected-term annual costs | `enom-money-test.php`, `enom-pricing-test.php`: null vs throw, four-decimal live rates, rejected extra precision, eight-decimal DB padding, exact rates/totals, DB retention and PriceSnapshot |
+| RegistrarMoney renewal currency, matching Check, max term/hold, precise local-date reconciliation; RenewalAdmission expired one-year rule | `enom-money-test.php`: ordinary/grace/unknown, foreign owner, budget, conflicting dates/prices/currency, scalar-only authenticated expiry, UTC/local midnight, hold/term/cap and restorable/redemption refusal |
+| RegistrarMoney actualCost single item, execution/ID/domain/action/term/status/currency/total binding | `enom-money-test.php`: register/renew charge, malformed/split/unknown/null execution, expired-command refusal, exact discrepancy and date/redaction |
+
+14 owns catalogue freshness/sync margin and a neutral catalogue interface; it must precheck
+disabled servers, publish accepted capabilities and validate annual renewal;
+20 owns admitted writes; 22 owns attempt/time-window correlation and transfer/expired-order
+contracts; 23 owns saved expected-ID/expiry, auto-renew-off, balance, funding, grace enablement
+and complimentary caps. Neither billing nor dispatch gains a cost floor. Provider acceptance,
+installed hooks and production account identity remain open.

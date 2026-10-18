@@ -121,7 +121,8 @@ $diagnostic = print_r($result, true).json_encode($result).var_export((array) $re
 foreach (['private-name', '5551234', 'account-only'] as $private) { expect(!str_contains($diagnostic, $private), 'Contact data excluded from diagnostics'); }
 $wire->payloads['Contacts'] = str_replace('<RegistrantFirstName>private-name</RegistrantFirstName>', '<RegistrantFirstName>private-name</RegistrantFirstName><FirstName>conflict</FirstName>', $contact);
 same('unknown', $driver->contacts('example.com', $context())->status, 'Conflicting contact aliases unknown');
-$before = count($wire->calls); same(Disposition::Rejected, $driver->quote(new Query('example.com', Action::Register, 1), $context())->disposition, 'Quote awaits pricing slice07/12');
+$before = count($wire->calls); same(Disposition::Unknown, $driver->quote(new Query('example.com', Action::Register, 1), $context())->disposition, 'Missing quote price stays unknown');
+$before = count($wire->calls);
 same(Disposition::Rejected, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->disposition, 'Register Check is not transfer eligibility'); same($before, count($wire->calls), 'Unsupported read has no dispatch');
 try { $driver->balance(new RequestContext(new AccountBinding('enom', 2, Environment::Test, 'other'), RequestOrigin::Background, new DateTimeImmutable('+1 hour'), new RequestBudget(1))); throw new LogicException('Expected binding refusal'); } catch (InvalidArgumentException) {}
 same($before, count($wire->calls), 'Wrong binding never dispatched');
