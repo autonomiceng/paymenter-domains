@@ -101,3 +101,11 @@ Synthetic SQLite publication is not MariaDB concurrency or installed hook accept
 Slice 15 also refuses incoming/outgoing native upgrade and config-option links, tests withdrawn-plan
 sort order, and discovers product IDs before primary-key locking to avoid a broad native products scan.
 The exact staged slice is tested separately before its signed commit; subsequent slice work is excluded.
+
+Slice 16's `cart-admission-test.php` invokes vanilla Livewire Cart checkout in the disposable fixture:
+shared hosting/domain invoices, distinct names on one separated product, positive below-cost coupons,
+zero net, stale/seller-switched/direct-link checks, receipt tampering, malformed input and explicit
+premium=false. Native tokenizer is enabled from the already pinned common package for Blade/Livewire.
+Source map: Enom `444f31c` CartOrdering fields/admit → CartAdmission + CheckoutEligibility;
+native mixed-cart/coupon/quantity/source scenarios → cart-admission-test. Transfer eligibility/RDAP,
+contacts/registry and installed extension entry remain 27/18/39; these tests register internal hooks only.

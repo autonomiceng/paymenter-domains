@@ -379,3 +379,23 @@ unused first projections is a later optimization. Native publication invocation 
 must verify publication's unlocked slug/marker discovery followed by primary-key product locks;
 no FOR UPDATE over the unindexed slug/marker OR scan. Native product locks still follow native
 checkout order; deadlocks/timeouts abort the entire checkout, never resume a partial batch.
+
+Slice 16 keeps an opaque, five-minute eligibility receipt in the server cache, bound to the
+cart, canonical name, account, product and exact plan. Native login can adopt a guest cart;
+checkout independently verifies the authenticated owner inside its native transaction. A fresh accepted availability read must say
+premium=false and available=true. Rendering fields makes no provider request. Cart create/update
+performs that read outside transactions; checkout performs no provider read. Transfer checkout stays
+closed until slice 27 supplies accepted transferability/RDAP evidence; codes are entered after checkout.
+Native Order Creating uses the same cached item batch as vanilla checkout, after all native
+user/coupon/product locks and before invoice/service inserts. It calls SellerPolicies::admit once for
+ALL domain selections. A receipt or DTO cannot replace that call. Native list row equals the admitted
+retail; discounted final unit total already includes coupons. Subtract native original tax once to
+require positive net, independently of margin. Each domain line has quantity one and no config options.
+The admitted batch exists only for this transaction and clears on outer commit/rollback. Slice 17
+consumes it synchronously; contacts/registry validation (18) and claims/dispatch (19/20) remain required.
+
+Presentation32/39 must translate customer-correctable refusals to native DisplayException or field
+validation, and offer an explicit re-edit/recheck path after receipt expiry outside the checkout
+transaction. Generic DomainException handling is not ready for installation. Slice39 must install
+exactly one shared CartAdmission instance before InvoiceBinding; the double-adapter test only
+simulates an earlier listener changing cached native prices.

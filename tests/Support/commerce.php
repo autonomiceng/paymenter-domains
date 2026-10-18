@@ -4,23 +4,28 @@ declare(strict_types=1);
 require_once __DIR__.'/FakeRegistrar.php';
 use App\Models\{Category, Currency, Server};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CatalogueEntry, CatalogueRate, Disposition, DriverResult, Environment, ResultReason, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CatalogueEntry, CatalogueRate, Disposition, DriverResult, Environment, Evidence, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, FoundationSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
-function commerceFixture(): array
+function commerceFixture(bool $eligible = false): array
 {
     FoundationSchema::install(); SalesPolicySchema::install();
     Currency::firstOrCreate(['code' => 'USD'], ['name' => 'US Dollar', 'format' => '1,000.00', 'prefix' => '$', 'suffix' => '']);
     Category::create(['name' => 'Domains', 'slug' => 'domains', 'description' => 'Domains']);
     $registry = new RegistrarRegistry;
+    $reads = (object) ['calls' => 0, 'premium' => false, 'available' => true];
     $verifier = new class implements AccountVerifier {
         public function verify(Environment $env, #[SensitiveParameter] array $credentials): string { return $credentials['token']; }
     };
     foreach (['enom', 'namesilo'] as $key) {
-        $registry->register($key, ['token'], $verifier, static fn (AccountBinding $b, array $c): FakeRegistrar => new FakeRegistrar($b, new Capabilities($b, []),
-            new DriverResult($b, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unverified)));
+        $registry->register($key, ['token'], $verifier, static function (AccountBinding $b, array $c) use ($eligible, $reads): FakeRegistrar {
+            expect(Illuminate\Support\Facades\DB::transactionLevel() === 0, 'No provider reads under locks'); $reads->calls++;
+            return new FakeRegistrar($b, new Capabilities($b, []), $eligible
+                ? new DriverResult($b, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged, new Evidence(premium: $reads->premium, available: $reads->available))
+                : new DriverResult($b, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unverified));
+        });
     }
     $bindings = new AccountBindings($registry); $prices = new PriceCatalogue(new PricingRules);
     $sellers = new SellerPolicies($prices, $bindings); $native = new NativeCatalogue($prices);
@@ -41,7 +46,7 @@ function commerceFixture(): array
         $native->publish($tld->id, $now); $tlds[] = $tld->fresh();
     }
     $sellers->initialize('com'); $sellers->change('com', 1, $tlds[0]->server_id, true, true, $now);
-    return compact('bindings', 'prices', 'sellers', 'native', 'now', 'tlds');
+    return compact('bindings', 'prices', 'sellers', 'native', 'now', 'tlds', 'reads');
 }
 function commerceReject(callable $call): void
 {

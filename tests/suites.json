@@ -23,7 +23,8 @@
     "tests/seller-policy-test.php",
     "tests/namesilo-pricing-test.php",
     "tests/catalogue-sync-test.php",
-    "tests/native-catalogue-test.php"
+    "tests/native-catalogue-test.php",
+    "tests/cart-admission-test.php"
   ],
   "ui": [],
   "runner": [

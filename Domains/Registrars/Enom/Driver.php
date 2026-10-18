@@ -130,6 +130,16 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         if ($reply->status !== 'success' || !is_array($row) || !is_string($row['name'] ?? null) || strtolower($row['name']) !== $query->name || !in_array($row['rrpcode'] ?? null, ['210', '211'], true)) {
             return $this->neutral(new ProtocolResult('unknown', 'invalid_payload'));
         }
+        // Name-specific Check restrictions override the account/TLD catalogue. Missing bounds
+        // retain the source 1..10 defaults; malformed or conflicting evidence is unknown.
+        $properties = $row['properties'] ?? [];
+        if (!is_array($properties) || ($properties !== [] && array_is_list($properties))) { return $this->neutral(new ProtocolResult('unknown', 'invalid_payload')); }
+        $min = $properties['minregyear'] ?? '1'; $max = $properties['maxregyear'] ?? '10';
+        if (!is_string($min) || !is_string($max) || !preg_match('/^(?:[1-9]|10)$/D', $min)
+            || !preg_match('/^(?:[1-9]|10)$/D', $max) || (int) $min > (int) $max) {
+            return $this->neutral(new ProtocolResult('unknown', 'invalid_payload'));
+        }
+        if ($query->years < (int) $min || $query->years > (int) $max) { return $this->unsupported($context); }
         // Premium includes platinum/EAP; missing any exclusion flag remains unknown.
         $flags = array_map(self::flag(...), [$row['ispremium'] ?? null, $row['isplatinum'] ?? null, $row['iseap'] ?? null]);
         $premium = in_array(true, $flags, true) ? true : (in_array(null, $flags, true) ? null : false);

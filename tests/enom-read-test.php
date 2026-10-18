@@ -81,6 +81,20 @@ $check = '<Domains><Domain><Name>example.com</Name><RRPCode>210</RRPCode><IsPrem
 $wire->payloads['Check'] = $check;
 $result = $driver->availability(new Query('example.com', Action::Register, 1), $context());
 same(true, $result->evidence()->available, 'Recognized available response'); same(false, $result->evidence()->premium, 'All exclusions known false');
+$wire->payloads['Check'] = str_replace('</Domain>', '<Properties><MinRegYear>1</MinRegYear><MaxRegYear>1</MaxRegYear></Properties></Domain>', $check);
+same(Disposition::Rejected, $driver->availability(new Query('example.com', Action::Register, 3), $context())->disposition, 'Name-specific term restriction closes multi-year checkout');
+same(true, $driver->availability(new Query('example.com', Action::Register, 1), $context())->evidence()->available, 'Allowed name-specific term retained');
+$wire->payloads['Check'] = str_replace('</Domain>', '<Properties><MinRegYear>bad</MinRegYear></Properties></Domain>', $check);
+same(Disposition::Unknown, $driver->availability(new Query('example.com', Action::Register, 1), $context())->disposition, 'Malformed term restriction is unknown');
+$wire->payloads['Check'] = str_replace('</Domain>', '<Properties><MinRegYear>2</MinRegYear><MaxRegYear>5</MaxRegYear></Properties></Domain>', $check);
+same(Disposition::Rejected, $driver->availability(new Query('example.com', Action::Register, 1), $context())->disposition, 'Nested minimum excludes one year');
+same(true, $driver->availability(new Query('example.com', Action::Register, 3), $context())->evidence()->available, 'Nested allowed multi-year term retained');
+$wire->payloads['Check'] = str_replace('</Domain>', str_repeat('<Properties><MinRegYear>2</MinRegYear></Properties>', 2).'</Domain>', $check);
+same(Disposition::Unknown, $driver->availability(new Query('example.com', Action::Register, 1), $context())->disposition, 'Repeated properties cannot bypass the minimum');
+$wire->payloads['Check'] = str_replace('</Domain>', '<Properties>invalid</Properties></Domain>', $check);
+same(Disposition::Unknown, $driver->availability(new Query('example.com', Action::Register, 1), $context())->disposition, 'Scalar properties are unknown');
+$wire->payloads['Check'] = str_replace('</Domain>', '<MinRegYear>5</MinRegYear><MaxRegYear>1</MaxRegYear></Domain>', $check);
+same(true, $driver->availability(new Query('example.com', Action::Register, 3), $context())->evidence()->available, 'Unrelated top-level fields do not replace nested restrictions');
 $wire->payloads['Check'] = str_replace('<IsEAP>0', '<IsEAP>1', $check); same(true, $driver->availability(new Query('example.com', Action::Register, 1), $context())->evidence()->premium, 'EAP is premium');
 $wire->payloads['Check'] = str_replace('<IsEAP>0</IsEAP>', '', $check); same(null, $driver->availability(new Query('example.com', Action::Register, 1), $context())->evidence()->premium, 'Absent exclusion is unknown');
 foreach ([str_replace('example.com', 'other.com', $check), str_replace('210', '999', $check), str_replace('</Domains>', substr($check, 9, -10).'</Domains>', $check)] as $bad) {

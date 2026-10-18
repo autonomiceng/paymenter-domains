@@ -6,7 +6,7 @@ set -euo pipefail
 export PHP_INI_SCAN_DIR=''
 extra=()
 if [[ -n "${PAYMENTER_TEST_NATIVE_EXTENSIONS:-}" ]]; then
-  for module in pdo pdo_sqlite sqlite3 mbstring intl xml xmlreader xmlwriter; do
+  for module in pdo pdo_sqlite sqlite3 mbstring intl tokenizer xml xmlreader xmlwriter; do
     extra+=(-d "extension=${PAYMENTER_TEST_NATIVE_EXTENSIONS}/$module.so")
   done
 fi
