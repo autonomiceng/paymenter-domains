@@ -15,27 +15,36 @@ Illuminate\Support\Facades\DB::table('invoices')->where('id', $op->invoice_id)->
 App\Models\InvoiceTransaction::create(['invoice_id' => $op->invoice_id, 'amount' => $op->amount, 'fee' => '0.00', 'status' => 'succeeded']);
 [$claimed, $domain, $binding] = $claims->claim($op->id);
 $ctx = new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+300 seconds'), new RequestBudget(10), $clock);
+$preflight->cost = '8.95';
 $sealed = $claims->seal($claimed, $preflight->inspect($claimed, $domain, $ctx));
 $claims->finish($sealed, new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
     new Evidence(registration: new RegistrationEvidence(Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op, $domain), null, null, null, ['auto_renew']))));
 $wire = new class implements DeadlineTransport {
-    public int $calls = 0;
+    public int $calls = 0; public array $commands = []; public string $status = 'Active';
+    public string $expiry = '2027-10-18'; public string $auto = 'No'; public bool $quote = true;
+    public string $balance = '100.00'; public string $price = '8.95'; public array $omit = []; public $during = null;
     public function send(WireEnvironment $e, WireContext $c, RegistrarRequest $r, string $key): TransportResponse { throw new LogicException; }
     public function sendWithin(WireEnvironment $e, WireContext $c, RegistrarRequest $r, string $key, int $ms): TransportResponse {
-        same(0, Illuminate\Support\Facades\DB::transactionLevel(), 'No-ID reads outside locks'); $this->calls++;
+        same(0, Illuminate\Support\Facades\DB::transactionLevel(), 'No-ID reads outside locks'); $this->calls++; $this->commands[] = $r->command;
+        expect($ms > 0 && $ms <= 25000, 'NameSilo deadline bounded');
+        if ($r->command === 'getDomainInfo') { same(['domain' => 'native-history.com'], $r->parameters(), 'Exact account-scoped name read'); }
+        if ($this->during) { $hook = $this->during; $this->during = null; $hook($r->command); }
         $reply = match ($r->command) {
             'listOrders' => ['order' => [['order_number' => '901']]],
             'orderDetails' => ['order_number' => '901', 'order_date' => '2026-10-18 05:00:01', 'total' => '8.95',
                 'order_details' => [['description' => 'native-history.com - registration', 'years_qty' => '1', 'status' => 'Processed', 'subtotal' => '8.95']]],
-            'getDomainInfo' => ['created' => '2026-10-18', 'expires' => '2027-10-18', 'status' => 'Active', 'locked' => 'Yes', 'private' => 'No', 'auto_renew' => 'No'],
+            'getDomainInfo' => ['created' => '2026-10-18', 'expires' => $this->expiry, 'status' => $this->status, 'locked' => 'Yes', 'private' => 'No', 'auto_renew' => $this->auto],
+            'getPrices' => [$this->quote ? 'com' : 'net' => ['registration' => '8.95', 'renew' => $this->price, 'transfer' => '8.95']],
+            'getAccountBalance' => ['balance' => $this->balance],
             default => throw new LogicException('Only named reads permitted'),
         };
+        if ($r->command === 'getDomainInfo') { foreach ($this->omit as $field) { unset($reply[$field]); } }
         return new TransportResponse(200, json_encode(['request' => ['operation' => $r->command], 'reply' => ['code' => 300, 'detail' => 'synthetic'] + $reply]));
     }
 };
 $registry = new RegistrarRegistry;
 $verify = new class implements AccountVerifier { public function verify(Environment $e, array $c): string { return $c['token']; } };
-$registry->register('namesilo', ['token'], $verify, fn ($b, $c) => new Driver(new Client($b, $c['token'], $wire)));
+$registry->register('namesilo', ['token'], $verify, fn ($b, $c) => new Driver(new Client($b, $c['token'], $wire), ['renew'], $clock, 120));
 $reconcile = new OperationReconciliation($claims, new AccountBindings($registry), $clock);
 $clock->instant = $clock->now()->modify('+600 seconds');
 for ($i = 0; $i < 6; $i++) { $result = $reconcile->run($op->id); }
@@ -50,15 +59,4 @@ same('901', $result->provider_order_id, 'Read-confirmed order persisted'); same(
 same(null, $result->attempt['registration']['order_reference'], 'Original missing order ID remains immutable');
 same('registration_correction_required', $result->safe_code, 'Correction work retained after financial completion');
 $before = $wire->calls; $reconcile->run($op->id); same($before, $wire->calls, 'No replay or repeated provider read after completion');
-// Even an owned, uniquely completed holding cannot infer renewal/restore safety from Active.
-$renewBindings = new AccountBindings($registry);
-$admission = new \Paymenter\Extensions\Servers\Domains\Services\RenewalAdmission(
-    new \Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority($renewBindings, $clock), $renewBindings,
-    new \Paymenter\Extensions\Servers\Domains\Services\RenewalAcceptance($binding, true, true, 25, true), $clock);
-$holding = $result->domain->fresh(); Illuminate\Support\Facades\Cache::flush(); $before = $wire->calls;
-$decision = $admission->check(new \Paymenter\Extensions\Servers\Domains\Data\RenewalRequest($holding->id,
-    $holding->authority_generation, $holding->confirmed_revision, '2027-10-18', null));
-same(\Paymenter\Extensions\Servers\Domains\Data\RenewalCode::State, $decision->code, 'NameSilo unknown restore safety refuses');
-same($before + 1, $wire->calls, 'NameSilo refusal uses one bounded fresh ownership read');
-same(null, $holding->provider_domain_id, 'Absent provider-domain ID is never fabricated');
 echo "Native NameSilo no-ID accepted-history unique completion passed\n"; $nativeSuccessful = true;

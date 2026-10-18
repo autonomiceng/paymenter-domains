@@ -180,3 +180,12 @@ bounded reads outside locks and no invoice/operation/native-expiry mutation. Nam
 holder still refuses its unknown restoration-safe path; no synthetic Active/date inference enables it.
 Paid/unpaid/complimentary funding and caps remain25, invoice/calendar24 and reminders38; SQLite
 fixtures do not establish MariaDB races, installed runtime composition or live account acceptance39.
+
+
+Slice23b `renewal-namesilo-test` extends native no-ID reconciliation with ordinary admission,
+superseding slice23's blanket NameSilo refusal described above. It covers matching actual charges,
+changed-charge refusal and prevention of admission-proof backfill, as well as
+two-day UTC margin/offset/midnight boundaries, exact Active vocabulary, missing quotes, budget,
+nonpremium local proof/immutability, auto-renew/balance and post-read authority checks. Reads are
+synthetic, bounded and outside transactions; admission changes no invoice, operation or native expiry.
+Enom ordinary/grace/restore regressions remain in `renewal-admission-test`.

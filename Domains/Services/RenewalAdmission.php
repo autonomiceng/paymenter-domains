@@ -15,7 +15,7 @@ final readonly class RenewalAdmission
     {
         OperationClaims::outside(); $status = RenewalStatus::Unknown;
         try {
-            [$binding, $name, $stamp, $retail] = $this->authority->capture($request);
+            [$binding, $name, $stamp, $retail, $nonpremium] = $this->authority->capture($request);
             $this->accepted->reserve($binding);
             $reader = $this->bindings->reader($binding->serverId); $binding->requireMatch($reader->binding());
             $started = $this->clock->now();
@@ -33,7 +33,7 @@ final readonly class RenewalAdmission
                 throw new RenewalRefused($request->years !== 1 ? RenewalCode::Term : RenewalCode::Grace);
             }
             $this->owned($facts->domain, $request, $binding, $name);
-            if ($facts->premium !== false) { throw new RenewalRefused(RenewalCode::Cost); }
+            if ($binding->registrarKey === 'namesilo' ? !$nonpremium : $facts->premium !== false) { throw new RenewalRefused(RenewalCode::Cost); }
             $cost = WriteMoney::cost($facts->quote, $query, $started, $this->clock->now());
             if (!$cost) { throw new RenewalRefused(RenewalCode::Cost); }
             $flags = $reader->readDomain($name, $context); $binding->requireMatch($flags->binding);
@@ -58,7 +58,10 @@ final readonly class RenewalAdmission
     private function owned($snapshot, RenewalRequest $request, $binding, string $name): void
     {
         if (!$snapshot || $snapshot->binding->fingerprint !== $binding->fingerprint || $snapshot->owned !== true
-            || $snapshot->name !== $name || $snapshot->providerReference !== $request->providerId) { throw new RenewalRefused(RenewalCode::Owner); }
+            || $snapshot->name !== $name
+            || ($binding->registrarKey === 'namesilo'
+                ? $snapshot->providerReference !== null || $request->providerId !== null
+                : $snapshot->providerReference !== $request->providerId)) { throw new RenewalRefused(RenewalCode::Owner); }
         // Slice22 stores the normalized evidence calendar date without inventing a new timezone.
         $day = $snapshot->expiry ? substr($snapshot->expiry->value, 0, 10) : null;
         if ($day !== $request->expiry) { throw new RenewalRefused(RenewalCode::Anchor); }

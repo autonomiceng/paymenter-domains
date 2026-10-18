@@ -6,12 +6,13 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, RegistrarDriver};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, Capabilities, CostUnit, DateEvidence, Disposition,
     DomainSnapshot, DriverResult, Evidence, ExpiryPrecision, Money, PrivacyMode, Query, QuoteEvidence, ReconciliationResult,
-    RejectionBasis, RequestContext, ResultReason, SendState, SystemClock};
+    RejectionBasis, RenewalStatus, RequestContext, ResultReason, SendState, SystemClock};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DomainName, Outcome, RegistrarRequest as Request, RegistrarResult};
 
 /** Named reads only. Construction/quotes do not prove provider identity, sale eligibility or renewal safety. */
 final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader
 {
+    public const ORDINARY_EXPIRY_MARGIN_DAYS = 2;
     private readonly array $annualActions;
     /** Annual catalogue units/currency require independent account acceptance, default none. */
     public function __construct(private readonly Client $client, array $acceptedAnnualActions = [],
@@ -123,20 +124,45 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     {
         Query::requireName($name); $reply = $this->read(Request::domainInfo($name), $context);
         if ($reply->outcome !== Outcome::Success) { return $this->neutral($reply); }
+        return $this->neutral($reply, new Evidence(domain: $this->snapshot($name, $reply)));
+    }
+    private function snapshot(string $name, RegistrarResult $reply): DomainSnapshot
+    {
         $expiry = null;
         try { $expiry = new DateEvidence($reply->value('expires'), ExpiryPrecision::Date, 'namesilo_domain_info'); }
         catch (\InvalidArgumentException) {}
         // Successful account-scoped getDomainInfo observes ownership, not this attempt's execution.
-        return $this->neutral($reply, new Evidence(domain: new DomainSnapshot($this->binding(), $name, true, $expiry,
-            $reply->value('auto_renew') === 'Yes', $reply->value('private') === 'Yes', $reply->value('locked') === 'Yes')));
+        return new DomainSnapshot($this->binding(), $name, true, $expiry,
+            $reply->value('auto_renew') === 'Yes', $reply->value('private') === 'Yes', $reply->value('locked') === 'Yes');
     }
     public function renewalAssessment(Query $query, #[\SensitiveParameter] RequestContext $context): DriverResult
     {
         $this->binding()->requireMatch($context->binding);
         if ($query->action !== Action::Renew) { return $this->unsent(ResultReason::Unsupported); }
-        $domain = $this->readDomain($query->name, $context);
-        // Neither expiry nor Active proves ordinary/grace eligibility or disabled restoration.
-        return new DriverResult($this->binding(), Disposition::Unknown, $domain->sendState, ResultReason::Unverified, $domain->evidence());
+        $reply = $this->read(Request::domainInfo($query->name), $context);
+        $domain = $reply->outcome === Outcome::Success ? $this->snapshot($query->name, $reply) : null;
+        $facts = new Evidence(domain: $domain);
+        // Only exact Active plus a safely future UTC calendar date excludes grace/restoration.
+        $today = $context->now()->setTimezone(new \DateTimeZone('UTC'))->setTime(0, 0);
+        if ($domain?->expiry && $reply->value('status') === 'Active'
+            && $domain->expiry->value >= $today->modify('+'.self::ORDINARY_EXPIRY_MARGIN_DAYS.' days')->format('Y-m-d')) {
+            $quote = $this->quote($query, $context);
+            if ($quote->disposition === Disposition::Accepted && $quote->evidence()->quote) {
+                $q = $quote->evidence()->quote;
+                // The margin must still hold when the engine finishes its unlocked read window.
+                $until = (new \DateTimeImmutable($domain->expiry->value.'T00:00:00Z'))
+                    ->modify('-'.(self::ORDINARY_EXPIRY_MARGIN_DAYS - 1).' days');
+                if ($context->now() >= $until) {
+                    return new DriverResult($this->binding(), Disposition::Unknown, SendState::Sent, ResultReason::Unverified, $facts);
+                }
+                $facts = new Evidence(domain: $domain, quote: new QuoteEvidence($q->query, $q->cost, $q->unit,
+                    $q->source, $q->observedAt, min($q->validUntil, $until)), renewal: RenewalStatus::Ordinary);
+                return new DriverResult($this->binding(), Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged, $facts);
+            }
+        }
+        // Premium remains unknown here; local completed nonpremium acquisition proof belongs to the engine.
+        return new DriverResult($this->binding(), Disposition::Unknown,
+            $reply->outcome === Outcome::Success ? SendState::Sent : $this->neutral($reply)->sendState, ResultReason::Unverified, $facts);
     }
     public function reconcile(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
     {

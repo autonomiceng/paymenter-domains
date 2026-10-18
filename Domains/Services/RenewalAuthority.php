@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Plan, Product, Server, Service, ServiceCancellation, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{RenewalCode, RenewalRequest};
+use Paymenter\Extensions\Servers\Domains\Data\{Money, RenewalCode, RenewalRequest};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Price, Tld};
 /** Owns the renewal-specific ordered prefix. No general callback or write-authority scope is exposed. */
 final readonly class RenewalAuthority
@@ -79,13 +79,23 @@ final readonly class RenewalAuthority
                 // Ciphertext hashes detect even same-account verified credential rotation during the read window.
                 $rows = [$user, $service, $product, $plan, $server, $account, $tld, $domain,
                     ...$cancel, ...$properties, ...$markers, ...$settings, ...$prices, ...$all];
-                $current = hash('sha256', json_encode(array_map(static fn ($row) => $row->getAttributes(), $rows), JSON_THROW_ON_ERROR));
+                $current = hash('sha256', json_encode(array_map(static fn ($row) => $row->getRawOriginal(), $rows), JSON_THROW_ON_ERROR));
                 if (($stamp !== null && $stamp !== $current) || ($until !== null && $until <= $this->clock->now())) {
                     throw new RenewalRefused(RenewalCode::Changed);
                 }
                 $annual = $prices->where('term', 1)->where('currency', 'USD')->where('account_fingerprint', $binding->fingerprint)->first();
                 $retail = $annual?->retail !== null ? PricingRule::total(PriceCatalogue::retail($annual->retail), $request->years) : null;
-                return [$binding, $domain->domain, $current, $retail];
+                $admission = $prior->attempt['registration_admission'] ?? [];
+                $nonpremium = false;
+                try {
+                    $nonpremium = ($admission['premium'] ?? null) === false && ($admission['name'] ?? null) === $domain->domain
+                        && ($admission['years'] ?? null) === (int) $prior->term
+                        && ($admission['cost'] ?? null) === ($prior->attempt['authorized_cost'] ?? null)
+                        && ($admission['cost']['currency'] ?? null) === 'USD'
+                        && WriteMoney::compare((new Money($prior->cost['actual']['amount'] ?? '', 'USD'))->amount,
+                            (new Money($admission['cost']['amount'] ?? '', 'USD'))->amount) === 0;
+                } catch (\InvalidArgumentException | \TypeError) {}
+                return [$binding, $domain->domain, $current, $retail, $nonpremium];
             });
         } catch (RenewalRefused $error) { throw $error; }
         catch (\Throwable) { throw new RenewalRefused(RenewalCode::Authority); }

@@ -87,6 +87,10 @@ final class OperationClaims
             $attempt['seal'] = 'sealed'; $attempt['dispatch_attempted_at'] = $now->format(DATE_ATOM);
             $attempt['send_state'] = 'possibly_sent';
             $attempt['authorized_cost'] = ['amount' => $ready->cost->amount, 'currency' => $ready->cost->currency];
+            if ($ready->query->action === Action::Register) {
+                $attempt['registration_admission'] = ['premium' => false, 'name' => $ready->query->name,
+                    'years' => $ready->query->years, 'cost' => $attempt['authorized_cost']];
+            }
             $op->update(['attempt' => $attempt, 'funding' => [...$op->funding, 'seal' => $paid]]);
             return $op;
         });
@@ -189,7 +193,7 @@ final class OperationClaims
     /** Independent presence guard: null charge/refund/candidate facts are still uncertainty. */
     private static function requireNoSendEvidence(Operation $op): void
     {
-        if (array_diff(array_keys($op->attempt ?? []), ['claim_key', 'seal', 'send_state', 'dispatch_attempted_at', 'authorized_cost'])
+        if (array_diff(array_keys($op->attempt ?? []), ['claim_key', 'seal', 'send_state', 'dispatch_attempted_at', 'authorized_cost', 'registration_admission'])
             || array_key_exists('refund', $op->funding ?? []) || array_key_exists('actual', $op->cost ?? [])
             || array_key_exists('execution', $op->cost ?? []) || array_key_exists('dispatch_attempted_at', $op->policy ?? [])) {
             throw new \DomainException('Prior operation evidence blocks dispatch.');

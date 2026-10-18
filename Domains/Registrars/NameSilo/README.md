@@ -21,8 +21,11 @@ reads a mandatory bounded transport. PurchaseMapping still cannot reach either p
 
 Domain expiry keeps date-only precision with no timezone. Missing premium stays null. Account-
 scoped domain info observes ownership but does not prove which purchase executed. No domain or
-purchase order ID is invented. Renewal assessment stays unknown until restore/eligibility gates
-close; an Active status or expiry alone proves neither ordinary nor grace eligibility.
+purchase order ID is invented. Ordinary renewal assessment requires exact `Active`, a date-only
+expiry at least two UTC calendar days ahead and an accepted exact annual account quote. Grace,
+restoration and near-expiry dates remain unknown. The engine additionally requires this holding's
+unique completed registration with actual charge and retained nonpremium admission proof;
+provider renewal reads do not claim premium=false. Transfer-in proof remains a slice28 gate.
 
 Reconciliation returns only unresolved candidates: at most a seven-day attempt window padded by one UTC day on either end
 for the unknown provider timezone, 20 order headers, 200 candidates and the shared per-wire budget. Strict synthetic description patterns

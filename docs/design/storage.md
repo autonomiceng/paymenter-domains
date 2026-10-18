@@ -647,3 +647,22 @@ codes also cover transient database/processing and mismatched-result failures; r
 staff diagnostics35 must distinguish these without exposing exceptions. The retained retail comparison
 is an advisory margin alert only; billing24 must use the validated holding renewal-price API (USD,
 positive retail, term-total unit) and emit a staff alert when retail/margin is unknown.
+
+
+Slice23b narrows NameSilo's refusal above: ordinary annual renewal may pass exact account-scoped
+`Active`, date-only expiry at least two UTC calendar days ahead and an exact accepted account quote.
+Validity ends when that UTC margin ceases. Grace/redemption remain unknown. NameSilo request and
+snapshot provider domain IDs must both be null. Enom saved-ID behavior is unchanged.
+Sealing now retains write-once encrypted `attempt.registration_admission` (premium=false, exact name,
+term and authorized cost) after DispatchReadiness validation. No schema changes. A uniquely completed
+registration anchor whose actual USD charge equals the authorized cost (normalized decimals) must match this proof before NameSilo's premium gate
+can pass. Older holdings without that evidence retain Cost refusal; no flag is backfilled from
+Active or a catalogue price. Slice28 must establish independent nonpremium proof for transfer-ins.
+All23 auto-renew, balance, authority/generation, account acceptance and margin checks still apply.
+The model permits adding this proof only in the original absent-to-sealed registration update.
+Execution25 must honour validUntil and repeat Active plus the two-day margin immediately before send;
+wiring39 must independently confirm restores disabled in API Manager. Acceptance tooling37/39 must
+recheck per-TLD renewal-safe acceptance, including revocation, beyond today's account-wide quote acceptance.
+Only annual NameSilo costs are accepted; other terms currently refuse State rather than Term.
+When24/25 advance the anchor to a completed renewal, retain or resolve the original registration's
+nonpremium proof; never backfill registration_admission onto renewal operation rows.
