@@ -12,7 +12,7 @@ enum Environment: string
     {
         return match ($this) {
             self::Live => 'https://www.namesilo.com',
-            self::Sandbox => 'https://sandbox.namesilo.com',
+            self::Sandbox => 'https://ote.namesilo.com',
         };
     }
 }

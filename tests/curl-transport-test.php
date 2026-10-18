@@ -32,7 +32,7 @@ foreach ([Environment::Live, Environment::Sandbox] as $environment) {
         $response = $transport->send($environment, $context, RegistrarRequest::balance(), 'test-api-key');
         $options = $GLOBALS['curlFake']['options'];
         $url = parse_url($options[CURLOPT_URL]);
-        same($environment === Environment::Live ? 'www.namesilo.com' : 'sandbox.namesilo.com', $url['host'], 'Fixed environment host');
+        same($environment === Environment::Live ? 'www.namesilo.com' : 'ote.namesilo.com', $url['host'], 'Fixed environment host');
         same('/'.$context->value.'/getAccountBalance', $url['path'], 'Caller-declared route');
         same('https', $url['scheme'], 'HTTPS only');
         parse_str($url['query'], $query);

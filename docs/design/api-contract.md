@@ -1,6 +1,7 @@
 # NameSilo API contract
 
-Read 2026-10-17 (Pacific). Public documentation only; no registrar requests or account access.
+Public documentation read 2026-10-17 (Pacific); later support confirmations are recorded in
+[provider facts](namesilo-provider-facts.md). No registrar requests or account access.
 This is a design contract, not provider acceptance. See [parity and gates](parity.md).
 
 ## Wire and outcome rules
@@ -12,11 +13,11 @@ repetitive or background work → `/apibatch`. No inference from command or HTTP
 The [batch policy](https://www.namesilo.com/support/v2/articles/account-options/api-automated-batch)
 requires that distinction; queues should declare background pending support clarification.
 
-Live origin is `https://www.namesilo.com`. The reference requests support-issued sandbox credentials;
-its landing page does not publish a sandbox origin. NameSilo's
-[official module](https://github.com/namesilo/whmcs/blob/master/namesilo.php) defines
-`https://sandbox.namesilo.com`. Use an explicit environment enum, never arbitrary caller URLs.
-Confirm that origin and batch support with support before acceptance.
+Live origin is `https://www.namesilo.com`; the API-only OTE sandbox origin is
+`https://ote.namesilo.com`, using the same API reference and `/api/{command}` paths.
+Use an explicit environment enum, never arbitrary caller URLs. See the
+[provider-confirmed facts and OTE constraints](namesilo-provider-facts.md).
+Sandbox `/apibatch` routing is retained pending an OTE contract test; support is unconfirmed.
 
 JSON is an object with `request: {operation, ip}` and `reply: {code, detail, ...}`;
 there is no outer `namesilo` property (that is the XML root). Tables list additional **reply**
@@ -127,7 +128,7 @@ until support confirms their behavior or an approved readback/control sequence r
 mapping. Undocumented parameters cannot enforce policy. Disable restores in API Manager and
 prove normal/grace eligibility independently. Renewal builder output alone is not safe fulfillment.
 
-No documented client idempotency token or atomic maximum-price parameter was found. Future
+The provider confirms there is no idempotency key or maximum-price parameter. Future
 execution must admit one operation, retain pre-send order snapshots, correlate account/domain/action/
 term/time/charge evidence and hold ambiguous matches. Domain existence or an expiry change alone
 cannot prove which operation charged; a timeout never authorizes a second purchase.
@@ -163,8 +164,8 @@ All rows: **I/B**, common envelope/code table. Ack mutations require later readb
 | --- | --- | --- |
 | [changeNameServers](https://www.namesilo.com/api-reference/pages?uid=nameserver/change-nameserver) | `domain` (comma list ≤200), `ns1,ns2`, optional through `ns13` | Ack. Prefer one domain per mutation. |
 | [listRegisteredNameServers](https://www.namesilo.com/api-reference/pages?uid=nameserver/list-registered-nameservers) | Page omits parameter list; domain scope implied | `{hosts:[{host,ip}]}`; example repeats identical `ip` keys, losing multi-address data in ordinary JSON parsers. Confirm real array shape. |
-| [addRegisteredNameServer](https://www.namesilo.com/api-reference/pages?uid=nameserver/add-registered-nameserver) | `new_host` relative label, `ip1`, optional `ip2`–`ip13`; domain omitted in prose | Ack. Domain scoping needs support/example confirmation. IP examples are IPv4; IPv6 not explicitly documented. |
-| [modifyRegisteredNameServer](https://www.namesilo.com/api-reference/pages?uid=nameserver/modify-registered-nameserver) | `current_host,new_host,ip1`, optional `ip2`–`ip13`; relative hosts | Ack. Same scope/address gaps; confirm replacement vs merge. |
+| [addRegisteredNameServer](https://www.namesilo.com/api-reference/pages?uid=nameserver/add-registered-nameserver) | `new_host` relative label, `ip1`, optional `ip2`–`ip13`; domain omitted in prose | Ack. Domain scoping needs support/example confirmation. IPv4 only (provider-confirmed); IPv6 glue refused. |
+| [modifyRegisteredNameServer](https://www.namesilo.com/api-reference/pages?uid=nameserver/modify-registered-nameserver) | `current_host,new_host,ip1`, optional `ip2`–`ip13`; relative hosts | Ack. IPv4 only (provider-confirmed); IPv6 glue refused. Confirm scope and replacement vs merge. |
 | [deleteRegisteredNameServer](https://www.namesilo.com/api-reference/pages?uid=nameserver/delete-registered-nameserver) | `current_host` relative; domain omitted in prose | Ack. Registry refuses hosts still in use; see [management guide](https://www.namesilo.com/support/v2/articles/domain-manager/manage-name-servers). |
 | [domainLock](https://www.namesilo.com/api-reference/pages?uid=domains/domain-lock) / [domainUnlock](https://www.namesilo.com/api-reference/pages?uid=domains/domain-unlock) | `domain` | Ack; 252/253 already-set responses require state readback. |
 | [addPrivacy](https://www.namesilo.com/api-reference/pages?uid=privacy/add-privacy) / [removePrivacy](https://www.namesilo.com/api-reference/pages?uid=privacy/remove-privacy) | `domain` | Ack; 255/256 already-set responses. Eligibility is TLD-dependent. |
@@ -178,5 +179,5 @@ All rows: **I/B**, common envelope/code table. Ack mutations require later readb
 
 DNS add/update say `rrdistance` is MX-only (default 10), leaving SRV **priority** mapping unclear;
 weight/port/target are documented. TTL default is 7207; send an explicit validated TTL. Preserve
-TXT bytes and verify readback. AAAA DNS support does not establish IPv6 glue support. Do not offer
-SRV editing or IPv6 glue until those gaps are resolved.
+TXT bytes and verify readback. Registered nameservers are IPv4 only (provider-confirmed);
+IPv6 glue is refused. SRV editing remains gated on its priority mapping.

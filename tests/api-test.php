@@ -8,6 +8,19 @@ ini_set('zend.exception_ignore_args', '0');
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DomainName, Environment, Outcome, RegistrarClient,
     RegistrarRequest as Request, PurchaseMapping as Purchase, ResponseParser, RejectionScope, RequestContext, Transport, TransportResponse, UsNexus, CurlTransport};
 
+// Keep provider origins centralized, including hostnames assembled from string fragments.
+$hasNameSiloHost = static fn (string $source): bool => str_contains(
+    preg_replace('/[\'"\s.]+/', '', strtolower($source)), 'namesilocom');
+foreach (["'https://www.namesilo.com'", "'https://'.'sandbox.'.'namesilo'.'.com/apibatch'"] as $source) {
+    expect($hasNameSiloHost($source), 'Origin guard detects literal and fragmented hostnames');
+}
+$environmentFile = realpath(__DIR__.'/../Domains/Registrars/NameSilo/Api/Environment.php');
+foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__.'/../Domains')) as $file) {
+    if (!$file->isFile() || $file->getExtension() !== 'php' || $file->getRealPath() === $environmentFile) { continue; }
+    expect(!$hasNameSiloHost(file_get_contents($file->getPathname())),
+        'NameSilo hostnames must use Api/Environment: '.$file->getFilename());
+}
+
 final class FakeTransport implements Transport
 {
     public int $calls = 0;

@@ -15,7 +15,7 @@ $nsNew = static function ($name) use ($nsProduct, $user) {
 $binding = $bindingFor(1);
 $exchange = static function ($origin, $command, $parameters, $timeout) use ($registration): string {
     same(0, Illuminate\Support\Facades\DB::transactionLevel(), 'All profile/purchase/follow-up work outside locks');
-    same('https://sandbox.namesilo.com/apibatch', $origin, 'Fixed batch route'); expect($timeout > 0 && $timeout <= 25000, 'Bounded request');
+    same('https://ote.namesilo.com/apibatch', $origin, 'Fixed batch route'); expect($timeout > 0 && $timeout <= 25000, 'Bounded request');
     $registration->calls[] = $command; $reply = ['code' => 300, 'detail' => 'synthetic'];
     if ($command === 'contactAdd') { $registration->profile = $parameters; $reply['contact_id'] = (string) ++$registration->id; }
     elseif ($command === 'contactList') {
@@ -71,7 +71,7 @@ foreach (['300', '301', '302', 'amount', 'badns', 'remove', 'stillon', 'lost', '
     $clock->instant = $clock->now()->modify('+121 seconds'); expect(!$profiles->hasProof($result), 'Stale profile proof refuses'); $clock->instant = $clock->now()->modify('-121 seconds');
 }
 $attacker = new class extends RegistrationTransport {
-    public function attack($target, $op, $ctx): DriverResult { return $target->sendRegistration($op, $ctx, [], 'https://sandbox.namesilo.com/apibatch', 25000); }
+    public function attack($target, $op, $ctx): DriverResult { return $target->sendRegistration($op, $ctx, [], 'https://ote.namesilo.com/apibatch', 25000); }
     protected function sendRegistration(AdmittedOperation $o, RequestContext $c, array $p, string $s, int $t): DriverResult { throw new LogicException; }
 };
 $forged = new AdmittedOperation($binding, new Query('forged.com', Action::Register, 1), 'forged', 'claim', 1, 'funding', str_repeat('a', 64), new Money('1.00', 'USD'));

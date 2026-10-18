@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\AdmittedRegistrarDriver;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedOperation, Disposition, DriverResult, Evidence, RenewalEvidence, RejectionBasis, RequestContext, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{RegistrationCommand, ResponseParser as EnomParser};
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Outcome, PurchaseMapping, ResponseParser as NameSiloParser};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Environment as NameSiloEnvironment, Outcome, PurchaseMapping, ResponseParser as NameSiloParser};
 /** Named bounded protocol port; default composition supplies no sender. One call consumes one live grant. */
 final class RenewalWriter implements AdmittedRegistrarDriver
 {
@@ -48,7 +48,8 @@ final class RenewalWriter implements AdmittedRegistrarDriver
         }
         // Documented renewal parameters only. Admission proves exact Active + UTC margin and auto-renew off.
         $mapping = PurchaseMapping::renew($op->query->name, $op->query->years, false);
-        $body = ($this->exchange->getValue())('https://'.($op->binding->environment->value === 'test' ? 'sandbox.' : 'www.').'namesilo.com/apibatch',
+        $environment = $op->binding->environment === \Paymenter\Extensions\Servers\Domains\Data\Environment::Live ? NameSiloEnvironment::Live : NameSiloEnvironment::Sandbox;
+        $body = ($this->exchange->getValue())($environment->origin().'/apibatch',
             'renewDomain', ['domain' => $op->query->name, 'years' => $op->query->years], $timeout);
         $reply = (new NameSiloParser)->parse(self::body($body), $mapping, '');
         if ($reply->outcome !== Outcome::Success) { return self::unknown($op); }

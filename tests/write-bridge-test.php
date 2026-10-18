@@ -51,7 +51,7 @@ same('absent', $result->attempt['seal'], 'Profile refusal cannot become possibly
 same('contact_profile_proof_required', $result->safe_code, 'Neutral profile hold reason');
 $bridge = $build($nsBinding); $op = $nsNew('bridge-ns.com'); $result = $engine->execute($op->id);
 same(3, count($transport->calls), 'Synthetic accepted NameSilo port called once'); same('uncertain', $result->state, 'No business completion');
-same('https://sandbox.namesilo.com/apibatch', $transport->calls[2]['origin'], 'Explicit automated batch origin');
+same('https://ote.namesilo.com/apibatch', $transport->calls[2]['origin'], 'Explicit automated batch origin');
 $registry = new RegistrarRegistry; RegistrarFactories::install($registry);
 commerceReject(fn () => $registry->credentialKeys('namesilo')); commerceReject(fn () => $registry->credentialKeys('enom'));
 echo "Admitted dual-driver write bridge checks passed\n"; $nativeSuccessful = true;

@@ -21,7 +21,7 @@ explicit interactive/background routing. No billing, cart, UI, schema or jobs ar
 | Registry fields / .us nexus | inline usnc/usap and contact profile | partial | Offer .us only after eligibility/privacy acceptance; .ca/.eu/other unmapped requirements disabled. |
 | Arbitrary customer nameservers | changeNameServers, getDomainInfo | yes | Offer with 2–13 valid hosts/readback; 301 cannot refund registration. |
 | Child nameservers IPv4 | add/modify/delete/listRegisteredNameServers | partial | Staff-only until domain scope and multi-IP readback proved. |
-| Child nameservers IPv6 | same | unknown | Disable; AAAA record support is not glue proof. Full-parity gate. |
+| Child nameservers IPv6 | same | provider-confirmed unsupported | Refuse; registered nameservers support IPv4 only. |
 | Registrar lock | domainLock/domainUnlock, getDomainInfo | yes | Offer; already-set code still needs readback. |
 | Privacy / paid Enom ID Protect | addPrivacy/removePrivacy, getDomainInfo | partial | Free privacy where eligible; disable copied paid privacy invoice/renewal assumptions. |
 | Registrar auto-renew off | removeAutoRenewal, getDomainInfo; purchase flags | partial | Required readback before Paymenter owns renewal; customer enable control disabled. |
@@ -37,17 +37,19 @@ explicit interactive/background routing. No billing, cart, UI, schema or jobs ar
 | Encrypted settings, account/site/environment binding, processing off | none; local Paymenter | local | Deferred; explicit environment required now, no extension entry point yet. |
 | Native ZIP, migrations, retained history on uninstall | none; local Paymenter | local | Deferred; no installable package/compatibility claim. |
 
+Provider confirmations and remaining gates: [NameSilo provider facts](namesilo-provider-facts.md).
+
 ## Numbered acceptance/support gates
 
-1. **IPv6 glue:** explicit accepted syntax, TLD coverage, domain scoping, mixed/multiple IPs,
+1. **IPv4 glue:** accepted syntax, TLD coverage, domain scoping, multiple IPv4 addresses,
    replace semantics and valid JSON readback. Resolve duplicate `ip` keys in published sample.
-2. **Idempotency/correlation:** is there any client order token or atomic maximum-price option?
-   How to prove outcome/charge after timeout, disambiguate repeated renewals and correlate order
-   rows? What are history lag, time zone, retention, pagination and complete status values?
-3. **Rate limits:** numeric per-account/IP/concurrency/search caps and backoff policy; confirm
-   queued human actions must use batch and sandbox supports both routes. No automatic retry now.
-4. **Sandbox coverage:** credentials/origin, registry attributes, .us, transfer state transitions,
-   contacts, fallback codes, restores, glue (both families), DS, order receipts and error injection.
+2. **Correlation:** no idempotency key or maximum-price parameter exists (provider-confirmed).
+   Prove outcome/charge after timeout, disambiguate repeated renewals and correlate order
+   rows. Establish history lag, time zone, retention, pagination and complete status values.
+3. **Rate limits:** apply the confirmed limits in the provider facts; failed-request suspension
+   threshold and OTE batch support remain unconfirmed. No automatic retry of failed requests.
+4. **Sandbox coverage:** OTE origin is confirmed; use .com/.net for consistent checks. Verify
+   transfer transitions, contacts, fallback codes, restores, IPv4 glue, DS, receipts and errors.
 5. **Contact fallback:** enable Reseller Manager reject-invalid-contact setting, confirm missing
    contact behavior, both-invalid precedence and post-acceptance contact failure observation.
 6. **Renewals/restores:** disable API Manager implicit restoration; prove policy for grace versus

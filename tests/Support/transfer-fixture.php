@@ -64,7 +64,7 @@ $exchange = static function ($origin,$command,$p,$timeout) use ($state): string 
             expect(isset($p['AuthInfo1'],$p['RegistrantEmailAddress'],$p['AuxBillingEmailAddress']),'Frozen input and four roles mapped');
             return '<interface-response><Command>TP_CreateOrder</Command><ErrCount>0</ErrCount><Done>true</Done><TransferOrderID>7001</TransferOrderID></interface-response>';
         }
-        same('transferDomain',$command,'Only monetary transfer command'); same('https://sandbox.namesilo.com/apibatch',$origin,'Fixed batch route');
+        same('transferDomain',$command,'Only monetary transfer command'); same('https://ote.namesilo.com/apibatch',$origin,'Fixed batch route');
         same(0,$p['auto_renew'],'No automatic registrar renewal'); same(0,$p['private'],'Frozen privacy'); expect(str_starts_with($p['auth'],'base64:'),'Encoded auth');
         $reply += ['domain'=>$p['domain'],'order_amount'=>'99.00']; $reply['code']=in_array($state->mode,['301','302'],true)?(int)$state->mode:300;
     }

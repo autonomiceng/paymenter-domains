@@ -10,7 +10,7 @@ $ms = (object) ['calls'=>[], 'ns'=>['ns1.provider.net','ns2.provider.net'], 'loc
     'ids'=>[], 'profiles'=>[], 'next'=>900000, 'apply'=>true, 'fault'=>'', 'during'=>null, 'route'=>'api'];
 $managementExchange = static function ($origin, $cmd, $p, $timeout) use ($ms): string {
     same(0, DB::transactionLevel(), 'Management I/O outside locks');
-    same('https://sandbox.namesilo.com/'.$ms->route, $origin, 'Fixed origin and caller route');
+    same('https://ote.namesilo.com/'.$ms->route, $origin, 'Fixed origin and caller route');
     expect($timeout > 0 && $timeout <= 25000, 'Bounded wire timeout'); $ms->calls[] = [$cmd,$p];
     if ($ms->during) { $hook=$ms->during; $ms->during=null; $hook($cmd); }
     if ($ms->fault === $cmd) { return '{}'; }
