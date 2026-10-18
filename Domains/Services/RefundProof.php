@@ -9,17 +9,21 @@ final class RefundProof
     public static function requireUnsent(Operation $op, Domain $d): void
     {
         $a = $op->attempt ?? []; $f = $op->funding ?? []; $c = $op->cost ?? [];
-        if (!in_array($op->action, ['register', 'renew'], true) || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
+        if (!in_array($op->action, ['register', 'renew', 'transfer'], true) || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
             || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key || $op->account_fingerprint !== $d->account_fingerprint
             || $op->authority_generation < 1 || $op->authority_generation !== $d->authority_generation
             || $op->provider_order_id !== null || $op->confirmed_expires_at !== null || $op->lease_expires_at !== null
             || array_diff(array_keys($c), ['estimated', 'currency', 'unit'])
             || array_diff(array_keys($f), ['claim', 'seal', 'refund_authorization', 'refund', 'financial_adjustments'])
             || array_key_exists('dispatch_attempted_at', $op->policy ?? [])) { throw new \DomainException('Refund lacks definitely-unsent proof.'); }
-        if ($op->action === 'register' && ($d->provider_domain_id !== null || $d->provider_order_id !== null || $d->provider_expires_at !== null
-            || !in_array($d->status, ['registration_pending', 'registration_rejected'], true))) { throw new \DomainException('Acquisition already has provider evidence.'); }
+        if (in_array($op->action, ['register', 'transfer'], true) && ($d->provider_domain_id !== null || $d->provider_order_id !== null || $d->provider_expires_at !== null
+            || !in_array($d->status, $op->action === 'transfer' ? ['transfer_pending', 'transfer_rejected'] : ['registration_pending', 'registration_rejected'], true))) { throw new \DomainException('Acquisition already has provider evidence.'); }
         if (array_key_exists('financial_adjustments', $f) && (!is_array($f['financial_adjustments']) || !array_is_list($f['financial_adjustments']))) {
             throw new \DomainException('Unknown adjustment evidence.');
+        }
+        if ($op->action === 'transfer' && $a !== []) {
+            if (!self::transferTimeout($op, $d)) { throw new \DomainException('Transfer is not a definitely-unsent timeout.'); }
+            return;
         }
         if ($a === []) {
             if ($op->started_at !== null || $op->request_fingerprint !== null || array_key_exists('claim', $f) || array_key_exists('seal', $f)) { throw new \DomainException('Unknown attempt identity.'); }
@@ -53,6 +57,18 @@ final class RefundProof
         }
         if (array_key_exists('terminal', $a) && (($a['terminal']['operation_key'] ?? null) !== $op->operation_key
             || ($a['terminal']['generation'] ?? null) !== $op->authority_generation)) { throw new \DomainException('Foreign terminal proof.'); }
+    }
+    public static function transferTimeout(Operation $op, Domain $d): bool
+    {
+        $a = $op->attempt ?? []; $at = $op->completed_at;
+        $deadline = $at ? TransferInputs::deadline($op, $at->toDateTimeImmutable()) : null;
+        return $op->action === 'transfer' && $op->state === 'rejected' && $op->safe_code === 'transfer_code_timeout'
+            && $op->term === 1 && $at !== null && $deadline !== null && $at >= $deadline
+            && $op->started_at === null && $op->request_fingerprint === null
+            && !array_intersect(['claim', 'seal'], array_keys($op->funding ?? []))
+            && (!array_key_exists('epp', $op->payload ?? []) || $op->payload['epp'] === null)
+            && $a === ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent',
+                'transfer_timeout' => ['operation_key' => $op->operation_key, 'generation' => $d->authority_generation, 'deadline' => $deadline->format(DATE_ATOM)]];
     }
     public static function retired(Operation $op, Domain $d): bool
     {

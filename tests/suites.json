@@ -8,7 +8,8 @@
     "tests/enom-read-test.php",
     "tests/namesilo-read-test.php",
     "tests/reconciliation-provider-test.php",
-    "tests/reconciliation-enom-history-test.php"
+    "tests/reconciliation-enom-history-test.php",
+    "tests/transfer-rdap-test.php"
   ],
   "contracts": [
     "tests/driver-contract-test.php",
@@ -54,7 +55,9 @@
     "tests/renewal-read-recovery-test.php",
     "tests/refunds-test.php",
     "tests/refund-evidence-test.php",
-    "tests/refund-renewals-test.php"
+    "tests/refund-renewals-test.php",
+    "tests/transfer-inputs-test.php",
+    "tests/transfer-precheck-test.php"
   ],
   "ui": [],
   "runner": [

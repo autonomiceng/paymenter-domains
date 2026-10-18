@@ -20,7 +20,7 @@ final class ContactRecovery
             $funding = InvoiceFunding::lock($hint->invoice_id);
             [$domain, $operations] = self::lock($hint); $op = $operations->firstWhere('id', $hint->id);
             self::paidIdentity($funding, $op, $domain); self::unsent($op);
-            if (!in_array($op->action, ['register', 'transfer'], true) || !in_array($op->state, ['awaiting_payment', 'queued', 'held'], true)
+            if (!in_array($op->action, ['register', 'transfer'], true) || !in_array($op->state, ['awaiting_payment', 'awaiting_code', 'queued', 'held'], true)
                 || ($op->state === 'held' && !in_array($op->safe_code, ['contact_details_required', 'registry_details_unsupported'], true))
                 || $domain->status !== ($op->action === 'register' ? 'registration_pending' : 'transfer_pending')
                 || $domain->provider_order_id !== null || $domain->provider_domain_id !== null || $domain->provider_expires_at !== null) {
@@ -59,6 +59,10 @@ final class ContactRecovery
                 || $domain->provider_order_id !== null || $domain->provider_domain_id !== null || $domain->provider_expires_at !== null
                 || $operations->contains(static fn ($peer) => $peer->id !== $op->id && !in_array($peer->state, ['rejected', 'disposed'], true))) {
                 throw new \DomainException('Contact recovery unavailable.');
+            }
+            if ($op->action === 'transfer') {
+                if (!TransferInputs::deadline($op, now()->toDateTimeImmutable())) { throw new \DomainException('Transfer payment time is unverified.'); }
+                TransferInputs::requireEditable($op, now()->toDateTimeImmutable());
             }
             $payload = $op->payload ?? []; $policy = $op->policy ?? [];
             $history = $policy['contact_readmissions'] ?? [];

@@ -208,3 +208,9 @@ account-credit once/retry, atomic credit/marker rollback, reentrant refusal, exa
 funding, mixed invoices, contact holds, null/presence refusals, real typed25 prewire outcomes,
 unsuitable fixed renewal terms and late retired payments. Source: Enom444f31c/d1392a8 Refunds.
 These are offline SQLite checks; paired MariaDB concurrency and installed native hooks remain39.
+
+Slice27 transfer-inputs-test covers native transfer checkout, owner POST-only encrypted code,
+fixed payment cutoff/recovery, contact isolation and transfer-specific26 timeout credit/retry.
+transfer-rdap-test ports frozen444f31c/d2c55e2 bootstrap/domain404, narrow TLS-close,
+lock-day/calendar/status/unsafe-endpoint scenarios. All exchanges are synthetic; no transfer
+write, HTTP route/UI, scheduler, provider/MariaDB or installed-runtime acceptance is claimed.

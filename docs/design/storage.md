@@ -384,8 +384,8 @@ Slice 16 keeps an opaque, five-minute eligibility receipt in the server cache, b
 cart, canonical name, account, product and exact plan. Native login can adopt a guest cart;
 checkout independently verifies the authenticated owner inside its native transaction. A fresh accepted availability read must say
 premium=false and available=true. Rendering fields makes no provider request. Cart create/update
-performs that read outside transactions; checkout performs no provider read. Transfer checkout stays
-closed until slice 27 supplies accepted transferability/RDAP evidence; codes are entered after checkout.
+performs that read outside transactions; checkout performs no provider read. Transfer checkout
+gates and owner code/cutoff/timeout rules are specified in [transfers.md](transfers.md); codes follow checkout.
 Native Order Creating uses the same cached item batch as vanilla checkout, after all native
 user/coupon/product locks and before invoice/service inserts. It calls SellerPolicies::admit once for
 ALL domain selections. A receipt or DTO cannot replace that call. Native list row equals the admitted
@@ -440,7 +440,7 @@ ContactRecovery owns its transaction: native users, full InvoiceFunding prefix f
 (service/product for nonbillable contacts), server/account, domain, all operations in numeric order.
 Paid invalid acquisitions can be held; owners or fresh `admin.domains.manage` staff may recollect
 the OWNER's details with a reason and bounded audit, only for the same contact-held definitely-unsent
-obligation. Register returns queued; transfer stays held for 27. Registry/EPP/NS/deadlines and financial
+obligation. Register returns queued; transfer stays held under [transfer rules](transfers.md). Registry/EPP/NS/deadlines and financial
 rows are preserved. Staff may terminally reject held nonbillable contacts as audited definitely-unsent,
 never credit or release the name. Any send, claim/lease, recorded execution (including null), provider
 reference, charge, candidate, unknown attempt field or financial refund blocks recovery.19 must align
@@ -460,7 +460,7 @@ This section supersedes17's setup_required placeholder statement above. Before A
 claim/seal,19/20 must call ContactSetup::requireReady under their current locks: explicit false
 setup_required, true registry_supported, and validated frozen contacts/registry. Queued is not
 dispatch permission. Only ContactRecovery may release contact_details_required; it refuses foreign
-held codes. Registry-unsupported paid holds stay held for26 disposition (27 for transfer inputs).
+held codes. Registry-unsupported paid holds stay held; transfer timeout/disposition limits are in [transfers.md](transfers.md).
 Native identity checks consume current locked models, never a plain repeatable-read re-query after
 permission reads. MariaDB acceptance must test that older read-view/cancellation/owner/route race.
 Profile fingerprints use an HMAC keyed by a random secret in encrypted retained profile details.

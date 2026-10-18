@@ -36,6 +36,7 @@ class Operation extends Model
             }
         });
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::guardSnapshot($operation));
+        static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\TransferInputs::guard($operation));
         static::updating(static function (self $operation): void {
             $before = $operation->getOriginal('policy') ?? []; $after = $operation->policy ?? [];
             if (array_key_exists('contact_disposition', $before)
@@ -57,7 +58,7 @@ class Operation extends Model
                 && (($old['seal'] ?? null) !== 'absent' || ($new['seal'] ?? null) !== 'sealed' || $operation->action !== 'register')) {
                 throw new \DomainException('Registration admission can only be recorded at the original seal.');
             }
-            foreach (['claim_key', 'dispatch_attempted_at', 'authorized_cost', 'renewal_mode', 'renewal', 'registration_admission', 'execution', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections', 'reconciliation', 'terminal'] as $key) {
+            foreach (['claim_key', 'dispatch_attempted_at', 'authorized_cost', 'renewal_mode', 'renewal', 'registration_admission', 'execution', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections', 'reconciliation', 'terminal', 'transfer_timeout'] as $key) {
                 if (array_key_exists($key, $old) && (!array_key_exists($key, $new) || $new[$key] !== $old[$key])) {
                     throw new \DomainException('Attempt evidence is write-once.');
                 }

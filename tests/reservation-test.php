@@ -108,6 +108,8 @@ foreach ([['charge_absent' => false], ['charge_absent' => null], ['send_state' =
     $reject(static fn () => DomainReservations::releaseTerminal('x.com'));
 }
 $proof->attempt = $providerProof; $proof->save();
+$reject(static fn () => DomainReservations::releaseTerminal('x.com')); // paid transfer credit still pending
+$proof->update(['funding' => ['refund' => ['to' => 'account_credit']]]);
 DomainReservations::releaseTerminal('x.com');
 same(null, $replacement->fresh()->reservation_name, 'Proven rejection released');
 // All operations, including ancillary work, must be terminal and resolved.

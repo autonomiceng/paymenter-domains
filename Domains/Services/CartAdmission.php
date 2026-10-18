@@ -95,7 +95,7 @@ final class CartAdmission
                 || RetailLine::decimal($cached->price) !== $snapshot->retail || RetailLine::decimal($cached->setup_fee) !== '0.00') {
                 throw new \DomainException('Native list price changed; refresh checkout.');
             }
-            $this->eligibility->require((string) $item->checkout_config['domains_check'], $line['name'], $this->identity($item));
+            $this->eligibility->require((string) $item->checkout_config['domains_check'], $line['name'], $this->identity($item), true);
             if ($snapshot->freshUntil <= $this->clock->now()) { throw new \DomainException('Price evidence expired during admission.'); }
             $line['snapshot'] = $snapshot;
         } unset($line);
@@ -112,7 +112,7 @@ final class CartAdmission
     public function recheck(array $line): void
     {
         if (DB::transactionLevel() !== 1 || !$this->order?->exists) { throw new \DomainException('No current native checkout.'); }
-        $this->eligibility->require($line['check'], $line['name'], $line['identity']);
+        $this->eligibility->require($line['check'], $line['name'], $line['identity'], true);
         if ($line['snapshot']->freshUntil <= $this->clock->now()) { throw new \DomainException('Admitted evidence expired.'); }
     }
 

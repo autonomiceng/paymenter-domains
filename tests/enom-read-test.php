@@ -138,7 +138,11 @@ $wire->payloads['Contacts'] = str_replace('<RegistrantFirstName>private-name</Re
 same('unknown', $driver->contacts('example.com', $context())->status, 'Conflicting contact aliases unknown');
 $before = count($wire->calls); same(Disposition::Unknown, $driver->quote(new Query('example.com', Action::Register, 1), $context())->disposition, 'Missing quote price stays unknown');
 $before = count($wire->calls);
-same(Disposition::Rejected, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->disposition, 'Register Check is not transfer eligibility'); same($before, count($wire->calls), 'Unsupported read has no dispatch');
+foreach (['true' => true, 'false' => false, 'unknown' => false] as $flag => $eligible) {
+    $wire->payloads['Check'] = '<Domains><Domain><Name>example.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><MinRegYear>2</MinRegYear><Transferable>'.$flag.'</Transferable></Properties></Domain></Domains>';
+    same($eligible, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->evidence()->available, 'Transfer needs explicit positive property');
+}
+$before = count($wire->calls);
 try { $driver->balance(new RequestContext(new AccountBinding('enom', 2, Environment::Test, 'other'), RequestOrigin::Background, new DateTimeImmutable('+1 hour'), new RequestBudget(1))); throw new LogicException('Expected binding refusal'); } catch (InvalidArgumentException) {}
 same($before, count($wire->calls), 'Wrong binding never dispatched');
 echo "Enom reads: catalogue, exact lexical price, ownership, expiry, nullable flags and contact isolation passed.\n";

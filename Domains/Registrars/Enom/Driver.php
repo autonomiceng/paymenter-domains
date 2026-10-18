@@ -121,7 +121,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     }
     public function availability(Query $query, #[\SensitiveParameter] RequestContext $context): DriverResult
     {
-        if ($query->action !== Action::Register) { return $this->unsupported($context); }
+        if (!in_array($query->action, [Action::Register, Action::Transfer], true) || ($query->action === Action::Transfer && $query->years !== 1)) { return $this->unsupported($context); }
         $parts = $this->parts($query->name);
         $reply = $this->read(ReadCommand::Check, $parts + ['Version' => 2, 'IncludePrice' => 1, 'IncludeProperties' => 1, 'IncludeEAP' => 1], $context);
         if ($reply->status !== 'success') { return $this->neutral($reply); }
@@ -134,16 +134,18 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         // retain the source 1..10 defaults; malformed or conflicting evidence is unknown.
         $properties = $row['properties'] ?? [];
         if (!is_array($properties) || ($properties !== [] && array_is_list($properties))) { return $this->neutral(new ProtocolResult('unknown', 'invalid_payload')); }
+        if ($query->action === Action::Register) {
         $min = $properties['minregyear'] ?? '1'; $max = $properties['maxregyear'] ?? '10';
         if (!is_string($min) || !is_string($max) || !preg_match('/^(?:[1-9]|10)$/D', $min)
             || !preg_match('/^(?:[1-9]|10)$/D', $max) || (int) $min > (int) $max) {
             return $this->neutral(new ProtocolResult('unknown', 'invalid_payload'));
         }
         if ($query->years < (int) $min || $query->years > (int) $max) { return $this->unsupported($context); }
+        }
         // Premium includes platinum/EAP; missing any exclusion flag remains unknown.
         $flags = array_map(self::flag(...), [$row['ispremium'] ?? null, $row['isplatinum'] ?? null, $row['iseap'] ?? null]);
         $premium = in_array(true, $flags, true) ? true : (in_array(null, $flags, true) ? null : false);
-        return $this->neutral($reply, new Evidence(available: $row['rrpcode'] === '210', premium: $premium));
+        return $this->neutral($reply, new Evidence(available: $query->action === Action::Transfer ? ($row['rrpcode'] === '211' && self::flag($properties['transferable'] ?? null) === true) : $row['rrpcode'] === '210', premium: $premium));
     }
     /** @return array{Api\ProtocolResult, array, ?DomainSnapshot} Fresh account ownership proof before private reads. */
     private function identity(string $name, #[\SensitiveParameter] RequestContext $context): array

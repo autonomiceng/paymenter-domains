@@ -11,7 +11,7 @@ final class RefundPayment
     {
         $d = $l['domain']; $s = $l['service'];
         $invoice = $l['invoices']->firstWhere('id', $op->invoice_id); $item = $l['items']->firstWhere('id', $op->invoice_item_id);
-        if (!in_array($op->action, ['register', 'renew'], true) || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
+        if (!in_array($op->action, ['register', 'renew', 'transfer'], true) || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
             || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key || $op->account_fingerprint !== $d->account_fingerprint
             || $op->authority_generation < 1 || $op->authority_generation !== $d->authority_generation || $op->term < 1 || $op->term > 10
             || $op->funding_basis !== 'paid_invoice' || $op->currency !== 'USD' || !$invoice || !$item
@@ -20,7 +20,7 @@ final class RefundPayment
             || PricingRule::minor($op->amount) <= 0 || PricingRule::minor($item->price) !== PricingRule::minor($op->amount)) {
             throw new \DomainException('No exact eligible paid native line.');
         }
-        if ($op->action === 'register') { InvoiceBinding::requireIdentity($op, $d, $s, $invoice, $item, $l['product']); }
+        if (in_array($op->action, ['register', 'transfer'], true)) { InvoiceBinding::requireIdentity($op, $d, $s, $invoice, $item, $l['product']); }
         elseif ($op->action === 'renew') {
             $r = $op->policy['renewal'] ?? [];
             foreach (['user_id', 'order_id', 'product_id'] as $key) {
