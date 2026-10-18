@@ -76,9 +76,14 @@ final class PriceCatalogue
      * lock=true requires caller-held server, account, policy and TLD locks in storage.md order.
      */
     public function current(int $serverId, string $fingerprint, string $tld, string $action, int $term,
-        string $currency, \DateTimeImmutable $now, bool $lock = false): PriceSnapshot
+        string $currency, \DateTimeImmutable $now, bool $lock = false, ?Tld $locked = null): PriceSnapshot
     {
         if ($lock && DB::transactionLevel() === 0) { throw new \LogicException('Price locks require an outer transaction.'); }
+        if ($lock && (!$locked || (int) $locked->server_id !== $serverId || $locked->tld !== $tld || $locked->account_fingerprint !== $fingerprint)) {
+            throw new \LogicException('Locked price validation requires its caller-held TLD.');
+        }
+        $tldRow = $locked ?? Tld::where(['server_id' => $serverId, 'tld' => $tld, 'account_fingerprint' => $fingerprint])->firstOrFail();
+        $hash = $this->ruleHash($tldRow, $lock);
         $query = Price::where(['server_id' => $serverId, 'account_fingerprint' => $fingerprint, 'tld' => $tld,
             'action' => $action, 'term' => $term, 'currency' => $currency]);
         if ($lock) { $query->lockForUpdate(); }
@@ -87,8 +92,7 @@ final class PriceCatalogue
             || $price->unit !== 'term_total' || !$price->fresh_until || $price->observed_at > $now || $price->fresh_until <= $now) {
             throw new \DomainException('No current eligible price.');
         }
-        $tldRow = Tld::where(['server_id' => $serverId, 'tld' => $tld, 'account_fingerprint' => $fingerprint])->firstOrFail();
-        if (($price->eligibility['rule_hash'] ?? null) !== $this->ruleHash($tldRow)) { throw new \DomainException('Price rule changed; republication required.'); }
+        if (($price->eligibility['rule_hash'] ?? null) !== $hash) { throw new \DomainException('Price rule changed; republication required.'); }
         return new PriceSnapshot($price->id, $price->revision, $serverId, $price->registrar_key, $fingerprint, $tld, $action, $term,
             $currency, self::cost($price->wholesale), self::retail($price->retail), $price->source,
             $price->observed_at->toDateTimeImmutable(), $price->fresh_until->toDateTimeImmutable(), $price->eligibility['staff_alert'] ?? null);
@@ -132,9 +136,9 @@ final class PriceCatalogue
             'hold_reason' => $margin->hold])->save();
     }
 
-    private function ruleHash(Tld $tld): string
+    private function ruleHash(Tld $tld, bool $lock = false): string
     {
-        return hash('sha256', json_encode($this->rules->rule($tld), JSON_THROW_ON_ERROR));
+        return hash('sha256', json_encode($this->rules->rule($tld, $lock), JSON_THROW_ON_ERROR));
     }
 
     public static function cost(string $value): string

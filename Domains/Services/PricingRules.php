@@ -9,18 +9,21 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
 
 final class PricingRules
 {
-    public function rule(Tld $tld): array
+    public function rule(Tld $tld, bool $lock = false): array
     {
-        if ($tld->use_default_rule) { return $this->defaultRule((int) $tld->server_id); }
+        if ($tld->use_default_rule) { return $this->defaultRule((int) $tld->server_id, $lock); }
         return PricingRule::validate(['mode' => $tld->pricing_mode, 'markup' => $tld->markup ?? '0', 'round_up' => $tld->round_up,
             'fixed' => ['register' => $tld->fixed_register, 'renew' => $tld->fixed_renew, 'transfer' => $tld->fixed_transfer]]);
     }
 
     /** One shared default across an account's TLDs; another account has its own retail table/rule. */
-    public function defaultRule(int $serverId): array
+    public function defaultRule(int $serverId, bool $lock = false): array
     {
-        $server = $this->server($serverId, false, false);
-        $setting = $server->settings()->where('key', 'domains_pricing_default_rule')->first();
+        if ($lock && DB::transactionLevel() === 0) { throw new \LogicException('Rule locks require an outer transaction.'); }
+        $server = $this->server($serverId, $lock, false);
+        $query = $server->settings()->where('key', 'domains_pricing_default_rule');
+        if ($lock) { $query->lockForUpdate(); }
+        $setting = $query->first();
         $rule = $setting ? $setting->value : PricingRule::DEFAULT;
         if (!is_array($rule)) { throw new \DomainException('Invalid default pricing rule.'); }
         return PricingRule::validate($rule);
@@ -48,7 +51,8 @@ final class PricingRules
     {
         $query = Server::whereKey($id); if ($lock) { $query->lockForUpdate(); }
         $server = $query->firstOrFail();
-        if ($server->extension !== 'Domains' || ($requireEnabled && !$server->enabled) || !Account::where('server_id', $id)->exists()) {
+        $account = Account::where('server_id', $id); if ($lock) { $account->lockForUpdate(); }
+        if ($server->extension !== 'Domains' || ($requireEnabled && !$server->enabled) || !$account->first()) {
             throw new \DomainException('Bound Domains account required.');
         }
         return $server;

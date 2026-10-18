@@ -239,3 +239,61 @@ RenewServiceService expires_at writes before installing the null-expiry guard, a
 future native billing projections only. Slice 14 must skip retained out-of-range registration
 rows during republication when term bounds change, and precheck disabled native servers before
 provider reads; current write refusal alone deliberately does not avoid the read callback.
+
+## Seller policy and checkout locks (slice 09)
+
+One retained domains_sales_policies row per canonical TLD names a default account or none,
+independent acquisition flags and monotonic revision. SellerPolicies is its ordinary writer;
+raw SQL/quiet/bulk writes and internal PHP scopes are privileged maintenance bypasses.
+Initialization's absent-row unique race aborts. Changes require expected revision, a configured
+processing target, accepted TLD flags, fresh annual renewal and an eligible acquisition term.
+Only terms in 1–10 within configured bounds qualify; disjoint/reversed bounds yield none.
+Changing policy never repoints products,
+old orders or holders. Switching away from disabled/paused old sellers needs no old-account lock.
+Slice 14 must publish only accepted capability/registry/action/renewal flags. No network here.
+
+Paymenter 1.5.9 Cart::checkout already owns the native transaction. Slice 16/17 gathers ALL
+Domain selections and calls SellerPolicies::admit once, AFTER native user/coupon/product locks,
+BEFORE domain/operation writes. admit requires that outer transaction, adds no nested transaction
+or callback, and returns immutable price snapshots in input order. All native service/invoice/
+item/reservation/operation writes commit together in that SAME transaction. Any stale line,
+duplicate, deadlock or timeout escapes to the native rollback; never catch-and-continue or retry.
+The reservation must derive account identity from its admitted snapshot, never independent input.
+
+Global checkout lock prefix: native user, coupon, products; ALL Domains servers by numeric ID,
+then accounts by server ID (including their credential settings), policies by canonical TLD,
+TLD rows by ID, price rows by ID, domain rows then operations by ID. The full batch is locked
+before per-line validation. change uses target server/account then the SAME policy row then
+TLD/prices; disabling sales takes only policy. No old-account or native-product write in a switch.
+If checkout wins, old bindings commit first. If switch wins, stale carts abort. Switch-back raises
+revision again. Policy/price ID/revision, bindings, flags, terms and annual renewal are rechecked;
+there is no fallback seller. DTO possession grants no admission or dispatch authority.
+
+requireProcessingLocked validates supplied locked server/account models and current locking
+credential reads, never older snapshot re-queries. Locked price validation requires the caller's
+locked TLD and current locking shared-rule settings, so repeatable-read cannot hide a pause,
+credential edit or rule change. MariaDB acceptance must establish native checkout's older read
+view, commit a second connection's pause/override/default-rule edit before Domains locks, and
+prove stale evidence refused. Also test reversed multi-account cart order and switch/duplicate/
+1062/1213/1205 whole-checkout rollback. SQLite establishes sequential semantics only.
+Slice 15 price publication must lock native products/plans BEFORE Domains rows, never afterward;
+otherwise it can cycle with checkout. Native lock-prefix integration remains 16/17 acceptance.
+
+Slices 39/42 must call FoundationSchema::verify AND SalesPolicySchema::verify after Migrator,
+even on skip; both migrations retain data on down. No native/foundation columns change.
+19/20 dispatch frozen old holdings without requiring current default seller, while rechecking
+processing, funded authority, ownership and unresolved outcomes. No financial runtime ships here.
+
+The server row lock serialises every catalogue/price/default-rule writer, including future
+TLD admin, 14 and 15 paths. Batch admission orders price locks by ID; change validates renewal
+then acquisition terms under its server lock. Default-rule settings may be locked at validation
+under that same server lock. No future writer may omit this prefix.
+Slice 24 needs a locked renewal API accepting the caller-held TLD and current locking rule/
+price reads: holding rows before calling the existing unlocked renewal() is insufficient in
+native CronJob's enclosing repeatable-read transaction. Test an older native cron snapshot.
+Slices 16/17 must compare each native line list price to its admitted snapshot retail and abort
+ALL checkout on mismatch, handling coupon/net authority per plan 16. Install one batch call
+at the native order-creation boundary after ALL product locks and before service/invoice writes;
+there is no existing between-locks hook, and per-item admission is unsafe.
+MariaDB acceptance must EXPLAIN batch TLD/price locking queries: require suitable indexed range
+access, not broad primary-key scans that lock unrelated accounts under repeatable read.
