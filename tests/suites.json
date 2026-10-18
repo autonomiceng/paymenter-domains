@@ -70,7 +70,11 @@
     "tests/management-namesilo-test.php",
     "tests/management-namesilo-contacts-test.php",
     "tests/management-namesilo-boundary-test.php",
-    "tests/management-preparation-test.php"
+    "tests/management-preparation-test.php",
+    "tests/observation-budget-test.php",
+    "tests/observation-test.php",
+    "tests/observation-namesilo-test.php",
+    "tests/observation-catalogue-test.php"
   ],
   "ui": [],
   "runner": [

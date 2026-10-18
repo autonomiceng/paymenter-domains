@@ -20,9 +20,9 @@ final class Client
     }
     public function read(RegistrarRequest $request, #[\SensitiveParameter] RequestContext $context): RegistrarResult
     {
-        $remaining = $context->claimRead($this->binding);
-        return $this->client->getValue()->execute($request,
-            $context->origin === RequestOrigin::Interactive ? WireContext::Interactive : WireContext::Background, min(25000, $remaining));
+        $result=$context->withinRead($this->binding, fn (int $remaining) => $this->client->getValue()->execute($request,
+            $context->origin === RequestOrigin::Interactive ? WireContext::Interactive : WireContext::Background, min(25000, $remaining)));
+        $context->requireReadSuccess($result->outcome===\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Success); return $result;
     }
     public function __debugInfo(): array { return ['registrar' => 'namesilo']; }
     public function __serialize(): array { throw new \LogicException('Registrar clients cannot be serialized.'); }

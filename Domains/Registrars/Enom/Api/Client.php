@@ -22,12 +22,14 @@ final class Client
     public function read(ReadCommand $command, #[\SensitiveParameter] array $parameters, #[\SensitiveParameter] RequestContext $context): ProtocolResult
     {
         $command->validate($parameters);
-        $remaining = $context->claimRead($this->binding);
+        $result=$context->withinRead($this->binding, function (int $remaining) use ($command, $parameters): ProtocolResult {
         try {
             [$uid, $token, $transport] = self::$secrets[$this];
             $body = $transport->send($this->binding->environment, $command, $parameters, $uid, $token, min(25000, $remaining));
             return (new ResponseParser)->parse($command, $body);
         } catch (\Throwable) { return new ProtocolResult('unknown', 'transport'); }
+        });
+        $context->requireReadSuccess($result->status==='success'); return $result;
     }
     public function __debugInfo(): array { return ['registrar' => 'enom', 'environment' => $this->binding->environment->value]; }
     public function __serialize(): array { throw new \LogicException('Registrar clients cannot be serialized.'); }

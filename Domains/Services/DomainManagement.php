@@ -58,7 +58,7 @@ final class DomainManagement
                 && in_array($op->state, ['queued', 'running', 'succeeded', 'uncertain'], true)
                 && $op->created_at->toDateTimeImmutable() > $this->clock->now()->modify('-10 minutes'))) { throw new \DomainException('Transfer code cooldown active.'); }
             $policy = ['management' => ['actor_id' => (int) $actor->id, 'reason' => (int)$actor->id===(int)$d->user_id?'owner_request':'staff_correction', 'input' => $clean,
-                'at' => $this->clock->now()->format(DATE_ATOM), 'generation' => $d->authority_generation, ...($correction !== null ? ['correction' => $correction] : [])]];
+                'at' => $this->clock->now()->format(DATE_ATOM), 'generation' => $d->authority_generation, ...($correction !== null ? ['correction' => $correction, 'correction_link' => CorrectionProgress::link($l, $correction, $action)] : [])]];
             $data = ['domain_id' => $d->id, 'service_id' => $d->service_id, 'server_id' => $d->server_id, 'registrar_key' => $d->registrar_key,
                 'account_fingerprint' => $d->account_fingerprint, 'authority_generation' => $d->authority_generation, 'authorized_by' => (int) $actor->id,
                 'operation_key' => $key, 'action' => $action, 'term' => 1, 'currency' => 'USD', 'amount' => '0.00',
@@ -190,13 +190,15 @@ final class DomainManagement
             $facts = $result->facts(); $ack = $op->attempt['management_ack'] ?? [];
             $email=$op->action==='auth_code_email'&&($ack['email_accepted']??null)===true&&($result->confirmed||$result->emailAccepted); $confirmed=$result->confirmed&&$op->action!=='auth_code_email';
             $ok = ($confirmed || $email) && ($op->action!=='contact_profile'||isset($ack['profile_id'])) && (!in_array($op->action,['privacy_purchase','privacy_renew'],true) || isset($ack['order_id']));
-            $entry = ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'action' => $op->action,
-                'at' => $this->clock->now()->format(DATE_ATOM), 'confirmed' => $confirmed, 'email_accepted' => $email, 'facts' => $result->facts()];
+            $projection=$l['domain']->observation??[]; $sequence=($projection['management_sequence']??0)+1;
+            $entry = ['sequence'=>$sequence,'operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'action' => $op->action,
+                'at' => $this->clock->now()->format(DATE_ATOM), 'correction_link' => $op->policy['management']['correction_link'] ?? null, 'confirmed' => $confirmed, 'email_accepted' => $email, 'facts' => $result->facts()];
             $refused=$writeResult&&$result->refused&&!$confirmed&&!$email;$terminal=$refused&&$op->funding_basis==='non_billable_management';
             $history = $op->attempt['management_reads'] ?? [];
             if (count($history) >= 20) { throw new \DomainException('Management read budget exhausted.'); }
             $op->update(['state' => $ok ? 'succeeded' : ($terminal?'rejected':'uncertain'), 'safe_code' => $email ? 'auth_email_accepted' : ($ok ? 'readback_confirmed' : ($refused?'management_provider_refused':'management_unconfirmed')),
                 'attempt' => [...$op->attempt, 'management_reads' => [...$history, $entry], ...($ack ? ['management_ack'=>$ack] : []),...($refused?['management_refusal'=>['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,'action'=>$op->action]]:[])], 'completed_at' => ($ok||$terminal) ? $this->clock->now() : null, 'lease_expires_at' => null]);
+            $projection['management_sequence']=$sequence; $l['domain']->update(['observation'=>$projection]);
             return $op;
         }, false, false);
     }

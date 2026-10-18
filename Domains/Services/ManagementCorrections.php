@@ -8,13 +8,13 @@ final class ManagementCorrections
 {
     public static function resolvedFor(Operation $peer, Operation $acquisition, Domain $d): bool
     {
-        return $acquisition->registrar_key === 'namesilo' && ($peer->policy['management']['correction'] ?? null) === $acquisition->operation_key
-            && ManagementEvidence::resolved($peer, $d) && ($peer->state === 'succeeded' || ManagementEvidence::idle($peer));
+        return ($peer->policy['management']['correction'] ?? null) === $acquisition->operation_key
+            && CorrectionProgress::matches($peer, $acquisition, $d) && ManagementEvidence::resolved($peer, $d) && ($peer->state === 'succeeded' || ManagementEvidence::idle($peer));
     }
     public static function pending(array $l, string $action, ?string $key): bool
     {
         $op = $key === null ? null : $l['operations']->firstWhere('operation_key', $key); $d = $l['domain'];
-        if (!$op || $d->registrar_key !== 'namesilo' || !in_array($action, ['nameservers','contacts','contact_profile','privacy_enable','privacy_disable','auto_renew_off'], true)
+        if (!$op || !in_array($action, ['nameservers','contacts','contact_profile','privacy_enable','privacy_disable','auto_renew_off'], true)
             || !in_array($d->status, ['registration_pending','transfer_pending','active'], true) || !in_array($l['service']->status, ['pending','active'], true)
             || !in_array($op->action, ['register','transfer'], true) || !in_array($op->state, ['pending','uncertain','succeeded'], true)
             || $op->account_fingerprint !== $d->account_fingerprint || $op->authority_generation !== $d->authority_generation
@@ -24,10 +24,10 @@ final class ManagementCorrections
     public static function require(array $l, string $action, #[\SensitiveParameter] array $input, string $key): void
     {
         if (!self::pending($l, $action, $key)) { throw new \DomainException('Acquisition correction authority unavailable.'); }
-        $op = $l['operations']->firstWhere('operation_key', $key); $desired = $op->payload;
+        $d = $l['domain']; $op = $l['operations']->firstWhere('operation_key', $key); $desired = $op->payload;
         if ($action === 'nameservers') { $same = ($input['nameservers'] ?? null) === ManagementPayload::nameservers($desired['nameservers'] ?? []); }
         elseif (in_array($action, ['contacts','contact_profile'], true)) {
-            $contacts = ContactDetails::validate('namesilo', $desired['contacts'] ?? []); $same = true;
+            $contacts = ContactDetails::validate($d->registrar_key, $desired['contacts'] ?? []); $same = true;
             foreach (($input['role'] ?? null) === 'all' ? ContactDetails::ROLES : [$input['role'] ?? ''] as $role) {
                 if (($contacts[$role] ?? null) !== ($input['contact'] ?? null)) { $same = false; }
             }

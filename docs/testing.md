@@ -240,3 +240,10 @@ correction authority. All inputs and transport responses are synthetic; installe
 
 `management-preparation-test` preserves next-day Enom paid privacy dispatch targets and refuses
 wrong-action enrichment or changes to frozen renewal obligations.
+
+Slice31 observation-budget/observation/observation-namesilo/observation-catalogue suites use real read adapters
+with synthetic transports to cover durable wire quotas/route caps, old holders, stale-read
+rejection, pending windows, restart/lease/resume, correction links and unchanged authority.
+Regressions cover local quota deferral/reset, exhausted-pending acquisition phases, reversed
+management execution order and durable catalogue failure holds without extending prices.
+No installed schedule, provider acceptance or concurrent MariaDB guarantee is established.

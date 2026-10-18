@@ -1,0 +1,139 @@
+<?php
+// Enom444f31c bounded refresh/follow-up; MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Services;
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ReadLimiter};
+use Paymenter\Extensions\Servers\Domains\Data\{CatalogueFreshness, RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
+/** No installed schedule or writer. One turn/account, bounded discovery and one read job/turn. */
+final class ObservationWork
+{
+    public function __construct(private readonly DomainObservation $observer, private readonly Clock $clock,
+        private readonly ReadLimiter $budget, private readonly ?CatalogueSync $catalogue=null) {}
+    public function enroll(int $server): void
+    {
+        OperationClaims::outside();
+        DB::transaction(function () use ($server): void {
+            $a=Account::where('server_id',$server)->lockForUpdate()->firstOrFail();
+            DB::table('domains_observation_queues')->insertOrIgnore(['server_id'=>$server,'account_fingerprint'=>$a->account_fingerprint]);
+        });
+    }
+    public function tick(int $accounts=8): array
+    {
+        OperationClaims::outside(); if ($accounts<1||$accounts>32) { throw new \InvalidArgumentException('Invalid account batch.'); }
+        $queues=DB::transaction(function () use ($accounts): array {
+            $q=DB::table('domains_observation_queues'); $rows=(clone $q)->orderBy('turn')->orderBy('server_id')->limit($accounts)->lockForUpdate()->get();
+            $turn=(int)$q->max('turn');
+            foreach ($rows as $row) { (clone $q)->where('id',$row->id)->update(['turn'=>++$turn]); }
+            return $rows->all();
+        });
+        $summary=[];
+        foreach ($queues as $queue) {
+            try {
+                $this->discover($queue); if ($this->catalogue) { try { $this->catalogue($queue); } catch (\Throwable) {} }
+                $job=$this->claim($queue); if (!$job) { $summary[$queue->server_id]='idle'; continue; }
+                try { $code=$this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint); }
+                catch (ReadDeferred) { $code='read_deferred'; }
+                catch (\Throwable) { $code='read_unavailable'; }
+                $this->finish($job,$code); $summary[$queue->server_id]=$code;
+            } catch (\Throwable) { $summary[$queue->server_id]='account_unavailable'; }
+        }
+        return $summary;
+    }
+    private function discover(object $queue): void
+    {
+        DB::transaction(function () use ($queue): void {
+            $a=Account::where('server_id',$queue->server_id)->lockForUpdate()->firstOrFail();
+            if ($a->account_fingerprint!==$queue->account_fingerprint) { throw new \DomainException('Observation queue binding changed.'); }
+            $q=DB::table('domains_observation_queues')->where('id',$queue->id); $current=(clone $q)->lockForUpdate()->firstOrFail();
+            $rows=Domain::where('server_id',$a->server_id)->where('id','>',$current->cursor)->orderBy('id')->limit(25)->get();
+            foreach ($rows as $d) {
+                if (!in_array($d->status,['active','registration_pending','transfer_pending'],true)||$d->account_fingerprint!==$a->account_fingerprint) { continue; }
+                DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
+                    'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$this->clock->now()->getTimestamp()]);
+            }
+            $q->update(['cursor'=>$rows->count()===25?$rows->last()->id:0]);
+        });
+    }
+    private function claim(object $queue): ?object
+    {
+        return DB::transaction(function () use ($queue): ?object {
+            $now=$this->clock->now()->getTimestamp(); $q=DB::table('domains_observation_work')->where('server_id',$queue->server_id)
+                ->where('account_fingerprint',$queue->account_fingerprint)->where('due_at','<=',$now)->where('tries','<',28)->where('lease_until','<=',$now)
+                ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',['read_unavailable','budget_exhausted','superseded']);});
+            $job=$q->orderBy('due_at')->orderBy('id')->lockForUpdate()->first(); if (!$job) { return null; }
+            $d=Domain::find($job->domain_id);
+            if ($d && ((int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
+                DB::table('domains_observation_work')->where('id',$job->id)->update(['safe_code'=>'superseded']); return null;
+            }
+            $job->claim=bin2hex(random_bytes(16));
+            DB::table('domains_observation_work')->where('id',$job->id)->update(['claim'=>$job->claim,'lease_until'=>$now+300,'tries'=>$job->tries+1]);
+            return $job;
+        });
+    }
+    private function finish(object $job, string $code): void
+    {
+        $now=$this->clock->now()->getTimestamp();
+        if ($code==='read_deferred') {
+            DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)->update([
+                'claim'=>null,'lease_until'=>0,'tries'=>$job->tries,'safe_code'=>$job->safe_code,'due_at'=>$now+60]); return;
+        }
+        $d=Domain::findOrFail($job->domain_id); $tries=$job->tries+1;
+        $pending=$code==='healthy_pending'; $start=$d->operations()->where('action','transfer')->where('authority_generation',$d->authority_generation)->orderBy('id')->get()->first(fn($o)=>($o->attempt['seal']??null)==='sealed'&&in_array($o->state,['pending','uncertain','held'],true))?->started_at;
+        $startAt=$start instanceof \DateTimeInterface?$start->getTimestamp():($start===null?null:(new \DateTimeImmutable($start))->getTimestamp());
+        $within=$pending&&$startAt!==null&&$now<$startAt+7*86400;
+        $exhausted=$pending?(!$within||$tries>=28):($code!=='refreshed'&&$tries>=5);
+        $follow=($d->observation['followup']['state']??null)==='pending';
+        DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)->update([
+            'claim'=>null,'lease_until'=>0,'tries'=>$code==='refreshed'?0:$tries,
+            'due_at'=>$now+($pending?21600:($code==='refreshed'?($follow?300:86400):900)),
+            'safe_code'=>$exhausted?'budget_exhausted':$code]);
+    }
+    /** Internal audited read-only resume. Fresh staff policy/permission belongs36. */
+    public function resume(int $id, string $reason): void
+    {
+        OperationClaims::outside(); if (!preg_match('/^[a-z][a-z0-9_]{4,63}$/D',$reason)) { throw new \InvalidArgumentException('Safe reason required.'); }
+        $seed=Domain::findOrFail(DB::table('domains_observation_work')->where('id',$id)->value('domain_id'));
+        DB::transaction(function () use ($id,$reason,$seed): void {
+            $l=HoldingLocks::take($seed); $d=$l['domain']; $q=DB::table('domains_observation_work')->where('id',$id); $job=(clone $q)->lockForUpdate()->firstOrFail();
+            if ($job->phase!==self::phase($d)||(int)$job->generation!==$d->authority_generation||$job->account_fingerprint!==$d->account_fingerprint||$job->lease_until>$this->clock->now()->getTimestamp()||$job->resumes>=20) { throw new \DomainException('Read resume unavailable.'); }
+            $p=$d->observation??[]; $p['resumptions']=[...($p['resumptions']??[]),['work_id'=>$id,'reason'=>$reason,'at'=>$this->clock->now()->format(DATE_ATOM)]];
+            $d->update(['observation'=>$p]); $q->update(['resumes'=>$job->resumes+1,'tries'=>0,'claim'=>null,'safe_code'=>null,'due_at'=>$this->clock->now()->getTimestamp()]);
+        });
+    }
+    private static function phase(Domain $d): string
+    { $follow=$d->observation['followup']??[]; return isset($follow['operation_key'])&&($follow['generation']??null)===$d->authority_generation?hash('sha256',$follow['operation_key']):'holding'; }
+    /** Internal bounded catalogue failure resume; installed staff policy remains36. */
+    public function resumeCatalogue(int $server, string $reason): void
+    {
+        OperationClaims::outside(); if (!preg_match('/^[a-z][a-z0-9_]{4,63}$/D',$reason)) { throw new \InvalidArgumentException('Safe reason required.'); }
+        DB::transaction(function () use ($server,$reason): void {
+            $q=DB::table('domains_observation_queues')->where('server_id',$server); $row=(clone $q)->lockForUpdate()->firstOrFail();
+            if ($row->catalogue_lease>$this->clock->now()->getTimestamp()||$row->catalogue_resumes>=20) { throw new \DomainException('Catalogue resume unavailable.'); }
+            $audit=json_decode($row->catalogue_audit??'[]',true,8,JSON_THROW_ON_ERROR);
+            $audit[]=['reason'=>$reason,'at'=>$this->clock->now()->format(DATE_ATOM)];
+            $q->update(['catalogue_resumes'=>$row->catalogue_resumes+1,'catalogue_hold'=>null,'catalogue_due'=>$this->clock->now()->getTimestamp(),'catalogue_audit'=>json_encode($audit,JSON_THROW_ON_ERROR)]);
+        });
+    }
+    private function catalogue(object $queue): void
+    {
+        $a=Account::where('server_id',$queue->server_id)->firstOrFail(); $b=CatalogueAcceptances::binding($a); $accepted=CatalogueAcceptances::load($b); $keys=array_keys($accepted->endings);
+        if (!$keys) { return; } $fresh=new CatalogueFreshness; $now=$this->clock->now()->getTimestamp();
+        $claim=DB::transaction(function () use ($queue,$now): ?object {
+            $q=DB::table('domains_observation_queues')->where('id',$queue->id); $row=(clone $q)->lockForUpdate()->firstOrFail();
+            if ($row->catalogue_due>$now||$row->catalogue_hold!==null||$row->catalogue_lease>$now) { return null; }
+            // Crash after sending holds until explicit resume; an expired lease never automatically replays failure.
+            $row->catalogue_claim=bin2hex(random_bytes(16));
+            $q->update(['catalogue_claim'=>$row->catalogue_claim,'catalogue_lease'=>$now+300,'catalogue_hold'=>'read_unavailable']); return $row;
+        });
+        if (!$claim) { return; } $cursor=$claim->catalogue_cursor%count($keys); $deferred=false; $ok=false;
+        try {
+            $ctx=new RequestContext($b,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true);
+            $summary=$this->catalogue->refresh($b->serverId,$ctx,$fresh,[$keys[$cursor]]); $ok=$summary['failed']===[]&&$summary['synced']===1;
+        } catch (ReadDeferred) { $deferred=true; } catch (\Throwable) {}
+        DB::table('domains_observation_queues')->where('id',$queue->id)->where('catalogue_claim',$claim->catalogue_claim)->update([
+            'catalogue_claim'=>null,'catalogue_lease'=>0,'catalogue_hold'=>$ok||$deferred?null:'read_unavailable',
+            'catalogue_cursor'=>$cursor+($ok?1:0),'catalogue_due'=>$now+($deferred?60:max(1,intdiv($fresh->intervalSeconds,count($keys))))]);
+    }
+}

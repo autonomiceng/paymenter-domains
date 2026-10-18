@@ -43,7 +43,8 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
                     array_values(array_intersect($row['register'], $live)),
                     $fields['supported'] === true && $facts['requires_nameservers'] === false && $facts['registry_attributes'] !== null,
                     $facts['auto_renew_only'] === false, $fields['fields']);
-            } catch (\Throwable) { $entries[$tld] = null; }
+            } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $error) { throw $error; }
+            catch (\Throwable) { $entries[$tld] = null; }
         }
         return $entries;
     }

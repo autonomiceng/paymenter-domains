@@ -40,7 +40,7 @@ abstract class ManagementProtocol
     {
         if (!in_array($command, $this->readCommands(), true)) { throw new \DomainException('Unsupported management read.'); }
         $this->validateRead($command,$parameters);
-        return $this->exchange($r, $c, $command, $parameters);
+        return $c->withinRead($this->binding, fn(int $remaining) => $this->exchange($r, $c, $command, $parameters, $remaining));
     }
     final protected function write(ManagementRequest $r, RequestContext $c, string $command, #[\SensitiveParameter] array $parameters): string
     {
@@ -53,10 +53,10 @@ abstract class ManagementProtocol
         if($this->active!==$r||$this->context!==$c||!$this->sent||!$this->engine){throw new \DomainException('No acknowledgement grant.');}
         $this->engine->acknowledge($r,$c,$this,$facts);
     }
-    private function exchange(ManagementRequest $r, RequestContext $c, string $command, #[\SensitiveParameter] array $parameters): string
+    private function exchange(ManagementRequest $r, RequestContext $c, string $command, #[\SensitiveParameter] array $parameters, ?int $remaining = null): string
     {
         OperationClaims::outside(); $this->binding->requireMatch($r->binding); $this->binding->requireMatch($c->binding);
-        $timeout = min(25000, $c->claimRead($this->binding));
+        $timeout = min(25000, ($remaining ?? $c->claimRead($this->binding)));
         try { $body = ($this->exchange->getValue())($this->origin($c), $command, $parameters, $timeout); }
         catch (\Throwable) { throw new \RuntimeException('Management transport unavailable.'); }
         if (!is_string($body) || strlen($body) > 1048576) { throw new \RuntimeException('Management response unavailable.'); }

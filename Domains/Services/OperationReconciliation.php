@@ -87,7 +87,7 @@ final class OperationReconciliation
             $domain->update(['status' => 'active', 'provider_expires_at' => $proof['expiry'], 'provider_order_id' => $proof['order_reference'],
                 'provider_domain_id' => $proof['provider_domain_id'], 'confirmed_revision' => $domain->confirmed_revision + 1,
                 'renewal_policy' => [...($domain->renewal_policy ?? []), 'billing_anchor' => ['expiry' => $proof['expiry'], 'operation_key' => $op->operation_key]],
-                'last_synced_at' => $this->clock->now()]);
+                'observation' => ObservationProjection::acquired($domain, $op->operation_key), 'last_synced_at' => $this->clock->now()]);
             return $op;
         });
     }

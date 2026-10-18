@@ -1,0 +1,68 @@
+<?php
+// Enom444f31c refresh/follow-up semantics; MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Data\{DomainSnapshot, TransferStatus};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+/** Encrypted facts only. No anchor, operation state, correction closure or financial writer. */
+final class ObservationProjection
+{
+    public static function acquired(Domain $d, string $key): array
+    {
+        return [...($d->observation??[]),'followup'=>['operation_key'=>$key,'generation'=>$d->authority_generation,'reads'=>0,'state'=>'pending']];
+    }
+    public static function save(Domain $d, ?DomainSnapshot $facts, TransferStatus $transfer, \DateTimeImmutable $now): void
+    {
+        $p=$d->observation??[];
+        if ($facts) {
+            $p['facts']=['name'=>$facts->name,'owned'=>$facts->owned,'expiry'=>$facts->expiry?->value,
+                'precision'=>$facts->expiry?->precision->value,'source'=>$facts->expiry?->source,'timezone'=>$facts->expiry?->timezone,
+                'auto_renew'=>$facts->providerAutoRenew,'privacy'=>$facts->privacy,'locked'=>$facts->locked,'active'=>$facts->active,'at'=>$now->format(DATE_ATOM)];
+            // Drift is diagnostic; confirmed expiry and the billing anchor never follow observations.
+            $p['drift']=$facts->owned!==true||$facts->providerAutoRenew!==false
+                || ($facts->expiry!==null&&$d->provider_expires_at!==null&&substr($facts->expiry->value,0,10)!==$d->provider_expires_at->format('Y-m-d'));
+            if ($facts->owned===true&&!$p['drift']&&isset($p['followup'])&&$p['followup']['generation']===$d->authority_generation&&$p['followup']['reads']<3) {
+                $p['followup']['reads']++; $p['followup']['state']=$p['followup']['reads']>=3?'observed':'pending';
+            }
+        }
+        $p['transfer_status']=$transfer->value;
+        $p['corrections']=self::corrections($d);
+        $p['sections']=self::sections($d);
+        $d->update(['observation'=>$p,'last_synced_at'=>$now]);
+    }
+    private static function sections(Domain $d): array
+    {
+        $sections=[]; $glue=[]; $reads=[];
+        foreach ($d->operations()->orderBy('id')->get() as $op) {
+            if ($op->authority_generation!==$d->authority_generation||!isset($op->policy['management'])||!ManagementEvidence::resolved($op,$d)) { continue; }
+            foreach ($op->attempt['management_reads']??[] as $read) {
+                if (($read['confirmed']??false)!==true) { continue; }
+                $reads[]=['op'=>$op,'read'=>$read];
+            }
+        }
+        usort($reads,static fn($a,$b)=>[($a['read']['sequence']??0),$a['read']['at'],$a['op']->id]<=>[($b['read']['sequence']??0),$b['read']['at'],$b['op']->id]);
+        foreach ($reads as $item) {
+                $op=$item['op']; $read=$item['read'];
+                $kind=match($op->action) {'privacy_purchase','privacy_renew','privacy_enable','privacy_disable'=>'privacy',
+                    'ds_add','ds_delete'=>'ds','glue_add','glue_update','glue_delete'=>'glue',default=>$op->action};
+                if ($kind==='glue') {
+                    $host=$read['facts']['host']??null; if (!$host) { continue; }
+                    if (($read['facts']['ip']??null)===null) { unset($glue[$host]); } else { $glue[$host]=$read['facts']['ip']; }
+                } else { $sections[$kind]=['operation_key'=>$op->operation_key,'at'=>$read['at'],'facts'=>$read['facts']]; }
+        }
+        $sections['known_glue']=$glue; return $sections;
+    }
+    private static function corrections(Domain $d): array
+    {
+        $progress=[]; $ops=$d->operations()->orderBy('id')->get();
+        foreach ($ops as $op) {
+            $link=$op->policy['management']['correction_link']??null;
+            if (!$link || count($progress)>=100) { continue; }
+            $original=$ops->firstWhere('operation_key',$link['operation_key']??null);
+            if (!$original || !CorrectionProgress::matches($op,$original,$d)) { continue; }
+            $progress[]=['original_key'=>$original->operation_key,'section'=>$link['section'],'operation_key'=>$op->operation_key,
+                'state'=>$op->state==='succeeded'&&ManagementEvidence::resolved($op,$d)?'readback_confirmed_awaiting_review':'unresolved'];
+        }
+        return $progress;
+    }
+}
