@@ -4,16 +4,16 @@
 declare(strict_types=1);
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth, Route};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,OperationResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 function staffPanel(): void
 {
     PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),
         PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());
-    $panel=Filament::getPanel('admin'); $panel->resources([DomainResource::class]);
+    $panel=Filament::getPanel('admin'); $panel->resources([DomainResource::class,OperationResource::class]);
     Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(function() use($panel) {
-        Route::middleware($panel->getAuthMiddleware())->group(fn()=>DomainResource::registerRoutes($panel));
+        Route::middleware($panel->getAuthMiddleware())->group(function()use($panel){DomainResource::registerRoutes($panel);OperationResource::registerRoutes($panel);});
     });
     app('router')->getRoutes()->refreshNameLookups(); app('router')->getRoutes()->refreshActionLookups();
     Filament::setCurrentPanel($panel);

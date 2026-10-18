@@ -56,7 +56,7 @@ foreach ([[null,0,0,'Waiting for next check · 0 checks'],['healthy_pending',1,0
     same([$label],DomainFacts::for($held)['Observation work'],'Saved variable observation outcomes have distinct counters and labels');
     Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee($label);
 }
-DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>null,'claim'=>str_repeat('a',32),'tries'=>1]);
+DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>null,'claim'=>str_repeat('a',32),'lease_until'=>time()+300,'tries'=>1]);
 same(['Check in progress · 1 check · 2 resumes'],DomainFacts::for($held)['Observation work'],'A claimed reasonless check is in progress');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'PRIVATE-UNKNOWN']);
 expect(!str_contains(implode('',DomainFacts::for($held)['Observation work']),'PRIVATE'),'Unknown saved work code never echoes');
@@ -107,7 +107,7 @@ $op->safe_code='transfer_provider_rejected'; $op->funding=['refund'=>['private'=
 $facts=RequestFacts::for($op);
 expect(str_contains($facts['registrar_refund'],'manual'),'NameSilo manual refund indicator');
 expect(str_contains($facts['refund'],'Credit marker'),'Customer credit is retained separately');
-same('Outcome unknown; never resend',RequestFacts::review($op)[0],'Safety instruction precedes refund and audit');
+same('Original send response unknown; never resend',RequestFacts::review($op)[0],'Safety instruction precedes refund and audit');
 expect(!str_contains($facts['registrar_refund'],'Customer credit'),'Registrar refund does not duplicate customer-credit wording');
 $op->state='rejected'; $op->safe_code='transfer_code_timeout';
 expect(!isset(RequestFacts::for($op)['registrar_refund']),'Local unsent rejection does not imply a registrar charge');

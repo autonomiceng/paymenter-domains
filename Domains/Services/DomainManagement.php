@@ -252,8 +252,7 @@ final class DomainManagement
     }
     private function noInflight(Operation $op): void
     {
-        if ($op->funding_basis === 'paid_invoice' && Operation::where('account_fingerprint',$op->account_fingerprint)->where('id','!=',$op->id)
-            ->whereIn('state',['running','pending','uncertain'])->where(fn($q)=>$q->where('funding_basis','paid_invoice')->orWhereIn('action',['register','renew','transfer','privacy_purchase','privacy_renew']))->orderBy('id')->lockForUpdate()->get(['id'])->isNotEmpty()) { throw new WriteHeld('write_rate_limited'); }
+        if ($op->funding_basis === 'paid_invoice' && AccountSpendingHolds::query(Operation::where('account_fingerprint',$op->account_fingerprint)->where('id','!=',$op->id))->orderBy('id')->lockForUpdate()->get(['id'])->isNotEmpty()) { throw new WriteHeld('write_rate_limited'); }
     }
     private function peers(array $l, ?int $except = null, ?string $correction = null, ?string $action = null): void
     {

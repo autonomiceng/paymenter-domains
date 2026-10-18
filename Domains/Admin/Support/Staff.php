@@ -13,9 +13,13 @@ final class Staff
     public const POLICY = 'admin.domains.manage-policy';
     public static function permissions(): array
     {
-        return [self::VIEW => 'View domains', self::COSTS => 'View domain costs',
+        $permissions = [self::VIEW => 'View domains', self::COSTS => 'View domain costs',
             self::METADATA => 'View domain secret metadata', self::POLICY => 'Manage domain policy',
             'admin.domains.manage' => 'Manage domain operations', 'admin.domains.fund' => 'Fund domain renewals'];
+        foreach(\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS as $action=>$label){
+            $permissions[\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission($action)]=$label;
+        }
+        return $permissions;
     }
     public static function allows(?User $user, string $permission = self::VIEW): bool
     {

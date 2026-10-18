@@ -65,6 +65,22 @@ final readonly class RenewalCompletion
             return $op;
         });
     }
+    /** Explicit bounded read-only recovery; original paid uncertainty and attempt remain unchanged. */
+    public function resume(int $id, StaffOperationReview $review): Operation
+    {
+        OperationClaims::outside(); $seed=Operation::findOrFail($id)->domain()->firstOrFail();
+        return DB::transaction(function()use($seed,$id,$review){
+            $l=HoldingLocks::take($seed,$review->actorId);$review->check($l);$op=$l['operations']->firstWhere('id',$id);
+            if(!$op||!$this->eligible($op)){throw new \DomainException('No unresolved sealed renewal.');}
+            $this->bindings->requireReadableLocked($l['server'],$l['account']);RenewalFunding::requireCurrent($op,$l,true);
+            ReconciliationEvidence::attempt($op,$l['domain'],CatalogueAcceptances::binding($l['account']));
+            $policy=$op->policy;$history=$policy['renewal_resumptions']??[];
+            if(!is_array($history)||!array_is_list($history)||count($history)>=20){throw new \DomainException('Renewal read resume limit reached.');}
+            $policy['renewal_resumptions']=[...$history,['prior_polls'=>$policy['renewal_polls']??0,'at'=>$this->clock->now()->format(DATE_ATOM)]];
+            $policy['renewal_polls']=0;$policy['renewal_execution']=['staff_alert'=>true,'reason'=>'resumed','refundable_later'=>false];
+            $op->update(['policy'=>$policy]);$review->record($l);return $op;
+        });
+    }
     private function eligible(Operation $op): bool
     {
         return $op->action === 'renew' && (($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now()))

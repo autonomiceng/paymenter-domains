@@ -80,7 +80,7 @@ final readonly class RenewalAuthority
     }
     public static function resolved(Operation $op, Domain $domain, \Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): bool
     {
-        if (ManagementEvidence::resolved($op, $domain) || OperationTerminalProof::safe($op, $domain)) { return true; }
+        if (RenewalReplacements::reviewed($op,$domain) || ManagementEvidence::resolved($op, $domain) || OperationTerminalProof::safe($op, $domain)) { return true; }
         if (!$op->confirmed_expires_at || $op->confirmed_expires_at > $domain->provider_expires_at) { return false; }
         $historical = clone $domain; $historical->provider_expires_at = $op->confirmed_expires_at;
         return self::completed($op, $historical, $binding);

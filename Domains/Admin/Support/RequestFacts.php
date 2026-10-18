@@ -9,7 +9,7 @@ final class RequestFacts
     public static function for(Operation $op): array
     {
         Staff::requireView();
-        $out = ['reason'=>Labels::reason($op->safe_code), 'refund'=>'Customer credit: not assessed'];
+        $out = ['reason'=>$op->safe_code===null ? null : Labels::reason($op->safe_code), 'refund'=>'Customer credit: not assessed'];
         try {
             $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
             $out['refund']=array_key_exists('refund',$f) ? 'Credit marker retained; review ledger'
@@ -21,12 +21,13 @@ final class RequestFacts
                 && (in_array($op->safe_code,['transfer_provider_rejected','transfer_needs_action'],true)
                     || in_array($p['reconciliation']['transfer_status']??null,['rejected','needs_action'],true))) {
                 $rejected=$op->safe_code==='transfer_provider_rejected' || ($p['reconciliation']['transfer_status']??null)==='rejected';
-                $out['registrar_refund']=$rejected ? 'Registrar refund is manual (request via registrar support).'
+                $out['registrar_refund']=$rejected ? 'Registrar refund is manual — request it from registrar support'
                     : 'If this transfer is abandoned, request any registrar refund manually via registrar support.';
             }
             $out['outcome']=match(true) {
-                array_key_exists('execution',$a) && $a['execution']===null=>'Outcome unknown; never resend',
-                ($a['seal']??null)==='sealed'=>'Possibly sent; never resend or credit automatically',
+                array_key_exists('execution',$a) && $a['execution']===null=>$op->state==='succeeded'
+                    ? 'Original send response was unknown; completion later confirmed' : 'Original send response unknown; never resend',
+                ($a['seal']??null)==='sealed'=>'Original attempt possibly sent; never resend or credit automatically',
                 $op->state==='uncertain'=>'Unconfirmed; never resend or credit automatically',
                 default=>null,
             };

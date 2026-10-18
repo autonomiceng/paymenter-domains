@@ -24,6 +24,6 @@ class RequestsRelationManager extends RelationManager
                 ->description(fn($record)=>$record->safe_code===null ? null : Labels::reason($record->safe_code))->wrap(),
             TextColumn::make('review')->label('Review')->state(fn($record)=>RequestFacts::review($record))->listWithLineBreaks()->wrap()
                 ->extraAttributes(['style'=>'min-width:14rem;max-width:32rem;overflow-wrap:anywhere']),
-        ])->defaultSort('id','desc')->paginated([10,25,50])->defaultPaginationPageOption(10);
+        ])->recordUrl(fn($record)=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$record]))->defaultSort('id','desc')->paginated([10,25,50])->defaultPaginationPageOption(10);
     }
 }

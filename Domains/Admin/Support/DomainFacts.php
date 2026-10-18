@@ -34,6 +34,9 @@ final class DomainFacts
         $jobs = DB::table('domains_observation_work')->where('domain_id',$d->id)->where('server_id',$d->server_id)
             ->where('account_fingerprint',$d->account_fingerprint)->where('generation',$d->authority_generation)->orderByDesc('id')->limit(5)->get();
         $result['Observation work'] = $jobs->map(fn($j)=>self::work($j))->all() ?: ['Not scheduled'];
+        $holds=PaidUncertainty::for($d); if($holds){$result['Account spending holds']=$holds;}
+        $reviews=PaidUncertainty::reviews($d); if($reviews){$result['Paid outcome review']=$reviews;}
+        $activity=\Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::activity($d);if($activity){$result['Refunded debt review']=$activity;}
         $result['Data retention']='Encrypted contact and operation evidence is retained. Erasure requires a separately reviewed policy.';
         return $result;
     }
@@ -41,7 +44,7 @@ final class DomainFacts
     {
         $tries=(int)$job->tries; $resumes=(int)$job->resumes;
         // Attempts include healthy pending checks; a matching refresh resets this counter.
-        return ($job->safe_code===null ? ($job->claim===null?'Waiting for next check':'Check in progress') : Labels::reason($job->safe_code))
+        return ($job->safe_code===null ? ($job->claim===null?'Waiting for next check':($job->lease_until<=time()?'Check interrupted; review before resuming':'Check in progress')) : Labels::reason($job->safe_code))
             .($job->safe_code==='refreshed'?'':' · '.$tries.' check'.($tries===1?'':'s'))
             .($resumes>0?' · '.$resumes.' resume'.($resumes===1?'':'s'):'');
     }

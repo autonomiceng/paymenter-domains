@@ -21,11 +21,17 @@ final class OperationTerminalProof
                 throw new \DomainException('No definitely-unsent terminal proof.');
             }
             RefundProof::requireUnsent($op, $domain);
-            $op->update(['state' => 'rejected', 'attempt' => [...$a, 'terminal' => ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation],
-                'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent']]);
+            $op->update(['state' => 'rejected', 'attempt' => self::rejectedAttempt($op,$domain)]);
             if (!self::safe($op, $domain)) { throw new \DomainException('Terminal identity mismatch.'); }
             $domain->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']); return $op;
         });
+    }
+    /** Shared normalized envelope, only after the existing locked negative-proof checks. */
+    public static function rejectedAttempt(Operation $op,Domain $domain): array
+    {
+        RefundProof::requireUnsent($op,$domain);
+        return [...($op->attempt??[]),'seal'=>'absent','send_state'=>'definitely_unsent','disposition'=>'rejected','rejection_basis'=>'definitely_unsent',
+            'terminal'=>['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation]];
     }
     public static function safe(Operation $op, Domain $domain): bool
     {

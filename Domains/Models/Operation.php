@@ -45,6 +45,14 @@ class Operation extends Model
                 && (!array_key_exists('contact_disposition', $after) || $after['contact_disposition'] !== $before['contact_disposition'])) {
                 throw new \DomainException('Contact disposition is frozen.');
             }
+            foreach (['staff_actions'=>100,'renewal_resumptions'=>20] as $key=>$limit) {
+                $history=$before[$key]??[]; $next=$after[$key]??[];
+                if(!is_array($history)||!is_array($next)||!array_is_list($next)||count($next)>$limit||count($next)<count($history)
+                    ||array_slice($next,0,count($history))!==$history){throw new \DomainException('Staff review history is append-only and bounded.');}
+            }
+            if(array_key_exists('renewal_replacement',$before)&&($after['renewal_replacement']??null)!==$before['renewal_replacement']){
+                throw new \DomainException('Renewal replacement review is retained.');
+            }
             $history = $before['reconciliation_resumptions'] ?? []; $next = $after['reconciliation_resumptions'] ?? [];
             if (!is_array($history) || !is_array($next) || !array_is_list($next) || count($next) > 20
                 || count($next) < count($history) || array_slice($next, 0, count($history)) !== $history) { throw new \DomainException('Reconciliation resumptions are append-only.'); }

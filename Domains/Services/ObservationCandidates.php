@@ -16,9 +16,7 @@ final class ObservationCandidates
             $turn=(int)$q->max($kind.'_turn'); $result=[];
             foreach ($rows as $row) {
                 $cursor=$kind.'_cursor'; $ops=Operation::where('server_id',$row->server_id)->where('account_fingerprint',$row->account_fingerprint)->where('id','>',$row->$cursor);
-                if ($kind==='refund') { $ops->where('state','rejected')->where('funding_basis','paid_invoice')
-                    ->whereIn('action',['register','renew','transfer','privacy_purchase','privacy_renew'])
-                    ->where(fn($q)=>$q->whereNull('safe_code')->orWhere('safe_code','!=','transfer_provider_rejected')); }
+                if ($kind==='refund') { RefundCandidates::query($ops); }
                 else { $ops->where('action','transfer')->whereIn('state',['awaiting_code','awaiting_payment','held']); }
                 $ids=$ops->orderBy('id')->limit($limit)->pluck('id'); $result[$row->server_id]=$ids->all();
                 (clone $q)->where('id',$row->id)->update([$kind.'_turn'=>++$turn,$cursor=>$ids->count()===$limit?$ids->last():0]);

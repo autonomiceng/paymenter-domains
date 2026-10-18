@@ -10,33 +10,40 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final readonly class Refunds
 {
     public function __construct(private Clock $clock) {}
-    public function refundHeld(User $actor, int $id, string $reason): ?array
+    public function refundHeld(User $actor, int $id, string $reason, ?StaffOperationReview $review = null): ?array
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        DB::transaction(function () use ($seed, $actor, $id, $reason): void {
-            $l = HoldingLocks::take($seed, (int) $actor->id); $staffId = StaffFinancialRights::require($l, $reason);
+        DB::transaction(function () use ($seed, $actor, $id, $reason, $review): void {
+            $l = HoldingLocks::take($seed, (int) $actor->id); $review?->check($l); $staffId = StaffFinancialRights::require($l, $reason);
             $op = $l['operations']->firstWhere('id', $id);
             if (!$op) { throw new \DomainException('Missing refund obligation.'); }
             if (array_key_exists('refund_authorization', $op->funding ?? [])) {
-                if ($op->state !== 'rejected') { throw new \DomainException('Invalid retained refund disposition.'); }
+                if ($review || $op->state !== 'rejected') { throw new \DomainException('Invalid retained refund disposition.'); }
                 return;
             }
-            if ($op->action === 'transfer' || $op->state !== 'held' || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Only held unpaid-to-provider requests may be closed.'); }
+            if ($op->state !== 'held' || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Only held unpaid-to-provider requests may be closed.'); }
             RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireCurrent($op, $l);
+            if ($op->action === 'transfer' && (($op->attempt ?? []) !== [] || $op->safe_code === 'transfer_not_registered')) {
+                throw new \DomainException('A fresh registry404 disposition is unavailable; retain this hold.');
+            }
             $audit = ['actor_id' => $staffId, 'reason' => $reason, 'at' => $this->clock->now()->format(DATE_ATOM),
                 'operation_key' => $op->operation_key, 'generation' => $op->authority_generation];
             // Retain the decision if credit fails; retryPending independently rechecks funding and negative proof.
             ContactRecovery::financialDisposition($op, ['state' => 'rejected', 'safe_code' => 'refund_approved',
                 'funding' => [...($op->funding ?? []), 'refund_authorization' => $audit]]);
+            if (in_array($op->action,['register','transfer'],true)&&($op->attempt??[])===[]) {
+                $op->update(['attempt'=>OperationTerminalProof::rejectedAttempt($op,$l['domain'])]);
+            }
+            $review?->record($l);
         });
         return $this->creditRejected($id);
     }
-    public function creditRejected(int $id): ?array
+    public function creditRejected(int $id, ?StaffOperationReview $review = null): ?array
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        return DB::transaction(function () use ($seed, $id): ?array {
-            $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
-            if (!$op || $op->state !== 'rejected' || array_key_exists('refund', $op->funding ?? [])) { return null; }
+        return DB::transaction(function () use ($seed, $id, $review): ?array {
+            $l = HoldingLocks::take($seed, $review?->actorId); $review?->check($l); $op = $l['operations']->firstWhere('id', $id);
+            if (!$op || $op->state !== 'rejected' || array_key_exists('refund', $op->funding ?? [])) { if($review){throw new \DomainException('No pending account credit. Reload this page.');} return null; }
             RefundProof::requireUnsent($op, $l['domain']);
             $approved = $op->funding['refund_authorization'] ?? null;
             if (array_key_exists('refund_authorization', $op->funding ?? []) && (!is_array($approved)
@@ -62,6 +69,7 @@ final readonly class Refunds
                 $l['domain']->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);
                 $l['service']->update(['status' => 'cancelled', 'expires_at' => null]);
             }
+            $review?->record($l);
             return ['amount' => $payment['amount'], 'currency' => 'USD'];
         });
     }
@@ -71,9 +79,7 @@ final readonly class Refunds
         OperationClaims::outside();
         if ($afterId < 0 || $limit < 1 || $limit > 100) { throw new \InvalidArgumentException('Invalid refund batch.'); }
         $done = 0;
-        $ids = Operation::where('id', '>', $afterId)->where('state', 'rejected')->where('funding_basis', 'paid_invoice')
-            ->whereIn('action', ['register', 'renew', 'transfer', 'privacy_purchase', 'privacy_renew'])
-            ->where(fn($q)=>$q->whereNull('safe_code')->orWhere('safe_code','!=','transfer_provider_rejected'))->orderBy('id')->limit($limit)->pluck('id');
+        $ids = RefundCandidates::query(Operation::where('id', '>', $afterId))->orderBy('id')->limit($limit)->pluck('id');
         foreach ($ids as $id) { try { $done += $this->creditRejected((int) $id) !== null ? 1 : 0; } catch (\Throwable) {} }
         return $done;
     }

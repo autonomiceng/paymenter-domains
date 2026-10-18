@@ -81,6 +81,11 @@
     "tests/owner-management-test.php",
     "tests/owner-management-namesilo-test.php",
     "tests/staff-domains-test.php",
+    "tests/staff-operations-test.php",
+    "tests/staff-operation-actions-test.php",
+    "tests/staff-operation-reads-test.php",
+    "tests/staff-operation-transfers-test.php",
+    "tests/staff-operation-privacy-test.php",
     "tests/owner-records-test.php",
     "tests/owner-record-errors-test.php"
   ],

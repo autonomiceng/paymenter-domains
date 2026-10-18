@@ -76,6 +76,10 @@ $reject(static fn () => $original->update(['reservation_name' => null]));
 $original->refresh();
 $reject(static fn () => $original->update(['domain' => 'other.com']));
 $original->refresh();
+// Paid registrations retain the name until committed account credit, even with unsent proof.
+$reject(static fn () => DomainReservations::releaseTerminal('x.com'));
+// Synthetic marker only: native refund/staff suites verify the actual once-only credit writer.
+$op->update(['funding'=>['refund'=>['to'=>'account_credit']]]);
 // A checkout failure restores both terminal reservation and native writes.
 try {
     DB::transaction(static function () use ($make): void {
@@ -94,7 +98,7 @@ same('terminal:register', $op->fresh()->operation_key, 'Financial deduplication 
 // A provider-proven rejection can release an acquisition, but not a cancelled holding.
 $replacement->update(['status' => 'transfer_rejected']);
 $proof = $op->replicate(); $proof->fill(['domain_id' => $replacement->id, 'service_id' => $replacement->service_id,
-    'registrar_key' => 'namesilo', 'server_id' => 2, 'account_fingerprint' => $accounts[2]['account_fingerprint'], 'operation_key' => 'provider:transfer', 'action' => 'transfer',
+    'registrar_key' => 'namesilo', 'server_id' => 2, 'account_fingerprint' => $accounts[2]['account_fingerprint'], 'operation_key' => 'provider:transfer', 'action' => 'transfer', 'funding'=>[],
     'attempt' => ['disposition' => 'rejected', 'rejection_basis' => 'provider_proof', 'send_state' => 'sent', 'charge_absent' => true]]); $proof->save();
 $replacement->update(['status' => 'cancelled']);
 $reject(static fn () => DomainReservations::releaseTerminal('x.com'));

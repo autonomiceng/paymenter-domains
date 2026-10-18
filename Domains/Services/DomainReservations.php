@@ -44,8 +44,8 @@ final class DomainReservations
 
     private static function resolved(Operation $operation, Domain $domain): bool
     {
-        // A paid transfer must retain its exact holding identity until timeout credit commits.
-        if ($operation->action === 'transfer' && $operation->funding_basis === 'paid_invoice'
+        // A paid acquisition must retain its exact holding identity until timeout credit commits.
+        if (in_array($operation->action, ['register','transfer'], true) && $operation->funding_basis === 'paid_invoice'
             && ($operation->funding['refund']['to'] ?? null) !== 'account_credit') { return false; }
         if ((int) $operation->authority_generation < 1 || $operation->account_fingerprint === null
             || $operation->state !== 'rejected' || $operation->confirmed_expires_at !== null

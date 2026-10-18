@@ -34,7 +34,7 @@ final class Labels
     public static function reason(?string $value): string
     {
         // Never echo provider messages, exception text or unrecognized stored codes.
-        return ['contact_details_required'=>'Contact details required','transfer_code_required'=>'Transfer code required',
+        return ['staff_review_required'=>'Staff review required','contact_details_required'=>'Contact details required','transfer_code_required'=>'Transfer code required',
             'transfer_code_timeout'=>'Transfer code deadline passed','transfer_not_registered'=>'Registry found no domain',
             'transfer_needs_action'=>'Transfer needs attention','transfer_provider_rejected'=>'Registrar rejected transfer',
             'stale_claim'=>'Worker outcome unconfirmed','poll_limit_reached'=>'Read limit reached',

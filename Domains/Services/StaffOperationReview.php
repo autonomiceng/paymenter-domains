@@ -1,0 +1,90 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Services;
+use App\Models\User;
+use Illuminate\Support\Facades\{Crypt,DB};
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+/** One-use, actor/action/domain-bound review. All mutation checks run under the writer's locks. */
+final class StaffOperationReview
+{
+    public const ACTIONS=['recheck'=>'Re-check now','resume_reads'=>'Resume reconciliation reads','resume_observation'=>'Resume scheduled reads',
+        'hold'=>'Hold unsent request','release'=>'Release unsent hold','disposition'=>'Record terminal review',
+        'refund'=>'Close and credit account','credit'=>'Retry account credit','replacement'=>'Allow replacement renewal'];
+    private array $before=[];
+    private array $verifiedTicket=[];
+    public function __construct(public readonly int $actorId, public readonly int $domainId, public readonly int $operationId,
+        public readonly string $action, private readonly string $ticket, public readonly string $reason, private readonly Clock $clock) {}
+    public static function permission(string $action): string
+    { if(!isset(self::ACTIONS[$action])){throw new \DomainException('Unknown review action.');} return 'admin.domains.operations.'.$action; }
+    public static function stamp(Operation $op,Domain $d): string
+    { return hash('sha256',json_encode([$op->getRawOriginal(),$d->getRawOriginal()],JSON_THROW_ON_ERROR)); }
+    public static function ticket(int $actor,int $domain,int $op,string $action,string $stamp,Clock $clock): string
+    {
+        return Crypt::encryptString(json_encode(['actor'=>$actor,'domain'=>$domain,'operation'=>$op,'action'=>$action,'stamp'=>$stamp,
+            'key'=>bin2hex(random_bytes(16)),'until'=>$clock->now()->getTimestamp()+900],JSON_THROW_ON_ERROR));
+    }
+    public function check(array $l): void
+    {
+        if(DB::transactionLevel()!==1){throw new \LogicException('Staff review requires the outer writer transaction.');}
+        $staff=$l['staff']??null; $op=$l['operations']->firstWhere('id',$this->operationId); $d=$l['domain'];
+        if(!$staff instanceof User || (int)$staff->id!==$this->actorId || !$staff->hasPermission('admin.domains.view')
+            || !$staff->hasPermission(self::permission($this->action))
+            || (!in_array($this->action,['recheck','resume_reads','resume_observation'],true)&&!$staff->hasPermission('admin.domains.manage'))
+            || (in_array($this->action,['refund','credit','replacement'],true)&&!$staff->hasPermission('admin.invoices.update'))
+            || ($this->action==='release'&&$op?->funding_basis==='complimentary'&&!$staff->hasPermission('admin.domains.fund'))) {
+            throw new \DomainException('Current staff permissions are required. Reload this page.');
+        }
+        if(strlen($this->reason)<5||strlen($this->reason)>500||$this->reason!==trim($this->reason)||preg_match('/[\x00-\x1f\x7f]/',$this->reason)) {
+            throw new \DomainException('Enter a reason between 5 and 500 bytes.');
+        }
+        $t=$this->decode();
+        if(!$op || (int)$d->id!==$this->domainId || $op->domain_id!==$d->id || $op->service_id!==$d->service_id
+            || $op->server_id!==$d->server_id || $op->registrar_key!==$d->registrar_key || $op->account_fingerprint!==$d->account_fingerprint
+            || $op->authority_generation!==$d->authority_generation || $op->authority_generation<1
+            || !hash_equals($t['stamp'],self::stamp($op,$d))) { throw new \DomainException('This request changed. Reload this page.'); }
+        $history=$op->policy['staff_actions']??[];
+        $limit=in_array($this->action,['recheck','resume_reads','resume_observation'],true)?($this->action==='recheck'?88:89):99;
+        if(!is_array($history)||!array_is_list($history)||count($history)>$limit
+            || array_filter($history,fn($a)=>($a['key']??null)===$t['key'])) { throw new \DomainException('Review key used or audit full. Reload this page.'); }
+        $this->verifiedTicket=$t; $this->before=self::state($op,$d);
+    }
+    private function decode(): array
+    {
+        try { $t=json_decode(Crypt::decryptString($this->ticket),true,8,JSON_THROW_ON_ERROR); }
+        catch(\Throwable){throw new \DomainException('Invalid review key. Reload this page.');}
+        if(($t['actor']??null)!==$this->actorId||($t['domain']??null)!==$this->domainId||($t['operation']??null)!==$this->operationId
+            ||($t['action']??null)!==$this->action||!is_int($t['until']??null)||$t['until']<=$this->clock->now()->getTimestamp()
+            ||!is_string($t['stamp']??null)||!is_string($t['key']??null)){throw new \DomainException('Review key expired or changed. Reload this page.');}
+        return $t;
+    }
+    public function record(array $l,string $phase='completed'): void
+    {
+        if(!$this->before||DB::transactionLevel()!==1){throw new \LogicException('Missing locked review.');}
+        $op=$l['operations']->firstWhere('id',$this->operationId)->fresh(); $d=$l['domain']->fresh(); $t=$this->verifiedTicket;
+        $history=$op->policy['staff_actions']??[];
+        $history[]=['key'=>$t['key'],'action'=>$this->action,'phase'=>$phase,'actor_id'=>$this->actorId,'reason'=>$this->reason,
+            'at'=>$this->clock->now()->format(DATE_ATOM),'operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,
+            'before'=>$this->before,'after'=>self::state($op,$d)];
+        $op->update(['policy'=>[...($op->policy??[]),'staff_actions'=>$history]]);
+    }
+    public function local(\Closure $write): mixed
+    {
+        OperationClaims::outside(); $seed=Domain::findOrFail($this->domainId);
+        return DB::transaction(function()use($seed,$write){$l=HoldingLocks::take($seed,$this->actorId);$this->check($l);
+            $result=$write($l['operations']->firstWhere('id',$this->operationId),$l);$this->record($l,$this->action==='recheck'?'read_requested':'completed');return $result;});
+    }
+    public function read(\Closure $read): mixed
+    {
+        $this->local(fn()=>null); // Durable request audit and key consumption before provider I/O; no locks over reads.
+        try { return $read(); }
+        finally {
+            DB::transaction(function(){ $d=Domain::whereKey($this->domainId)->lockForUpdate()->firstOrFail();
+                $l=['domain'=>$d,'operations'=>$d->operations()->orderBy('id')->lockForUpdate()->get()];$this->record($l,'read_finished'); });
+        }
+    }
+    private static function state(Operation $op,Domain $d): array
+    { return ['state'=>$op->state,'reason'=>$op->safe_code,'domain_status'=>$d->status,'credit_marker'=>array_key_exists('refund',$op->funding??[]),
+        'polls'=>$op->policy['reconciliation']['polls']??null,'observation'=>hash('sha256',json_encode($d->observation,JSON_THROW_ON_ERROR))]; }
+}

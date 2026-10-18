@@ -92,18 +92,19 @@ final class OperationReconciliation
         });
     }
     /** Internal audited resume seam; staff authorization/route belongs to36. No send authority. */
-    public function resume(int $id, string $reason): Operation
+    public function resume(int $id, string $reason, ?StaffOperationReview $review = null): Operation
     {
         if (!preg_match('/^[a-z][a-z0-9_]{0,63}$/D', $reason)) { throw new \InvalidArgumentException('Safe resume reason required.'); }
-        return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($reason): Operation {
+        return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account, $staff) use ($reason, $review): Operation {
+            $l=['domain'=>$domain,'operations'=>$all,'staff'=>$staff]; $review?->check($l);
             if (!$this->eligible($op)) { throw new \DomainException('No unresolved attempt.'); }
             $this->authority($op, $domain, $all, $funding, $server, $account);
             $policy = $op->policy; $history = $policy['reconciliation_resumptions'] ?? [];
             if (count($history) >= 20) { throw new \DomainException('Resume audit is full.'); }
             $policy['reconciliation_resumptions'] = [...$history, ['reason' => $reason, 'at' => $this->clock->now()->format(DATE_ATOM), 'prior_polls' => $policy['reconciliation']['polls'] ?? 0]];
             $policy['reconciliation']['polls'] = 0; $policy['reconciliation']['reason'] = 'resumed';
-            $op->update(['policy' => $policy]); return $op;
-        });
+            $op->update(['policy' => $policy]); $review?->record($l); return $op;
+        }, $review?->actorId);
     }
     private function eligible(Operation $op): bool
     {

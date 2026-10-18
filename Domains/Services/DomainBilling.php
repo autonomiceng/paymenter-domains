@@ -34,7 +34,7 @@ final class DomainBilling
             $key = RenewalCycles::key($d);
             // Issued debt keeps its calendar, term and amount through later configuration changes.
             $existing = $l['operations']->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
-            if ($existing && $existing->safe_code !== 'renewal_cancelled_unpaid') { return $this->existing($existing, $l, $years); }
+            if ($existing && $existing->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($existing,$d)) { return $this->existing($existing, $l, $years); }
             $key = RenewalCycles::next($l);
             $this->bindings->requireProcessingLocked($l['server'], $l['account']);
             if ($d->renewal_policy['automatic_spend_paused'] ?? false) { throw new \DomainException('Renewal spending requires review.'); }

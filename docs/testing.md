@@ -282,6 +282,16 @@ row: permission registration and policy binding must ship with that installed ac
 
 These are presentation checks, not installed provider acceptance. DNS/SRV editing is unreachable without an initial complete current-generation record readback producer. A plan amendment is requested for a new observation row, proposed 31R, to own bounded durable record refresh with current authority binding; installation alone does not supply it. DNS tools remain opt-in. Glue shows only confirmed changes made here, not a complete provider inventory; unknown DS lists are explicit while additions retain fresh engine preflight. Routes, factories and writes stay dormant until installation; shared session/cache locks, bounded observation history, GET lock contention, provider registry behavior and theme navigation still require their acceptance gates.
 
+### Dormant staff operation review
+
+The native staff-operation suites cover independent default-deny actions, locked fresh authorization,
+required reasons, immutable before/after audit, one-use keys, stale/binding refusals, exact unsent
+account credits, bounded read resumes and explicit refunded-renewal replacement. Paid sent/unknown
+outcomes keep their account spending holds and cannot be released or credited by these actions.
+`tests/staff-operations-render.php OUTPUT_DIRECTORY` renders the native queue, views, all nine
+confirmations and reason refusal with synthetic data; capture at 1440/1024 in light/dark.
+No resource or permission registration is installed by these fixtures.
+
 ## Opt-in NameSilo OTE contract test
 
 Run only with separate authority for the sandbox account and (for `--write`) its funds.
