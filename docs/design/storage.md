@@ -476,3 +476,49 @@ DB::afterCommit); it owns its transaction. Stale setup flags also enter a recove
 audited recollection reasserts readiness only after frozen registry and fresh owner contacts validate.
 Paid awaiting_payment may become held then queued here;19 must still confirm full native funding
 under its current claim locks. Preserve BOTH independent Operation updating guards on rebase.
+
+## Operation claims and seals (slice 19)
+
+`DomainOperations` composes `OperationClaims`, an unregistered trusted `OperationPreflight` and
+an admitted writer. Only synthetic writers exist. Registration is the initial supported financial
+route; transfer/renewal/complimentary/management authority remains closed for 23–30. Preflight20/21
+must compose contacts18 and fresh ordinary-name/term/capability/cost/balance policy; the readiness
+DTO itself is evidence only. No production preflight, write bridge, job boot or scheduler is installed.
+
+Claims and seals each lock native owner, complete invoice/items/payments/services/products/plans/
+cancellations, server/account/credentials, domain then all operations by ID. Current locked funding,
+owner/native annual route, frozen account/generation, reservation, lifecycle and unresolved outcomes
+are revalidated. No current seller or new-sale flag is required. Known dispatch cost is independent
+of billed retail: no margin floor. Locked server mutex serializes pause/rotation against the seal.
+All provider reads and sends run at transaction level zero; outer transaction callers refuse.
+
+One random claim token and request digest identify the worker. A seal commits before the writer;
+its cost, funding and desired-state digest are frozen. Write-once attempt keys preserve absent
+execution versus recorded null. A live descriptor/context must be consumed once by the future
+bridge immediately before its named send; copied/forged/reused descriptors grant no authority.
+Only the facade opens that in-memory scope after sealing. Bridges20 must enforce this consumption,
+accepted account/site, fixed origin, deadlines/budgets and default-off feature gates themselves.
+
+Ten 25-second requests plus 50 seconds yield a 300-second worker timeout and a 360-second claim
+lease. Final seal requires a complete send timeout plus 60-second cleanup margin, current preflight
+and unchanged payload. Jobs try once and fail on timeout. Active duplicate delivery does nothing;
+expired claims become uncertain even when unsealed, and never regain dispatch authority. Pre-seal
+exceptions hold definitely-unsealed work; post-seal exceptions record null execution and uncertainty.
+Every response, including ack or rejection, awaits 21/22 action-specific proof; no automatic replay,
+refund, fallback, completion or reservation release exists. A late worker cannot overwrite a changed
+claim. For the same sealed worker, write-once late facts survive expiry and stale quarantine without
+changing uncertainty or reopening authority. Reconciliation22 interprets these facts and correlates charges.
+MariaDB paired races, current reads/EXPLAIN, cancellation writers acquiring the service prefix,
+queue timeout versus retry_after and installed native guards remain 39/44 acceptance gates.
+
+The combined18/19 claim authority calls ContactSetup::requireReady at claim and seal with the
+already locked domain relation. A contact refusal before claiming schedules ContactRecovery::hold
+only after commit; recovery reacquires its own ordered prefix and current funding. No claim/seal/
+grant is created by that refusal. A postclaim contact change instead holds the attempted operation
+as seal_authority_invalid: its retained claim prevents contact readmission, even without a seal.
+ContactRecovery refuses finance claim/seal/grant funding keys as well as claim token, request digest,
+started/lease and any unknown attempt/execution key. Live dispatch grants stay in memory only.
+Both Operation updating hooks remain active. Contact holds release only in the internal recovery
+scope; contact_disposition is write-once and contact_readmissions stays a bounded append-only
+policy prefix. Later policy writers must merge and preserve both audit keys. No finance migration
+is needed; contact profile migration000003 retains its unique basename.

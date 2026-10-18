@@ -152,7 +152,7 @@ foreach ([['attempt' => ['execution' => null]], ['attempt' => ['seal' => 'unknow
     ['completed_at' => now()], ['lease_expires_at' => now()], ['funding' => ['refund' => null]], ['state' => 'uncertain'],
     ['request_fingerprint' => 'claimed'], ['safe_code' => 'different_hold'],
     ['policy' => $held->fresh()->policy + ['contact_readmissions' => array_fill(0, 10, [])]]] as $changes) {
-    DB::beginTransaction(); $held->fresh()->update($changes); DB::commit();
+    DB::beginTransaction(); ContactSetup::recoveryWrite(static fn () => $held->fresh()->update($changes)); DB::commit();
     contactReject(static fn () => ContactRecovery::replace($staff, $held->id, 'Reviewed corrected details'));
     // Test-only restore of exact pre-case bytes; no runtime evidence-rewriting API.
     DB::table('domains_operations')->where('id', $held->id)->update($rawHeld);

@@ -125,3 +125,16 @@ Recorded-null execution, seals, sends, ambiguous evidence and NameSilo 301/302 p
 cannot become unsent recovery/refund. Contacts close without credit; `.us/.ca/.eu`, unknown/nonempty
 registry schemas and arbitrary attributes remain disabled. Fixtures make no provider calls. Profile
 creation/association/readback (20/30), transfer admission (27), routes (33) and installation (39) remain open.
+
+Slice19 `operation-claims-test.php` and `operation-recovery-test.php` exercise the real native checkout/funding/claim/seal path with
+synthetic preflight and writer objects: before/after-seal failures, stale workers, one-use dispatch,
+reversals and changed owner/generation/reservation/processing/payload/cancellation, deadline/capability
+refusals and old-seller dispatch. Cost above retail remains allowed; unknown outcomes retain names.
+No provider bridge or network is installed. SQLite establishes sequential behavior only; MariaDB
+races, installed queues and action-specific completion/reconciliation remain later acceptance gates.
+
+Slice18/19 integration adds operation-contacts-test.php: actual frozen contact validation before
+claim and seal, postcommit paid holds without attempts/grants, audited release, finance evidence
+refusing recollection/nonbillable closure, both model guards and immutable contact policy audit.
+Finance fixtures now collect real native owner contacts at checkout. All provider work is synthetic;
+SQLite does not establish MariaDB interleavings or installed queue/provider acceptance.

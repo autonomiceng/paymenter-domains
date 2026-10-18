@@ -26,7 +26,10 @@
     "tests/native-catalogue-test.php",
     "tests/cart-admission-test.php",
     "tests/invoice-binding-test.php",
-    "tests/contact-setup-test.php"
+    "tests/contact-setup-test.php",
+    "tests/operation-claims-test.php",
+    "tests/operation-recovery-test.php",
+    "tests/operation-contacts-test.php"
   ],
   "ui": [],
   "runner": [

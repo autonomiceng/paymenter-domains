@@ -33,7 +33,7 @@ final class ContactRecovery
             }
             catch (ContactValidation) { $code = 'contact_details_required'; }
             catch (\DomainException) { $code = 'registry_details_unsupported'; }
-            if ($op->state !== 'held' || $op->safe_code !== $code) { $op->update(['state' => 'held', 'safe_code' => $code]); }
+            if ($op->state !== 'held' || $op->safe_code !== $code) { ContactSetup::recoveryWrite(static fn () => $op->update(['state' => 'held', 'safe_code' => $code])); }
             return $op;
         });
     }
@@ -98,8 +98,8 @@ final class ContactRecovery
             $policy['contact_disposition'] = ['actor_id' => (int) $actor->id, 'reason' => $reason,
                 'at' => now()->toIso8601String(), 'outcome' => 'definitely_unsent', 'financial' => 'non_refundable'];
             $attempt = ['disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent', 'send_state' => 'definitely_unsent', 'seal' => 'absent'];
-            $op->update(['state' => 'rejected', 'safe_code' => 'contacts_closed_unsent', 'policy' => $policy,
-                'attempt' => $attempt, 'completed_at' => now()]);
+            ContactSetup::recoveryWrite(static fn () => $op->update(['state' => 'rejected', 'safe_code' => 'contacts_closed_unsent', 'policy' => $policy,
+                'attempt' => $attempt, 'completed_at' => now()]));
             return $op;
         });
     }
@@ -144,7 +144,8 @@ final class ContactRecovery
         if ($op->completed_at !== null || $op->started_at !== null || $op->lease_expires_at !== null || $op->request_fingerprint !== null
             || $op->provider_order_id !== null || $op->confirmed_expires_at !== null
             || array_key_exists('execution', $op->cost ?? []) || array_key_exists('actual', $op->cost ?? [])
-            || array_key_exists('dispatch_attempted_at', $op->policy ?? []) || array_key_exists('refund', $op->funding ?? [])
+            || array_key_exists('dispatch_attempted_at', $op->policy ?? [])
+            || array_intersect(['refund', 'claim', 'seal', 'grant'], array_keys($op->funding ?? []))
             || array_diff(array_keys($attempt), ['seal', 'send_state', 'disposition', 'rejection_basis'])
             || ($attempt !== [] && (($attempt['seal'] ?? null) !== 'absent' || ($attempt['send_state'] ?? null) !== 'definitely_unsent'))
             || (array_key_exists('disposition', $attempt) && $attempt['disposition'] !== 'rejected')

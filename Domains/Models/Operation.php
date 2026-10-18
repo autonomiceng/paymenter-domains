@@ -33,6 +33,38 @@ class Operation extends Model
             }
         });
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::guardSnapshot($operation));
+        static::updating(static function (self $operation): void {
+            $before = $operation->getOriginal('policy') ?? []; $after = $operation->policy ?? [];
+            if (array_key_exists('contact_disposition', $before)
+                && (!array_key_exists('contact_disposition', $after) || $after['contact_disposition'] !== $before['contact_disposition'])) {
+                throw new \DomainException('Contact disposition is frozen.');
+            }
+            if (array_key_exists('contact_readmissions', $before) || array_key_exists('contact_readmissions', $after)) {
+                $history = array_key_exists('contact_readmissions', $before) ? $before['contact_readmissions'] : []; $next = $after['contact_readmissions'] ?? null;
+                if (!is_array($history) || !array_is_list($history) || !is_array($next) || !array_is_list($next)
+                    || count($next) > 10 || count($next) < count($history) || array_slice($next, 0, count($history)) !== $history) {
+                    throw new \DomainException('Contact readmissions are append-only and bounded.');
+                }
+            }
+            $old = $operation->getOriginal('attempt') ?? []; $new = $operation->attempt ?? [];
+            foreach (['claim_key', 'dispatch_attempted_at', 'authorized_cost', 'execution', 'evidence', 'charge', 'order_candidates'] as $key) {
+                if (array_key_exists($key, $old) && (!array_key_exists($key, $new) || $new[$key] !== $old[$key])) {
+                    throw new \DomainException('Attempt evidence is write-once.');
+                }
+            }
+            if (($old['seal'] ?? null) === 'sealed' && $operation->isDirty('payload')) {
+                throw new \DomainException('Sealed desired state is frozen.');
+            }
+            foreach (['claim', 'seal'] as $key) {
+                $before = $operation->getOriginal('funding') ?? []; $after = $operation->funding ?? [];
+                if (array_key_exists($key, $before) && (!array_key_exists($key, $after) || $after[$key] !== $before[$key])) {
+                    throw new \DomainException('Claim funding evidence is frozen.');
+                }
+            }
+            if (($old['seal'] ?? null) === 'sealed' && ($new['seal'] ?? null) !== 'sealed') {
+                throw new \DomainException('Dispatch seals cannot be removed.');
+            }
+        });
         static::deleting(static function (): never { throw new \DomainException('Operation ledger rows are retained.'); });
     }
 

@@ -41,6 +41,10 @@ final class ContactSetup
 
     public static function guardSnapshot(#[\SensitiveParameter] Operation $operation): void
     {
+        if (!self::$recovering && $operation->getOriginal('safe_code') === 'contact_details_required'
+            && $operation->isDirty(['state', 'safe_code'])) {
+            throw new \DomainException('Only contact recovery can release the contact hold.');
+        }
         $old = $operation->getOriginal('payload');
         if (!is_array($old) || (!array_key_exists('contacts', $old) && !array_key_exists('setup_required', $old)) || self::$recovering) { return; }
         foreach (['contacts', 'registry', 'registry_schema', 'setup_required', 'setup_fields', 'registry_supported'] as $field) {

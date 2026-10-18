@@ -1,0 +1,95 @@
+<?php
+// Synthetic Enom 444f31c claim/seal regressions; MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/Support/operation-fixture.php';
+use App\Models\{Invoice, InvoiceTransaction};
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, OperationPreflight};
+use Paymenter\Extensions\Servers\Domains\Data\{AdmittedOperation, Capabilities, Capability, DispatchReadiness, Disposition, DriverResult, Evidence, Money, RequestContext, ResultReason, SendState, Support};
+use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainOperations, InvoiceBinding, OperationClaims};
+use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
+
+// Active duplicate worker cannot claim; expired workers enter reconciliation, including definitely-unsealed ones.
+foreach ([false, true] as $seal) {
+    $op = $new($seal ? 'stale-sealed.com' : 'stale-unsealed.com'); [$claimed, $domain, $binding] = $claims->claim($op->id);
+    $assertNoSend($op, 'running');
+    if ($seal) { $ready = $preflight->inspect($claimed, $domain, new RequestContext($binding, Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background, $now->modify('+300 seconds'), new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(10), $clock)); $claims->seal($claimed, $ready); }
+    $clock->instant = $clock->instant->modify('+361 seconds'); $result = $assertNoSend($op, 'uncertain'); same('stale_claim', $result->safe_code, 'Expired worker requires reconciliation');
+    $clock->instant = $clock->instant->modify('-361 seconds');
+}
+// Original workers must classify their own expired claim, whether preflight returns or throws.
+foreach ([false, true] as $fail) {
+    $op = $new($fail ? 'expired-throw.com' : 'expired-return.com'); $preflight->fail = $fail;
+    $preflight->during = static fn () => $clock->instant = $clock->instant->modify('+361 seconds');
+    $result = $assertNoSend($op, 'uncertain'); same('stale_claim', $result->safe_code, 'Original expired worker enters reconciliation');
+    same('absent', $result->attempt['seal'], 'Expired worker cannot seal');
+    $clock->instant = $clock->instant->modify('-361 seconds'); $preflight->during = null; $preflight->fail = false;
+}
+$op = $new('lease-short.com'); $preflight->during = static fn () => $clock->instant = $clock->instant->modify('+276 seconds');
+$assertNoSend($op); $clock->instant = $clock->instant->modify('-276 seconds'); $preflight->during = null;
+// Frozen source dispatch-CAS scenarios: changed claim identity/state must defeat the old worker.
+foreach (['held', 'replacement'] as $change) {
+    $op = $new('claim-race-'.$change.'.com'); $before = $writer->calls;
+    $preflight->during = static function ($claimed) use ($change): void {
+        if ($change === 'held') { $claimed->fresh()->update(['state' => 'held', 'lease_expires_at' => null]); }
+        else {
+            $a = $claimed->attempt; $a['claim_key'] = str_repeat('f', 32);
+            DB::table('domains_operations')->where('id', $claimed->id)->update(['attempt' => Illuminate\Support\Facades\Crypt::encryptString(json_encode($a)), 'started_at' => '2026-10-18 12:00:01']);
+        }
+    };
+    $result = $engine->execute($op->id); same($before, $writer->calls, 'Old claim cannot dispatch after concurrent replacement');
+    same($change === 'held' ? 'held' : 'running', $result->state, 'Concurrent worker state preserved'); $preflight->during = null;
+}
+// A failed seal write rolls back the marker and permits no send.
+$op = $new('seal-rollback.com'); $failSeal = true;
+Operation::updating(static function ($current) use ($op, &$failSeal): void {
+    if ($failSeal && $current->id === $op->id && ($current->attempt['seal'] ?? null) === 'sealed') {
+        $failSeal = false; throw new RuntimeException('Synthetic seal persistence failure');
+    }
+});
+$result = $assertNoSend($op); expect(!$failSeal, 'Seal persistence fault injected'); same('absent', $result->attempt['seal'], 'Rolled-back seal remains absent');
+$op = $new('prior-uncertain.com');
+Operation::create(['domain_id' => $op->domain_id, 'service_id' => $op->service_id, 'server_id' => $op->server_id,
+    'registrar_key' => $op->registrar_key, 'account_fingerprint' => $op->account_fingerprint, 'authority_generation' => 1,
+    'operation_key' => 'prior-uncertain', 'action' => 'renew', 'term' => 1, 'currency' => 'USD', 'state' => 'uncertain']);
+$assertNoSend($op);
+// Bounded slow reads fit; exactly one full send timeout remains at the accepted boundary.
+foreach ([175, 275] as $elapsed) {
+    $op = $new('slow-'.$elapsed.'.com'); $before = $writer->calls;
+    $preflight->during = static fn () => $clock->instant = $clock->instant->modify('+'.$elapsed.' seconds');
+    same('uncertain', $engine->execute($op->id)->state, 'Bounded slow preflight retains dispatch lease');
+    same($before + 1, $writer->calls, 'Full request boundary permits one send');
+    $clock->instant = $clock->instant->modify('-'.$elapsed.' seconds'); $preflight->during = null;
+}
+// Late same-worker facts survive expiry or another worker's stale classification without reopening authority.
+foreach (['expired', 'swept', 'replaced'] as $late) {
+    $op = $new('late-'.$late.'.com'); $before = $writer->calls;
+    $writer->during = static function ($saved) use ($clock, $engine, $late): void {
+        $clock->instant = $clock->instant->modify('+361 seconds');
+        if ($late !== 'expired') { same('uncertain', $engine->execute($saved->id)->state, 'Concurrent worker quarantines stale claim'); }
+        if ($late === 'replaced') {
+            $a = $saved->attempt; $a['claim_key'] = str_repeat('e', 32);
+            DB::table('domains_operations')->where('id', $saved->id)->update(['attempt' => Illuminate\Support\Facades\Crypt::encryptString(json_encode($a))]);
+        }
+    };
+    $result = $engine->execute($op->id); same($before + 1, $writer->calls, 'Late response never resends');
+    same('uncertain', $result->state, 'Late response remains uncertain'); same('stale_claim', $result->safe_code, 'Late facts preserve quarantine');
+    same($late !== 'replaced', array_key_exists('execution', $result->attempt), 'Only matching worker may retain late evidence');
+    if ($late !== 'replaced') { expect(isset($result->attempt['evidence']), 'Late neutral facts retained'); same('unknown', $result->attempt['execution']['disposition'], 'Late normalized result retained'); }
+    $clock->instant = $clock->instant->modify('-361 seconds'); $writer->during = null; $assertNoSend($result, 'uncertain');
+}
+foreach (['consume', 'binding'] as $failure) {
+    $op = $new('writer-'.$failure.'.com'); $writer->consume = $failure !== 'consume'; $writer->wrongBinding = $failure === 'binding';
+    $result = $engine->execute($op->id); same('uncertain', $result->state, 'Invalid bridge result cannot complete');
+    expect(array_key_exists('execution', $result->attempt) && $result->attempt['execution'] === null, 'Rejected bridge result stays recorded-null');
+    $writer->consume = true; $writer->wrongBinding = false;
+}
+commerceReject(fn () => clone $engine); commerceReject(fn () => serialize($engine));
+// Old bindings survive future seller changes and flags; seller policy is not dispatch authority.
+$op = $new('old-seller.com'); $sellers->change('com', 2, $tlds[1]->server_id, true, true, $now);
+$tlds[0]->update(['enabled' => false, 'register_enabled' => false]);
+same('uncertain', $engine->execute($op->id)->state, 'Paid prior seller dispatches after switch and sale withdrawal');
+echo "Operation expiry, late evidence and one-attempt recovery checks passed\n";
+$nativeSuccessful = true;

@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Enums\InvoiceTransactionStatus;
-use App\Models\{Invoice, InvoiceItem, Product, Service};
+use App\Models\{Invoice, InvoiceItem, Plan, Product, Service, ServiceCancellation};
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\{DB, Event};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
@@ -16,7 +16,8 @@ final class InvoiceFunding
     private bool $active = true;
     private function __construct(private readonly \Illuminate\Database\Connection $connection,
         private readonly Invoice $invoice, private readonly Collection $items, private readonly Collection $transactions,
-        private readonly Collection $services, private readonly Collection $products) {}
+        private readonly Collection $services, private readonly Collection $products,
+        private readonly Collection $plans, private readonly Collection $cancellations) {}
 
     public function __clone(): void { throw new \LogicException('Funding contexts cannot be cloned.'); }
     public function __serialize(): array { throw new \LogicException('Funding contexts cannot be persisted.'); }
@@ -44,8 +45,24 @@ final class InvoiceFunding
         $ids = $items->where('reference_type', (new Service)->getMorphClass())->pluck('reference_id')->unique();
         $services = Service::whereKey($ids)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
         $products = Product::whereKey($services->pluck('product_id')->unique())->orderBy('id')->lockForUpdate()->get()->keyBy('id');
-        $context = new self(DB::connection(), $invoice, $items, $transactions, $services, $products);
+        $plans = Plan::whereKey($services->pluck('plan_id')->unique())->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+        $cancellations = ServiceCancellation::whereIn('service_id', $services->keys())->orderBy('id')->lockForUpdate()->get();
+        $context = new self(DB::connection(), $invoice, $items, $transactions, $services, $products, $plans, $cancellations);
         self::$contexts[$context] = true; return $context;
+    }
+
+    /** Acquisition lifecycle under the same native prefix; renewal/complimentary authority is separate. */
+    public function requireInitial(Operation $op, Domain $domain): array
+    {
+        $paid = $this->requirePaid($op, $domain);
+        $service = $this->services->get($op->service_id); $plan = $this->plans->get($service->plan_id);
+        if (!in_array($service->status, [Service::STATUS_PENDING, Service::STATUS_ACTIVE], true)
+            || $this->cancellations->contains('service_id', $service->id) || !$plan
+            || $plan->priceable_type !== (new Product)->getMorphClass() || (int) $plan->priceable_id !== (int) $service->product_id
+            || $plan->type !== 'recurring' || $plan->billing_unit !== 'year' || (int) $plan->billing_period !== 1) {
+            throw new \DomainException('Acquisition lifecycle changed.');
+        }
+        return $paid;
     }
 
     /** Funding evidence only. Engine19 supplies its current domain then operation under ordered locks. */
@@ -60,7 +77,9 @@ final class InvoiceFunding
             || $service->status === Service::STATUS_CANCELLED || PricingRule::minor($op->amount) <= 0) {
             throw new \DomainException('Domain invoice binding is not funded.');
         }
-        InvoiceBinding::requireIdentity($op, $domain, $service, $invoice, $item, $this->products->get($service->product_id));
+        $product = $this->products->get($service->product_id);
+        if (!$product) { throw new \DomainException('Missing locked native product.'); }
+        InvoiceBinding::requireIdentity($op, $domain, $service, $invoice, $item, $product);
         $total = $paid = 0; $transactionIds = [];
         foreach ($items as $row) {
             if ((int) $row->invoice_id !== (int) $invoice->id || !ctype_digit((string) $row->quantity) || (int) $row->quantity < 1) { throw new \DomainException('Invalid native invoice line.'); }
