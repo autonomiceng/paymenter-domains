@@ -38,14 +38,27 @@ $reject(static fn () => $registry->register('other', ['token'], $verifier, $fact
 $bindings = new AccountBindings($registry);
 foreach ([1, 2, 3, 4] as $id) { Server::create(['id' => $id, 'name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]); }
 $credentials = ['uid' => 'synthetic', 'token' => 'A1'];
-$reject(static fn () => $bindings->configure(1, 'enom', Environment::Test, ['token' => 'A1']));
-$reject(static fn () => DB::transaction(static fn () => $bindings->configure(1, 'enom', Environment::Test, $credentials)));
+$callsBefore = $verifier->calls;
+try { $bindings->configure(1, 'enom', Environment::Test, ['token' => 'A1']); expect(false, 'Incomplete credentials accepted'); }
+catch (InvalidArgumentException $error) {
+    same(InvalidArgumentException::class, $error::class, 'Incomplete credential refusal class');
+    same('Registrar credentials incomplete.', $error->getMessage(), 'Incomplete credential refusal message');
+}
+same($callsBefore, $verifier->calls, 'Incomplete credentials refuse before provider verification');
+try { DB::transaction(static fn () => $bindings->configure(1, 'enom', Environment::Test, $credentials)); expect(false, 'Open transaction accepted'); }
+catch (LogicException $error) {
+    same(LogicException::class, $error::class, 'Open transaction refusal class');
+    same('Account verification must run outside database locks.', $error->getMessage(), 'Open transaction refusal message');
+}
+same($callsBefore, $verifier->calls, 'Open transactions refuse before provider verification');
 Server::findOrFail(2)->update(['enabled' => false]);
 $reject(static fn () => $bindings->configure(2, 'enom', Environment::Test, $credentials));
 Server::findOrFail(2)->update(['enabled' => true]);
 try { $bindings->configure(1, 'enom', Environment::Test, ['uid' => 'synthetic', 'token' => 'invalid']); expect(false, 'Unknown ownership accepted'); }
 catch (RuntimeException $e) { same('Registrar account ownership could not be verified.', $e->getMessage(), 'Verification failure redacted'); same(null, $e->getPrevious(), 'No private exception chained'); }
+$callsBefore = $verifier->calls;
 $b = $bindings->configure(1, 'enom', Environment::Test, $credentials);
+same($callsBefore + 1, $verifier->calls, 'First save performs exactly one provider verification');
 $account = Account::where('server_id', 1)->firstOrFail();
 same(false, $account->processing_enabled, 'Processing initially off');
 same('account-a', $account->stable_identity, 'Verified stable identity stored');

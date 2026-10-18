@@ -76,9 +76,13 @@ class RunnerTests(unittest.TestCase):
         pid = stdout.decode().strip()
         self.assertTrue(pid.isdigit(), 'Nested child PID was not captured before timeout')
         child = Path('/proc')/pid/'stat'
-        try: state = child.read_text().split()[2]
-        except (FileNotFoundError, ProcessLookupError): state = None
-        self.assertIn(state, [None, 'Z'], 'Nested child is still running')
+        deadline = time.monotonic() + 3
+        while True:
+            try: state = child.read_text().split()[2]
+            except (FileNotFoundError, ProcessLookupError): state = None
+            if state in [None, 'Z', 'X'] or time.monotonic() >= deadline: break
+            time.sleep(0.05)
+        self.assertIn(state, [None, 'Z', 'X'], 'Nested child is still running')
 
     def test_escaped_session_pipe_drain_is_bounded_and_receipted(self):
         with tempfile.TemporaryDirectory() as temp:
