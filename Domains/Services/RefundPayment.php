@@ -11,7 +11,7 @@ final class RefundPayment
     {
         $d = $l['domain']; $s = $l['service'];
         $invoice = $l['invoices']->firstWhere('id', $op->invoice_id); $item = $l['items']->firstWhere('id', $op->invoice_item_id);
-        if (!in_array($op->action, ['register', 'renew', 'transfer'], true) || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
+        if (!in_array($op->action, ['register', 'renew', 'transfer', 'privacy_purchase', 'privacy_renew'], true) || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
             || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key || $op->account_fingerprint !== $d->account_fingerprint
             || $op->authority_generation < 1 || $op->authority_generation !== $d->authority_generation || $op->term < 1 || $op->term > 10
             || $op->funding_basis !== 'paid_invoice' || $op->currency !== 'USD' || !$invoice || !$item
@@ -33,7 +33,7 @@ final class RefundPayment
                 || $item->reference_type !== null || $item->reference_id !== null || $l['items']->where('invoice_id', $invoice->id)->count() !== 1) {
                 throw new \DomainException('Renewal line changed.');
             }
-        } else { throw new \DomainException('This action has no refund authority.'); }
+        } elseif (in_array($op->action, ['privacy_purchase','privacy_renew'],true)) { ManagementPrivacy::requireLine($op,$l,$invoice,$item); } else { throw new \DomainException('This action has no refund authority.'); }
         return [$invoice, $item];
     }
     /** Retired debt can stop blocking a replacement only while its exact full credit still covers all activity. */

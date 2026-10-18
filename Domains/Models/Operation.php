@@ -27,7 +27,7 @@ class Operation extends Model
             if (isset($old['renewal']) && $operation->isDirty(['base_expires_at', 'expected_expires_at'])) {
                 throw new \DomainException('Issued renewal expiry obligations are frozen.');
             }
-            foreach (['checkout', 'price', 'seller_revision', 'calendar', 'renewal', 'complimentary'] as $key) {
+            foreach (['checkout', 'price', 'seller_revision', 'calendar', 'renewal', 'complimentary', 'management', 'privacy'] as $key) {
                 if (array_key_exists($key, $old) && ($new[$key] ?? null) !== $old[$key]) { throw new \DomainException('Checkout evidence is frozen.'); }
             }
             $old = $operation->getOriginal('cost') ?? []; $new = $operation->cost ?? [];
@@ -37,6 +37,7 @@ class Operation extends Model
         });
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::guardSnapshot($operation));
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\TransferInputs::guard($operation));
+        static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\ManagementEvidence::guard($operation));
         static::updating(static function (self $operation): void {
             $before = $operation->getOriginal('policy') ?? []; $after = $operation->policy ?? [];
             if (array_key_exists('contact_disposition', $before)

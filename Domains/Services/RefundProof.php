@@ -9,7 +9,7 @@ final class RefundProof
     public static function requireUnsent(Operation $op, Domain $d): void
     {
         $a = $op->attempt ?? []; $f = $op->funding ?? []; $c = $op->cost ?? [];
-        if (!in_array($op->action, ['register', 'renew', 'transfer'], true) || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
+        if (!in_array($op->action, ['register', 'renew', 'transfer', 'privacy_purchase', 'privacy_renew'], true) || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
             || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key || $op->account_fingerprint !== $d->account_fingerprint
             || $op->authority_generation < 1 || $op->authority_generation !== $d->authority_generation
             || $op->provider_order_id !== null || $op->confirmed_expires_at !== null || $op->lease_expires_at !== null
@@ -32,6 +32,11 @@ final class RefundProof
         $sealed = ($a['seal'] ?? null) === 'sealed';
         $allowed = $sealed ? ['claim_key', 'seal', 'dispatch_attempted_at', 'send_state', 'authorized_cost', 'renewal_mode', 'execution']
             : ['claim_key', 'seal', 'send_state', 'disposition', 'rejection_basis', 'terminal'];
+        if(!$sealed&&in_array($op->action,['privacy_purchase','privacy_renew'],true)&&array_key_exists('management_claim',$a)){
+            $allowed[]='management_claim';$allowed[]='management_deferrals';if(!ManagementEvidence::deferrals($a)){throw new \DomainException('Unknown management deferral.');}
+            if(!is_string($a['management_claim'])||!preg_match('/^[a-f0-9]{32}$/D',$a['management_claim'])||!$op->started_at||$op->request_fingerprint!==null
+                ||!in_array($op->safe_code,['management_unconfirmed','refund_approved'],true)){throw new \DomainException('Unknown privacy claim.');}
+        }
         if (array_diff(array_keys($a), $allowed)) { throw new \DomainException('Unresolved attempt facts prevent refund.'); }
         if ($sealed) {
             // Slice25 commits possibly_sent at seal; ONLY its exact typed local prewire result can override it.

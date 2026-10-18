@@ -221,3 +221,14 @@ proof, fixed input/funding gates, status contradictions, unique original charge 
 full added-year/ownership proof, native funding races, transfer renewal anchors and
 unsent-only credit. NameSilo terminal vocabulary stays unresolved under the current
 public contract. Exchanges are injected; no provider or installed acceptance is claimed.
+
+Slice29 adds synthetic `management-test.php`, `management-records-test.php` and
+`management-privacy-test.php`: engine authorization/one-use dispatch/readback, Enom DNS/SRV/DS/glue,
+and native paid privacy plus definitely-unsent refunds. Frozen Enom444f31c is provenance.
+All exchanges are injected; no provider or installed-extension acceptance is claimed.
+
+`management-refusal-test` covers documented/system/contradictory provider refusals and the binding no-sent-credit boundary.
+
+Runner timeout correction: native offline suites have a 120-second per-process deadline on shared,
+nice/ionice-limited hosts. The 60-second summary above applies to other categories.
+Provider request deadlines remain independent.

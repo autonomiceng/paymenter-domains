@@ -23,6 +23,8 @@ enum ReadCommand: string
     case Order = 'GetOrderDetail';
     case Transfer = 'TP_GetOrder';
     case Orders = 'GetOrderList';
+    case Nameservers = 'GetDNS'; case Hosts = 'GetHosts'; case Srv = 'GetDomainSRVHosts';
+    case Ds = 'GetDnsSec'; case HostStatus = 'CheckNSStatus';
 
     /** Exact parameters for the named read; no shared credential/mutation overrides. */
     public function validate(#[\SensitiveParameter] array $parameters): void
@@ -30,6 +32,7 @@ enum ReadCommand: string
         $expected = match ($this) {
             self::Balance, self::Tlds, self::Expired => [],
             self::Order => ['OrderID'],
+            self::HostStatus => ['CheckNSName'],
             self::Transfer => ['TransferOrderID'],
             self::Orders => ['BeginDate', 'EndDate', 'Start'],
             self::ProductPrice => ['TLD', 'ProductType', 'Years'],
@@ -42,6 +45,7 @@ enum ReadCommand: string
         }
         foreach ($parameters as $key => $value) {
             $valid = match ($key) {
+                'CheckNSName' => is_string($value) && strlen($value) <= 253 && (bool) filter_var($value, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME),
                 'SLD' => is_string($value) && preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/D', $value),
                 'TLD' => is_string($value) && strlen($value) <= 189 && preg_match('/^[a-z]{2,63}(?:\.[a-z]{2,63})*$/D', $value),
                 'OrderID', 'TransferOrderID' => is_string($value) && preg_match('/^[1-9][0-9]{0,19}$/D', $value),

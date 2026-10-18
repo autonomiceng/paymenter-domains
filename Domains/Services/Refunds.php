@@ -72,7 +72,7 @@ final readonly class Refunds
         if ($afterId < 0 || $limit < 1 || $limit > 100) { throw new \InvalidArgumentException('Invalid refund batch.'); }
         $done = 0;
         $ids = Operation::where('id', '>', $afterId)->where('state', 'rejected')->where('funding_basis', 'paid_invoice')
-            ->whereIn('action', ['register', 'renew', 'transfer'])->orderBy('id')->limit($limit)->pluck('id');
+            ->whereIn('action', ['register', 'renew', 'transfer', 'privacy_purchase', 'privacy_renew'])->orderBy('id')->limit($limit)->pluck('id');
         foreach ($ids as $id) { try { $done += $this->creditRejected((int) $id) !== null ? 1 : 0; } catch (\Throwable) {} }
         return $done;
     }

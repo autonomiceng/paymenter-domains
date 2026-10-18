@@ -81,7 +81,7 @@ final class NativeDomainGuard
             if (Domain::whereIn('service_id', Service::whereIn('plan_id', self::ids($p))->select('id'))->exists()) { throw new \DomainException('Holding annual plans are retained.'); }
         });
         InvoiceItem::creating(static function (InvoiceItem $item): void {
-            if (Operation::where('invoice_id', $item->invoice_id)->where('action', 'renew')->exists()
+            if (Operation::where('invoice_id', $item->invoice_id)->whereIn('action', ['renew','privacy_purchase','privacy_renew'])->exists()
                 || ($item->reference_type === (new Service)->getMorphClass() && Domain::where('service_id', $item->reference_id)->exists())) {
                 throw new \DomainException('Managed renewal items require the billing authority.');
             }
@@ -89,7 +89,7 @@ final class NativeDomainGuard
         foreach (['updating', 'deleting'] as $event) {
             InvoiceItem::$event(static function (InvoiceItem $item): void {
                 if (Operation::whereIn('invoice_item_id', self::ids($item))->exists()
-                    || Operation::whereIn('invoice_id', [$item->invoice_id, $item->getRawOriginal('invoice_id')])->where('action', 'renew')->exists()) {
+                    || Operation::whereIn('invoice_id', [$item->invoice_id, $item->getRawOriginal('invoice_id')])->whereIn('action', ['renew','privacy_purchase','privacy_renew'])->exists()) {
                     throw new \DomainException('Issued domain invoice items and renewal membership are immutable.');
                 }
             });

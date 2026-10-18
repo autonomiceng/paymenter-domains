@@ -56,7 +56,7 @@ def execute(argv, *, cwd, env, timeout=60):
 def run(commands, env, output, selected, suites, dependency=None):
     before, results = hashes(), []
     for index, (kind, argv) in enumerate(commands):
-        stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=env, timeout=60)
+        stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=env, timeout=120 if kind == 'native' else 60)
         (output/f'{index:03d}.stdout.txt').write_bytes(stdout)
         (output/f'{index:03d}.stderr.txt').write_bytes(stderr)
         runtime_error = None
