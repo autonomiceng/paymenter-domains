@@ -10,3 +10,7 @@ network access. Tests never load credentials, an installed Paymenter app or cust
 
 No native Paymenter, database, billing, UI or provider acceptance is claimed. Add those harnesses
 with their implementation; keep ordinary runtime suites offline.
+
+`api-test.php` covers pure protocol classification and read-only client behavior. Purchase mappings
+are tested as values and cannot be dispatched. `curl-transport-test.php` uses namespaced synthetic
+cURL functions; real cURL execution remains disabled. Redaction cases enable exception arguments.

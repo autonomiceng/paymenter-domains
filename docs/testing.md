@@ -25,6 +25,13 @@ CI retains repository hygiene and runs bootstrap plus this runner without secret
 belong only to bootstrap; ordinary suites are offline. Passing tests establish local protocol
 interpretation, not registry acceptance, Paymenter installation or concurrency correctness.
 
+The current synthetic suites cover documented response codes and success shapes, credential redaction,
+request bounds and purchase flags, and cURL routing/TLS/timeouts/stream limits without network execution.
+Purchase mappings are structurally excluded from client/transport dispatch; tests assert zero sends.
+Redaction cases explicitly enable exception arguments, and cover ordinary object casts/dumpers as well
+as serialization. Pure parser tests cover correlated fallbacks, per-operation refusals, canonical
+decimal amounts/IDs and exact availability coverage.
+
 ## Reference and deferred coverage
 
 Adapted from Enom `d2c55e2` scripts/test.py and scripts/php-test. Its bootstrap accepts system

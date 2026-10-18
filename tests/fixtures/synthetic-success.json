@@ -1,0 +1,39 @@
+{
+  "_fixture": "Synthetic NameSilo JSON shapes derived from public documentation; all amounts are invented, not quotes.",
+  "checkRegisterAvailability": {
+    "request": {"operation": "checkRegisterAvailability", "ip": "192.0.2.1"},
+    "reply": {"code": 300, "detail": "success", "available": [{"domain": "example.com", "price": 12.34, "premium": 0, "duration": 1}], "unavailable": {"domain": "example.net"}, "invalid": {"domain": "example.org"}}
+  },
+  "checkTransferAvailability": {
+    "request": {"operation": "checkTransferAvailability", "ip": "192.0.2.1"},
+    "reply": {"code": 300, "detail": "success", "available": [{"domain": "example.com", "price": 12.34, "premium": 0}], "unavailable": [{"domain": "example.net", "reason": "Synthetic unavailable result"}]}
+  },
+  "getPrices": {
+    "request": {"operation": "getPrices", "ip": "192.0.2.1"},
+    "reply": {"code": 300, "detail": "success", "com": {"registration": 12.34, "transfer": 12.35, "renew": 12.36}}
+  },
+  "getDomainInfo": {
+    "request": {"operation": "getDomainInfo", "ip": "192.0.2.1"},
+    "reply": {"code": 300, "detail": "success", "created": "2026-01-01", "expires": "2027-01-01", "status": "Active", "locked": "Yes", "private": "No", "auto_renew": "No", "traffic_type": "Custom DNS", "email_verification_required": "No", "portfolio": "Synthetic", "forward_url": "N/A", "forward_type": "N/A", "nameservers": [{"nameserver": "ns1.example.net", "position": 1}, {"nameserver": "ns2.example.net", "position": 2}], "contact_ids": {"registrant": "123", "administrative": "123", "technical": "123", "billing": "123"}}
+  },
+  "getAccountBalance": {
+    "request": {"operation": "getAccountBalance", "ip": "192.0.2.1"},
+    "reply": {"code": 300, "detail": "success", "balance": 123.45}
+  },
+  "listOrders": {
+    "request": {"operation": "listOrders", "ip": "192.0.2.1"},
+    "reply": {"code": 300, "detail": "success", "order": [{"order_number": "123", "order_date": "2026-01-01 12:00:00", "method": "Account Funds", "total": "12.34"}]}
+  },
+  "orderDetails": {
+    "request": {"operation": "orderDetails", "ip": "192.0.2.1"},
+    "reply": {"code": 300, "detail": "success", "order_number": "123", "order_date": "2026-01-01 12:00:00", "method": "Account Funds", "total": "12.34", "order_details": [{"description": "example.com - registration", "years_qty": "1", "price": "12.34", "subtotal": "12.34", "status": "Processed"}]}
+  },
+  "registerDomain": {
+    "request": {"operation": "registerDomain", "ip": "192.0.2.1"},
+    "reply": {"code": 300, "detail": "success", "message": "Synthetic registration acknowledgement", "domain": "example.com", "order_amount": 12.34}
+  },
+  "transferDomain": {
+    "request": {"operation": "transferDomain", "ip": "192.0.2.1"},
+    "reply": {"code": 300, "detail": "success", "message": "Synthetic transfer acknowledgement", "domain": "example.com", "order_amount": 12.34}
+  }
+}

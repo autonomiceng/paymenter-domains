@@ -1,6 +1,6 @@
 # Contributing
 
-This project currently contains repository scaffolding only. Agree on implementation scope before adding extension code.
+The standalone API foundation is in progress; Paymenter integration remains unimplemented. Agree on implementation scope before adding billing, jobs or UI.
 
 Read [extension conventions](docs/paymenter-extension-conventions.md) and [verification guidance](docs/testing.md). Keep runtime in `NameSilo/`, offline tests in `tests/`, and development tools in `scripts/`. Record design decisions and evidence in `docs/` once implementation begins.
 
@@ -10,4 +10,4 @@ Use synthetic examples, `example.com`, and documentation addresses in public mat
 
 Open focused pull requests with the problem, resulting behavior, verification performed, and remaining limits. Use Conventional Commits and the maintainer-configured author, committer, and signing settings. Preserve existing MIT notices in adapted source.
 
-The current CI checks repository hygiene only. As runtime is introduced, add meaningful provider-contract, native integration, UI, and package checks. Describe unrun checks explicitly; passing scaffold CI does not establish extension compatibility or provider acceptance.
+Run `scripts/test.py` before committing. CI checks repository hygiene and synthetic offline PHP suites. Add native integration, UI and package checks with those features. Describe unrun checks explicitly; synthetic tests do not establish extension compatibility or provider acceptance.

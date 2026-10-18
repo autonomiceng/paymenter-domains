@@ -35,8 +35,9 @@ Only explicitly needed reply fields are accessible in memory; unknown results di
 ## Reply codes
 
 Source: [API reference, Response Codes tab](https://www.namesilo.com/api-reference).
-This table applies to **all** commands below; command pages generally show only 300.
-These are local classifications, not a provider guarantee of safe retry. No outcome automatically
+This table records provider meanings; command pages generally show only 300. The per-operation
+policy below determines which refusals are authoritative for each mapped command.
+These are candidate local classifications, applied only to relevant operations; an inapplicable code is unknown, not a definitive refusal. They are not a provider guarantee of safe retry. No outcome automatically
 retries/refunds. In particular, already-existing/in-flight requests require reconciliation.
 
 | Code | Documented meaning (paraphrased) | Local disposition |
@@ -69,11 +70,27 @@ retries/refunds. In particular, already-existing/in-flight requests require reco
 | 400 | Earlier API request processing; docs suggest resubmission | unknown; never auto-resubmit |
 | Other, malformed envelope, timeout, HTTP error | No authoritative outcome | unknown |
 
-301/302 mean a purchase with a discrepancy. Retain that outcome, block original-write replay and
-automatic refund, and arrange separately authorized correction/readback. Treat either code as
-fallback even if returned unexpectedly by a different command. A rejection containing purchase
+301/302 on a purchase with matching domain and valid amount mean a purchase with a discrepancy.
+Retain sanitized domain/charge evidence, block original-write replay and automatic refund, and
+arrange separately authorized correction/readback. Unexpected read-command fallbacks or mismatched
+purchase evidence stay unknown; that also forbids replay/refund. A rejection containing purchase
 amount/order evidence is contradictory and must remain unknown. Provider detail text never controls
 classification. API success is separate from business completion and is never retry authority.
+
+Current refusal policy: common validation codes 101–114 and 116–120 apply to all mapped operations;
+getDomainInfo additionally accepts 200; availability 267; register 263/267; transfer 263/265–267;
+draft renew 263/264. Every other non-success code stays unknown. State-toggle acknowledgements
+250–256 do not apply to current read/purchase mappings. Refusals carry request, credential/account,
+funds or domain-state scope so future processing can hold account-wide problems.
+
+`RegistrarRequest` and transport/client execution accept reads only. `PurchaseMapping` exposes
+register/renew/transfer parameters with no dispatch path. `ResponseParser` can classify synthetic
+purchase evidence independently, without sending it. A later authorized write slice must introduce
+funding/ownership/premium/cost/prior-outcome admission before adding a purchase transport path.
+Availability collections normalize to lists and must cover exactly the requested names once;
+missing premium evidence is explicit null, never ordinary-name proof. Monetary JSON lexemes are
+preserved before float conversion and returned as canonical two-decimal strings; numeric IDs are
+normalized to digit strings. Unknown three-digit codes remain available for diagnosis.
 
 ## Search, lifecycle and evidence
 
@@ -98,8 +115,14 @@ All rows: **I/B**, common JSON envelope and code table above. Optional parameter
 | [listOrders](https://www.namesilo.com/api-reference/pages?uid=account/list-orders) | `date_from?`, `date_to?`: date or date-time | `{order:[{order_number,order_date,method,total}]}`. Complete history advertised; timezone, pagination, consistency and lag unknown. |
 | [orderDetails](https://www.namesilo.com/api-reference/pages?uid=account/order-details) | `order_number` | `{order_number,order_date,method,total,order_details:[{description,years_qty,price,subtotal,status,credited_date?,credited_amount?}]}`. Example statuses Processed/Credited; description embeds domain/action rather than structured fields. No exhaustive status vocabulary. |
 
+The linked register/transfer pages explicitly define value-based `private` and `auto_renew`:
+0 disables and 1 enables; omission disables privacy but enables auto-renew. This differs from
+presence-based `retail_prices`. Parameters alone are not the authoritative control: a future write
+workflow must read getDomainInfo, verify `auto_renew=No` and expected privacy, and removeAutoRenewal
+before accepting Paymenter renewal authority.
+
 **Renewal gate:** the task requires explicit `auto_renew=0` and privacy on all three purchase
-builders. Preserve those fields in a draft renewal mapping, but refuse dispatch of `renewDomain`
+builders. Preserve those fields in a draft renewal mapping, but provide no purchase dispatch
 until support confirms their behavior or an approved readback/control sequence replaces that
 mapping. Undocumented parameters cannot enforce policy. Disable restores in API Manager and
 prove normal/grace eligibility independently. Renewal builder output alone is not safe fulfillment.
@@ -129,7 +152,7 @@ disable until mapped and accepted.
 C12 (permanent resident), C21 (US organization), C31 (foreign business operating in US), or C32
 (foreign entity with US office). `usap` is P1 (commercial), P2 (nonprofit), P3 (personal), P4
 (education), or P5 (government). Collect explicit eligibility, never invent defaults. Creation,
-transfer and profile updates document these fields; verify whether a stored profile suffices at
+transfer and profile updates document these fields; verify whether inline nexus is honored alongside contact_id or a stored profile must carry it at
 purchase, and confirm privacy eligibility and any extra foreign-entity country field before offering.
 
 ## Nameservers, flags, DNS and DS

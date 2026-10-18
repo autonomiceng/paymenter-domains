@@ -52,8 +52,8 @@ explicit interactive/background routing. No billing, cart, UI, schema or jobs ar
    contact behavior, both-invalid precedence and post-acceptance contact failure observation.
 6. **Renewals/restores:** disable API Manager implicit restoration; prove policy for grace versus
    redemption, final charges, and whether `auto_renew`/`private` are accepted on renewDomain.
-   Until then renewal mapping is draft-only and dispatch refuses it.
-7. **Registry requirements:** .us profile versus inline fields, foreign-entity extra requirements,
+   Until then renewal mapping is draft-only; all purchase mappings currently have no dispatch path.
+7. **Registry requirements:** .us profile versus inline fields (including coexistence with contact_id), foreign-entity extra requirements,
    privacy eligibility, TLD term bounds; keep unmapped requirements out of offered catalogue.
 8. **Transfer outcomes:** exhaustive statuses/terminal evidence, resend operation echo typo,
    completion/expiry behavior and whether retries can create a new charge.
