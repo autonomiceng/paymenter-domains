@@ -118,6 +118,8 @@
 @media (max-width: 639px) { .domains .domains-fields { grid-template-columns: minmax(0, 1fr); } }
 .domains .domains-checkbox { display: flex; align-items: flex-start; gap: .625rem; font-size: .875rem; cursor: pointer; padding-block: .25rem; }
 .domains .domains-checkbox input, .domains .domains-choice input { width: 1.125rem; height: 1.125rem; flex: none; margin-top: .125rem; accent-color: var(--e-accent); }
+.domains input[type="checkbox"] { color-scheme: light; }
+.dark .domains input[type="checkbox"] { color-scheme: dark; }
 .domains .domains-choice { display: flex; align-items: flex-start; gap: .75rem; padding: .875rem 1rem; border: 1px solid var(--e-line); border-radius: .5rem; cursor: pointer; background: var(--e-field); }
 .domains .domains-choice:has(input:checked) { border-color: var(--e-accent); box-shadow: inset 0 0 0 1px var(--e-accent); }
 .domains .domains-choice strong { display: block; font-size: .875rem; }
