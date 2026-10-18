@@ -9,6 +9,7 @@ final class RenewalFunding
 {
     public static function requireCurrent(Operation $op, array $l, bool $sent = false): array
     {
+        FinancialAdjustments::requireHistory($op, $l);
         $d = $l['domain']; $s = $l['service']; $r = $op->policy['renewal'] ?? [];
         $binding = CatalogueAcceptances::binding($l['account']);
         $prior = $l['operations']->firstWhere('operation_key', $d->renewal_policy['billing_anchor']['operation_key'] ?? null);
@@ -29,7 +30,7 @@ final class RenewalFunding
             || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Renewal obligation authority changed.'); }
         foreach ($l['operations'] as $other) {
             if ($other->safe_code === 'renewal_cancelled_unpaid' && ($l['invoices']->firstWhere('id', $other->invoice_id)?->status !== 'cancelled'
-                || $l['transactions']->contains('invoice_id', $other->invoice_id))) { throw new \DomainException('Retired renewal received financial activity.'); }
+                || $l['transactions']->contains('invoice_id', $other->invoice_id)) && !RefundPayment::retiredSettled($other, $l)) { throw new \DomainException('Retired renewal received financial activity.'); }
         }
         if ($op->funding_basis === 'complimentary') {
             $a = $op->policy['complimentary'] ?? []; $current = $d->renewal_policy['complimentary'] ?? [];

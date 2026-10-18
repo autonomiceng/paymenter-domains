@@ -202,3 +202,9 @@ They cover real native payment/credit routing, late/preference/stale obligations
 replacement keys, audited complimentary fixed terms/caps, final provider rechecks, one-attempt
 writes and unique charge/expiry completion across repeated anchors. Provider ports are injected
 synthetic exchanges; no registrar network or installed scheduler acceptance is claimed.
+
+Slice26 adds refunds, refund-evidence and refund-renewals native suites: fresh staff rights,
+account-credit once/retry, atomic credit/marker rollback, reentrant refusal, exact/full signed
+funding, mixed invoices, contact holds, null/presence refusals, real typed25 prewire outcomes,
+unsuitable fixed renewal terms and late retired payments. Source: Enom444f31c/d1392a8 Refunds.
+These are offline SQLite checks; paired MariaDB concurrency and installed native hooks remain39.

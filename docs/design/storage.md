@@ -781,3 +781,20 @@ These are internal, default-off seams.26 owns refunds;27/28 transfer anchors;31/
 held readmission and audited policy workflows;36/37 staff acceptance/history recovery;38 delivery;
 39 installed singleton hooks, fresh binding-scoped policy, restores-disabled acceptance, native
 financial transition integration, queue/deadline/shared-cache and paired MariaDB lock acceptance.
+
+Slice26 `Refunds` locks the owner, USD credit, native ledger and holding before interpreting
+unsent proof and the exact issued positive line. The whole invoice needs positive net succeeded
+native funding; processing/failed payments and status labels grant nothing. Only exact typed25
+prewire refusals can override a sealed renewal's possibly-sent marker. Unknown/fallback facts,
+even null-valued keys, refuse credit. Refunding retains invoice/payment history and reservations.
+Held disposition records fresh domain-manage + invoice-update rights, bounded reason and actor;
+contact holds use their recovery seam. The rejected decision survives credit failure. Credit and
+immutable funding.refund commit together, once; bounded retries recheck current evidence.
+FinancialAdjustments appends signed native transactions and bounded immutable audits under the
+same locks plus native transaction-create rights; cumulative corrections cannot add net funds.
+Original payments stay immutable. Installed native action routing remains35/39.
+Unsuitable paid renewals and late payments to retired cancelled debt use the same proof. Late
+retired payments unblock replacement only when an exact full refund still covers every retained
+transaction; later activity blocks again. Notifications38, scheduling31 and MariaDB races39 remain.
+Refunded unsuitable paid renewals still own their cycle; safe replacement authority remains35/36.
+Correction-only history remains unattempted; current native rows are rechecked and seals retain audits.

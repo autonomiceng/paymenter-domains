@@ -67,11 +67,17 @@ class Operation extends Model
             if (($old['seal'] ?? null) === 'sealed' && $operation->isDirty('payload')) {
                 throw new \DomainException('Sealed desired state is frozen.');
             }
-            foreach (['claim', 'seal'] as $key) {
+            foreach (['claim', 'seal', 'refund_authorization', 'refund'] as $key) {
                 $before = $operation->getOriginal('funding') ?? []; $after = $operation->funding ?? [];
                 if (array_key_exists($key, $before) && (!array_key_exists($key, $after) || $after[$key] !== $before[$key])) {
                     throw new \DomainException('Claim funding evidence is frozen.');
                 }
+            }
+            $history = $operation->getOriginal('funding')['financial_adjustments'] ?? [];
+            $next = $operation->funding['financial_adjustments'] ?? [];
+            if (!is_array($history) || !array_is_list($history) || !is_array($next) || !array_is_list($next)
+                || count($next) > 20 || count($next) < count($history) || array_slice($next, 0, count($history)) !== $history) {
+                throw new \DomainException('Financial adjustments are append-only.');
             }
             if (($old['seal'] ?? null) === 'sealed' && ($new['seal'] ?? null) !== 'sealed') {
                 throw new \DomainException('Dispatch seals cannot be removed.');

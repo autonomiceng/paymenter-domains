@@ -51,7 +51,10 @@
     "tests/renewal-cycles-test.php",
     "tests/renewal-execution-namesilo-test.php",
     "tests/renewal-completion-test.php",
-    "tests/renewal-read-recovery-test.php"
+    "tests/renewal-read-recovery-test.php",
+    "tests/refunds-test.php",
+    "tests/refund-evidence-test.php",
+    "tests/refund-renewals-test.php"
   ],
   "ui": [],
   "runner": [

@@ -74,7 +74,7 @@ final readonly class RenewalAuthority
     {
         return $r->obligationKey !== null && $op->operation_key === $r->obligationKey && $op->action === 'renew'
             && in_array($op->state, ['awaiting_payment', 'queued'], true) && ($op->attempt ?? []) === []
-            && ($op->funding ?? []) === [] && ($op->cost ?? []) === [] && $op->provider_order_id === null
+            && RenewalCycles::virgin($op) && $op->provider_order_id === null
             && $op->confirmed_expires_at === null && $op->authority_generation === $r->generation
             && $op->base_expires_at?->format('Y-m-d') === $r->expiry && (int) $op->term === $r->years;
     }

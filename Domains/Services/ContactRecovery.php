@@ -104,6 +104,15 @@ final class ContactRecovery
         });
     }
 
+    /** Internal refund disposition, after the financial service's locked proof and permission checks. */
+    public static function financialDisposition(Operation $op, array $changes): void
+    {
+        if (DB::transactionLevel() !== 1 || $op->state !== 'held' || ($changes['state'] ?? null) !== 'rejected'
+            || ($changes['safe_code'] ?? null) !== 'refund_approved' || array_diff(array_keys($changes), ['state', 'safe_code', 'funding'])
+            || !isset($changes['funding']['refund_authorization'])) { throw new \DomainException('Invalid financial disposition.'); }
+        ContactSetup::recoveryWrite(static fn () => $op->update($changes));
+    }
+
     private static function lock(Operation $hint): array
     {
         $server = Server::whereKey($hint->server_id)->lockForUpdate()->firstOrFail();
