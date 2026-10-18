@@ -6,8 +6,8 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Models\{Server, User};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, DispatchReadiness, DriverResult, Environment, Query};
+use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, SealPreflight, WriteGate};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedOperation, DispatchReadiness, DriverResult, Environment, Query, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 
@@ -60,14 +60,17 @@ final class OperationClaims
         });
     }
 
-    public function seal(Operation $claimed, DispatchReadiness $ready): ?Operation
+    public function seal(Operation $claimed, DispatchReadiness $ready, ?SealPreflight $preflight = null, ?WriteGate $writer = null): ?Operation
     {
-        return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready): ?Operation {
+        return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready, $preflight, $writer): ?Operation {
             if (!self::sameClaim($op, $claimed)) { return null; }
             if ($this->expire($op) || !self::unsealed($op)) { return null; }
             try {
+                self::requireSameEvidence($op, $claimed); self::requireNoSendEvidence($op);
                 [$binding, $paid] = $this->validate($op, $domain, $all, $funding, $server, $account);
                 ContactSetup::requireReady($op);
+                $preflight?->requireAtSeal($op, $domain, $ready);
+                $writer?->requireAtSeal($op, $domain, $ready);
                 $now = $this->clock->now();
                 $ready->requireCurrent($binding, self::query($op, $domain), self::payloadDigest($op), $now);
                 $lastSend = $op->started_at->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
@@ -77,8 +80,8 @@ final class OperationClaims
                     || $ready->validUntil < $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')) {
                     throw new \DomainException('Insufficient dispatch lease or changed request.');
                 }
-            } catch (\Throwable) {
-                $op->update(['state' => 'held', 'safe_code' => 'seal_authority_invalid', 'lease_expires_at' => null]); return null;
+            } catch (\Throwable $error) {
+                $op->update(['state' => 'held', 'safe_code' => $error instanceof WriteHeld ? $error->reason : 'seal_authority_invalid', 'lease_expires_at' => null]); return null;
             }
             $attempt = $op->attempt;
             $attempt['seal'] = 'sealed'; $attempt['dispatch_attempted_at'] = $now->format(DATE_ATOM);
@@ -90,10 +93,10 @@ final class OperationClaims
     }
 
     /** Post-read/write bookkeeping needs only domain -> ordered operations, never financial authority again. */
-    public function finish(Operation $claimed, ?DriverResult $result = null): Operation
+    public function finish(Operation $claimed, ?DriverResult $result = null, ?string $holdReason = null): Operation
     {
         self::outside();
-        return DB::transaction(function () use ($claimed, $result): Operation {
+        return DB::transaction(function () use ($claimed, $result, $holdReason): Operation {
             Domain::whereKey($claimed->domain_id)->lockForUpdate()->firstOrFail();
             $all = Operation::where('domain_id', $claimed->domain_id)->orderBy('id')->lockForUpdate()->get();
             $op = $all->firstWhere('id', $claimed->id);
@@ -116,9 +119,67 @@ final class OperationClaims
             }
             // Ack/rejection still require action-specific correlation/completion in 21/22. No refund/release here.
             $op->update(['attempt' => $attempt, 'state' => ($sealed || $expired) ? 'uncertain' : 'held',
-                'safe_code' => $expired ? 'stale_claim' : ($sealed ? 'reconciliation_required' : 'pre_send_interrupted'), 'lease_expires_at' => null]);
+                'safe_code' => $expired ? 'stale_claim' : ($sealed ? 'reconciliation_required' : ($holdReason ?? 'pre_send_interrupted')), 'lease_expires_at' => null]);
             return $op;
         });
+    }
+
+    /** Disabled feature gates create no claim, seal or provider traffic. */
+    public function holdUnclaimed(int $id, string $reason): Operation
+    {
+        self::outside(); $route = Operation::findOrFail($id);
+        return DB::transaction(function () use ($route, $reason): Operation {
+            Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
+            $all = Operation::where('domain_id', $route->domain_id)->orderBy('id')->lockForUpdate()->get();
+            $op = $all->firstWhere('id', $route->id);
+            if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
+                $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
+            } elseif (in_array($op->state, ['queued', 'awaiting_payment'], true) && self::virgin($op)) {
+                $op->update(['state' => 'held', 'safe_code' => $reason]);
+            }
+            return $op;
+        });
+    }
+
+    /** Bridge consumption: acquire current ordered financial locks, commit, then send outside locks. */
+    public function verifySend(Operation $sealed, AdmittedOperation $admitted, RequestContext $context,
+        DispatchReadiness $ready, ?SealPreflight $preflight, ?WriteAcceptance $acceptance): array
+    {
+        return $this->locked((int) $sealed->id, function ($op, $domain, $all, $funding, $server, $account) use ($sealed, $admitted, $context, $ready, $preflight, $acceptance): array {
+            [$binding, $paid] = $this->validate($op, $domain, $all, $funding, $server, $account);
+            $binding->requireMatch($admitted->binding); $binding->requireMatch($context->binding);
+            ContactSetup::requireReady($op); $preflight?->requireAtSeal($op, $domain, $ready);
+            $acceptance?->requireCurrent($binding, self::query($op, $domain), $op, true);
+            $ready->requireCurrent($binding, self::query($op, $domain), self::payloadDigest($op), $this->clock->now());
+            self::requireSameEvidence($op, $sealed); self::requireNoSendEvidence($op);
+            if (!self::sameClaim($op, $sealed) || ($op->attempt['seal'] ?? null) !== 'sealed'
+                || ($op->attempt['send_state'] ?? null) !== 'possibly_sent' || array_key_exists('execution', $op->attempt)
+                || $op->lease_expires_at <= $this->clock->now() || $this->clock->now() >= $context->deadline
+                || $op->request_fingerprint !== self::digest($op, $domain) || $op->operation_key !== $admitted->operationKey
+                || $op->attempt['claim_key'] !== $admitted->claimKey || $op->authority_generation !== $admitted->authorityGeneration
+                || $admitted->fundingEvidenceKey !== 'operation:'.$op->id.':seal' || !self::query($op, $domain)->matches($admitted->query)
+                || self::payloadDigest($op) !== $admitted->desiredStateDigest || ($op->funding['seal'] ?? null) !== $paid
+                || ($op->attempt['authorized_cost'] ?? null) !== ['amount' => $admitted->authorizedCost->amount, 'currency' => $admitted->authorizedCost->currency]) {
+                throw new \DomainException('Sealed dispatch authority changed.');
+            }
+            return $op->payload;
+        });
+    }
+
+    private static function requireSameEvidence(Operation $current, Operation $snapshot): void
+    {
+        foreach (['attempt', 'funding', 'cost', 'policy'] as $field) {
+            if ($current->$field !== $snapshot->$field) { throw new \DomainException('Operation evidence changed.'); }
+        }
+    }
+    /** Independent presence guard: null charge/refund/candidate facts are still uncertainty. */
+    private static function requireNoSendEvidence(Operation $op): void
+    {
+        if (array_diff(array_keys($op->attempt ?? []), ['claim_key', 'seal', 'send_state', 'dispatch_attempted_at', 'authorized_cost'])
+            || array_key_exists('refund', $op->funding ?? []) || array_key_exists('actual', $op->cost ?? [])
+            || array_key_exists('execution', $op->cost ?? []) || array_key_exists('dispatch_attempted_at', $op->policy ?? [])) {
+            throw new \DomainException('Prior operation evidence blocks dispatch.');
+        }
     }
 
     private function validate(Operation $op, Domain $domain, $all, InvoiceFunding $funding, Server $server, Account $account): array

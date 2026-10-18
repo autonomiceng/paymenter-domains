@@ -29,7 +29,10 @@
     "tests/contact-setup-test.php",
     "tests/operation-claims-test.php",
     "tests/operation-recovery-test.php",
-    "tests/operation-contacts-test.php"
+    "tests/operation-contacts-test.php",
+    "tests/write-bridge-test.php",
+    "tests/write-boundary-test.php",
+    "tests/write-preflight-test.php"
   ],
   "ui": [],
   "runner": [

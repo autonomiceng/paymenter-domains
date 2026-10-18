@@ -522,3 +522,23 @@ Both Operation updating hooks remain active. Contact holds release only in the i
 scope; contact_disposition is write-once and contact_readmissions stays a bounded append-only
 policy prefix. Later policy writers must merge and preserve both audit keys. No finance migration
 is needed; contact profile migration000003 retains its unique basename.
+
+## Slice20 admitted bridge boundary
+
+No schema change. Internal registration bridges consume the exact live engine grant, re-lock the
+slice19 financial prefix and recheck the durable seal, current ownership/funding/account/reservation,
+generation, contacts and absence of unresolved work. They return only the locked frozen payload to
+a protected named synthetic wire method after commit. DTOs, clones, contexts and durable receipts confer
+no write authority; read transports still cannot dispatch purchase mappings. All feature gates default
+off. Fresh preflight reads run outside locks; local acceptance is checked again at seal and consume.
+USD/batch acceptance and safe annual renewal must be explicit. NameSilo durable fresh contactAdd plus non-default
+readback proof for the frozen owner/account/payload is mandatory and unavailable by default;
+its local proof check never performs provider I/O under locks.
+Before claim, account rate slots are nonblocking and shared-cache dependent; no lock spans I/O. No real purchase,
+completion, renewal, retry, refund, profile creation or installed wiring is supplied (21–30/39).
+The writer's local acceptance gate always runs before seal, independent of the selected preflight.
+Consume refuses any change to the sealed encrypted attempt/funding/cost/policy maps, including
+new null-valued evidence. Disabled writes still quarantine expired running claims without I/O.
+Seal also rejects encrypted evidence changes since claim and independently forbids prior charge,
+refund and candidate facts by presence. The final transport entry consumes live engine authority;
+only its protected named wire method receives the fixed origin, timeout and frozen payload.

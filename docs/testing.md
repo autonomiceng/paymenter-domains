@@ -138,3 +138,12 @@ claim and seal, postcommit paid holds without attempts/grants, audited release, 
 refusing recollection/nonbillable closure, both model guards and immutable contact policy audit.
 Finance fixtures now collect real native owner contacts at checkout. All provider work is synthetic;
 SQLite does not establish MariaDB interleavings or installed queue/provider acceptance.
+
+Slice20 write-bridge/boundary/preflight tests use the real checkout/financial seal plus synthetic
+named registration ports. Enom `444f31c` request gates, frozen-holder dispatch, unknown-send and
+post-read financial scenarios map to disabled gates, one-use grants, exact costs, three-read budgets,
+pre/post-seal evidence and owner/funding/reservation/generation/account/acceptance changes and recorded-null uncertainty.
+Fresh evidence requires explicit nonpremium availability, matching term, USD cost/balance and exact
+sufficient funds (including 18-digit amounts). No current-seller or retail floor applies at dispatch.
+No production registration transport exists; provider contactAdd/readback, identity/currency/batch
+acceptance, MariaDB races and installed queues remain blocked pending later acceptance.
