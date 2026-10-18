@@ -82,16 +82,23 @@ final class PriceCatalogue
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Republication owns its lock order.'); }
         $this->locked($tld, function (Tld $locked): void {
-            foreach (Price::where('server_id', $locked->server_id)->where('tld', $locked->tld)->orderBy('id')->lockForUpdate()->get() as $price) {
-                if ($price->action === 'register' && ($price->term < $locked->min_years || $price->term > $locked->max_years)) { continue; }
-                $total = $price->wholesale === null ? null : self::cost($price->wholesale);
-                $units = $total === null ? null : PricingRule::units($total);
-                if ($units !== null && $units % $price->term !== 0) { throw new \DomainException('Unsupported per-year precision.'); }
-                $rate = new CatalogueRate($price->action, $price->term, $units === null ? null : PricingRule::decimal(intdiv($units, $price->term), 4),
-                    $price->source, $price->observed_at->toDateTimeImmutable(), $price->fresh_until?->toDateTimeImmutable(), $price->currency);
-                $this->write($locked, $rate, array_intersect_key($price->eligibility, array_flip(['catalogue_revision', 'accepted_terms', 'registry', 'renewal_safe'])));
-            }
+            $this->republishLocked($locked);
         });
+    }
+
+    /** Caller owns native publication prefix, server/account, policy and TLD locks. */
+    public function republishLocked(Tld $locked): void
+    {
+        if (DB::transactionLevel() !== 1) { throw new \LogicException('Locked republication requires the outer writer.'); }
+        foreach (Price::where('server_id', $locked->server_id)->where('tld', $locked->tld)->orderBy('id')->lockForUpdate()->get() as $price) {
+            if ($price->action === 'register' && ($price->term < $locked->min_years || $price->term > $locked->max_years)) { continue; }
+            $total = $price->wholesale === null ? null : self::cost($price->wholesale);
+            $units = $total === null ? null : PricingRule::units($total);
+            if ($units !== null && $units % $price->term !== 0) { throw new \DomainException('Unsupported per-year precision.'); }
+            $rate = new CatalogueRate($price->action, $price->term, $units === null ? null : PricingRule::decimal(intdiv($units, $price->term), 4),
+                $price->source, $price->observed_at->toDateTimeImmutable(), $price->fresh_until?->toDateTimeImmutable(), $price->currency);
+            $this->write($locked, $rate, array_intersect_key($price->eligibility, array_flip(['catalogue_revision', 'accepted_terms', 'registry', 'renewal_safe'])));
+        }
     }
 
     /** Published annual retail survives unknown/stale costs and rule republication failures.
@@ -169,7 +176,7 @@ final class PriceCatalogue
             'term' => $rate->term, 'currency' => $rate->currency])->lockForUpdate()->first();
         if ($price && $price->observed_at > $rate->observedAt) { throw new \DomainException('Stale provider read.'); }
         $wholesale = $rate->perYear === null ? null : PricingRule::decimal(PricingRule::units($rate->perYear) * $rate->term, 4);
-        $annualRetail = $rate->perYear === null ? null : PricingRule::price($rate->perYear, $this->rules->rule($tld), $rate->action);
+        $annualRetail = $rate->perYear === null ? null : PricingRule::price($rate->perYear, $this->rules->rule($tld, true), $rate->action);
         $retail = $annualRetail === null ? null : PricingRule::total($annualRetail, $rate->term);
         $margin = MarginPolicy::assess($rate->action, $rate->perYear, $annualRetail);
         if ($wholesale !== null) { self::cost($wholesale); }
@@ -178,7 +185,7 @@ final class PriceCatalogue
             'tld' => $tld->tld, 'action' => $rate->action, 'term' => $rate->term, 'currency' => $rate->currency, 'revision' => 0]);
         $price->fill(['wholesale' => $wholesale, 'retail' => $retail, 'unit' => 'term_total', 'source' => $rate->source,
             'observed_at' => $rate->observedAt, 'fresh_until' => $rate->freshUntil, 'revision' => $price->revision + 1,
-            'eligibility' => [...$publication, 'source_unit' => $rate->action === 'register' ? 'exact_term_annual_rate' : 'annual', 'staff_alert' => $margin->staffAlert, 'rule_hash' => $this->ruleHash($tld)],
+            'eligibility' => [...$publication, 'source_unit' => $rate->action === 'register' ? 'exact_term_annual_rate' : 'annual', 'staff_alert' => $margin->staffAlert, 'rule_hash' => $this->ruleHash($tld, true)],
             'hold_reason' => $margin->hold])->save();
     }
 

@@ -29,20 +29,29 @@ final class CatalogueAcceptances
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Acceptance owns its lock order.'); }
         $next = new CatalogueAcceptance($binding, $expectedRevision + 1, $endings);
-        $encoded = json_encode(['fingerprint' => $binding->fingerprint, 'revision' => $next->revision, 'endings' => $next->endings, 'currency' => 'USD', 'unit' => 'exact_term_annual'], JSON_THROW_ON_ERROR);
-        if (strlen($encoded) > 32768) { throw new \DomainException('Acceptance exceeds encrypted settings capacity.'); }
-        return DB::transaction(static function () use ($binding, $expectedRevision, $next, $encoded): CatalogueAcceptance {
+        return DB::transaction(static function () use ($binding, $expectedRevision, $next): CatalogueAcceptance {
             $server = Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
             $account = Account::where('server_id', $binding->serverId)->lockForUpdate()->firstOrFail();
             $binding->requireMatch(self::binding($account));
             if (!$server->enabled || $server->extension !== 'Domains') { throw new \DomainException('Unavailable registrar server.'); }
             $setting = $server->settings()->where('key', self::KEY)->lockForUpdate()->first();
             if (($setting ? self::load($binding, true)->revision : 0) !== $expectedRevision) { throw new \DomainException('Stale acceptance revision.'); }
-            $setting ??= $server->settings()->make(['key' => self::KEY]);
-            $setting->encrypted = true; $setting->type = 'string';
-            $setting->value = $encoded;
-            $setting->save(); return $next;
+            self::saveLocked($next); return $next;
         });
+    }
+    /** Caller has checked current revision/repair evidence under its account review locks. */
+    public static function saveLocked(CatalogueAcceptance $next): void
+    {
+        if (DB::transactionLevel() !== 1) { throw new \LogicException('Outer acceptance transaction required.'); }
+        $binding = $next->binding;
+        $server = Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
+        $account = Account::where('server_id', $binding->serverId)->lockForUpdate()->firstOrFail();
+        $binding->requireMatch(self::binding($account));
+        if (!$server->enabled || $server->extension !== 'Domains') { throw new \DomainException('Unavailable registrar server.'); }
+        $encoded = json_encode(['fingerprint' => $binding->fingerprint, 'revision' => $next->revision, 'endings' => $next->endings, 'currency' => 'USD', 'unit' => 'exact_term_annual'], JSON_THROW_ON_ERROR);
+        if (strlen($encoded) > 32768) { throw new \DomainException('Acceptance exceeds encrypted settings capacity.'); }
+        $setting = $server->settings()->where('key', self::KEY)->lockForUpdate()->first() ?? $server->settings()->make(['key' => self::KEY]);
+        $setting->encrypted = true; $setting->type = 'string'; $setting->value = $encoded; $setting->save();
     }
     public static function binding(Account $account): AccountBinding
     {

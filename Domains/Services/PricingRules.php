@@ -35,9 +35,7 @@ final class PricingRules
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Default republication requires independent transactions.'); }
         $rule = PricingRule::validate($rule);
         DB::transaction(function () use ($serverId, $rule): void {
-            $server = $this->server($serverId, true);
-            Account::where('server_id', $serverId)->lockForUpdate()->firstOrFail();
-            $server->settings()->updateOrCreate(['key' => 'domains_pricing_default_rule'], ['type' => 'array', 'encrypted' => false, 'value' => $rule]);
+            $this->saveDefaultRuleLocked($serverId, $rule);
         });
         $summary = ['published' => 0, 'failed' => [], 'failure_types' => []];
         foreach (Tld::where('server_id', $serverId)->where('use_default_rule', true)->orderBy('id')->get() as $tld) {
@@ -45,6 +43,15 @@ final class PricingRules
             catch (\Throwable $error) { $summary['failed'][] = '.'.$tld->tld; $summary['failure_types']['.'.$tld->tld] = $error::class; }
         }
         return $summary;
+    }
+
+    /** Staff review owns the outer transaction and publishes each TLD separately. */
+    public function saveDefaultRuleLocked(int $serverId, array $rule): void
+    {
+        if (DB::transactionLevel() !== 1) { throw new \LogicException('Outer rule transaction required.'); }
+        $server = $this->server($serverId, true);
+        $server->settings()->updateOrCreate(['key' => 'domains_pricing_default_rule'],
+            ['type' => 'array', 'encrypted' => false, 'value' => PricingRule::validate($rule)]);
     }
 
     private function server(int $id, bool $lock = false, bool $requireEnabled = true): Server

@@ -292,6 +292,16 @@ outcomes keep their account spending holds and cannot be released or credited by
 confirmations and reason refusal with synthetic data; capture at 1440/1024 in light/dark.
 No resource or permission registration is installed by these fixtures.
 
+### Staff TLD pricing and setup (slice37)
+
+Native Filament list, term-price detail and two-registrar setup use saved facts only.
+Independent view/cost permissions, unknown/below-cost labels, stale refresh, foreign binding
+and HTML/Livewire credential secrecy are checked offline. Native action tests cover reason/confirmation,
+stale/replayed keys, current permissions, encrypted audit, margin holds, seller/holder separation,
+acceptance narrowing/recovery and fake-only credential/probe paths. Default setup performs no I/O.
+`tests/staff-tld-render.php` emits native fixtures to its output argument. No panel registration is installed.
+Source layout/labels adapt Enom `444f31c` TldResource and EnomSetup (MIT).
+
 ## Opt-in NameSilo OTE contract test
 
 Run only with separate authority for the sandbox account and (for `--write`) its funds.

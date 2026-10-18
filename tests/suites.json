@@ -87,7 +87,10 @@
     "tests/staff-operation-transfers-test.php",
     "tests/staff-operation-privacy-test.php",
     "tests/owner-records-test.php",
-    "tests/owner-record-errors-test.php"
+    "tests/owner-record-errors-test.php",
+    "tests/staff-tld-reads-test.php",
+    "tests/staff-tld-writes-test.php",
+    "tests/staff-tld-actions-test.php"
   ],
   "ui": [],
   "runner": [

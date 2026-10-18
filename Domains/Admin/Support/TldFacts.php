@@ -1,0 +1,119 @@
+<?php
+// Adapted from Enom 444f31c TldResource price preview; MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Illuminate\Support\HtmlString;
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolicy,Tld};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,PriceCatalogue,PricingRule};
+/** Saved facts only. No reader factory, credentials or provider calls. */
+final class TldFacts
+{
+    public const AUDIT = \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::KEY;
+    public static function bound($query)
+    {
+        return $query->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_accounts as a')
+            ->join('extensions as s','s.id','=','a.server_id')->where('s.extension','Domains')->where('s.type','server')
+            ->whereColumn('a.server_id','domains_tlds.server_id')->whereColumn('a.registrar_key','domains_tlds.registrar_key')
+            ->whereColumn('a.account_fingerprint','domains_tlds.account_fingerprint'));
+    }
+    public static function registrar(string $key): string { return ['enom'=>'Enom','namesilo'=>'NameSilo'][$key]??'Unavailable'; }
+    public static function holders(Tld $tld): int
+    { return Domain::where(['server_id'=>$tld->server_id,'tld'=>$tld->tld,'account_fingerprint'=>$tld->account_fingerprint])->whereNotNull('reservation_name')->count(); }
+    public static function seller(Tld $tld): string
+    {
+        $p=SalesPolicy::where('tld',$tld->tld)->first();
+        return !$p?->server_id?'No seller':self::registrar((string)$p->registrar_key).' · account #'.$p->server_id.' · revision '.$p->revision;
+    }
+    public static function prices(Tld $tld): array
+    {
+        Staff::requireView();
+        $out=[];
+        try{$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding(Account::where('server_id',$tld->server_id)->firstOrFail()))->revision;}catch(\Throwable){$accepted=null;}
+        try{$ruleHash=hash('sha256',json_encode((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($tld),JSON_THROW_ON_ERROR));}catch(\Throwable){$ruleHash=null;}
+        foreach(Price::where(['server_id'=>$tld->server_id,'account_fingerprint'=>$tld->account_fingerprint,'tld'=>$tld->tld])->orderBy('action')->orderBy('term')->get() as $p){
+            $fresh=$p->observed_at<=now()&&$p->fresh_until&&$p->fresh_until>now();
+            $row=['action'=>['register'=>'Registration','renew'=>'Renewal','transfer'=>'Transfer'][$p->action]??'Unavailable',
+                'term'=>$p->term.' '.($p->term===1?'year':'years'),'retail'=>self::money($p->retail),
+                'revision'=>(string)$p->revision,'freshness'=>$fresh?'Current':'Stale',
+                'warning'=>match($p->hold_reason??($p->eligibility['staff_alert']??null)){
+                    'below_cost'=>$p->action==='renew'?'Below cost · billed; staff alert':'Below cost · held; staff alert',
+                    'unknown_price'=>'Cost unknown · '.($p->action==='renew'?'retained retail; staff alert':'held'),
+                    null=>'None',default=>'Review required'},
+            ];
+            if($p->wholesale===null){$row['warning']='Cost unknown · '.($p->action==='renew'?'retained retail; staff alert':'held');}
+            if($p->action!=='renew'&&($accepted===null||($p->eligibility['catalogue_revision']??null)!==$accepted)){$row['warning'].=' · Account acceptance changed; new sales held pending import';}
+            if($ruleHash===null||($p->eligibility['rule_hash']??null)!==$ruleHash){$row['warning'].=' · Rule changed · publish required';}
+            $row['warning']=trim(str_replace('None · ','',$row['warning']));
+            if(Staff::can(Staff::COSTS)){
+                $row['cost']=$p->wholesale===null?'Unknown':self::money($p->wholesale,4);
+                $row['margin']=$p->wholesale===null||$p->retail===null?'Unknown':PricingRule::decimal(PricingRule::units(PriceCatalogue::retail($p->retail),2)*100-PricingRule::units(PriceCatalogue::cost($p->wholesale)),4).' USD';
+                $row['source']=$p->source.' · '.match($p->eligibility['source_unit']??$p->unit){'exact_term_annual_rate'=>'annual rate for exact term','annual'=>'annual rate',default=>'term total'};
+                $row['observed']=$p->observed_at->format('Y-m-d H:i').' UTC';
+                $row['until']=$p->fresh_until?->format('Y-m-d H:i').' UTC';
+            }
+            $out[]=$row;
+        }
+        return $out;
+    }
+    public static function rule(Tld $t): string
+    {try{$r=(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($t);return match($r['mode']){'fixed'=>'Fixed annual retail','markup_amount'=>$r['markup'].' USD markup',default=>$r['markup'].'% markup'}.' · rounding: '.str_replace('_',' ',$r['round_up']);}catch(\Throwable){return 'Unavailable · publication held';}}
+    public static function money(?string $value,int $places=2): string
+    { return $value===null?'Unknown':($places===4?PriceCatalogue::cost($value):PriceCatalogue::retail($value)).' USD'; }
+    public static function table(Tld $tld): HtmlString
+    {
+        $rows=self::prices($tld); if(!$rows){return new HtmlString('No saved prices. Unknown cost is never zero.');}
+        $head=['action'=>'Action','term'=>'Term','retail'=>'Your price','revision'=>'Revision'];
+        $html='<div style="max-width:100%;overflow-x:auto"><table style="width:100%;border-collapse:collapse"><caption style="text-align:left;padding:8px">Term totals before tax. Cost and retail use the same term.</caption><thead><tr>';
+        foreach($head as $label){$html.='<th scope="col" style="padding:8px;text-align:left;white-space:nowrap">'.e($label).'</th>';}$html.='</tr></thead><tbody>';
+        foreach($rows as $row){
+            $html.='<tr>';foreach($head as $key=>$label){$html.='<td style="padding:8px;white-space:nowrap;vertical-align:top">'.e($row[$key]??'Unknown').'</td>';}$html.='</tr>';
+            $detail='';
+            if(Staff::can(Staff::COSTS)){$detail='Cost <span style="white-space:nowrap">'.e($row['cost']).'</span> · Margin <span style="white-space:nowrap">'.e($row['margin']).'</span><br>';}
+            if($row['warning']!=='None'){$detail.='Needs attention: '.e($row['warning']).'<br>';}
+            $detail.='Cost '.strtolower($row['freshness']);
+            if(Staff::can(Staff::COSTS)){$detail.=' · '.e($row['source']).'<br>Observed '.e($row['observed']).' · fresh until '.e($row['until']??'Unknown');}
+            $html.='<tr><td colspan="4" style="padding:0 8px 16px;font-size:0.875rem">'.$detail.'</td></tr>';
+        }
+        return new HtmlString($html.'</tbody></table></div>');
+    }
+    public static function acceptance(Account $a): string
+    {
+        try{$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding($a));$count=count($accepted->endings);return 'Revision '.$accepted->revision.' · '.$count.' '.($count===1?'ending':'endings');}
+        catch(\Throwable){return 'Unavailable · new sales held';}
+    }
+    public static function salesState(Tld $t): string
+    {
+        if(!$t->enabled||(!$t->register_enabled&&!$t->transfer_enabled)){return 'New sales paused';}
+        $action=$t->register_enabled?'register':'transfer';$term=$action==='register'?$t->min_years:1;
+        try{\Paymenter\Extensions\Servers\Domains\Services\PublicationEligibility::require($t,$action,$term);}catch(\Throwable){return 'New sales held · pending import or acceptance';}
+        try{
+            $engine=new PriceCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules);
+            $engine->current((int)$t->server_id,$t->account_fingerprint,$t->tld,'renew',1,'USD',now()->toDateTimeImmutable());
+            $engine->current((int)$t->server_id,$t->account_fingerprint,$t->tld,$action,$term,'USD',now()->toDateTimeImmutable());
+            return 'Price eligible · check selected seller';
+        }catch(\Throwable){
+            $rows=self::prices($t);$text=implode(' ',array_column($rows,'warning'));
+            if(str_contains($text,'Rule changed')){return 'New sales held · rule changed, publish required';}
+            if(collect($rows)->contains(fn($r)=>str_contains($r['warning'],'Cost unknown'))){return 'New sales held · cost unknown';}
+            if(collect($rows)->contains(fn($r)=>$r['freshness']==='Stale')){return 'New sales held · cost stale';}
+            return str_contains($text,'below cost')||str_contains($text,'Below cost')?'New sales held · below cost':'New sales held · price unavailable';
+        }
+    }
+    public static function history(int $serverId,?int $tldId=null): array
+    {
+        try{
+            $rows=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::historyRows(\App\Models\Server::findOrFail($serverId));
+            if($tldId){$rows=array_filter($rows,fn($r)=>!$r['tld_id']||$r['tld_id']===$tldId);}
+            return array_map(static function($r){
+                $prices=[];foreach($r['after']['prices']??[] as $p){$before=collect($r['before']['prices']??[])->firstWhere('id',$p['id']);$prices[]='#'.$p['id'].' r'.($before['revision']??'?').' / '.self::money($before['retail']??null).' → r'.$p['revision'].' / '.self::money($p['retail']??null);}
+                return $r['at'].' · staff #'.$r['actor_id'].' · '.($r['tld_id']?'TLD #'.$r['tld_id']:'Account').' · '.$r['action'].' · '.str_replace('_',' ',$r['phase']).' · '.$r['reason'].($r['action']==='Publish prices'?' · '.implode('; ',$prices):'');
+            },array_reverse(array_values($rows)));
+        }catch(\Throwable){return ['History unavailable · changes held'];}
+    }
+    public static function refreshState(int $serverId): string
+    {
+        if(!\Illuminate\Support\Facades\Schema::hasTable('domains_observation_queues')){return 'No refresh result saved';}
+        $row=\Illuminate\Support\Facades\DB::table('domains_observation_queues')->where('server_id',$serverId)->first();
+        return $row?->catalogue_hold!==null?'Refresh failed or interrupted · saved prices retained':'No failed refresh recorded';
+    }
+}

@@ -19,6 +19,9 @@ final class Staff
         foreach(\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS as $action=>$label){
             $permissions[\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission($action)]=$label;
         }
+        foreach(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::ACTIONS as $action=>$label){
+            $permissions[\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission($action)]=$label;
+        }
         return $permissions;
     }
     public static function allows(?User $user, string $permission = self::VIEW): bool

@@ -25,10 +25,12 @@ final class SellerPolicies
 
     /** No provider reads under locks; processing/configuration guard is local. Switch affects future orders only. */
     public function change(string $tld, int $expectedRevision, ?int $serverId, bool $register, bool $transfer,
-        \DateTimeImmutable $now): SalesPolicy
+        \DateTimeImmutable $now, ?StaffSettingsReview $review = null): SalesPolicy
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Seller change owns its lock order.'); }
-        return DB::transaction(function () use ($tld, $expectedRevision, $serverId, $register, $transfer, $now): SalesPolicy {
+        return DB::transaction(function () use ($tld, $expectedRevision, $serverId, $register, $transfer, $now, $review): SalesPolicy {
+            $review?->lockActor(); $review?->lockAccounts(); $review?->check();
+            if ($review && ($review->action !== 'seller' || Tld::findOrFail($review->tldId)->tld !== $tld)) { throw new \DomainException('Seller review mismatch.'); }
             $account = $serverId === null ? null : $this->account($serverId, true);
             $policy = SalesPolicy::where('tld', $tld)->lockForUpdate()->firstOrFail();
             if ($policy->revision !== $expectedRevision) { throw new \DomainException('Stale seller policy.'); }
@@ -52,6 +54,7 @@ final class SellerPolicies
             $policy->fill(['server_id' => $serverId, 'registrar_key' => $account?->registrar_key, 'account_fingerprint' => $account?->account_fingerprint,
                 'register_enabled' => $register, 'transfer_enabled' => $transfer, 'revision' => $policy->revision + 1]);
             SalesPolicy::withPolicyWrite(static fn () => $policy->save());
+            $review?->record();
             return $policy;
         });
     }

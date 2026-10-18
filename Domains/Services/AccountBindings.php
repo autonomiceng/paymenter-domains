@@ -18,32 +18,43 @@ final class AccountBindings
     public function __construct(private readonly RegistrarRegistry $registry) {}
 
     /** First save and rotations both require positive provider identity; verification never holds locks. */
-    public function configure(int $serverId, string $registrar, Environment $environment, #[\SensitiveParameter] array $credentials): AccountBinding
+    public function configure(int $serverId, string $registrar, Environment $environment, #[\SensitiveParameter] array $credentials, ?StaffSettingsReview $review = null): AccountBinding
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Account verification must run outside database locks.'); }
-        $credentials = $this->registry->credentials($registrar, $credentials);
-        [$binding, $identity] = $this->registry->verify($registrar, $serverId, $environment, $credentials);
-        try {
-            return DB::transaction(function () use ($serverId, $binding, $identity, $credentials): AccountBinding {
-                $this->server($serverId, true);
-                $account = Account::where('server_id', $serverId)->lockForUpdate()->first();
-                if ($account) { $binding->requireMatch($this->binding($account)); }
-                else {
-                    $account = Account::withVerifiedBindingWrite(static fn () => Account::create(['server_id' => $serverId, 'registrar_key' => $binding->registrarKey,
-                        'environment' => $binding->environment->value, 'stable_identity' => $identity,
-                        'account_fingerprint' => $binding->fingerprint]));
-                }
-                // Native Setting encrypts in its saving event: mark encryption BEFORE assigning the first value.
-                $this->saveSecret($serverId, self::CREDENTIALS, json_encode($credentials, JSON_THROW_ON_ERROR));
-                $this->saveSecret($serverId, self::VERIFIED, $this->digest($binding, $credentials));
-                // Rotation pauses processing until deliberately resumed, preserving binding and live site.
-                $account->processing_enabled = false; Account::withVerifiedBindingWrite(static fn () => $account->save());
-                return $binding;
-            });
-        } catch (\Throwable) {
-            // The native transaction callback captures plaintext: never retain its exception trace.
-            throw new \DomainException('Registrar account configuration could not be saved.');
+        if ($review) {
+            if ($review->action !== 'configure' || $review->serverId !== $serverId) { throw new \DomainException('Configuration review mismatch.'); }
+            $review->local(fn () => null, 'verification_requested'); // Consume before injected I/O.
         }
+        $phase = 'verification_refused';
+        try {
+            $credentials = $this->registry->credentials($registrar, $credentials);
+            [$binding, $identity] = $this->registry->verify($registrar, $serverId, $environment, $credentials);
+            try {
+                $saved = DB::transaction(function () use ($serverId, $binding, $identity, $credentials, $review): AccountBinding {
+                    $review?->lockActor(); $review?->lockAccounts(); $review?->check(true);
+                    $this->server($serverId, true);
+                    $account = Account::where('server_id', $serverId)->lockForUpdate()->first();
+                    if ($account) { $binding->requireMatch($this->binding($account)); }
+                    else {
+                        $account = Account::withVerifiedBindingWrite(static fn () => Account::create(['server_id' => $serverId, 'registrar_key' => $binding->registrarKey,
+                            'environment' => $binding->environment->value, 'stable_identity' => $identity,
+                            'account_fingerprint' => $binding->fingerprint]));
+                    }
+                    // Native Setting encrypts in its saving event: mark encryption BEFORE assigning the first value.
+                    $this->saveSecret($serverId, self::CREDENTIALS, json_encode($credentials, JSON_THROW_ON_ERROR));
+                    $this->saveSecret($serverId, self::VERIFIED, $this->digest($binding, $credentials));
+                    // Rotation pauses processing until deliberately resumed, preserving binding and live site.
+                    $account->processing_enabled = false; Account::withVerifiedBindingWrite(static fn () => $account->save());
+                    $review?->record('verified_and_saved');
+                    return $binding;
+                });
+            } catch (\Throwable) {
+                // The native transaction callback captures plaintext: never retain its exception trace.
+                throw new \DomainException('Registrar account configuration could not be saved.');
+            }
+            $phase = 'verification_finished';
+            return $saved;
+        } finally { $review?->finish($phase); }
     }
 
     public function confirmLiveSite(int $serverId, string $explicitSite): void
