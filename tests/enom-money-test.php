@@ -5,7 +5,7 @@ declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, CostUnit, DispatchSeal, Discrepancy, Disposition,
-    DriverResult, Environment, Evidence, ExecutionRecord, ExpiryPrecision, Money, Query, QuoteEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, RenewalStatus, SendState};
+    DriverResult, Environment, Evidence, ExecutionRecord, ExpiryPrecision, Money, PersistedExecution, Query, QuoteEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, RenewalStatus, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, OrderCharge, Pricing};
 $clock = new class implements Clock { public DateTimeImmutable $at; public function now(): DateTimeImmutable { return $this->at; } };
@@ -135,7 +135,7 @@ foreach ([ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Expired] as
     same(Disposition::Unknown, $driver->quote($annual, $context())->disposition, 'Every required renewal read failure reports Unknown');
 }
 $wire->failCommand = null;
-$execution = new ProtocolResult('success', data: ['command' => 'Purchase', 'orderid' => '9001']);
+$execution = new PersistedExecution($binding, new Query('example.com', Action::Register, 1), 'original', Disposition::Accepted, SendState::Sent, '9001');
 $attempt = fn (Action $action = Action::Register, ?Money $expected = null, ExecutionRecord $record = ExecutionRecord::Recorded) => new AttemptEvidence(
     $binding, new Query('example.com', $action, 1), 'original', 1, $record, SendState::Sent, $clock->now(), $clock->now(),
     expectedCharge: $expected, seal: DispatchSeal::Sealed, providerReference: '9001');
@@ -154,9 +154,14 @@ foreach ([['description', 'other.com'], ['producttype', 'Domain'], ['quantity', 
     same(null, OrderCharge::read($attempt(), $execution, $order($bad)), 'Unbound/ambiguous item never charge proof');
 }
 foreach ([ExecutionRecord::Absent, ExecutionRecord::RecordedNull] as $record) { same(null, OrderCharge::read($attempt(record: $record), $execution, $order($header)), 'Absent/null execution cannot confirm charge'); }
+foreach (['11/1/2026 1:30:00 AM', '3/8/2026 2:30:00 AM', '11/7/2026 5:40 AM', '2/30/2026 5:40:00 AM'] as $date) {
+    $bad = $header; $bad['billdate'] = $date;
+    same(null, OrderCharge::read($attempt(), $execution, $order($bad))?->processedAt, 'Ambiguous/nonexistent/calendar-invalid/minute-only billing time cannot prove original instant');
+}
 $renewHeader = $header; $renewHeader['orderdetail']['producttype'] = 'Renew';
-same('8.95', OrderCharge::read($attempt(Action::Renew), new ProtocolResult('success', data: ['command' => 'Extend', 'orderid' => '9001']), $order($renewHeader))?->charge?->amount, 'Exact Extend/Renew pair accepted');
-same(null, OrderCharge::read($attempt(Action::Renew), new ProtocolResult('success', data: ['command' => 'UpdateExpiredDomains', 'orderid' => '9001']), $order($renewHeader)), 'Expired command has no invented item contract');
+same('8.95', OrderCharge::read($attempt(Action::Renew), new PersistedExecution($binding, new Query('example.com', Action::Renew, 1), 'original', Disposition::Accepted, SendState::Sent, '9001', 'ordinary'), $order($renewHeader))?->charge?->amount, 'Exact Extend/Renew pair accepted');
+same(null, OrderCharge::read($attempt(Action::Renew), new PersistedExecution($binding, new Query('example.com', Action::Renew, 1), 'original', Disposition::Accepted, SendState::Sent, '9001', 'grace'), $order($renewHeader)), 'Grace has no invented ordinary order-charge contract');
+same(null, OrderCharge::read($attempt(Action::Renew), $execution, $order($renewHeader)), 'Retained registration cannot authorize a renewal charge');
 $wire->data['Order'] = '<Order><OrderID>9001</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><OrderDetail><Description>example.com</Description><ProductType>Register</ProductType><Quantity>1</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>8.95</AmountPaid></OrderDetail></Order>';
 $result = $driver->orderCharge($attempt(expected: new Money('8.9400', 'USD')), $execution, $context(1));
 same(Disposition::AcceptedWithDiscrepancy, $result->disposition, 'Actual versus authorized cost discrepancy retained');

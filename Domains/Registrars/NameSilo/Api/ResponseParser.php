@@ -206,6 +206,10 @@ final class ResponseParser
             return $this->normalize($result);
         }
         $result = array_intersect_key($reply, array_flip($fields));
+        if (in_array($command, ['listOrders', 'orderDetails'], true)) {
+            $allowed = $command === 'listOrders' ? ['order'] : ['order_number', 'order_date', 'method', 'total', 'order_details'];
+            $result['history_complete'] = !array_diff(array_keys($reply), ['code', 'detail', 'message', ...$allowed]);
+        }
         $records = [
             'available' => ['domain', 'price', 'premium', 'duration'], 'unavailable' => ['domain'], 'invalid' => ['domain'],
             'nameservers' => ['nameserver', 'position'],
@@ -216,7 +220,10 @@ final class ResponseParser
         foreach ($records as $field => $allowed) {
             if (!array_key_exists($field, $result)) { continue; }
             if (!is_array($result[$field])) { throw new \UnexpectedValueException('Invalid registrar collection shape.'); }
-            $project = fn (array $record): array => $this->scalarFields(array_intersect_key($record, array_flip($allowed)));
+            $project = function (array $record) use ($field, $allowed, &$result): array {
+                if (in_array($field, ['order', 'order_details'], true) && array_diff(array_keys($record), $allowed)) { $result['history_complete'] = false; }
+                return $this->scalarFields(array_intersect_key($record, array_flip($allowed)));
+            };
             $result[$field] = array_is_list($result[$field]) ? array_map($project, $result[$field]) : $project($result[$field]);
         }
         foreach ($result as $field => $value) {

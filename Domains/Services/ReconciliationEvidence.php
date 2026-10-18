@@ -1,0 +1,69 @@
+<?php
+// Enom 444f31c original-attempt reconciliation; MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AttemptEvidence, DispatchSeal, DateEvidence, Disposition, Evidence, ExecutionRecord, ExpiryPrecision, Money, PersistedExecution, SendState};
+use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+final class ReconciliationEvidence
+{
+    public static function attempt(Operation $op, Domain $domain, AccountBinding $binding): AttemptEvidence
+    {
+        $a = $op->attempt ?? []; $query = OperationClaims::query($op, $domain);
+        if (!$op->started_at || !$op->request_fingerprint || !isset($a['claim_key'], $a['dispatch_attempted_at'])
+            || ($a['seal'] ?? null) !== 'sealed') { throw new \DomainException('No sealed original attempt.'); }
+        $end = $op->started_at->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
+        $dispatch = new \DateTimeImmutable($a['dispatch_attempted_at']);
+        if ($dispatch < $op->started_at || $dispatch > $end) { throw new \DomainException('Invalid original window.'); }
+        $record = !array_key_exists('execution', $a) ? ExecutionRecord::Absent : ($a['execution'] === null ? ExecutionRecord::RecordedNull : ExecutionRecord::Recorded);
+        $registration = $a['registration'] ?? null; $raw = $a['evidence']['registration'] ?? null;
+        $ref = $registration['order_reference'] ?? $raw['orderReference'] ?? null;
+        foreach ([$registration, $raw] as $facts) {
+            if ($facts !== null && (($facts['query']['name'] ?? null) !== $query->name || ($facts['query']['years'] ?? null) !== $query->years
+                || ($facts['order_reference'] ?? $facts['orderReference'] ?? null) !== $ref)) { throw new \DomainException('Contradictory retained acceptance.'); }
+        }
+        if ($op->provider_order_id !== null && $op->provider_order_id !== $ref) { throw new \DomainException('Order reference changed.'); }
+        $execution = null;
+        if ($record === ExecutionRecord::Recorded && $raw !== null) {
+            $disposition = Disposition::from($a['execution']['disposition']); $send = SendState::from($a['execution']['send_state']);
+            if (in_array($disposition, [Disposition::Accepted, Disposition::AcceptedWithDiscrepancy], true) && $send === SendState::Sent) {
+                $execution = new PersistedExecution($binding, $query, $op->operation_key, $disposition, $send, $ref);
+            }
+        }
+        $cost = $a['authorized_cost'] ?? null;
+        return new AttemptEvidence($binding, $query, $op->operation_key, $op->authority_generation, $record, $execution ? SendState::Sent : SendState::PossiblySent,
+            $dispatch, $end, expectedCharge: $cost ? new Money($cost['amount'], $cost['currency']) : null,
+            seal: DispatchSeal::Sealed, providerReference: $ref, expectedExpiry: $op->expected_expires_at ? new DateEvidence($op->expected_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'original_expected') : null,
+            executionFacts: $execution, historyAcceptance: $execution && $ref !== null ? null : HistoryAcceptances::load($binding));
+    }
+    /** Exactly one charged original order AND owned full-term expiry; neither read alone is completion. */
+    public static function completion(AttemptEvidence $attempt, Evidence $facts, \DateTimeImmutable $now): ?array
+    {
+        if (count($facts->candidates) !== 1) { return null; }
+        try { $attempt->executionFacts?->requireAttempt($attempt); } catch (\InvalidArgumentException) { return null; }
+        $history = $facts->historyComplete && ($attempt->historyAcceptance?->covers($attempt, $now) ?? false);
+        $order = $facts->candidates[0]; $domain = $facts->domain; $date = $order->processedAt;
+        if (!$order->charge || $order->charge->currency !== 'USD' || !$date || $date->precision !== ExpiryPrecision::Instant
+            || new \DateTimeImmutable($date->value) < $attempt->windowStart || new \DateTimeImmutable($date->value) > $attempt->windowEnd
+            || (!$attempt->executionFacts && !$history)
+            || ($attempt->providerReference === null && !$history)
+            || !$domain || $domain->owned !== true || !$domain->expiry) { return null; }
+        $expiry = substr($domain->expiry->value, 0, 10);
+        $earliest = $attempt->windowStart->modify('+'.$attempt->query->years.' years')->modify('-2 days')->format('Y-m-d');
+        $latest = $attempt->windowEnd->modify('+'.$attempt->query->years.' years')->modify('+2 days')->format('Y-m-d');
+        // Provider dates may differ by a timezone boundary, but never by a missing year/term.
+        if ($expiry < $earliest || $expiry > $latest || ($attempt->expectedExpiry && substr($attempt->expectedExpiry->value, 0, 10) !== $expiry)) { return null; }
+        if ($attempt->binding->registrarKey === 'enom') {
+            if (!$order->afterExpiry || substr($order->afterExpiry->value, 0, 10) !== $expiry) { return null; }
+            if ($order->afterExpiry->precision === ExpiryPrecision::Instant && $domain->expiry->precision === ExpiryPrecision::Instant
+                && new \DateTimeImmutable($order->afterExpiry->value) != new \DateTimeImmutable($domain->expiry->value)) { return null; }
+        }
+        return ['order_reference' => $order->providerReference, 'charge' => ['amount' => $order->charge->amount, 'currency' => 'USD'],
+            'processed_at' => $date->value, 'expiry' => $expiry, 'provider_domain_id' => $domain->providerReference,
+            'operation_key' => $attempt->operationKey, 'generation' => $attempt->authorityGeneration,
+            'fingerprint' => $attempt->binding->fingerprint, 'query' => ['name' => $attempt->query->name, 'action' => $attempt->query->action->value, 'years' => $attempt->query->years],
+            'source' => $attempt->executionFacts && $attempt->providerReference !== null ? 'captured_order' : 'accepted_history',
+            'expiry_precision' => $domain->expiry->precision->value, 'observed_corrections' => $domain->providerAutoRenew === false ? [] : ['auto_renew'], 'window_start' => $attempt->windowStart->format(DATE_ATOM),
+            'window_end' => $attempt->windowEnd->format(DATE_ATOM)];
+    }
+}

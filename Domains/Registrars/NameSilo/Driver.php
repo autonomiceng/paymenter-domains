@@ -141,7 +141,9 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     public function reconcile(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
     {
         $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);
+        $history = (new Correlation($this->client))->inspect($attempt, $context);
+        $domain = $this->readDomain($attempt->query->name, $context)->evidence()->domain;
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown, SendState::PossiblySent,
-            ResultReason::Unresolved, new Evidence(candidates: (new Correlation($this->client))->candidates($attempt, $context))));
+            ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $history->candidates, historyComplete: $history->historyComplete)));
     }
 }

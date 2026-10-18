@@ -10,7 +10,8 @@ final readonly class AttemptEvidence
         public int $authorityGeneration, public ExecutionRecord $execution, public SendState $sendState,
         public \DateTimeImmutable $windowStart, public \DateTimeImmutable $windowEnd,
         public ?DateEvidence $beforeExpiry = null, public ?Money $expectedCharge = null, public DispatchSeal $seal = DispatchSeal::Unknown,
-        public ?string $providerReference = null, public ?DateEvidence $expectedExpiry = null)
+        public ?string $providerReference = null, public ?DateEvidence $expectedExpiry = null, public ?PersistedExecution $executionFacts = null,
+        public ?HistoryAcceptance $historyAcceptance = null)
     {
         if (!preg_match('/^[A-Za-z0-9_.:-]{1,128}$/D', $operationKey) || $authorityGeneration < 1 || $windowEnd < $windowStart
             || ($providerReference !== null && !preg_match('/^[A-Za-z0-9_.:-]{1,128}$/D', $providerReference))

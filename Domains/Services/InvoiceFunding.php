@@ -65,6 +65,12 @@ final class InvoiceFunding
         return $paid;
     }
 
+    public function completeInitial(Operation $op, Domain $domain): void
+    {
+        $this->requireInitial($op, $domain);
+        $this->services->get($op->service_id)->update(['status' => Service::STATUS_ACTIVE, 'expires_at' => null]);
+    }
+
     /** Funding evidence only. Engine19 supplies its current domain then operation under ordered locks. */
     public function requirePaid(Operation $op, Domain $domain): array
     {

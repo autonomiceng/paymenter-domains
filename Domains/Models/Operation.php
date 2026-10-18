@@ -28,7 +28,7 @@ class Operation extends Model
                 if (array_key_exists($key, $old) && ($new[$key] ?? null) !== $old[$key]) { throw new \DomainException('Checkout evidence is frozen.'); }
             }
             $old = $operation->getOriginal('cost') ?? []; $new = $operation->cost ?? [];
-            foreach (['estimated', 'currency', 'unit'] as $key) {
+            foreach (['estimated', 'currency', 'unit', 'actual'] as $key) {
                 if (array_key_exists($key, $old) && ($new[$key] ?? null) !== $old[$key]) { throw new \DomainException('Estimated cost evidence is frozen.'); }
             }
         });
@@ -39,6 +39,9 @@ class Operation extends Model
                 && (!array_key_exists('contact_disposition', $after) || $after['contact_disposition'] !== $before['contact_disposition'])) {
                 throw new \DomainException('Contact disposition is frozen.');
             }
+            $history = $before['reconciliation_resumptions'] ?? []; $next = $after['reconciliation_resumptions'] ?? [];
+            if (!is_array($history) || !is_array($next) || !array_is_list($next) || count($next) > 20
+                || count($next) < count($history) || array_slice($next, 0, count($history)) !== $history) { throw new \DomainException('Reconciliation resumptions are append-only.'); }
             if (array_key_exists('contact_readmissions', $before) || array_key_exists('contact_readmissions', $after)) {
                 $history = array_key_exists('contact_readmissions', $before) ? $before['contact_readmissions'] : []; $next = $after['contact_readmissions'] ?? null;
                 if (!is_array($history) || !array_is_list($history) || !is_array($next) || !array_is_list($next)
@@ -47,11 +50,13 @@ class Operation extends Model
                 }
             }
             $old = $operation->getOriginal('attempt') ?? []; $new = $operation->attempt ?? [];
-            foreach (['claim_key', 'dispatch_attempted_at', 'authorized_cost', 'execution', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections'] as $key) {
+            foreach (['claim_key', 'dispatch_attempted_at', 'authorized_cost', 'execution', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections', 'reconciliation', 'terminal'] as $key) {
                 if (array_key_exists($key, $old) && (!array_key_exists($key, $new) || $new[$key] !== $old[$key])) {
                     throw new \DomainException('Attempt evidence is write-once.');
                 }
             }
+            if (isset($old['claim_key']) && $operation->isDirty(['started_at', 'request_fingerprint'])) { throw new \DomainException('Original attempt identity is frozen.'); }
+            if (isset($old['reconciliation']) && $operation->isDirty(['provider_order_id', 'confirmed_expires_at', 'completed_at'])) { throw new \DomainException('Completion evidence is frozen.'); }
             if (($old['seal'] ?? null) === 'sealed' && $operation->isDirty('payload')) {
                 throw new \DomainException('Sealed desired state is frozen.');
             }

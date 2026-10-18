@@ -225,7 +225,8 @@ final class OperationClaims
             && ($op->attempt['charge'] ?? null) === null && ($op->attempt['order_candidates'] ?? []) === [];
     }
 
-    private function locked(int $id, \Closure $callback): mixed
+    /** Internal ordered authority scope shared by read-only reconciliation. */
+    public function locked(int $id, \Closure $callback): mixed
     {
         self::outside();
         // Discovery is before the transaction, so it cannot establish an old repeatable-read view.

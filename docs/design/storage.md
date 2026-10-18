@@ -571,3 +571,43 @@ allow only RegistrationBridge + RegistrationProtocol writers; direct transport s
 Completion retries retain the original result; changed authority retains acceptance/corrections as
 uncertain. Slice22 selects financial_completion=awaiting_unique_charge even with correction safe codes.
 Correction progress uses separate append-only records; the original requirements never change.
+
+## Slice22 original-attempt reconciliation
+
+`OperationReconciliation::run` selects pending `registration.financial_completion=awaiting_unique_charge`
+regardless of correction safe codes, uncertain attempts, or expired running leases. Each poll first
+retains an encrypted staff-alert marker (notification delivery38/staff workflow36);
+Only completed, covered reads with unchanged authority consume the five-poll budget; missing acceptance,
+lag, failed/incomplete reads and stale snapshots do not. A distinct poll_limit_reached alert and bounded
+append-only internal resume audit permit later staff-triggered reads; staff authorization/UI stays36.
+No retries of purchase, refund, seller fallback or rejection follow observation. Live leases refuse.
+The existing user/native-funding/server/account/settings/domain/ordered-operation lock prefix captures
+and rechecks lifecycle, binding, generation, all operation evidence and acceptance around bounded
+provider reads outside transactions (25 reads/250 seconds). Changed authority or cancelled/reversed
+native funding prevents completion. Pausing spending permits account-scoped reconciliation reads.
+
+`PersistedExecution` replaces Enom protocol execution objects; original operation/query/account/order
+identity and frozen start/fingerprint bind retained acceptance, including matching late-worker facts. Its time window begins at the durable dispatch seal.
+Absent and recorded-null executions remain distinct. Sealed attempts with neither can resolve only
+through an explicitly accepted complete history contract, never by inventing an execution result.
+Encrypted server setting `domains_history_acceptance` binds USD, all-pages completeness, exact
+registrar registration vocabulary, explicit timezone, lag and retention. Absence is unaccepted;
+unknown/paged envelopes, unsupported detail shapes, missing/ambiguous timestamps, exhausted budgets,
+zero or multiple matches and out-of-window rows stay unresolved. Acceptance is an internal seam;
+real account/provider contract acceptance and staff authorization remain39/36. Enom discovery accepts
+only the opt-in flat OrderList/OrderCount shape; unaccepted provider variants remain unresolved.
+
+A unique successful exact domain/action/term order with USD charge and precise original-window time
+must also have current owned, full-term expiry (source two-day calendar tolerance, exact retained expected expiry). Enom captured IDs use dedicated expiry
+plus corroborating exact order expiry; NameSilo absent IDs require accepted complete history after lag
+and within retention. Only then do immutable `attempt.reconciliation` and `cost.actual` evidence set
+succeeded/active, confirmed expiry/revision and `renewal_policy.billing_anchor`; native annual service
+expiry stays null. Corrections remain separately authorized, immutable original requirements; observed provider renewal drift is separate correction work and cannot erase unique financial proof. Changed
+actual cost/below-cost realized margin alert staff without undoing an incurred purchase or adding a floor.
+Publication still holds below-cost registration/transfer and bills below-cost renewals with alerts.
+
+`OperationTerminalProof::encode` normalizes only a completed, held, definitely-unsealed local worker
+with no send/result/charge/candidate/refund facts. Expired claims, seals and present-null results never
+become unsent. Reservation release remains solely in `DomainReservations`; no sent/provider rejection
+or no-charge proof is synthesized from history. Refund-once26, renewal23–25, transfers27–28, installed
+queue/scheduler acceptance39 and shared refresh/correction execution31 remain separate.

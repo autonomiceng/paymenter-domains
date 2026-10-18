@@ -157,3 +157,16 @@ Sibling protected-method attacks must make zero port calls; policy identity and 
 are required for protocol composition. All exchanges are synthetic; no network sender is installed.
 Authority changes and a transient completion failure retain original acceptance/correction evidence;
 missing/different/closure-only NameSilo profile composition refuses before claim with zero requests.
+
+Slice22 tests use real provider read adapters with injected offline transports and native funding locks.
+Enom frozen `444f31c` reconciliation-registration maps to exact captured order/domain/term/status/charge,
+dedicated expiry, purchase-expiry discrepancies, unique completion and idempotent repeated reconciliation.
+Provider-disposition maps to cancelled services, reversed payments, changed generation/evidence,
+expired/late/missing/null executions, unresolved alerts and definitely-unsent-only terminal encoding.
+Automatic-refresh maps to five-poll bounds and observation without billing-anchor changes until proof;
+shared observation jobs/rate limits remain31/39. NameSilo covers no-ID native completion, exact vocabulary,
+completeness/pagination, zero/multiple/credited/unknown-status rows, lag, retention, timezone/DST and budget
+exhaustion. All provider facts are synthetic; these suites establish no live history/identity acceptance,
+MariaDB interleavings, installed UI/queue, renewal/refund/transfer execution or notification delivery.
+
+`reconciliation-recovery-test` exercises the slice21 residual with both same-result persistence attempts failing: provider-only unique recovery, zero/multiple candidates unresolved, and exactly one original send.

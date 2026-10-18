@@ -44,6 +44,10 @@ final class ResponseParser
         if (isset($data['rrpcode']) && !in_array($data['rrpcode'], $codes, true)) {
             return new ProtocolResult('unknown', $code);
         }
+        if (in_array($command, [ReadCommand::Orders, ReadCommand::Order], true)) {
+            $payload = $command === ReadCommand::Orders ? ['orderlist', 'ordercount'] : ['order'];
+            $data['history_complete'] = !array_diff(array_keys($data), ['command', 'errcount', 'done', 'rrpcode', 'responsecode', 'errors', ...$payload]);
+        }
         // Payload-specific validation belongs to each named read normalizer, never to acknowledgement alone.
         return new ProtocolResult('success', $code, $data);
     }

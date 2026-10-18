@@ -3,22 +3,26 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
-use Paymenter\Extensions\Servers\Domains\Data\{Action, AttemptEvidence, DateEvidence, ExecutionRecord, Money, OrderEvidence, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, AttemptEvidence, DateEvidence, Money, OrderEvidence, PersistedExecution, CanonicalName, HistoryAcceptance, ExpiryPrecision};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ProtocolResult;
 
 /** Single exact item only. A quote, acknowledgement or order ID alone never proves a charge. */
 final class OrderCharge
 {
-    public static function read(AttemptEvidence $attempt, ProtocolResult $execution, ProtocolResult $order): ?OrderEvidence
+    public static function read(AttemptEvidence $attempt, PersistedExecution $execution, ProtocolResult $order): ?OrderEvidence
     {
-        $query = $attempt->query; $id = $attempt->providerReference;
-        $command = match ($query->action) { Action::Register => 'purchase', Action::Renew => 'extend', default => null };
-        $header = $order->value('order'); $executed = $execution->value('command');
-        if (!$command || $attempt->binding->registrarKey !== 'enom' || $attempt->execution !== ExecutionRecord::Recorded
-            || $attempt->sendState === SendState::DefinitelyUnsent || !is_string($id) || !preg_match('/^[1-9][0-9]{0,19}$/D', $id)
-            || $execution->status !== 'success' || !is_string($executed) || strtolower($executed) !== $command
-            || $execution->value('orderid') !== $id || $order->status !== 'success' || !is_array($header)
-            || ($header['orderid'] ?? null) !== $id || !is_string($header['result'] ?? null) || strtolower($header['result']) !== 'true') { return null; }
+        try { $execution->requireAttempt($attempt); } catch (\InvalidArgumentException) { return null; }
+        return self::candidate($attempt, $order);
+    }
+    /** Discovery candidates need a complete accepted history contract at the engine, never fabricated execution. */
+    public static function candidate(AttemptEvidence $attempt, ProtocolResult $order): ?OrderEvidence
+    {
+        $query = $attempt->query; $header = $order->value('order');
+        $id = is_array($header) ? ($header['orderid'] ?? null) : null;
+        if (!in_array($query->action, [Action::Register, Action::Renew], true) || $attempt->binding->registrarKey !== 'enom'
+            || !is_string($id) || !preg_match('/^[1-9][0-9]{0,19}$/D', $id)
+            || ($attempt->providerReference !== null && $id !== $attempt->providerReference)
+            || $order->status !== 'success' || !is_array($header) || strtolower($header['result'] ?? '') !== 'true') { return null; }
         $items = $header['orderdetail'] ?? null;
         if (!is_array($items)) { return null; }
         $items = array_is_list($items) ? $items : [$items];
@@ -38,9 +42,30 @@ final class OrderCharge
         $processed = self::date($header['billdate'] ?? null, 'enom_order_bill_date');
         return new OrderEvidence($attempt->binding, $query, new Money($amount, 'USD'), $id, $processed, Expiry::read($order));
     }
+    /** Every parsed item must positively name a different canonical domain. */
+    public static function unrelated(AttemptEvidence $attempt, ProtocolResult $order): bool
+    {
+        $items = $order->value('order.orderdetail');
+        if ($order->status !== 'success' || strtolower($order->value('order.result', '')) !== 'true' || !is_array($items) || !$items) { return false; }
+        $items = array_is_list($items) ? $items : [$items];
+        foreach ($items as $item) {
+            try {
+                if (!is_array($item) || !is_string($item['description'] ?? null)
+                    || CanonicalName::normalize($item['description']) === $attempt->query->name
+                    || !in_array(strtolower($item['producttype'] ?? ''), ['register', 'renew'], true)
+                    || strtolower($item['status'] ?? '') !== 'successful' || strtolower($item['orderstatus'] ?? '') !== 'closed') { return false; }
+            } catch (\InvalidArgumentException|\TypeError) { return false; }
+        }
+        return true;
+    }
     private static function date(mixed $value, string $source): ?DateEvidence
     {
-        $date = Expiry::read(new ProtocolResult('success', data: ['expiration' => $value]));
-        return $date ? new DateEvidence($date->value, $date->precision, $source, $date->timezone) : null;
+        if (!is_string($value)) { return null; }
+        if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4}) (\d{1,2}):(\d{2}):(\d{2}) (AM|PM)$/D', $value, $m)) {
+            if ((int) $m[4] < 1 || (int) $m[4] > 12) { return null; }
+            $value = sprintf('%04d-%02d-%02d %02d:%02d:%02d', $m[3], $m[1], $m[2], (int) $m[4] % 12 + ($m[7] === 'PM' ? 12 : 0), $m[5], $m[6]);
+        }
+        $date = HistoryAcceptance::localDate($value, 'America/Los_Angeles', $source);
+        return $date ? new DateEvidence((new \DateTimeImmutable($date->value))->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM), ExpiryPrecision::Instant, $source, 'UTC') : null;
     }
 }

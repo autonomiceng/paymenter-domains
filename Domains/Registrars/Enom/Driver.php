@@ -265,7 +265,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             Renewal::assess($query, $domain, $reply, $extend, $check, $expired, $now, $now->modify('+'.$this->priceMaxAgeSeconds.' seconds')));
     }
     /** Actual charge read for an original attempt plus retained successful execution, never a purchase path. */
-    public function orderCharge(AttemptEvidence $attempt, #[\SensitiveParameter] ProtocolResult $execution,
+    public function orderCharge(AttemptEvidence $attempt, #[\SensitiveParameter] \Paymenter\Extensions\Servers\Domains\Data\PersistedExecution $execution,
         #[\SensitiveParameter] RequestContext $context): DriverResult
     {
         $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);
@@ -283,6 +283,24 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     public function reconcile(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
     {
         $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);
-        return new ReconciliationResult($attempt, $this->neutral(new ProtocolResult('unknown', 'context_refused')));
+        $domain = $this->readDomain($attempt->query->name, $context)->evidence()->domain;
+        if ($domain?->owned === true) {
+            $expiry = $this->expiry($attempt->query->name, $context)->facts();
+            $domain = new DomainSnapshot($this->binding(), $attempt->query->name, true,
+                ($expiry['provider_reference'] ?? null) === $domain->providerReference ? ($expiry['expiry'] ?? null) : null,
+                $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference);
+        }
+        $candidates = [];
+        if ($attempt->executionFacts && $attempt->providerReference) {
+            $charge = $this->orderCharge($attempt, $attempt->executionFacts, $context);
+            $candidates = $charge->evidence()->candidates;
+        }
+        $complete = false;
+        if (!$attempt->executionFacts && $attempt->historyAcceptance?->covers($attempt, $context->now())) {
+            $history = new History($this->client);
+            $facts = $history->inspect($attempt, $context); $candidates = $facts->candidates; $complete = $facts->historyComplete;
+        }
+        return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown,
+            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete)));
     }
 }

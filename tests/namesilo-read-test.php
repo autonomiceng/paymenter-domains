@@ -116,7 +116,7 @@ $attempt = new AttemptEvidence($binding, $query, 'synthetic-operation', 1, Execu
     $clock->now()->modify('-1 hour'), $clock->now());
 $reconcile = static fn (int $budget = 10) => $driver->reconcile($attempt, $context($budget));
 $rec = $reconcile(); $rec->requireAttempt($attempt);
-$list = $wire->calls[count($wire->calls) - 2];
+$list = array_values(array_filter($wire->calls, fn ($call) => $call[2] === 'listOrders')); $list = end($list);
 same(['date_from' => '2026-10-17', 'date_to' => '2026-10-19'], $list[3], 'Unknown provider timezone padded on both sides');
 same(Disposition::Unknown, $rec->disposition, 'One history candidate never resolves purchase');
 $candidates = $rec->result()->evidence()->candidates;
@@ -141,7 +141,7 @@ $wire->fixtures['listOrders']['reply']['order'] = [];
 same([], $reconcile()->result()->evidence()->candidates, 'Zero candidates unresolved, not unsent');
 $wire->fixtures['listOrders']['reply']['order'] = array_map(fn ($id) => ['order_number' => (string) $id], range(1, 21));
 $before = count($wire->calls); same([], $reconcile()->result()->evidence()->candidates, 'Oversize discovery refuses whole search');
-same($before + 1, count($wire->calls), 'Discovery bound makes no detail reads');
+same($before + 2, count($wire->calls), 'Discovery bound makes no detail reads');
 // Compound suffixes work through all read paths, independent of purchase mapping restrictions.
 $wire->fixtures['getPrices']['reply']['co.uk'] = ['registration' => '8.25', 'renew' => '10.00', 'transfer' => '9.00'];
 $wire->fixtures['getPrices']['reply']['com']['registration'] = '12.34';

@@ -6,7 +6,9 @@
     "tests/enom-curl-test.php",
     "tests/enom-money-test.php",
     "tests/enom-read-test.php",
-    "tests/namesilo-read-test.php"
+    "tests/namesilo-read-test.php",
+    "tests/reconciliation-provider-test.php",
+    "tests/reconciliation-enom-history-test.php"
   ],
   "contracts": [
     "tests/driver-contract-test.php",
@@ -34,7 +36,12 @@
     "tests/write-boundary-test.php",
     "tests/write-preflight-test.php",
     "tests/registration-enom-test.php",
-    "tests/registration-namesilo-test.php"
+    "tests/registration-namesilo-test.php",
+    "tests/reconciliation-test.php",
+    "tests/reconciliation-authority-test.php",
+    "tests/terminal-proof-test.php",
+    "tests/reconciliation-namesilo-test.php",
+    "tests/reconciliation-recovery-test.php"
   ],
   "ui": [],
   "runner": [
