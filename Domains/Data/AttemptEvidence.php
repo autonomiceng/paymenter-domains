@@ -11,7 +11,7 @@ final readonly class AttemptEvidence
         public \DateTimeImmutable $windowStart, public \DateTimeImmutable $windowEnd,
         public ?DateEvidence $beforeExpiry = null, public ?Money $expectedCharge = null, public DispatchSeal $seal = DispatchSeal::Unknown,
         public ?string $providerReference = null, public ?DateEvidence $expectedExpiry = null, public ?PersistedExecution $executionFacts = null,
-        public ?HistoryAcceptance $historyAcceptance = null, public ?string $transferReference = null)
+        public ?HistoryAcceptance $historyAcceptance = null, public ?string $transferReference = null, public ?bool $expectedPrivacy = null)
     {
         if (!preg_match('/^[A-Za-z0-9_.:-]{1,128}$/D', $operationKey) || $authorityGeneration < 1 || $windowEnd < $windowStart
             || ($providerReference !== null && !preg_match('/^[A-Za-z0-9_.:-]{1,128}$/D', $providerReference))

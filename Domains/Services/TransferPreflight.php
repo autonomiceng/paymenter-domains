@@ -45,7 +45,7 @@ final readonly class TransferPreflight implements SealPreflight
         if (!WriteMoney::cost($q, $query, $observed, $context->now()) || !WriteMoney::sufficient($balance->evidence()->balance, $q->cost)) { throw new WriteHeld('write_acceptance_required'); }
         return new DispatchReadiness($context->binding, $query, new Capabilities($context->binding, ['transfer' => $capability]),
             $q->cost, true, false, $observed, min($q->validUntil, $observed->modify('+120 seconds')), OperationClaims::payloadDigest($op),
-            [...$transfer, 'premium' => false, 'name' => $query->name, 'years' => 1, 'cost' => ['amount' => $q->cost->amount, 'currency' => 'USD']]);
+            [...$transfer, 'premium' => false, 'privacy' => $privacy, 'name' => $query->name, 'years' => 1, 'cost' => ['amount' => $q->cost->amount, 'currency' => 'USD']]);
     }
     public function requireAtSeal(Operation $op, Domain $domain, DispatchReadiness $ready): void
     {

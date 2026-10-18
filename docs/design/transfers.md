@@ -108,11 +108,9 @@ expiry, confirmed revision and the transfer billing anchor consumed by24/25. Ori
 ordinary acquisition proof remains available after later renewal anchors advance;
 NameSilo renewal Cost remains closed if that proof or matching actual cost is absent.
 
-NameSilo checkTransferStatus currently recognizes only documented Pending at Registry.
-Its unestablished terminal vocabulary remains closed: Completed/Failed/Active strings,
-charge or owned expiry alone cannot complete/reject. Controlled acceptance39 must
-establish terminal semantics before extending this mapping; no terminal word is
-invented. Fallback301/302 acknowledgements remain unresolved and never trigger replay.
+Slice30a below extends NameSilo checkTransferStatus using vendor-module vocabulary.
+Completed/Failed/Active strings, charge or owned expiry alone still cannot complete.
+Fallback301/302 acknowledgements remain unresolved and never trigger replay.
 
 A fresh domain-endpoint404 retains transfer_not_registered before sealing; generic
 terminal encoding and code replacement stay closed for this staff35 disposition.
@@ -134,7 +132,7 @@ raises an unresolved staff alert; twenty audited resumes bound lifetime observat
 31/35 must define a separate healthy-pending window, alert policy and fair account
 budget before scheduling ordinary multi-day transfers. This slice is dormant, not
 operational acceptance.31/39 also own staff recovery for lost Enom TransferOrderID;
-no domain-only recovery exists. NameSilo terminal completion remains closed39.
+no domain-only recovery exists. NameSilo live terminal acceptance remains39.
 
 39 must accept strict baseline-plus-one-year date matching against old-registrar
 renewal races, auto-renew grace, timezone boundaries and absent Enom order expiry.
@@ -149,3 +147,42 @@ refund them today. Sent rejections retain reservations indefinitely. This supers
 without treating sent evidence as unsent;31 owns filtering these rows from repeated
 refund scans. Rejected status combined with owned readback or any charge candidate
 remains uncertain with a contradiction alert, never terminal.
+
+
+## NameSilo terminal vocabulary (slice30a)
+
+Provenance: [official WHMCS module namesilo.php](https://github.com/namesilo/whmcs/blob/5afe3fa4657e9c6d28235f73035eaff7b4ebc53b/namesilo.php),
+commit `5afe3fa4657e9c6d28235f73035eaff7b4ebc53b` (2026-10-01), TransferSync.
+Facts only, no code copied. Confirmation is pending NameSilo support question7
+(transfer status in the current support draft; question8 in the original parity list).
+This supersedes28's pending-only implementation, not controlled live acceptance39.
+
+The NameSilo transfer status list (account popup, captured 2026-10-18) supplies 28 exact
+strings, retained alone in the test fixture: 9 pending, 1 completion candidate, 5 needs-action,
+10 rejected and 3 deliberately unknown. `Transfer Completed` remains only a candidate.
+`Wait Authorization Code` requires the owner to supply an authorization code;
+`Domain is Private` requires disabling privacy or WHOIS masking at the current registrar.
+Both reuse the existing nonterminal `transfer_needs_action` hold and staff alert, alongside
+missing/incorrect codes and locked domains. `Transfer Timed Out`, `Time Out` and
+`Transfer price changed` retain uncertainty and a staff alert because finality and charge
+outcomes are unconfirmed. Case/space variants, empty, null and other strings remain unknown.
+Needs-action holds remain observable without granting code edits, replay or refunds;
+owned readback or any charge candidate instead retains uncertainty with a contradiction alert.
+Sent rejection retains reservation/financial uncertainty; owned readback or any charge
+candidate contradicts rejection and retains uncertainty/alert without a terminal marker.
+
+Completion requires exact Active account readback, auto-renew off and frozen expected
+privacy (dispatch's default off is frozen in transfer_admission), one accepted original-window USD transfer charge under22's no-ID history
+completeness/lag/retention/timezone rules, and exactly one full calendar year from the
+immutable pre-send expiry. Optional status `expiration` must be a valid date agreeing
+with getDomainInfo; malformed or conflicting evidence stays unresolved with an alert.
+Native service activation/null expiry, actual charge, domain revision and transfer
+billing anchor commit together through slice28. Slice24 billing and25 renewal admission consume
+that anchor; absent original sealed ordinary proof retains Cost, with no backfill.
+
+30b owns separately authorized flag/profile/NS correction writes;31 owns fair observation
+and the inherited five-covered-poll/20-resume pending policy.35 owns staff-only gates for
+transferUpdateChangeEPPCode, transferUpdateResubmitToRegistry and
+transferUpdateResendAdminEmail; none is implemented here.35/36 retain audited sent/held
+disposition and permissions,38 delivery,39 provider/support/installed/MariaDB acceptance,
+including strict added-year liveness, original-window clock skew and deadline headroom.

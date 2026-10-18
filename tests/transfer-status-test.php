@@ -16,7 +16,7 @@ foreach (['2','4','6','7','8','15','16','17','18','19','20','21','22','23','24',
 foreach (['0','1','4','5'] as $h) { foreach (['0','1','3','9','10','11','12','13','14','28','29','35','100'] as $d) { same(TransferStatus::Pending,TransferState::read($a,$parse($h,$d)),'Pending pair including draft/100'); } }
 foreach ([['3','32'],['2','5'],['1','32'],['3','100'],['999','5'],['3','999']] as [$h,$d]) { same(TransferStatus::Unknown,TransferState::read($a,$parse($h,$d)),'Contradictory/unknown pair unresolved'); }
 foreach ([$parse('3','5','7002'),$parse('3','5','7001','other'),$parse('3','5','7001','x','1'),$parse('3','5','7001','x','0','<TransferOrderDetail><SLD>x</SLD><TLD>com</TLD><StatusID>5</StatusID></TransferOrderDetail>')] as $reply) { same(TransferStatus::Unknown,TransferState::read($a,$reply),'Wrong ID/name/error/multiple unresolved'); }
-// NameSilo accepts the documented pending string only. Owned Active is never transfer status.
+// NameSilo vendor facts use exact strings. Owned Active is never transfer status.
 $state=(object)['status'=>'Pending at Registry'];
 $wire=new class($state) implements Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\DeadlineTransport {
     public function __construct(private $s){}
@@ -30,8 +30,34 @@ $wire=new class($state) implements Paymenter\Extensions\Servers\Domains\Registra
 $b=new AccountBinding('namesilo',2,Environment::Test,'account-namesilo');
 $driver=new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client($b,'synthetic',$wire));
 $a=new AttemptEvidence($b,new Query('x.com',Action::Transfer,1),'transfer:2',1,ExecutionRecord::Recorded,SendState::Sent,$now->modify('-6 minutes'),$now->modify('-1 minute'),seal:DispatchSeal::Sealed);
-foreach (['Pending at Registry','Completed','Failed','Cancelled','Active','',null] as $status) {
+// NameSilo transfer status list (account popup, captured 2026-10-18); status strings only.
+$official=file(__DIR__.'/fixtures/namesilo-transfer-statuses.txt',FILE_IGNORE_NEW_LINES);
+same(28,count($official),'Exactly 28 official NameSilo statuses');
+same(28,count(array_unique($official)),'Official statuses are unique');
+$statuses = ['Transfer Completed'=>TransferStatus::Completed];
+foreach (['Retrieving Administrative Contact Email','Retrieving Administrative Contact Email (2)',
+    'Pending Reply from Administrative Contact','Transfer Accepted','Approved','Approved (Auto)',
+    'Checking Domain Status','Submitting Transfer Request to Registry','Pending at Registry'] as $status) { $statuses[$status]=TransferStatus::Pending; }
+foreach (['Missing Authorization Code','Incorrect Authorization Code','Domain is Locked',
+    'Wait Authorization Code','Domain is Private'] as $status) { $statuses[$status]=TransferStatus::NeedsAction; }
+foreach (['Transfer Rejected','Registry Transfer Request Failed','Registrar Rejected','On Hold - Created in last 60 days',
+    'On Hold - Transferred in last 60 days','Registry Rejected','Domain Transferred Elsewhere','User Cancelled',
+    'Domain has a pendingDelete status','Domain has a pendingTransfer status'] as $status) { $statuses[$status]=TransferStatus::Rejected; }
+// Deliberately unresolved vendor vocabulary, not missing mappings.
+foreach (['Transfer Timed Out','Time Out','Transfer price changed'] as $status) { $statuses[$status]=TransferStatus::Unknown; }
+$expectedNames=array_keys($statuses); sort($expectedNames); $fixtureNames=$official; sort($fixtureNames);
+same($expectedNames,$fixtureNames,'Every official status has exactly one decided class');
+foreach ($official as $status) {
+    $expected=$statuses[$status];
+    same($expected,Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TransferState::read($status),
+        'NameSilo mapping: '.$status);
+    foreach ([$status, strtolower($status), ' '.$status, $status.' ', $status.' extra'] as $variant) {
+        $state->status=$variant; $ctx=new RequestContext($b,RequestOrigin::Background,$now->modify('+250 seconds'),new RequestBudget(10),new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now));
+        same($variant===$status?$expected:TransferStatus::Unknown,$driver->reconcile($a,$ctx)->result()->evidence()->transfer,'Exact NameSilo vocabulary only');
+    }
+}
+foreach (['Completed','Failed','Cancelled','Active','',null,0,[],false] as $status) {
     $state->status=$status; $ctx=new RequestContext($b,RequestOrigin::Background,$now->modify('+250 seconds'),new RequestBudget(10),new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now));
-    same($status==='Pending at Registry'?TransferStatus::Pending:TransferStatus::Unknown,$driver->reconcile($a,$ctx)->result()->evidence()->transfer,'No invented NameSilo terminal vocabulary');
+    same(TransferStatus::Unknown,$driver->reconcile($a,$ctx)->result()->evidence()->transfer,'No invented NameSilo terminal vocabulary');
 }
 echo "Transfer status vocabulary and contradictory evidence refusals passed.\n";

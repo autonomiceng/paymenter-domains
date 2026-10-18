@@ -34,7 +34,7 @@ final class OperationReconciliation
                 $covered = $facts->domain?->owned === true && $facts->domain->expiry !== null
                     && ($facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null && count($facts->candidates) > 0));
                 $transfer = $facts->transfer;
-                $transferConflict = $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected
+                $transferConflict = in_array($transfer, [\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected, \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::NeedsAction], true)
                     && ($facts->domain?->owned === true || count($facts->candidates) > 0);
                 if ($attempt->query->action->value === 'transfer' && $transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown) { $covered = true; }
                 $proof = ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
@@ -51,9 +51,14 @@ final class OperationReconciliation
             $policy = $op->policy; $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1;
             if ($op->action === 'transfer') {
                 $policy['reconciliation']['transfer_status'] = $transfer->value;
+                if ($op->state === 'held') { $op->update(['state' => 'uncertain', 'safe_code' => 'reconciliation_required']); }
                 if ($transferConflict) {
-                    $policy['reconciliation']['reason'] = 'transfer_rejection_contradiction';
+                    $policy['reconciliation']['reason'] = $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected ? 'transfer_rejection_contradiction' : 'transfer_status_contradiction';
                     $op->update(['policy' => $policy]); return $op;
+                }
+                if ($transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::NeedsAction) {
+                    $policy['reconciliation']['reason'] = 'transfer_needs_action';
+                    $op->update(['state' => 'held', 'safe_code' => 'transfer_needs_action', 'policy' => $policy]); return $op;
                 }
                 if ($transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected) {
                     $op->update(['state' => 'rejected', 'safe_code' => 'transfer_provider_rejected', 'policy' => $policy, 'completed_at' => $this->clock->now(),
@@ -101,14 +106,15 @@ final class OperationReconciliation
     {
         if (!in_array($op->action, ['register', 'transfer'], true)) { return false; }
         if ($op->state === 'running') { return !$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now(); }
-        return $op->state === 'uncertain' || ($op->state === 'pending'
+        return ($op->state === 'held' && $op->safe_code === 'transfer_needs_action') || $op->state === 'uncertain' || ($op->state === 'pending'
             && ($op->attempt['registration']['financial_completion'] ?? null) === 'awaiting_unique_charge');
     }
     private function unresolved(Operation $op): void
     {
         $policy = $op->policy ?? [];
         $policy['reconciliation'] = [...($policy['reconciliation'] ?? []), 'polls' => $policy['reconciliation']['polls'] ?? 0,
-            'staff_alert' => true, 'reason' => ($policy['reconciliation']['polls'] ?? 0) >= 5 ? 'poll_limit_reached' : 'original_attempt_unresolved'];
+            'staff_alert' => true, 'reason' => $op->state === 'held' && $op->safe_code === 'transfer_needs_action' ? 'transfer_needs_action'
+                : (($policy['reconciliation']['polls'] ?? 0) >= 5 ? 'poll_limit_reached' : 'original_attempt_unresolved')];
         $op->update(['policy' => $policy, 'state' => $op->state === 'running' ? 'uncertain' : $op->state,
             'lease_expires_at' => null, 'safe_code' => $op->state === 'running' ? 'stale_claim' : ($op->safe_code ?: 'reconciliation_required')]);
     }

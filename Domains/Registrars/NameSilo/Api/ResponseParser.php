@@ -193,7 +193,7 @@ final class ResponseParser
             'checkRegisterAvailability', 'checkTransferAvailability' => ['available', 'unavailable', 'invalid'],
             'getDomainInfo' => ['created', 'expires', 'status', 'locked', 'private', 'auto_renew', 'traffic_type',
                 'email_verification_required', 'portfolio', 'nameservers', 'contact_ids'],
-            'checkTransferStatus' => ['date', 'status'],
+            'checkTransferStatus' => ['date', 'status', 'expiration'],
             'getAccountBalance' => ['balance'],
             'listOrders' => ['order'],
             'orderDetails' => ['order_number', 'order_date', 'method', 'total', 'order_details'],

@@ -36,7 +36,8 @@ final class ReconciliationEvidence
         return new AttemptEvidence($binding, $query, $op->operation_key, $op->authority_generation, $record, $execution ? SendState::Sent : SendState::PossiblySent,
             $dispatch, $end, expectedCharge: $cost ? new Money($cost['amount'], $cost['currency']) : null,
             seal: DispatchSeal::Sealed, providerReference: $ref, expectedExpiry: $op->expected_expires_at ? new DateEvidence($op->expected_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'original_expected') : null,
-            beforeExpiry: in_array($op->action, ['renew', 'transfer'], true) && ($op->base_expires_at || ($a['transfer_admission']['base_expiry'] ?? null)) ? new DateEvidence($op->action === 'transfer' ? $a['transfer_admission']['base_expiry'] : $op->base_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'acquisition_base') : null, executionFacts: $execution, historyAcceptance: $execution && $ref !== null ? null : HistoryAcceptances::load($binding, $query->action), transferReference: $op->action === 'transfer' ? ($a['evidence']['transferReference'] ?? null) : null);
+            beforeExpiry: in_array($op->action, ['renew', 'transfer'], true) && ($op->base_expires_at || ($a['transfer_admission']['base_expiry'] ?? null)) ? new DateEvidence($op->action === 'transfer' ? $a['transfer_admission']['base_expiry'] : $op->base_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'acquisition_base') : null, executionFacts: $execution, historyAcceptance: $execution && $ref !== null ? null : HistoryAcceptances::load($binding, $query->action), transferReference: $op->action === 'transfer' ? ($a['evidence']['transferReference'] ?? null) : null,
+            expectedPrivacy: $op->action === 'transfer' && is_bool($a['transfer_admission']['privacy'] ?? null) ? $a['transfer_admission']['privacy'] : null);
     }
     /** Exactly one charged original order AND owned full-term expiry; neither read alone is completion. */
     public static function completion(AttemptEvidence $attempt, Evidence $facts, \DateTimeImmutable $now): ?array
@@ -44,6 +45,9 @@ final class ReconciliationEvidence
         if ($attempt->query->action === \Paymenter\Extensions\Servers\Domains\Data\Action::Transfer
             && ($facts->transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Completed || !$attempt->beforeExpiry
                 || ($attempt->binding->registrarKey === 'enom' && (!$attempt->transferReference || $facts->transferReference !== $attempt->transferReference)))) { return null; }
+        if ($attempt->query->action === \Paymenter\Extensions\Servers\Domains\Data\Action::Transfer && $attempt->binding->registrarKey === 'namesilo'
+            && ($facts->domain?->active !== true || $facts->domain->providerAutoRenew !== false
+                || $attempt->expectedPrivacy === null || $facts->domain->privacy !== $attempt->expectedPrivacy)) { return null; }
         if (count($facts->candidates) !== 1) { return null; }
         try { $attempt->executionFacts?->requireAttempt($attempt); } catch (\InvalidArgumentException) { return null; }
         $history = $facts->historyComplete && ($attempt->historyAcceptance?->covers($attempt, $now) ?? false);

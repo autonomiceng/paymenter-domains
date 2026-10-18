@@ -7,5 +7,6 @@ enum TransferStatus: string
     case Unknown = 'unknown';
     case Pending = 'pending';
     case Completed = 'completed';
+    case NeedsAction = 'needs_action';
     case Rejected = 'rejected';
 }

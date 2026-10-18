@@ -1,0 +1,28 @@
+Retrieving Administrative Contact Email
+Missing Authorization Code
+Pending Reply from Administrative Contact
+Transfer Rejected
+Transfer Timed Out
+Transfer Accepted
+Registry Transfer Request Failed
+Pending at Registry
+Registrar Rejected
+Approved
+Approved (Auto)
+Transfer Completed
+Incorrect Authorization Code
+Domain is Locked
+Domain is Private
+Checking Domain Status
+Retrieving Administrative Contact Email (2)
+Submitting Transfer Request to Registry
+On Hold - Created in last 60 days
+On Hold - Transferred in last 60 days
+Registry Rejected
+Domain Transferred Elsewhere
+User Cancelled
+Domain has a pendingDelete status
+Domain has a pendingTransfer status
+Time Out
+Wait Authorization Code
+Transfer price changed
