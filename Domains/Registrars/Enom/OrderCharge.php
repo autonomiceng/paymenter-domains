@@ -19,7 +19,7 @@ final class OrderCharge
     {
         $query = $attempt->query; $header = $order->value('order');
         $id = is_array($header) ? ($header['orderid'] ?? null) : null;
-        if (!in_array($query->action, [Action::Register, Action::Renew], true) || $attempt->binding->registrarKey !== 'enom'
+        if (!in_array($query->action, [Action::Register, Action::Renew, Action::Transfer], true) || $attempt->binding->registrarKey !== 'enom'
             || !is_string($id) || !preg_match('/^[1-9][0-9]{0,19}$/D', $id)
             || ($attempt->providerReference !== null && $id !== $attempt->providerReference)
             || $order->status !== 'success' || !is_array($header) || strtolower($header['result'] ?? '') !== 'true') { return null; }
@@ -52,7 +52,7 @@ final class OrderCharge
             try {
                 if (!is_array($item) || !is_string($item['description'] ?? null)
                     || CanonicalName::normalize($item['description']) === $attempt->query->name
-                    || !in_array(strtolower($item['producttype'] ?? ''), ['register', 'renew'], true)
+                    || !in_array(strtolower($item['producttype'] ?? ''), ['register', 'renew', 'transfer'], true)
                     || strtolower($item['status'] ?? '') !== 'successful' || strtolower($item['orderstatus'] ?? '') !== 'closed') { return false; }
             } catch (\InvalidArgumentException|\TypeError) { return false; }
         }

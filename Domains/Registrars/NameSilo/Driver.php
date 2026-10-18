@@ -169,9 +169,14 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     public function reconcile(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
     {
         $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);
+        $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
+        if ($attempt->query->action === Action::Transfer) {
+            $status = $this->read(Request::transferStatus($attempt->query->name), $context);
+            if ($status->outcome === Outcome::Success && $status->value('status') === 'Pending at Registry') { $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Pending; }
+        }
         $history = (new Correlation($this->client))->inspect($attempt, $context);
         $domain = $this->readDomain($attempt->query->name, $context)->evidence()->domain;
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown, SendState::PossiblySent,
-            ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $history->candidates, historyComplete: $history->historyComplete)));
+            ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $history->candidates, historyComplete: $history->historyComplete, transfer: $transfer)));
     }
 }

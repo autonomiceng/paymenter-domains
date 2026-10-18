@@ -48,9 +48,9 @@ final readonly class RenewalAuthority
                 $annual = $prices->where('term', 1)->where('currency', 'USD')->where('account_fingerprint', $binding->fingerprint)->first();
                 $retail = $annual?->retail !== null ? PricingRule::total(PriceCatalogue::retail($annual->retail), $request->years) : null;
                 // Resolve original registration proof after the latest anchor advances to a renewal.
-                $registration = $all->first(fn ($op) => $op->action === 'register' && $op->state === 'succeeded' && self::resolved($op, $domain, $binding));
+                $registration = $all->first(fn ($op) => in_array($op->action, ['register', 'transfer'], true) && $op->state === 'succeeded' && self::resolved($op, $domain, $binding));
                 $prior = $registration ?? $prior;
-                $admission = $prior->attempt['registration_admission'] ?? [];
+                $admission = $prior->attempt[$prior->action === 'transfer' ? 'transfer_admission' : 'registration_admission'] ?? [];
                 $nonpremium = false;
                 try {
                     $nonpremium = ($admission['premium'] ?? null) === false && ($admission['name'] ?? null) === $domain->domain
@@ -89,7 +89,10 @@ final readonly class RenewalAuthority
     public static function completed(Operation $op, Domain $domain, \Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): bool
     {
         $p = $op->attempt['reconciliation'] ?? [];
-        if ($op->state !== 'succeeded' || !in_array($op->action, ['register', 'renew'], true) || $op->service_id !== $domain->service_id
+        try { if ($op->action === 'transfer' && (($p['transfer_status'] ?? null) !== 'completed'
+            || !($base = $op->attempt['transfer_admission']['base_expiry'] ?? null) || ($p['base_expiry'] ?? null) !== $base
+            || \Carbon\CarbonImmutable::parse($base)->addYearsNoOverflow($op->term)->format('Y-m-d') !== ($p['expiry'] ?? null))) { return false; } } catch (\Throwable) { return false; }
+        if ($op->state !== 'succeeded' || !in_array($op->action, ['register', 'renew', 'transfer'], true) || $op->service_id !== $domain->service_id
             || $op->server_id !== $domain->server_id || $op->registrar_key !== $domain->registrar_key
             || $op->account_fingerprint !== $binding->fingerprint || $op->authority_generation !== $domain->authority_generation
             || $op->confirmed_expires_at?->format('Y-m-d') !== $domain->provider_expires_at?->format('Y-m-d')

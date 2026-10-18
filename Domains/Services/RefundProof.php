@@ -21,7 +21,7 @@ final class RefundProof
         if (array_key_exists('financial_adjustments', $f) && (!is_array($f['financial_adjustments']) || !array_is_list($f['financial_adjustments']))) {
             throw new \DomainException('Unknown adjustment evidence.');
         }
-        if ($op->action === 'transfer' && $a !== []) {
+        if ($op->action === 'transfer' && array_key_exists('transfer_timeout', $a)) {
             if (!self::transferTimeout($op, $d)) { throw new \DomainException('Transfer is not a definitely-unsent timeout.'); }
             return;
         }

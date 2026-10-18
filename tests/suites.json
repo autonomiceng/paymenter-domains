@@ -9,7 +9,8 @@
     "tests/namesilo-read-test.php",
     "tests/reconciliation-provider-test.php",
     "tests/reconciliation-enom-history-test.php",
-    "tests/transfer-rdap-test.php"
+    "tests/transfer-rdap-test.php",
+    "tests/transfer-status-test.php"
   ],
   "contracts": [
     "tests/driver-contract-test.php",
@@ -57,7 +58,9 @@
     "tests/refund-evidence-test.php",
     "tests/refund-renewals-test.php",
     "tests/transfer-inputs-test.php",
-    "tests/transfer-precheck-test.php"
+    "tests/transfer-precheck-test.php",
+    "tests/transfer-dispatch-test.php",
+    "tests/transfer-completion-test.php"
   ],
   "ui": [],
   "runner": [

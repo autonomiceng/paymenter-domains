@@ -18,13 +18,13 @@ final class OperationReconciliation
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
                 $attempt = ReconciliationEvidence::attempt($op, $domain, $binding);
-                if ((!$attempt->executionFacts || $attempt->providerReference === null) && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
+                if ($op->action !== 'transfer' && (!$attempt->executionFacts || $attempt->providerReference === null) && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
                 if (($op->policy['reconciliation']['polls'] ?? 0) >= 5) { return null; }
                 return [$attempt, self::stamp($op, $domain), self::contract($attempt)];
             } catch (\Throwable) { return null; }
         });
         if (!$capture) { return Operation::findOrFail($id); }
-        [$attempt, $stamp, $contract] = $capture; $proof = null; $covered = false;
+        [$attempt, $stamp, $contract] = $capture; $proof = null; $covered = false; $transferConflict = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
         try {
             $context = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock);
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $context);
@@ -33,11 +33,15 @@ final class OperationReconciliation
                 $facts = $result->result()->evidence();
                 $covered = $facts->domain?->owned === true && $facts->domain->expiry !== null
                     && ($facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null && count($facts->candidates) > 0));
+                $transfer = $facts->transfer;
+                $transferConflict = $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected
+                    && ($facts->domain?->owned === true || count($facts->candidates) > 0);
+                if ($attempt->query->action->value === 'transfer' && $transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown) { $covered = true; }
                 $proof = ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
             }
         } catch (\Throwable) {} // Safe retained alert; transport/contract failures do not manufacture facts.
         if (!$covered) { return Operation::findOrFail($id); }
-        return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof): Operation {
+        return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $transfer, $transferConflict): Operation {
             if (!$this->eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
@@ -45,6 +49,18 @@ final class OperationReconciliation
                 $binding->requireMatch($attempt->binding);
             } catch (\Throwable) { return $op; }
             $policy = $op->policy; $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1;
+            if ($op->action === 'transfer') {
+                $policy['reconciliation']['transfer_status'] = $transfer->value;
+                if ($transferConflict) {
+                    $policy['reconciliation']['reason'] = 'transfer_rejection_contradiction';
+                    $op->update(['policy' => $policy]); return $op;
+                }
+                if ($transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected) {
+                    $op->update(['state' => 'rejected', 'safe_code' => 'transfer_provider_rejected', 'policy' => $policy, 'completed_at' => $this->clock->now(),
+                        'attempt' => [...$op->attempt, 'transfer_terminal' => ['status' => 'rejected', 'send_state' => 'sent', 'operation_key' => $op->operation_key]]]);
+                    $domain->update(['status' => 'transfer_rejected']); return $op; // Sent rejection never grants a negative proof or credit.
+                }
+            }
             if (!$proof) {
                 $policy['reconciliation']['reason'] = $policy['reconciliation']['polls'] >= 5 ? 'poll_limit_reached' : 'original_attempt_unresolved';
                 $op->update(['policy' => $policy]); return $op;
@@ -83,7 +99,7 @@ final class OperationReconciliation
     }
     private function eligible(Operation $op): bool
     {
-        if ($op->action !== 'register') { return false; }
+        if (!in_array($op->action, ['register', 'transfer'], true)) { return false; }
         if ($op->state === 'running') { return !$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now(); }
         return $op->state === 'uncertain' || ($op->state === 'pending'
             && ($op->attempt['registration']['financial_completion'] ?? null) === 'awaiting_unique_charge');
@@ -99,7 +115,7 @@ final class OperationReconciliation
     private function authority($op, $domain, $all, $funding, $server, $account)
     {
         $this->bindings->requireReadableLocked($server, $account); $binding = CatalogueAcceptances::binding($account);
-        if ($domain->status !== 'registration_pending' || !$domain->billing_managed || $domain->reservation_name !== $domain->domain
+        if ($domain->status !== ($op->action === 'transfer' ? 'transfer_pending' : 'registration_pending') || !$domain->billing_managed || $domain->reservation_name !== $domain->domain
             || $domain->provider_expires_at !== null || $domain->provider_domain_id !== null || $domain->provider_order_id !== null
             || $op->confirmed_expires_at !== null || $op->authority_generation !== $domain->authority_generation
             || $op->account_fingerprint !== $binding->fingerprint || $domain->account_fingerprint !== $binding->fingerprint

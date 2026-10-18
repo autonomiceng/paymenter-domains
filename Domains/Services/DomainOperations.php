@@ -39,11 +39,13 @@ final class DomainOperations
     public function execute(int $id): Operation
     {
         OperationClaims::outside();
+        $route = Operation::findOrFail($id);
+        if ($route->action === 'transfer' && !TransferInputs::validCode($route->payload['epp'] ?? null)) { return $route; }
         if ($this->writer instanceof RegistrationBridge) { $this->writer->checkComposition($this->preflight); }
         if ($this->writer instanceof WriteGate) {
             try {
-                $this->writer->requireEnabled(\Paymenter\Extensions\Servers\Domains\Data\Action::Register);
-                if (in_array(Operation::findOrFail($id)->state, ['queued', 'awaiting_payment'], true)) { $this->writer->reserve(); }
+                $this->writer->requireEnabled(\Paymenter\Extensions\Servers\Domains\Data\Action::from($route->action));
+                if (in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { $this->writer->reserve(); }
             }
             catch (WriteHeld $held) { return $this->claims->holdUnclaimed($id, $held->reason); }
         }
@@ -53,8 +55,9 @@ final class DomainOperations
         $result = null;
         try {
             $deadline = $op->started_at->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
-            $context = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget(ExecuteOperation::REQUEST_LIMIT), $this->clock);
+            $context = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget($op->action === 'transfer' ? 12 : ExecuteOperation::REQUEST_LIMIT), $this->clock);
             $ready = $this->preflight->inspect($op, $domain, $context);
+            if ($this->preflight instanceof TransferPreflight) { $ready = $this->preflight->inspect($op, $domain, $context); }
             if ($context->budget->remaining() < 1) { throw new \DomainException('No dispatch request budget remains.'); }
             $sealed = $this->claims->seal($op, $ready, $this->preflight instanceof SealPreflight ? $this->preflight : null,
                 $this->writer instanceof WriteGate ? $this->writer : null);
@@ -66,7 +69,7 @@ final class DomainOperations
                 $op->attempt['claim_key'], $op->authority_generation, 'operation:'.$op->id.':seal', OperationClaims::payloadDigest($op), $ready->cost);
             $this->grants[$admitted] = ['context' => $context, 'consumed' => false, 'sealed' => $op, 'ready' => $ready];
             try {
-                $response = $this->writer->register($admitted, $context);
+                $response = $op->action === 'transfer' ? $this->writer->transferIn($admitted, $context) : $this->writer->register($admitted, $context);
                 if (!$this->grants[$admitted]['consumed']) { throw new \LogicException('Writer omitted engine authority consumption.'); }
                 $binding->requireMatch($response->binding); $result = $response;
             } finally { unset($this->grants[$admitted]); }

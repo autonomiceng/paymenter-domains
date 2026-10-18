@@ -40,6 +40,9 @@ final class RegistrarRequest implements \JsonSerializable
         return new self('getDomainInfo', ['domain' => \Paymenter\Extensions\Servers\Domains\Data\CanonicalName::normalize($domain)]);
     }
 
+    public static function transferStatus(string $domain): self
+    { return new self('checkTransferStatus', ['domain' => \Paymenter\Extensions\Servers\Domains\Data\CanonicalName::normalize($domain)]); }
+
     public static function balance(): self { return new self('getAccountBalance', []); }
 
     public static function listOrders(?string $from = null, ?string $to = null): self

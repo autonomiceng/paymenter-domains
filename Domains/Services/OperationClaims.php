@@ -31,7 +31,7 @@ final class OperationClaims
             });
             return null;
         }
-        if (!in_array($route->state, ['queued', 'awaiting_payment'], true)) { return null; }
+        if (!in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { return null; }
         return $this->locked($id, function ($op, $domain, $all, $funding, $server, $account): ?array {
             if ($op->state === 'running') {
                 if (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now()) {
@@ -39,7 +39,8 @@ final class OperationClaims
                 }
                 return null; // Expiry is reconciliation work, even without a seal; never reclaim.
             }
-            if (!in_array($op->state, ['queued', 'awaiting_payment'], true)) { return null; }
+            if (!in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { return null; }
+            if ($op->action === 'transfer' && !TransferInputs::validCode($op->payload['epp'] ?? null)) { return null; }
             if (!self::virgin($op)) {
                 $op->update(['state' => 'uncertain', 'safe_code' => 'prior_attempt', 'lease_expires_at' => null]); return null;
             }
@@ -91,6 +92,7 @@ final class OperationClaims
                 $attempt['registration_admission'] = ['premium' => false, 'name' => $ready->query->name,
                     'years' => $ready->query->years, 'cost' => $attempt['authorized_cost']];
             }
+            if ($ready->query->action === Action::Transfer) { $attempt['transfer_admission'] = $ready->transfer; }
             $op->update(['attempt' => $attempt, 'funding' => [...$op->funding, 'seal' => $paid]]);
             return $op;
         });
@@ -138,9 +140,10 @@ final class OperationClaims
             Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
             $all = Operation::where('domain_id', $route->domain_id)->orderBy('id')->lockForUpdate()->get();
             $op = $all->firstWhere('id', $route->id);
+            if ($op->action === 'transfer' && $op->state === 'awaiting_code' && !TransferInputs::validCode($op->payload['epp'] ?? null)) { return $op; }
             if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
                 $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
-            } elseif (in_array($op->state, ['queued', 'awaiting_payment'], true) && self::virgin($op)) {
+            } elseif (in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true) && self::virgin($op)) {
                 $op->update(['state' => 'held', 'safe_code' => $reason]);
             }
             return $op;
@@ -193,7 +196,7 @@ final class OperationClaims
     /** Independent presence guard: null charge/refund/candidate facts are still uncertainty. */
     private static function requireNoSendEvidence(Operation $op): void
     {
-        if (array_diff(array_keys($op->attempt ?? []), ['claim_key', 'seal', 'send_state', 'dispatch_attempted_at', 'authorized_cost', 'registration_admission'])
+        if (array_diff(array_keys($op->attempt ?? []), ['claim_key', 'seal', 'send_state', 'dispatch_attempted_at', 'authorized_cost', 'registration_admission', 'transfer_admission'])
             || array_key_exists('refund', $op->funding ?? []) || array_key_exists('actual', $op->cost ?? [])
             || array_key_exists('execution', $op->cost ?? []) || array_key_exists('dispatch_attempted_at', $op->policy ?? [])) {
             throw new \DomainException('Prior operation evidence blocks dispatch.');
@@ -207,7 +210,7 @@ final class OperationClaims
         if ($op->account_fingerprint !== $binding->fingerprint || $domain->account_fingerprint !== $binding->fingerprint
             || $op->registrar_key !== $binding->registrarKey || $op->server_id !== $binding->serverId
             || $domain->registrar_key !== $binding->registrarKey || $domain->server_id !== $binding->serverId
-            || $op->action !== 'register' || $domain->status !== 'registration_pending' || !$domain->billing_managed
+            || !in_array($op->action, ['register', 'transfer'], true) || $domain->status !== ($op->action === 'transfer' ? 'transfer_pending' : 'registration_pending') || !$domain->billing_managed
             || $domain->reservation_name !== $domain->domain || $domain->provider_domain_id !== null
             || $domain->provider_expires_at !== null || $domain->provider_order_id !== null || $op->provider_order_id !== null
             || $op->confirmed_expires_at !== null
@@ -216,6 +219,8 @@ final class OperationClaims
                 || $other->authority_generation !== $op->authority_generation || $other->service_id !== $op->service_id))) {
             throw new \DomainException('Acquisition authority is unavailable.');
         }
+        if ($op->action === 'transfer' && ($op->term !== 1 || !TransferInputs::validCode($op->payload['epp'] ?? null)
+            || !TransferInputs::deadline($op, $this->clock->now()))) { throw new \DomainException('Transfer inputs incomplete.'); }
         $op->setRelation('domain', $domain); // Contact validation consumes the already locked holding.
         return [$binding, $funding->requireInitial($op, $domain)];
     }

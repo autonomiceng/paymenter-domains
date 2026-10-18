@@ -13,10 +13,10 @@ abstract class RegistrationTransport
     final public function register(AdmittedOperation $operation, RequestContext $context, DomainOperations $engine,
         WriteFeatures $features, WriteAcceptance $acceptance): DriverResult
     {
-        OperationClaims::outside(); $features->requireEnabled(Action::Register);
+        OperationClaims::outside(); $action = $this instanceof TransferProtocol ? Action::Transfer : Action::Register; $features->requireEnabled($action);
         if ($this->flight !== null) { throw new \DomainException('Registration is already in flight.'); }
         $operation->binding->requireMatch($context->binding);
-        if ($operation->query->action !== Action::Register || $context->origin !== RequestOrigin::Background) {
+        if ($operation->query->action !== $action || $context->origin !== RequestOrigin::Background) {
             throw new \DomainException('Invalid registration dispatch context.');
         }
         $payload = $engine->consume($operation, $context, $acceptance, $features, $this);

@@ -140,6 +140,7 @@ final class ResponseParser
             'getDomainInfo' => isset($reply['created'], $reply['expires'], $reply['status'])
                 && is_string($reply['created']) && is_string($reply['expires']) && is_string($reply['status'])
                 && $this->flags($reply),
+            'checkTransferStatus' => is_string($reply['date'] ?? null) && is_string($reply['status'] ?? null) && is_string($reply['message'] ?? null),
             'getAccountBalance' => $this->amount($reply['balance'] ?? null),
             'listOrders' => isset($reply['order']) && is_array($reply['order']),
             'orderDetails' => $this->identifier($reply['order_number'] ?? null) === $request->parameters()['order_number']
@@ -192,6 +193,7 @@ final class ResponseParser
             'checkRegisterAvailability', 'checkTransferAvailability' => ['available', 'unavailable', 'invalid'],
             'getDomainInfo' => ['created', 'expires', 'status', 'locked', 'private', 'auto_renew', 'traffic_type',
                 'email_verification_required', 'portfolio', 'nameservers', 'contact_ids'],
+            'checkTransferStatus' => ['date', 'status'],
             'getAccountBalance' => ['balance'],
             'listOrders' => ['order'],
             'orderDetails' => ['order_number', 'order_date', 'method', 'total', 'order_details'],

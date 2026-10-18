@@ -16,7 +16,7 @@ final readonly class TransferPrecheck
         $settings = Server::findOrFail($s->serverId)->settings()->whereIn('key',
             ['domains_transfer_endings', 'domains_transfer_creation_lock_days', 'domains_transfer_previous_lock_days'])->when($locked, static fn ($q) => $q->lockForUpdate())->get()->keyBy('key');
         $endings = $settings->get('domains_transfer_endings')?->value;
-        if ($s->registrar !== 'enom' || $s->action !== 'transfer' || $s->term !== 1 || !is_string($endings)
+        if (!in_array($s->registrar, ['enom', 'namesilo'], true) || $s->action !== 'transfer' || $s->term !== 1 || !is_string($endings)
             || !in_array($s->tld, array_map('trim', explode(',', $endings)), true)
             || in_array(substr($s->tld, (int) strrpos('.'.$s->tld, '.')), ['uk', 'ca', 'eu', 'ai', 'de'], true)
             || !RegistryInputs::supported($s->registrar, $s->tld, $tld->registry_fields)) { throw new \DomainException('Transfer ending is not accepted.'); }
@@ -37,7 +37,8 @@ final readonly class TransferPrecheck
             throw new \DomainException('Transferability could not be confirmed.');
         }
         $rdap = $this->rdap->precheck($name, $days[0], $days[1], $context->now(), $context);
+        if (!$rdap['allowed'] && $rdap['code'] === 'transfer_not_registered') { throw new WriteHeld('transfer_not_registered'); }
         if (!$rdap['allowed'] || $context->now() >= $context->deadline) { throw new \DomainException($rdap['code'] ?? 'Transfer check expired.'); }
-        return ['rules' => $days, 'rdap_unchecked' => $rdap['warning'] !== null];
+        return ['rules' => $days, 'rdap_unchecked' => $rdap['warning'] !== null, 'base_expiry' => $rdap['expires_at']];
     }
 }

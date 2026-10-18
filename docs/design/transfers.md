@@ -7,8 +7,8 @@ Reference checkout tip `f7175ff` was inspected; frozen444f31c supplies imported 
 Transfer availability uses the neutral reader's `availability(Action::Transfer)`:
 `available=true` means transferable, with independent explicit `premium=false`.
 Enom requires registered211 plus positive Transferable, with premium/platinum/EAP
-exclusions. NameSilo is structurally blocked even with premium=0;28 owns independent ordinary
-transfer proof. No transfer writes or completion/renewal anchors are supplied here.
+exclusions. Slice27 structurally blocked NameSilo even with premium=0; slice28 below supersedes
+that gate with explicit independent ordinary evidence and adds dormant dispatch/anchors.
 
 TransferPrecheck requires an explicit account `domains_transfer_endings` allowlist
 (default empty), annual term, ordinary ASCII identity and empty accepted registry
@@ -65,3 +65,87 @@ transfer-completed anchors.31/35 own fair scheduling, held readmission and polic
 39 sole installed hooks/queues, production acceptance, MariaDB paired races/EXPLAIN,
 settings lock writers and the exact native payment-transition integration. No network,
 installation, concurrency or provider acceptance is established by offline SQLite.
+
+## Dispatch and observation (slice28)
+
+TransferProtocol marks the transfer action on the existing one-use transport. A
+registration permission, descriptor, profile handle or saved seal grants no transfer
+send. The bound bridge requires the exact TransferPreflight/features/acceptance and
+NameSilo profile service. Both protocols send one transfer write, with no retries or
+ancillary mutations. Enom TP_CreateOrder retains PreConfig=0, Lock=1, Renew=0,
+UseCreditCard=no and all four frozen contact roles; custom DNS/privacy are held.
+NameSilo transferDomain uses a fresh non-default four-role profile, explicit privacy
+and auto_renew=0, required external nameservers and opaque encoded auth bytes.
+
+Paid awaiting-code operations with complete inputs can be explicitly executed. The
+original verified paid_at must exist; existing saved codes remain usable after the
+edit cutoff. Missing codes remain editable, without an attempt or account write-slot reservation. Two unlocked fresh
+provider/RDAP observations precede the seal; current funding, setup, allowlist/lock
+settings, acceptance, account and immutable desired state are rechecked under the
+existing ordered financial prefix at seal and consumption. No seller dependency is
+introduced. Transfer budgets allow12 requests (including two profile calls and the
+initial RDAP bootstrap) within the same300-second execution/360-second lease;
+every exchange remains capped at25seconds and the actual remaining deadline.
+
+The original seal stores immutable transfer_admission: explicit premium=false,
+name/year/cost, observed lock rules, base_expiry and rdap_unchecked. Missing RDAP
+expiry stays null, with explicit unchecked provenance; it permits advisory dispatch
+but cannot prove a subsequent added year. NameSilo's explicit availability premium=0
+is independent ordinary-name proof; missing premium remains closed, regardless of
+account prices or Active status. This supersedes slice27's structural NameSilo gate.
+
+Enom observation accepts only a single original TransferOrderID and exact domain.
+Header3/detail5 completes; header2 plus an enumerated source failed detail rejects;
+source pending header/detail pairs (including draft5/detail100) remain pending.
+Contradictory, missing, multi-domain, wrong-ID and unknown states remain unresolved.
+TransferOrderID never becomes billing OrderID. An independently accepted encrypted
+`domains_history_acceptance_transfer` contract (`*_transfer_v1`) must prove complete
+USD history, timezone, lag and retention. Exactly one charged original domain/action/
+year order inside the original send window, account ownership and full added-year
+expiry (calendar clamp) are required together. Enom order expiry must corroborate
+owned readback. Completion atomically records actual charge, native active/null
+expiry, confirmed revision and the transfer billing anchor consumed by24/25. Original
+ordinary acquisition proof remains available after later renewal anchors advance;
+NameSilo renewal Cost remains closed if that proof or matching actual cost is absent.
+
+NameSilo checkTransferStatus currently recognizes only documented Pending at Registry.
+Its unestablished terminal vocabulary remains closed: Completed/Failed/Active strings,
+charge or owned expiry alone cannot complete/reject. Controlled acceptance39 must
+establish terminal semantics before extending this mapping; no terminal word is
+invented. Fallback301/302 acknowledgements remain unresolved and never trigger replay.
+
+A fresh domain-endpoint404 retains transfer_not_registered before sealing; generic
+terminal encoding and code replacement stay closed for this staff35 disposition.
+Only exact definitely-unsent pre-seal terminal proof encoded through
+OperationTerminalProof qualifies for26 credit;27 timeout proof remains distinct.
+Sent terminal rejection is retained with its reservation and an unresolved financial
+alert, never credited or released. This deliberately tightens source sent-rejection
+credit behavior. Five covered observations and audited bounded resume remain the22
+policy;31/35 own fair scheduling/readmission,29/30 correction writes and38 delivery.
+No installed composition, route, queue, scheduler, migration or production acceptance
+is supplied.39 must verify shared cache slots, native locks, provider contracts and
+paired MariaDB races;41 must positively map these retained proofs during conversion.
+
+
+### Retained operational gates from slice28 review
+
+Normal matching Pending currently consumes the inherited five-covered-poll cap and
+raises an unresolved staff alert; twenty audited resumes bound lifetime observation.
+31/35 must define a separate healthy-pending window, alert policy and fair account
+budget before scheduling ordinary multi-day transfers. This slice is dormant, not
+operational acceptance.31/39 also own staff recovery for lost Enom TransferOrderID;
+no domain-only recovery exists. NameSilo terminal completion remains closed39.
+
+39 must accept strict baseline-plus-one-year date matching against old-registrar
+renewal races, auto-renew grace, timezone boundaries and absent Enom order expiry.
+These fail closed today. Twelve25-second requests exhaust the300-second execution
+budget without the older ten-request margin; seal/send still require25seconds of
+remaining execution time.39 must validate budget headroom against real timings.
+
+26/36 must supply audited disposition for paid unclaimed held transfers with a
+saved code: neither missing-code timeout nor the claim-bound terminal encoder can
+refund them today. Sent rejections retain reservations indefinitely. This supersedes
+27's proposed provider-proven sent-rejection credit gate:35/36 own disposition,
+without treating sent evidence as unsent;31 owns filtering these rows from repeated
+refund scans. Rejected status combined with owned readback or any charge candidate
+remains uncertain with a contradiction alert, never terminal.

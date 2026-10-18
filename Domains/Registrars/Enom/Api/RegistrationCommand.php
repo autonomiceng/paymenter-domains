@@ -6,6 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api;
 enum RegistrationCommand: string
 {
     case Purchase = 'Purchase';
+    case Transfer = 'TP_CreateOrder';
     case Renew = 'Extend';
     case GraceRenew = 'UpdateExpiredDomains';
     case Nameservers = 'ModifyNS';

@@ -8,7 +8,7 @@ final readonly class DispatchReadiness
 {
     public function __construct(public AccountBinding $binding, public Query $query, public Capabilities $capabilities,
         public Money $cost, public bool $eligible, public ?bool $premium,
-        public \DateTimeImmutable $observedAt, public \DateTimeImmutable $validUntil, public string $payloadDigest) {}
+        public \DateTimeImmutable $observedAt, public \DateTimeImmutable $validUntil, public string $payloadDigest, public ?array $transfer = null) {}
 
     public function requireCurrent(AccountBinding $binding, Query $query, string $digest, \DateTimeImmutable $now): void
     {

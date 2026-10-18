@@ -214,3 +214,10 @@ fixed payment cutoff/recovery, contact isolation and transfer-specific26 timeout
 transfer-rdap-test ports frozen444f31c/d2c55e2 bootstrap/domain404, narrow TLS-close,
 lock-day/calendar/status/unsafe-endpoint scenarios. All exchanges are synthetic; no transfer
 write, HTTP route/UI, scheduler, provider/MariaDB or installed-runtime acceptance is claimed.
+
+Slice28 adds transfer-status, transfer-dispatch and transfer-completion suites: both
+bounded one-use transfer protocols, repeated provider/RDAP admission, explicit premium
+proof, fixed input/funding gates, status contradictions, unique original charge plus
+full added-year/ownership proof, native funding races, transfer renewal anchors and
+unsent-only credit. NameSilo terminal vocabulary stays unresolved under the current
+public contract. Exchanges are injected; no provider or installed acceptance is claimed.

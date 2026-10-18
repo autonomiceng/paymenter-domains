@@ -295,6 +295,10 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
                 ($expiry['provider_reference'] ?? null) === $domain->providerReference ? ($expiry['expiry'] ?? null) : null,
                 $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference);
         }
+        $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
+        if ($attempt->query->action === Action::Transfer && is_string($attempt->transferReference) && preg_match('/^[1-9][0-9]{0,19}$/D', $attempt->transferReference)) {
+            $transfer = TransferState::read($attempt, $this->read(ReadCommand::Transfer, ['TransferOrderID' => $attempt->transferReference], $context));
+        }
         $candidates = [];
         if ($attempt->executionFacts && $attempt->providerReference) {
             $charge = $this->orderCharge($attempt, $attempt->executionFacts, $context);
@@ -306,6 +310,6 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             $facts = $history->inspect($attempt, $context); $candidates = $facts->candidates; $complete = $facts->historyComplete;
         }
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown,
-            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete)));
+            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference)));
     }
 }

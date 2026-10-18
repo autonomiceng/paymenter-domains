@@ -42,8 +42,8 @@ $nsBinding=new AccountBinding('namesilo',$ns->id,Environment::Test,'account-name
 $nsDriver=new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client($nsBinding,'synthetic',$wire));
 $nsContext=new RequestContext($nsBinding,RequestOrigin::Interactive,$now->modify('+25 seconds'),new RequestBudget(3),$clock);
 same(false,$nsDriver->availability(new Query('x.com',Action::Transfer,1),$nsContext)->evidence()->premium,'Synthetic NameSilo reply carries premium=0');
-commerceReject(fn()=>(new TransferPrecheck($rdap))->check('x.com',$nsSelection,$nsDriver,$nsContext));
-commerceReject(fn()=>$eligibility->observe('x.com',$nsSelection,[1]));
+same(false,(new TransferPrecheck($rdap))->check('x.com',$nsSelection,$nsDriver,$nsContext)['rdap_unchecked'],'Explicit NameSilo ordinary transfer evidence accepted');
+$reads->premium=null; commerceReject(fn()=>$eligibility->observe('x.com',$nsSelection,[1])); $reads->premium=false;
 $budget=new RequestBudget(1);$context=new RequestContext(new AccountBinding('enom',1,Environment::Test,'synthetic'),RequestOrigin::Interactive,$now->modify('+25 seconds'),$budget,$clock);
 $bounded=0;$fresh=new Rdap(static function()use(&$bounded){$bounded++;return ['status'=>200,'body'=>'{"services":[[["com"],["https://rdap.example.com/"]]]}'];});
 $r=$fresh->precheck('x.com',60,60,$now,$context);same(1,$bounded,'Neutral budget prevents second wire call');expect($r['warning']!==null,'Exhausted lookup stays unknown');

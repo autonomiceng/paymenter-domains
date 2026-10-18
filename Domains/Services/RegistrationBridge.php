@@ -17,13 +17,18 @@ abstract class RegistrationBridge implements AdmittedRegistrarDriver, WriteGate
     final public function reserve(): void { OperationClaims::outside(); $this->accepted->reserve($this->binding); }
     final public function requireAtSeal(Operation $op, Domain $domain, DispatchReadiness $ready): void
     {
-        $this->requireEnabled(Action::Register); $this->binding->requireMatch($ready->binding);
+        $this->requireEnabled($ready->query->action); $this->binding->requireMatch($ready->binding);
         ContactSetup::requireReady($op);
         $this->accepted->requireCurrent($this->binding, OperationClaims::query($op, $domain), $op, true);
     }
     final public function register(AdmittedOperation $op, RequestContext $context): DriverResult
     {
-        OperationClaims::outside(); $this->requireEnabled(Action::Register);
+        return $this->dispatch($op, $context, Action::Register);
+    }
+    private function dispatch(AdmittedOperation $op, RequestContext $context, Action $action): DriverResult
+    {
+        OperationClaims::outside(); $this->requireEnabled($action);
+        if ($op->query->action !== $action || ($this->transport->getValue() instanceof \Paymenter\Extensions\Servers\Domains\Contracts\TransferProtocol) !== ($action === Action::Transfer)) { throw new \DomainException('Writer action mismatch.'); }
         $this->binding->requireMatch($op->binding); $this->binding->requireMatch($context->binding);
         $engine = ($this->engine)();
         if (!$engine instanceof DomainOperations) { throw new \DomainException('No engine writer scope.'); }
@@ -39,12 +44,12 @@ abstract class RegistrationBridge implements AdmittedRegistrarDriver, WriteGate
     {
         if ($features !== $this->features || $accepted !== $this->accepted || $transport !== $this->transport->getValue()
             || !$transport instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol || !$transport->bindsTo($this->binding)
-            || !$preflight instanceof RegistrationPreflight || !$preflight->usesPolicy($features, $accepted, $transport)) {
+            || !($transport instanceof \Paymenter\Extensions\Servers\Domains\Contracts\TransferProtocol ? $preflight instanceof TransferPreflight : $preflight instanceof RegistrationPreflight) || !$preflight->usesPolicy($features, $accepted, $transport)) {
             throw new \DomainException('Registration policy composition is unavailable.');
         }
     }
     final public function transferIn(AdmittedOperation $op, RequestContext $context): DriverResult
-    { $this->requireEnabled(Action::Transfer); throw new WriteHeld('write_acceptance_required'); }
+    { return $this->dispatch($op, $context, Action::Transfer); }
     final public function renew(AdmittedOperation $op, RequestContext $context): DriverResult
     { $this->requireEnabled(Action::Renew); throw new WriteHeld('write_acceptance_required'); }
     final public function __debugInfo(): array { return ['registrar' => $this->binding->registrarKey]; }

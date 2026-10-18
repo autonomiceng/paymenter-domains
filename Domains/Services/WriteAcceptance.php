@@ -26,14 +26,14 @@ final readonly class WriteAcceptance
         $accepted = CatalogueAcceptances::load($binding, $lock);
         $parts = CanonicalName::parse($query->name, array_keys($accepted->endings));
         $row = $accepted->endings[$parts['tld']];
-        if (!in_array($query->years, $row['register'], true) || $row['renew'] !== [1] || !$row['renewal_safe'] || !$row['registry']) {
+        if (!in_array($query->years, $row[$query->action->value], true) || $row['renew'] !== [1] || !$row['renewal_safe'] || !$row['registry']) {
             throw new WriteHeld('write_acceptance_required');
         }
         if ($profile && $binding->registrarKey === 'namesilo' && !($this->profileProofCheck instanceof RegistrationProfiles
             ? $this->profileProofCheck->hasProof($op) : ($this->profileProofCheck && ($this->profileProofCheck)($op) === true))) {
             throw new WriteHeld('contact_profile_proof_required');
         }
-        return new Capability(Support::Supported, $row['register']);
+        return new Capability(Support::Supported, $row[$query->action->value]);
     }
     /** Reserve a local account slot without waiting or holding a database lock over I/O. */
     public function reserve(AccountBinding $binding): void
