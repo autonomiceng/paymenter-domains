@@ -611,3 +611,39 @@ with no send/result/charge/candidate/refund facts. Expired claims, seals and pre
 become unsent. Reservation release remains solely in `DomainReservations`; no sent/provider rejection
 or no-charge proof is synthesized from history. Refund-once26, renewal23–25, transfers27–28, installed
 queue/scheduler acceptance39 and shared refresh/correction execution31 remain separate.
+
+### Held-domain renewal admission (slice23)
+
+`RenewalAdmission::check` accepts an expected domain/generation/confirmed revision/provider ID/expiry
+and exact term. Its own private ordered native-owner/service/product/plan/cancellation/property/product-settings/server/
+account/settings/TLD/prices/domain/operations prefix validates current holding authority and slice22's
+persisted original-attempt/completion proof. It never calls the generic trusted-writer lock seam.
+A fresh bounded read window (10 requests/250 seconds, quote lifetime at most 120 seconds) runs outside
+transactions; then the prefix retakes locks and rejects changed anchors, authority or settings,
+including same-account credential rotation. Seller and new-sale enable flags cannot strand holders.
+
+Only proven ordinary or explicitly accepted one-year grace states with matching owned saved ID/expiry,
+provider auto-renew off, nonpremium exact USD term cost and sufficient USD balance can pass.
+Explicit Enom restoration inventory is a typed refusal; unknown states and NameSilo's unproven
+restore-safe renewal path remain closed. Account USD/batch/rate acceptance defaults closed and shares
+slice20's nonblocking account slot. Below-cost renewal produces a staff alert, never a retail floor.
+Neutral typed decisions are server-only prospective facts: they create no obligation, funding/dispatch
+grant, invoice, operation or expiry change. Billing24 and paid/complimentary authority, caps and
+execution25 must revalidate independently; transfer-completion anchors extend the proof seam in28.
+
+Before composing billing24/execution25, extend `RenewalRequest` with the expected obligation key.
+Exempt exactly that matching unsealed obligation from sibling refusal, and accept the latest proven
+completed renewal anchor; registration-only proof and register-only terminal safety are insufficient
+for repeated renewals. Conversion41 must supply independently accepted converted-holding anchors.
+Invoice24 locks belong between owner and service, matching `InvoiceFunding`; obligations fix the
+term (including accepted additional years) independently of the annual native plan.
+Admission reserves the shared account slot once for that attempt: execution25 must carry that
+reservation through its final rechecks, never reserve again for the same immediate send. A separate
+attempt needs a new slot. Constructor account/grace acceptance is internal only; wiring39 must read
+it from locked binding-scoped settings and recheck it at the end of the window.
+Immutable completed-history proof reconstruction currently fails closed if current history acceptance
+is malformed/foreign; holder-safe recovery/acceptance tooling remains37/39. Neutral authority/read
+codes also cover transient database/processing and mismatched-result failures; retry policy31 and
+staff diagnostics35 must distinguish these without exposing exceptions. The retained retail comparison
+is an advisory margin alert only; billing24 must use the validated holding renewal-price API (USD,
+positive retail, term-total unit) and emit a staff alert when retail/margin is unknown.

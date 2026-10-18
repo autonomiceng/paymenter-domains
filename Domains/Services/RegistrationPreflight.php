@@ -41,9 +41,8 @@ final readonly class RegistrationPreflight implements SealPreflight
             if ($result->disposition !== Disposition::Accepted) { throw new WriteHeld('write_acceptance_required'); }
         }
         $q = $quote->evidence()->quote; $funds = $balance->evidence()->balance; $facts = $availability->evidence();
-        if (!$q || !$query->matches($q->query) || !$q->cost || $q->cost->currency !== 'USD' || !$funds || $funds->currency !== 'USD'
-            || $facts->available !== true || $facts->premium !== false || $q->observedAt < $observed || $q->observedAt > $context->now()
-            || !$q->validUntil || $q->validUntil <= $context->now() || strcmp(self::decimal($funds->amount), self::decimal($q->cost->amount)) < 0) {
+        if (!WriteMoney::cost($q, $query, $observed, $context->now())
+            || $facts->available !== true || $facts->premium !== false || !WriteMoney::sufficient($funds, $q->cost)) {
             throw new WriteHeld('write_acceptance_required');
         }
         return new DispatchReadiness($context->binding, $query,
@@ -54,9 +53,5 @@ final readonly class RegistrationPreflight implements SealPreflight
     {
         $this->features->requireEnabled($ready->query->action); ContactSetup::requireReady($op);
         $this->accepted->requireCurrent($ready->binding, OperationClaims::query($op, $domain), $op, true);
-    }
-    private static function decimal(string $amount): string
-    {
-        [$whole, $fraction] = explode('.', $amount); return str_pad($whole, 18, '0', STR_PAD_LEFT).str_pad($fraction, 6, '0');
     }
 }

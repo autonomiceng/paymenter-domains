@@ -74,6 +74,8 @@ final class Renewal
         if (count($matches) !== 1 || ($matches[0]['domainnameid'] ?? null) !== $domain->providerReference) { return RenewalStatus::Unknown; }
         $row = $matches[0]; $state = is_string($row['status'] ?? null) ? strtolower($row['status']) : null;
         $date = Expiry::read(new ProtocolResult('success', data: ['expirationdate' => $row['expiration-date'] ?? null]));
+        if (!$date || substr($date->value, 0, 10) !== substr($expiry->value, 0, 10)) { return RenewalStatus::Unknown; }
+        if (in_array($state, ['redemption', 'redemptionperiod', 'restorable'], true)) { return RenewalStatus::Redemption; }
         return $state === 'expired' && $date && substr($date->value, 0, 10) === substr($expiry->value, 0, 10)
             ? RenewalStatus::Grace : RenewalStatus::Unknown;
     }

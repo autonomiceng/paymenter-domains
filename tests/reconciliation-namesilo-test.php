@@ -50,4 +50,15 @@ same('901', $result->provider_order_id, 'Read-confirmed order persisted'); same(
 same(null, $result->attempt['registration']['order_reference'], 'Original missing order ID remains immutable');
 same('registration_correction_required', $result->safe_code, 'Correction work retained after financial completion');
 $before = $wire->calls; $reconcile->run($op->id); same($before, $wire->calls, 'No replay or repeated provider read after completion');
+// Even an owned, uniquely completed holding cannot infer renewal/restore safety from Active.
+$renewBindings = new AccountBindings($registry);
+$admission = new \Paymenter\Extensions\Servers\Domains\Services\RenewalAdmission(
+    new \Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority($renewBindings, $clock), $renewBindings,
+    new \Paymenter\Extensions\Servers\Domains\Services\RenewalAcceptance($binding, true, true, 25, true), $clock);
+$holding = $result->domain->fresh(); Illuminate\Support\Facades\Cache::flush(); $before = $wire->calls;
+$decision = $admission->check(new \Paymenter\Extensions\Servers\Domains\Data\RenewalRequest($holding->id,
+    $holding->authority_generation, $holding->confirmed_revision, '2027-10-18', null));
+same(\Paymenter\Extensions\Servers\Domains\Data\RenewalCode::State, $decision->code, 'NameSilo unknown restore safety refuses');
+same($before + 1, $wire->calls, 'NameSilo refusal uses one bounded fresh ownership read');
+same(null, $holding->provider_domain_id, 'Absent provider-domain ID is never fabricated');
 echo "Native NameSilo no-ID accepted-history unique completion passed\n"; $nativeSuccessful = true;

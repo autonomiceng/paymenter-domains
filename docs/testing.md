@@ -170,3 +170,13 @@ exhaustion. All provider facts are synthetic; these suites establish no live his
 MariaDB interleavings, installed UI/queue, renewal/refund/transfer execution or notification delivery.
 
 `reconciliation-recovery-test` exercises the slice21 residual with both same-result persistence attempts failing: provider-only unique recovery, zero/multiple candidates unresolved, and exactly one original send.
+
+Slice23 `renewal-admission-test` composes native checkout, slice22 completion and real Enom reads over
+an injected transport. Frozen Enom `444f31c` renewal-admission scenarios cover ordinary/exact expiry
+boundary/grace/restore, exact multi-year costs, below-cost alerts without a floor, premium/unknown
+cost, exact/unknown balance, current owner/ID, auto-renew off, disabled seller flags, account rotation,
+paused spending, stale generation/revision/expiry and changed authority during reads. Tests assert
+bounded reads outside locks and no invoice/operation/native-expiry mutation. NameSilo's no-ID completed
+holder still refuses its unknown restoration-safe path; no synthetic Active/date inference enables it.
+Paid/unpaid/complimentary funding and caps remain25, invoice/calendar24 and reminders38; SQLite
+fixtures do not establish MariaDB races, installed runtime composition or live account acceptance39.

@@ -41,7 +41,8 @@
     "tests/reconciliation-authority-test.php",
     "tests/terminal-proof-test.php",
     "tests/reconciliation-namesilo-test.php",
-    "tests/reconciliation-recovery-test.php"
+    "tests/reconciliation-recovery-test.php",
+    "tests/renewal-admission-test.php"
   ],
   "ui": [],
   "runner": [

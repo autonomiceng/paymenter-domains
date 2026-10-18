@@ -114,9 +114,14 @@ $wire->data['Expired'] = '<DomainCount>1</DomainCount><DomainDetail><DomainName>
 same(RenewalStatus::Ineligible, $driver->renewalAssessment($renew, $context())->evidence()->renewal, 'Grace is one year only');
 $annual = new Query('example.com', Action::Renew, 1);
 same(RenewalStatus::Grace, $driver->renewalAssessment($annual, $context(4))->evidence()->renewal, 'Exact expired listing corroborates grace');
-foreach ([str_replace('456', '457', $wire->data['Expired']), str_replace('Expired', 'Restorable', $wire->data['Expired']), str_replace('Expired', 'Redemption', $wire->data['Expired']), ''] as $bad) {
+foreach ([str_replace('456', '457', $wire->data['Expired']), str_replace('Expired', 'Unknown', $wire->data['Expired']), ''] as $bad) {
     $saved = $wire->data['Expired']; $wire->data['Expired'] = $bad;
     same(RenewalStatus::Unknown, $driver->renewalAssessment($annual, $context())->evidence()->renewal, 'Unknown/restorable/foreign listing never grace');
+    $wire->data['Expired'] = $saved;
+}
+foreach (['Redemption', 'RedemptionPeriod', 'Restorable'] as $state) {
+    $saved = $wire->data['Expired']; $wire->data['Expired'] = str_replace('Expired', $state, $saved);
+    same(RenewalStatus::Redemption, $driver->renewalAssessment($annual, $context())->evidence()->renewal, 'Exact restoration inventory is distinct from grace');
     $wire->data['Expired'] = $saved;
 }
 $wire->data['RenewalInfo'] = str_replace('False', 'True', $extend);
