@@ -80,6 +80,26 @@ foreach ($fixtures as $command => $fixture) {
     }
     if ($command !== '_fixture') { same([], Shapes::check($command, $fixture), 'Documented fixture shape '.$command); }
 }
+$diagnostic = static fn ($reply, $request) => \OteContract\ParserDiagnostics::inspect(json_encode([
+    'request' => ['operation' => $request->command], 'reply' => ['code' => 300, 'detail' => 'offline-secret-token'] + $reply]), $request, 'offline-secret-token');
+$d = $diagnostic(['balance' => 'invented-secret-amount'], RegistrarRequest::balance());
+same('amount.balance', $d['predicate'], 'Actual balance predicate diagnosed');
+same('int', $d['code_type'], 'Wire JSON numeric code type retained');
+same('int', $d['structure']['$.reply.code'], 'Wire structural type agrees');
+same([false], $d['money_pattern']['$.reply.balance'], 'Decimal-pattern failure recorded without value');
+expect(!str_contains(json_encode($d), 'invented-secret-amount') && !str_contains(json_encode($d), 'offline-secret-token'), 'Diagnostics omit scalar secrets');
+$d = $diagnostic(['available' => [['domain' => 'example.com', 'price' => 'malformed']]], RegistrarRequest::availability(['example.com'], false));
+same('amount.availability.price', $d['predicate'], 'Actual exception predicate diagnosed');
+same('UnexpectedValueException', $d['exception_class'], 'Exception class without message');
+$validPrices = ['registration' => '1.00', 'transfer' => '1.00', 'renew' => '1.00'];
+$d = $diagnostic(['xn--synthetic' => $validPrices], RegistrarRequest::prices());
+same('prices.tld_key', $d['predicate'], 'Actual isolated TLD-key predicate diagnosed');
+same(true, $d['price_key_structure']['[other-field]'][0]['punycode_label'], 'Key syntax boolean without key value');
+expect(!str_contains(json_encode($d), 'xn--synthetic'), 'Dynamic rejected key omitted');
+$d = $diagnostic(['com' => ['registration' => '1.00', 'transfer' => '1.00']], RegistrarRequest::prices());
+same('prices.amount.renew', $d['predicate'], 'Missing amount predicate diagnosed');
+$d = $diagnostic(['com' => null], RegistrarRequest::prices());
+same('prices.entry_object', $d['predicate'], 'Malformed entry predicate diagnosed');
 $incomplete = ['request' => ['operation' => 'listDomains'], 'reply' => ['code' => 300, 'detail' => 'synthetic', 'domains' => [['domain' => 'synthetic.com']], 'pager' => ['page' => 1]]];
 expect(in_array('reply.domains.[].created.missing', Shapes::check('listDomains', $incomplete), true), 'Nested missing date detected');
 expect(in_array('reply.pager.pageSize.missing', Shapes::check('listDomains', $incomplete), true), 'Missing pager size detected');

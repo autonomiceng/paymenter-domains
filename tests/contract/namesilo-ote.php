@@ -4,7 +4,7 @@ declare(strict_types=1);
 ob_start(); // Never expose native framework output or error traces.
 ini_set('display_errors', '0'); ini_set('log_errors', '0'); ini_set('zend.exception_ignore_args', '1');
 require_once dirname(__DIR__).'/bootstrap.php';
-require __DIR__.'/Shapes.php'; require __DIR__.'/GuardedTransport.php';
+require __DIR__.'/Shapes.php'; require __DIR__.'/ParserDiagnostics.php'; require __DIR__.'/GuardedTransport.php';
 use OteContract\GuardedTransport;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RequestBudget, RequestContext, RequestOrigin, SystemClock};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client;

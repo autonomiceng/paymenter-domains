@@ -118,6 +118,12 @@ final class GuardedTransport implements DeadlineTransport
                 $shaped['reply'] = array_intersect_key($data['reply'], array_flip(['code', 'detail', 'com', 'net']));
             }
             $entry['shape'] = Shapes::shape($shaped);
+            $diagnosticRequest = match ($command) {
+                'getAccountBalance' => RegistrarRequest::balance(), 'getPrices' => RegistrarRequest::prices(),
+                'checkRegisterAvailability' => RegistrarRequest::availability(explode(',', $parameters['domains']), false),
+                default => null,
+            };
+            if ($diagnosticRequest !== null) { $entry['parser'] = ParserDiagnostics::inspect($body, $diagnosticRequest, $key); }
             foreach (Shapes::check($command, $data) as $error) { $this->mismatch($command, $error); }
             if ($response->httpStatus !== 200) { $this->mismatch($command, 'http_status'); $this->save(); throw new \RuntimeException('OTE HTTP response refused.'); }
             $this->save(); return $response;
