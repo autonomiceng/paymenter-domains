@@ -74,6 +74,20 @@ final class ParserDiagnostics
                         'non_ascii' => preg_match('/[^\x00-\x7f]/', (string) $tld) === 1,
                     ];
                     foreach ($checks as $predicate => $passed) { if (!$passed && $first === null) { $first = 'prices.'.$predicate; } }
+                    if (in_array(false, $checks, true)) {
+                        // Only syntactically valid public catalogue labels may be retained.
+                        $label = $checks['tld_key'] && !str_contains((string) $tld, $key) ? $tld : '[invalid-tld]';
+                        $categories = [];
+                        if (!$checks['tld_key']) { $categories['tld_key'] = 'tld-key'; }
+                        if (!$checks['entry_object']) { $categories['row'] = 'json-type'; }
+                        foreach (['registration', 'transfer', 'renew'] as $field) {
+                            if (!$checks['amount.'.$field]) {
+                                $categories[$field] = self::amountFailure(is_array($prices) ? $prices : [], $field);
+                            }
+                        }
+                        $facts['catalogue_failures'][] = ['tld' => $label, 'categories' => $categories,
+                            'passes' => array_intersect_key($checks, array_flip(['amount.registration', 'amount.transfer', 'amount.renew']))];
+                    }
                 }
                 foreach ($facts['price_predicates'] as &$checks) { $checks = array_values(array_unique($checks, SORT_REGULAR)); }
                 unset($checks);
@@ -95,5 +109,24 @@ final class ParserDiagnostics
             };
         }
         return $facts;
+    }
+
+    /** Closed vocabulary only; never return any part of the amount or an exception message. */
+    private static function amountFailure(array $row, string $field): string
+    {
+        if (!array_key_exists($field, $row)) { return 'missing'; }
+        $value = $row[$field];
+        if ($value === null) { return 'null'; }
+        if (!is_string($value)) { return 'json-type'; }
+        if ($value === '') { return 'empty-string'; }
+        if (str_contains($value, ',')) { return 'grouped-ambiguous'; }
+        if (trim($value) !== $value) { return 'whitespace'; }
+        if (preg_match('/^-[0-9]+(?:\.[0-9]+)?$/D', $value)) { return 'negative'; }
+        if (preg_match('/^[0-9]+\.[0-9]{2}0+$/D', $value)) { return 'fraction-trailing-zeros'; }
+        if (preg_match('/^[0-9]+\.[0-9]{3,}$/D', $value)) { return 'fraction-digits>2'; }
+        if (preg_match('/^(?:\.[0-9]+|[0-9]+\.)$/D', $value)) { return 'decimal-edge'; }
+        if (preg_match('/^\+[0-9]+(?:\.[0-9]+)?$/D', $value)) { return 'positive-sign'; }
+        if (preg_match('/^-?[0-9]+(?:\.[0-9]+)?[eE][+-]?[0-9]+$/D', $value)) { return 'exponent'; }
+        return 'non-decimal';
     }
 }

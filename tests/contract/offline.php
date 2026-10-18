@@ -105,6 +105,26 @@ $d = $diagnostic(['com' => ['registration' => '1.00', 'transfer' => '1.00']], Re
 same('prices.amount.renew', $d['predicate'], 'Missing amount predicate diagnosed');
 $d = $diagnostic(['com' => null], RegistrarRequest::prices());
 same('prices.entry_object', $d['predicate'], 'Malformed entry predicate diagnosed');
+foreach (['missing' => [], 'null' => ['registration' => null], 'json-type' => ['registration' => false],
+    'empty-string' => ['registration' => ''], 'grouped-ambiguous' => ['registration' => '1,234'],
+    'fraction-digits>2' => ['registration' => '1.234'], 'negative' => ['registration' => '-1.00'],
+    'fraction-trailing-zeros' => ['registration' => '1.2300'], 'whitespace' => ['registration' => ' 1.00'],
+    'decimal-edge' => ['registration' => '.99'], 'positive-sign' => ['registration' => '+1.00'],
+    'exponent' => ['registration' => '1e2'],
+    'non-decimal' => ['registration' => 'invented-secret-amount']] as $category => $bad) {
+    $d = $diagnostic(['example' => $bad + ['transfer' => '1.00', 'renew' => '1.00']], RegistrarRequest::prices());
+    same([['tld' => 'example', 'categories' => ['registration' => $category],
+        'passes' => ['amount.registration' => false, 'amount.transfer' => true, 'amount.renew' => true]]],
+        $d['catalogue_failures'], 'Closed per-row category and field predicates');
+    expect(!str_contains(json_encode($d), 'invented-secret-amount'), 'Per-row diagnostics omit amount values');
+}
+$d = $diagnostic(['example' => ['registration' => 'bad'] + $validPrices,
+    'invalid' => ['renew' => null] + $validPrices], RegistrarRequest::prices());
+same(2, count($d['catalogue_failures']), 'Every failed row named independently');
+$d = $diagnostic(['invalid-key' => null], RegistrarRequest::prices());
+same('[invalid-tld]', $d['catalogue_failures'][0]['tld'], 'Invalid key never retained');
+same('tld-key', $d['catalogue_failures'][0]['categories']['tld_key'], 'Bad key classified');
+same('json-type', $d['catalogue_failures'][0]['categories']['row'], 'Bad row independently classified');
 $groupedCatalogue = ['request' => ['operation' => 'getPrices', 'ip' => '192.0.2.1'],
     'reply' => ['code' => 300, 'detail' => 'synthetic', 'com' => $validPrices, 'net' => $validPrices]];
 $groupedCatalogue['reply']['com']['registration'] = '1,234.56';
