@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Domain extends Model
 {
+    use HasAccountBinding;
+
     protected $table = 'domains_domains';
     protected $guarded = [];
     protected $hidden = ['account_fingerprint', 'snapshot', 'renewal_policy', 'observation', 'provider_domain_id', 'reservation_name'];

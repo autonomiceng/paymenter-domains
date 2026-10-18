@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
+require __DIR__.'/Support/accounts.php';
 
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
@@ -20,7 +21,8 @@ foreach (Schema::getTableListing() as $table) {
         expect(strlen($index['name']) <= 64, 'Index fits MySQL identifier limit');
     }
 }
-$binding = ['registrar_key' => 'enom', 'server_id' => 1, 'account_fingerprint' => str_repeat('a', 64)];
+$binding = fixtureAccount(1, 'enom', 'synthetic-account');
+$account = Account::where('server_id', 1)->firstOrFail();
 $domain = Domain::create($binding + ['id' => 41, 'service_id' => 51, 'user_id' => 61,
     'domain' => 'example.com', 'reservation_name' => 'example.com', 'sld' => 'example', 'tld' => 'com', 'status' => 'pending',
     'snapshot' => ['contact' => 'synthetic'], 'renewal_policy' => ['cap' => '10.00'], 'observation' => ['execution' => null]]);
@@ -42,12 +44,11 @@ same(['execution' => null], $operation->fresh()->attempt, 'Recorded null is reta
 same('12.34', $operation->fresh()->amount, 'Exact legacy invoice amount');
 $unverified = $operation->replicate();
 $unverified->fill(['operation_key' => 'legacy:unverified', 'invoice_item_id' => null,
-    'authority_generation' => null, 'account_fingerprint' => null]); $unverified->save();
+    'authority_generation' => null, 'account_fingerprint' => null]); Operation::withoutEvents(static fn () => $unverified->save()); // converter-only historical fixture
 same(null, $unverified->fresh()->authority_generation, 'Unknown historical generation retained');
 same(null, $unverified->fresh()->account_fingerprint, 'Unknown historical account proof retained');
 same(41, $operation->domain->id, 'ID-preserving relation');
 same(71, $domain->operations()->first()->id, 'ID-preserving history');
-$account = Account::create($binding + ['environment' => 'sandbox', 'stable_identity' => 'synthetic-account', 'identity_fingerprint' => str_repeat('b', 64)]);
 expect(!str_contains($account->getRawOriginal('stable_identity'), 'synthetic'), 'Identity encrypted on first save');
 same(false, $account->fresh()->processing_enabled, 'Processing defaults off');
 $tld = Tld::create($binding + ['id' => 101, 'tld' => 'com', 'cost_register_terms' => ['2' => '19.1234']]);

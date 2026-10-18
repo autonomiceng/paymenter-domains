@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Price extends Model
 {
+    use HasAccountBinding;
+
     protected $table = 'domains_prices';
     protected $guarded = [];
     protected $hidden = ['account_fingerprint', 'wholesale', 'source', 'eligibility'];

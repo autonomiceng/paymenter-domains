@@ -94,8 +94,8 @@ TLD suffixes. It refuses IDNs, reserved hyphen forms, subdomains for a selected 
 characters. Syntax never establishes availability, premium eligibility or ownership.
 
 `DomainReservations::reserve` creates the ledger reservation in a transaction. Checkout must wrap
-native service/invoice/operation writes in its outer transaction, acquire policy/catalogue locks
-first, and roll back on its duplicate exception. The global unique key arbitrates absent-row races.
+native service/invoice/operation writes in its outer transaction, acquire server/account then
+policy/catalogue locks before domain locks, and roll back on its duplicate exception. The global unique key arbitrates absent-row races.
 Release locks the domain then all operations in ID order. Every operation must be rejected with
 matching service/account and positive generation and explicit encrypted terminal proof. Missing
 proof, domain-level provider IDs/expiry, active/pending/unknown work and ownership block both paths.
@@ -118,6 +118,59 @@ Slice 41 atomically maps a proven Enom generation-zero authority to generation o
 and every operation proven to belong to that authority, keeping zero in the read-only source audit.
 This is an epoch translation, not proof of an operation's account/terminal outcome. Unknown
 operation authority stays null; incomplete/contradictory mappings stop conversion, never default
-to one. Valid converted terminal reservations can release only after all ordinary proof gates pass. Only the reservation service clears reservations in ordinary runtime. Raw SQL/quiet saves are
+to one. Valid converted terminal reservations can release only after all ordinary proof gates pass. Only the reservation service clears reservations in ordinary runtime. Raw SQL, bulk Eloquent updates/deletes and quiet saves are
 reserved for reviewed conversion/maintenance and can bypass model guards. These SQLite fixtures
 prove transaction rollback and uniqueness, not MariaDB concurrent checkout or lock ordering.
+
+## Account binding authority (slice 06)
+
+`RegistrarRegistry` registers named Enom/NameSilo entries with credential fields, a read-only
+positive-identity verifier and a reader factory. No production entries or provider identity probes
+ship here. A customer/staff label or API key hash is not accepted as proof. Synthetic verifiers
+exercise the integration seam; provider acceptance remains open. Writer handles are refused.
+
+`AccountBindings::configure` verifies outside database transactions, then locks the native server
+and account row in that order. A successful first save encrypts the identity and native credential
+settings; rotation must verify the same stable identity/environment/registrar/server fingerprint.
+Rotation pauses processing. A credential HMAC binds the verified credential set to the accepted
+account; it detects unverified native-setting edits and does not stand in for account identity.
+Native settings are marked encrypted before their first value/save. No native schema is changed.
+
+Bindings cannot be created from labels, repurposed or deleted through ordinary model edits.
+AccountBindings uses a narrow synchronous internal Account write scope after its checks, restored
+in finally; ordinary model site/processing edits are refused too. Explicit trusted PHP bypasses
+(including the internal scope and quiet saves) are not authorization APIs or native form inputs. Live access requires an
+explicit current HTTPS application URL, with a one-time immutable site confirmation. Processing
+starts off and must be explicitly enabled. A copied database at a different URL cannot read/live
+process; restoring the original URL does not prove a separate copy is safe, so deployments still
+require independent operational controls. Pausing remains available when credentials are broken.
+The dispatch guard only checks configuration, never funds/admission or prior outcome. Slice 19
+must recheck it inside the claim transaction after server/account locks; unlocked reader/guard
+calls alone do not serialize dispatch against rotation or pause. The global lock order is server,
+account, policy/catalogue, domain, then operations in ID order; MariaDB must prove interleavings.
+
+Configure failures and stored-credential parsing failures discard internal exception traces without chaining,
+including with PHP exception arguments enabled, so captured plaintext does not escape diagnostics.
+Application encryption-key loss refuses decryption; changing the active HMAC key requires verified
+reconfiguration after restoring decryption access. Keep previous encryption keys in
+`APP_PREVIOUS_KEYS` until a reviewed tool has re-encrypted every retained encrypted column:
+configure only rewrites native credentials, and immutable account/ledger fields cannot be rotated
+through ordinary model saves. Registrar token rotation preserves the binding
+only after the injected verifier positively proves the original account. Enom UID identity is
+lowercased before storage/hashing; NameSilo verification must return its canonical stable ID.
+A deleted native server cannot silently reclaim an existing account on a new ID: recovery requires
+an audited ID-preserving restore, or a separately reviewed migration proving every retained
+holding/operation and live-site binding. No automatic retirement or rebind path ships here. No native global hooks
+exist yet: future slice 39 must route every native save/dispatch through these guards. Native
+server disable/extension-change hooks must pause processing so re-enabling requires an explicit
+resume. Slices 37/39 must prevent native EditServer's all-settings fill from exposing decrypted
+credentials/HMAC in public Livewire state; neither internal setting key may be declared in Domains
+config. The service is not an installed native-admin secrecy boundary. Direct SQL, bulk Eloquent
+updates/deletes, quiet saves and privileged malicious code can bypass model events and are not a supported runtime
+editing path. Real provider proof, native UI, MariaDB locking and installed-runtime acceptance remain
+separate gates.
+
+NameSilo driver work (13/20) requires proving that its API exposes a stable account identifier;
+if it cannot, configuration remains blocked rather than accepting a key or label. Moving a held
+domain between our accounts needs a separate schema/authority decision: current binding fields
+are immutable and the global reservation forbids a second holding for the same name.

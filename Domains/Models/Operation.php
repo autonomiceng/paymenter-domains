@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Operation extends Model
 {
+    use HasAccountBinding;
+
     protected $table = 'domains_operations';
     protected $guarded = [];
     protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint'];

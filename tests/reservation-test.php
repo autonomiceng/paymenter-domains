@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
+require __DIR__.'/Support/accounts.php';
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, Query};
@@ -10,11 +11,12 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\DomainName;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainReservations, FoundationSchema};
 
 FoundationSchema::install();
+$accounts = [1 => fixtureAccount(1, 'enom', 'account-one'), 2 => fixtureAccount(2, 'namesilo', 'account-two')];
 $seq = 1;
-$make = static function (string $name = 'example.com', array $overrides = []) use (&$seq): Domain {
+$make = static function (string $name = 'example.com', array $overrides = []) use (&$seq, $accounts): Domain {
     return DomainReservations::reserve(array_replace(['service_id' => $seq++, 'user_id' => 1, 'server_id' => 1,
-        'registrar_key' => 'enom', 'account_fingerprint' => str_repeat('a', 64), 'domain' => $name,
-        'status' => 'pending'], $overrides), ['com', 'co.uk']);
+        'domain' => $name,
+        'status' => 'pending'], $accounts[$overrides['server_id'] ?? 1], $overrides), ['com', 'co.uk']);
 };
 $reject = static function (callable $call): void {
     try { $call(); expect(false, 'Reservation safety refusal escaped'); }
@@ -52,7 +54,7 @@ try { DomainReservations::releaseTerminal('X.COM.'); expect(false, 'Unproved can
 catch (DomainException $e) { same('This domain already has an order.', $e->getMessage(), 'Specific duplicate refusal'); }
 $original->status = 'registration_rejected'; $original->save();
 $op = Operation::create(['domain_id' => $original->id, 'service_id' => $original->service_id,
-    'server_id' => 1, 'registrar_key' => 'enom', 'account_fingerprint' => str_repeat('a', 64),
+    'server_id' => 1, 'registrar_key' => 'enom', 'account_fingerprint' => $accounts[1]['account_fingerprint'],
     'authority_generation' => 1, 'operation_key' => 'terminal:register', 'action' => 'register', 'state' => 'rejected', 'currency' => 'USD']);
 $reject(static fn () => DomainReservations::releaseTerminal('x.com')); // missing proof
 $unsent = ['disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent', 'send_state' => 'definitely_unsent', 'seal' => 'absent'];
@@ -95,7 +97,7 @@ same('terminal:register', $op->fresh()->operation_key, 'Financial deduplication 
 // A provider-proven rejection can release an acquisition, but not a cancelled holding.
 $replacement->update(['status' => 'transfer_rejected']);
 $proof = $op->replicate(); $proof->fill(['domain_id' => $replacement->id, 'service_id' => $replacement->service_id,
-    'registrar_key' => 'namesilo', 'server_id' => 2, 'operation_key' => 'provider:transfer', 'action' => 'transfer',
+    'registrar_key' => 'namesilo', 'server_id' => 2, 'account_fingerprint' => $accounts[2]['account_fingerprint'], 'operation_key' => 'provider:transfer', 'action' => 'transfer',
     'attempt' => ['disposition' => 'rejected', 'rejection_basis' => 'provider_proof', 'send_state' => 'sent', 'charge_absent' => true]]); $proof->save();
 $replacement->update(['status' => 'cancelled']);
 $reject(static fn () => DomainReservations::releaseTerminal('x.com'));

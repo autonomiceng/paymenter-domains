@@ -13,6 +13,8 @@ class Tld extends Model
     public const MODES = ['fixed', 'markup_amount', 'markup_percent'];
     public const ACTIONS = ['register', 'renew', 'transfer'];
 
+    use HasAccountBinding;
+
     protected $table = 'domains_tlds';
     protected $guarded = [];
     protected $hidden = ['account_fingerprint', 'cost_register_terms', 'cost_renew', 'cost_transfer', 'markup'];

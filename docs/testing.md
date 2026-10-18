@@ -50,8 +50,10 @@ not independent archive authentication of every dependency. No source dependency
 
 The runner copies source and vendor to a private disposable fixture, uses synthetic environment
 values, migrates an in-memory database, blocks stray HTTP, and removes the copy afterward.
-Current native coverage is a **harness probe**: upstream schema/model/transaction/HTTP guards,
-including failure exits. There is no Domains entry point, billing, migration or installed extension.
+Native coverage includes upstream schema/model/transaction/HTTP guards, manually invoked Domains
+foundation migrations and standalone retained-schema verification, global reservation/rollback,
+and synthetic account/site/credential binding guards. There is no Domains entry point, billing,
+production registrar identity verifier or installed extension. These are fixture-only checks.
 SQLite alone cannot establish MariaDB locking, concurrent checkout or financial correctness.
 CI uses cached pinned PHP and runs standalone categories; native checks need an explicitly supplied
 local dependency and are not claimed by CI. No dependency checkout/download/bootstrap is automatic.
