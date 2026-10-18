@@ -20,12 +20,16 @@ final class DomainOperations
     public function __debugInfo(): array { return []; }
 
     /** Real bridges in slice20 MUST consume the live descriptor/context exactly once immediately before send. */
-    public function consume(AdmittedOperation $operation, RequestContext $context, ?WriteAcceptance $acceptance = null): array
+    public function consume(AdmittedOperation $operation, RequestContext $context, WriteAcceptance $acceptance, ?WriteFeatures $features = null, ?\Paymenter\Extensions\Servers\Domains\Contracts\RegistrationTransport $transport = null): array
     {
         OperationClaims::outside();
         $grant = $this->grants[$operation] ?? null;
         if (!$grant || $grant['context'] !== $context || $grant['consumed'] || $this->clock->now() >= $context->deadline) {
             throw new \DomainException('No live engine dispatch authority.');
+        }
+        if ($transport instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol) {
+            if (!$this->writer instanceof RegistrationBridge || !$features) { throw new \DomainException('Production dispatch requires a bound bridge.'); }
+            $this->writer->requireComposition($this->preflight, $features, $acceptance, $transport);
         }
         $this->grants[$operation] = [...$grant, 'consumed' => true];
         return $this->claims->verifySend($grant['sealed'], $operation, $context, $grant['ready'],
@@ -35,6 +39,7 @@ final class DomainOperations
     public function execute(int $id): Operation
     {
         OperationClaims::outside();
+        if ($this->writer instanceof RegistrationBridge) { $this->writer->checkComposition($this->preflight); }
         if ($this->writer instanceof WriteGate) {
             try {
                 $this->writer->requireEnabled(\Paymenter\Extensions\Servers\Domains\Data\Action::Register);
@@ -45,6 +50,7 @@ final class DomainOperations
         $claim = $this->claims->claim($id);
         if (!$claim) { return Operation::findOrFail($id); }
         [$op, $domain, $binding] = $claim;
+        $result = null;
         try {
             $deadline = $op->started_at->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
             $context = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget(ExecuteOperation::REQUEST_LIMIT), $this->clock);
@@ -60,16 +66,16 @@ final class DomainOperations
                 $op->attempt['claim_key'], $op->authority_generation, 'operation:'.$op->id.':seal', OperationClaims::payloadDigest($op), $ready->cost);
             $this->grants[$admitted] = ['context' => $context, 'consumed' => false, 'sealed' => $op, 'ready' => $ready];
             try {
-                $result = $this->writer->register($admitted, $context);
+                $response = $this->writer->register($admitted, $context);
                 if (!$this->grants[$admitted]['consumed']) { throw new \LogicException('Writer omitted engine authority consumption.'); }
-                $binding->requireMatch($result->binding);
+                $binding->requireMatch($response->binding); $result = $response;
             } finally { unset($this->grants[$admitted]); }
             return $this->claims->finish($op, $result);
         } catch (WriteHeld $held) {
-            return $this->claims->finish($op, holdReason: $held->reason);
+            return $this->claims->finish($op, $result, holdReason: $held->reason);
         } catch (\Throwable) {
             // Never chain a provider/input exception or expose raw evidence through diagnostic traces.
-            return $this->claims->finish($op);
+            return $this->claims->finish($op, $result); // One completion retry retains the original result; never resend.
         }
     }
 }

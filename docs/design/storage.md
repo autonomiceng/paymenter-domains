@@ -542,3 +542,32 @@ new null-valued evidence. Disabled writes still quarantine expired running claim
 Seal also rejects encrypted evidence changes since claim and independently forbids prior charge,
 refund and candidate facts by presence. The final transport entry consumes live engine authority;
 only its protected named wire method receives the fixed origin, timeout and frozen payload.
+
+## Slice21 registration acceptance and correction work
+
+No migration. Immediate registration facts live in encrypted attempt evidence; registration and
+corrections are write-once audit keys. Accepted purchases become pending, retaining reservation,
+native paid invoice and registration_pending domain until22 proves unique charge/term/ownership.
+No cost floor, refund, replay, seller fallback or expiry/billing anchor follows acknowledgement.
+Correction entries require separate authorization and readback; their execution belongs to29–31/33.
+Enom purchases on default DNS then attempts NS/readback. NameSilo 300/301/302 are purchases;
+readback/removal failures retain acceptance and auto_renew/contact/NS/privacy correction work.
+Unknown responses remain uncertain, including provider refusals lacking correlated no-charge proof.
+
+Fresh NameSilo contactAdd/contactList work runs outside financial locks between two complete
+claim-authority checks. Immutable encrypted profile details bind proof to owner/account/operation,
+payload digest and 120-second freshness. A worker-local handle selects only its newly created
+profile; restarts create fresh proof, never adopt inventory. Default or mismatched profiles refuse.
+Production protocol paths require the bound bridge, real RegistrationPreflight and identical
+per-account gate objects. Every concrete send first consumes base-private in-flight authority.
+Ports have no default network exchange or installed composition. Account identity/USD/batch/live
+acceptance, installed shared gates/cache, queues, paired MariaDB races and rate-limit release
+remain39; unknown/late evidence interpretation and unique charge acceptance remain22.
+
+NameSilo protocol composition also requires the same profile service in acceptance, preflight and
+transport before claim. Ordinary checkout lacks desired NS/privacy capture:32/33 must capture and
+freeze these before installed activation39; missing NS holds before profile work. Installed39 must
+allow only RegistrationBridge + RegistrationProtocol writers; direct transport seams are synthetic.
+Completion retries retain the original result; changed authority retains acceptance/corrections as
+uncertain. Slice22 selects financial_completion=awaiting_unique_charge even with correction safe codes.
+Correction progress uses separate append-only records; the original requirements never change.

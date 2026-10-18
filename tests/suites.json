@@ -32,7 +32,9 @@
     "tests/operation-contacts-test.php",
     "tests/write-bridge-test.php",
     "tests/write-boundary-test.php",
-    "tests/write-preflight-test.php"
+    "tests/write-preflight-test.php",
+    "tests/registration-enom-test.php",
+    "tests/registration-namesilo-test.php"
   ],
   "ui": [],
   "runner": [

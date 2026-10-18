@@ -97,7 +97,7 @@ final class OperationClaims
     {
         self::outside();
         return DB::transaction(function () use ($claimed, $result, $holdReason): Operation {
-            Domain::whereKey($claimed->domain_id)->lockForUpdate()->firstOrFail();
+            $domain = Domain::whereKey($claimed->domain_id)->lockForUpdate()->firstOrFail();
             $all = Operation::where('domain_id', $claimed->domain_id)->orderBy('id')->lockForUpdate()->get();
             $op = $all->firstWhere('id', $claimed->id);
             if (!$op) { return $claimed->fresh(); }
@@ -118,8 +118,10 @@ final class OperationClaims
                 }
             }
             // Ack/rejection still require action-specific correlation/completion in 21/22. No refund/release here.
-            $op->update(['attempt' => $attempt, 'state' => ($sealed || $expired) ? 'uncertain' : 'held',
-                'safe_code' => $expired ? 'stale_claim' : ($sealed ? 'reconciliation_required' : ($holdReason ?? 'pre_send_interrupted')), 'lease_expires_at' => null]);
+            $op->attempt = $attempt;
+            $completion = !$expired && $sealed && $result ? RegistrationCompletion::record($op, $domain, $result) : null;
+            $op->update(array_replace(['attempt' => $attempt, 'state' => ($sealed || $expired) ? 'uncertain' : 'held',
+                'safe_code' => $expired ? 'stale_claim' : ($sealed ? 'reconciliation_required' : ($holdReason ?? 'pre_send_interrupted')), 'lease_expires_at' => null], $completion ?? []));
             return $op;
         });
     }
@@ -141,15 +143,27 @@ final class OperationClaims
         });
     }
 
+    /** Authorizes nonmonetary fresh profile creation for this live, funded, unsealed claim only. */
+    public function profileAuthority(Operation $claimed): array
+    {
+        return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed): array {
+            [$binding] = $this->validate($op, $domain, $all, $funding, $server, $account);
+            self::requireSameEvidence($op, $claimed); ContactSetup::requireReady($op);
+            if (!self::sameClaim($op, $claimed) || !self::unsealed($op) || $op->lease_expires_at <= $this->clock->now()
+                || self::payloadDigest($op) !== self::payloadDigest($claimed)) { throw new \DomainException('Profile claim unavailable.'); }
+            return [$binding, (int) $domain->user_id];
+        });
+    }
+
     /** Bridge consumption: acquire current ordered financial locks, commit, then send outside locks. */
     public function verifySend(Operation $sealed, AdmittedOperation $admitted, RequestContext $context,
-        DispatchReadiness $ready, ?SealPreflight $preflight, ?WriteAcceptance $acceptance): array
+        DispatchReadiness $ready, ?SealPreflight $preflight, WriteAcceptance $acceptance): array
     {
         return $this->locked((int) $sealed->id, function ($op, $domain, $all, $funding, $server, $account) use ($sealed, $admitted, $context, $ready, $preflight, $acceptance): array {
             [$binding, $paid] = $this->validate($op, $domain, $all, $funding, $server, $account);
             $binding->requireMatch($admitted->binding); $binding->requireMatch($context->binding);
             ContactSetup::requireReady($op); $preflight?->requireAtSeal($op, $domain, $ready);
-            $acceptance?->requireCurrent($binding, self::query($op, $domain), $op, true);
+            $acceptance->requireCurrent($binding, self::query($op, $domain), $op, true);
             $ready->requireCurrent($binding, self::query($op, $domain), self::payloadDigest($op), $this->clock->now());
             self::requireSameEvidence($op, $sealed); self::requireNoSendEvidence($op);
             if (!self::sameClaim($op, $sealed) || ($op->attempt['seal'] ?? null) !== 'sealed'

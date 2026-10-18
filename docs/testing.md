@@ -147,3 +147,13 @@ Fresh evidence requires explicit nonpremium availability, matching term, USD cos
 sufficient funds (including 18-digit amounts). No current-seller or retail floor applies at dispatch.
 No production registration transport exists; provider contactAdd/readback, identity/currency/batch
 acceptance, MariaDB races and installed queues remain blocked pending later acceptance.
+
+Slice21 registration-enom/namesilo tests compose actual RegistrationPreflight, account gates,
+financial seal/consume and bounded injected protocol ports. Enom 444f31c default-DNS purchase,
+NS follow-up/readback, lost ancillary responses and incomplete/pending purchases map to retained acceptance
+or uncertainty. NameSilo covers fresh owner/account/payload profile creation/non-default readback,
+300/301/302, auto-renew removal/readback, stale/default/mismatched proof and no replay/refund.
+Sibling protected-method attacks must make zero port calls; policy identity and real preflight
+are required for protocol composition. All exchanges are synthetic; no network sender is installed.
+Authority changes and a transient completion failure retain original acceptance/correction evidence;
+missing/different/closure-only NameSilo profile composition refuses before claim with zero requests.

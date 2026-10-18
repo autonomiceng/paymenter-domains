@@ -35,7 +35,7 @@ foreach ($ops as $change => $op) {
         };
     };
     if ($change === 'context') { $proxy->before = static function ($admitted, $context) use (&$engine) {
-        commerceReject(fn () => $engine->consume($admitted, clone $context));
+        commerceReject(fn () => $engine->consume($admitted, clone $context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($admitted->binding)));
         throw new RuntimeException('Refuse wrong scope');
     }; }
     $before = count($transport->calls); $result = $engine->execute($op->id);

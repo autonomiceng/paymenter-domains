@@ -29,6 +29,20 @@ abstract class RegistrationBridge implements AdmittedRegistrarDriver, WriteGate
         if (!$engine instanceof DomainOperations) { throw new \DomainException('No engine writer scope.'); }
         return $this->transport->getValue()->register($op, $context, $engine, $this->features, $this->accepted);
     }
+    final public function checkComposition(\Paymenter\Extensions\Servers\Domains\Contracts\OperationPreflight $preflight): void
+    {
+        if ($this->transport->getValue() instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol) {
+            $this->requireComposition($preflight, $this->features, $this->accepted, $this->transport->getValue());
+        }
+    }
+    final public function requireComposition($preflight, WriteFeatures $features, WriteAcceptance $accepted, RegistrationTransport $transport): void
+    {
+        if ($features !== $this->features || $accepted !== $this->accepted || $transport !== $this->transport->getValue()
+            || !$transport instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol || !$transport->bindsTo($this->binding)
+            || !$preflight instanceof RegistrationPreflight || !$preflight->usesPolicy($features, $accepted, $transport)) {
+            throw new \DomainException('Registration policy composition is unavailable.');
+        }
+    }
     final public function transferIn(AdmittedOperation $op, RequestContext $context): DriverResult
     { $this->requireEnabled(Action::Transfer); throw new WriteHeld('write_acceptance_required'); }
     final public function renew(AdmittedOperation $op, RequestContext $context): DriverResult

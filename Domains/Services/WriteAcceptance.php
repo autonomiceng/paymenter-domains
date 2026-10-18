@@ -15,8 +15,9 @@ final readonly class WriteAcceptance
 {
     public function __construct(private AccountBinding $binding, private bool $usdBalance = false,
         private bool $batchRoute = false, private int $intervalSeconds = 0,
-        private ?\Closure $profileProofCheck = null) {}
-    public function requireCurrent(AccountBinding $binding, Query $query, Operation $op, bool $lock = false): Capability
+        private RegistrationProfiles|\Closure|null $profileProofCheck = null) {}
+    public function usesProfiles(RegistrationProfiles $profiles): bool { return $this->profileProofCheck === $profiles; }
+    public function requireCurrent(AccountBinding $binding, Query $query, Operation $op, bool $lock = false, bool $profile = true): Capability
     {
         $this->binding->requireMatch($binding);
         if (!$this->usdBalance || !$this->batchRoute || $this->intervalSeconds < 25 || $this->intervalSeconds > 86400) {
@@ -28,7 +29,8 @@ final readonly class WriteAcceptance
         if (!in_array($query->years, $row['register'], true) || $row['renew'] !== [1] || !$row['renewal_safe'] || !$row['registry']) {
             throw new WriteHeld('write_acceptance_required');
         }
-        if ($binding->registrarKey === 'namesilo' && (!$this->profileProofCheck || ($this->profileProofCheck)($op) !== true)) {
+        if ($profile && $binding->registrarKey === 'namesilo' && !($this->profileProofCheck instanceof RegistrationProfiles
+            ? $this->profileProofCheck->hasProof($op) : ($this->profileProofCheck && ($this->profileProofCheck)($op) === true))) {
             throw new WriteHeld('contact_profile_proof_required');
         }
         return new Capability(Support::Supported, $row['register']);

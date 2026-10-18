@@ -42,6 +42,7 @@ final class DriverResult implements \JsonSerializable
             throw new \InvalidArgumentException('Contradictory registrar disposition evidence.');
         }
         $binding->requireMatch($evidence->domain?->binding ?? $binding);
+        $binding->requireMatch($evidence->registration?->readback?->binding ?? $binding);
         foreach ($evidence->candidates as $candidate) { $binding->requireMatch($candidate->binding); }
         $facts = self::$facts ??= new \WeakMap;
         $facts[$this] = $evidence;

@@ -53,7 +53,7 @@ $writer = new class implements AdmittedRegistrarDriver {
     public bool $consume = true; public bool $wrongBinding = false; public Disposition $disposition = Disposition::Unknown;
     public function register(AdmittedOperation $op, RequestContext $context): DriverResult {
         same(0, DB::transactionLevel(), 'Write never under database locks');
-        if ($this->consume) { $this->engine->consume($op, $context); commerceReject(fn () => $this->engine->consume($op, $context)); }
+        if ($this->consume) { $this->engine->consume($op, $context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($op->binding, true, true, 25, static fn () => true)); commerceReject(fn () => $this->engine->consume($op, $context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($op->binding, true, true, 25, static fn () => true))); }
         $context->claimRead($context->binding); $this->calls++; $this->last = $op; $this->context = $context;
         $saved = Operation::where('operation_key', $op->operationKey)->sole();
         same('sealed', $saved->attempt['seal'], 'Seal durably committed before writer');

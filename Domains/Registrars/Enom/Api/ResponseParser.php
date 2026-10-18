@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api;
 
 final class ResponseParser
 {
-    public function parse(ReadCommand $command, #[\SensitiveParameter] string $body): ProtocolResult
+    public function parse(ReadCommand|RegistrationCommand $command, #[\SensitiveParameter] string $body): ProtocolResult
     {
         if (strlen($body) > $command->bodyLimit() || str_contains($body, "\0") || preg_match('//u', $body) !== 1 || preg_match('/<!DOCTYPE|<!ENTITY/i', $body)) {
             return new ProtocolResult('unknown', 'invalid_response');
@@ -32,7 +32,7 @@ final class ResponseParser
         }
         $code = $data['rrpcode'] ?? $data['responsecode'] ?? null;
         $code = is_string($code) && preg_match('/^[0-9]{1,6}$/D', $code) ? $code : null;
-        if (trim($data['errcount'], '0') !== '') { return new ProtocolResult('rejected', $code); }
+        if (trim($data['errcount'], '0') !== '') { return new ProtocolResult($command instanceof RegistrationCommand ? 'unknown' : 'rejected', $code); }
         if (isset($data['errors']) && $data['errors'] !== '') { return new ProtocolResult('unknown', 'contradictory_errors'); }
         foreach ($data as $key => $value) {
             if (preg_match('/^err[0-9]+$/D', $key) && $value !== '') { return new ProtocolResult('unknown', 'contradictory_errors'); }
@@ -40,7 +40,8 @@ final class ResponseParser
         if (isset($data['responsecode']) && (!is_string($data['responsecode']) || !preg_match('/^1[0-9]{5}$/D', $data['responsecode']))) {
             return new ProtocolResult('unknown', $code);
         }
-        if (isset($data['rrpcode']) && !in_array($data['rrpcode'], $command === ReadCommand::Check ? ['200', '210', '211'] : ['200'], true)) {
+        $codes = $command === ReadCommand::Check ? ['200', '210', '211'] : ($command === RegistrationCommand::Purchase ? ['200', '1300'] : ['200']);
+        if (isset($data['rrpcode']) && !in_array($data['rrpcode'], $codes, true)) {
             return new ProtocolResult('unknown', $code);
         }
         // Payload-specific validation belongs to each named read normalizer, never to acknowledgement alone.

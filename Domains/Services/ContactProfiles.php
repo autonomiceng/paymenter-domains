@@ -13,7 +13,7 @@ final class ContactProfiles
 {
     /** Slice 20/30 must prove fresh contactAdd + non-default readback BEFORE calling this sink. */
     public static function recordCreated(AccountBinding $binding, int $ownerId, #[\SensitiveParameter] string $providerId,
-        #[\SensitiveParameter] array $contact, bool $defaultProfile): ContactProfile
+        #[\SensitiveParameter] array $contact, bool $defaultProfile, ?array $registrationProof = null): ContactProfile
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Profile recording owns its transaction.'); }
         if ($binding->registrarKey !== 'namesilo' || $defaultProfile || !preg_match('/^[1-9][0-9]{0,19}$/D', $providerId)) {
@@ -21,7 +21,7 @@ final class ContactProfiles
         }
         $clean = ContactDetails::validate('namesilo', array_fill_keys(ContactDetails::ROLES, $contact))['registrant'];
         try {
-            return DB::transaction(static function () use ($binding, $ownerId, $providerId, $clean): ContactProfile {
+            return DB::transaction(static function () use ($binding, $ownerId, $providerId, $clean, $registrationProof): ContactProfile {
                 User::whereKey($ownerId)->lockForUpdate()->firstOrFail();
                 $server = Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
                 $account = Account::where('server_id', $server->id)->lockForUpdate()->firstOrFail();
@@ -36,16 +36,18 @@ final class ContactProfiles
                         hash_hmac('sha256', $anchor->details['provider_id'], $indexKey)))) {
                     throw new \DomainException('Contact profile index unavailable.');
                 }
+                $details = ['provider_id' => $providerId, 'contact' => $clean, 'index_key' => $indexKey];
+                if ($registrationProof !== null) { $details['registration_proof'] = $registrationProof; }
                 $hash = hash_hmac('sha256', $providerId, $indexKey);
                 $existing = ContactProfile::where(['server_id' => $server->id, 'profile_fingerprint' => $hash])->lockForUpdate()->first();
                 if ($existing) {
                     if ((int) $existing->user_id !== $ownerId || $existing->account_fingerprint !== $binding->fingerprint
-                        || $existing->details !== ['provider_id' => $providerId, 'contact' => $clean, 'index_key' => $indexKey]) { throw new \DomainException('Contact profile is already assigned.'); }
+                        || $existing->details !== $details) { throw new \DomainException('Contact profile is already assigned.'); }
                     return $existing;
                 }
                 return ContactProfile::recording(static fn () => ContactProfile::create(['user_id' => $ownerId,
                     'server_id' => $server->id, 'account_fingerprint' => $binding->fingerprint, 'profile_fingerprint' => $hash,
-                    'details' => ['provider_id' => $providerId, 'contact' => $clean, 'index_key' => $indexKey]]));
+                    'details' => $details]));
             });
         } catch (\Throwable) { throw new \DomainException('Contact profile could not be recorded.'); }
     }

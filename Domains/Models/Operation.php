@@ -47,7 +47,7 @@ class Operation extends Model
                 }
             }
             $old = $operation->getOriginal('attempt') ?? []; $new = $operation->attempt ?? [];
-            foreach (['claim_key', 'dispatch_attempted_at', 'authorized_cost', 'execution', 'evidence', 'charge', 'order_candidates'] as $key) {
+            foreach (['claim_key', 'dispatch_attempted_at', 'authorized_cost', 'execution', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections'] as $key) {
                 if (array_key_exists($key, $old) && (!array_key_exists($key, $new) || $new[$key] !== $old[$key])) {
                     throw new \DomainException('Attempt evidence is write-once.');
                 }
