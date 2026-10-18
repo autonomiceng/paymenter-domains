@@ -1,0 +1,55 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/bootstrap.php';
+use Paymenter\Extensions\Servers\Domains\Services\{MarginPolicy, PricingRule, RetailLine};
+
+$rule = PricingRule::DEFAULT;
+same('13.00', PricingRule::price('10.0000', $rule, 'register'), 'Default percent');
+foreach (['none' => '10.01', 'whole' => '11.00', 'half' => '10.50', 'ending_99' => '10.99'] as $round => $price) {
+    same($price, PricingRule::price('10.0050', [...$rule, 'markup' => '0', 'round_up' => $round], 'register'), 'Rounding '.$round);
+}
+same('10.99', PricingRule::price('10.9900', [...$rule, 'markup' => '0', 'round_up' => 'ending_99'], 'register'), 'Exact .99 unchanged');
+same('11.99', PricingRule::price('10.9901', [...$rule, 'markup' => '0', 'round_up' => 'ending_99'], 'register'), 'Above .99 rounds up');
+same('12.50', PricingRule::price('10.0000', [...$rule, 'mode' => 'markup_amount', 'markup' => '2.50'], 'renew'), 'Fixed markup');
+same('3.00', PricingRule::total('1.00', 3), 'Retail rounds per year before multiplication');
+same('1.00', PricingRule::price('0.9960', [...$rule, 'markup' => '0'], 'register'), 'Per-year cent rounding');
+$reject = static function (callable $call): void {
+    try { $call(); expect(false, 'Invalid pricing escaped'); } catch (InvalidArgumentException|RuntimeException $e) {
+        if ($e->getMessage() === 'Invalid pricing escaped') { throw $e; }
+    }
+};
+foreach (['-1', '1e2', 'NaN', '1.00001', ' 1', '100000000.0000'] as $invalid) {
+    $reject(static fn () => PricingRule::price($invalid, $rule, 'renew'));
+}
+$reject(static fn () => PricingRule::price('99999999.9999', [...$rule, 'markup' => '100000.00'], 'register'));
+$reject(static fn () => PricingRule::total('9999999999.99', 10));
+$reject(static fn () => PricingRule::minor(1.001));
+$reject(static fn () => PricingRule::total('1.00', 0));
+$reject(static fn () => PricingRule::validate([...$rule, 'mode' => 'fixed', 'fixed' => ['register' => '0.00']]));
+same(-123, PricingRule::minor('-1.23'), 'Signed native adjustment');
+same(123, PricingRule::minor(1.23), 'Exact native float compatibility');
+same(null, PricingRule::wholesale('broken'), 'Malformed wholesale unknown');
+$fixed = [...$rule, 'mode' => 'fixed', 'fixed' => ['register' => '5.00', 'renew' => '6.00', 'transfer' => '7.00']];
+same('6.00', PricingRule::price('10.0000', $fixed, 'renew'), 'Fixed action price');
+foreach (['register', 'transfer'] as $action) {
+    $decision = MarginPolicy::assess($action, '10.0001', '10.00');
+    same(false, $decision->publishable, 'Subcent below-cost acquisition held');
+    same('below_cost', $decision->staffAlert, 'Staff acquisition alert');
+}
+$renew = MarginPolicy::assess('renew', '10.0001', '10.00');
+same(true, $renew->publishable, 'Below-cost renewal continues');
+same(null, $renew->hold, 'No renewal floor');
+same('below_cost', $renew->staffAlert, 'Renewal staff alert');
+same(false, MarginPolicy::assess('renew', null, '10.00')->publishable, 'Unknown cost never zero');
+same(true, MarginPolicy::assess('register', '0.0000', '0.01')->publishable, 'Known free wholesale');
+same(false, MarginPolicy::assess('register', '0.0000', '0.00')->publishable, 'Zero retail not complimentary authority');
+same(false, MarginPolicy::assess('register', '10.0000', '9.00')->publishable, 'Tax cannot cover below-cost published list price');
+same(true, RetailLine::positiveNet('12.00', '2.00', '1.00'), 'Positive discounted line may be below cost');
+same(true, MarginPolicy::assess('register', '10.0000', '10.00')->publishable, 'Discounts never change published margin');
+same(false, RetailLine::positiveNet('12.00', '2.00', '10.00'), 'Zero net line refused separately from margin');
+$unknownRenewal = MarginPolicy::assess('renew', null, '10.00');
+same(false, $unknownRenewal->publishable, 'Unknown renewal retains prior published price');
+same(null, $unknownRenewal->hold, 'Unknown cost never creates renewal hold');
+same('unknown_price', $unknownRenewal->staffAlert, 'Staff must resolve unknown renewal');
+echo "Exact pricing and margin checks passed.\n";

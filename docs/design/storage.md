@@ -174,3 +174,21 @@ NameSilo driver work (13/20) requires proving that its API exposes a stable acco
 if it cannot, configuration remains blocked rather than accepting a key or label. Moving a held
 domain between our accounts needs a separate schema/authority decision: current binding fields
 are immutable and the global reservation forbids a second holding for the same name.
+
+## Pricing rules (slice 07)
+
+Adapted from Enom 0.5 frozen revision `444f31c` Services/PricingRule.php and
+Services/Catalogue{,Runtime}.php, including accepted partial republication behavior.
+`PricingRules` uses one native `domains_pricing_default_rule` per account/server, shared
+by that account's default-rule TLDs; overrides remain on each bound TLD. Retail tables
+remain separate across accounts. Republishing returns failed endings and continues.
+`MarginPolicy` assesses per-year published list retail against per-year term costs before
+tax/discount (same currency): below-cost acquisition terms
+are held with staff alerts; below-cost renewals continue with alerts. These assessments
+are publication inputs, never obligation/dispatch floors or complimentary authority.
+Unknown costs prevent new price publication; renewals retain prior retail with an alert,
+never a billing/dispatch hold. `RetailLine` checks positive net totals independently of margin;
+a positive discounted cart line may be below cost. Currency conversion and provider rounding are not inferred.
+`PricingRule` retains the source four-decimal wholesale/two-decimal retail bounds;
+provider evidence with greater precision requires a separately reviewed exact adapter.
+Slice 41 must rename the source `pricing_default_rule` setting to `domains_pricing_default_rule`.

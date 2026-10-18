@@ -7,13 +7,15 @@
     "tests/enom-read-test.php"
   ],
   "contracts": [
-    "tests/driver-contract-test.php"
+    "tests/driver-contract-test.php",
+    "tests/pricing-test.php"
   ],
   "native": [
     "tests/native-fixture-test.php",
     "tests/schema-test.php",
     "tests/reservation-test.php",
-    "tests/binding-test.php"
+    "tests/binding-test.php",
+    "tests/pricing-rules-test.php"
   ],
   "ui": [],
   "runner": [
