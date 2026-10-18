@@ -75,7 +75,11 @@
     "tests/observation-test.php",
     "tests/observation-namesilo-test.php",
     "tests/observation-catalogue-test.php",
-    "tests/storefront-test.php"
+    "tests/storefront-test.php",
+    "tests/owned-pages-test.php",
+    "tests/owner-actions-test.php",
+    "tests/owner-management-test.php",
+    "tests/owner-management-namesilo-test.php"
   ],
   "ui": [],
   "runner": [

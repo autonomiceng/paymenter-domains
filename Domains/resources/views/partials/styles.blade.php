@@ -249,5 +249,111 @@
     .domains .domains-result__action:has(select) .domains-btn { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .domains * { transition: none !important; animation: none !important; } }
+/* Owner forms retain the approved management layout. */
+.domains .domains-owner-form { display: grid; gap: .75rem; max-width: 38rem; margin-top: 1rem; }
+.domains .domains-owner-form .domains-btn { justify-self: start; }
+.domains .domains-section > p { margin-block: .5rem; }
+.domains .domains-title, .domains .domains-back { overflow-wrap: anywhere; }
+.domains .domains-checkbox { align-items: start; }
+.domains .domains-checkbox input { margin-top: .25rem; flex: none; }
 </style>
 @endonce
+
+<style>
+.domains-dhead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem 2rem; }
+.domains .domains-dhead__meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-top: .5rem; font-size: .875rem; color: var(--e-muted); }
+.domains .domains-dhead__meta strong { color: var(--e-fg); font-weight: 600; }
+.domains .domains-tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--e-line); overflow-x: auto; scrollbar-width: none; }
+.domains .domains-tabs::-webkit-scrollbar { display: none; }
+.domains .domains-tab { display: inline-flex; align-items: center; gap: .375rem; padding: .75rem .875rem; font-size: .875rem; font-weight: 600; color: var(--e-muted);
+    border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.domains .domains-tab:hover { color: var(--e-fg); }
+.domains .domains-tab[aria-selected="true"] { color: var(--e-fg); border-bottom-color: var(--e-accent); }
+.domains .domains-tab .domains-dot { width: .4375rem; height: .4375rem; border-radius: 50%; background: var(--e-warn); }
+.domains .domains-tabpanel + .domains-tabpanel { margin-top: 1.5rem; }
+.domains.domains-js .domains-tabpanel { margin-top: 1.25rem; }
+.domains .domains-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+.domains .domains-facts { padding-block: .5rem; }
+.domains .domains-facts:not(:last-child) { border-bottom: 1px solid var(--e-line); }
+.domains .domains-fact { padding: .875rem 1.5rem; }
+@media (max-width: 639px) { .domains .domains-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .domains .domains-fact { padding: .75rem 1rem; } }
+.domains .domains-fact dt { font-size: .8125rem; color: var(--e-muted); }
+.domains .domains-fact dd { margin-top: .25rem; font-size: 1rem; font-weight: 700; }
+.domains .domains-fact dd small { display: block; font-size: .8125rem; font-weight: 400; color: var(--e-muted); margin-top: .125rem; }
+.domains .domains-hosts { display: grid; gap: .25rem; font-size: .9375rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.domains .domains-hosts li { display: flex; align-items: center; gap: .625rem; }
+.domains .domains-hosts li::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: var(--e-line); }
+.domains ol.domains-steps2 { counter-reset: s; display: grid; gap: .625rem; font-size: .875rem; }
+.domains ol.domains-steps2 li { counter-increment: s; display: flex; gap: .75rem; align-items: baseline; }
+.domains ol.domains-steps2 li::before { content: counter(s); flex: none; width: 1.375rem; height: 1.375rem; border-radius: 50%; display: inline-grid; place-items: center;
+    font-size: .75rem; font-weight: 700; background: hsl(var(--color-primary) / .12); color: var(--e-accent); }
+.domains .domains-status-card { padding: 1.75rem 1.5rem; }
+.domains .domains-status-card h2 { font-size: 1.25rem; font-weight: 700; }
+.domains .domains-status-card p { color: var(--e-muted); max-width: 60ch; margin-top: .375rem; }
+.domains .domains-status-card .domains-input { max-width: 28rem; }
+.domains .domains-progress { display: flex; gap: .375rem; margin-top: 1.25rem; max-width: 28rem; }
+.domains .domains-progress span { flex: 1; height: .3125rem; border-radius: 999px; background: color-mix(in srgb, var(--e-muted) 25%, transparent); }
+.domains .domains-progress span.is-done { background: var(--e-accent); }
+.domains .domains-progress-labels { display: flex; justify-content: space-between; max-width: 28rem; font-size: .75rem; color: var(--e-muted); margin-top: .375rem; }
+
+/* Dialog */
+.domains-dialog { margin: auto; max-height: calc(100vh - 2rem); border: 0; padding: 0; border-radius: .75rem; width: min(28rem, calc(100vw - 2rem)); background: hsl(var(--color-background-secondary)); color: hsl(var(--color-base));
+    box-shadow: 0 24px 60px rgb(0 0 0 / .35); }
+.domains-dialog::backdrop { background: rgb(0 0 0 / .55); }
+.domains-dialog form { padding: 1.5rem; }
+.domains-dialog h2 { font-size: 1.125rem; font-weight: 700; }
+.domains-dialog p { margin-top: .5rem; font-size: .9375rem; line-height: 1.5rem; color: hsl(var(--color-muted)); }
+.domains-dialog .domains-dialog__actions { display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; gap: .5rem; margin-top: 1.5rem; }
+.domains-dialog .domains-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; padding: 0 1rem; border-radius: .375rem; font-size: .875rem; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
+.domains-dialog .domains-btn--secondary { background: transparent; border-color: hsl(var(--color-neutral)); color: hsl(var(--color-base)); }
+.domains-dialog .domains-btn--primary { background: hsl(var(--color-primary)); color: #fff; }
+.domains-dialog .domains-btn--danger { background: hsl(var(--color-error)); color: #fff; }
+.domains-dialog :focus-visible { outline: 2px solid hsl(var(--color-primary)); outline-offset: 2px; }
+
+/* Help */
+.domains .domains-faq { max-width: 46rem; }
+.domains .domains-faq details { border-bottom: 1px solid var(--e-line); }
+.domains .domains-faq summary { cursor: pointer; padding: 1rem 0; font-weight: 700; list-style: none; display: flex; justify-content: space-between; gap: 1rem; }
+.domains .domains-faq summary::-webkit-details-marker { display: none; }
+.domains .domains-faq summary::after { content: "+"; color: var(--e-muted); font-weight: 400; }
+.domains .domains-faq details[open] summary::after { content: "−"; }
+.domains .domains-faq details > div { padding-bottom: 1rem; color: color-mix(in srgb, var(--e-fg) 78%, transparent); font-size: .9375rem; line-height: 1.5rem; }
+.domains .domains-faq details > div > * + * { margin-top: .5rem; }
+
+@media (prefers-reduced-motion: reduce) {
+    .domains-ui *, .domains *, .domains-dialog { transition: none !important; animation: none !important; }
+}
+
+/* Owner forms retain the approved management layout. */
+.domains .domains-owner-form { display: grid; gap: .75rem; max-width: 38rem; margin-top: 1rem; }
+.domains .domains-owner-form .domains-btn { justify-self: start; }
+.domains .domains-section > p { margin-block: .5rem; }
+.domains .domains-title, .domains .domains-back { overflow-wrap: anywhere; }
+.domains .domains-checkbox { align-items: start; }
+.domains .domains-checkbox input { margin-top: .25rem; flex: none; }
+</style>
+
+<style>
+/* Toolbar and chips */
+.domains .domains-toolbar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; justify-content: space-between; padding: 1rem; border-bottom: 1px solid var(--e-line); }
+.domains .domains-chips { display: flex; flex-wrap: wrap; gap: .375rem; }
+.domains .domains-chip { display: inline-flex; align-items: center; gap: .375rem; min-height: 2rem; padding: 0 .75rem; border-radius: 999px; border: 1px solid var(--e-line);
+    font-size: .8125rem; font-weight: 600; color: var(--e-muted); background: var(--e-bg); }
+.domains .domains-chip:hover { color: var(--e-fg); }
+.domains .domains-chip[aria-current="true"] { color: var(--e-accent); border-color: hsl(var(--color-primary) / .5); background: hsl(var(--color-primary) / .08); }
+.domains .domains-chip small { font-size: .75rem; font-weight: 600; opacity: .75; }
+.domains .domains-filter { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.domains .domains-filter .domains-input { min-height: 2.25rem; width: auto; }
+.domains .domains-search-mini { position: relative; }
+.domains .domains-search-mini svg { position: absolute; left: .625rem; top: 50%; transform: translateY(-50%); color: var(--e-muted); pointer-events: none; }
+.domains .domains-search-mini .domains-input { padding-left: 2rem; width: 15rem; max-width: 100%; }
+@media (max-width: 639px) { .domains .domains-search-mini, .domains .domains-search-mini .domains-input { width: 100%; } .domains .domains-filter { width: 100%; } }
+.domains .domains-filter > .domains-input { max-width: 100%; }
+@media (max-width: 639px) { .domains .domains-filter > .domains-input { width: 100%; } }
+</style>
+
+<style>
+/* Enom 444f31c empty state */
+.domains .domains-empty { padding: 3rem 1.5rem; text-align: center; }
+.domains .domains-empty p { color: var(--e-muted); max-width: 42ch; margin: .375rem auto 1.25rem; font-size: .9375rem; }
+</style>

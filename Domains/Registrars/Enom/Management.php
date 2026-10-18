@@ -65,7 +65,7 @@ final class Management extends ManagementProtocol
     {
         $p=$r->payload(); $a=$r->action; $args=$this->parts($r); $extra=[];
         $cmd=M::from($this->writeCommand($a));
-        if($a==='nameservers'){foreach($p['nameservers'] as $i=>$v){$extra['NS'.($i+1)]=$v;}}
+        if($a==='nameservers'){if(($p['use_default']??false)===true){$extra=['UseDNS'=>'default'];}else{foreach($p['nameservers'] as $i=>$v){$extra['NS'.($i+1)]=$v;}}}
         elseif($a==='lock'){$extra=['UnlockRegistrar'=>$p['locked']?0:1];}
         elseif($a==='auth_code_email'){$extra=['EmailEPP'=>'True','RunSynchAutoInfo'=>'True'];}
         elseif($a==='auto_renew_off'){$extra=['RenewFlag'=>0,'WPPSRenew'=>0];}
@@ -94,7 +94,7 @@ final class Management extends ManagementProtocol
         $cmd=match($a){'nameservers'=>R::Nameservers,'contacts'=>R::Contacts,'lock'=>R::Lock,'auto_renew_off'=>R::Renewal,'dns'=>R::Hosts,'srv'=>R::Srv,'ds_add','ds_delete'=>R::Ds,default=>str_starts_with($a,'privacy_')?R::Privacy:(str_starts_with($a,'glue_')?R::HostStatus:null)};
         if(!$cmd){return new ManagementResult($a==='auth_code_email');} $v=$this->get($r,$c,$cmd,$cmd===R::HostStatus?['CheckNSName'=>$p['host']]:null);
         if($cmd!==R::HostStatus&&$v->status!=='success'){return new ManagementResult(false);}
-        if($a==='nameservers'){$actual=ManagementRead::nameservers($v);$desired=$p['nameservers'];sort($actual);sort($desired);$ok=$actual===$desired||ManagementRead::defaultDns($actual)&&ManagementRead::defaultDns($desired);$facts=['nameservers'=>$actual];}
+        if($a==='nameservers'){$actual=ManagementRead::nameservers($v);$desired=$p['nameservers'];sort($actual);sort($desired);$ok=($p['use_default']??false)===true?ManagementRead::defaultDns($actual):($actual===$desired||ManagementRead::defaultDns($actual)&&ManagementRead::defaultDns($desired));$facts=['nameservers'=>$actual];}
         elseif($a==='lock'){$state=Driver::flag($v->value('reg-lock'));$ok=$state===$p['locked'];$facts=['locked'=>$state];}
         elseif($a==='auto_renew_off'){$one=Driver::flag($v->value('auto-renew',$v->value('renewname')));$two=$v->value('renewname');$ok=$one===false&&($two===null||Driver::flag($two)===false);$facts=['auto_renew'=>$one];}
         elseif($a==='contacts'){

@@ -25,6 +25,27 @@ final class DomainManagement
             default => throw new \DomainException('Unsupported management action.'),
         };
     }
+    /** Read-only owner affordances use the same current predicates; this grants no request/send authority. */
+    public function available(User $actor, Domain $seed, ManagementProtocol $driver, array $actions): array
+    {
+        if (!$actions) { return []; }
+        try {
+            return DB::transaction(function()use($actor,$seed,$driver,$actions):array {
+                $l=HoldingLocks::take($seed,(int)$actor->id);
+                $this->authority($l,(int)$actor->id,$actions[0],$driver); $this->peers($l);
+                return array_values(array_filter($actions,function($action)use($l,$actor,$driver):bool {
+                    if ($action==='auth_code_email'&&$this->emailCooling($l)) { return false; }
+                    if (in_array($action,['privacy_purchase','privacy_renew'],true)) {
+                        try { $this->authority($l,(int)$actor->id,$action,$driver); }
+                        catch (\Throwable) { return false; }
+                    }
+                    return $driver->capabilities()->get(self::capability($action))->support===Support::Supported;
+                }));
+            });
+        } catch (\Throwable) { return []; }
+    }
+    private function emailCooling(array $l): bool
+    { return $l['operations']->contains(fn($op)=>$op->action==='auth_code_email'&&in_array($op->state,['queued','running','succeeded','uncertain'],true)&&$op->created_at->toDateTimeImmutable()>$this->clock->now()->modify('-10 minutes')); }
     public function request(User $actor, int $id, string $action, #[\SensitiveParameter] array $payload, string $nonce,
         ManagementProtocol $driver, string $reason = 'owner_request', ?string $correction = null): Operation
     {
@@ -54,9 +75,7 @@ final class DomainManagement
             if($terms!==null&&($pending=ManagementPrivacy::pending($l,$action))){return $pending;}
             if ($initial !== null && $l['stamp'] !== $initial) { throw new \DomainException('Privacy authority changed.'); }
             $this->peers($l, correction: $correction, action: $action);
-            if ($action === 'auth_code_email' && $l['operations']->contains(fn ($op) => $op->action === $action
-                && in_array($op->state, ['queued', 'running', 'succeeded', 'uncertain'], true)
-                && $op->created_at->toDateTimeImmutable() > $this->clock->now()->modify('-10 minutes'))) { throw new \DomainException('Transfer code cooldown active.'); }
+            if ($action === 'auth_code_email' && $this->emailCooling($l)) { throw new \DomainException('Transfer code cooldown active.'); }
             $policy = ['management' => ['actor_id' => (int) $actor->id, 'reason' => (int)$actor->id===(int)$d->user_id?'owner_request':'staff_correction', 'input' => $clean,
                 'at' => $this->clock->now()->format(DATE_ATOM), 'generation' => $d->authority_generation, ...($correction !== null ? ['correction' => $correction, 'correction_link' => CorrectionProgress::link($l, $correction, $action)] : [])]];
             $data = ['domain_id' => $d->id, 'service_id' => $d->service_id, 'server_id' => $d->server_id, 'registrar_key' => $d->registrar_key,

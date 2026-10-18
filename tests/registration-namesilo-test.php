@@ -92,6 +92,8 @@ foreach (['different', 'missing', 'closure', 'account', 'registrar'] as $mode) {
     same($before, $registration->calls, 'Mismatched profile composition makes zero calls');
 }
 $makeEngine($binding, $exchange); $op = $nsNew('missing-servers.com'); $before = $registration->calls;
-$result = $engine->execute($op->id); same('held', $result->state, 'Ordinary payload safely held');
-same('nameservers_required', $result->safe_code, 'Specific missing desired nameserver hold'); same($before, $registration->calls, 'No profile or purchase without desired servers');
+$result = $engine->execute($op->id); same($op->state, $result->state, 'Missing desired setup remains editable before claim');
+same(null, $result->attempt, 'Missing desired servers consume no acquisition attempt');
+same($op->safe_code, $result->safe_code, 'No unrecoverable hold is invented before owner setup');
+same($before, $registration->calls, 'No profile or purchase without desired servers');
 echo "NameSilo fresh profile, acceptance and ancillary correction checks passed\n"; $nativeSuccessful = true;

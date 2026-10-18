@@ -44,7 +44,7 @@ a sealed/unknown request cannot. Refund retains the acquired domain and native f
 | Frozen source behavior | Target test or explicit disposition |
 | --- | --- |
 | DomainManager/DomainOperations owner, staff, stale permission, active service, unresolved sibling and duplicate request | `management-test`: stranger, staff revocation, native drift, repeated key/write, completed evidence; native holding checks reuse24/25 |
-| Empty nameserver list / UseDNS=default | Explicit reset-to-provider-default command is unsupported here;33 must expose a named, separately authorized action before implementing it. Empty lists never silently change DNS. |
+| Empty nameserver list / UseDNS=default | Owner reset is an explicit confirmed `use_default` intent under a fresh nameservers form key and the existing engine grant. Enom alone accepts it and requires default-DNS readback. Bare empty lists remain invalid. |
 | ModifyNS/GetDNS canonical hosts and Enom default nameserver equivalence | `management-test`; source-equivalent `.name-services.com` sets are normalized before readback comparison |
 | Contacts one role/all four in one request; optional fields; collected roles; malformed/conflicting aliases | `management-test`; `Contacts::read` and existing `enom-read-test` retain attributed fields/NotCollected/conflicting aliases; no account profile mutation |
 | SetRegLock/GetRegLock and provider renewal-off | `management-test`; nullable flags never fabricate desired state; customer provider-renewal enable remains unsupported |

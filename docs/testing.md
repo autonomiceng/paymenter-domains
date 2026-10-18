@@ -247,3 +247,15 @@ rejection, pending windows, restart/lease/resume, correction links and unchanged
 Regressions cover local quota deferral/reset, exhausted-pending acquisition phases, reversed
 management execution order and durable catalogue failure holds without extending prices.
 No installed schedule, provider acceptance or concurrent MariaDB guarantee is established.
+
+### Dormant owner pages (33)
+
+`owned-pages-test.php` exercises current native/ledger ownership, capability labels,
+held contacts, pending transfers, safe correction states and real Blade rendering.
+`PAYMENTER_TEST_APP=<pinned source> python3 scripts/render-owned.py SHELL_DIR OUTPUT_DIR`
+renders synthetic owner DTOs inside the supplied site shell.
+It does not boot the extension, read registrar state or enable processing.
+The owner action/management suites cover exact encrypted code bytes, paid UTC cutoffs,
+immutable setup, purchase grammar, native CSRF, atomic replay, engine requests and synthetic readback.
+They also verify unresolved-peer/cooldown affordances and the explicit Enom default-DNS reset;
+empty nameservers never imply a reset, and NameSilo does not offer one.

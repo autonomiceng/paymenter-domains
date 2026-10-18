@@ -7,6 +7,10 @@ final class ManagementInput extends ManagementPayload
 {
     public static function validate(string $action,#[\SensitiveParameter] array $p,string $name): array
     {
+        if ($action==='nameservers' && ($p['use_default']??null)===true) {
+            if (($p['nameservers']??[])!==[]) { throw new \DomainException('Default reset cannot include custom nameservers.'); }
+            return ['nameservers'=>[],'use_default'=>true];
+        }
         $clean=parent::normalize($action,$p,$name,'enom');
         if($action==='nameservers'&&count($clean['nameservers'])>12){throw new \DomainException('Enom nameserver limit.');}return $clean;
     }

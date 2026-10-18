@@ -1,0 +1,78 @@
+<?php
+// Enom 444f31c RegistrationSetupController/TransferCodeController/DomainController; MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Http\Controllers;
+use Illuminate\Http\Request;
+use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
+use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, DomainManagement, OwnedDomains, OwnerPorts, OwnerSetup, TransferInputs};
+/** Dormant owner POST boundary. Never calls a driver write or queues a purchase. */
+final readonly class OwnerActionController
+{
+    public const ACTIONS=['nameservers','contacts','contact_profile','lock','privacy_enable','privacy_disable','privacy_purchase','privacy_renew','auto_renew_off','auth_code_email'];
+    public function __construct(private OwnedDomains $owners, private OwnerSetup $setup, private TransferInputs $inputs,
+        private DomainManagement $management, private OwnerPorts $ports) {}
+    public function code(#[\SensitiveParameter] Request $request,int $domain)
+    {
+        $query=$request->query->has('transfer_code'); $code=$request->request->all()['transfer_code']??null;
+        $request->request->remove('transfer_code'); $request->query->remove('transfer_code');
+        if ($request->isJson()) { $request->json()->remove('transfer_code'); }
+        $request->session()->forget('_old_input.transfer_code');
+        $d=$this->owners->owned($request->user(),$domain); $op=$this->owners->operation($d);
+        $context='owner:'.$domain.':code'; FormKeys::verify($request,$context);
+        if ($query||!TransferInputs::validCode($code)||$request->isJson()) {
+            return redirect()->route('domains.domains.code',$domain)->withErrors(['transfer_code'=>'Enter a valid transfer code.']);
+        }
+        FormKeys::consume($request,$context);
+        try {
+            $body=Request::create('/','POST',['transfer_code'=>$code]); $body->setUserResolver(fn()=>$request->user());
+            $this->inputs->submitCode($body,$op?->id??0);
+            return redirect()->route('domains.domains.code',$domain)->with('domains_status','Code received. The transfer starts once payment and your details are confirmed.');
+        } catch (\Throwable) { return redirect()->route('domains.domains.code',$domain)->withErrors(['transfer_code'=>'We couldn’t save the code. Try again.']); }
+    }
+    public function setup(Request $request,int $domain)
+    {
+        return $this->submit($request,$domain,'setup',function()use($request,$domain):void {
+            if ($request->request->get('confirmed')!=='1') { throw new \DomainException; }
+            $servers=$request->request->get('nameservers','');
+            if (!is_string($servers)||!in_array($request->request->get('privacy','0'),['0','1'],true)) { throw new \DomainException; }
+            $this->setup->save($request->user(),$domain,['nameservers'=>self::servers($servers),'privacy'=>$request->request->get('privacy')==='1']);
+        },'Domain setup saved.');
+    }
+    public function contacts(Request $request,int $domain)
+    {
+        return $this->submit($request,$domain,'recovery',function()use($request,$domain):void {
+            $op=$this->owners->operation($this->owners->owned($request->user(),$domain));
+            ContactRecovery::replace($request->user(),$op?->id??0,'owner_updated_account_details');
+        },'Account details updated. We will continue once the order is ready.');
+    }
+    public function manage(Request $request,int $domain,string $action)
+    {
+        abort_unless(in_array($action,self::ACTIONS,true),404);
+        return $this->submit($request,$domain,$action,function($nonce)use($request,$domain,$action):void {
+            $d=$this->owners->owned($request->user(),$domain); $p=$request->request->all();
+            if (($p['confirmed']??null)!=='1') { throw new \DomainException; }
+            $payload=match($action) {
+                'nameservers'=>($p['use_default']??null)==='1' && $d->registrar_key==='enom'
+                    ? ['nameservers'=>[],'use_default'=>true] : ['nameservers'=>self::servers(is_string($p['nameservers']??null)?$p['nameservers']:'')],
+                'lock'=>['locked'=>match($p['locked']??null){'1'=>true,'0'=>false,default=>throw new \DomainException}],
+                'contacts','contact_profile'=>['role'=>$p['role']??'all','contact'=>$p['contact']??[]],
+                default=>[],
+            };
+            $this->management->request($request->user(),$domain,$action,$payload,$nonce,$this->ports->forDomain($d));
+        },'Change requested. Check Activity for updates.');
+    }
+    private function submit(Request $request,int $domain,string $action,\Closure $work,string $message)
+    {
+        $this->owners->owned($request->user(),$domain); $context='owner:'.$domain.':'.$action;
+        $nonce=FormKeys::verify($request,$context); FormKeys::consume($request,$context);
+        try { $work($nonce); return redirect()->route('domains.domains.show',$domain)->with('domains_status',$message); }
+        catch (\Paymenter\Extensions\Servers\Domains\Services\SetupValidation $error) {
+            return redirect()->route('domains.domains.setup',$domain)->withErrors(array_intersect_key([
+                'nameservers'=>'Check the nameservers.','privacy'=>'Domain privacy is not available for this domain.'],array_flip($error->fields)));
+        } catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation $error) {
+            return redirect()->route('domains.domains.show',$domain)->withErrors(array_fill_keys(array_unique(array_map(static fn($field)=>preg_replace('/^contacts\\.[^.]+\\./','contact.',$field),$error->fields)),'Check this contact detail.'));
+        } catch (\Throwable) { return redirect()->route('domains.domains.show',$domain)->withErrors(['owner_action'=>'We couldn’t save this change. Check the details and try again. If it keeps happening, contact support.']); }
+    }
+    private static function servers(string $text): array
+    { return $text===''?[]:array_values(array_filter(array_map('trim',preg_split('/\r\n|\n|\r/',$text)),fn($v)=>$v!=='')); }
+}

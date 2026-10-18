@@ -45,6 +45,8 @@ final class DomainOperations
         if ($this->writer instanceof WriteGate) {
             try {
                 $this->writer->requireEnabled(\Paymenter\Extensions\Servers\Domains\Data\Action::from($route->action));
+                // Missing/invalid owner setup is not an acquisition attempt or a rate reservation.
+                if ($this->writer instanceof RegistrationBridge && !AcquisitionSetup::ready($route)) { return $route; }
                 if (in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { $this->writer->reserve(); }
             }
             catch (WriteHeld $held) { return $this->claims->holdUnclaimed($id, $held->reason); }
