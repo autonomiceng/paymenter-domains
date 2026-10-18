@@ -14,6 +14,9 @@ same(0,storefrontDom($html)->query('//form[contains(@action,"/manage/dns")]')->l
 $dom=storefrontDom($html);same(0,$dom->query('//form[contains(@action,"/manage/srv")]')->length,'Held SRV has no replacement form');
 expect(str_contains($html,'Your current DS records can’t be shown right now. You can still add one.'),'Unknown DS list is explicit');same(1,$dom->query('//form[contains(@action,"/manage/ds_add")]')->length,'Unknown DS permits fresh-preflight addition');same(0,$dom->query('//form[contains(@action,"/manage/ds_delete")]')->length,'Unknown DS cannot imply deletable records');
 expect(str_contains($html,'Only child nameservers added or changed here are listed. Others may already exist.'),'Unknown glue is explicitly partial history');same(1,$dom->query('//form[contains(@action,"/manage/glue_add")]')->length,'Unknown glue permits verified additions');same(0,$dom->query('//form[contains(@action,"/manage/glue_update")]')->length,'Unknown glue never fabricates editable hosts');
+\Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
+$observer=new \Paymenter\Extensions\Servers\Domains\Services\DomainObservation($readBindings,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),$ports);
+same('refreshed',$observer->run($d->id),'Initial producer proves complete empty records before editing');
 $cases=[
     'dns'=>['records'=>[['name'=>'@','type'=>'TXT','address'=>' exact  text ','mx_pref'=>''],[]],'preimage_digest'=>ManagementPayload::digest([])],
     'srv'=>['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'0','weight'=>'5','port'=>'443','target'=>'sip.example.com.']],'preimage_digest'=>ManagementPayload::digest([],'srv')],

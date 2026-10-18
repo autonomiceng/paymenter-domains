@@ -73,6 +73,7 @@
     "tests/management-preparation-test.php",
     "tests/observation-budget-test.php",
     "tests/observation-test.php",
+    "tests/observation-records-test.php",
     "tests/observation-namesilo-test.php",
     "tests/observation-catalogue-test.php",
     "tests/storefront-test.php",

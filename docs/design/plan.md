@@ -114,6 +114,12 @@ lines: **48 slices / 49,158 lines** combined. Optional NameSilo DNS/glue/DS adds
 3,600 lines: **51 / 52,758**. Enom release review is outside these totals. Preparatory plan docs
 are charged to foundation allowance; estimates remain ±25%, and hard limits require extra commits.
 
+## Explicit amendment: initial managed-record observations (2026-10-18)
+
+| PR | Budget | Scope / predecessors / evidence |
+| --- | ---: | --- |
+| 31R | 1,200 | Initial durable DNS/SRV/DS/child-host observations; explicit complete/unknown and partial glue, bounded account/read budgets, domain/provider/account/generation binding, no GET transport. Observation lane owns the producer after36–38 and before39. Owner DNS/SRV editing requires proven current records.39 only registers the accepted producer. Split green commits if hard limits require. |
+
 ## Parallel worktrees and owners
 
 | Lane | Slices | Role / exclusive ownership | Start gate |

@@ -100,14 +100,14 @@ final class AccountBindings
     }
 
     /** Caller holds these server/account rows in its checkout/claim transaction; never re-query a snapshot. */
-    public function requireProcessingLocked(Server $server, Account $account): void
+    public function requireProcessingLocked(Server $server, Account $account, bool $advisory = false): void
     {
         if (DB::transactionLevel() === 0) { throw new \LogicException('Locked processing requires an outer transaction.'); }
         if (!$server->enabled || $server->extension !== 'Domains' || (int) $account->server_id !== (int) $server->id) {
             throw new \DomainException('Locked registrar server is unavailable.');
         }
         $this->binding($account);
-        $this->configuration($account, true, $server);
+        $this->configuration($account, true, $server, $advisory);
         if (!$account->processing_enabled) { throw new \DomainException('Registrar processing is disabled.'); }
     }
 
@@ -135,16 +135,16 @@ final class AccountBindings
         return $binding;
     }
 
-    private function configuration(Account $account, bool $requireSite = false, ?Server $lockedServer = null): array
+    private function configuration(Account $account, bool $requireSite = false, ?Server $lockedServer = null, bool $advisory = false): array
     {
         try {
             $binding = $this->binding($account);
             if ($requireSite && $binding->environment === Environment::Live && $account->live_site !== self::site()) {
                 throw new \DomainException('Live mode is not bound to this site.');
             }
-            $credentials = json_decode($this->secret((int) $account->server_id, self::CREDENTIALS, $lockedServer), true, 8, JSON_THROW_ON_ERROR);
+            $credentials = json_decode($this->secret((int) $account->server_id, self::CREDENTIALS, $lockedServer, $advisory), true, 8, JSON_THROW_ON_ERROR);
             $credentials = $this->registry->credentials($binding->registrarKey, $credentials);
-            if (!hash_equals($this->secret((int) $account->server_id, self::VERIFIED, $lockedServer), $this->digest($binding, $credentials))) {
+            if (!hash_equals($this->secret((int) $account->server_id, self::VERIFIED, $lockedServer, $advisory), $this->digest($binding, $credentials))) {
                 throw new \DomainException('Registrar credentials changed without verified rotation.');
             }
             return $credentials;
@@ -160,10 +160,10 @@ final class AccountBindings
         $setting->encrypted = true; $setting->type = 'string'; $setting->value = $value; $setting->save();
     }
 
-    private function secret(int $serverId, string $key, ?Server $lockedServer = null): string
+    private function secret(int $serverId, string $key, ?Server $lockedServer = null, bool $advisory = false): string
     {
         $query = ($lockedServer ?? $this->server($serverId))->settings()->where('key', $key);
-        if ($lockedServer) { $query->lockForUpdate(); }
+        if ($lockedServer && !$advisory) { $query->lockForUpdate(); }
         $setting = $query->first();
         if (!$setting || !$setting->encrypted || !is_string($setting->value) || $setting->value === '') {
             throw new \DomainException('Encrypted registrar settings are required.');

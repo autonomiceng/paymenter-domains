@@ -32,11 +32,23 @@ final class ObservationProjection
     }
     public static function sections(Domain $d): array
     {
-        $sections=[]; $glue=[]; $reads=[];
-        foreach ($d->operations()->orderBy('id')->get() as $op) {
+        $sections=[]; $glue=[]; $reads=[]; $inventory=ObservationRecords::current($d);
+        if ($inventory) {
+            foreach (['dns','srv','ds'] as $kind) {
+                $f=$inventory['families'][$kind]??[];
+                if (($f['state']??null)==='complete') { $sections[$kind]=['at'=>$inventory['at'],'facts'=>['records'=>$f['records']]]; }
+            }
+            $glue=$inventory['families']['glue']['records']??[];
+        }
+        $ops=$d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(101)->get();
+        // Never treat a truncated history as a complete inventory. A fresh observation stands alone.
+        if ($ops->count()>100) {
+            return ['known_glue'=>$glue];
+        }
+        foreach ($ops as $op) {
             if ($op->authority_generation!==$d->authority_generation||!isset($op->policy['management'])||!ManagementEvidence::resolved($op,$d)) { continue; }
             foreach ($op->attempt['management_reads']??[] as $read) {
-                if (($read['confirmed']??false)!==true) { continue; }
+                if (($read['confirmed']??false)!==true || ($inventory && in_array($op->action,['dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'],true) && ($read['sequence']??0)<=$inventory['sequence'])) { continue; }
                 $reads[]=['op'=>$op,'read'=>$read];
             }
         }
@@ -50,11 +62,12 @@ final class ObservationProjection
                     if (($read['facts']['ip']??null)===null) { unset($glue[$host]); } else { $glue[$host]=$read['facts']['ip']; }
                 } else { $sections[$kind]=['operation_key'=>$op->operation_key,'at'=>$read['at'],'facts'=>$read['facts']]; }
         }
+        if (count($glue)>50) { unset($sections['dns'],$sections['srv'],$sections['ds']); }
         $sections['known_glue']=$glue; return $sections;
     }
     private static function corrections(Domain $d): array
     {
-        $progress=[]; $ops=$d->operations()->orderBy('id')->get();
+        $progress=[]; $ops=$d->operations()->where('authority_generation',$d->authority_generation)->orderByDesc('id')->limit(100)->get();
         foreach ($ops as $op) {
             $link=$op->policy['management']['correction_link']??null;
             if (!$link || count($progress)>=100) { continue; }

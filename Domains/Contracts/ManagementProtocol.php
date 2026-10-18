@@ -15,6 +15,13 @@ abstract class ManagementProtocol
     public function __construct(protected readonly AccountBinding $binding, #[\SensitiveParameter] \Closure $exchange)
     { $this->exchange = new \SensitiveParameterValue($exchange); }
     final public function bindsTo(AccountBinding $binding): bool { return $this->binding->matches($binding); }
+    /** Read-only discovery; unsupported families remain unknown, never empty. No write grant. */
+    public function discover(ManagementRequest $request, RequestContext $context, array $knownGlue = []): array
+    {
+        $this->binding->requireMatch($request->binding); $this->binding->requireMatch($context->binding);
+        if (count($knownGlue)>50) { throw new \DomainException('Child-host history limit reached.'); }
+        return array_fill_keys(['dns','srv','ds'], ['state'=>'unknown'])+['glue'=>['state'=>'partial','records'=>array_slice($knownGlue,0,50,true)]];
+    }
     abstract public function capabilities(): Capabilities;
     abstract public function validate(string $action, #[\SensitiveParameter] array $payload, string $name): array;
     public function freeze(string $key, string $name, string $action, #[\SensitiveParameter] array $payload, int $domainId): array { return $payload; }

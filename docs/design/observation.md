@@ -75,3 +75,47 @@ Earlier correction operations without a frozen link remain unresolved; Enom uses
 existing separately authorized correction checks. Original attempts are never retrofitted.
 Legacy readbacks without a sequence retain timestamp/ID ordering;39 must classify ambiguous
 legacy section/glue history Unknown before any installed presentation relies on it.
+
+## Initial record inventory (31R)
+
+The optional `OwnerPorts` on `DomainObservation` injects the accepted named discovery
+port; absent composition does not produce a record inventory. Existing account-fair work
+and 25-wire/250-second contexts budget all domain and record reads together. No GET
+transport, scheduler, listener, sender or processing activation is registered.39 owns that
+composition and the existing publication/headroom/installed database acceptance gates.
+Enom uses existing GetDomainInfo identity, GetHosts, GetDomainSRVHosts, GetDnsSec and
+CheckNSStatus parsers from frozen444f31c. NameSilo advanced discovery remains unknown:
+its documented commands do not supply accepted completeness/identity/shape contracts.
+Glue cannot be enumerated by the Enom source; at most13 known hosts are refreshed in rotating order, with
+confirmed local history retained as partial across unrelated or child-host read failures.
+A failed record/child read sets an identity-bound encrypted `observation.record_hold`
+with reason/time. Later daily ownership/expiry/drift reads continue but skip record discovery.
+The existing bounded audited work resume clears the record hold for one new attempt;
+only exact absence removes a child host. Neither driver claims complete glue discovery.
+Before39 registers this producer, a current-identity `record_hold` must surface as a
+staff review/alert with its reason. Registration is held until that operational signal exists.
+
+Encrypted `observation.records` contains domain/name/provider/account/server/generation,
+provider domain ID, observation time, readback sequence watermark and per-family state.
+Only explicit complete record lists (including positively proven empty) unlock DNS/SRV.
+Unknown/malformed/failed families replace prior completeness; stale identity is discarded.
+Later sequenced management readbacks overlay the observation; older or ambiguous legacy
+reads cannot replace it. Live dispatch still independently verifies the whole-list preimage.
+No billing anchor, confirmed expiry/revision, operation or financial authority changes.
+
+Owner presentation scans at most100 current-generation operations per projection and
+100 progress entries; correction projection also caps100. Advisory native validation reads
+at most101 operations and holds forms when the bound is exceeded. Those GET checks use
+no row locks, including credential settings; POST/consume retain the ordered locking
+protocol. Large histories need39 retention-preserving compaction rather than unbounded
+GET decryption. Above100 operations or50 known child hosts, refresh skips record
+discovery/publication and holds only the record stage for explicit resume. Healthy domain
+observations keep their schedule even after the existing20-resume budget is exhausted. It never
+advances a record watermark past omitted child-host evidence. Record quota deferral saves
+successful domain facts and leaves inventory unchanged. SQLite checks prove lock-free query construction, not MariaDB concurrency.
+
+Frozen MIT provenance: Enom `444f31ce0bfd07216e5200544bffe863119d0e7d`,
+`DomainOperations::refreshDomain`, `EnomApi::snapshot` and `currentHostIp`; source
+`tests/Enom/glue-records.php`, `provider-contracts.php`, `capability-readbacks.php`
+and `automatic-refresh.php`. Existing strict parsers are reused; native initial-inventory
+cases cover empty/unknown, identity races, partial glue retention and sequence ordering.

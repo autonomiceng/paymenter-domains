@@ -17,7 +17,7 @@ $wire = new class($observation) implements Transport {
         $expiry = (2026 + $s->years).'-10-18'; if ($s->fault === 'term') { $expiry = '2026-10-18'; }
         $item = '<Description>'.$s->name.'</Description><ProductType>Register</ProductType><Quantity>'.$s->years.'</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>8.95</AmountPaid><ExpiryDateTime>'.$expiry.'</ExpiryDateTime>';
         $data = match ($command) {
-            ReadCommand::Info => '<GetDomainInfo><DomainName DomainNameID="456">'.$s->name.'</DomainName><Status><Belongs-To>account-enom</Belongs-To><Expiration>'.$expiry.'</Expiration></Status></GetDomainInfo>',
+            ReadCommand::Info => '<GetDomainInfo><DomainName DomainNameID="456">'.$s->name.'</DomainName><Status><Belongs-To>'.($s->fault==='owner'?'another-account':'account-enom').'</Belongs-To><Expiration>'.$expiry.'</Expiration></Status></GetDomainInfo>',
             ReadCommand::Expiry => '<ExpirationDate>'.$expiry.'</ExpirationDate>',
             ReadCommand::Renewal => '<RenewName>0</RenewName>', ReadCommand::Lock => '<Reg-Lock>1</Reg-Lock>',
             ReadCommand::Privacy => '<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',

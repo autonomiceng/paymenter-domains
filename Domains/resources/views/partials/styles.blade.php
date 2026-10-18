@@ -354,6 +354,8 @@
 .domains .domains-records .domains-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .domains .domains-records .domains-input { min-width: 5.5rem; }
 .domains .domains-record-card { border: 1px solid var(--e-line); border-radius: .5rem; padding: .75rem 1rem; margin-block: .75rem; }
-.domains .domains-record-value { overflow-wrap: anywhere; }
+.domains .domains-dhead > div { min-width: 0; max-width: 100%; }
+.domains .domains-record-value { white-space: nowrap; overflow-wrap: normal; overflow-x: auto; max-width: 100%; }
+.domains .domains-inline-token { display: inline-block; max-width: 100%; white-space: nowrap; overflow-wrap: normal; overflow-x: auto; vertical-align: bottom; }
 </style>
 @endonce

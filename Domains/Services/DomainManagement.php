@@ -31,7 +31,7 @@ final class DomainManagement
         if (!$actions) { return []; }
         try {
             return DB::transaction(function()use($actor,$seed,$driver,$actions):array {
-                $l=HoldingLocks::take($seed,(int)$actor->id);
+                $l=HoldingLocks::take($seed,(int)$actor->id,advisory:true);
                 $this->peers($l);
                 return array_values(array_filter($actions,function($action)use($l,$actor,$driver):bool {
                     if ($action==='auth_code_email'&&$this->emailCooling($l)) { return false; }
@@ -45,7 +45,7 @@ final class DomainManagement
     private function emailCooling(array $l): bool
     { return $l['operations']->contains(fn($op)=>$op->action==='auth_code_email'&&in_array($op->state,['queued','running','succeeded','uncertain'],true)&&$op->created_at->toDateTimeImmutable()>$this->clock->now()->modify('-10 minutes')); }
     public function request(User $actor, int $id, string $action, #[\SensitiveParameter] array $payload, string $nonce,
-        ManagementProtocol $driver, string $reason = 'owner_request', ?string $correction = null): Operation
+        ManagementProtocol $driver, string $reason = 'owner_request', ?string $correction = null, ?array $recordIdentity = null): Operation
     {
         OperationClaims::outside(); self::capability($action);
         if (!preg_match('/^[a-f0-9]{64}$/D', $nonce) || !in_array($reason,['owner_request','staff_correction'],true)) { throw new \DomainException('Invalid management request identity.'); }
@@ -60,8 +60,9 @@ final class DomainManagement
             if ($existing) { if ($existing->action !== $action || (int)$existing->authorized_by !== (int)$actor->id) { throw new \DomainException('Management key reused.'); } return $existing; }
             $terms = $driver->billingTerms($request, new RequestContext($request->binding, RequestOrigin::Interactive, $this->clock->now()->modify('+250 seconds'), new RequestBudget(10), $this->clock));
         }
-        return DB::transaction(function () use ($seed, $actor, $action, $payload, $nonce, $driver, $reason, $terms, $initial, $correction): Operation {
+        return DB::transaction(function () use ($seed, $actor, $action, $payload, $nonce, $driver, $reason, $terms, $initial, $correction, $recordIdentity): Operation {
             $l = HoldingLocks::take($seed, (int) $actor->id); $d = $l['domain']; $this->authority($l, (int) $actor->id, $action, $driver, correction: $correction);
+            if ($recordIdentity!==null && (ObservationRecords::identity($d)!==$recordIdentity || !isset(OwnerRecords::forDomain($d)[$action]))) { throw new \DomainException('Current records required.'); }
             $clean = $terms ?? $driver->validate($action, $payload, $d->domain); $key = 'manage:'.$seed->id.':'.$nonce;
             $clean = $driver->freeze($key, $d->domain, $action, $clean, (int) $d->id);
             if ($correction !== null) { ManagementCorrections::require($l, $action, $clean, $correction); }
@@ -243,7 +244,7 @@ final class DomainManagement
         if ($actor !== (int) $d->user_id && (!$l['staff'] || !$l['staff']->hasPermission('admin.domains.manage'))) { throw new \DomainException('Management permission required.'); }
         if (!$driver->bindsTo($b) || !$driver->capabilities()->binding->matches($b)
             || $driver->capabilities()->get(self::capability($action))->support !== Support::Supported) { throw new \DomainException('Management capability unsupported.'); }
-        if ($processing) { $this->bindings->requireProcessingLocked($l['server'], $l['account']); }
+        if ($processing) { $this->bindings->requireProcessingLocked($l['server'], $l['account'], $l['advisory']??false); }
         else { $this->bindings->requireReadableLocked($l['server'], $l['account']); }
         if ((($d->status !== 'active' || $l['service']->status !== 'active') && !ManagementCorrections::pending($l, $action, $correction)) || $l['cancel']->contains('service_id', $d->service_id)
             || ($d->renewal_policy['automatic_spend_paused'] ?? false)) { throw new \DomainException('Management lifecycle held.'); }

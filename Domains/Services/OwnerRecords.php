@@ -26,9 +26,10 @@ final class OwnerRecords
     }
     public static function forDomain(Domain $d): array
     {
-        $facts=ObservationProjection::sections($d); $out=[];
+        $facts=ObservationProjection::sections($d); $out=[]; $inventory=ObservationRecords::current($d);
         foreach (['dns','srv','ds'] as $kind) {
             try {
+                if (in_array($kind,['dns','srv'],true)&&(!$inventory||($inventory['families'][$kind]['state']??null)!=='complete')) { continue; }
                 $rows=$facts[$kind]['facts']['records']??null;
                 if (!is_array($rows)||!array_is_list($rows)||count($rows)>50) { continue; }
                 $out[$kind]=ManagementPayload::canonical($kind,$rows);

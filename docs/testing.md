@@ -313,6 +313,17 @@ preferences and uncertain handoff without automatic replay. No provider transpor
 renders all customer template branches as native HTML/text and the changed staff
 surfaces with the pinned mail shell and compiled Filament CSS. Output is external.
 
+### Initial managed-record observation (31R)
+
+`observation-records-test.php` composes the real Enom read seam with injected transport,
+account-fair work, encrypted complete/unknown inventories, sequence ordering, stale identity
+refusal and owner Blade/POST gates. GET advice uses bounded history without row locks.
+NameSilo advanced families remain unknown; glue is partial confirmed local history.
+No provider calls, installed schedule or production database acceptance is established.
+
+Render complete, unknown, partial, stale-generation and many-record owner pages offline with
+`scripts/render-observations.py SHELL_DIR OUTPUT_DIR`, using the pinned native fixture.
+
 ## Opt-in NameSilo OTE contract test
 
 Run only with separate authority for the sandbox account and (for `--write`) its funds.

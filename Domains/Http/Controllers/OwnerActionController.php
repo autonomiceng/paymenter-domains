@@ -51,6 +51,7 @@ final readonly class OwnerActionController
         return $this->submit($request,$domain,$action,function($nonce)use($request,$domain,$action):void {
             $d=$this->owners->owned($request->user(),$domain); $p=$request->request->all();
             if (($p['confirmed']??null)!=='1') { throw new \DomainException; }
+            if (in_array($action,['dns','srv'],true)&&!isset(\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::forDomain($d)[$action])) { throw new \DomainException('Current records required.'); }
             $payload=match($action) {
                 'nameservers'=>($p['use_default']??null)==='1' && $d->registrar_key==='enom'
                     ? ['nameservers'=>[],'use_default'=>true] : ['nameservers'=>self::servers(is_string($p['nameservers']??null)?$p['nameservers']:'')],
@@ -64,7 +65,7 @@ final readonly class OwnerActionController
                 try { $this->ports->forDomain($d)->validate($action,$payload,$d->domain); }
                 catch (\Throwable) { throw new \Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation(['nameservers']); }
             }
-            $this->management->request($request->user(),$domain,$action,$payload,$nonce,$this->ports->forDomain($d));
+            $this->management->request($request->user(),$domain,$action,$payload,$nonce,$this->ports->forDomain($d),recordIdentity:in_array($action,['dns','srv'],true)?\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d):null);
         },'Change requested. Check Activity for updates.');
     }
     private function submit(Request $request,int $domain,string $action,\Closure $work,string $message)

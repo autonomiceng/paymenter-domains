@@ -6,7 +6,7 @@
 @foreach ($section['records'] ?? [] as $index => $ds)
 <div class="domains-record-card">
 <p><strong>Key tag {{ $ds['key_tag'] }}</strong> · algorithm {{ $ds['algorithm'] }} · digest type {{ $ds['digest_type'] }}</p>
-<p class="domains-record-value">{{ $ds['digest'] }}</p>
+<p class="domains-record-value" tabindex="0">{{ $ds['digest'] }}</p>
 @if (isset($section['actions']['ds_delete']))
 <form method="POST" action="{{ $section['actions']['ds_delete'] }}" class="domains-owner-form">
 @include('domains::partials.form-key', ['action'=>'ds_delete'])
