@@ -35,7 +35,8 @@ final class PriceCatalogue
                     $seen[$rate->action.':'.$rate->term] = true;
                 }
                 $this->locked($tld, function (Tld $locked) use ($rates): void {
-                    foreach ($rates as $rate) { $this->write($locked, $rate); }
+                    $rule = $this->rules->rule($locked, true); $hash = self::ruleHash($rule);
+                    foreach ($rates as $rate) { $this->write($locked, $rate, $rule, $hash); }
                 });
                 $summary['synced']++;
             } catch (\Throwable) { $summary['failed'][] = '.'.$tld->tld; }
@@ -60,9 +61,11 @@ final class PriceCatalogue
             $renewal = $row['renewal_safe'] && $entry->renewalSupported && in_array(1, $row['renew'], true);
             $registry = $row['registry'] && $entry->registrySupported;
             $proof = ['catalogue_revision' => $accepted->revision, 'accepted_terms' => $terms, 'registry' => $registry, 'renewal_safe' => $renewal];
+            $rule = $hash = null;
             foreach ($rates as $rate) {
                 if (!in_array($rate->term, $row[$rate->action], true)) { throw new \DomainException('Unaccepted action term.'); }
-                $this->write($locked, $rate, $proof);
+                $rule ??= $this->rules->rule($locked, true); $hash ??= self::ruleHash($rule);
+                $this->write($locked, $rate, $rule, $hash, $proof);
             }
             if ($terms) { $locked->min_years = min($terms); $locked->max_years = max($terms); }
             $locked->fill(['register_enabled' => false, 'transfer_enabled' => false, 'renew_enabled' => $renewal,
@@ -90,6 +93,7 @@ final class PriceCatalogue
     public function republishLocked(Tld $locked): void
     {
         if (DB::transactionLevel() !== 1) { throw new \LogicException('Locked republication requires the outer writer.'); }
+        $rule = $hash = null;
         foreach (Price::where('server_id', $locked->server_id)->where('tld', $locked->tld)->orderBy('id')->lockForUpdate()->get() as $price) {
             if ($price->eligibility['price_unavailable'] ?? false) { continue; }
             if ($price->action === 'register' && ($price->term < $locked->min_years || $price->term > $locked->max_years)) { continue; }
@@ -98,7 +102,8 @@ final class PriceCatalogue
             if ($units !== null && $units % $price->term !== 0) { throw new \DomainException('Unsupported per-year precision.'); }
             $rate = new CatalogueRate($price->action, $price->term, $units === null ? null : PricingRule::decimal(intdiv($units, $price->term), 4),
                 $price->source, $price->observed_at->toDateTimeImmutable(), $price->fresh_until?->toDateTimeImmutable(), $price->currency);
-            $this->write($locked, $rate, array_intersect_key($price->eligibility, array_flip(['catalogue_revision', 'accepted_terms', 'registry', 'renewal_safe'])));
+            $rule ??= $this->rules->rule($locked, true); $hash ??= self::ruleHash($rule);
+            $this->write($locked, $rate, $rule, $hash, array_intersect_key($price->eligibility, array_flip(['catalogue_revision', 'accepted_terms', 'registry', 'renewal_safe'])));
         }
     }
 
@@ -171,7 +176,7 @@ final class PriceCatalogue
             throw new \LogicException('Locked price validation requires its caller-held TLD.');
         }
         $tldRow = $locked ?? Tld::where(['server_id' => $serverId, 'tld' => $tld, 'account_fingerprint' => $fingerprint])->firstOrFail();
-        $hash = $this->ruleHash($tldRow, $lock);
+        $hash = self::ruleHash($this->rules->rule($tldRow, $lock));
         $query = Price::where(['server_id' => $serverId, 'account_fingerprint' => $fingerprint, 'tld' => $tld,
             'action' => $action, 'term' => $term, 'currency' => $currency]);
         if ($lock) { $query->lockForUpdate(); }
@@ -204,7 +209,7 @@ final class PriceCatalogue
         });
     }
 
-    private function write(Tld $tld, CatalogueRate $rate, array $publication = []): void
+    private function write(Tld $tld, CatalogueRate $rate, array $rule, string $hash, array $publication = []): void
     {
         if ($rate->action === 'register' && ($rate->term < $tld->min_years || $rate->term > $tld->max_years)) {
             throw new \DomainException('Unsupported registration term.');
@@ -213,7 +218,7 @@ final class PriceCatalogue
             'term' => $rate->term, 'currency' => $rate->currency])->lockForUpdate()->first();
         if ($price && $price->observed_at > $rate->observedAt) { throw new \DomainException('Stale provider read.'); }
         $wholesale = $rate->perYear === null ? null : PricingRule::decimal(PricingRule::units($rate->perYear) * $rate->term, 4);
-        $annualRetail = $rate->perYear === null ? null : PricingRule::price($rate->perYear, $this->rules->rule($tld, true), $rate->action);
+        $annualRetail = $rate->perYear === null ? null : PricingRule::price($rate->perYear, $rule, $rate->action);
         $retail = $annualRetail === null ? null : PricingRule::total($annualRetail, $rate->term);
         $margin = MarginPolicy::assess($rate->action, $rate->perYear, $annualRetail);
         if ($wholesale !== null) { self::cost($wholesale); }
@@ -222,13 +227,13 @@ final class PriceCatalogue
             'tld' => $tld->tld, 'action' => $rate->action, 'term' => $rate->term, 'currency' => $rate->currency, 'revision' => 0]);
         $price->fill(['wholesale' => $wholesale, 'retail' => $retail, 'unit' => 'term_total', 'source' => $rate->source,
             'observed_at' => $rate->observedAt, 'fresh_until' => $rate->freshUntil, 'revision' => $price->revision + 1,
-            'eligibility' => [...$publication, 'source_unit' => $rate->action === 'register' ? 'exact_term_annual_rate' : 'annual', 'staff_alert' => $margin->staffAlert, 'rule_hash' => $this->ruleHash($tld, true)],
+            'eligibility' => [...$publication, 'source_unit' => $rate->action === 'register' ? 'exact_term_annual_rate' : 'annual', 'staff_alert' => $margin->staffAlert, 'rule_hash' => $hash],
             'hold_reason' => $margin->hold])->save();
     }
 
-    private function ruleHash(Tld $tld, bool $lock = false): string
+    private static function ruleHash(array $rule): string
     {
-        return hash('sha256', json_encode($this->rules->rule($tld, $lock), JSON_THROW_ON_ERROR));
+        return hash('sha256', json_encode($rule, JSON_THROW_ON_ERROR));
     }
 
     public static function cost(string $value): string

@@ -84,7 +84,17 @@ expect(strlen($stored) < 65535, 'Boundary acceptance ciphertext fits native TEXT
 $reject(fn () => CatalogueAcceptances::save($bound[1], 2, $large));
 same($stored, DB::table('settings')->where('key', CatalogueAcceptances::KEY)->where('settingable_id', 1)->value('value'), 'Oversize cannot corrupt existing acceptance');
 CatalogueAcceptances::save($bound[1], 2, ['com' => [...$row, 'register' => [1, 3]]]);
+DB::flushQueryLog(); DB::enableQueryLog();
 same(['synced' => 2, 'failed' => []], $sync->refresh(2, $context(2, 1)), 'One batch imports ordinary and compound endings');
+$queries = DB::getQueryLog(); DB::disableQueryLog(); DB::flushQueryLog();
+$ruleReads = array_filter($queries, static fn (array $query): bool => str_starts_with($query['query'], 'select ')
+    && in_array('domains_pricing_default_rule', $query['bindings'], true));
+// Each ending has one publication resolution plus three independent current() eligibility checks.
+same(8, count($ruleReads), 'Import resolves one publication rule per locked TLD across all actions');
+foreach (Price::where('server_id', 2)->get() as $price) {
+    same(hash('sha256', json_encode(PricingRule::DEFAULT, JSON_THROW_ON_ERROR)), $price->eligibility['rule_hash'],
+        'Imported rates hash the same default used for pricing');
+}
 same(1, $ns->calls, 'One getPrices read for all endings and actions');
 same('8.2500', $prices->current(2, $bound[2]->fingerprint, 'co.uk', 'register', 1, 'USD', $clock->now())->wholesale, 'Literal multi-label suffix lookup');
 same(0, Price::where('server_id', 2)->where('term', 3)->count(), 'NameSilo does not extrapolate');

@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/accounts.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\CatalogueRate;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain, Price, Tld};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Price, Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, HolderPricing, PriceCatalogue, PricingRule, PricingRules};
 FoundationSchema::install();
 $a = fixtureAccount(1, 'enom', 'account-a'); $b = fixtureAccount(2, 'namesilo', 'account-b');
@@ -17,10 +17,43 @@ $rules = new PricingRules; $catalogue = new PriceCatalogue($rules); $holder = ne
 $reject = static function (callable $call): void {
     try { $call(); expect(false, 'Pricing guard escaped'); } catch (DomainException|InvalidArgumentException|LogicException $e) { /* expected */ }
 };
+// Count the default-setting SELECT, one of the reads made by each rule resolution.
+$withRuleReads = static function (callable $call, int $expected, string $label): mixed {
+    DB::flushQueryLog(); DB::enableQueryLog();
+    try { $result = $call(); }
+    finally { $queries = DB::getQueryLog(); DB::disableQueryLog(); DB::flushQueryLog(); }
+    $reads = array_filter($queries, static fn (array $query): bool => str_starts_with($query['query'], 'select ')
+        && in_array('domains_pricing_default_rule', $query['bindings'], true));
+    same($expected, count($reads), $label);
+    return $result;
+};
 $read = static fn (Tld $tld): array => [$rate('register', 1, '10.0000'), $rate('register', 3, '8.0000'), $rate('renew', 1, '12.0000'), $rate('transfer', 1, '9.0000')];
-same(['synced' => 3, 'failed' => []], $catalogue->sync(1, $read), 'Non-selling holders still sync');
+same(['synced' => 3, 'failed' => []], $withRuleReads(static fn () => $catalogue->sync(1, $read), 3,
+    'Sync resolves one rule per locked TLD across four rates'), 'Non-selling holders still sync');
 $catalogue->sync(2, static fn (): array => [$rate('renew', 1, '5.0000')]);
-$p = $catalogue->current(1, $a['account_fingerprint'], 'com', 'register', 3, 'USD', $now);
+$com = Tld::where('server_id', 1)->where('tld', 'com')->firstOrFail();
+$assertPublishedRule = static function (Tld $tld, array $rule) use ($read): void {
+    $hash = hash('sha256', json_encode($rule, JSON_THROW_ON_ERROR));
+    foreach ($read($tld) as $rate) {
+        $price = Price::where('server_id', $tld->server_id)->where('tld', $tld->tld)
+            ->where('action', $rate->action)->where('term', $rate->term)->firstOrFail();
+        same($hash, $price->eligibility['rule_hash'], 'Every rate hashes the resolved rule');
+        same(PricingRule::total(PricingRule::price($rate->perYear, $rule, $rate->action), $rate->term),
+            PriceCatalogue::retail($price->retail), 'Every rate is priced from that same rule');
+    }
+};
+foreach (Tld::where('server_id', 1)->get() as $tld) { $assertPublishedRule($tld, PricingRule::DEFAULT); }
+$withRuleReads(static fn () => $catalogue->republish($com), 1, 'Republication resolves one rule across four rates');
+$assertPublishedRule($com, PricingRule::DEFAULT);
+$withRuleReads(static fn () => DB::transaction(static function () use ($catalogue, $com): void {
+    App\Models\Server::whereKey($com->server_id)->lockForUpdate()->firstOrFail();
+    Account::where('server_id', $com->server_id)->lockForUpdate()->firstOrFail();
+    $locked = Tld::whereKey($com->id)->lockForUpdate()->firstOrFail();
+    $catalogue->republishLocked($locked);
+}), 1, 'Locked republication resolves one rule across four rates');
+$assertPublishedRule($com, PricingRule::DEFAULT);
+$p = $withRuleReads(static fn () => $catalogue->current(1, $a['account_fingerprint'], 'com', 'register', 3, 'USD', $now),
+    1, 'Current hashes its own single rule resolution');
 same('24.0000', $p->wholesale, 'Selected-term wholesale total'); same('31.20', $p->retail, 'Selected-term annual retail rounded then totalled');
 same('term_total', Price::findOrFail($p->id)->unit, 'Explicit normalized total unit');
 same('exact_term_annual_rate', Price::findOrFail($p->id)->eligibility['source_unit'], 'Source units retained');
