@@ -32,13 +32,11 @@ final class DomainManagement
         try {
             return DB::transaction(function()use($actor,$seed,$driver,$actions):array {
                 $l=HoldingLocks::take($seed,(int)$actor->id);
-                $this->authority($l,(int)$actor->id,$actions[0],$driver); $this->peers($l);
+                $this->peers($l);
                 return array_values(array_filter($actions,function($action)use($l,$actor,$driver):bool {
                     if ($action==='auth_code_email'&&$this->emailCooling($l)) { return false; }
-                    if (in_array($action,['privacy_purchase','privacy_renew'],true)) {
-                        try { $this->authority($l,(int)$actor->id,$action,$driver); }
-                        catch (\Throwable) { return false; }
-                    }
+                    try { $this->authority($l,(int)$actor->id,$action,$driver); }
+                    catch (\Throwable) { return false; }
                     return $driver->capabilities()->get(self::capability($action))->support===Support::Supported;
                 }));
             });

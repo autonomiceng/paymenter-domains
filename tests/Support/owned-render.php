@@ -18,7 +18,7 @@ $make=static function(bool $free=false,bool $setup=false,bool $held=false):Owned
     foreach(['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'Domain privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code']as$cap=>$label){
         $management[$cap]=['label'=>$label,'url'=>'/domains/1/manage/'.$cap,'actions'=>[]];
     }
-    $management['nameservers']['max']=$free?13:12; $management['nameservers']['defaults']=!$free; $management['contacts']['staged']=$free;
+    $management['nameservers']['max']=$free?13:12; $management['nameservers']['defaults']=!$free; $management['contacts']['staged']=$free;$management['contacts']['limits']=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits($free?'namesilo':'enom');
     $management['privacy']+=['free'=>$free,'price'=>$free?null:'$8.00'];
     $management['auth_code_email']['recipient']=$free?'domain’s administrative contact':'domain owner';
     foreach($free?['contact_profile','contacts']:['contacts']as$a){$management['contacts']['actions'][$a]='/domains/1/manage/'.$a;}
@@ -55,5 +55,6 @@ $copy=new OwnedDomain(...[...get_object_vars($enom),'management'=>[],'changesUna
 app('view')->share('errors',(new Illuminate\Support\ViewErrorBag)->put('default',new Illuminate\Support\MessageBag(['nameservers'=>'Check the nameservers.','privacy'=>'Domain privacy is not available for this domain.'])));
 $pages['setup-errors']=view('domains::setup',['domain'=>$setup])->render();
 $copy=new OwnedDomain(...[...get_object_vars($setup),'testEnvironment'=>true]);$pages['test-mode']=view('domains::setup',['domain'=>$copy])->render();
-foreach($pages as$name=>$html){preg_match('#<body>(.*)</body>#s',$html,$body);$content=preg_replace('#<script\b[^>]*>.*?</script>#s','',$body[1]??$html);file_put_contents(getenv('OWNER_OUTPUT').'/'.$name.'.html',str_replace('@@SLOT@@',$content,$shell));}
+if (getenv('OWNER_RECORDS')==='1') { require __DIR__.'/owner-record-render.php'; }
+foreach($pages as$name=>$html){preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;if(getenv('OWNER_RECORDS')!=='1'){$content=preg_replace('#<script\b[^>]*>.*?</script>#s','',$content);}file_put_contents(getenv('OWNER_OUTPUT').'/'.$name.'.html',str_replace('@@SLOT@@',$content,$shell));}
 $nativeSuccessful=true;echo "Real Blade owner pages rendered.\n";

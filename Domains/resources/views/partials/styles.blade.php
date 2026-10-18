@@ -256,10 +256,7 @@
 .domains .domains-title, .domains .domains-back { overflow-wrap: anywhere; }
 .domains .domains-checkbox { align-items: start; }
 .domains .domains-checkbox input { margin-top: .25rem; flex: none; }
-</style>
-@endonce
 
-<style>
 .domains-dhead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem 2rem; }
 .domains .domains-dhead__meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-top: .5rem; font-size: .875rem; color: var(--e-muted); }
 .domains .domains-dhead__meta strong { color: var(--e-fg); font-weight: 600; }
@@ -324,16 +321,6 @@
     .domains-ui *, .domains *, .domains-dialog { transition: none !important; animation: none !important; }
 }
 
-/* Owner forms retain the approved management layout. */
-.domains .domains-owner-form { display: grid; gap: .75rem; max-width: 38rem; margin-top: 1rem; }
-.domains .domains-owner-form .domains-btn { justify-self: start; }
-.domains .domains-section > p { margin-block: .5rem; }
-.domains .domains-title, .domains .domains-back { overflow-wrap: anywhere; }
-.domains .domains-checkbox { align-items: start; }
-.domains .domains-checkbox input { margin-top: .25rem; flex: none; }
-</style>
-
-<style>
 /* Toolbar and chips */
 .domains .domains-toolbar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; justify-content: space-between; padding: 1rem; border-bottom: 1px solid var(--e-line); }
 .domains .domains-chips { display: flex; flex-wrap: wrap; gap: .375rem; }
@@ -350,10 +337,21 @@
 @media (max-width: 639px) { .domains .domains-search-mini, .domains .domains-search-mini .domains-input { width: 100%; } .domains .domains-filter { width: 100%; } }
 .domains .domains-filter > .domains-input { max-width: 100%; }
 @media (max-width: 639px) { .domains .domains-filter > .domains-input { width: 100%; } }
-</style>
 
-<style>
 /* Enom 444f31c empty state */
 .domains .domains-empty { padding: 3rem 1.5rem; text-align: center; }
 .domains .domains-empty p { color: var(--e-muted); max-width: 42ch; margin: .375rem auto 1.25rem; font-size: .9375rem; }
+/* Record editors share the table overflow and input focus rules. */
+.domains .domains-record-form { max-width: 100%; min-width: 0; }
+.domains .domains-record-form .domains-tablewrap { position: relative; }
+.domains .domains-record-form .domains-tablewrap:focus-visible { outline: 2px solid var(--e-accent); outline-offset: 2px; }
+.domains .domains-scroll-hint { display: none; }
+@media (max-width: 52rem) { .domains .domains-scroll-hint { display: block; } }
+.domains .domains-records { min-width: 46rem; }
+.domains .domains-records td { padding: .375rem .5rem; vertical-align: top; }
+.domains .domains-records .domains-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.domains .domains-records .domains-input { min-width: 5.5rem; }
+.domains .domains-record-card { border: 1px solid var(--e-line); border-radius: .5rem; padding: .75rem 1rem; margin-block: .75rem; }
+.domains .domains-record-value { overflow-wrap: anywhere; }
 </style>
+@endonce

@@ -1,10 +1,48 @@
-{{-- Search-only enhancement adapted from Enom 444f31c; MIT, Copyright (c) 2026 Autonomic Engineering. --}}
+{{-- Shared progressive enhancement adapted from Enom 444f31c; MIT, Copyright (c) 2026 Autonomic Engineering. --}}
 @once
 <p class="domains-sr" aria-live="polite" id="domains-live"></p>
 @verbatim
 <script>
 (() => {
     const live = document.getElementById('domains-live');
+    document.querySelectorAll('.domains-record-form select[name$="[type]"]').forEach(type => {
+        const priority = type.closest('tr').querySelector('input[name$="[mx_pref]"]');
+        if (!priority) return;
+        const update = () => { priority.disabled = type.value !== 'MX'; };
+        type.addEventListener('change', update); update();
+    });
+    document.querySelectorAll('[data-contact-fields]').forEach(group => {
+        const country = group.querySelector('[name$="[country]"]');
+        const state = group.querySelector('[name$="[state_province]"]');
+        if (!country || !state) return;
+        const update = () => { state.required = group.dataset.stateRequired === '1' || ['US', 'CA', 'AU'].includes(country.value); };
+        country.addEventListener('change', update); update();
+    });
+    document.querySelectorAll('.domains form').forEach(form => {
+        form.addEventListener('invalid', event => {
+            const field = event.target;
+            if (!field.id) return;
+            const id = field.id + '-client-error';
+            let error = document.getElementById(id);
+            if (!error) {
+                error = document.createElement('p'); error.id = id; error.className = 'domains-error';
+                error.setAttribute('aria-live', 'polite'); field.after(error);
+            }
+            error.textContent = field.validity.valueMissing ? 'Required.' : field.validity.typeMismatch ? 'Check the format.' : 'Check this field.';
+            field.setAttribute('aria-invalid', 'true');
+            const refs = new Set((field.getAttribute('aria-describedby') || '').split(' ').filter(Boolean));
+            refs.add(id); field.setAttribute('aria-describedby', [...refs].join(' '));
+        }, true);
+        form.addEventListener('input', event => {
+            const field = event.target, id = field.id + '-client-error';
+            const error = document.getElementById(id);
+            if (!error || !field.validity.valid) return;
+            error.remove();
+            const refs = (field.getAttribute('aria-describedby') || '').split(' ').filter(ref => ref && ref !== id);
+            if (refs.length) field.setAttribute('aria-describedby', refs.join(' ')); else field.removeAttribute('aria-describedby');
+            if (!refs.some(ref => ref.endsWith('-error'))) field.removeAttribute('aria-invalid');
+        });
+    });
     document.querySelectorAll('[data-domains-results]').forEach(list => {
         const summary = () => {
             const states = [...list.querySelectorAll('[data-domains-result]')].map(row => row.dataset.state);

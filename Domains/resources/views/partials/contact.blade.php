@@ -8,6 +8,7 @@
     $idPrefix = $idPrefix ?? 'contact';
     $requiredFields = ['first_name','last_name','email_address','phone','address1','city','postal_code','country'];
     if ($stateRequired ?? false) { $requiredFields[] = 'state_province'; }
+    $limits = $limits ?? \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits('enom');
     $countries = config('app.countries', []);
     $value = function (string $field) use ($useOld, $values, $errorPrefix) {
         $v = !empty($useOld) ? old($errorPrefix.'.'.$field, '') : ($values[$field] ?? '');
@@ -23,7 +24,7 @@
     ];
     $section = $section ?? null; // autocomplete section token keeps browsers from mixing contacts
 @endphp
-<div class="domains-fields">
+<div class="domains-fields" data-contact-fields data-state-required="{{ ($stateRequired ?? false) ? '1' : '0' }}">
     @foreach ($layout as $field => [$label, $auto, $type, $span])
         @php
             $id = $idPrefix.'-'.$field;
@@ -31,25 +32,13 @@
             $isRequired = $required && in_array($field, $requiredFields, true);
             $error = $errors->first($key);
             $current = $value($field);
-            $described = trim(($field === 'phone' ? $id.'-hint ' : '').($error ? $id.'-error' : ''));
+            $described = trim((in_array($field, ['phone', 'state_province']) ? $id.'-hint ' : '').($error ? $id.'-error' : ''));
         @endphp
         <div class="{{ $span }}" data-field>
             <label for="{{ $id }}" class="domains-label">{{ $label }}@if (!$isRequired && $field !== 'state_province') <span class="domains-opt">(optional)</span>@endif</label>
-            @if ($type === 'select')
-                <select id="{{ $id }}" name="{{ $prefix }}[country]" class="domains-input" autocomplete="{{ $section ? $section.' ' : '' }}country" @required($isRequired)
-                    @if ($error) aria-invalid="true" @endif @if ($described) aria-describedby="{{ $described }}" @endif>
-                    <option value="" @selected($current === '')>Choose a country</option>
-                    @foreach ($countries as $code => $countryLabel)
-                        @if ($code !== '')<option value="{{ $code }}" @selected(strtoupper($current) === $code)>{{ $countryLabel }}</option>@endif
-                    @endforeach
-                </select>
-            @else
-                <input id="{{ $id }}" name="{{ $prefix }}[{{ $field }}]" type="{{ $type }}" value="{{ $current }}" maxlength="255" class="domains-input"
-                    autocomplete="{{ $section ? $section.' ' : '' }}{{ $auto }}" @required($isRequired) @if ($field === 'phone') placeholder="+1 206 555 0100" @endif
-                    @if ($error) aria-invalid="true" @endif @if ($described) aria-describedby="{{ $described }}" @endif>
-            @endif
+            @include('domains::partials.input', ['name'=>$prefix.'['.$field.']', 'current'=>$type==='select'?strtoupper($current):$current, 'limit'=>$limits[$field], 'required'=>$isRequired, 'auto'=>($section ? $section.' ' : '').$auto, 'description'=>$described, 'invalid'=>(bool)$error, 'placeholder'=>$field==='phone'?'+1 206 555 0100':null, 'machine'=>false, 'options'=>$type==='select'?[''=>'Choose a country']+array_filter($countries, fn($key)=>$key!=='', ARRAY_FILTER_USE_KEY):null])
             @if ($field === 'phone')<p id="{{ $id }}-hint" class="domains-hint">Start with + and your country code.</p>@endif
-            @if ($field === 'state_province' && !($stateRequired ?? false))<p class="domains-hint">Required for the United States, Canada and Australia.</p>@endif
+            @if ($field === 'state_province')<p id="{{ $id }}-hint" class="domains-hint">{{ ($stateRequired ?? false) ? 'Required. For the United States and Canada, use the two-letter code.' : 'Required for the United States, Canada and Australia.' }}</p>@endif
             @if ($error)<p id="{{ $id }}-error" class="domains-error">{{ $error }}</p>@endif
         </div>
     @endforeach

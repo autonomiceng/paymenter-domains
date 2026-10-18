@@ -6,7 +6,7 @@ use App\Http\Middleware\MustVerfiyEmail;
 use Illuminate\Support\Facades\Route;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController as Owner;
 // Definitions are dormant; install39 must load them before the global input middleware runs.
-TrimStrings::except(['transfer_code']);
+TrimStrings::except(['transfer_code','records.*.address']);
 Route::middleware(['web','auth',MustVerfiyEmail::class,'throttle:60,1,domains.owner'])->group(function():void {
     Route::post('/domains/{domain}/setup',[Action::class,'setup'])->whereNumber('domain')->name('domains.domains.setup-save')->block(10,10);
     Route::post('/domains/{domain}/account-contacts',[Action::class,'contacts'])->whereNumber('domain')->name('domains.domains.contacts-save')->block(10,10);

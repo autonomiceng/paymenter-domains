@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, DomainManage
 /** Dormant owner POST boundary. Never calls a driver write or queues a purchase. */
 final readonly class OwnerActionController
 {
-    public const ACTIONS=['nameservers','contacts','contact_profile','lock','privacy_enable','privacy_disable','privacy_purchase','privacy_renew','auto_renew_off','auth_code_email'];
+    public const ACTIONS=['nameservers','contacts','contact_profile','lock','privacy_enable','privacy_disable','privacy_purchase','privacy_renew','auto_renew_off','auth_code_email','dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'];
     public function __construct(private OwnedDomains $owners, private OwnerSetup $setup, private TransferInputs $inputs,
         private DomainManagement $management, private OwnerPorts $ports) {}
     public function code(#[\SensitiveParameter] Request $request,int $domain)
@@ -56,8 +56,14 @@ final readonly class OwnerActionController
                     ? ['nameservers'=>[],'use_default'=>true] : ['nameservers'=>self::servers(is_string($p['nameservers']??null)?$p['nameservers']:'')],
                 'lock'=>['locked'=>match($p['locked']??null){'1'=>true,'0'=>false,default=>throw new \DomainException}],
                 'contacts','contact_profile'=>['role'=>$p['role']??'all','contact'=>$p['contact']??[]],
+                'dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'=>\Paymenter\Extensions\Servers\Domains\Services\OwnerRecordInput::payload($action,$p,$d->domain),
                 default=>[],
             };
+            if ($action==='srv') { $payload=\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::restoreSrv($d,$payload); }
+            if ($action==='nameservers') {
+                try { $this->ports->forDomain($d)->validate($action,$payload,$d->domain); }
+                catch (\Throwable) { throw new \Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation(['nameservers']); }
+            }
             $this->management->request($request->user(),$domain,$action,$payload,$nonce,$this->ports->forDomain($d));
         },'Change requested. Check Activity for updates.');
     }
@@ -66,7 +72,16 @@ final readonly class OwnerActionController
         $this->owners->owned($request->user(),$domain); $context='owner:'.$domain.':'.$action;
         $nonce=FormKeys::verify($request,$context); FormKeys::consume($request,$context);
         try { $work($nonce); return redirect()->route('domains.domains.show',$domain)->with('domains_status',$message); }
-        catch (\Paymenter\Extensions\Servers\Domains\Services\SetupValidation $error) {
+        catch (\Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation $error) {
+            if (in_array($action,['dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'],true)) {
+                $view=(new OwnedDomainController($this->owners))->show($request,$domain);
+                $dto=\Paymenter\Extensions\Servers\Domains\Services\OwnerRecordDraft::apply($view->getData()['domain'],$action,$request->request->all());
+                $messages=in_array($action,['ds_delete','glue_delete'],true)?['owner_action'=>'We couldn’t save this change. Reload the page and try again.']:$error->messages($dto->name);
+                $errors=(new \Illuminate\Support\ViewErrorBag)->put('default',new \Illuminate\Support\MessageBag($messages));
+                return response($view->with(['domain'=>$dto,'errors'=>$errors]),422)->header('Cache-Control','no-store, private');
+            }
+            return redirect()->route('domains.domains.show',$domain)->withErrors($error->messages(''));
+        } catch (\Paymenter\Extensions\Servers\Domains\Services\SetupValidation $error) {
             return redirect()->route('domains.domains.setup',$domain)->withErrors(array_intersect_key([
                 'nameservers'=>'Check the nameservers.','privacy'=>'Domain privacy is not available for this domain.'],array_flip($error->fields)));
         } catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation $error) {

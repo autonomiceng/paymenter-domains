@@ -48,9 +48,10 @@ class StaticShell(HTMLParser):
 
 
 def main():
-    if len(sys.argv) != 3:
-        sys.exit('usage: render-owned.py SHELL_DIR OUTPUT_DIR')
+    if len(sys.argv) not in (3, 4):
+        sys.exit('usage: render-owned.py SHELL_DIR OUTPUT_DIR [records]')
     ASSETS, DEST = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
+    records = len(sys.argv) == 4 and sys.argv[3] == 'records'
     source = os.environ['PAYMENTER_TEST_APP']
     fixture = Path(tempfile.mkdtemp(prefix='domains-ui33-'))/'paymenter'
     runtime = None
@@ -66,12 +67,12 @@ def main():
         shell = re.sub(r'<html\b[^>]*>', '<html lang="en" class="dark">', shell, count=1)
         env = dict(os.environ, PAYMENTER_TEST_PHP=str(binary), PAYMENTER_TEST_CURL_EXTENSION=str(ext),
                    PAYMENTER_TEST_NATIVE_EXTENSIONS=str(ext.parent), PAYMENTER_TEST_FIXTURE=str(fixture),
-                   LD_LIBRARY_PATH=str(runtime/'usr/lib/x86_64-linux-gnu'), OWNER_OUTPUT=str(DEST))
+                   LD_LIBRARY_PATH=str(runtime/'usr/lib/x86_64-linux-gnu'), OWNER_OUTPUT=str(DEST), OWNER_RECORDS='1' if records else '0')
         DEST.mkdir(parents=True, exist_ok=True)
         (fixture/'ui33-shell.html').write_text(shell)
         subprocess.run([str(ROOT/'scripts/php-test'), str(ROOT/'tests/Support/owned-render.php')], env=env, cwd=ROOT, check=True)
         for page in DEST.glob('*.html'):
-            shutil.copy2(page, ASSETS/('ui33-'+page.name))
+            shutil.copy2(page, ASSETS/(('ui34-' if records else 'ui33-')+page.name))
         if native.verify(source)[1] != before:
             raise RuntimeError('Read-only dependency changed')
         print(DEST)

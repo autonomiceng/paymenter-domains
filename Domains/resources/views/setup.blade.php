@@ -6,5 +6,6 @@
 <h1 class="domains-title">Domain setup</h1>
 @include('domains::partials.notices', ['fieldKeys' => ['nameservers', 'privacy']])
 <section class="domains-panel domains-section">@include('domains::partials.registration-setup')</section>
+@include('domains::partials.client-script')
 </div></div>
 @endcomponent

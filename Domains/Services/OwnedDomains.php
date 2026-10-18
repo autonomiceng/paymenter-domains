@@ -69,7 +69,8 @@ final readonly class OwnedDomains
             if (!isset($entry->policy['management']) || isset($entry->policy['management']['correction'])) { continue; }
             $label=['nameservers'=>'Nameservers','contacts'=>'Domain contacts','contact_profile'=>'Contact details','lock'=>'Transfer lock',
                 'privacy_enable'=>'Domain privacy','privacy_disable'=>'Domain privacy','privacy_purchase'=>'Domain privacy','privacy_renew'=>'Domain privacy',
-                'auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code'][$entry->action]??null;
+                'auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code','dns'=>'DNS records','srv'=>'SRV records',
+                'ds_add'=>'DNSSEC','ds_delete'=>'DNSSEC','glue_add'=>'Child nameservers','glue_update'=>'Child nameservers','glue_delete'=>'Child nameservers'][$entry->action]??null;
             if (!$label) { continue; }
             $state=match($entry->state) { 'awaiting_payment'=>'Awaiting payment','queued'=>'Queued — not sent yet','running','pending'=>'In progress',default=>'Unresolved' };
             if ($entry->state==='succeeded' && ManagementEvidence::resolved($entry,$d)) { $state=$entry->action==='auth_code_email'?'Email requested':'Confirmed'; }
@@ -80,8 +81,10 @@ final readonly class OwnedDomains
             $label=['contacts'=>'Domain contacts','nameservers'=>'Nameservers','privacy'=>'Domain privacy','auto_renew'=>'Renewal settings'][$row['section']??'']??null;
             if ($label) { $progress[]=['label'=>$label,'state'=>($row['state']??null)==='readback_confirmed_awaiting_review'?'Awaiting review':'Unresolved']; }
         }
-        foreach (['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'Domain privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code'] as $cap=>$label) {
-            if ($d->status==='active' && $service?->status==='active' && !$service->cancellation && !($d->renewal_policy['automatic_spend_paused']??false) && $caps?->get($cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
+        $labels=['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'Domain privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code'];
+        if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Child nameservers']; }
+        foreach ($labels as $cap=>$label) {
+            if ($d->status==='active' && $service?->status==='active' && !$service->cancellation && !($d->renewal_policy['automatic_spend_paused']??false) && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
         }
         if (isset($management['privacy'])) { $management['privacy']['free']=$caps->privacy===PrivacyMode::Free;
             $retail=\App\Models\Server::find($d->server_id)?->settings()->where('key','domains_privacy_price')->value('value');
@@ -89,14 +92,20 @@ final readonly class OwnedDomains
         if ($caps) {
             $setup['maxNameservers']=$d->registrar_key==='enom'?12:13;
             if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $management['nameservers']['defaults']=$d->registrar_key==='enom'; }
-            if (isset($management['contacts'])) { $management['contacts']['staged']=$d->registrar_key==='namesilo'; }
+            if (isset($management['contacts'])) { $management['contacts']['staged']=$d->registrar_key==='namesilo'; $management['contacts']['limits']=ContactDetails::limits($d->registrar_key); }
             if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'domain’s administrative contact':'domain owner'; }
+        }
+        $records=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?OwnerRecords::forDomain($d):[];
+        foreach (['dns','srv','ds','glue'] as $kind) {
+            if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; }
+            if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
         }
         $renewal=$d->status==='active'?($service?->cancellation?'Off':'On'):'—'; $price=null;
         try { if($service?->currency_code==='USD'){$price=Storefront::money(RetailLine::decimal($service->price));} } catch(\Throwable){}
         foreach ($management as $key=>&$section) {
             $section['url']=route('domains.domains.manage',[$d->id,$key]); $section['actions']=[];
             $intents=match($key) { 'contacts'=>$section['staged']?['contact_profile','contacts']:['contacts'],
+                'ds'=>['ds_add','ds_delete'],'glue'=>['glue_add','glue_update','glue_delete'],
                 'privacy'=>['privacy_enable','privacy_disable',...(!$section['free']&&$section['price']?['privacy_purchase','privacy_renew']:[])],default=>[$key] };
             foreach ($intents as $form) { $section['actions'][$form]=route('domains.domains.manage',[$d->id,$form]); }
         } unset($section);

@@ -13,6 +13,9 @@ final class ContactDetails
         'state_province', 'postal_code', 'country', 'email_address', 'phone'];
     private const NS_LIMITS = [32, 32, 64, 128, 128, 64, 64, 16, 4, 128, 32];
 
+    public static function limits(string $registrar): array
+    { return array_combine(self::FIELDS, $registrar === 'namesilo' ? self::NS_LIMITS : array_fill(0, count(self::FIELDS), 255)); }
+
     public static function collect(User $owner): array
     {
         $properties = $owner->properties()->whereIn('key', ['company_name', 'address', 'address2', 'city', 'state', 'zip', 'country', 'phone'])->pluck('value', 'key');
@@ -33,7 +36,7 @@ final class ContactDetails
             $row = [];
             if (array_diff(array_keys($input), self::FIELDS)) { $errors[] = 'contacts.'.$role; }
             foreach (self::FIELDS as $i => $field) {
-                $value = $input[$field] ?? ''; $limit = $registrar === 'namesilo' ? self::NS_LIMITS[$i] : 255;
+                $value = $input[$field] ?? ''; $limit = self::limits($registrar)[$field];
                 if (!is_string($value) || strlen($value) > $limit || preg_match('/[\x00-\x1f\x7f]/', $value)) {
                     $errors[] = 'contacts.'.$role.'.'.$field; $value = '';
                 }

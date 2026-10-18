@@ -273,3 +273,11 @@ no mutation actions) and paid-rejection credit-review selection; that SQL queue 
 credited rows because funding is encrypted. Each row distinguishes credit markers from candidates.
 Adding the extension entry and a server row in slice 39 activates native admin discovery, even for a disabled
 row: permission registration and policy binding must ship with that installed activation.
+
+### Owner record controls
+
+`owner-records-test.php` and `owner-record-errors-test.php` exercise dormant native controllers and real Blade for Enom DNS/SRV, DS and child nameservers. They cover queued grants/readback, preimages, exact TXT bytes through native trimming, retained server-side SRV IDs, bounded public-record retry responses, field scoping, replay, current ownership, unsupported tools and 50-record limits. Private request fields are neither rendered nor flashed. Contact and nameserver inputs share the engine limits and common input partials.
+
+`render-owned.py SHELL_DIR OUTPUT_DIR records` adds synthetic record/error/held/max-record and shared regression fixtures to the existing owner renderer. Paths are CLI arguments; the supplied site shell and assets remain external. Reference: MIT Enom `444f31ce0bfd07216e5200544bffe863119d0e7d`, DNS/glue partials, DomainController record paths, shared styles/script and glue/single-DS regressions.
+
+These are presentation checks, not installed provider acceptance. DNS/SRV editing is unreachable without an initial complete current-generation record readback producer. A plan amendment is requested for a new observation row, proposed 31R, to own bounded durable record refresh with current authority binding; installation alone does not supply it. DNS tools remain opt-in. Glue shows only confirmed changes made here, not a complete provider inventory; unknown DS lists are explicit while additions retain fresh engine preflight. Routes, factories and writes stay dormant until installation; shared session/cache locks, bounded observation history, GET lock contention, provider registry behavior and theme navigation still require their acceptance gates.

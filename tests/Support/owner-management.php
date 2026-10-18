@@ -30,7 +30,7 @@ $forms=$dom->query('//form[@method="POST"]');expect($forms->length>=7,'Supported
 same($forms->length,$dom->query('//form/input[@name="_token"]')->length,'Every form has native CSRF');
 same($forms->length,$dom->query('//form/input[@name="_request_key"]')->length,'Every form has single-use intent');
 same($forms->length,$dom->query('//form//input[@name="confirmed"]')->length,'Every management action has explicit confirmation');
-foreach(['dns','ds','glue','auth_code_display']as$a){expect(!isset($dto->management[$a]),'No advanced/display forms in this slice');}
+foreach($free?['dns','srv','ds','glue','auth_code_display']:['dns','srv','ds','auth_code_display']as$a){expect(!isset($dto->management[$a]),'Unsupported or disabled advanced/display forms are absent');}
 if($free){expect(!str_contains($html,'privacy_purchase'),'Free privacy offers no paid action');commerceReject(fn()=>$driver->validate('nameservers',['use_default'=>true,'nameservers'=>[]],$d->domain));}
 else {
     commerceReject(fn()=>$driver->validate('nameservers',['nameservers'=>[]],$d->domain));

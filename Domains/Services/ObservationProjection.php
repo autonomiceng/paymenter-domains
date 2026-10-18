@@ -30,7 +30,7 @@ final class ObservationProjection
         $p['sections']=self::sections($d);
         $d->update(['observation'=>$p,'last_synced_at'=>$now]);
     }
-    private static function sections(Domain $d): array
+    public static function sections(Domain $d): array
     {
         $sections=[]; $glue=[]; $reads=[];
         foreach ($d->operations()->orderBy('id')->get() as $op) {

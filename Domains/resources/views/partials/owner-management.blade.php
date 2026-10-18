@@ -6,9 +6,7 @@
 <p>These decide where your website and email are hosted. Changes can take up to 48 hours to reach everyone.</p>
 <form method="POST" action="{{ $section['url'] }}" class="domains-owner-form">
 @include('domains::partials.form-key', ['action' => 'nameservers'])
-<label for="domains-ns" class="domains-label">Nameservers, one per line</label>
-<textarea id="domains-ns" name="nameservers" rows="4" class="domains-input" required spellcheck="false" autocapitalize="none" aria-describedby="domains-ns-hint"></textarea>
-<p id="domains-ns-hint" class="domains-hint">2 to {{ $section['max'] }} hostnames, such as ns1.example.com.</p>
+@include('domains::partials.nameservers', ['id' => 'domains-ns', 'max' => $section['max'], 'required' => true, 'hint' => '2 to '.$section['max'].' hostnames, such as ns1.example.com.'])
 @include('domains::partials.owner-confirm', ['text' => 'I understand that changing nameservers may stop my website or email working.'])
 <button type="submit" class="domains-btn domains-btn--primary">Save nameservers</button></form>
 @if ($section['defaults'] ?? false)
@@ -27,10 +25,12 @@
 <form method="POST" action="{{ $section['actions'][$action] }}" class="domains-owner-form">
 @include('domains::partials.form-key')
 <label class="domains-label" for="role-{{ $action }}">Contact</label><select id="role-{{ $action }}" class="domains-input" name="role"><option value="all">All contacts</option><option value="registrant">Domain owner</option><option value="admin">Administrative</option><option value="tech">Technical</option><option value="auxbilling">Billing</option></select>
-@include('domains::partials.contact', ['prefix' => 'contact', 'idPrefix' => $action, 'section' => 'owner-'.$action, 'stateRequired' => $section['staged']])
+@include('domains::partials.contact', ['prefix' => 'contact', 'idPrefix' => $action, 'section' => 'owner-'.$action, 'stateRequired' => $section['staged'], 'limits' => $section['limits'] ?? null])
 @include('domains::partials.owner-confirm', ['text' => 'I confirm these contact details are correct.'])
 <button type="submit" class="domains-btn domains-btn--primary">{{ $label }}</button></form></details>
 @endforeach
+@elseif (in_array($cap, ['dns', 'srv', 'ds', 'glue']))
+@include('domains::partials.owner-'.$cap)
 @elseif ($cap === 'privacy')
 <p>Hides the owner’s name, address, phone and email from public WHOIS lookups.</p>
 @if ($section['free'])<p class="domains-hint">Domain privacy is included at no charge.</p>@else<p class="domains-hint">Domain privacy renews separately from the domain, one year at a time.</p>@endif

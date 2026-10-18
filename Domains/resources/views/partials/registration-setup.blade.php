@@ -9,9 +9,7 @@
 <form method="POST" action="{{ $domain->actions['setupSave'] }}" class="domains-owner-form">
 @include('domains::partials.form-key', ['action' => 'setup'])
 @if ($domain->setup['nameservers'])
-<label for="setup-ns" class="domains-label">Nameservers, one per line</label><textarea id="setup-ns" name="nameservers" rows="4" class="domains-input" @if (!$domain->setup['defaults']) required @endif spellcheck="false" autocapitalize="none" aria-describedby="setup-ns-hint{{ $errors->has('nameservers') ? ' setup-ns-error' : '' }}" @if ($errors->has('nameservers')) aria-invalid="true" @endif></textarea>
-<p id="setup-ns-hint" class="domains-hint">{{ $domain->setup['defaults'] ? 'Leave blank to use the default nameservers, or enter 2 to '.$domain->setup['maxNameservers'].' hostnames.' : 'Enter 2 to '.$domain->setup['maxNameservers'].' hostnames, such as ns1.example.com. Your website or email host can tell you which to use.' }}</p>
-@if ($errors->has('nameservers'))<p id="setup-ns-error" class="domains-error">{{ $errors->first('nameservers') }}</p>@endif
+@include('domains::partials.nameservers', ['id' => 'setup-ns', 'max' => $domain->setup['maxNameservers'], 'required' => !$domain->setup['defaults'], 'hint' => $domain->setup['defaults'] ? 'Leave blank to use the default nameservers, or enter 2 to '.$domain->setup['maxNameservers'].' hostnames.' : 'Enter 2 to '.$domain->setup['maxNameservers'].' hostnames, such as ns1.example.com. Your website or email host can tell you which to use.'])
 @else<p>Your current nameservers stay the same.</p>@endif
 @if ($domain->setup['privacy'])<label class="domains-checkbox"><input id="setup-privacy" type="checkbox" name="privacy" value="1" @if ($errors->has('privacy')) aria-invalid="true" aria-describedby="setup-privacy-error" @endif><span>Turn on domain privacy at no charge</span></label>@endif
 @if ($errors->has('privacy'))<p id="setup-privacy-error" class="domains-error">{{ $errors->first('privacy') }}</p>@endif
