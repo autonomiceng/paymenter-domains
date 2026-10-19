@@ -24,6 +24,26 @@ foreach([0,1] as $i){
     expect(!str_contains($last->render(),'registry did not accept'),'No invented registry rejection');
 }
 same($renders[0],$renders[1],'Identical customer message for both holders');
+// Native USD formatting belongs to the administrator, including separators and both affixes.
+$currency = App\Models\Currency::where('code', 'USD')->sole();
+$currencyFormat = $currency->only(['format', 'prefix', 'suffix']);
+$tld = $tlds[0]; $rule = $tld->only(['use_default_rule', 'pricing_mode', 'fixed_register', 'fixed_renew', 'fixed_transfer']);
+try {
+    $currency->update(['format' => '1.000,00', 'prefix' => 'US$', 'suffix' => 'USD']);
+    $tld->update(['use_default_rule' => false, 'pricing_mode' => 'fixed', 'fixed_register' => '20.00', 'fixed_renew' => '20.00', 'fixed_transfer' => '1234.56']);
+    $prices->republish($tld->fresh()); $native->publish($tld->id, $now);
+    $clock->instant = $now; $op = $newTransfer('custom-native-money.com', 0, true, false);
+    expect($reminders->remind($op->domain_id), 'M1 custom-format paid transfer queues its real notice');
+    $mail = Mail::queued(DomainNotice::class)->last();
+    same(['domains_transfer_code_paid', true], [$mail->emailTemplate->key,
+        str_contains(html_entity_decode(strip_tags($mail->render()), ENT_QUOTES | ENT_HTML5), 'US$1.234,56USD')],
+        'M1 real queued transfer template uses exact native USD format');
+    $queued = Mail::queued(DomainNotice::class)->count();
+    same([false, $queued], [$reminders->remind($op->domain_id), Mail::queued(DomainNotice::class)->count()], 'M1 formatted notice remains deduplicated');
+} finally {
+    $currency->update($currencyFormat); $tld->update($rule);
+    $prices->republish($tld->fresh()); $native->publish($tld->id, $now);
+}
 $clock->instant=$now;$op=$newTransfer('unknown-payment-time.com',0,true,false);
 $p=$op->policy;unset($p['paid_at']);DB::table('domains_operations')->where('id',$op->id)->update(['policy'=>encrypt(json_encode($p),false)]);
 same(false,$reminders->remind($op->domain_id),'Unknown payment timestamp never guesses deadline');

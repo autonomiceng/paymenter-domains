@@ -15,7 +15,10 @@ use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligib
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 extract(commerceFixture(true)); $clock = new FakeClock($now);
-$admission = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock), $clock); $admission->boot();
+$transfers = new \Paymenter\Extensions\Servers\Domains\Services\TransferInputs($clock, new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock));
+$transferCheck = new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck(new \Paymenter\Extensions\Servers\Domains\Services\Rdap(static fn () => throw new RuntimeException('Synthetic offline RDAP')));
+App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
+$admission = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock, $transferCheck), $clock); $admission->boot();
 (new InvoiceBinding($admission, $native, $prices, $clock))->boot();
 $user = commerceUser(); $user->update(['email' => 'finance-owner@example.com']);
 foreach (['address' => '1 Synthetic Street', 'city' => 'Seattle', 'state' => 'WA', 'zip' => '98101',
@@ -23,15 +26,28 @@ foreach (['address' => '1 Synthetic Street', 'city' => 'Seattle', 'state' => 'WA
     $user->properties()->create(['key' => $key, 'name' => $key, 'value' => $value]);
 }
 $product = $native->product($tlds[0], 'register');
-$new = static function (string $name, bool $paid = true, bool $setup = true) use ($user, $product): Operation {
-    $cart = commerceCart($user); commerceAdd($cart, $product, $name); commerceCheckout($user, $cart);
+$new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1) use ($user, $product, $native, $tlds, $clock, $transfers): Operation {
+    Carbon\Carbon::setTestNow($clock->now()); Carbon\CarbonImmutable::setTestNow($clock->now());
+    $cart = commerceCart($user); commerceAdd($cart, $action === 'register' ? $product : $native->product($tlds[0], $action), $name, $term); commerceCheckout($user, $cart);
     $op = Domain::where('domain', $name)->sole()->operations()->sole();
     if (!$setup) { \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(static fn () => $op->update(['payload' => array_replace($op->payload, ['setup_required' => true])])); }
     if ($paid) {
         DB::table('invoices')->where('id', $op->invoice_id)->update(['status' => 'paid']);
         InvoiceTransaction::create(['invoice_id' => $op->invoice_id, 'amount' => $op->amount, 'fee' => '0.00', 'status' => 'succeeded']);
     }
+    if ($action === 'transfer') {
+        $request = Illuminate\Http\Request::create('/internal-transfer-input', 'POST', ['transfer_code' => 'SyntheticOnly']);
+        $request->setUserResolver(static fn () => $user); $transfers->submitCode($request, $op->id);
+    }
     return $op->fresh();
+};
+// Raw rows retain invoice/item/payment/credit/job bytes, including native timestamps.
+$nativeMoney = static function (): array {
+    $rows = [];
+    foreach (['invoices', 'invoice_items', 'invoice_transactions', 'credits', 'jobs', 'failed_jobs'] as $table) {
+        $rows[$table] = DB::table($table)->orderBy('id')->get()->map(static fn ($row) => (array) $row)->all();
+    }
+    return $rows;
 };
 $preflight = new class($clock) implements OperationPreflight {
     public int $calls = 0; public $during = null; public bool $fail = false; public bool $supported = true;
@@ -43,7 +59,7 @@ $preflight = new class($clock) implements OperationPreflight {
         if ($this->during) { ($this->during)($op, $domain); }
         if ($this->fail) { throw new RuntimeException('Synthetic preflight exception'); }
         return new DispatchReadiness($context->binding, OperationClaims::query($op, $domain),
-            new Capabilities($context->binding, ['register' => new Capability($this->supported ? Support::Supported : Support::Unsupported, $this->supported ? [1, 3] : [])]),
+            new Capabilities($context->binding, [$op->action => new Capability($this->supported ? Support::Supported : Support::Unsupported, $this->supported ? [1, 3] : [])]),
             new Money($this->cost, 'USD'), true, $this->premium, $this->clock->now()->modify('-'.$this->ageSeconds.' seconds'), $this->clock->now()->modify('+'.$this->freshSeconds.' seconds'), OperationClaims::payloadDigest($op));
     }
 };
@@ -64,7 +80,7 @@ $writer = new class implements AdmittedRegistrarDriver {
         return new DriverResult($binding, $this->disposition, $this->disposition === Disposition::Unknown ? SendState::PossiblySent : SendState::Sent,
             $this->disposition === Disposition::Unknown ? ResultReason::Unresolved : ResultReason::Acknowledged, new Evidence);
     }
-    public function transferIn(AdmittedOperation $op, RequestContext $context): DriverResult { throw new LogicException('Transfer gate27 closed.'); }
+    public function transferIn(AdmittedOperation $op, RequestContext $context): DriverResult { return $this->register($op, $context); }
     public function renew(AdmittedOperation $op, RequestContext $context): DriverResult { throw new LogicException('Renewal gate23 closed.'); }
 };
 $claims = new OperationClaims($bindings, $clock); $engine = new DomainOperations($claims, $preflight, $writer, $clock); $writer->engine = $engine;
