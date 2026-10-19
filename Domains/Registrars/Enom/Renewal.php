@@ -19,10 +19,11 @@ final class Renewal
             || !is_string($row['name'] ?? null) || strtolower($row['name']) !== $query->name || ($row['rrpcode'] ?? null) !== '211') { return $unknown; }
         $premium = array_map(Driver::flag(...), [$row['ispremium'] ?? null, $row['isplatinum'] ?? null, $row['iseap'] ?? null]);
         $ordinary = !in_array(null, $premium, true) && !in_array(true, $premium, true);
-        $hold = Driver::flag($info['registrarhold'] ?? null); $maximum = $info['maxextension'] ?? null;
-        if (!$ordinary || $hold === null || !is_string($maximum) || !preg_match('/^(?:[1-9]|10)$/D', $maximum)) { return $unknown; }
+        $limits = self::limits($extend);
+        if (!$ordinary || $limits === null) { return $unknown; }
+        ['hold' => $hold, 'maximum' => $maximum] = $limits;
         if ($query->years > (int) $maximum) { return new Evidence(domain: $domain, renewal: RenewalStatus::Ineligible); }
-        $expiry = self::expiry($extend, $domain->expiry, $authenticatedInfo);
+        $expiry = Expiry::reconcile($extend, $domain->expiry, $authenticatedInfo);
         // A calendar day alone cannot establish which side of expiry this instant occupies.
         if (!$expiry || $expiry->precision !== ExpiryPrecision::Instant) { return $unknown; }
         $past = new \DateTimeImmutable($expiry->value) <= $now;
@@ -41,23 +42,13 @@ final class Renewal
         }
         return new Evidence(domain: $domain, quote: $quote, premium: false, renewal: $status);
     }
-    private static function expiry(ProtocolResult $extend, ?DateEvidence $authenticated, ProtocolResult $authenticatedInfo): ?DateEvidence
+    public static function limits(ProtocolResult $extend): ?array
     {
-        $expiry = Expiry::read($extend);
-        if (!$expiry || !$authenticated) { return null; }
-        if ($expiry->precision === ExpiryPrecision::Instant) {
-            return $authenticated->precision === ExpiryPrecision::Instant && $expiry->value === $authenticated->value ? $authenticated : null;
-        }
-        $raw = $extend->value('getextendinfo.expiration');
-        if ($authenticated->precision !== ExpiryPrecision::Instant || !is_string($raw) || !preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/D', $raw)) { return null; }
-        $authenticatedRaw = $authenticatedInfo->value('getdomaininfo.status.expiration');
-        if (!is_string($authenticatedRaw) || !preg_match('/[T ]\d{1,2}:\d{2}/', $authenticatedRaw)) { return null; }
-        // Only the frozen scalar US local-date and authenticated timestamp shapes may reconcile.
-        foreach (['registryexpdate', 'domaininfo.registryexpdate', 'expirationdate', 'expiration', 'order.orderdetail.expirydatetime'] as $path) {
-            if ($extend->value($path) !== null) { return null; }
-        }
-        $local = (new \DateTimeImmutable($authenticated->value))->setTimezone(new \DateTimeZone('America/Los_Angeles'));
-        return $expiry->value === $local->format('Y-m-d') ? $authenticated : null;
+        if ($extend->status !== 'success') { return null; }
+        $hold = Driver::flag($extend->value('getextendinfo.registrarhold'));
+        $maximum = $extend->value('getextendinfo.maxextension');
+        return $hold !== null && is_string($maximum) && preg_match('/^(?:[1-9]|10)$/D', $maximum)
+            ? ['hold' => $hold, 'maximum' => (int) $maximum] : null;
     }
     private static function expiredStatus(?ProtocolResult $reply, Query $query, DomainSnapshot $domain, DateEvidence $expiry): RenewalStatus
     {

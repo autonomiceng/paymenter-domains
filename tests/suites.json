@@ -11,7 +11,8 @@
     "tests/reconciliation-enom-history-test.php",
     "tests/transfer-rdap-test.php",
     "tests/transfer-status-test.php",
-    "tests/psl-transport-test.php"
+    "tests/psl-transport-test.php",
+    "tests/adoption-enom-test.php"
   ],
   "contracts": [
     "tests/ote-reconciliation-test.php",
