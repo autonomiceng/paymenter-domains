@@ -26,6 +26,22 @@ function fake(array $overrides = []): void
 }
 
 $transport = new CurlTransport;
+foreach ([[1750, 1750], [20000, 8000], [1, 1], [25000, 8000]] as [$timeoutMs, $connectMs]) {
+    fake(); $accepted = true;
+    try { $transport->sendWithin(Environment::Sandbox, RequestContext::Background, RegistrarRequest::balance(), 'test-api-key', $timeoutMs); }
+    catch (\InvalidArgumentException) { $accepted = false; }
+    same(true, $accepted, "Deadline {$timeoutMs} ms accepted");
+    same($connectMs, $GLOBALS['curlFake']['options'][CURLOPT_CONNECTTIMEOUT_MS], "Connect timeout for {$timeoutMs} ms deadline");
+    same($timeoutMs, $GLOBALS['curlFake']['options'][CURLOPT_TIMEOUT_MS], "Total timeout for {$timeoutMs} ms deadline");
+    same(1, $GLOBALS['curlFake']['calls'], "Deadline {$timeoutMs} ms is one read");
+}
+foreach ([0, -1, 25001] as $timeoutMs) {
+    fake(); $refused = false;
+    try { $transport->sendWithin(Environment::Sandbox, RequestContext::Background, RegistrarRequest::balance(), 'test-api-key', $timeoutMs); }
+    catch (\InvalidArgumentException) { $refused = true; }
+    same(true, $refused, "Invalid deadline {$timeoutMs} ms refused");
+    same(0, $GLOBALS['curlFake']['calls'], "Invalid deadline {$timeoutMs} ms never dispatches");
+}
 foreach ([Environment::Live, Environment::Sandbox] as $environment) {
     foreach ([RequestContext::Interactive, RequestContext::Background] as $context) {
         fake();
@@ -81,9 +97,4 @@ same(Outcome::Unknown, $client->execute(RegistrarRequest::balance(), RequestCont
 same(0, $GLOBALS['curlFake']['calls'], 'TLS logging blocks before dispatch');
 putenv('SSLKEYLOGFILE');
 
-fake();
-$transport->sendWithin(Environment::Sandbox, RequestContext::Background, RegistrarRequest::balance(), 'test-api-key', 1750);
-same(1750, $GLOBALS['curlFake']['options'][CURLOPT_CONNECTTIMEOUT_MS], 'Connect obeys remaining neutral deadline');
-same(1750, $GLOBALS['curlFake']['options'][CURLOPT_TIMEOUT_MS], 'Total obeys remaining neutral deadline');
-same(1, $GLOBALS['curlFake']['calls'], 'Deadline path is one read');
 echo "Transport: synthetic HTTPS options, routing, streaming cap, redirects and timeouts passed.\n";
