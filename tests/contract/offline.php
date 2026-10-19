@@ -63,9 +63,10 @@ $refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'domainLock', ['do
 $writer->raw('https://ote.namesilo.com/api', 'registerDomain', $p);
 $refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'registerDomain', $p));
 $refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]));
-$writer->authorizeRenewal(true);
-$writer->raw('https://ote.namesilo.com/api', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]);
+$writer->authorizeRenewal(true); $writer->renewalBefore('2027-01-01');
 $refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]));
+$writer->raw('https://ote.namesilo.com/apibatch', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]);
+$refuse(fn () => $writer->raw('https://ote.namesilo.com/apibatch', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]));
 $http = new GuardedTransport('offline-secret-token', true, $output,
     static fn () => new TransportResponse(500, json_encode(['request' => ['operation' => 'registerDomain'], 'reply' => ['code' => 300, 'detail' => 'synthetic', 'domain' => 'synthetic', 'order_amount' => '8.95']])), $clock);
 $http->purchaseAuthorization(static fn () => new \Paymenter\Extensions\Servers\Domains\Data\Money('8.95', 'USD'));
@@ -182,6 +183,7 @@ same(\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Unkn
 same(false, GuardedTransport::durableRegistration([], $writer->domain), 'Unresolved purchase cannot continue');
 same(false, GuardedTransport::durableRegistration(['registration' => ['accepted' => true, 'query' => ['name' => 'other.com', 'years' => 1]]], $writer->domain), 'Wrong durable name cannot continue');
 if (getenv('OTE_SELF_TEST_NATIVE')) {
+    foreach (glob($output.'/*attempt-private*.json') as $private) { unlink($private); }
     putenv('NAMESILO_SANDBOX_API_KEY=offline-secret-token');
     $state = (object) ['profile' => [], 'locked' => 'Yes', 'expiry' => gmdate('Y-m-d', strtotime('+1 year')), 'record' => false, 'renewed' => false];
     $wire = new GuardedTransport('offline-secret-token', getenv('OTE_SELF_TEST_SCENARIO') !== 'profile-read', $output,

@@ -11,43 +11,87 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Outcome, Regis
 final class PurchaseAttempt
 {
     private function __construct(private readonly string $path, private readonly \SensitiveParameterValue $original) {}
-    public static function persist(string $directory, string $name, Money $amount, int $term, string $route, string $utc): self
+    public static function persist(string $directory, string $name, Money $amount, int $term, string $route, string $utc, string $command = 'registerDomain', ?string $beforeExpiry = null): self
     {
         if (!preg_match('/^contract-ote-[0-9a-f]{12}\.com$/D', $name) || $amount->currency !== 'USD'
             || !preg_match('/^[0-9]+(?:\.[0-9]{1,6})?$/D', $amount->amount) || $term !== 1
             || !in_array($route, ['/api', '/apibatch'], true)
+            || !in_array($command, ['registerDomain', 'renewDomain'], true)
+            || ($command === 'renewDomain' && Shapes::strictDate($beforeExpiry) === null)
             || !preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$/D', $utc)
             || (new \DateTimeImmutable($utc))->format(DATE_ATOM) !== $utc) {
             throw new \RuntimeException('Private attempt scope refused.');
         }
-        $data = ['name' => $name, 'authorized_amount' => $amount->amount, 'term' => $term, 'route' => $route, 'dispatch_utc' => $utc];
-        $json = json_encode($data, JSON_THROW_ON_ERROR)."\n";
+        $data = ['name' => $name, 'authorized_amount' => $amount->amount, 'term' => $term, 'route' => $route, 'dispatch_utc' => $utc, 'command' => $command];
+        if ($command === 'renewDomain') { $data['before_expiry'] = $beforeExpiry; }
         $path = $directory.'/attempt-private.json';
-        // A renewal may supersede the live file; retain the first purchase as private evidence too.
         if (file_exists($path)) {
-            if (is_link($path) || !rename($path, $directory.'/registration-attempt-private.json')) {
-                throw new \RuntimeException('Private attempt archive failed.');
-            }
+            $prior = self::readPrivate($path);
+            if (isset($prior['name'])) {
+                $archive = ($prior['command'] ?? 'registerDomain') === 'registerDomain'
+                    ? 'registration-attempt-private.json' : 'renewal-background-attempt-private.json';
+                if (file_exists($directory.'/'.$archive)) { $archive .= '.'.bin2hex(random_bytes(4)); }
+                if (!rename($path, $directory.'/'.$archive)) {
+                    throw new \RuntimeException('Private attempt archive failed.');
+                }
+            } else { $data['non_success_replies'] = $prior['non_success_replies'] ?? []; }
         }
+        self::writePrivate($path, $data);
+        unset($data['non_success_replies']);
+        return new self($path, new \SensitiveParameterValue($data));
+    }
+    public static function readPrivate(string $path): array
+    {
+        clearstatcache(true, $path);
+        if (is_link($path) || !is_file($path) || (fileperms($path) & 0777) !== 0600) {
+            throw new \RuntimeException('Private evidence permissions refused.');
+        }
+        return json_decode(file_get_contents($path), true, 16, JSON_THROW_ON_ERROR);
+    }
+    public static function writePrivate(string $path, array $data): void
+    {
+        if (is_link($path)) { throw new \RuntimeException('Private evidence link refused.'); }
+        $json = json_encode($data, JSON_THROW_ON_ERROR)."\n";
+        $temporary = $path.'.pending-'.bin2hex(random_bytes(8));
         $old = umask(0077);
-        try { $file = fopen($path, 'x'); }
+        try { $file = fopen($temporary, 'x'); }
         finally { umask($old); }
         if ($file === false) { throw new \RuntimeException('Private attempt creation failed.'); }
         try {
-            if (!chmod($path, 0600) || fwrite($file, $json) !== strlen($json) || !fflush($file) || !fsync($file)) {
+            if (!chmod($temporary, 0600) || fwrite($file, $json) !== strlen($json) || !fflush($file) || !fsync($file)
+                || is_link($path) || !rename($temporary, $path)) {
                 throw new \RuntimeException('Private attempt persistence failed.');
             }
-        } finally { fclose($file); }
-        return new self($path, new \SensitiveParameterValue($data));
+        } finally { fclose($file); if (file_exists($temporary)) { unlink($temporary); } }
+    }
+
+    public static function retainDetail(string $directory, string $command, ?int $code, ?string $detail): void
+    {
+        $path = $directory.'/attempt-private.json';
+        $data = file_exists($path) ? self::readPrivate($path) : [];
+        $data['non_success_replies'][] = ['command' => $command, 'code' => $code, 'detail' => $detail];
+        self::writePrivate($path, $data);
+    }
+    public function original(): array
+    {
+        $data = self::readPrivate($this->path);
+        $original = $this->original->getValue();
+        if (array_intersect_key($data, $original) !== $original) { throw new \RuntimeException('Private evidence changed.'); }
+        return $original;
+    }
+    public function renewalCategory(string $category): void
+    {
+        if (!in_array($category, ['renewed', 'not_renewed', 'ambiguous'], true)) { throw new \RuntimeException('Closed renewal category required.'); }
+        $this->original(); $data = self::readPrivate($this->path); $data['renewal_category'] = $category;
+        self::writePrivate($this->path, $data);
     }
     public function reconcile(GuardedTransport $wire, Client $client, AccountBinding $binding, Clock $clock): string
     {
         $wire->receipt['reconciliation'] = ['category' => 'ambiguous', 'adopted' => false];
         $wire->check('purchase_unresolved', true);
         try {
-            if (is_link($this->path) || (fileperms($this->path) & 0777) !== 0600) { throw new \RuntimeException('Private evidence permissions changed.'); }
-            $data = json_decode(file_get_contents($this->path), true, 8, JSON_THROW_ON_ERROR);
-            if ($data !== $this->original->getValue() || $data['name'] !== $wire->domain) { throw new \RuntimeException('Private evidence changed.'); }
+            $data = $this->original();
+            if ($data['command'] !== 'registerDomain' || $data['name'] !== $wire->domain) { throw new \RuntimeException('Private evidence changed.'); }
             $start = new \DateTimeImmutable($data['dispatch_utc']);
             $attempt = new AttemptEvidence($binding, new Query($data['name'], Action::Register, $data['term']), 'ote-original', 1,
                 ExecutionRecord::Recorded, SendState::PossiblySent, $start, $clock->now(),
