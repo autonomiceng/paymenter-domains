@@ -58,6 +58,10 @@ final class Inputs
         foreach($units as $role=>$names){if(!is_array($names)||!$names){throw new \DomainException('Every stopped role requires a unit.');}
             foreach($names as $unit){if(!is_string($unit)||!preg_match('/^[a-zA-Z0-9_.@-]+\.(service|timer|socket|path)$/D',$unit)){throw new \DomainException('Explicit systemd unit required.');}
                 $state=$inspect($unit);if(!str_contains($state,"ActiveState=inactive\n")||!str_contains($state,"UnitFileState=masked\n")){throw new \DomainException('All maintenance units must be inactive and masked.');}}}
+        self::registrarsOff();
+    }
+    public static function registrarsOff(): void
+    {
         if(\App\Models\Server::where('extension','NameSilo')->exists()){throw new \DomainException('Independent NameSilo server is unsupported; keep it retired separately.');}
         foreach(\App\Models\Server::whereIn('extension',['Enom','Domains'])->get() as $s){
             foreach(['operations_enabled','domains_billing_enabled','domains_observations_enabled']as$key){if(filter_var($s->settings->firstWhere('key',$key)?->value,FILTER_VALIDATE_BOOLEAN)){throw new \DomainException('Registrar dispatch/billing/observations must be off.');}}}

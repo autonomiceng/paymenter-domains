@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{PricingRule,ReminderSchedules
 final class Planner
 {
     public array $rows=[];public array $changes=[];public array $bindings=[];public array $unknown=[];public array $pending=[];public array $payable=[];public array $unsupported=[];
-    public function __construct(private array $evidence) {}
+    public function __construct(private array $evidence,private string $hostProfile='dedicated') {}
     public static function sourceDigest(): string
     {
         $rows=[];foreach(['enom_domains','enom_operations','enom_tlds','services','plans','prices','invoices','invoice_items','invoice_transactions','credits','properties','service_cancellations','notification_preferences','failed_jobs']as$t){
@@ -74,7 +74,7 @@ final class Planner
         }
         // Orphan operations must not disappear behind domain iteration.
         if(count($this->rows['domains_operations']??[])!==DB::table('enom_operations')->count()){throw new \DomainException('Orphan source operation.');}
-        Mapper::native($this);Mapper::jobs($this);ksort($this->rows);$counts=array_map('count',$this->rows);
+        Mapper::native($this);Mapper::jobs($this,$this->hostProfile==='app');ksort($this->rows);$counts=array_map('count',$this->rows);
         $expiryReview=array_map(fn($id)=>['domain_id'=>$id,'recorded_expiry'=>$domains[$id]->provider_expires_at,'within_60_days'=>$domains[$id]->provider_expires_at===null||$domains[$id]->provider_expires_at<=(new \DateTimeImmutable('+60 days'))->format('Y-m-d')],$this->pending);
         usort($expiryReview,fn($a,$b)=>[$a['recorded_expiry']??'',$a['domain_id']]<=>[$b['recorded_expiry']??'',$b['domain_id']]);
         return ['source_revision'=>Inputs::selectedRevision(),'source_digest'=>$digest,'plan_digest'=>Inputs::digest([$this->rows,$this->changes]),'counts'=>$counts,'adoption_pending'=>$this->pending,'unknown_operations'=>$this->unknown,'unsupported_history'=>$this->unsupported,'pending_payable_invoices'=>$this->payable,'pending_expiry_review'=>$expiryReview,'queue_removals'=>count($this->changes['jobs']??[])];

@@ -5,6 +5,12 @@ namespace DomainsConversion;
 /** Dedicated standard Linux/systemd host only; all cron spools and application runtimes must be inspectable. */
 final class Host
 {
+    public static function profile(string $app,array $inventory,string $profile='dedicated',int $seconds=120): array
+    {
+        if($profile==='app'){return AppHost::verify($app,$inventory,$seconds);}
+        if($profile!=='dedicated'){throw new \DomainException('Unknown host profile.');}
+        self::verify($app,$inventory);return ['profile'=>'dedicated'];
+    }
     public static function verify(string $app,array $units): void
     {
         foreach(['Enom','Domains']as$name){if(file_exists($app.'/extensions/Servers/'.$name)||is_link($app.'/extensions/Servers/'.$name)){throw new \DomainException('Park both registrar runtimes outside the active extension directory.');}}

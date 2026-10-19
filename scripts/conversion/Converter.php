@@ -10,7 +10,7 @@ final class Converter
     private const TARGET=['domains_accounts','domains_domains','domains_operations','domains_tlds','domains_prices','domains_sales_policies','domains_contact_profiles','domains_read_budgets','domains_observation_queues','domains_observation_work',
             'domains_reminder_schedules','domains_reminder_deliveries','domains_obligation_alerts','domains_runtime_turns','domains_runtime_operations'];
     private const ENCRYPTED=['domains_accounts'=>['stable_identity'],'domains_domains'=>['snapshot','renewal_policy','observation'],'domains_operations'=>['policy','cost','attempt','funding']];
-    public function __construct(private array $evidence,private \Closure $maintenance) {}
+    public function __construct(private array $evidence,private \Closure $maintenance,private string $hostProfile='dedicated') {}
     public function run(bool $apply=false,?string $backup=null,?\Closure $checkpoint=null): array
     {
         ($this->maintenance)();self::target();SourceSchema::transactional();
@@ -24,7 +24,7 @@ final class Converter
             }
         }
         $this->emptyTarget();
-        $planner=new Planner($this->evidence);$summary=$planner->plan();
+        $planner=new Planner($this->evidence,$this->hostProfile);$summary=$planner->plan();
         if(!$apply){return [...$summary,'complete'=>false,'dry_run'=>true];}
         if($summary['unsupported_history']){throw new \DomainException('Unsupported terminal history requires reviewed prerequisite.');}
         if($planner->payable){throw new \DomainException('Legacy holdings have payable invoices; resolve before conversion.');}
