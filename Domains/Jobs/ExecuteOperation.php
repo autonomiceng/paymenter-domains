@@ -15,6 +15,8 @@ final class ExecuteOperation implements ShouldQueue
     public const REQUEST_SECONDS = 25;
     public const REQUEST_LIMIT = 10;
     public const EXECUTION_SECONDS = self::REQUEST_LIMIT * self::REQUEST_SECONDS + 50;
+    // Reserve evidence persistence and its domain/operation lock waits before the worker alarm.
+    public const FINISH_SECONDS = 30;
     public const CLEANUP_SECONDS = 60;
     public const LEASE_SECONDS = self::EXECUTION_SECONDS + self::CLEANUP_SECONDS;
     public int $tries = 1;

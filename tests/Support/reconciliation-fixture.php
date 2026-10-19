@@ -39,7 +39,7 @@ $prepare = static function (string $name, string $mode = 'accepted') use ($new, 
     $op = $new($name); [$claimed, $domain, $binding] = $claims->claim($op->id);
     if ($mode === 'preseal') { $clock->instant = $clock->now()->modify('+60 seconds'); }
     $ctx = new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+300 seconds'), new RequestBudget(10), $clock);
-    $sealed = $claims->seal($claimed, $preflight->inspect($claimed, $domain, $ctx)); expect($sealed !== null, 'Original attempt sealed');
+    $sealed = $claims->seal($claimed, $preflight->inspect($claimed, $domain, $ctx), $clock->now()); expect($sealed !== null, 'Original attempt sealed');
     if ($mode === 'late') { $clock->instant = $clock->now()->modify('+361 seconds'); }
     if (!in_array($mode, ['absent', 'preseal'], true)) {
         $result = $mode === 'null' ? null : new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,

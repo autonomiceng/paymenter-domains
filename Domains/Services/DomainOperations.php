@@ -38,6 +38,13 @@ final class DomainOperations
 
     public function execute(int $id): Operation
     {
+        return $this->clock instanceof \Paymenter\Extensions\Servers\Domains\Data\SystemClock
+            ? $this->clock->withinExecution(fn () => $this->executeEntered($id)) : $this->executeEntered($id);
+    }
+
+    private function executeEntered(int $id): Operation
+    {
+        $entry = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
         OperationClaims::outside();
         $route = Operation::findOrFail($id);
         if ($route->action === 'transfer' && !TransferInputs::validCode($route->payload['epp'] ?? null)) { return $route; }
@@ -56,15 +63,15 @@ final class DomainOperations
         [$op, $domain, $binding] = $claim;
         $result = null;
         try {
-            $deadline = $this->clock->now()->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
+            $deadline = $entry->modify('+'.(ExecuteOperation::EXECUTION_SECONDS - ExecuteOperation::FINISH_SECONDS).' seconds');
             $context = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget($op->action === 'transfer' ? 12 : ExecuteOperation::REQUEST_LIMIT), $this->clock, Runtime::limiter());
             $ready = $this->preflight->inspect($op, $domain, $context);
             if ($this->preflight instanceof TransferPreflight) { $ready = $this->preflight->inspect($op, $domain, $context); }
             if ($context->budget->remaining() < 1) { throw new \DomainException('No dispatch request budget remains.'); }
-            $dispatchDeadline = min($deadline, $ready->validUntil, $this->clock->now()->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds'));
+            $dispatchDeadline = min($deadline, $ready->validUntil, $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds'));
             $context = new RequestContext($binding, RequestOrigin::Background, $dispatchDeadline, $context->budget, $this->clock, Runtime::limiter());
-            return $context->withReservedWire(function()use(&$op,$ready,$context,$binding,&$result):Operation {
-            $sealed = $this->claims->seal($op, $ready, $this->preflight instanceof SealPreflight ? $this->preflight : null,
+            return $context->withReservedWire(function()use(&$op,$ready,$context,$binding,&$result,$entry):Operation {
+            $sealed = $this->claims->seal($op, $ready, $entry, $this->preflight instanceof SealPreflight ? $this->preflight : null,
                 $this->writer instanceof WriteGate ? $this->writer : null,$context);
             if (!$sealed) { return $op->fresh(); }
             $op = $sealed;

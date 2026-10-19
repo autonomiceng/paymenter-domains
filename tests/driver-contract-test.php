@@ -238,3 +238,19 @@ foreach ([['+2 seconds', 2000], ['+1000 microseconds', 1]] as [$offset, $millise
 $context = new RequestContext($account, RequestOrigin::Background, $clock->now()->modify('+999 microseconds'), new RequestBudget(1), $clock);
 try { $context->claimRead($account); throw new LogicException('Expected sub-millisecond refusal'); } catch (RuntimeException) {}
 same(1, $context->budget->remaining(), 'Sub-millisecond refusal preserves budget');
+
+// Execution arithmetic must not inherit a site's DST-observing timezone.
+$siteTimezone = date_default_timezone_get();
+$systemClock = new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;
+try {
+    date_default_timezone_set('America/Los_Angeles');
+    $systemClock->withinExecution(function () use ($systemClock): void {
+        $first = $systemClock->now(); $next = $systemClock->now();
+        same('America/Los_Angeles', $first->getTimezone()->getName(), 'Execution clock preserves native datetime serialization timezone');
+        expect($next >= $first, 'Execution clock advances monotonically');
+    });
+    same('America/Los_Angeles', $systemClock->now()->getTimezone()->getName(), 'Clock returns to site wall time after execution');
+    try { $systemClock->withinExecution(static fn () => throw new RuntimeException('Synthetic clock scope failure')); }
+    catch (RuntimeException) {}
+    same('America/Los_Angeles', $systemClock->now()->getTimezone()->getName(), 'Failed execution releases clock anchor');
+} finally { date_default_timezone_set($siteTimezone); }

@@ -16,7 +16,7 @@ App\Models\InvoiceTransaction::create(['invoice_id' => $op->invoice_id, 'amount'
 [$claimed, $domain, $binding] = $claims->claim($op->id);
 $ctx = new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+300 seconds'), new RequestBudget(10), $clock);
 $preflight->cost = '8.95';
-$sealed = $claims->seal($claimed, $preflight->inspect($claimed, $domain, $ctx));
+$sealed = $claims->seal($claimed, $preflight->inspect($claimed, $domain, $ctx), $clock->now());
 $claims->finish($sealed, new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
     new Evidence(registration: new RegistrationEvidence(Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op, $domain), null, null, null, ['auto_renew']))));
 $wire = new class implements DeadlineTransport {

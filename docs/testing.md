@@ -555,3 +555,10 @@ PSL rebaseline tests bind acceptance to pending bytes, fresh staff rights, typed
 current validation remains mandatory and acceptance retains encrypted append-only audit evidence.
 
 Watch storage tests use installed native SQLite fixtures. They cover disabled revisioned mappings, fresh/default-deny permissions, customer/name and service uniqueness, exact target invariants, immutable owner identities, encrypted evidence/audit, source retirement with retained service identity, lifecycle retention and missing migration history. No discovery runtime, public lookup or browser evidence is implied.
+
+Worker-deadline regressions in `operation-recovery-test.php` cover the 245-second last-send
+boundary, refusal beyond it and claim-lock waits that consume the same entry budget. Late contact
+recovery in `Support/late-contact-matrix.php` commits and explicitly retains the staff review hold
+without adding queued jobs. Synthetic clocks and SQLite do not establish production lock latency.
+
+Operation clock regressions cover elapsed fall-back boundaries and native datetime round trips. Operation rate regressions cover unchanged preclaim states, the durable 60-second retry, one eventual send and staff release of disabled writes.

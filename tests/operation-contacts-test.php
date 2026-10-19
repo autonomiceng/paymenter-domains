@@ -72,7 +72,7 @@ foreach ([false, true] as $seal) {
         $context = new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,
             Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background, $clock->now()->modify('+300 seconds'),
             new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(10), $clock);
-        $claims->seal($claimed, $preflight->inspect($claimed, $domain, $context));
+        $claims->seal($claimed, $preflight->inspect($claimed, $domain, $context), $clock->now());
     }
     $inject($op, ['state' => 'held', 'safe_code' => 'contact_details_required']);
     commerceReject(fn () => ContactRecovery::hold($op->id));
