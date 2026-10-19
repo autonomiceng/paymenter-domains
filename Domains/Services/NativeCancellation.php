@@ -65,11 +65,11 @@ final class NativeCancellation
             $acquisitions=$ops->whereIn('action',['register','transfer']);$allTerminal=$acquisitions->isNotEmpty();
             if($acquisitions->isEmpty()){
                 // A converted holding may retain only a converter-sealed historical renewal.
-                // Require its exact current billing anchor and MAC, never a succeeded label.
+                // Require its authenticated current billing anchor, including later renewals; never a state label.
                 foreach($domains as$d){
                     $anchor=$ops->firstWhere('operation_key',$d->renewal_policy['billing_anchor']['operation_key']??null);
                     $account=Account::where('server_id',$d->server_id)->first();
-                    if($anchor&&$account&&ConvertedHoldingProof::completed($anchor,$d,CatalogueAcceptances::binding($account))){$allTerminal=true;}
+                    if($anchor&&$account&&RenewalAuthority::completed($anchor,$d,CatalogueAcceptances::binding($account))){$allTerminal=true;}
                 }
             }
             foreach($acquisitions as$op){

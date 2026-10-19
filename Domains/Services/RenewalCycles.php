@@ -59,12 +59,13 @@ final readonly class RenewalCycles
             $d = $l['domain']; $s = $l['service']; $binding = CatalogueAcceptances::binding($l['account']);
             $this->bindings->requireProcessingLocked($l['server'], $l['account']);
             if ($years < 1 || $years > 10 || $d->provider_expires_at?->addYearsNoOverflow($years) > $this->clock->now()->modify('+10 years')
-                || $s->status !== 'active' || $l['cancel']->contains('service_id', $s->id) || ($d->renewal_policy['automatic_spend_paused'] ?? false)) { throw new \DomainException('Complimentary lifecycle unavailable.'); }
+                || $s->status !== 'active' || RenewalStop::blocksExisting($l) || ($d->renewal_policy['automatic_spend_paused'] ?? false)) { throw new \DomainException('Complimentary lifecycle unavailable.'); }
             $key = self::key($d); $existing = $l['operations']->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
             if ($existing && $existing->funding_basis === 'complimentary') {
                 if ((int) $existing->term !== $years || ($existing->policy['renewal']['cost_cap'] ?? null) !== ['amount' => $cap->amount, 'currency' => 'USD']) { throw new \DomainException('Complimentary term and cap are fixed.'); }
                 return $existing;
             }
+            if(RenewalStop::stopped($l)){throw new \DomainException('Future renewals are stopped for this domain.');}
             $key = self::next($l); $anchor = $l['operations']->firstWhere('operation_key', $d->renewal_policy['billing_anchor']['operation_key'] ?? null);
             if (!$anchor || !RenewalAuthority::completed($anchor, $d, $binding)
                 || $l['operations']->contains(fn ($op) => !RenewalAuthority::resolved($op, $d, $binding))) { throw new \DomainException('Prior renewal outcome unavailable.'); }

@@ -103,7 +103,7 @@ a typed date can pass validation and is discarded on update. This is an accepted
 editing capability, not a promise of normal native lifecycle editing. Native Recalculate Price
 still derives an acquisition-plan price (`P/app/Admin/Resources/ServiceResource.php:124–150`),
 so use owned audited **reprice holding**, **stop/resume renewal** and **retire unpaid acquisition**
-actions. These actions are planned, not implemented here; there is no owner-change action.
+actions. Update renewal price and stop/resume renewal are implemented below. Unpaid acquisition retirement remains deferred; there is no owner-change action.
 Since slice 2, every ordinary native price change requires an owned audited transition, even
 when its amount equals current retail (`D/Domains/Services/NativeDomainGuard.php:130–131`).
 Private exact-object projection authority selects the locked Service and planned values.
@@ -231,6 +231,39 @@ INSERT can leave the service safely held; no timeout or resume acknowledgement c
 intent. Paid and attempted acquisitions require original terminal proof; a succeeded/rejected
 label alone is insufficient. Missing protection schema refuses only lifecycle mutation, with a
 clear upgrade message. Active native paid-loop saves remain available. See
-[native intent storage](native-intent-storage.md). Owned renewal controls follow in the next slice.
+[native intent storage](native-intent-storage.md). Owned renewal controls are described below.
 For converted holdings with no acquisition row, only the current billing anchor's complete
-converter-sealed historical proof permits cancellation; a terminal label or invalid MAC cannot.
+authenticated proof permits cancellation: converter-sealed history or a later original renewal
+completion. A terminal label or invalid conversion MAC cannot authorize cancellation.
+
+## Owned holding controls
+
+Domains staff with Manage domain operations and the specific holding permission can reprice,
+stop or resume one holding. Each reviewed action requires a one-line reason, checks a 15-minute
+actor/domain/action snapshot under the ordered holding locks and appends encrypted before/after
+evidence. A stale, replayed or revoked review refuses; 100 retained entries pause further changes
+until a reviewed retention mechanism is available. No audit entry or cancellation intent is erased.
+
+Reprice applies the current published annual renewal retail, including applicable tax, through
+the exact-object projection capability. It does not publish prices or rewrite issued invoices.
+Future invoices still use retail current at issuance, including the existing retained-price rules.
+Stop prevents new paid and complimentary renewal obligations; issued debts remain payable and
+issued paid and complimentary obligations keep their existing evidence-based execution path,
+including registrar spending. Hold an unsent request before stopping to prevent that spending.
+Stop controls domain-expiry renewal billing; separately requested privacy purchases and renewals
+remain available. Native end-of-period rows
+have the same future-only meaning. Resume may delete only reviewed end-of-period rows; immediate
+cancellation and retained acquisition intent require review and cannot be cleared here. Neither
+action sends a registrar request, deletes a registration or changes registrar auto-renew.
+
+Owner change, native subscription/billing-agreement enrollment, upgrades and unpaid acquisition
+retirement remain deferred. These controls do not complete the later Option E removal gates.
+
+Native cancellation edits/deletions keep Paymenter auditing when native auditing is enabled;
+owned actions additionally require their retained review reason. Disabling native auditing is
+a privileged installation choice. Original sent renewal reconciliation ignores later native billing lifecycle
+changes while retaining original identity and full-funding checks. An unsent paid obligation
+with immediate cancellation stays held for its existing evidence-based refund/review path;
+no automatic refund or registrar request is inferred. Management readback already bypasses send
+eligibility while retaining its original binding checks. Existing-debt reminders continue;
+month-out notices promise no new invoice while future renewals are stopped.

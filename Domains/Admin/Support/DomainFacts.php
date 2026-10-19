@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
+use Paymenter\Extensions\Servers\Domains\Services\{RenewalStop,StaffHoldingReview};
 /** Request-local allowlisted projection. Never cache across actors, call providers or serialize models. */
 final class DomainFacts
 {
@@ -46,6 +47,12 @@ final class DomainFacts
         $holds=PaidUncertainty::for($d); if($holds){$result['Account spending holds']=$holds;}
         $reviews=PaidUncertainty::reviews($d); if($reviews){$result['Paid outcome review']=$reviews;}
         $activity=\Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::activity($d);if($activity){$result['Refunded debt review']=$activity;}
+        try{$renewal=RenewalStop::read($d);$result['Future renewals']=match(true){
+            RenewalStop::blocksExisting($renewal)=>'Stopped: service cancellation pending review.',
+            (bool)($d->renewal_policy['renewals_stopped']??false)=>'Stopped by staff. Issued invoices stay payable.',
+            RenewalStop::stopped($renewal)=>'Stops at end of current period (service cancellation).',default=>'On'};
+        $history=$d->renewal_policy['staff_holdings']??[];
+        $result['Change history']=array_map(static fn($r)=>(isset($r['at'])?(new \DateTimeImmutable($r['at']))->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC':'Unknown time').' · Staff #'.($r['actor_id']??'?').' · '.(StaffHoldingReview::ACTIONS[$r['action']??'']??'Review').' · '.($r['reason']??''),array_slice($history,-5))?:['None'];}catch(\Throwable){$result['Future renewals']='Unavailable; review encryption access';$result['Change history']='Unavailable; review encryption access';}
         $result += ReminderFacts::for($d);
         $result['Data retention']='Encrypted contact and operation evidence is retained. Erasure requires a separately reviewed policy.';
         return $result;

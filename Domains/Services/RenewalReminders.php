@@ -20,7 +20,7 @@ final class RenewalReminders
             &&$op->safe_code!=='renewal_cancelled_unpaid'&&!RenewalReplacements::reviewed($op,$d));
         $retired=$l['operations']->contains(fn($o)=>$o->action==='renew'&&$o->authority_generation===$d->authority_generation&&$o->account_fingerprint===$d->account_fingerprint&&$o->base_expires_at?->format('Y-m-d')===$expiry->format('Y-m-d')&&$o->safe_code==='renewal_cancelled_unpaid');
         if($retired){$alert('renewal_unpaid');}
-        $op=$ops->last();$renewOn=!$l['cancel']->contains('service_id',$s->id);
+        $op=$ops->last();$renewOn=!RenewalStop::stopped($l);
         $rate=$l['prices']->where('term',1)->where('currency','USD')->where('account_fingerprint',$d->account_fingerprint)->first();
         $unknown=false;$complimentary=$d->price_mode==='complimentary';
         if(!$rate||$rate->retail===null||PricingRule::minor(PriceCatalogue::retail($rate->retail))<=0){$alert('unknown_price');$unknown=true;}
@@ -38,7 +38,7 @@ final class RenewalReminders
             'invoice_on'=>null,'overdue'=>false,'complimentary'=>$complimentary&&$renewOn,'years'=>1,'amount'=>null,'invoice_url'=>null,'domain_url'=>url('/domains/'.$d->id)];
         if(!$expired&&$op){
             try{$bindings->requireProcessingLocked($l['server'],$l['account']);
-                if(!$renewOn||($d->renewal_policy['automatic_spend_paused']??false)){throw new \DomainException('Renewal paused.');}
+                if(RenewalStop::blocksExisting($l)||($d->renewal_policy['automatic_spend_paused']??false)){throw new \DomainException('Renewal paused.');}
                 RenewalFunding::requireAuthority($op,$l);
             }catch(\Throwable){$alert('held_obligation',(int)$op->id);return null;}
             try{RefundPayment::requireLine($op,$l);}catch(\Throwable){$alert('invalid_invoice',(int)$op->id);return null;}

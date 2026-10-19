@@ -33,6 +33,7 @@ final readonly class OwnedDomains
                 Account::where('server_id',$d->server_id)->value('environment')==='test', setupPending:true);
         }
         $op=$this->operation($d); $obs=$d->observation??[]; $service=$d->service;
+        $renewalState=RenewalStop::read($d);
         $actions=['show'=>route('domains.domains.show',$d->id),'setupSave'=>route('domains.domains.setup-save',$d->id),'contactsSave'=>route('domains.domains.contacts-save',$d->id),'codeSave'=>route('domains.domains.code-save',$d->id)]; $management=[]; $caps=null;
         try { $caps=$this->ports->forDomain($d)->capabilities(); } catch (\Throwable) {}
         $status=self::STATUSES[$d->status]??'Needs attention'; $tone=$d->status==='active'?'ok':'muted';
@@ -94,7 +95,7 @@ final readonly class OwnedDomains
         $labels=['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'Domain privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code'];
         if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Child nameservers']; }
         foreach ($labels as $cap=>$label) {
-            if ($d->status==='active' && $service?->status==='active' && !$service->cancellation && !($d->renewal_policy['automatic_spend_paused']??false) && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
+            if ($d->status==='active' && $service?->status==='active' && !RenewalStop::blocksExisting($renewalState) && !($d->renewal_policy['automatic_spend_paused']??false) && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
         }
         if (isset($management['privacy'])) { $management['privacy']['free']=$caps->privacy===PrivacyMode::Free;
             $retail=\App\Models\Server::find($d->server_id)?->settings()->where('key','domains_privacy_price')->value('value');
@@ -111,7 +112,7 @@ final readonly class OwnedDomains
             if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['recordCheckHeld']=$recordCheckHeld; }
             if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
         }
-        $renewal=$d->status==='active'?($service?->cancellation?'Off':'On'):'—'; $price=null;
+        $renewal=$d->status==='active'?(RenewalStop::stopped($renewalState)?'Off':'On'):'—'; $price=null;
         try { if($service?->currency_code==='USD'){$price=Storefront::money(RetailLine::decimal($service->price));} } catch(\Throwable){}
         foreach ($management as $key=>&$section) {
             $section['url']=route('domains.domains.manage',[$d->id,$key]); $section['actions']=[];

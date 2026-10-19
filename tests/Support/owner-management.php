@@ -10,6 +10,10 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 $free=isset($ms);[$d,$driver]=$holding($free?'owner-management':'owner-management.com');
 storefrontViews();
 $ports=new OwnerPorts(fn($b)=>$driver);$owners=new OwnedDomains($clock,$ports,$management);
+// Future-only stops preserve settings management and accurately show renewal Off.
+\App\Models\ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Stop future domain renewal']);
+$d->update(['renewal_policy'=>[...($d->renewal_policy??[]),'renewals_stopped'=>true]]);
+$stoppedDto=$owners->present($d->fresh());same('Off',$stoppedDto->renewal,'Customer sees owned/native future stop');expect(isset($stoppedDto->management['nameservers']),'Settings management remains available under future-only stop');
 $controller=new OwnerActionController($owners,new OwnerSetup($clock,$ports),new TransferInputs($clock,new Refunds($clock)),$management,$ports);
 $session=app('request')->session();$session->put('_token','owner-csrf');
 $post=static function(string $action,array $data=[])use($d,$user,$session):Request {

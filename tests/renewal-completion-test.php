@@ -45,8 +45,8 @@ same($writes,$state->writes,'Known prewire refusal never enters exchange'); same
 $engine->run($op->id,$writer); same($writes,$state->writes,'Sealed prewire refusal cannot replay');
 [$op,$d,$b]=$makeRenewal('renew-postsend-cancel.com'); [$engine,$writer,$completion]=$compose($b); $engine->run($op->id,$writer);
 App\Models\ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Synthetic']);
-$state->expiry='2028-10-18'; $state->charge='8.00'; same('pending',$completion->run($op->id)->state,'Post-send cancellation retains unresolved original attempt');
-same('2027-10-18',$d->fresh()->provider_expires_at->format('Y-m-d'),'Cancellation cannot advance local expiry or reactivate native service');
+$state->expiry='2028-10-18'; $state->charge='8.00'; same('succeeded',$completion->run($op->id)->state,'Future-only cancellation does not strand original paid reconciliation');
+same('2028-10-18',$d->fresh()->provider_expires_at->format('Y-m-d'),'Original registrar proof advances owned expiry');same('active',$d->service->fresh()->status,'Registrar reconciliation preserves native paid status');
 [$op,$d,$b]=$makeRenewal('renew-below-cost.com',true,1,false,static function($d)use($clock){
     $price=Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$d->server_id,'action'=>'renew'])->sole();
     $price->update(['retail'=>'1.00','revision'=>$price->revision+1,'observed_at'=>$clock->now(),'fresh_until'=>$clock->now()->modify('+1 day')]);

@@ -19,7 +19,7 @@ final class StaffOperationWrites
                 'renewal_funding_or_authority','renewal_authority_invalid','transfer_setup_review_required'],true)) {
             throw new \DomainException('This hold requires its original recovery or evidence path.'); }
         self::virgin($op,$l);
-        if($l['cancel']->contains('service_id',$op->service_id)||!in_array($l['service']->status,['pending','active'],true)) { throw new \DomainException('Service lifecycle changed.'); }
+        if(($op->action==='renew'?RenewalStop::blocksExisting($l):$l['cancel']->contains('service_id',$op->service_id))||!in_array($l['service']->status,['pending','active'],true)) { throw new \DomainException('Service lifecycle changed.'); }
         if($op->action==='renew'){RenewalFunding::requireCurrent($op,$l);}
         else { RefundPayment::requireCurrent($op,$l);ContactSetup::validate($op);
             if($op->action==='transfer'&&(!TransferInputs::validCode($op->payload['epp']??null)||!($deadline=TransferInputs::deadline($op,$now))||$now>=$deadline)) {

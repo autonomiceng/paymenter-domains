@@ -153,9 +153,18 @@ final class NativeDomainGuard
         $domain = $locked['domain']; $service = $locked['service'];
         if (($locked['advisory'] ?? true) || $service->isDirty()) { throw new \DomainException('Holding native authority changed.'); }
         if ($domain->price_mode !== 'standard') { throw new \DomainException('Complimentary authority belongs to renewal execution.'); }
-        $retail = $this->pricing->renewal($domain, 'USD', $this->clock->now(), true, $locked['tld']);
+        $price = $this->quote($locked);
+        self::persist($service, $service->getRawOriginal(), ['price' => $price['annual_gross'], 'expires_at' => null]);
+        return $price;
+    }
+
+    /** Read-only preview; caller has validated holding identity. Uses the execution price basis. */
+    public function quote(array $locked): array
+    {
+        $domain=$locked['domain'];
+        if($domain->price_mode!=='standard'){throw new \DomainException('Complimentary authority belongs to renewal execution.');}
+        $retail = $this->pricing->renewal($domain, 'USD', $this->clock->now(), !($locked['advisory']??true), $locked['tld']);
         $gross = self::gross($retail->retail, $locked['tax']);
-        self::persist($service, $service->getRawOriginal(), ['price' => $gross, 'expires_at' => null]);
         return ['id' => $retail->id, 'revision' => $retail->revision, 'annual_net' => $retail->retail, 'annual_gross' => $gross,
             'currency' => 'USD', 'unit' => 'term_total', 'retained' => $retail->retained, 'staff_alert' => $retail->staffAlert];
     }

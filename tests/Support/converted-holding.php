@@ -7,7 +7,10 @@ function convertedHoldingFixture(\Paymenter\Extensions\Servers\Domains\Models\Op
     $d=$original->domain->fresh();
     \Illuminate\Support\Facades\DB::table('domains_domains')->where('id',$d->id)->update(['provenance'=>'converted_purchase']);
     \Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$original->id)->update(['action'=>'renew']);
-    $d=$d->fresh();$op=$original->fresh();$binding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(
+    $d=$d->fresh();$op=$original->fresh();
+    // A converted renewal retains the matched historical cap required by the real converter.
+    $op->attempt=[...$op->attempt,'authorized_cost'=>$op->cost['actual']];
+    $binding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(
         \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->firstOrFail());
     $data=['revision'=>\Paymenter\Extensions\Servers\Domains\Services\ConvertedHoldingProof::SOURCE_REVISIONS[0],
         'source_digest'=>str_repeat('a',64),'accepted_read_sha256'=>str_repeat('b',64),
