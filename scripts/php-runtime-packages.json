@@ -34,5 +34,10 @@
     "url": "https://deb.debian.org/debian/pool/main/i/icu/libicu76_76.1-4_amd64.deb",
     "sha256": "c1bf762996de9ecba9b9d871e4928a8090f023a3e9e7fa3240b3d90f892a01dc",
     "native": true
+  },
+  {
+    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-zip_8.4.26-1~deb13u1_amd64.deb",
+    "sha256": "eeba41dd5d6f3d04d7d2328a8dcbd18497df9f5a7b19e6a135bd5f75a96988ac",
+    "native": true
   }
 ]
