@@ -190,3 +190,12 @@ native answers remain unknown: PHP empty arrays are ambiguous (including type-fi
 45-second context admits at most ten queries and rejects late results; it cannot interrupt
 a blocking system resolver call. DoH adapter for proven empty answers is a follow-up;
 proven NODATA/NXDOMAIN is supported without relaxing native unknowns. Worker isolation is deferred.
+
+Watch DNS storage tests cover default-off profiles/work, exact revision and owner/source stamps,
+claims/expired workers, encrypted retained facts, independent axes and failed-read stale projections.
+They use a disposable SQLite fixture; concurrent MariaDB activation and dispatch remain unqualified.
+
+DNS signal tests cover exact complete NS sets, proven NODATA/NXDOMAIN through a fake reader,
+null MX, mixed overlap, bounded CNAME chains, omitted hosts and failed-read empty-label refusal.
+TTL/order changes preserve the routing digest; source/profile changes discard in-flight results.
+The native reader stays conservative; see `docs/design/watch-dns.md` for activation limits.

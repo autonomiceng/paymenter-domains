@@ -67,7 +67,7 @@ final class Labels
             'write_rate_limited'=>'Registrar writes rate limited','write_acceptance_required'=>'Registrar write acceptance required',
             'nameservers_required'=>'Nameservers required','registry_details_unsupported'=>'Registry details need review',
             'renewal_funding_or_authority'=>'Renewal funding or authority needs review','renewal_cost_overrun'=>'Renewal cost exceeds authorized limit',
-            'term'=>'Term needs review','balance'=>'Registrar balance needs review'][$value] ?? 'Review retained evidence';
+            'target_changed'=>'Check target changed','term'=>'Term needs review','balance'=>'Registrar balance needs review'][$value] ?? 'Review retained evidence';
     }
     public static function flag(mixed $value): string { return match ($value) { true=>'Yes', false=>'No', default=>'Unknown' }; }
     public static function money(mixed $value): string

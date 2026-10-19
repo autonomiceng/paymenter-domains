@@ -16,14 +16,15 @@ final class NativeDnsReader implements DnsReader
     public function read(DnsQuery $query, DnsContext $context): DnsAnswer
     {
         try {
-            if (!$context->reserve()) { return DnsAnswer::unknown($query); }
+            if (!$context->reserve()) { return DnsAnswer::unknown($query, $context->live() ? 'budget_exhausted' : 'deadline'); }
             $type = match ($query->type) { 'NS' => DNS_NS, 'A' => DNS_A, 'AAAA' => DNS_AAAA, 'CNAME' => DNS_CNAME, 'MX' => DNS_MX };
             $rows = @($this->exchange)($query->name.'.', $type);
-            // PHP provides no RCODE/TC or negative proof. false/empty must not mean NXDOMAIN/NODATA.
-            if (!$context->live() || !is_array($rows)) { return DnsAnswer::unknown($query); }
+            if (!$context->live()) { return DnsAnswer::unknown($query, 'deadline'); }
+            if (!is_array($rows)) { return DnsAnswer::unknown($query, 'resolver_failed'); }
             // PHP ext/standard/dns.c filters by type: [] can hide a CNAME owner/target gap.
             // No RCODE/NODATA proof is exposed, so empty A/AAAA/MX (and other types) stay unknown.
+            if (!$rows) { return DnsAnswer::unknown($query, 'ambiguous_empty'); }
             return DnsAnswer::rrset($query, $rows);
-        } catch (\Throwable) { return DnsAnswer::unknown($query); }
+        } catch (\Throwable) { return DnsAnswer::unknown($query, 'resolver_failed'); }
     }
 }
