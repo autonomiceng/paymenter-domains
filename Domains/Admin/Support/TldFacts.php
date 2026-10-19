@@ -47,7 +47,7 @@ final class TldFacts
             $row['warning']=trim(str_replace('None · ','',$row['warning']));
             if(Staff::can(Staff::COSTS)){
                 $row['cost']=$p->wholesale===null?(($p->eligibility['price_unavailable']??false)?'Price unavailable':'Unknown'):self::money($p->wholesale,4);
-                $row['margin']=$p->wholesale===null||$p->retail===null?'Unknown':PricingRule::decimal(PricingRule::units(PriceCatalogue::retail($p->retail),2)*100-PricingRule::units(PriceCatalogue::cost($p->wholesale)),4).' USD';
+                $row['margin']=$p->wholesale===null||$p->retail===null?'Unknown':self::exactMoney(PricingRule::decimal(PricingRule::units(PriceCatalogue::retail($p->retail),2)*100-PricingRule::units(PriceCatalogue::cost($p->wholesale)),4));
                 $row['source']=$p->source.' · '.match($p->eligibility['source_unit']??$p->unit){'exact_term_annual_rate'=>'annual rate for exact term','annual'=>'annual rate',default=>'term total'};
                 $row['observed']=$p->observed_at->format('Y-m-d H:i').' UTC';
                 $row['until']=$p->fresh_until?->format('Y-m-d H:i').' UTC';
@@ -59,7 +59,9 @@ final class TldFacts
     public static function rule(Tld $t): string
     {try{$r=(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($t);return match($r['mode']){'fixed'=>'Fixed annual retail','markup_amount'=>$r['markup'].' USD markup',default=>$r['markup'].'% markup'}.' · rounding: '.str_replace('_',' ',$r['round_up']);}catch(\Throwable){return 'Unavailable · publication held';}}
     public static function money(?string $value,int $places=2): string
-    { return $value===null?'Unknown':($places===4?PriceCatalogue::cost($value):PriceCatalogue::retail($value)).' USD'; }
+    { return $value===null?'Unknown':($places===4?self::exactMoney(PriceCatalogue::cost($value)):PriceCatalogue::retail($value).' USD'); }
+    private static function exactMoney(string $value): string
+    { return preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$value).' USD'; }
     public static function table(Tld $tld): HtmlString
     {
         $rows=self::prices($tld); if(!$rows){return new HtmlString('No saved prices. Unknown cost is never zero.');}

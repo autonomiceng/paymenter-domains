@@ -25,10 +25,11 @@ foreach([[],[Staff::COSTS],[Staff::VIEW],[Staff::VIEW,Staff::COSTS]] as $permiss
         ->assertSee('Revision history')->assertSee('Refresh failed or interrupted')->assertSee('existing domains keep their holding registrar');
     $body=$detail->html().$setup->html().json_encode($detail->snapshot).json_encode($setup->snapshot);
     foreach(['PRIVATE-','account-enom','account-namesilo',$t->account_fingerprint] as $secret){expect(!str_contains($body,$secret),'No account or credential in markup/state');}
-    same($cost,str_contains($detail->html(),'8.0000 USD'),'Wholesale independently permissioned');
+    same($cost,str_contains($detail->html(),'8.00 USD'),'Wholesale independently permissioned');
     expect(!str_contains(json_encode($detail->snapshot),'8.0000'),'Cost not public component state');
 }
 $u=staffUser([Staff::VIEW,Staff::COSTS]);Auth::setUser($u);
+foreach (['12.0000'=>'12.00 USD','12.3000'=>'12.30 USD','12.3450'=>'12.345 USD','12.3456'=>'12.3456 USD','0.0000'=>'0.00 USD'] as $amount=>$label) { same($label,TldFacts::money($amount,4),'Wholesale precision stays exact while redundant zeros are trimmed'); }
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;
 $rules->saveDefaultRule($t->server_id,['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],$prices->republish(...));
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('Below cost · held; staff alert')->assertSee('Below cost · billed; staff alert');
