@@ -23,6 +23,7 @@ same(['expiry' => '2027-10-18', 'issue' => '2027-09-27', 'due' => '2027-10-11'],
 commerceReject(fn () => DomainBilling::calendar($d, 7, 7));
 $server = $product->server; $setting = static fn ($key, $value) => $server->settings()->updateOrCreate(['key' => $key], ['value' => $value, 'type' => 'boolean']);
 $setting('domains_billing_enabled', true); $setting('domains_manual_renewals_enabled', false);
+require __DIR__.'/Support/cancelled-billing.php';
 commerceReject(fn () => $billing->invoice($d->id)); // too early for scheduled issue
 commerceReject(fn () => $billing->invoice($d->id, $user)); // independent manual gate
 $setting('domains_billing_enabled', false); $setting('domains_manual_renewals_enabled', true);
@@ -38,6 +39,13 @@ $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused'
 commerceReject(fn () => $billing->invoice($d->id, $user, 3));
 $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => false]]);
 $renewal = $billing->invoice($d->id, $user, 3); $op = Operation::where('invoice_id', $renewal->id)->sole();
+// Cancellation skips scheduled work without erasing an already issued obligation.
+$issuedBefore=serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('invoice_transactions')->get(),$op->fresh()->getRawOriginal()]);
+$issuedCancel=App\Models\ServiceCancellation::create(['service_id'=>$s->id,'type'=>'end_of_period','reason'=>'Synthetic retained-debt cancellation']);
+same(null,$billing->invoice($d->id),'Scheduled cancellation also skips an issued renewal quietly');
+same($issuedBefore,serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('invoice_transactions')->get(),$op->fresh()->getRawOriginal()]),'Cancellation never rewrites retained debt');
+DB::table('service_cancellations')->where('id',$issuedCancel->id)->delete();
+
 same('31.20', $op->amount, 'Retained expired retail bills exact fixed three-year total without current cost');
 same(true, $op->policy['price']['retained'], 'Stale costs retain published holder retail');
 same('stale', $d->fresh()->observation['renewal_price_alert']['code'], 'Stale margin is a staff alert');

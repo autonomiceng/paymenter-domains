@@ -18,7 +18,20 @@ $d->service->product->server->settings()->updateOrCreate(['key'=>'domains_billin
 expect($reminders->remind($d->id),'Source month-out scheduled invoice reminder');
 same('September 27, 2027',Mail::queued(DomainNotice::class)->last()->data['invoice_on'],'Known saved issue date');
 [$d]=$make('renewal-off.com',false);ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Synthetic request']);
+$cancelCounts=[App\Models\Invoice::count(),Paymenter\Extensions\Servers\Domains\Models\Operation::count()];
+same(null,$billing->invoice($d->id),'Scheduled billing quietly skips a native cancellation before the notice');
+same($cancelCounts,[App\Models\Invoice::count(),Paymenter\Extensions\Servers\Domains\Models\Operation::count()],'Cancellation notice flow creates no renewal debt');
+
 expect($reminders->remind($d->id),'Renewal-off notice');
+$offMail=Mail::queued(DomainNotice::class)->last();
+same(false,$offMail->data['invoice'],'Cancelled renewal notice offers no payment instruction');
+same(false,$offMail->data['complimentary'],'Native cancellation is not complimentary renewal');
+expect(str_contains($offMail->render(),'Renewal is turned off'),'Actual cancelled-service mail says Renewal off');
+expect(str_contains(view('domains::mail-text',$offMail->content()->with)->render(),'Renewal is turned off'),'Cancelled-service text alternative says Renewal off');
+expect(!DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereIn('code',['missing_obligation','held_obligation','invalid_invoice'])->exists(),'Native cancellation alone creates no renewal billing review alert');
+$offNotice=App\Models\Notification::where('user_id',$d->user_id)->latest('id')->firstOrFail();
+expect(str_contains($offNotice->title,$d->domain)&&str_contains($offNotice->body,'Renewal is off.'),'Actual native in-app reminder says renewal is off for the cancelled domain');
+
 [$d]=$make('expired-off.com',false);ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Synthetic request']);
 $d->update(['status'=>'expired']);$clock->instant=new DateTimeImmutable('2027-10-21T12:00:00Z');
 expect($reminders->remind($d->id),'Expired notice at configured three-day window');
