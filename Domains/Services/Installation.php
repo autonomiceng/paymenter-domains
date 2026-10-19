@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
 {
-    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class];
+    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class];
     public static function legacy(): void
     {
         foreach(Server::where('extension','Enom')->get() as $server){
@@ -23,7 +23,7 @@ final class Installation
         OperationClaims::outside(); self::legacy();
         Cache::lock('domains-installation',60)->block(5,function():void {
             $present=Schema::hasTable('domains_accounts');
-            foreach(['domains_domains','domains_operations','domains_tlds','domains_prices','domains_contact_profiles','domains_sales_policies','domains_read_budgets','domains_observation_queues','domains_observation_work','domains_reminder_schedules','domains_reminder_deliveries','domains_obligation_alerts','domains_runtime_turns','domains_runtime_operations'] as $table){
+            foreach(['domains_domains','domains_operations','domains_tlds','domains_prices','domains_contact_profiles','domains_sales_policies','domains_read_budgets','domains_observation_queues','domains_observation_work','domains_reminder_schedules','domains_reminder_deliveries','domains_obligation_alerts','domains_runtime_turns','domains_runtime_operations','domains_psl_snapshots','domains_psl_status'] as $table){
                 if(!$present&&Schema::hasTable($table)){throw new \DomainException('Partial retained Domains schema. Restore its installation history before reinstalling.');}
             }
             $ran=app(Migrator::class)->getRepository()->getRan();$recorded=in_array('2026_10_18_000001_create_domains_foundation',$ran,true);
@@ -38,6 +38,9 @@ final class Installation
                 }
             }
             if (in_array('2026_10_18_000007_add_holding_provenance',$ran,true)) { HoldingProvenanceSchema::verify(); }
+            if(Schema::hasTable('domains_psl_snapshots')||Schema::hasTable('domains_psl_status')){
+                if(!in_array('2026_10_19_000007_create_psl_snapshots',$ran,true)){throw new \DomainException('Retained public suffix history has no installation record.');}PslSchema::verify();
+            }
             app(Migrator::class)->run([dirname(__DIR__).'/database/migrations'],['force'=>true]);
             $this->verify(); // Required even when every migration was skipped.
             ReminderTemplates::ensure();

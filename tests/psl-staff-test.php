@@ -1,0 +1,47 @@
+<?php
+// Native installed staff page with fake downloads only. MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/native-app.php'; require __DIR__.'/Support/staff-panel.php'; require __DIR__.'/Support/psl.php';
+use Illuminate\Support\Facades\{Auth,DB,Route,Schema};
+use Filament\Facades\Filament;
+use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList as Page;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,PslFacts};
+use Paymenter\Extensions\Servers\Domains\Services\{PublicSuffixList as Lists,PslTransport,PslValidator,RuntimeWork,Installation};
+$entry=new Paymenter\Extensions\Servers\Domains\Domains([]);$entry->installed();$entry->boot();
+staffPanel();$panel=Filament::getCurrentPanel();$panel->pages([Page::class]);
+Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(fn()=>Route::middleware($panel->getAuthMiddleware())->group(fn()=>Page::registerRoutes($panel)));
+app('router')->getRoutes()->refreshNameLookups();app('router')->getRoutes()->refreshActionLookups();
+$clock=new PslClock;$count=0;$list=new Lists($clock,new PslTransport(function()use(&$count){$count++;return ['status'=>200,'body'=>pslFixture()];}),new PslValidator(128,5,1));
+app()->instance(Lists::class,$list);app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
+$rights=[Staff::VIEW,Page::VIEW,Page::MANAGE];$staff=staffUser($rights);Auth::setUser($staff);
+$setRights=function($permissions)use($staff){$staff->role()->first()->update(['permissions'=>$permissions]);};
+$setRights([]);same(false,Page::canAccess(),'Default deny');Livewire::actingAs($staff)->test(Page::class)->assertForbidden();
+$setRights([Staff::VIEW,Page::MANAGE]);same(false,Page::canAccess(),'Manage cannot view alone');
+$setRights([Staff::VIEW,Page::VIEW]);Livewire::actingAs($staff)->test(Page::class)->assertSee('Not downloaded yet')->assertActionHidden('update')->assertActionHidden('source');same(0,$count,'GET no fetch');
+$setRights($rights);$confirmation=Livewire::actingAs($staff)->test(Page::class)->mountAction('update')->assertActionMounted('update');
+same('This uses the one update allowed in any 24 hours.',$confirmation->instance()->getMountedAction()->getModalDescription(),'Native confirmation wording');same(0,$count,'Confirmation does not fetch');
+$page=Livewire::actingAs($staff)->test(Page::class)->assertSee('MPL-2.0')->assertActionEnabled('update');
+$update=$page->instance()->getCachedHeaderActions()[0]->getActionFunction();
+$setRights([Staff::VIEW,Page::VIEW]);$page->assertActionHidden('update');same(0,$count,'Fresh manage revoked');
+$denied=false;try{$update();}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Cached update callback rechecks manage');
+$setRights($rights);$page=Livewire::actingAs($staff)->test(Page::class)->mountAction('source')->setActionData(['url'=>'https://mirror.example.com/list']);
+$source=$page->instance()->getCachedHeaderActions()[1]->getActionFunction();
+$setRights([Staff::VIEW,Page::VIEW]);same(Lists::SOURCE,$list->source(),'Revoked source stays saved');
+$denied=false;try{$source(['url'=>'https://mirror.example.com/list']);}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Cached source callback rechecks manage');
+$setRights($rights);
+Livewire::actingAs($staff)->test(Page::class)->mountAction('source')->setActionData(['url'=>'http://mirror.example.com/list'])->callMountedAction()->assertHasActionErrors(['url']);
+Livewire::actingAs($staff)->test(Page::class)->mountAction('source')->setActionData(['url'=>'https://mirror.example.com/list'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Public suffix list source saved');same(0,$count,'Saving source no network');
+Livewire::actingAs($staff)->test(Page::class)->callAction('update')->assertNotified('A validated list was saved.')->assertActionDisabled('update')->assertSee('Next update allowed:');
+same(1,$count,'Native manual fetched once');same('Current',PslFacts::state($list),'Current state');
+$clock->at+=7*86400-1;app(RuntimeWork::class)->tick();same(1,$count,'Sole runtime schedule not due');
+$clock->at++;app(RuntimeWork::class)->tick();same(2,$count,'Sole runtime weekly even without accounts');
+$clock->at+=30*86400+1;Livewire::actingAs($staff)->test(Page::class)->assertSee('Out of date warning');
+$clock->at+=60*86400;Livewire::actingAs($staff)->test(Page::class)->assertSee('New discovery paused');
+DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'rules_lost_private']);Livewire::actingAs($staff)->test(Page::class)->assertSee('More than 5%');
+$page=Livewire::actingAs($staff)->test(Page::class);$setRights([Staff::VIEW,Page::MANAGE]);$page->call('$refresh')->assertForbidden();
+// The native migrator/retained-history preflight must neither replace lost data nor repair partial installs.
+$setRights($rights);$entry->upgraded('0.1.0');$entry->uninstalled();same(1,DB::table('domains_psl_snapshots')->count(),'Lifecycle retains snapshot');
+DB::table('migrations')->where('migration','2026_10_19_000007_create_psl_snapshots')->delete();
+try{$entry->installed();expect(false,'Missing PSL migration history refused');}catch(DomainException $e){expect(str_contains($e->getMessage(),'public suffix history'),'Clear retention refusal');}
+echo "Installed public suffix staff view/manage denial, fresh permissions, settings, cap, runtime cadence and retention passed.\n";$nativeSuccessful=true;
