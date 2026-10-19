@@ -114,6 +114,7 @@
   "ui": [],
   "runner": [
     "tests/runner-test.php",
+    "tests/php83-compatibility-test.php",
     "tests/test_runner.py",
     "tests/test_native.py"
   ],
