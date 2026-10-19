@@ -23,13 +23,15 @@ final class DomainBilling
             'due' => $domain->provider_expires_at->subDays($dueDays)->format('Y-m-d')];
     }
 
-    /** A null actor selects scheduled billing; manual billing requires the current native owner. */
-    public function invoice(int $domainId, ?User $actor = null, ?int $years = null): Invoice
+    /** A null actor selects scheduled billing, skipped on native cancellation; manual billing requires the current owner. */
+    public function invoice(int $domainId, ?User $actor = null, ?int $years = null): ?Invoice
     {
         OperationClaims::outside(); $seed = Domain::findOrFail($domainId);
-        return DB::transaction(function () use ($seed, $actor, $years): Invoice {
+        return DB::transaction(function () use ($seed, $actor, $years): ?Invoice {
             $l = HoldingLocks::take($seed); $d = $l['domain']; $s = $l['service'];
             if ($actor && (int) $actor->id !== (int) $l['user']->id) { throw new \DomainException('Domain renewal is unavailable.'); }
+            // A native cancellation disables scheduled billing without touching retained debts.
+            if ($actor === null && $l['cancel']->contains('service_id', $s->id)) { return null; }
             if (!$d->provider_expires_at) { throw new \DomainException('Confirmed expiry required.'); }
             $key = RenewalCycles::key($d);
             // Issued debt keeps its calendar, term and amount through later configuration changes.
