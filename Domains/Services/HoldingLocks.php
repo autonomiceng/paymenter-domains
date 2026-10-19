@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Plan, Product, Server, Service, ServiceCancellation, TaxRate, User};
+use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Price, Tld};
 
@@ -13,39 +13,13 @@ final class HoldingLocks
     public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false): array
     {
         if (!$advisory && DB::transactionLevel() !== 1) { throw new \LogicException('Holding locks require the outer transaction.'); }
-        $users = User::whereKey(array_filter([$seed->user_id, $staffId]))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $user = $users->firstWhere('id', $seed->user_id) ?? throw new \DomainException('Missing owner.');
-        $staff = $staffId === null ? null : $users->firstWhere('id', $staffId);
-        if ($staff) { $staff->setRelation('role', $staff->role()->when(!$advisory,fn($q)=>$q->lockForUpdate())->first()); }
-        $user->setRelation('properties', $user->properties()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get());
-        $credit = $user->credits()->where('currency_code', 'USD')->when(!$advisory,fn($q)=>$q->lockForUpdate())->first();
-        // Current locking reads also see invoices committed after an older native cron read view.
-        // All owner invoices precede ALL services, matching InvoiceFunding, including mixed invoices.
-        $opIds=$advisory?Operation::where('domain_id',$seed->id)->orderByDesc('id')->limit(101)->pluck('id'):null;
-        if($advisory&&$opIds->count()>100){throw new \DomainException('Advisory operation history requires staff review.');}
-        $invoiceIds=$advisory?Operation::whereIn('id',$opIds)->whereNotNull('invoice_id')->limit(100)->pluck('invoice_id'):null;
-        $itemIds=$advisory?Operation::whereIn('id',$opIds)->limit(100)->pluck('invoice_item_id'):null;
-        $invoices = Invoice::where('user_id', $user->id)->when($advisory,fn($q)=>$q->whereIn('id',$invoiceIds))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get(); $ids = $invoices->pluck('id');
-        $items = InvoiceItem::whereIn('invoice_id', $ids)->when($advisory,fn($q)=>$q->whereIn('id',$itemIds))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $transactions = InvoiceTransaction::whereIn('invoice_id', $ids)->when($advisory,fn($q)=>$q->limit(101))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        if($advisory&&$transactions->count()>100){throw new \DomainException('Advisory payment history requires staff review.');}
-        $serviceIds = $items->where('reference_type', (new Service)->getMorphClass())->pluck('reference_id')->push($seed->service_id)->unique();
-        $services = Service::whereKey($serviceIds)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $products = Product::whereKey($services->pluck('product_id'))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $plans = Plan::whereKey($services->pluck('plan_id'))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $service = $services->firstWhere('id', $seed->service_id) ?? throw new \DomainException('Missing holding service.');
-        $product = $products->firstWhere('id', $service->product_id); $plan = $plans->firstWhere('id', $service->plan_id);
-        $cancel = ServiceCancellation::whereIn('service_id', $serviceIds)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $configs = $service->configs()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $properties = $service->properties()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        if (!$product || !$plan) { throw new \DomainException('Missing holding route.'); }
-        $markers = $product->settings()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $upgrades = DB::table('product_upgrades')->where('product_id', $product->id)->orWhere('upgrade_id', $product->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $links = DB::table('config_option_products')->where('product_id', $product->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        // Native Settings::tax selection, using current locked rows rather than a cached read view.
-        $country = $user->properties->where('key', 'country')->value('value');
-        if ($country) { $country = array_search($country, config('app.countries')) ?: $country; }
-        $tax = TaxRate::whereIn('country', [$country, 'all'])->orderByRaw('country = ? desc', [$country])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->first() ?? 0;
+        ['user' => $user, 'staff' => $staff, 'credit' => $credit, 'invoices' => $invoices, 'items' => $items,
+            'transactions' => $transactions, 'orders' => $orders, 'services' => $services, 'products' => $products,
+            'plans' => $plans, 'service' => $service, 'product' => $product, 'plan' => $plan, 'cancel' => $cancel,
+            'configs' => $configs, 'properties' => $properties, 'markers' => $markers, 'tax' => $tax,
+            'upgrades' => $upgrades, 'links' => $links, 'opIds' => $opIds]
+            = HoldingNativeLocks::take((int) $seed->user_id, (int) $seed->service_id, $staffId, $advisory, $seed);
+        $order = $orders->firstWhere('id', $service->order_id);
         $server = Server::whereKey($seed->server_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $account = Account::where('server_id', $seed->server_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $settings = $server->settings()->when($advisory,fn($q)=>$q->whereIn('key',['domains_credentials','domains_verified_credentials','domains_dns_tools']))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
@@ -56,7 +30,7 @@ final class HoldingLocks
         $c = $domain->snapshot['checkout'] ?? [];
         if ($domain->service_id !== $seed->service_id || $domain->user_id !== $seed->user_id || $domain->server_id !== $seed->server_id || $domain->tld !== $seed->tld
             || $domain->adoptionPending() || !$domain->billing_managed || $domain->reservation_name !== $domain->domain || $domain->authority_generation < 1
-            || (int) $service->user_id !== (int) $user->id || $service->currency_code !== 'USD' || (string) $service->quantity !== '1'
+            || !$order || (int) $order->user_id !== (int) $user->id || (int) $service->user_id !== (int) $user->id || $service->currency_code !== 'USD' || (string) $service->quantity !== '1'
             || $service->expires_at !== null || $server->extension !== 'Domains' || (int) $product->server_id !== (int) $server->id
             || $account->account_fingerprint !== $domain->account_fingerprint || $account->registrar_key !== $domain->registrar_key
             || $tld->account_fingerprint !== $domain->account_fingerprint || $tld->registrar_key !== $domain->registrar_key
@@ -77,7 +51,7 @@ final class HoldingLocks
             }
         }
         $service->setRelation('user', $user);
-        $rows = [$user, ...$user->properties, ...$invoices, ...$items, ...$transactions, ...$services, ...$products, ...$plans, ...$cancel, ...$configs, ...$properties, ...$markers, $server, $account, ...$settings, $tld, ...$prices, $domain, ...$operations];
+        $rows = [$user, ...$user->properties, ...$invoices, ...$items, ...$transactions, ...$orders, ...$services, ...$products, ...$plans, ...$cancel, ...$configs, ...$properties, ...$markers, $server, $account, ...$settings, $tld, ...$prices, $domain, ...$operations];
         $stamp = hash('sha256', json_encode(array_map(static fn ($row) => $row->getRawOriginal(), $rows), JSON_THROW_ON_ERROR));
         return compact('advisory', 'credit', 'staff', 'stamp', 'prices', 'transactions', 'domain', 'service', 'product', 'plan', 'user', 'tax', 'server', 'account', 'settings', 'tld', 'operations', 'invoices', 'items', 'cancel');
     }

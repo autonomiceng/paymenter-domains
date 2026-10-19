@@ -92,7 +92,10 @@ final class ContactRecovery
             $actor = User::whereKey($staff->id)->lockForUpdate()->firstOrFail();
             if (!$actor->hasPermission('admin.domains.manage')) { throw new \DomainException('Contact disposition unavailable.'); }
             // Native prefix precedes account/domain/operation locks. No invoice exists for this action.
-            $service = Service::whereKey($hint->service_id)->lockForUpdate()->firstOrFail();
+            [$orders, $services] = HoldingNativeLocks::lockServices([(int) $hint->service_id]);
+            $service = $services->firstWhere('id', $hint->service_id) ?? throw new \DomainException('Missing native service.');
+            $order = $orders->firstWhere('id', $service->order_id);
+            if (!$order || (int) $order->user_id !== (int) $service->user_id) { throw new \DomainException('Holding native authority changed.'); }
             $product = $service->product()->lockForUpdate()->firstOrFail();
             [$domain, $operations] = self::lock($hint); $op = $operations->firstWhere('id', $hint->id);
             self::identity($op, $domain, $service, $product); self::unsent($op);

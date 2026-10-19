@@ -129,7 +129,9 @@
     "tests/conversion-new-pin-test.php",
     "tests/conversion-app-native-test.php",
     "tests/registration-nameservers-test.php",
-    "tests/adoption-storage-test.php"
+    "tests/adoption-storage-test.php",
+    "tests/holding-identity-lock-test.php",
+    "tests/holding-identity-writers-test.php"
   ],
   "ui": [],
   "runner": [
