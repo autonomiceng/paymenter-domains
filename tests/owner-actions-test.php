@@ -83,4 +83,5 @@ same('  keep  ',$trim->one('transfer_code','  keep  '),'Native trim exclusion ap
 same('trim',$trim->one('other','  trim  '),'Other native input transformations unchanged');
 foreach(['setup-save','contacts-save','code-save','manage']as$name){$route=Illuminate\Support\Facades\Route::getRoutes()->getByName('domains.domains.'.$name);
     expect(in_array('web',$route->gatherMiddleware(),true),'Native CSRF group retained');expect((bool)array_filter($route->gatherMiddleware(),fn($m)=>str_starts_with($m,'throttle:')),'POST throttled');}
+require __DIR__.'/Support/committed-code-pages.php';
 $nativeSuccessful=true;echo "Owner setup/code native POST, exact cutoff, encrypted bytes, replay and trim regressions passed.\n";
