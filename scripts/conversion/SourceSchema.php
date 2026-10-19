@@ -8,6 +8,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 final class SourceSchema {
+    // A changed source layout requires an implementation review and an exact schema digest here.
+    public const PIN_SCHEMAS=[];
     private const NATIVE=['extensions','products','roles','notification_templates','settings','jobs','audits'];
     public static function transactional(): void
     {

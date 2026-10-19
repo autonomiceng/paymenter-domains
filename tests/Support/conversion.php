@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,ReminderTemplates};
 use DomainsConversion\{Inputs,SourceSchema,Planner,Mapper,Journal,Converter,Host};
 foreach(['Inputs','SourceSchema','Planner','Mapper','Journal','Host','Converter']as$class){require dirname(__DIR__,2).'/scripts/conversion/'.$class.'.php';}
+Inputs::revision(defined('CONVERSION_SOURCE_REVISION')?CONVERSION_SOURCE_REVISION:Inputs::REVISION);
 Converter::stageSchema();SourceSchema::verify(true);SourceSchema::verify();
 config(['queue.default'=>'database','queue.connections.database'=>['driver'=>'database','connection'=>DB::getDefaultConnection(),'table'=>'jobs']]);
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
@@ -72,7 +73,7 @@ $temporary=sys_get_temp_dir().'/conversion-fixture-'.bin2hex(random_bytes(6));mk
 register_shutdown_function(static function()use($temporary):void{foreach(glob($temporary.'/*')?:[]as$p){if(is_file($p)){unlink($p);}}@rmdir($temporary);});
 $backup=static function()use($temporary):string {
     foreach(['database','files']as$kind){file_put_contents($temporary.'/'.$kind.'.archive','Synthetic backup '.$kind);}
-    $marker=['revision'=>Inputs::REVISION,'source_digest'=>Planner::sourceDigest(),'key_sha256'=>hash('sha256',(string)config('app.key'))];
+    $marker=['revision'=>Inputs::selectedRevision(),'source_digest'=>Planner::sourceDigest(),'key_sha256'=>hash('sha256',(string)config('app.key'))];
     foreach(['database','files']as$kind){$p=$temporary.'/'.$kind.'.archive';$marker[$kind]=['path'=>$p,'sha256'=>hash_file('sha256',$p)];}
     file_put_contents($temporary.'/backup.json',json_encode($marker));return $temporary.'/backup.json';
 };

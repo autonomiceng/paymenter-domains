@@ -122,7 +122,8 @@
     "tests/watch-storage-test.php",
     "tests/test_installed_package.py",
     "tests/operation-clock-test.php",
-    "tests/operation-rate-test.php"
+    "tests/operation-rate-test.php",
+    "tests/conversion-new-pin-test.php"
   ],
   "ui": [],
   "runner": [

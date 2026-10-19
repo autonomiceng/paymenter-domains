@@ -33,6 +33,24 @@ expect(count($converter->run()['unsupported_history'])===1,'Unsupported manageme
 Schema::table('enom_domains',fn($t)=>$t->string('unexpected')->nullable());conversionRefuses(fn()=>$converter->run(),'Exact source schema','Retained Domains schema mismatch');Schema::table('enom_domains',fn($t)=>$t->dropColumn('unexpected'));
 DB::table('domains_read_budgets')->insert(['server_id'=>$server->id,'account_fingerprint'=>str_repeat('0',64),'window_at'=>0,'used'=>1,'leases'=>'{}']);conversionRefuses(fn()=>$converter->run(),'Read budgets are target ledger','Target ledger must be empty');DB::table('domains_read_budgets')->delete();
 DB::table('domains_runtime_operations')->insert(['operation_id'=>999]);conversionRefuses(fn()=>$converter->run(),'Nonempty target','Target ledger must be empty');DB::table('domains_runtime_operations')->delete();
+require dirname(__DIR__).'/scripts/conversion/SourcePins.php';
+same(array_column(Inputs::pins(),'revision'),\Paymenter\Extensions\Servers\Domains\Services\ConvertedHoldingProof::SOURCE_REVISIONS,'Source pins and runtime proof revisions agree');
+$undeclared=Inputs::pins()[0];$undeclared['revision']=str_repeat('a',40);
+conversionRefuses(fn()=>\DomainsConversion\SourcePins::admit($undeclared,Inputs::pins()),'Runtime proof support required','Declare matching runtime proof');
+foreach(Inputs::pins()as$pin){
+    Inputs::revision($pin['revision']);Inputs::hashes($pin['revision'],$pin['files']);
+    $changed=$pin['files'];$changed[array_key_first($changed)]=str_repeat('0',64);
+    conversionRefuses(fn()=>Inputs::hashes($pin['revision'],$changed),'Changed byte refuses','Installed source bytes differ');
+    \DomainsConversion\SourcePins::admit($pin,Inputs::pins());
+    $changed=$pin;foreach($changed['files']as$path=>$hash){if(str_starts_with($path,'database/migrations/')){$changed['files'][$path]=str_repeat('0',64);break;}}
+    conversionRefuses(fn()=>\DomainsConversion\SourcePins::admit($changed,Inputs::pins()),'Migration needs explicit support','Changed source schema');
+    $changed=$pin;$changed['files']['Enom.php']=str_repeat('0',64);
+    conversionRefuses(fn()=>\DomainsConversion\SourcePins::admit($changed,Inputs::pins()),'Settings declarations need explicit support','Changed source schema');
+    $changed=$pin;$changed['files']['NewShape/Unexpected.php']=str_repeat('0',64);
+    conversionRefuses(fn()=>\DomainsConversion\SourcePins::admit($changed,Inputs::pins()),'New dependency folders refuse by default','Changed source schema');
+    $changed=$pin;$changed['files']['Models/Unexpected.php']=str_repeat('0',64);
+    conversionRefuses(fn()=>\DomainsConversion\SourcePins::admit($changed,Inputs::pins()),'Model inventory needs explicit support','Changed source schema');
+}
 Inputs::revision(Inputs::REVISION);conversionRefuses(fn()=>Inputs::revision('wrong'),'Wrong source revision','Accepted source revision required');
 conversionRefuses(fn()=>Inputs::source($temporary,'wrong'),'CLI source revision guard','Accepted source revision required');
 conversionRefuses(fn()=>Inputs::source($temporary,Inputs::REVISION),'Source bytes mismatch','Installed source bytes differ');
