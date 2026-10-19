@@ -43,7 +43,7 @@ final readonly class OwnerActionController
         return $this->submit($request,$domain,'recovery',function()use($request,$domain):void {
             $op=$this->owners->operation($this->owners->owned($request->user(),$domain));
             ContactRecovery::replace($request->user(),$op?->id??0,'owner_updated_account_details');
-        },'Account details updated. We will continue once the order is ready.');
+        },'Account details updated.');
     }
     public function manage(Request $request,int $domain,string $action)
     {

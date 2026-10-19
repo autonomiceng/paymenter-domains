@@ -8,7 +8,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations,TransferInputs};
 final class OperationActions
 {
     public static function make(Operation $op,string $stamp): array
@@ -37,13 +37,20 @@ final class OperationActions
         if(PaidUncertainty::summary($op)!==null&&!in_array($action,['recheck','resume_reads','resume_observation'],true)){return false;}
         return match($action){
             'hold'=>in_array($op->state,['queued','awaiting_payment','awaiting_code'],true),
-            'release','refund'=>$op->state==='held',
+            'release'=>$op->state==='held' && !self::transferCutoff($op),
+            'refund'=>$op->state==='held',
             'credit'=>$op->state==='rejected'&&$op->funding_basis==='paid_invoice',
             'replacement'=>$op->action==='renew'&&$op->state==='rejected',
             'disposition'=>in_array($op->state,['succeeded','rejected'],true),
             'resume_reads'=>in_array($op->action,['register','transfer','renew'],true)&&in_array($op->state,['running','pending','uncertain','held'],true),
             'recheck'=>in_array($op->state,['running','pending','uncertain','held'],true),
             'resume_observation'=>true,default=>false};
+    }
+    public static function transferCutoff(Operation $op): bool
+    {
+        $now=app(Clock::class)->now();
+        $deadline=$op->action==='transfer'?TransferInputs::deadline($op,$now):null;
+        return $deadline!==null && $now>=$deadline;
     }
     public static function description(string $action): string
     {

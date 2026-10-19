@@ -12,8 +12,14 @@
 @else
 @if ($domain->transfer['phase'] === 'pending')<p>Your current registrar may email the domain owner to approve the transfer. Approving it there can speed things up. Most transfers finish within 5 to 7 days.</p>
 @elseif ($domain->transfer['phase'] === 'review')<p>We’re checking your transfer and will update this page. You don’t need to do anything.</p>
+@elseif ($domain->transfer['phase'] === 'setup_review')<p>Your updated details are awaiting review by our team. Contact support to discuss the next step.</p>
+@elseif ($domain->transfer['phase'] === 'cutoff' && $domain->setup['contacts'])<p>Your saved code stays in place. The code-entry deadline has passed, so this transfer remains on hold. Our team will review any updated details.</p>
 @elseif ($domain->transfer['phase'] === 'cutoff')<p>The time to enter or change this transfer code has passed. Contact support and we’ll sort it out.</p>
 @elseif ($domain->transfer['phase'] === 'payment')<p>We couldn’t confirm the payment date for this transfer. Contact support and we’ll sort it out.</p>
 @else<p>Your transfer is on hold. Contact support and we’ll sort it out.</p>@endif
 @endif
 @if ($domain->transfer['unchecked'])<p class="domains-small domains-muted">We couldn’t check this domain’s public registration record for this transfer.</p>@endif
+
+@if ($domain->setup['contacts'])
+<section class="domains-section">@include('domains::partials.registration-setup')</section>
+@endif

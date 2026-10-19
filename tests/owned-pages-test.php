@@ -63,5 +63,6 @@ $dto=$owners->present($sealed->domain);expect($dto->transfer['unchecked']&&!$dto
 storefrontViews();$calls=$state->calls;$html=$controller->code($request($user),$sealed->domain_id)->render();
 expect(str_contains($html,'We couldn’t check this domain’s public registration record for this transfer.'),'Real presenter-to-Blade preserves unchecked provenance');
 same(0,storefrontDom($html)->query('//input[@name="transfer_code"]')->length,'Provenance grants no code editor');same($calls,$state->calls,'Rendering provenance performs no I/O');
+require __DIR__.'/Support/late-contact-pages.php';
 foreach(['show','setup','code','index','transfer']as$route){$r=Illuminate\Support\Facades\Route::getRoutes()->getByName('domains.domains.'.$route);expect(in_array('auth',$r->gatherMiddleware(),true)&&in_array('web',$r->gatherMiddleware(),true),'Dormant routes have native auth/session boundary');}
 $nativeSuccessful=true;echo "Owned DTO, native controllers, real Blade, held/correction/capability and ownership checks passed.\n";
