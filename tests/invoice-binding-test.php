@@ -39,6 +39,28 @@ same(2, Operation::count(), 'Duplicate event creates no operation');
 foreach (['term' => 1, 'amount' => '1.00', 'currency' => 'EUR', 'invoice_item_id' => 999, 'operation_key' => 'forged'] as $key => $value) {
     commerceReject(static fn () => $op->fresh()->fill([$key => $value])->save());
 }
+// Nested checkout and cost evidence is frozen, including removal of an existing key.
+foreach (['policy' => ['checkout', 'price', 'seller_revision'], 'cost' => ['estimated', 'currency', 'unit']] as $field => $keys) {
+    $saved = $op->fresh()->$field;
+    foreach ($keys as $key) {
+        foreach (['change', 'remove'] as $mutation) {
+            $changed = $saved;
+            if ($mutation === 'remove') { unset($changed[$key]); } else { $changed[$key] = 'changed'; }
+            commerceReject(static fn () => $op->fresh()->fill([$field => $changed])->save());
+            same($saved, $op->fresh()->$field, 'Refused nested operation evidence stays unchanged');
+        }
+    }
+}
+$snapshot = $domain->fresh()->snapshot;
+foreach (['change', 'remove'] as $mutation) {
+    $changed = $snapshot;
+    if ($mutation === 'remove') { unset($changed['checkout']); } else { $changed['checkout'] = ['name' => 'changed.com']; }
+    commerceReject(static fn () => $domain->fresh()->fill(['snapshot' => $changed])->save());
+    same($snapshot, $domain->fresh()->snapshot, 'Refused domain checkout evidence stays unchanged');
+}
+$policy = $op->fresh()->policy; $policy['review_note'] = 'Additional non-frozen evidence';
+expect($op->fresh()->update(['policy' => $policy]), 'A new non-frozen policy key can save');
+same($policy, $op->fresh()->policy, 'New policy evidence persists alongside frozen checkout facts');
 // A new holder after a seller change stays on its own account. Existing ownership never moves.
 $sellers->change('com', 2, $tlds[1]->server_id, true, true, $now); $nsProduct = $native->product($tlds[1], 'register');
 $cart = commerceCart($user); commerceAdd($cart, $nsProduct, 'new-account.com'); commerceAdd($cart, $nsProduct, 'same-plan.com'); commerceCheckout($user, $cart);
