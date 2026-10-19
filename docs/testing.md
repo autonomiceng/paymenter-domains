@@ -481,3 +481,7 @@ known PHP 8.4 function calls, asymmetric visibility, property hooks and unparent
 and imports are resolved without executing source. This targeted check is not exhaustive:
 dynamic function names, extension availability and untested runtime behavior remain
 outside it. Passing it does not establish installed Paymenter or provider acceptance.
+
+Storefront catalogue parity exercises real public endings/checks with separate malformed native
+price/setup-fee, altered-marker and duplicate marker-set products. Healthy and registration-only
+endings remain usable; stale, below-cost and unknown-cost acquisition evidence never leaks.

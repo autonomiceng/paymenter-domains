@@ -6,6 +6,7 @@ require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/storefront.php';
 require __DIR__.'/Support/storefront-reader.php';
+require __DIR__.'/Support/storefront-catalogue.php';
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{RateLimiter, Route};
 use Paymenter\Extensions\Servers\Domains\Http\{FormKeys};
@@ -19,6 +20,7 @@ require dirname(__DIR__).'/Domains/routes/web.php';
 extract(commerceFixture(true)); $clock = new FakeClock($now);
 $eligibility = new CheckoutEligibility($bindings, $clock, new TransferPrecheck(new Rdap(static fn () => ['status' => 503, 'body' => ''])));
 $store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
+storefrontCorruptionChecks(compact('bindings', 'prices', 'sellers', 'native', 'now', 'reads'), $store);
 $controller = new StorefrontController($store); app()->instance(Storefront::class, $store);
 storefrontViews(); $session = app('request')->session();
 $req = static function (array $input = [], string $method = 'POST', ?App\Models\User $user = null, string $ip = '192.0.2.32') use ($session): Request {
