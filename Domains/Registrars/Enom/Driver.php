@@ -102,7 +102,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         catch (\Throwable) { return $this->result(null); }
         return $this->result(['fields' => $schema, 'supported' => RegistryFields::supported($schema)]);
     }
-    /** Selected-term annual account rate; source product_price_unavailable alone means no price. */
+    /** Selected-term annual account rate; only explicit disablement means no price. */
     public function productPrice(string $tld, string $action, int $years, #[\SensitiveParameter] RequestContext $context): ReadResult
     {
         Catalogue::tld($tld);
@@ -111,12 +111,15 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $reply = $this->read(ReadCommand::ProductPrice, ['TLD' => $tld, 'ProductType' => $type, 'Years' => $years], $context);
         if ($reply->status !== 'success') { return $this->result(null); }
         $enabled = $reply->value('productprice.productenabled'); $price = $reply->value('productprice.price');
-        // Unlike malformed source no-price, unsupported extra precision must retain prior costs.
+        if (is_string($enabled) && in_array(strtolower($enabled), ['false', '0'], true)) {
+            return new ReadResult($this->binding(), 'no_price');
+        }
+        // Malformed replies, including unsupported precision, retain prior costs.
         if (is_string($price) && preg_match('/^[0-9]+\.[0-9]{5,}$/D', $price)) { return $this->result(null); }
         $currency = $reply->value('productprice.currency');
         if ($currency !== null && (!is_string($currency) || strtoupper($currency) !== 'USD')) { return $this->result(null); }
         if (!is_string($enabled) || !in_array(strtolower($enabled), ['true', '1'], true) || !is_string($price) || Pricing::annual($price) === null) {
-            return new ReadResult($this->binding(), 'no_price');
+            return $this->result(null);
         }
         return $this->result(['tld' => $tld, 'action' => $action, 'years' => $years, 'price' => $price]);
     }

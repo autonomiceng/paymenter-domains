@@ -91,9 +91,19 @@ foreach (['register' => 10, 'renew' => 16, 'transfer' => 19] as $action => $type
     $price = $driver->productPrice('com', $action, 2, $context()); same('success', $price->status, 'Known zero is valid lexical price');
     same('0.0000', $price->facts()['price'], 'No float price conversion'); same(['TLD' => 'com', 'ProductType' => $type, 'Years' => 2], end($wire->calls)[1], 'Exact action/term wire');
 }
-foreach (['<ProductEnabled>false</ProductEnabled><Price>10.00</Price>', '<ProductEnabled>true</ProductEnabled>', '<ProductEnabled>1</ProductEnabled><Price>1e3</Price>', '<ProductEnabled>yes</ProductEnabled><Price>10</Price>'] as $noPrice) {
-    $wire->payloads['ProductPrice'] = '<ProductPrice>'.$noPrice.'</ProductPrice>';
-    same('no_price', $driver->productPrice('com', 'register', 1, $context())->status, 'Only source product_price_unavailable maps to no price');
+foreach (['false', 'FALSE', 'FaLsE', '0'] as $disabled) {
+    $wire->payloads['ProductPrice'] = '<ProductPrice><ProductEnabled>'.$disabled.'</ProductEnabled><Price>10.00</Price></ProductPrice>';
+    same('no_price', $driver->productPrice('com', 'register', 1, $context())->status, 'Explicit disablement alone maps to no price');
+}
+foreach (['<Price>10.00000</Price>', '<Price>10.00</Price><Currency>EUR</Currency>'] as $ignoredPrice) {
+    $wire->payloads['ProductPrice'] = '<ProductPrice><ProductEnabled>false</ProductEnabled>'.$ignoredPrice.'</ProductPrice>';
+    same('no_price', $driver->productPrice('com', 'register', 1, $context())->status, 'Explicit disablement does not depend on price precision or currency');
+}
+foreach (['<Price>10.00</Price>', '<ProductEnabled><Value>true</Value></ProductEnabled><Price>10.00</Price>',
+    '<ProductEnabled>true</ProductEnabled>', '<ProductEnabled>true</ProductEnabled><Price>1e3</Price>',
+    '<ProductEnabled>yes</ProductEnabled><Price>10</Price>'] as $malformed) {
+    $wire->payloads['ProductPrice'] = '<ProductPrice>'.$malformed.'</ProductPrice>';
+    same('unknown', $driver->productPrice('com', 'register', 1, $context())->status, 'Malformed price reply is a failed read');
 }
 $wire->reject = true; same('unknown', $driver->productPrice('com', 'register', 1, $context())->status, 'Other provider non-success is failed read');
 $wire->reject = false; $wire->fail = true; same('unknown', $driver->productPrice('com', 'register', 1, $context())->status, 'Timeout never no price'); $wire->fail = false;

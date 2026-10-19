@@ -54,7 +54,7 @@ Suffixes are explicit, including compound endings; there are no default sellable
 | Frozen source | Target synthetic test (`enom-read-test.php`) |
 | --- | --- |
 | `Services/Catalogue.php`, `EnomApi::tldList/tldInfo` | Repeated/compound/malformed catalogue; bounded registration terms; paid privacy and unknown flags |
-| `EnomApi::productPrice` / provider contracts | Exact lexical zero and action/term parameters; disabled/unparseable is `no_price`; refusal/timeout is failed `unknown` |
+| `EnomApi::productPrice` / provider contracts | Exact lexical zero and action/term parameters; explicit false/0 is `no_price`; malformed/refusal/timeout is failed `unknown` |
 | `Services/RegistryFields.php::normalize/supported` | Conditional child schema; malformed/empty dependencies close; explicit empty and frozen no-Attributes/ResponseCount=0 schema |
 | `EnomApi::normalize(info)` / `DomainObservation` | Domain/SLD/TLD/owner UID/provider ID proof; another owner suppresses extra reads; per-read budget |
 | `RegistrarResult::confirmedExpiry`, provider contracts | Date-only precision; Pacific winter/DST and UTC attributes; invalid/conflicting aliases unknown; GetDomainExp |
@@ -87,7 +87,7 @@ Adapted from the same frozen revision's `Services/Catalogue.php::productCost`,
 `catalogueRate` retains selected-term annual registration rates and annual renewal/transfer,
 using source USD semantics. `quote` exposes exact term totals, advisory for acquisition:
 ordinary/premium/availability acceptance remains separate. A failed neutral quote never means
-no-price. Only the successful source `product_price_unavailable` shape supplies explicit null
+no-price. Only successful explicit `ProductEnabled=false/0` supplies null
 catalogue rates; unsupported decimal precision/currency fails instead. Live prices retain the source four-decimal limit; extra precision fails the read
 instead of withdrawing a prior price. Only database padding is trimmed when excess digits
 are zero (the neutral pricing lane owns that mapping). No floats or rounding are used.

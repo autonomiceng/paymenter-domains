@@ -34,7 +34,7 @@ $ns = new class implements DeadlineTransport {
     }
 };
 $enom = new class implements Transport {
-    public array $disabledRegisterTerms = [];
+    public array $disabledRegisterTerms = []; public ?string $pricePayload = null;
     public int $calls = 0; public bool $fail = false; public bool $noPrice = false; public int $max = 3; public bool $registry = true;
     public function send(Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string
     {
@@ -43,7 +43,7 @@ $enom = new class implements Transport {
         $body = match ($command) {
             ReadCommand::TldInfo => '<TLDs><TLD><TLD>'.$parameters['TLD'].'</TLD><Registration><Minimum>1</Minimum><Maximum>'.$this->max.'</Maximum><Unit>year</Unit><DNSRequired>false</DNSRequired></Registration><ExtAttributes>false</ExtAttributes><Renewal><AutoRenewOnly>false</AutoRenewOnly></Renewal></TLD></TLDs>',
             ReadCommand::Attributes => $this->registry ? '<ResponseCount>0</ResponseCount>' : '<Attributes><Attribute><Name>unsupported</Name></Attribute></Attributes>',
-            ReadCommand::ProductPrice => '<ProductPrice><ProductEnabled>'.($this->noPrice || ($parameters['ProductType'] === 10 && in_array($parameters['Years'], $this->disabledRegisterTerms, true)) ? 'false' : 'true').'</ProductEnabled><Price>8.9550</Price></ProductPrice>',
+            ReadCommand::ProductPrice => $this->pricePayload ?? '<ProductPrice><ProductEnabled>'.($this->noPrice || ($parameters['ProductType'] === 10 && in_array($parameters['Years'], $this->disabledRegisterTerms, true)) ? 'false' : 'true').'</ProductEnabled><Price>8.9550</Price></ProductPrice>',
             default => throw new LogicException('Unexpected read'),
         };
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';
@@ -102,6 +102,17 @@ same(0, Price::where('server_id', 2)->where('term', 3)->count(), 'NameSilo does 
 same('2026-10-18T13:00:00+00:00', Price::where('server_id', 2)->firstOrFail()->fresh_until->format(DATE_ATOM), 'Shared cadence plus failure margin');
 same(['synced' => 1, 'failed' => []], $sync->refresh(1, $context(1)), 'Enom accepted exact term batch');
 same('26.8650', $prices->current(1, $bound[1]->fingerprint, 'com', 'register', 3, 'USD', $clock->now())->wholesale, 'Enom selected-term exact total');
+// Every malformed price shape fails the ending atomically and preserves retained costs.
+foreach (['<Price>10.00</Price>', '<ProductEnabled><Value>true</Value></ProductEnabled><Price>10.00</Price>',
+    '<ProductEnabled>true</ProductEnabled>', '<ProductEnabled>true</ProductEnabled><Price>invalid</Price>'] as $malformed) {
+    $beforePrices = DB::table('domains_prices')->orderBy('id')->get()->toJson();
+    $beforeTlds = DB::table('domains_tlds')->orderBy('id')->get()->toJson();
+    $enom->pricePayload = '<ProductPrice>'.$malformed.'</ProductPrice>';
+    same(['synced' => 0, 'failed' => ['.com']], $sync->refresh(1, $context(1)), 'Malformed price is reported as a read failure');
+    same($beforePrices, DB::table('domains_prices')->orderBy('id')->get()->toJson(), 'Malformed reply preserves every prior cost and offer');
+    same($beforeTlds, DB::table('domains_tlds')->orderBy('id')->get()->toJson(), 'Malformed reply preserves TLD configuration');
+}
+$enom->pricePayload = null;
 // Registration requires any eligible exact term, independently of a valid annual renewal.
 $enom->disabledRegisterTerms = [1];
 same(1, $sync->refresh(1, $context(1))['synced'], 'Refresh with only the later registration term priced');
