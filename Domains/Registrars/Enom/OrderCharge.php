@@ -32,15 +32,19 @@ final class OrderCharge
         if (strtolower($item['description']) !== $query->name || ($item['quantity'] ?? null) !== (string) $query->years
             || strtolower($item['status']) !== 'successful' || strtolower($item['orderstatus']) !== 'closed'
             || strtolower($item['producttype']) !== $query->action->value) { return null; }
-        $bill = $header['orderbillamount'] ?? null;
-        $total = Pricing::cents(is_string($bill) && str_starts_with($bill, '$') ? substr($bill, 1) : $bill);
-        $amount = Pricing::cents($item['amountpaid'] ?? null);
+        $total = self::orderAmount($header['orderbillamount'] ?? null);
+        $amount = self::orderAmount($item['amountpaid'] ?? null);
         if ($amount === null || $total !== $amount) { return null; }
         foreach ([$header, $item] as $row) {
             if (array_key_exists('currency', $row) && (!is_string($row['currency']) || strtoupper($row['currency']) !== 'USD')) { return null; }
         }
         $processed = self::date($header['billdate'] ?? null, 'enom_order_bill_date');
         return new OrderEvidence($attempt->binding, $query, new Money($amount, 'USD'), $id, $processed, Expiry::read($order));
+    }
+    /** Order amounts may carry one leading dollar sign; quote parsing stays strict. */
+    private static function orderAmount(mixed $value): ?string
+    {
+        return Pricing::cents(is_string($value) && str_starts_with($value, '$') ? substr($value, 1) : $value);
     }
     /** Every parsed item must positively name a different canonical domain. */
     public static function unrelated(AttemptEvidence $attempt, ProtocolResult $order): bool

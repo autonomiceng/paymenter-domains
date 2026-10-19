@@ -150,11 +150,36 @@ $order = fn (array $h) => new ProtocolResult('success', data: ['order' => $h]);
 $candidate = OrderCharge::read($attempt(), $execution, $order($header));
 same('8.95', $candidate?->charge?->amount, 'Single exact closed item proves actual USD charge');
 same('2026-11-07T13:40:05+00:00', $candidate?->processedAt?->value, 'BillDate retains provider Pacific time semantics');
+// Both order fields accept exactly one optional dollar sign, independently.
+foreach (['8.95', '$8.95'] as $total) {
+    foreach (['8.95', '$8.95'] as $paid) {
+        $data = $header; $data['orderbillamount'] = $total; $data['orderdetail']['amountpaid'] = $paid;
+        same('8.95', OrderCharge::read($attempt(), $execution, $order($data))?->charge?->amount,
+            'Order dollar acceptance: '.$total.' / '.$paid);
+    }
+}
+foreach (['double_dollar' => '$$8.95', 'bare_dollar' => '$', 'leading_space' => ' $8.95',
+    'negative_prefix' => '-$8.95', 'negative_amount' => '$-8.95', 'trailing_dollar' => '8.95$',
+    'null' => null, 'integer' => 895, 'float' => 8.95, 'boolean' => true, 'array' => ['8.95'], 'object' => new stdClass] as $case => $invalid) {
+    foreach (['amountpaid', 'orderbillamount'] as $field) {
+        $data = $header;
+        if ($field === 'amountpaid') { $data['orderdetail'][$field] = $invalid; }
+        else { $data[$field] = $invalid; }
+        same(null, OrderCharge::read($attempt(), $execution, $order($data)), 'Order dollar refusal: '.$field.' / '.$case);
+    }
+}
+foreach (['amountpaid', 'orderbillamount'] as $field) {
+    $data = $header;
+    if ($field === 'amountpaid') { $data['orderdetail'][$field] = '$9.95'; }
+    else { $data[$field] = '$9.95'; }
+    same(null, OrderCharge::read($attempt(), $execution, $order($data)), 'Order dollar mismatch: '.$field);
+}
+same(null, Pricing::cents('$8.95'), 'Order dollar decoration never loosens quote parsing');
 foreach (['orderid' => '9002', 'result' => 'false', 'orderbillamount' => '$9.95', 'currency' => 'EUR', 'orderdetail' => [$header['orderdetail'], $header['orderdetail']]] as $field => $value) {
     same(null, OrderCharge::read($attempt(), $execution, $order(array_replace($header, [$field => $value]))), 'Ambiguous header/split order has unknown charge');
 }
 foreach ([['description', 'other.com'], ['producttype', 'Domain'], ['quantity', '2'], ['status', 'Failed'], ['orderstatus', 'Open'],
-    ['amountpaid', '8.950'], ['currency', ''], ['amountpaid', '$8.95']] as [$field, $value]) {
+    ['amountpaid', '8.950'], ['currency', '']] as [$field, $value]) {
     $bad = $header; $bad['orderdetail'][$field] = $value;
     same(null, OrderCharge::read($attempt(), $execution, $order($bad)), 'Unbound/ambiguous item never charge proof');
 }
