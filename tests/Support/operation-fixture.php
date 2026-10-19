@@ -19,7 +19,8 @@ $transfers = new \Paymenter\Extensions\Servers\Domains\Services\TransferInputs($
 $transferCheck = new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck(new \Paymenter\Extensions\Servers\Domains\Services\Rdap(static fn () => throw new RuntimeException('Synthetic offline RDAP')));
 App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
 $admission = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock, $transferCheck), $clock); $admission->boot();
-(new InvoiceBinding($admission, $native, $prices, $clock))->boot();
+$invoiceBinding = new InvoiceBinding($admission, $native, $prices, $clock); $invoiceBinding->boot();
+if(app()->bound(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)){app()->instance(InvoiceBinding::class,$invoiceBinding);}
 $user = commerceUser(); $user->update(['email' => 'finance-owner@example.com']);
 foreach (['address' => '1 Synthetic Street', 'city' => 'Seattle', 'state' => 'WA', 'zip' => '98101',
     'country' => 'US', 'phone' => '(206) 555-0100'] as $key => $value) {

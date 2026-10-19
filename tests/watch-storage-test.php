@@ -39,8 +39,9 @@ foreach ([null,$domainServer->id] as $i=>$serverId) {
     $invalidProduct=Product::create(['name'=>'Not hosting','slug'=>'non-hosting-'.$i,'category_id'=>$category->id,'server_id'=>$serverId,'hidden'=>true,'allow_quantity'=>'combined']);
     watchRefused(fn()=>$writer->save($staff,$invalidProduct->id,'domain',0,'Invalid product'),'Only hosting products can be mapped');
 }
-$catalogue=$product->settings()->create(['key'=>'domains_catalogue','value'=>'true']);
-watchRefused(fn()=>$writer->save($staff,$product->id,'domain',2,'Catalogue product'),'Catalogue product cannot be mapped');$catalogue->delete();
+// Deliberate corrupt-route fixture uses the privileged maintenance boundary.
+$catalogue=App\Models\Setting::withoutEvents(fn()=>$product->settings()->create(['key'=>'domains_catalogue','value'=>'true']));
+watchRefused(fn()=>$writer->save($staff,$product->id,'domain',2,'Catalogue product'),'Catalogue product cannot be mapped');App\Models\Setting::withoutEvents(fn()=>$catalogue->delete());
 $hash=str_repeat('a',64);$nameData=['user_id'=>$owner->id,'canonical_name'=>'example.com','psl_revision'=>$hash,'state'=>'active','notice_preferences'=>[]];
 $refused=false;try{WatchName::create($nameData);}catch(DomainException $e){$refused=true;}expect($refused,'Model writes require enclosing transaction');
 $watch=DB::transaction(fn()=>WatchName::create($nameData));

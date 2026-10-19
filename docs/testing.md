@@ -694,3 +694,61 @@ need an explicit refusal policy before activation. Raw SQL,
 query-builder bulk writes, direct PDO and deliberate event suppression retain the
 privileged-maintenance exclusion in storage's Reservation authority and Account binding
 authority sections. No activation safety is claimed beyond that boundary. Adoption stays off.
+
+### A0 route identity refusals (adoption remains off)
+
+`native-identity-test.php` checks ordinary event-enabled Order/Service, canonical-domain Property,
+ServiceConfig and route Product/Plan/marker writes, including original and proposed identities,
+malformed routes, partial model projections and native parent deletion/cascade paths.
+Dirty checks and identity reconstruction account for case-insensitive and qualified SQL identifiers.
+Persisted/proposed values are compared using model casts even when projected numeric extras are clean.
+Persisted rows supplement loaded original/proposed attributes; select projections cannot omit identity.
+The reserved `domains` category is retained before first publication, including partial-model deletion. Protection uses route identity before any
+ledger exists. Unsupported model identity edits and managed-route service deletion are refused.
+Native status changes, including paid `Active`, remain allowed; managed-route `expires_at` is silently
+cleared to null by ordinary saves. Event-enabled instance increment/decrement extra attributes are
+also checked through updating. A non-null route expiry in those unsupported numeric writes is refused
+with the logged safe message because Eloquent retains the original SQL extras. The installed app,
+extensions and vendor audit found no Service/Order numeric caller with extra attributes; native stock,
+credit and affiliate counters remain allowed. Full expiry handling belongs to the later lifecycle slice.
+Initial invoice items retain their native Service morphs. Unsafe paid-cancellation
+enforcement remains an open prerequisite for the separately planned cancellation slice.
+
+The controlled adoption-first competitor pauses before the guard, commits a synthetic lock-and-insert,
+then resumes and is refused. A post-guard/pre-SQL sentinel is unreachable for protected edits and is
+reached by ordinary hosting. Paired commit-first cases are in `holding-identity-lock-test.php`.
+SQLite checks requested lock order and scheduling; it does not prove concurrent MariaDB row locking.
+`native-identity-readiness-test.php` renders the installed staff adoption-off/drain/worker-restart fact.
+Before activation, drain in-flight native identity edits and restart web/queue workers; an observer
+cannot retroactively guard a write already running in an older worker.
+
+The privileged-maintenance boundary in `docs/design/storage.md` (Reservation authority / Account binding authority)
+still excludes raw SQL, direct PDO, query-builder/bulk writes and quiet/event-suppressed saves. Tests
+explicitly demonstrate those bypasses. This guard makes no activation-safety claim beyond that boundary.
+Existing routed children are guarded at their event-enabled parent; core configuration
+builder deletes and form pivot syncs listed in the inventory remain outside model-event interception.
+
+Concurrent staff User deletion and admitted checkout for that same user remain an adoption
+activation blocker: deletion can pass with no routed children, then cascade a later committed
+service. This also affects current admitted checkout with adoption off. Adoption stays off.
+Native deletion remains available without an outer transaction;
+observers do not open a transaction spanning deleting/deleted. Drain/restart alone cannot close
+this current-worker race.
+
+`native-identity-cascade-test.php` reproduces that exact gap with actual admitted checkout.
+Post-delete User/Service observers inspect at most 25 retained domains and save a staff discrepancy;
+the existing durable runtime domain cursor inspects at most 25 domains per account turn to recover
+missed/overflow checks while the saved account binding remains current. Registrar setup lists the saved alert under Missing Paymenter records and shows it even when native detail cannot open.
+These checks are diagnostic, grant no authority and do not recreate native records.
+The staff value lists domain names and states that their names remain reserved; no resolution action is promised.
+Runtime registration checks conversion completion before installing listeners, so refused boot cannot block parked conversion.
+`native-identity-orphans-test.php` checks missing User/Order/Service before claim and during unlocked
+preflight: no provider send or seal, no live claim after refusal, no contact readmission, and native
+money/jobs unchanged. Healthy/restored controls succeed. Missing identity also refuses the holding
+and adoption-lock APIs. This is fail-closed at authorization checks, not recall of a provider request
+already sent before a later deletion. SQLite scheduling does not prove MariaDB concurrency.
+
+The same absence race can null a newly assigned Service coupon during concurrent coupon deletion;
+it changes coupon accounting but does not reassign ownership or create an orphan. It is a retained
+limit for later review. Parent/reference scans use bounded model batches but still query route
+identity per Service; large hosting-product identity edits may remain slow.

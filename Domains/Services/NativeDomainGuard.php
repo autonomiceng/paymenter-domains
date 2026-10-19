@@ -13,6 +13,7 @@ final class NativeDomainGuard
 {
     private bool $booted = false;
     private static ?Service $projecting = null;
+    private static ?Service $initialIdentity = null;
     public function __construct(private readonly HolderPricing $pricing, private readonly Clock $clock) {}
 
     public function boot(): void
@@ -148,7 +149,9 @@ final class NativeDomainGuard
             || (int) $service->product_id !== ($c['product_id'] ?? null) || (int) $service->user_id !== ($c['user_id'] ?? null)
             || $service->expires_at !== null || RetailLine::decimal($service->price) !== ($c['annual_price'] ?? null)
             || array_diff(array_keys($service->getDirty()), ['plan_id', 'price', 'label', 'expires_at'])) { throw new \DomainException('Unadmitted initial projection.'); }
-        self::persist($service);
+        if (self::$initialIdentity !== null) { throw new \LogicException('Nested initial identity projection refused.'); }
+        self::$initialIdentity = $service;
+        try { self::persist($service); } finally { self::$initialIdentity = null; }
     }
 
     /** Caller holds HoldingLocks; retained retail is allowed only through this billing projection. */
@@ -162,6 +165,12 @@ final class NativeDomainGuard
         $service->forceFill(['price' => $gross, 'expires_at' => null]); self::persist($service);
         return ['id' => $retail->id, 'revision' => $retail->revision, 'annual_net' => $retail->retail, 'annual_gross' => $gross,
             'currency' => 'USD', 'unit' => 'term_total', 'retained' => $retail->retained, 'staff_alert' => $retail->staffAlert];
+    }
+
+    public static function identityProjection(Service $service): bool
+    {
+        return self::$initialIdentity === $service
+            && array_diff(array_keys($service->getDirty()), ['plan_id', 'price', 'label', 'expires_at', 'updated_at']) === [];
     }
 
     private static function persist(Service $service): void

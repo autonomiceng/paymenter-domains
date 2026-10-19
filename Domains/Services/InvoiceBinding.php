@@ -25,9 +25,7 @@ final class InvoiceBinding
         Event::listen(\App\Events\Order\Creating::class, fn ($e) => $this->prepare($e->order));
         Service::creating(function (Service $service): void {
             if (!$this->native->mapping($service->product, $service->plan)) { return; }
-            $line = $this->admission->take($service);
-            $annual = $this->prepared[$line['item_id']] ?? throw new \DomainException('Domain renewal projection was not admitted.');
-            $this->creating[$service] = [...$line, ...$annual];
+            $this->admitIdentity($service);
         });
         Event::listen(\App\Events\Service\Created::class, function ($e): void {
             if (isset($this->creating[$e->service])) {
@@ -49,6 +47,25 @@ final class InvoiceBinding
                 }
             });
         }
+    }
+
+    /** The route guard and checkout hook share one exact-object admission, never a caller flag. */
+    public function admitIdentity(Service $service): void
+    {
+        if (isset($this->creating[$service])) { return; }
+        if (!$service->product || !$service->plan || !$this->native->mapping($service->product, $service->plan)) { NativeIdentity::refuse(); }
+        $line = $this->admission->take($service);
+        $annual = $this->prepared[$line['item_id']] ?? throw new \DomainException('Domain renewal projection was not admitted.');
+        $this->creating[$service] = [...$line, ...$annual];
+    }
+
+    /** Only the admitted checkout line may initially persist its canonical service property. */
+    public function identityProperty(\App\Models\Property $property): bool
+    {
+        $line=$this->services[$property->model_id]??null;
+        return DB::transactionLevel()>=1&&$line!==null&&$property->model_type===(new Service)->getMorphClass()
+            &&$property->key==='domain'&&$property->value===$line['name']&&empty($property->custom_property_id)
+            &&!\App\Models\Property::where('model_type',$property->model_type)->where('model_id',$property->model_id)->where('key','domain')->exists();
     }
 
     private function prepare(Order $order): void
