@@ -797,4 +797,4 @@ Unsuitable paid renewals and late payments to retired cancelled debt use the sam
 retired payments unblock replacement only when an exact full refund still covers every retained
 transaction; later activity blocks again. Notifications38, scheduling31 and MariaDB races39 remain.
 Refunded unsuitable paid renewals still own their cycle; safe replacement authority remains35/36.
-Correction-only history remains unattempted; current native rows are rechecked and seals retain audits. See [adoption and invoice-history storage](storage-adoptions.md).
+Correction-only history remains unattempted; current native rows are rechecked and seals retain audits. See [adoption and invoice-history storage](storage-adoptions.md). CR30: RenewalAuthority now rechecks current per-TLD renewal-safe and annual-term acceptance at capture and recheck, including revocation, using CanonicalName and the settings locks already held by HoldingLocks.

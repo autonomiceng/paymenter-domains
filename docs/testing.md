@@ -657,3 +657,8 @@ uses its own frozen subscription expiry, independently of the domain's term.
 request/committed-generation/link uniqueness, encrypted hidden evidence, frozen intent, stale-preview
 refusal, skipped-migration schema verification and uninstall/reinstall/down retention. Storage fixtures
 create no holdings, operations or invoices; adoption authority and native history validation stay deferred.
+
+Renewal admission tests for both registrars run the shared `Support/renewal-acceptance.php` matrix:
+accepted and sales-withdrawn endings, renewal-safe/annual-term revocation, missing endings, revocation between
+check and refresh and during provider reads. Refused entry and refresh make zero additional wire calls.
+All exchanges remain synthetic; SQLite does not establish concurrent MariaDB acceptance.
