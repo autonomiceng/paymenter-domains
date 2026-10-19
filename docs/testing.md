@@ -790,3 +790,9 @@ The native adoption preview suites cover exact customer/order/annual registratio
 current permission and site/environment guards, unlocked-read changes, encrypted evidence, proof-aware operation
 history, unchanged invoices/cancellations and shared retail/calendar rules. The staff suite exercises the stock
 Filament page, every safe refusal, TEST/live badges, escaped HTML and disabled confirmation; it proves no activation.
+
+DNS reader coverage uses only injected native callables and a fake `DnsReader`. Empty/failed
+native answers remain unknown: PHP empty arrays are ambiguous (including type-filtered CNAME gaps). The shared
+45-second context admits at most ten queries and rejects late results; it cannot interrupt
+a blocking system resolver call. DoH adapter for proven empty answers is a follow-up;
+proven NODATA/NXDOMAIN is supported without relaxing native unknowns. Worker isolation is deferred.
