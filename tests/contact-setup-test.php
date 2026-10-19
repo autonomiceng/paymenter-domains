@@ -102,6 +102,7 @@ $op->refresh(); // A refused Eloquent save leaves the caller's in-memory attribu
 $raw = DB::table('domains_operations')->where('id', $op->id)->first();
 expect(!str_contains($raw->payload, 'Main Street') && !isset($op->toArray()['payload']), 'Encrypted and hidden snapshots');
 expect(!$op->domain->service->properties()->where('key', 'contacts')->exists(), 'No native contact property');
+require __DIR__.'/Support/frozen-contact-lifecycle.php';
 // Invalid paid setup is held; invalid unpaid setup cannot gain a paid hold.
 contactProperty($user, 'phone', 'private-value');
 $cart = commerceCart($user); commerceAdd($cart, $product, 'held-contact.com'); commerceCheckout($user, $cart);
