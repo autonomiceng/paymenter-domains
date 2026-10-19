@@ -111,6 +111,19 @@ $check = '<Domains><Domain><Name>example.com</Name><RRPCode>210</RRPCode><IsPrem
 $wire->payloads['Check'] = $check;
 $result = $driver->availability(new Query('example.com', Action::Register, 1), $context());
 same(true, $result->evidence()->available, 'Recognized available response'); same(false, $result->evidence()->premium, 'All exclusions known false');
+foreach (['<Properties/>', "<Properties> \n\t </Properties>"] as $empty) {
+    $wire->payloads['Check'] = str_replace('</Domain>', $empty.'</Domain>', $check);
+    foreach ([1, 10] as $years) {
+        $result = $driver->availability(new Query('example.com', Action::Register, $years), $context());
+        same(Disposition::Accepted, $result->disposition, 'Empty Properties keeps default 1..10 registration bounds');
+        same(true, $result->evidence()->available, 'Empty Properties keeps normal availability');
+        same(false, $result->evidence()->premium, 'Empty Properties keeps explicit premium exclusions');
+    }
+    $wire->payloads['Check'] = str_replace('210', '211', $wire->payloads['Check']);
+    $result = $driver->availability(new Query('example.com', Action::Transfer, 1), $context());
+    same(Disposition::Accepted, $result->disposition, 'Transfer uses the same empty Properties normalization');
+    same(false, $result->evidence()->available, 'Empty Properties never invents positive transfer eligibility');
+}
 $wire->payloads['Check'] = str_replace('</Domain>', '<Properties><MinRegYear>1</MinRegYear><MaxRegYear>1</MaxRegYear></Properties></Domain>', $check);
 same(Disposition::Rejected, $driver->availability(new Query('example.com', Action::Register, 3), $context())->disposition, 'Name-specific term restriction closes multi-year checkout');
 same(true, $driver->availability(new Query('example.com', Action::Register, 1), $context())->evidence()->available, 'Allowed name-specific term retained');
@@ -123,6 +136,7 @@ $wire->payloads['Check'] = str_replace('</Domain>', str_repeat('<Properties><Min
 same(Disposition::Unknown, $driver->availability(new Query('example.com', Action::Register, 1), $context())->disposition, 'Repeated properties cannot bypass the minimum');
 $wire->payloads['Check'] = str_replace('</Domain>', '<Properties>invalid</Properties></Domain>', $check);
 same(Disposition::Unknown, $driver->availability(new Query('example.com', Action::Register, 1), $context())->disposition, 'Scalar properties are unknown');
+same(Disposition::Unknown, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->disposition, 'Scalar transfer properties are unknown');
 $wire->payloads['Check'] = str_replace('</Domain>', '<MinRegYear>5</MinRegYear><MaxRegYear>1</MaxRegYear></Domain>', $check);
 same(true, $driver->availability(new Query('example.com', Action::Register, 3), $context())->evidence()->available, 'Unrelated top-level fields do not replace nested restrictions');
 $wire->payloads['Check'] = str_replace('<IsEAP>0', '<IsEAP>1', $check); same(true, $driver->availability(new Query('example.com', Action::Register, 1), $context())->evidence()->premium, 'EAP is premium');
