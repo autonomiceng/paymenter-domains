@@ -652,3 +652,8 @@ billing and paid privacy tests check issued text stays frozen when registrar exp
 `invoice-lines-render.php` exports synthetic formatter examples for wording review, not installed
 invoice/theme acceptance. Privacy purchase dates are expected from invoice day; privacy renewal
 uses its own frozen subscription expiry, independently of the domain's term.
+
+`adoption-storage-test.php` verifies retained adoption requests and append-only invoice-history links,
+request/committed-generation/link uniqueness, encrypted hidden evidence, frozen intent, stale-preview
+refusal, skipped-migration schema verification and uninstall/reinstall/down retention. Storage fixtures
+create no holdings, operations or invoices; adoption authority and native history validation stay deferred.
