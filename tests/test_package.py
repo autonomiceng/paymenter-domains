@@ -52,6 +52,8 @@ class PackageTests(unittest.TestCase):
                                 '$text = "{$items["#[ExtensionMeta(version: \'0.2.6\')]"]}";',
                                 "?> #[ExtensionMeta(version: '0.2.6')]",
                                 "// ?> #[ExtensionMeta(version: '0.2.6')]",
+                                "/* #[ExtensionMeta(version: '0.2.6')]",
+                                "$text = '#[ExtensionMeta(version: \\'0.2.6\\')]",
                                 "#[ExtensionMeta(version: '0.2.6', version: '0.2.6')]",
                                 "#[ExtensionMeta(version: '0.2.6')] #[ExtensionMeta(version: '0.2.6')]",
                                 "#[ExtensionMeta(version: '0.2.6-dev')]",
@@ -59,6 +61,13 @@ class PackageTests(unittest.TestCase):
                 with self.subTest(declaration=declaration):
                     (source/'Domains.php').write_text('<?php\n' + declaration)
                     with self.assertRaises(ValueError): builder.runtime_members(source)
+            # PHP ends a line comment at ?>, so the next line is inline HTML rather than an attribute.
+            (source/'Domains.php').write_text("<?php\n// ?>\n#[ExtensionMeta(version: '0.2.6')]")
+            with self.assertRaisesRegex(ValueError, 'Inline HTML is unsupported'): builder.runtime_members(source)
+            for unterminated in ["/* #[ExtensionMeta(version: '0.2.6')]", "#[ExtensionMeta(version: '0.2.6)]"]:
+                with self.subTest(unterminated=unterminated):
+                    (source/'Domains.php').write_text('<?php\n' + unterminated)
+                    with self.assertRaisesRegex(ValueError, 'Unterminated comment or string'): builder.runtime_members(source)
 
     def test_missing_license_or_development_member_fails(self):
         with tempfile.TemporaryDirectory(prefix='domains-package-boundary-') as temp:

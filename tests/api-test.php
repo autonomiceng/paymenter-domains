@@ -61,7 +61,7 @@ $purchases = [Purchase::register('example.com', 1, false, '123', $ns),
 $parser = new ResponseParser;
 
 foreach ($requests as $request) {
-    $fake = new FakeTransport(json_encode($fixtures[$request->command]));
+    $fake = new FakeTransport(json_encode($fixtures[$request->command], JSON_THROW_ON_ERROR));
     $client = new RegistrarClient('test-api-key', Environment::Sandbox, $fake);
     $result = $client->execute($request, RequestContext::Background);
     same(Outcome::Success, $result->outcome, 'Synthetic command shape accepted: '.$request->command);
@@ -76,7 +76,7 @@ foreach ($requests as $request) {
 }
 
 foreach ($purchases as $mapping) {
-    $result = $parser->parse(json_encode($fixtures[$mapping->command]), $mapping, 'test-api-key');
+    $result = $parser->parse(json_encode($fixtures[$mapping->command], JSON_THROW_ON_ERROR), $mapping, 'test-api-key');
     same(Outcome::Success, $result->outcome, 'Pure purchase response interpretation');
     same('12.34', $result->value('order_amount'), 'Canonical decimal amount');
 }
@@ -89,7 +89,7 @@ foreach ([...$rejected, ...$otherRefusals, ...$unknown, 300,301,302,999] as $cod
     foreach ([$code, (string) $code] as $wireCode) {
         $fixture = $fixtures['getAccountBalance'];
         $fixture['reply']['code'] = $wireCode;
-        $fake = new FakeTransport(json_encode($fixture));
+        $fake = new FakeTransport(json_encode($fixture, JSON_THROW_ON_ERROR));
         $result = (new RegistrarClient('test-api-key', Environment::Live, $fake))->execute(Request::balance(), RequestContext::Interactive);
         $expected = in_array($code, $rejected, true) ? Outcome::Rejected : ($code === 300 ? Outcome::Success : Outcome::Unknown);
         same($expected, $result->outcome, 'Documented classification '.$code);
@@ -113,21 +113,21 @@ foreach ($refusalCases as [$request, $codes]) {
         foreach ([$code, (string) $code] as $wireCode) {
             $body = ['request' => ['operation' => $request->command],
                 'reply' => ['code' => $wireCode, 'detail' => 'synthetic refusal']];
-            $result = $parser->parse(json_encode($body), $request, 'test-api-key');
+            $result = $parser->parse(json_encode($body, JSON_THROW_ON_ERROR), $request, 'test-api-key');
             same(Outcome::Rejected, $result->outcome, $request->command.' refusal '.$code);
             same($scope, $result->scope, $request->command.' refusal scope '.$code);
         }
     }
 }
 $body = ['request' => ['operation' => 'registerDomain'], 'reply' => ['code' => 264, 'detail' => 'synthetic refusal']];
-$result = $parser->parse(json_encode($body), $purchases[0], 'test-api-key');
+$result = $parser->parse(json_encode($body, JSON_THROW_ON_ERROR), $purchases[0], 'test-api-key');
 same(Outcome::Unknown, $result->outcome, 'Renew-only 264 is unknown for registration');
 same(null, $result->scope, 'Inapplicable renewal refusal has no rejection scope');
 
 foreach ([301,302,119,262,400] as $code) {
     $fixture = $fixtures['registerDomain'];
     $fixture['reply']['code'] = $code;
-    $result = $parser->parse(json_encode($fixture), $purchases[0], 'test-api-key');
+    $result = $parser->parse(json_encode($fixture, JSON_THROW_ON_ERROR), $purchases[0], 'test-api-key');
     same(in_array($code, [301,302], true) ? Outcome::Fallback : Outcome::Unknown, $result->outcome,
         'Purchased fallback or contradictory charge evidence never rejected');
     if (in_array($code, [301,302], true)) {
@@ -143,14 +143,14 @@ foreach ([null, false, [], ['registration' => null], ['registration' => '0'], ['
     $badRow = is_array($badRow) ? $badRow + ['transfer' => '9.00', 'renew' => '10.00'] : $badRow;
     $catalogueBody = ['request' => ['operation' => 'getPrices'], 'reply' => ['code' => 300, 'detail' => 'synthetic',
         'com' => $badRow, 'net' => $validPriceRow]];
-    $result = $parser->parse(json_encode($catalogueBody), Request::prices(), 'test-api-key');
+    $result = $parser->parse(json_encode($catalogueBody, JSON_THROW_ON_ERROR), Request::prices(), 'test-api-key');
     same(Outcome::Success, $result->outcome, 'Valid row survives quarantined sold ending');
     same(['com' => null, 'net' => $validPriceRow], $result->catalogueRows(), 'Whole malformed row is unknown, with no amount invented');
     unset($catalogueBody['reply']['net']);
-    same(Outcome::Unknown, $parser->parse(json_encode($catalogueBody), Request::prices(), 'test-api-key')->outcome, 'Entirely malformed catalogue remains unknown');
+    same(Outcome::Unknown, $parser->parse(json_encode($catalogueBody, JSON_THROW_ON_ERROR), Request::prices(), 'test-api-key')->outcome, 'Entirely malformed catalogue remains unknown');
 }
 $catalogueBody['reply'] = ['code' => 300, 'detail' => 'synthetic', 'com' => $validPriceRow];
-same($validPriceRow, $parser->parse(json_encode($catalogueBody), Request::prices(), 'test-api-key')->catalogueRows()['com'], 'Valid sold row remains exact');
+same($validPriceRow, $parser->parse(json_encode($catalogueBody, JSON_THROW_ON_ERROR), Request::prices(), 'test-api-key')->catalogueRows()['com'], 'Valid sold row remains exact');
 
 foreach (['', '{', 'null', '[]', str_repeat('x', CurlTransport::BODY_LIMIT + 1),
     '{"namesilo":{"reply":{"code":300,"detail":"success"}}}',
@@ -175,28 +175,28 @@ same(1, $timeout->calls, 'Timeout never retried');
 
 foreach ([254,250,200,268] as $code) {
     $body = ['request' => ['operation' => 'registerDomain'], 'reply' => ['code' => $code, 'detail' => 'synthetic']];
-    same(Outcome::Unknown, $parser->parse(json_encode($body), $purchases[0], 'test-api-key')->outcome, 'Post-purchase refusal not definitive');
+    same(Outcome::Unknown, $parser->parse(json_encode($body, JSON_THROW_ON_ERROR), $purchases[0], 'test-api-key')->outcome, 'Post-purchase refusal not definitive');
 }
 foreach (['missing', 'duplicate', 'extra'] as $case) {
     $body = $fixtures['checkRegisterAvailability'];
     if ($case === 'missing') { unset($body['reply']['unavailable']); }
     if ($case === 'duplicate') { $body['reply']['unavailable']['domain'] = 'example.com'; }
     if ($case === 'extra') { $body['reply']['unavailable']['domain'] = 'example.us'; }
-    same(Outcome::Unknown, $parser->parse(json_encode($body), $requests[0], 'test-api-key')->outcome, 'Availability correlation fails closed');
+    same(Outcome::Unknown, $parser->parse(json_encode($body, JSON_THROW_ON_ERROR), $requests[0], 'test-api-key')->outcome, 'Availability correlation fails closed');
 }
 $body = $fixtures['checkTransferAvailability'];
 unset($body['reply']['available'][0]['premium']);
-$result = $parser->parse(json_encode($body), $requests[1], 'test-api-key');
+$result = $parser->parse(json_encode($body, JSON_THROW_ON_ERROR), $requests[1], 'test-api-key');
 same(null, $result->value('available.0.premium'), 'Missing premium is explicitly unknown');
 $body = $fixtures['orderDetails'];
 $body['reply']['order_number'] = 123;
-$result = $parser->parse(json_encode($body), Request::orderDetails('123'), 'test-api-key');
+$result = $parser->parse(json_encode($body, JSON_THROW_ON_ERROR), Request::orderDetails('123'), 'test-api-key');
 same(Outcome::Success, $result->outcome, 'Numeric order echo normalized');
 same('123', $result->value('order_number'), 'Order identifier is canonical string');
 $body = $fixtures['registerDomain'];
 $body['reply']['code'] = 301;
 $body['reply']['domain'] = 'example.net';
-same(Outcome::Unknown, $parser->parse(json_encode($body), $purchases[0], 'test-api-key')->outcome, 'Uncorrelated fallback stays unknown');
+same(Outcome::Unknown, $parser->parse(json_encode($body, JSON_THROW_ON_ERROR), $purchases[0], 'test-api-key')->outcome, 'Uncorrelated fallback stays unknown');
 
 foreach (['9007199254740993.25' => Outcome::Success, '12.345' => Outcome::Unknown, '1e2' => Outcome::Unknown] as $amount => $expected) {
     $body = '{"request":{"operation":"getAccountBalance"},"reply":{"code":300,"detail":"success","balance":'.$amount.'}}';
@@ -214,7 +214,7 @@ $fixture['reply']['unexpected'] = 'untrusted payload';
 $fixture['reply']['nameservers'][0]['unexpected'] = 'untrusted payload';
 $fixture['reply']['nameservers'][0]['nameserver'] = $key;
 $fixture['reply']['contact_ids'][$key] = $key;
-$client = new RegistrarClient($key, Environment::Sandbox, new FakeTransport(json_encode($fixture)));
+$client = new RegistrarClient($key, Environment::Sandbox, new FakeTransport(json_encode($fixture, JSON_THROW_ON_ERROR)));
 $result = $client->execute(Request::domainInfo('example.com'), RequestContext::Interactive);
 ob_start(); var_dump((array) $client, (array) $result); $castDump = ob_get_clean();
 $serialized = $castDump.' '.print_r((array) $client, true).' '.rendered($result).' '.rendered($client).' '.json_encode($result->value('contact_ids'))
@@ -232,13 +232,13 @@ foreach (['portfolio', 'nameservers'] as $field) {
     $malformed = $fixtures['getDomainInfo'];
     if ($field === 'portfolio') { $malformed['reply'][$field] = ['customer' => ['email' => 'synthetic@example.com']]; }
     else { $malformed['reply'][$field][0]['nameserver'] = ['customer' => ['email' => 'synthetic@example.com']]; }
-    $malformedResult = (new RegistrarClient($key, Environment::Sandbox, new FakeTransport(json_encode($malformed))))
+    $malformedResult = (new RegistrarClient($key, Environment::Sandbox, new FakeTransport(json_encode($malformed, JSON_THROW_ON_ERROR))))
         ->execute(Request::domainInfo('example.com'), RequestContext::Interactive);
     same(Outcome::Unknown, $malformedResult->outcome, 'Nested value in scalar field rejected');
 }
 $numeric = $fixtures['getAccountBalance'];
 $numeric['reply']['balance'] = 12345;
-$numericResult = (new RegistrarClient('12345', Environment::Sandbox, new FakeTransport(json_encode($numeric))))
+$numericResult = (new RegistrarClient('12345', Environment::Sandbox, new FakeTransport(json_encode($numeric, JSON_THROW_ON_ERROR))))
     ->execute(Request::balance(), RequestContext::Interactive);
 expect(!str_contains(rendered($numericResult).' '.json_encode($numericResult->value('balance')), '12345'), 'Numeric credential echo redacted');
 $response = new TransportResponse(200, $key);
