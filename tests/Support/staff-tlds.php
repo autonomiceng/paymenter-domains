@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
 function tldPanel(): void
 {
+    \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
     staffPanel();$panel=Filament::getCurrentPanel();$panel->resources([TldResource::class])->pages([RegistrarSetup::class]);
     Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(function()use($panel){
         Route::middleware($panel->getAuthMiddleware())->group(function()use($panel){TldResource::registerRoutes($panel);RegistrarSetup::registerRoutes($panel);});

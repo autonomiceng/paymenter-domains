@@ -12,6 +12,8 @@ class ViewDomain extends ViewRecord
 {
     protected static string $resource = DomainResource::class;
     public function getTitle(): string { Staff::requireView(); return (string)$this->getRecord()->domain; }
+    public function getHeading(): \Illuminate\Support\HtmlString { return new \Illuminate\Support\HtmlString('<span style="overflow-wrap:anywhere">'.e($this->getTitle()).'</span>'); }
+    public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains','Domain #'.$this->getRecord()->id]; }
     protected function getHeaderActions(): array { return []; }
     // ViewRecord otherwise fills public form data with the entire model's attributes.
     protected function fillForm(): void { $this->data=[]; }

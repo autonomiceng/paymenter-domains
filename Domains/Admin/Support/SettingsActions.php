@@ -13,6 +13,9 @@ final class SettingsActions
     public static function description(string $name): string
     {
         return match($name){
+            'alert_review'=>'Record an independent check of a notification failure. A continuing failure reopens the alert; this action sends no message.',
+            'delivery_review'=>'Record an independently checked notification outcome. This retains the original handoff claim and never sends the notification again.',
+            'processing'=>'Registrar purchases and renewals can start for this account. Enable only after reviewing its accepted provider features and worker configuration.',
             'default_rule'=>'Changes the default for this account. Publish each affected TLD next. Existing invoices keep their prices.',
             'override'=>'Changes this TLD only. Publish prices next. Registration and transfer below cost are held; renewals below cost are billed. Both alert staff.',
             'remove_override'=>'Uses this account’s default rule. Publish prices next. Existing invoices keep their prices.',
@@ -27,7 +30,8 @@ final class SettingsActions
     }
     public static function make(int $server,?int $tld,string $stamp,bool $setup=false): array
     {
-        $out=[];$names=$setup?['configure','probe','acceptance','history']:['default_rule','override','remove_override','tld_settings','seller','publish'];
+        $out=[];$names=$setup?['configure','probe','acceptance','history','processing','delivery_review','alert_review']:['default_rule','override','remove_override','tld_settings','seller','publish'];
+        $target=fn()=>TldFacts::registrar((string)Account::where('server_id',$server)->value('registrar_key')).' · account #'.$server;
         foreach($names as $name){
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp))];
             if(in_array($name,['default_rule','override'],true)){
@@ -63,22 +67,35 @@ final class SettingsActions
                 $fields[]=TextInput::make('retention')->label('Retention (seconds)')->integer()->minValue(86400)->maxValue(31536000);
                 $fields[]=Checkbox::make('verified')->label('I verified complete, all-page USD history and these limits');
             }
+            if($name==='alert_review'){$fields[]=TextInput::make('alert_id')->label('Notification check alert number')->integer()->minValue(1)->required();$fields[]=Checkbox::make('confirmed')->label('I independently checked this notification failure')->accepted()->required();}
+            if($name==='delivery_review'){$fields[]=TextInput::make('delivery_id')->label('Notification claim number')->integer()->minValue(1)->required();$fields[]=Checkbox::make('confirmed')->label('I independently checked the outcome; retain this claim without resending')->accepted()->required();}
+            if($name==='processing'){
+                $fields[]=Hidden::make('enabled')->default(fn()=>!Account::where('server_id',$server)->value('processing_enabled'));
+                $fields[]=Checkbox::make('confirmed')->label(fn()=>'I reviewed '.$target().' and confirm this change')->accepted()->required();
+            }
             if($name==='configure'){
                 $fields[]=Select::make('registrar')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo'])->default(fn()=>Account::where('server_id',$server)->value('registrar_key'))->live()->required();
                 $fields[]=Select::make('environment')->label('Environment')->options(['test'=>'Test','live'=>'Live'])->default(fn()=>Account::where('server_id',$server)->value('environment')??'test')->required();
                 foreach(['uid'=>'Enom user ID','token'=>'Enom API token','api_key'=>'NameSilo API key'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->password()->autocomplete('new-password')->maxLength(4096)->visible(fn($get)=>$get('registrar')===($key==='api_key'?'namesilo':'enom'))->required();}
             }
             $fields[]=Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:/\A[^\x00-\x1f\x7f]*\z/'])->helperText('Use one line. Do not include credentials.');
-            $out[]=Action::make($name.($setup?'_'.$server:''))->label(Review::ACTIONS[$name])->color('gray')->modalWidth('lg')
+            $processing=fn()=>(bool)Account::where('server_id',$server)->value('processing_enabled');$label=$name==='processing'?fn()=>$processing()?'Pause processing…':'Enable processing…':Review::ACTIONS[$name];
+            $out[]=Action::make($name.($setup?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
                 ->disabled(fn()=>in_array($name,['configure','probe'],true)&&!app(StaffSettingsWrites::class)->connectionAvailable())
                 ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission($name)))
-                ->requiresConfirmation()->modalHeading(Review::ACTIONS[$name])->modalDescription(self::description($name))->modalSubmitActionLabel('Confirm')->schema($fields)
+                ->requiresConfirmation()->modalHeading($name==='processing'?fn()=>($processing()?'Pause':'Enable').' processing for '.$target().'?':$label)
+                ->modalDescription($name==='processing'?fn()=>$processing()?'Stops new registrar work for this account. Domains, invoices and queued work are kept; requests already sent keep reconciling.':self::description($name):self::description($name))->modalSubmitActionLabel($name==='processing'?fn()=>$processing()?'Confirm pause':'Confirm enable':'Confirm')->schema($fields)
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($name,$server,$tld){
                     try{$r=new Review((int)Auth::id(),$server,$tld,$name,(string)($data['review_key']??''),trim((string)($data['reason']??'')));
-                        app(StaffSettingsWrites::class)->run($r,$data);Notification::make()->success()->title('Change recorded')->body('Reload this page before another change.')->send();
+                        app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
+                        Notification::make()->success()->title($name==='processing'?($account->processing_enabled?'Processing enabled':'Processing paused').' for '.TldFacts::registrar($account->registrar_key).' · account #'.$server:'Change recorded')->body($name==='processing'?null:'Reload this page before another change.')->send();
+                        if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl());}
                     }catch(\Throwable $error){
-                        $message=match($error->getMessage()){'Settings changed. Reload this page.'=>'Settings changed. Reload this page.',
+                        $message=match($error->getMessage()){'Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',
+                            'Settings changed. Reload this page.'=>'Settings changed. Reload this page.',
                             'Current staff permissions required.'=>'Your permission changed. Reload this page.',
+                            'Runtime acceptance and shared workers are required.'=>'Provider acceptance and shared cache, sessions and queue workers are required before enabling processing.',
+                            'Pause processing on every legacy Enom server before installing or enabling Domains.'=>'Pause processing on every legacy Enom server first.',
                             'Connection checks are unavailable.'=>'Connection checks are unavailable. No provider call was made.',
                             'Review key used or history full.'=>'This confirmation was already used. Reload this page.',
                             default=>'Reload and check current permissions, saved facts and acceptance.'};

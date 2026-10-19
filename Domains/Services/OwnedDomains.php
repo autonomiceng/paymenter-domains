@@ -31,7 +31,7 @@ final readonly class OwnedDomains
         $actions=['show'=>route('domains.domains.show',$d->id),'setupSave'=>route('domains.domains.setup-save',$d->id),'contactsSave'=>route('domains.domains.contacts-save',$d->id),'codeSave'=>route('domains.domains.code-save',$d->id)]; $management=[]; $caps=null;
         try { $caps=$this->ports->forDomain($d)->capabilities(); } catch (\Throwable) {}
         $status=self::STATUSES[$d->status]??'Needs attention'; $tone=$d->status==='active'?'ok':'muted';
-        if ($op && in_array($op->state,['held','uncertain'],true)) { $status='Needs attention'; $tone='muted'; }
+        if ($op && in_array($op->state,['held','uncertain'],true)) { $status=$op->action==='register'?'Processing':'Needs attention'; $tone='muted'; }
         if ($op?->state==='awaiting_payment') { $status='Awaiting payment'; }
         $setup=['contacts'=>false,'required'=>false,'nameservers'=>false,'privacy'=>false,'defaults'=>$d->registrar_key==='enom'];
         if ($caps && $op && ($op->state!=='held'||in_array($op->safe_code,['contact_details_required','transfer_setup_review_required','nameservers_required'],true))
@@ -44,7 +44,7 @@ final readonly class OwnedDomains
             $setup['privacy']=$caps?->privacy===PrivacyMode::Free;
             $setup['required']=!isset($op->policy['owner_setup']) && ($setup['nameservers'] || $setup['privacy']);
         }
-        if ($setup['required']||$setup['contacts']) { $actions['setup']=route('domains.domains.setup',$d->id); }
+        if ($setup['required']||$setup['contacts']) { if($status==='Processing'){$status='Needs attention';} $actions['setup']=route('domains.domains.setup',$d->id); }
         $transfer=['open'=>false,'received'=>false,'paid'=>false,'deadline'=>null,'held'=>false,'unchecked'=>false,'phase'=>'held'];
         if ($op?->action==='transfer' && $d->status==='transfer_pending') {
             $transfer['received']=TransferInputs::validCode($op->payload['epp']??null);
@@ -112,12 +112,21 @@ final readonly class OwnedDomains
         $unavailable=$forms && $d->status==='active' && $service?->status==='active';
         if ($management && $forms) {
             $all=array_merge(...array_values(array_map(fn($section)=>array_keys($section['actions']),$management)));
-            try { $allowed=$this->engine?->available($d->service->user,$d,$this->ports->forDomain($d),$all)??[]; } catch (\Throwable) { $allowed=[]; }
+            try { $allowed=Runtime::management($d,$this->engine)?->available($d->service->user,$d,$this->ports->forDomain($d),$all)??[]; } catch (\Throwable) { $allowed=[]; }
             foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions']) { unset($management[$key]); } } unset($section);
             $unavailable=$management===[];
         } elseif (!$forms) { $management=[]; }
+        // Only the exact retained issued renewal invoice supplies a due date.
+        $renewalDue=null;
+        $debt=$d->operations()->where('action','renew')->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->whereIn('state',['awaiting_payment','queued','pending','uncertain'])->orderByDesc('id')->first();
+        if($debt&&$debt->service_id===$d->service_id&&$debt->server_id===$d->server_id&&$debt->registrar_key===$d->registrar_key){
+            $invoice=Invoice::whereKey($debt->invoice_id)->where('user_id',$d->user_id)->where('status','pending')->where('currency_code',$debt->currency)->first();
+            $item=$invoice?->items()->whereKey($debt->invoice_item_id)->whereNull('reference_id')->whereNull('reference_type')->first();
+            try{if($item&&(string)$item->quantity==='1'&&PricingRule::minor((string)$item->price)===PricingRule::minor((string)$debt->amount)
+                &&$invoice->due_at?->format('Y-m-d')===($debt->policy['calendar']['due']??null)){$renewalDue=$invoice->due_at->format('Y-m-d');}}catch(\Throwable){}
+        }
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';
         return new OwnedDomain($d->domain,$status,$tone,$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
-            $actions,$progress,$setup,$transfer,$management,$test,$unavailable);
+            $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue);
     }
 }

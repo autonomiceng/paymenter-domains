@@ -25,7 +25,7 @@ final readonly class RenewalAdmission
             if ($reserve) { $this->accepted->reserve($binding); } else { $this->accepted->requireCurrent($binding); }
             $reader = $this->bindings->reader($binding->serverId); $binding->requireMatch($reader->binding());
             $started = $this->clock->now();
-            $context = new RequestContext($binding, RequestOrigin::Background, $started->modify('+'.self::READ_SECONDS.' seconds'), new RequestBudget(self::MAX_READS), $this->clock);
+            $context = new RequestContext($binding, RequestOrigin::Background, $started->modify('+'.self::READ_SECONDS.' seconds'), new RequestBudget(self::MAX_READS), $this->clock, Runtime::limiter());
             $query = new Query($name, Action::Renew, $request->years);
             $assessment = $reader->renewalAssessment($query, $context); $binding->requireMatch($assessment->binding);
             $facts = $assessment->evidence(); $status = $facts->renewal;

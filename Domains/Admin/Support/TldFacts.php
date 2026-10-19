@@ -41,11 +41,12 @@ final class TldFacts
                     null=>'None',default=>'Review required'},
             ];
             if($p->wholesale===null){$row['warning']='Cost unknown · '.($p->action==='renew'?'retained retail; staff alert':'held');}
+            if(($p->eligibility['price_unavailable']??false)===true){$row['warning']='Price unavailable · '.($p->action==='renew'?'retained renewal retail':'off');if($p->action!=='renew'){$row['retail']='Price unavailable';}}
             if($p->action!=='renew'&&($accepted===null||($p->eligibility['catalogue_revision']??null)!==$accepted)){$row['warning'].=' · Account acceptance changed; new sales held pending import';}
             if($ruleHash===null||($p->eligibility['rule_hash']??null)!==$ruleHash){$row['warning'].=' · Rule changed · publish required';}
             $row['warning']=trim(str_replace('None · ','',$row['warning']));
             if(Staff::can(Staff::COSTS)){
-                $row['cost']=$p->wholesale===null?'Unknown':self::money($p->wholesale,4);
+                $row['cost']=$p->wholesale===null?(($p->eligibility['price_unavailable']??false)?'Price unavailable':'Unknown'):self::money($p->wholesale,4);
                 $row['margin']=$p->wholesale===null||$p->retail===null?'Unknown':PricingRule::decimal(PricingRule::units(PriceCatalogue::retail($p->retail),2)*100-PricingRule::units(PriceCatalogue::cost($p->wholesale)),4).' USD';
                 $row['source']=$p->source.' · '.match($p->eligibility['source_unit']??$p->unit){'exact_term_annual_rate'=>'annual rate for exact term','annual'=>'annual rate',default=>'term total'};
                 $row['observed']=$p->observed_at->format('Y-m-d H:i').' UTC';
@@ -83,6 +84,7 @@ final class TldFacts
     }
     public static function salesState(Tld $t): string
     {
+        if(Price::where(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint,'tld'=>$t->tld])->get()->contains(fn($p)=>($p->eligibility['price_unavailable']??false)===true)){return 'Price unavailable · registration and transfer off';}
         if(!$t->enabled||(!$t->register_enabled&&!$t->transfer_enabled)){return 'New sales paused';}
         $action=$t->register_enabled?'register':'transfer';$term=$action==='register'?$t->min_years:1;
         try{\Paymenter\Extensions\Servers\Domains\Services\PublicationEligibility::require($t,$action,$term);}catch(\Throwable){return 'New sales held · pending import or acceptance';}

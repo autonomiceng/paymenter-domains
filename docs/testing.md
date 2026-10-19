@@ -324,6 +324,10 @@ No provider calls, installed schedule or production database acceptance is estab
 Render complete, unknown, partial, stale-generation and many-record owner pages offline with
 `scripts/render-observations.py SHELL_DIR OUTPUT_DIR`, using the pinned native fixture.
 
+### Native runtime registration
+
+`runtime-install-test.php`, `runtime-presenter-test.php` and `runtime-notices-test.php` and `runtime-worker-test.php` cover retained lifecycle verification, singleton hooks, activation refusal/audit, legacy exclusion, paired owner-scoped theme DTOs, mandatory notices with schedules off, encrypted audit rotation and no-resend notification review. They use pinned native SQLite fixtures and fakes only. `runtime-render.php` accepts an output directory and inert supplied-shell HTML as CLI arguments for installed native panel and customer captures. This is not provider, MariaDB or delivered-mail acceptance. See [runtime composition](runtime.md).
+
 ## Opt-in NameSilo OTE contract test
 
 Run only with separate authority for the sandbox account and (for `--write`) its funds.

@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 /** Local 60-wire/minute ceiling, shared across origins. Vendor limits are additional, never inferred. */
 final class AccountReadBudget implements ReadLimiter
 {
-    public function __construct(private readonly Clock $clock) {}
+    public function __construct(private readonly Clock $clock, private readonly int $backgroundLimit=60) {if($backgroundLimit<1||$backgroundLimit>60){throw new \InvalidArgumentException;}}
     public function acquire(AccountBinding $binding, RequestOrigin $origin): string
     {
         OperationClaims::outside();
@@ -27,7 +27,7 @@ final class AccountReadBudget implements ReadLimiter
             $cap=$binding->registrarKey==='namesilo'&&$origin===RequestOrigin::Background?2:1;
             $window=$row?(int)$row->window_at:$now; $used=$row?(int)$row->used:0;
             if ($now-$window>=60000000) { $window=$now; $used=0; }
-            if ($active>=$cap || $used>=60 || ($binding->registrarKey==='namesilo' && $origin===RequestOrigin::Interactive && $row && $now<(int)$row->next_api_at)) {
+            if ($active>=$cap || $used>=($origin===RequestOrigin::Background?$this->backgroundLimit:60) || ($binding->registrarKey==='namesilo' && $origin===RequestOrigin::Interactive && $row && $now<(int)$row->next_api_at)) {
                 throw new ReadDeferred('Account read budget unavailable.');
             }
             $token=bin2hex(random_bytes(16)); $leases[$token]=['route'=>$route,'until'=>$now+30000000];

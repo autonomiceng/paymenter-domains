@@ -25,8 +25,8 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual(set(package.namelist()), {'Domains/LICENSE', 'Domains/Domains.php', 'Domains/Contracts/Driver.php'})
                 self.assertEqual(set(package.namelist()), set(first['members']))
 
-    def test_foundation_is_not_a_release_package(self):
-        with self.assertRaises(ValueError): builder.runtime_members(ROOT/'Domains')
+    def test_native_entrypoint_has_literal_version_metadata(self):
+        self.assertEqual(builder.extension_version((ROOT/'Domains'/'Domains.php').read_bytes()), '0.1.0')
 
     def test_version_comes_only_from_literal_extension_metadata(self):
         decoys = "// version: '9.9.9'\n/* #[ExtensionMeta(version: '8.8.8')] */\n$text = \"version: '7.7.7'\";\n"

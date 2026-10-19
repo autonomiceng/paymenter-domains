@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, FoundationSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
-function commerceFixture(bool $eligible = false): array
+function commerceFixture(bool $eligible = false, ?Closure $activation = null): array
 {
     FoundationSchema::install(); SalesPolicySchema::install();
     Currency::firstOrCreate(['code' => 'USD'], ['name' => 'US Dollar', 'format' => '1,000.00', 'prefix' => '$', 'suffix' => '']);
@@ -33,7 +33,7 @@ function commerceFixture(bool $eligible = false): array
     foreach (['enom', 'namesilo'] as $key) {
         $server = Server::create(['name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
         $binding = $bindings->configure($server->id, $key, Environment::Test, ['token' => 'account-'.$key]);
-        $bindings->setProcessing($server->id, true);
+        $bindings->setProcessing($server->id, true, $activation);
         $tld = Tld::create(['server_id' => $server->id, 'registrar_key' => $key, 'account_fingerprint' => $binding->fingerprint,
             'tld' => 'com', 'enabled' => true, 'min_years' => 1, 'max_years' => 3]);
         $terms = $key === 'enom' ? [1, 3] : [1];

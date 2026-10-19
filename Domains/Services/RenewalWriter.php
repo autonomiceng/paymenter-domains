@@ -33,7 +33,7 @@ final class RenewalWriter implements AdmittedRegistrarDriver
             $parts = explode('.', $op->query->name, 2); $command = $mode === 'grace' ? RegistrationCommand::GraceRenew : RegistrationCommand::Renew;
             $params = ['SLD' => $parts[0], 'TLD' => $parts[1], 'NumYears' => $op->query->years, 'UseCreditCard' => 'no'];
             if ($mode === 'grace') { $params = ['DomainName' => $op->query->name, 'NumYears' => 1, 'UseCreditCard' => 'no']; }
-            $body = ($this->exchange->getValue())(($op->binding->environment === \Paymenter\Extensions\Servers\Domains\Data\Environment::Live ? 'https://reseller.enom.com/interface.asp' : 'https://resellertest.enom.com/interface.asp'), $command->value, $params, $timeout);
+            try{$body=$this->wire($op,$context,($op->binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'),$command->value,$params,$timeout);}catch(RenewalUnsent){return self::unsent($op);}
             $reply = (new EnomParser)->parse($command, self::body($body)); $ref = $reply->value('orderid');
             $grace = $command === RegistrationCommand::GraceRenew && $reply->value('reactivatedomainname.status') === 'true';
             if ($grace) {
@@ -49,12 +49,17 @@ final class RenewalWriter implements AdmittedRegistrarDriver
         // Documented renewal parameters only. Admission proves exact Active + UTC margin and auto-renew off.
         $mapping = PurchaseMapping::renew($op->query->name, $op->query->years, false);
         $environment = $op->binding->environment === \Paymenter\Extensions\Servers\Domains\Data\Environment::Live ? NameSiloEnvironment::Live : NameSiloEnvironment::Sandbox;
-        $body = ($this->exchange->getValue())($environment->origin().'/apibatch',
-            'renewDomain', ['domain' => $op->query->name, 'years' => $op->query->years], $timeout);
+        try{$body=$this->wire($op,$context,$environment->origin().'/apibatch','renewDomain',['domain'=>$op->query->name,'years'=>$op->query->years],$timeout);}catch(RenewalUnsent){return self::unsent($op);}
         $reply = (new NameSiloParser)->parse(self::body($body), $mapping, '');
         if ($reply->outcome !== Outcome::Success) { return self::unknown($op); }
         return new DriverResult($op->binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
             new Evidence(renewalExecution: new RenewalEvidence($op->query, null)));
+    }
+    private function wire(AdmittedOperation $op,RequestContext $ctx,string $origin,string $command,array $parameters,int $timeout): mixed
+    {
+        $started=false;
+        try{return $ctx->withinClaimedWire($op->binding,function(int $remaining)use(&$started,$origin,$command,$parameters,$timeout){$started=true;return ($this->exchange->getValue())($origin,$command,$parameters,min($timeout,$remaining));});}
+        catch(ReadDeferred $e){if(!$started){throw new RenewalUnsent('Wire capacity unavailable.');}throw new \RuntimeException('Renewal outcome unresolved.');}
     }
     private static function unsent(AdmittedOperation $op): DriverResult
     { return new DriverResult($op->binding, Disposition::Rejected, SendState::DefinitelyUnsent, ResultReason::Unsent, rejectionBasis: RejectionBasis::DefinitelyUnsent); }

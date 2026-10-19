@@ -72,12 +72,13 @@ final class AccountBindings
         });
     }
 
-    public function setProcessing(int $serverId, bool $enabled): void
+    public function setProcessing(int $serverId, bool $enabled, ?\Closure $acceptance=null): void
     {
-        DB::transaction(function () use ($serverId, $enabled): void {
-            $this->server($serverId, true);
+        if($enabled&&app()->bound(Runtime::class)&&!$acceptance){throw new \DomainException('Installed activation requires staff review.');}
+        DB::transaction(function () use ($serverId, $enabled,$acceptance): void {
+            $server=$this->server($serverId, true);
             $account = Account::where('server_id', $serverId)->lockForUpdate()->firstOrFail();
-            if ($enabled) { $this->configuration($account, true); }
+            if ($enabled) { $acceptance?->__invoke($server,$account);$this->configuration($account, true,$server); }
             $account->processing_enabled = $enabled; Account::withVerifiedBindingWrite(static fn () => $account->save());
         });
     }
