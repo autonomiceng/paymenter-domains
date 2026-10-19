@@ -147,7 +147,8 @@
     "tests/adoption-preview-guards-test.php",
     "tests/staff-adoption-test.php",
     "tests/watch-dns-storage-test.php",
-    "tests/watch-dns-observer-test.php"
+    "tests/watch-dns-observer-test.php",
+    "tests/native-lifecycle-test.php"
   ],
   "ui": [],
   "runner": [

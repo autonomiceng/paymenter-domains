@@ -199,3 +199,10 @@ DNS signal tests cover exact complete NS sets, proven NODATA/NXDOMAIN through a 
 null MX, mixed overlap, bounded CNAME chains, omitted hosts and failed-read empty-label refusal.
 TTL/order changes preserve the routing digest; source/profile changes discard in-flight results.
 The native reader stays conservative; see `docs/design/watch-dns.md` for activation limits.
+
+`native-lifecycle-test.php` covers both guard boot orders, numeric expiry refusal and numeric
+updates without expiry extras, native paid Active/null saves, explicit idempotent legacy-date
+cleanup, scoped editor notice, unpaid native cancellation/status, terminal-proof refusal and
+acceptance, and the creating-check/INSERT payment race. Fake transport only; committed intent
+prevents any claim in that gap and survives a later native callback failure. SQLite scheduling
+is diagnostic evidence, not InnoDB concurrency or installed-theme acceptance.

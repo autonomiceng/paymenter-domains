@@ -14,21 +14,15 @@ final class NativeIdentity
     private const MARKERS=['domains_catalogue','domains_tld_id','domains_action','domains_registrar'];
     public static function boot(): void
     {
-        static $booted=false;if($booted){return;}$booted=true;
+        static $booted=false;if($booted){return;}$booted=true;NativeExpiry::boot();
         Order::updating(static function(Order $o):void {
             if(self::dirty($o,['id','user_id','currency_code'])){self::order($o);}
         });
         Order::deleting(self::order(...));
-        Service::saving(static function(Service $s):void {
-            // Native Active means paid. Status writes continue; registry expiry belongs to Domains.
-            if(self::routed($s)){$s->expires_at=null;}
-        });
         Service::creating(static function(Service $s):void {
             if(self::routed($s)){if(self::dirty($s,[...self::SERVICE,'expires_at'],true)){self::refuse();}if(!app()->bound(InvoiceBinding::class)){self::refuse();}app(InvoiceBinding::class)->admitIdentity($s);}
         });
         Service::updating(static function(Service $s):void {
-            // Numeric model updates skip saving and retain their original extra SQL values.
-            if((self::columns($s->getAttributes())['expires_at']??null)!==null&&self::routed($s)){self::refuse();}
             if((self::dirty($s,self::SERVICE)||self::dirty($s,['price'],persisted:false))&&!NativeDomainGuard::identityProjection($s)){self::service($s);}
         });
         Service::deleting(self::service(...));

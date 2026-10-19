@@ -49,6 +49,7 @@ final class InvoiceFunding
         $products = Product::whereKey($services->pluck('product_id')->unique())->orderBy('id')->lockForUpdate()->get()->keyBy('id');
         $plans = Plan::whereKey($services->pluck('plan_id')->unique())->orderBy('id')->lockForUpdate()->get()->keyBy('id');
         $cancellations = ServiceCancellation::whereIn('service_id', $services->keys())->orderBy('id')->lockForUpdate()->get();
+        $cancellations = NativeCancellation::withIntents($cancellations, $services->keys()->all());
         $context = new self(DB::connection(), $invoice, $items, $transactions, $orders, $services, $products, $plans, $cancellations);
         self::$contexts[$context] = true; return $context;
     }
