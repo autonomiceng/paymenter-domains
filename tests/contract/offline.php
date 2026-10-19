@@ -53,6 +53,7 @@ $refuse(fn () => $limited->raw('https://ote.namesilo.com/api', 'getAccountBalanc
 same($beforeCalls, $calls, 'Lower slice cap enforced before sender'); same(0, $limited->remaining(), 'Lower cap remaining');
 foreach ([0, 61] as $badLimit) { $refuse(fn () => new GuardedTransport('offline-secret-token', false, $output, $fake, $clock, $badLimit)); }
 $writer = new GuardedTransport('offline-secret-token', true, $output, $fake, $clock);
+$writer->purchaseAuthorization(static fn () => new \Paymenter\Extensions\Servers\Domains\Data\Money('8.95', 'USD'));
 $p = ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0, 'private' => 0];
 foreach ([['years' => 2], ['private' => 1], ['auto_renew' => 1], ['payment_id' => '1'], ['ns1' => 'ns1.other.test']] as $bad) {
     $refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'registerDomain', array_replace($p, $bad)));
@@ -67,11 +68,13 @@ $writer->raw('https://ote.namesilo.com/api', 'renewDomain', ['domain' => $writer
 $refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]));
 $http = new GuardedTransport('offline-secret-token', true, $output,
     static fn () => new TransportResponse(500, json_encode(['request' => ['operation' => 'registerDomain'], 'reply' => ['code' => 300, 'detail' => 'synthetic', 'domain' => 'synthetic', 'order_amount' => '8.95']])), $clock);
+$http->purchaseAuthorization(static fn () => new \Paymenter\Extensions\Servers\Domains\Data\Money('8.95', 'USD'));
 $refuse(fn () => $http->raw('https://ote.namesilo.com/api', 'registerDomain', ['domain' => $http->domain, 'years' => 1, 'auto_renew' => 0, 'private' => 0]));
 same(true, $http->receipt['checks']['purchase_unresolved'], 'HTTP error preserves uncertain purchase');
 $failedCalls = 0;
 $failure = new GuardedTransport('offline-secret-token', true, $output,
     static function () use (&$failedCalls) { $failedCalls++; throw new RuntimeException('offline-secret-token'); }, $clock);
+$failure->purchaseAuthorization(static fn () => new \Paymenter\Extensions\Servers\Domains\Data\Money('8.95', 'USD'));
 $refuse(fn () => $failure->raw('https://ote.namesilo.com/api', 'registerDomain', ['domain' => $failure->domain, 'years' => 1, 'auto_renew' => 0, 'private' => 0]));
 same(1, $failedCalls, 'Transport error never retries');
 $refuse(fn () => $failure->raw('https://ote.namesilo.com/api', 'registerDomain', ['domain' => $failure->domain, 'years' => 1, 'auto_renew' => 0, 'private' => 0]));
@@ -206,15 +209,19 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
                 if ($command === 'renewDomain' && getenv('OTE_SELF_TEST_SCENARIO') === 'renewal-transport-failure') { throw new RuntimeException('offline-secret-token'); }
                 $r += ['message' => 'synthetic', 'domain' => $p['domain'], 'order_amount' => '8.95'];
                 if ($command === 'registerDomain' && getenv('OTE_SELF_TEST_SCENARIO') === 'malformed-registration') { unset($r['order_amount']); }
+                if ($command === 'registerDomain' && str_starts_with((string) getenv('OTE_SELF_TEST_SCENARIO'), 'unknown-')) { $r = ['code' => null, 'detail' => null]; }
                 if ($command === 'renewDomain') { $state->renewed = true; $state->expiry = (new DateTimeImmutable($state->expiry))->modify('+1 year')->format('Y-m-d'); }
             } elseif ($command === 'getDomainInfo') {
                 $r += ['created' => gmdate('Y-m-d'), 'expires' => $state->expiry, 'status' => 'Active', 'locked' => $state->locked,
                     'private' => 'No', 'auto_renew' => 'No', 'traffic_type' => 'Custom DNS', 'email_verification_required' => 'No', 'portfolio' => '', 'forward_url' => 'N/A', 'forward_type' => 'N/A', 'nameservers' => [['nameserver' => 'ns1.namesilo.com', 'position' => 1], ['nameserver' => 'ns2.namesilo.com', 'position' => 2]],
                     'contact_ids' => array_fill_keys(['registrant','administrative','technical','billing'], '101')];
-            } elseif ($command === 'listOrders') { $r['order'] = [['order_number' => '901', 'order_date' => gmdate('Y-m-d H:i:s'), 'method' => 'Account Funds', 'total' => '8.95']]; }
+                if (getenv('OTE_SELF_TEST_SCENARIO') === 'unknown-absent') { $r = ['code' => 200, 'detail' => 'synthetic']; }
+            } elseif ($command === 'listOrders') { $r['order'] = [['order_number' => '901', 'order_date' => gmdate('Y-m-d H:i:s'), 'method' => 'Account Funds', 'total' => '8.95']];
+                if (getenv('OTE_SELF_TEST_SCENARIO') === 'unknown-absent') { $r['order'] = []; }
+            }
             elseif ($command === 'orderDetails') {
                 $r += ['order_number' => '901', 'order_date' => gmdate('Y-m-d H:i:s'), 'method' => 'Account Funds', 'total' => '8.95',
-                    'order_details' => [['description' => $wire->domain.' - '.($state->renewed ? 'renewal' : 'registration'), 'years_qty' => '1', 'price' => '8.95', 'subtotal' => '8.95', 'status' => 'Processed']]];
+                    'order_details' => [['description' => $wire->domain.' - '.($state->renewed ? 'renewal' : 'registration'), 'years_qty' => '1', 'price' => '8.95', 'subtotal' => getenv('OTE_SELF_TEST_SCENARIO') === 'malformed-registration' ? '9.95' : '8.95', 'status' => 'Processed']]];
             } elseif ($command === 'domainUnlock') { $state->locked = 'No'; }
             elseif ($command === 'domainLock') { $state->locked = 'Yes'; }
             elseif ($command === 'removeAutoRenewal') { $r['code'] = 251; }
@@ -243,7 +250,7 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
         same(false, $wire->attempted('registerDomain'), 'Unknown/premium singleton cannot purchase');
         same(false, $wire->attempted('renewDomain'), 'Unknown/premium singleton cannot renew');
     } else {
-    same('accepted_via_real_admitted_protocol', $wire->receipt['checks']['registration'], 'Real registration path exercised offline');
+    same(getenv('OTE_SELF_TEST_SCENARIO') === 'unknown-registered' ? 'reconciled_in_account' : 'accepted_via_real_admitted_protocol', $wire->receipt['checks']['registration'], 'Real registration path exercised offline');
     same(true, $wire->receipt['checks']['charge_evidence_shape_matches'], 'Charge correlation exercised offline');
     if (in_array(getenv('OTE_SELF_TEST_SCENARIO'), ['limited-budget', 'short-budget'], true)) {
         expect($wire->receipt['request_count'] <= (getenv('OTE_SELF_TEST_SCENARIO') === 'short-budget' ? 26 : 28), 'Constrained write never exceeds remaining slice allowance');
@@ -258,7 +265,8 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
     same(true, $wire->receipt['checks']['renewal_charge_evidence_shape_matches'], 'Renewal charge correlation exercised offline');
     same(true, $wire->receipt['checks']['txt_deleted'], 'TXT cleanup exercised offline');
     }
-    same([], $wire->receipt['mismatches'], 'Native fake matches all contract projections');
+    if (getenv('OTE_SELF_TEST_SCENARIO') !== 'unknown-registered') { same([], $wire->receipt['mismatches'], 'Native fake matches all contract projections'); }
+    else { same('registered_in_account', $wire->receipt['reconciliation']['category'], 'Unknown reconciles before continuing same sequence'); }
     }
 }
 $summary = ['self_test' => 'passed', 'real_provider_calls' => 0, 'native_protocol_exercised' => (bool) getenv('OTE_SELF_TEST_NATIVE')];
