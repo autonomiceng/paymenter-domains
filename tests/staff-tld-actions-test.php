@@ -11,6 +11,8 @@ use Paymenter\Extensions\Servers\Domains\Models\SalesPolicy;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Data\{Capabilities,Disposition,DriverResult,Evidence,ResultReason,SendState};
 extract(commerceFixture(true));tldPanel();Carbon\Carbon::setTestNow($now);$t=$tlds[0];
+// Staff actions read the engine clock; pin it so fixture price freshness never depends on the wall clock.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new class($now) implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock{public function __construct(private DateTimeImmutable $at){} public function now():DateTimeImmutable{return $this->at;}});
 $registry=new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
 $registry->register('enom',['uid','token'],new class implements \Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier{
     public function verify(\Paymenter\Extensions\Servers\Domains\Data\Environment $environment,#[SensitiveParameter] array $credentials): string{return $credentials['token'];}

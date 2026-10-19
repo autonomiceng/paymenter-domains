@@ -13,7 +13,7 @@ final class StaffSettingsWrites
     public function connectionAvailable(): bool {return $this->allowInjectedProbes;}
     public function run(StaffSettingsReview $r,#[\SensitiveParameter] array $data,?\DateTimeImmutable $now=null): void
     {
-        $now??=new \DateTimeImmutable;$r->input($data);
+        $clock=app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)?app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class):new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;$now??=$clock->now();$r->input($data);
         if($r->action==='alert_review'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Explicit notification check confirmation required.');}
             $r->local(function()use($r,$data,$now):void {
@@ -81,7 +81,7 @@ final class StaffSettingsWrites
             $r->local(fn()=>null,'connection_requested');$phase='connection_refused';
             try{
                 $driver=$this->bindings->reader($r->serverId);$binding=$driver->binding();
-                $result=$driver->balance(new RequestContext($binding,RequestOrigin::Interactive,$now->modify('+10 seconds'),new RequestBudget(1),limiter:Runtime::limiter()));
+                $result=$driver->balance(new RequestContext($binding,RequestOrigin::Interactive,$now->modify('+10 seconds'),new RequestBudget(1),$clock,Runtime::limiter()));
                 $binding->requireMatch($result->binding);
                 \Illuminate\Support\Facades\DB::transaction(function()use($r,$result){$r->lockActor();$r->lockAccounts();$r->check(true);
                     $r->record($result->disposition===\Paymenter\Extensions\Servers\Domains\Data\Disposition::Accepted?'connection_verified':'connection_unverified');});
