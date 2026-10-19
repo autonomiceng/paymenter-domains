@@ -2,13 +2,22 @@
 // Enom444f31c bounded refresh/follow-up; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueFreshness, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
 /** No installed schedule or writer. One turn/account, bounded discovery and one read job/turn. */
 final class ObservationWork
 {
+    private const STOPPED=['read_unavailable','budget_exhausted','superseded'];
+    /** Only the current binding, generation and follow-up phase can stop this holding. */
+    public static function stopped(Domain $d): bool
+    {
+        if (!Schema::hasTable('domains_observation_work')) { return false; }
+        return DB::table('domains_observation_work')->where('domain_id',$d->id)->where('server_id',$d->server_id)
+            ->where('account_fingerprint',$d->account_fingerprint)->where('generation',$d->authority_generation)
+            ->where('phase',self::phase($d))->whereIn('safe_code',self::STOPPED)->exists();
+    }
     public function __construct(private readonly DomainObservation $observer, private readonly Clock $clock,
         private readonly ReadLimiter $budget, private readonly ?CatalogueSync $catalogue=null) {}
     public function enroll(int $server): void
@@ -61,7 +70,7 @@ final class ObservationWork
         return DB::transaction(function () use ($queue): ?object {
             $now=$this->clock->now()->getTimestamp(); $q=DB::table('domains_observation_work')->where('server_id',$queue->server_id)
                 ->where('account_fingerprint',$queue->account_fingerprint)->where('due_at','<=',$now)->where('tries','<',28)->where('lease_until','<=',$now)
-                ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',['read_unavailable','budget_exhausted','superseded']);});
+                ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',self::STOPPED);});
             $job=$q->orderBy('due_at')->orderBy('id')->lockForUpdate()->first(); if (!$job) { return null; }
             $d=Domain::find($job->domain_id);
             if ($d && ((int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {

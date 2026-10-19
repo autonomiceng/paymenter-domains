@@ -50,7 +50,6 @@ final readonly class RuntimeWork
             foreach($tlds as $t){$this->attempt('publication',fn()=>app(NativeCatalogue::class)->publish((int)$t->id,$this->clock->now()));}
             DB::table('domains_runtime_turns')->where('id',$row->id)->update(['tld_cursor'=>$tlds->count()===25?$tlds->last()->id:0,'operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'domain_cursor'=>$domains->count()===25?$domains->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
         }
-        $this->attempt('observation',fn()=>app(ObservationWork::class)->tick(1));
         $this->attempt('initial_managed_records',fn()=>$this->ports->initialManagedRecordObservations());
         foreach(ObservationCandidates::next('refund') as $ids){foreach($ids as $id){$this->attempt('refund',fn()=>app(Refunds::class)->creditRejected((int)$id));}}
         foreach(ObservationCandidates::next('timeout') as $ids){foreach($ids as $id){$this->attempt('timeout',fn()=>app(TransferInputs::class)->expireMissingCode((int)$id));}}

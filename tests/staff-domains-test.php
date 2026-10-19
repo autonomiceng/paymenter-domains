@@ -48,8 +48,35 @@ $wild=staffUser(['*']); Auth::setUser($wild);
 expect(Staff::can(Staff::COSTS)&&Staff::can(Staff::METADATA)&&$policy->managePolicy($wild,$held),'Native wildcard includes all read permissions');
 expect(!$policy->update($wild,$held),'Wildcard cannot add staff writes in this slice');
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
+// Current record holds are safe review alerts; stale identities and arbitrary reasons never leak.
+$recordService=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::class;
+foreach (['history_limit'=>'Record history has reached its safety limit.','ownership_drift'=>'The registrar account no longer lists this domain.',
+    'records_unavailable'=>'Current records could not be confirmed.','PRIVATE-UNKNOWN'=>'The record check needs review.'] as $reason=>$label) {
+    $recordService::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-18T12:00:00Z'));
+    $alert=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id]);
+    $alert->assertSee('Record checks need review')->assertSee($label)->assertSee('choose '.\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS['resume_observation'])->assertSee('Open registrar request')->assertSeeHtml('href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$active->operations()->sole()->id])).'"')->assertDontSee('PRIVATE-UNKNOWN')->assertSet('data',[]);
+    $markup=new DOMDocument;@$markup->loadHTML($alert->html());$links=(new DOMXPath($markup))->query('//a[normalize-space(.)="Open registrar request"]');
+    same(1,$links->length,'Record alert has its own recovery link');
+    same(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$active->operations()->sole()->id]),$links->item(0)->getAttribute('href'),'Recovery link targets current bound request');
+    expect(!str_contains(json_encode($alert->snapshot),'record_hold'),'Encrypted hold is absent from public state');
+}
+$op=$active->operations()->sole();DB::table('domains_operations')->where('id',$op->id)->update(['authority_generation'=>$active->authority_generation+1]);
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('No current registrar request is available')->assertDontSee('Open registrar request');
+DB::table('domains_operations')->where('id',$op->id)->update(['authority_generation'=>$active->authority_generation]);
+$copy=$active->fresh();$p=$copy->observation;$p['record_hold']['identity']['generation']=0;$copy->update(['observation'=>$p]);
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Record checks need review');
+$p=$copy->fresh()->observation;unset($p['record_hold']);$copy->update(['observation'=>$p]);
+same(null,DomainFacts::recordHold($copy->fresh()),'An ordinary domain has no record alert');
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$held->server_id,'account_fingerprint'=>$held->account_fingerprint,
     'domain_id'=>$held->id,'generation'=>$held->authority_generation,'due_at'=>0]);
+foreach (['read_unavailable','budget_exhausted','superseded']as$code) {
+    DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code]);
+    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Record checks need review')->assertSee('Scheduled reads need staff review')->assertDontSee('Domain facts still refresh.');
+    foreach(['generation'=>$held->authority_generation+1,'server_id'=>$held->server_id+100,'account_fingerprint'=>str_repeat('a',64),'phase'=>'foreign']as$field=>$value){
+        $old=DB::table('domains_observation_work')->where('id',$work)->value($field);DB::table('domains_observation_work')->where('id',$work)->update([$field=>$value]);
+        expect(!$recordService::stopped($held->fresh()),'Foreign scheduled work never stops this holding');DB::table('domains_observation_work')->where('id',$work)->update([$field=>$old]);
+    }
+}
 foreach ([[null,0,0,'Waiting for next check · 0 checks'],['healthy_pending',1,0,'Transfer pending at registrar · 1 check'],['refreshed',0,0,'Saved facts refreshed'],
     ['unresolved',2,1,'Check needs review · 2 checks · 1 resume'],['refreshed',0,2,'Saved facts refreshed · 2 resumes']] as [$code,$tries,$resumes,$label]) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>$tries,'resumes'=>$resumes]);

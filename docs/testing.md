@@ -463,3 +463,9 @@ The private snapshot now also names the purchase command and renewal expiry base
 renewal category and non-success details are private metadata. Updates preserve original evidence
 with synced mode-0600 temporary files and atomic replacement. Continuation checks the retained
 request count plus its explicit limit against 60, and the transport requires its claimed /api route.
+
+## Native initial records
+
+`runtime-records-test.php` exercises the registered observation seam with accepted synthetic ports, processing pauses, daily cadence, held manual recovery, numeric DNS/SRV presentation and source-ID preservation. Staff record holds use allowlisted current-identity reasons. Customer unknown-state notes distinguish ordinary checks from manually resumed checks. All reads stay offline; native renders accept output and supplied-shell paths as arguments.
+
+Stopped scheduled-read coverage includes a domain-read failure while processing is paused, re-enabling without automatic retry, current-phase/binding exclusion and audited manual recovery. Staff alerts verify the exact resume-action label, bound request link and missing-request guidance.

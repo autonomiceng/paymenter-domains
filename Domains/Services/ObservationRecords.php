@@ -32,6 +32,9 @@ final class ObservationRecords
         $p['records']=['identity'=>self::identity($d),'at'=>$now->format(DATE_ATOM),'sequence'=>$p['management_sequence']??0,'families'=>$clean];
         $d->update(['observation'=>$p]);
     }
+    /** Staff recovery is needed for either a record hold or stopped current scheduled reads. */
+    public static function stopped(Domain $d): bool
+    { return self::held($d) || ObservationWork::stopped($d); }
     public static function held(Domain $d): bool
     { return ($d->observation['record_hold']['identity']??null)===self::identity($d); }
     public static function hold(Domain $d, string $reason, \DateTimeImmutable $now): void

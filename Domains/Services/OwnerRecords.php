@@ -11,7 +11,7 @@ final class OwnerRecords
     {
         $raw=ObservationProjection::sections($d)['srv']['facts']['records']??[];
         $known=array_map(fn($r)=>ManagementPayload::srv($r),$raw);
-        usort($known,fn($a,$b)=>strcmp(json_encode(ManagementPayload::canonical('srv',[$a])[0]),json_encode(ManagementPayload::canonical('srv',[$b])[0])));
+        $known=self::ordered('srv',$known);
         $seen=[];
         foreach ($p['records'] as $i=>&$row) {
             $source=$p['record_sources'][$i]??'';
@@ -24,6 +24,16 @@ final class OwnerRecords
         } unset($row);
         unset($p['record_sources']);return $p;
     }
+    /** Presentation and SRV source indexes use the same order; evidence digests keep their canonical order. */
+    private static function ordered(string $kind,array $rows): array
+    {
+        if (!in_array($kind,['dns','srv'],true)) { return $rows; }
+        $field=$kind==='dns'?'name':'service';
+        usort($rows,static function($a,$b)use($kind,$field):int {
+            $left=ManagementPayload::canonical($kind,[$a])[0];$right=ManagementPayload::canonical($kind,[$b])[0];
+            return strnatcmp($left[$field],$right[$field]) ?: strcmp(json_encode($left),json_encode($right));
+        });return $rows;
+    }
     public static function forDomain(Domain $d): array
     {
         $facts=ObservationProjection::sections($d); $out=[]; $inventory=ObservationRecords::current($d);
@@ -32,7 +42,7 @@ final class OwnerRecords
                 if (in_array($kind,['dns','srv'],true)&&(!$inventory||($inventory['families'][$kind]['state']??null)!=='complete')) { continue; }
                 $rows=$facts[$kind]['facts']['records']??null;
                 if (!is_array($rows)||!array_is_list($rows)||count($rows)>50) { continue; }
-                $out[$kind]=ManagementPayload::canonical($kind,$rows);
+                $out[$kind]=self::ordered($kind,ManagementPayload::canonical($kind,$rows));
             } catch (\Throwable) {}
         }
         $out['glue']=[];

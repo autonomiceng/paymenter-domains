@@ -6,7 +6,13 @@
     $types = [''=>'Type','A'=>'A (IPv4)','AAAA'=>'AAAA (IPv6)','CNAME'=>'CNAME (alias)','MX'=>'MX (mail)','MXE'=>'MXE (mail IP)','TXT'=>'TXT (text)','URL'=>'URL (redirect)','FRAME'=>'FRAME (masked redirect)'];
 @endphp
 @if ($section['records'] === null)
-<p class="domains-hint">Editing isn’t available yet because we haven’t confirmed your current records.</p>
+<p class="domains-hint">Editing isn’t available yet because we haven’t confirmed your current records.
+@if ($section['recordCheckHeld'] ?? false)
+Editing returns after our team resumes record checks and a check confirms the current list.
+@else
+Editing returns after a successful record check. Checks normally run daily.
+@endif
+</p>
 @else
 <p>{{ $isDns ? 'Used only while the domain uses the registrar’s nameservers. Use @ for the domain itself. Alias and mail targets end with a dot.' : 'Enter the service without the leading underscore, such as sip. The target ends with a dot.' }}</p>
 <form method="POST" action="{{ $section['actions'][$cap] }}" class="domains-owner-form domains-record-form">

@@ -97,7 +97,7 @@ final readonly class OwnedDomains
         }
         $records=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?OwnerRecords::forDomain($d):[];
         foreach (['dns','srv','ds','glue'] as $kind) {
-            if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; }
+            if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['recordCheckHeld']=ObservationRecords::stopped($d); }
             if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
         }
         $renewal=$d->status==='active'?($service?->cancellation?'Off':'On'):'—'; $price=null;

@@ -6,8 +6,9 @@ use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;
 use Filament\Infolists\Components\TextEntry;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,OperationResource};
+use Paymenter\Extensions\Servers\Domains\Services\{ObservationWork,StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,DomainQueries,Staff};
 class ViewDomain extends ViewRecord
 {
     protected static string $resource = DomainResource::class;
@@ -24,7 +25,18 @@ class ViewDomain extends ViewRecord
             $entries[]=TextEntry::make('fact_'.count($entries))->label($label)->state($value)->listWithLineBreaks()
                 ->extraAttributes(['style'=>'overflow-wrap:anywhere']);
         }
-        return $schema->components([Section::make('Domain')->description('Saved facts. Viewing this page makes no registrar requests.')
+        $sections=[];$hold=DomainFacts::recordHold($this->getRecord());
+        if ($hold!==null) {
+            $d=$this->getRecord();$request=DomainQueries::operations($d)->orderByDesc('id')->value('id');
+            $description=ObservationWork::stopped($d)?'Scheduled reads are paused for this domain.':'Record checks are paused. Domain facts still refresh.';
+            $description.=$request===null?' No current registrar request is available. Ask an administrator to review scheduled reads.':
+                ' After reviewing the reason, open the registrar request and choose '.StaffOperationReview::ACTIONS['resume_observation'].'. Staff read-resume permission is required.';
+            $review=[TextEntry::make('record_hold_reason')->label('Reason')->state($hold)];
+            if ($request!==null) { $review[]=TextEntry::make('record_recovery')->label('Recovery')->state('Open registrar request')->url(OperationResource::getUrl('view',['record'=>$request])); }
+            $sections[]=Section::make('Record checks need review')->icon('heroicon-o-exclamation-triangle')->iconColor('warning')
+                ->description($description)->columnSpanFull()->schema($review);
+        }
+        return $schema->components([...$sections,Section::make('Domain')->description('Saved facts. Viewing this page makes no registrar requests.')
             ->columnSpanFull()->columns(2)->schema($entries)]);
     }
 }

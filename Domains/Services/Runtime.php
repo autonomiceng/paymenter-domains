@@ -17,13 +17,22 @@ final class Runtime
         $app->singleton(self::class);
         foreach([RegistrarRegistry::class,AccountBindings::class,PricingRules::class,PriceCatalogue::class,SellerPolicies::class,NativeCatalogue::class,
             CheckoutEligibility::class,CartAdmission::class,InvoiceBinding::class,HolderPricing::class,NativeDomainGuard::class,NativeServerGuard::class,
-            Storefront::class,OwnedDomains::class,Installation::class,AccountReadBudget::class,DomainObservation::class,ObservationWork::class,
+            Storefront::class,OwnedDomains::class,Installation::class,AccountReadBudget::class,ObservationWork::class,
             CatalogueSync::class,Reminders::class,Refunds::class,RuntimeWork::class,RuntimePorts::class,NativePresenter::class] as $class){
             if(!$app->bound($class)){$app->singleton($class);}
         }
         if(!$app->bound(Clock::class)){$app->singleton(Clock::class,SystemClock::class);}
         if(!$app->bound(ReadLimiter::class)){$app->singleton(ReadLimiter::class,fn($a)=>new AccountReadBudget($a->make(Clock::class),48));}
         if(!$app->bound(OwnerPorts::class)){$app->singleton(OwnerPorts::class,fn($a)=>new OwnerPorts(fn($binding)=>$a->make(RuntimePorts::class)->management($binding)));}
+        // Record discovery shares the accepted account/processing authority; ordinary domain reads remain independent.
+        $app->singleton(DomainObservation::class,fn($a)=>new DomainObservation($a->make(AccountBindings::class),$a->make(Clock::class),
+            $a->make(ReadLimiter::class),$a->make(OwnerPorts::class),static function(array $l)use($a):bool {
+                try {
+                    $a->make(AccountBindings::class)->requireProcessingLocked($l['server'],$l['account']);
+                    return $a->make(RuntimePorts::class)->accepted($l['account']);
+                } catch (\Throwable) { return false; }
+            }));
+        $app->make(RuntimePorts::class)->registerInitialManagedRecordObservations(fn()=>$app->make(ObservationWork::class)->tick(1));
         // No positive provider identity verifier or accepted write sender is inferred at install.
         // Trusted deployment composition may register reviewed factories before boot.
         app(NativeServerGuard::class)->boot();
