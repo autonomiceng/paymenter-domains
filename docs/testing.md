@@ -506,3 +506,17 @@ No list download, discovery/resolver or provider acceptance is established.
 revokes permissions after mount, checks all age states and exercises weekly runtime work
 without accounts. Native fixture defaults inject a failing PSL transport so incidental ticks
 can never resolve DNS or download data.
+
+### Runtime archive verification
+
+`python3 scripts/build.py --output-dir /fresh/output` builds the complete native runtime.
+References reachable from the entry point and native Admin discovery, plus literal
+boot/view/migration paths, determine included roots. Source README files and tooling stay out.
+Sorted uncompressed entries use fixed metadata, avoiding compression-toolchain variance. The runtime conversion
+completion guard remains included; the one-time converter and its directories do not.
+The embedded `Domains/manifest.json` hashes all payload files. The adjacent release
+`manifest.json` hashes every ZIP member, including the embedded inventory, and the ZIP itself.
+Run `python3 scripts/build.py --verify /fresh/output/paymenter-domains-0.1.0.zip` before upload.
+Checksums detect corruption, not publisher identity; obtain artifacts from a trusted source.
+Package tests build the real tree twice, verify every member, omit referenced roots and
+refuse converter paths, tampering, unsafe names, symlinks, collisions and oversized files.

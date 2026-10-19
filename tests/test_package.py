@@ -3,6 +3,9 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+import hashlib
+import shutil
+import stat
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,15 +17,15 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='domains-package-test-') as temp:
             root = Path(temp)
             source = root/'Domains'; source.mkdir()
-            (source/'Domains.php').write_text("<?php #[ExtensionMeta(version: '0.1.0')]")
+            (source/'Domains.php').write_text("<?php use Paymenter\\Extensions\\Servers\\Domains\\Contracts\\Driver; #[ExtensionMeta(version: '0.1.0')]")
             (source/'LICENSE').write_bytes((ROOT/'LICENSE').read_bytes())
-            (source/'Contracts').mkdir(); (source/'Contracts/Driver.php').write_text('<?php // synthetic')
+            (source/'Contracts').mkdir(); (source/'Contracts/Driver.php').write_text('<?php namespace Paymenter\\Extensions\\Servers\\Domains\\Contracts; // synthetic')
             first = builder.build(source, root/'first')
             second = builder.build(source, root/'second')
             self.assertEqual(first, second)
             self.assertEqual((root/'first'/first['archive']).read_bytes(), (root/'second'/second['archive']).read_bytes())
             with zipfile.ZipFile(root/'first'/first['archive']) as package:
-                self.assertEqual(set(package.namelist()), {'Domains/LICENSE', 'Domains/Domains.php', 'Domains/Contracts/Driver.php'})
+                self.assertEqual(set(package.namelist()), {'Domains/LICENSE', 'Domains/Domains.php', 'Domains/Contracts/Driver.php', builder.MANIFEST})
                 self.assertEqual(set(package.namelist()), set(first['members']))
 
     def test_native_entrypoint_has_literal_version_metadata(self):
@@ -78,19 +81,111 @@ class PackageTests(unittest.TestCase):
         for source in [ROOT/'scripts/convert-enom-05.php', *(ROOT/'scripts/conversion').rglob('*')]:
             self.assertFalse(source.is_relative_to(ROOT/'Domains'))
         with tempfile.TemporaryDirectory(prefix='domains-converter-package-') as temp:
-            root = Path(temp); source = root/'Domains'; source.mkdir()
-            for name in ['Domains.php', 'LICENSE']:
-                (source/name).write_bytes((ROOT/'Domains'/name).read_bytes())
-            scripts = root/'scripts'; scripts.mkdir()
-            (scripts/'convert-enom-05.php').write_bytes((ROOT/'scripts/convert-enom-05.php').read_bytes())
-            (scripts/'conversion').mkdir(); (scripts/'conversion/source.json').write_bytes((ROOT/'scripts/conversion/source.json').read_bytes())
-            manifest = builder.build(source, root/'output')
-            with zipfile.ZipFile(root/'output'/manifest['archive']) as package:
-                self.assertEqual(set(package.namelist()), {'Domains/Domains.php', 'Domains/LICENSE'})
-                self.assertEqual(set(package.namelist()), set(manifest['members']))
-            (source/'scripts').mkdir(); (source/'scripts/convert-enom-05.php').write_bytes((scripts/'convert-enom-05.php').read_bytes())
-            with self.assertRaisesRegex(ValueError, 'outside the extension runtime layout'):
+            root = Path(temp)
+            first = builder.build(ROOT/'Domains', root/'first')
+            second = builder.build(ROOT/'Domains', root/'second')
+            self.assertEqual(first, second)
+            archive = root/'first'/first['archive']
+            self.assertEqual(builder.verify(archive, first), first)
+            with zipfile.ZipFile(archive) as package:
+                self.assertEqual(set(package.namelist()), set(first['members']))
+                for name in package.namelist():
+                    self.assertFalse(any(p.lower() in {'scripts', 'tests', 'docs', '.github'} or ('conversion' in p.lower() and p != 'ConversionGate.php') for p in Path(name).parts))
+                    self.assertNotEqual(Path(name).name.lower(), 'readme.md')
+                    self.assertEqual(first['members'][name], hashlib.sha256(package.read(name)).hexdigest())
+                for name in ['Mail/DomainNotice.php', 'Presentation/OwnedDomain.php', 'routes/web.php', 'resources/views/search.blade.php', 'database/migrations/2026_10_18_000001_create_domains_foundation.php']:
+                    self.assertIn('Domains/'+name, package.namelist())
+                self.assertEqual(package.read('Domains/LICENSE'), (ROOT/'LICENSE').read_bytes())
+            source = root/'Domains'
+            shutil.copytree(ROOT/'Domains', source)
+            (source/'Services/conversion').mkdir()
+            (source/'Services/conversion/Apply.php').write_bytes((ROOT/'scripts/convert-enom-05.php').read_bytes())
+            with self.assertRaisesRegex(ValueError, 'Development or private files'):
                 builder.runtime_members(source)
+
+    def test_unreachable_namespaced_trees_cannot_approve_themselves(self):
+        with tempfile.TemporaryDirectory(prefix='domains-unreachable-') as temp:
+            source = Path(temp)/'Domains'
+            shutil.copytree(ROOT/'Domains', source)
+            for root, other in [('Tools', 'Helpers'), ('Helpers', 'Tools')]:
+                (source/root).mkdir()
+                (source/root/'Import.php').write_text('<?php namespace '+builder.PREFIX+root+'; use '+builder.PREFIX+other+'\\Import;')
+            with self.assertRaisesRegex(ValueError, 'outside the extension runtime layout'): builder.runtime_members(source)
+            _, members = builder.runtime_members(ROOT/'Domains')
+            members['Domains/Tools/Import.php'] = ('<?php namespace '+builder.PREFIX+'Tools;').encode()
+            with self.assertRaisesRegex(ValueError, 'outside the extension runtime layout'): builder.validate_runtime(members)
+
+    def test_referenced_roots_cannot_be_omitted(self):
+        with tempfile.TemporaryDirectory(prefix='domains-runtime-roots-') as temp:
+            source = Path(temp)/'Domains'
+            shutil.copytree(ROOT/'Domains', source)
+            for name in ['Mail', 'Presentation', 'Policies', 'routes', 'resources', 'database']:
+                with self.subTest(name=name):
+                    parked = Path(temp)/name
+                    (source/name).rename(parked)
+                    with self.assertRaisesRegex(ValueError, 'Runtime-referenced directory is missing'):
+                        builder.runtime_members(source)
+                    parked.rename(source/name)
+
+    def test_non_runtime_paths_collisions_size_and_non_utf8_refused(self):
+        with tempfile.TemporaryDirectory(prefix='domains-runtime-refusal-') as temp:
+            source = Path(temp)/'Domains'
+            shutil.copytree(ROOT/'Domains', source)
+            for name in ['scripts/run.php', 'tests/probe.php', 'docs/note.php', '.github/ci.php', 'Services/convert-enom-05.php', 'Services/pin-source.php', 'Services/dev-tool.php', 'Services/conversion.php', 'Services/Runtime.PHP', 'Services/bad\udcff.php']:
+                with self.subTest(name=name):
+                    path = source/name; path.parent.mkdir(exist_ok=True)
+                    path.write_bytes(b'<?php')
+                    with self.assertRaises(ValueError): builder.runtime_members(source)
+                    path.unlink()
+                    if path.parent.name in ['scripts', 'tests', 'docs', '.github']: path.parent.rmdir()
+            oversized = source/'Services/Oversized.php'
+            oversized.write_bytes(b'x' * (builder.MAX_FILE_BYTES + 1))
+            with self.assertRaisesRegex(ValueError, 'large'): builder.runtime_members(source)
+
+    def test_archive_tamper_and_unsafe_members_refused_before_install(self):
+        with tempfile.TemporaryDirectory(prefix='domains-zip-refusal-') as temp:
+            root = Path(temp)
+            receipt = builder.build(ROOT/'Domains', root/'clean')
+            clean = root/'clean'/receipt['archive']
+            for name in ['Domains/Services/Runtime.php', builder.MANIFEST, 'Domains/scripts/conversion/Apply.php', '/Domains/escape.php', 'Domains/../escape.php', 'Domains/Services/runtime.php']:
+                with self.subTest(name=name):
+                    archive = root/'tampered.zip'
+                    with zipfile.ZipFile(clean) as original, zipfile.ZipFile(archive, 'w') as changed:
+                        for entry in original.infolist():
+                            changed.writestr(entry, b'tampered' if entry.filename == name else original.read(entry))
+                        if name not in original.namelist():
+                            entry = zipfile.ZipInfo(name); entry.external_attr = (stat.S_IFREG | 0o644) << 16
+                            changed.writestr(entry, b'<?php')
+                    with self.assertRaises(ValueError): builder.verify(archive)
+            with self.assertRaises(ValueError): builder.verify(clean, None)
+            # A self-consistent inventory cannot excuse directory case collisions.
+            with zipfile.ZipFile(clean) as original:
+                members = {n: original.read(n) for n in original.namelist() if n != builder.MANIFEST}
+            members['Domains/services/Probe.php'] = b'<?php'
+            members[builder.MANIFEST] = builder.json_bytes({'schema_version': 1, 'version': receipt['version'], 'license': 'MIT', 'members': builder.digests(members)})
+            with zipfile.ZipFile(root/'collision.zip', 'w') as package:
+                for name, data in members.items():
+                    entry = zipfile.ZipInfo(name); entry.external_attr = (stat.S_IFREG | 0o644) << 16
+                    package.writestr(entry, data)
+            with self.assertRaisesRegex(ValueError, 'Case-colliding'): builder.verify(root/'collision.zip')
+            wrong = dict(receipt, archive_sha256='0'*64)
+            with self.assertRaises(ValueError): builder.verify(clean, wrong)
+
+    def test_file_directory_conflict_is_refused_in_either_order(self):
+        with tempfile.TemporaryDirectory(prefix='domains-package-conflict-') as temp:
+            root = Path(temp)
+            receipt = builder.build(ROOT/'Domains', root/'clean')
+            with zipfile.ZipFile(root/'clean'/receipt['archive']) as original:
+                members = {n: original.read(n) for n in original.namelist() if n != builder.MANIFEST}
+            members['Domains/Services/Runtime.php/Probe.php'] = b'<?php'
+            members[builder.MANIFEST] = builder.json_bytes({'schema_version': 1, 'version': receipt['version'], 'license': 'MIT', 'members': builder.digests(members)})
+            for reverse in [False, True]:
+                with self.subTest(reverse=reverse), zipfile.ZipFile(root/'conflict.zip', 'w') as package:
+                    for name in sorted(members, reverse=reverse):
+                        entry = zipfile.ZipInfo(name); entry.external_attr = (stat.S_IFREG | 0o644) << 16
+                        package.writestr(entry, members[name])
+                with self.assertRaisesRegex(ValueError, 'file/directory conflict'): builder.verify(root/'conflict.zip')
+
     def test_symlink_and_existing_artifact_refused(self):
         with tempfile.TemporaryDirectory(prefix='domains-package-links-') as temp:
             source = Path(temp)/'Domains'; source.mkdir()
