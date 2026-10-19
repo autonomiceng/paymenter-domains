@@ -90,6 +90,20 @@ final class AccountBindings
         return $this->registry->reader($this->binding($account), $this->configuration($account, true));
     }
 
+    /** Named adoption factory: accepted credentials and exact site guard, independent of spending. */
+    public function adoptionReader(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $expected,
+        \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,
+        \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport $wire): \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader
+    {
+        if (DB::transactionLevel() !== 0 || $expected->registrarKey !== 'enom') { throw new \DomainException('Adoption read unavailable.'); }
+        $this->server($expected->serverId);
+        $account = Account::where('server_id', $expected->serverId)->sole();
+        $expected->requireMatch($this->binding($account));
+        $credentials = $this->configuration($account, true);
+        return new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader($expected,
+            $credentials['uid'], $credentials['token'], $wire, $clock, Runtime::limiter());
+    }
+
     /** Guard for later engine claim/dispatch; never grants admission by itself. */
     public function requireProcessing(AccountBinding $expected): void
     {

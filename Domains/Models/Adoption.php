@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
-/** Internal storage, not verified adoption authority. No application workflow consumes these rows. */
+/** Retained preview storage, never verified adoption or holding authority. */
 final class Adoption extends Model
 {
     protected $table = 'domains_adoptions';

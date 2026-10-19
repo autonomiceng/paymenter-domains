@@ -15,12 +15,8 @@ final class DomainBilling
 
     public static function calendar(Domain $domain, int $issueDays = 21, int $dueDays = 7): array
     {
-        if (!$domain->provider_expires_at || $issueDays <= $dueDays || $dueDays < 1 || $issueDays > 365) {
-            throw new \DomainException('Confirmed expiry and valid billing calendar required.');
-        }
-        return ['expiry' => $domain->provider_expires_at->format('Y-m-d'),
-            'issue' => $domain->provider_expires_at->subDays($issueDays)->format('Y-m-d'),
-            'due' => $domain->provider_expires_at->subDays($dueDays)->format('Y-m-d')];
+        if (!$domain->provider_expires_at) { throw new \DomainException('Confirmed expiry required.'); }
+        return BillingCalendar::dates($domain->provider_expires_at, $issueDays, $dueDays);
     }
 
     /** A null actor selects scheduled billing, skipped on native cancellation; manual billing requires the current owner. */
@@ -85,8 +81,8 @@ final class DomainBilling
     /** Validated saved calendar, shared by billing and its month-out notice. */
     public static function calendarFor(array $l):array
     {
-        $settings=$l['settings']->pluck('value','key');
-        return self::calendar($l['domain'],self::days($settings->get('domains_issue_days',21)),self::days($settings->get('domains_due_days',7)));
+        $timing = BillingCalendar::timing($l['settings']);
+        return self::calendar($l['domain'], $timing['issue'], $timing['due']);
     }
 
     /** Read-only eligibility shared with scheduled-invoice notices; caller holds HoldingLocks. */
@@ -123,10 +119,6 @@ final class DomainBilling
         return $invoice;
     }
 
-    private static function days(mixed $value): int
-    {
-        if (filter_var($value, FILTER_VALIDATE_INT) === false) { throw new \DomainException('Invalid renewal timing.'); } return (int) $value;
-    }
     private static function enabled(mixed $value): bool
     {
         return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) === true;
