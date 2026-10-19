@@ -28,6 +28,18 @@ tests/      Synthetic provider, transport and native package acceptance
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), [extension conventions](docs/paymenter-extension-conventions.md), and [verification guidance](docs/testing.md). See the [API contract](docs/design/api-contract.md), [runtime boundaries](docs/runtime.md), and [parity gates](docs/design/parity.md). Offline native SQLite acceptance does not establish shared-database locking, real provider acceptance or a production deployment.
 
+## Public suffix list review
+
+The weekly updater stores validated Public Suffix List data (MPL-2.0, publicsuffix.org).
+A removal of more than 5% of either section keeps the saved list and retains the exact
+rejected download for staff review. **Domains → Public suffix list → Accept this list**
+shows removal counts and up to 20 samples per section. It requires watch view/manage rights,
+the displayed 12-character hash and a reason. Changes to the pending bytes or saved baseline
+invalidate acceptance. All current size, parsing, marker and sentinel checks still apply.
+The same procedure can replace a hash-valid historical list whose rules a newer international
+domain parser rejects; historical source identities explain its differences but never resolve names.
+Acceptance records encrypted retained audit evidence and does not refresh the download's age.
+
 ## License
 
 [MIT](LICENSE), copyright 2026 Autonomic Engineering. NameSilo and Paymenter are trademarks of their respective owners; this is an independent project.

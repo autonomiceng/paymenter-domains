@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
 use App\Models\Setting;
 use Filament\Actions\Action;
-use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\{TextInput, Hidden, Textarea};
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -12,7 +12,7 @@ use Filament\Schemas\{Schema, Components\Section};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff, PslFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Services\{PublicSuffixList as Lists, PslTransport};
+use Paymenter\Extensions\Servers\Domains\Services\{PublicSuffixList as Lists, PslTransport, PslRebaseline, PslFailure};
 class PublicSuffixList extends Page
 {
     public const VIEW = 'admin.domains.watch.view';
@@ -22,6 +22,9 @@ class PublicSuffixList extends Page
     protected static ?string $title = 'Public suffix list';
     protected static ?int $navigationSort = 50;
     protected static ?string $slug = 'public-suffix-list';
+    private array|false|null $reviewPreview = false;
+    private function review(): ?array
+    { if ($this->reviewPreview === false) { $this->reviewPreview = app(PslRebaseline::class)->preview(); } return $this->reviewPreview; }
     public static function canAccess(): bool { return Staff::can(self::VIEW); }
     public function mount(): void { abort_unless(self::canAccess(), 403); }
     private static function requireManage(): void
@@ -33,7 +36,7 @@ class PublicSuffixList extends Page
             ->tooltip(fn() => ($at = app(Lists::class)->nextAllowedAt()) !== null && app(Clock::class)->now()->getTimestamp() < $at ? 'Next update allowed: '.PslFacts::time($at) : null)
             ->disabled(fn() => ($at = app(Lists::class)->nextAllowedAt()) !== null && app(Clock::class)->now()->getTimestamp() < $at)
             ->action(function (): void {
-                self::requireManage(); $code = app(Lists::class)->update(); unset($this->cachedSchemas['content']);
+                self::requireManage(); $code = app(Lists::class)->update(); unset($this->cachedSchemas['content']); $this->reviewPreview = false;
                 $notice = Notification::make()->title(PslFacts::result($code));
                 (in_array($code, ['updated', 'identical', 'not_modified'], true) ? $notice->success() : $notice->warning())->send();
             }),
@@ -47,8 +50,36 @@ class PublicSuffixList extends Page
                         DB::table('domains_psl_status')->where('id', 1)->lockForUpdate()->firstOrFail(); self::requireManage();
                         Setting::updateOrCreate(['settingable_type' => null, 'settingable_id' => null, 'key' => Lists::SETTING], ['type' => 'string', 'value' => $data['url']]);
                     });
-                    unset($this->cachedSchemas['content']); Notification::make()->title('Public suffix list source saved')->send();
+                    unset($this->cachedSchemas['content']); $this->reviewPreview = false; Notification::make()->title('Public suffix list source saved')->send();
+                }),
+            Action::make('accept')->label('Accept this list')->color('warning')
+                ->visible(fn() => Staff::can(self::MANAGE) &&  $this->review() !== null)
+                ->modalDescription('Review the removed rules. Acceptance applies only to these exact downloaded bytes and records your reason.')
+                ->schema(function (): array {
+                    self::requireManage(); $preview =  $this->review();
+                    return [Hidden::make('revision')->default($preview['revision'] ?? ''),
+                        TextEntry::make('changes')->label('Removed rules')->state(self::removedRules($preview))->listWithLineBreaks(),
+                        TextInput::make('confirmation')->label('Type '.substr($preview['revision'] ?? '', 0, 12).' to confirm')->required()->in([substr($preview['revision'] ?? '', 0, 12)]),
+                        Textarea::make('reason')->label('Reason')->required()->maxLength(1000)->rules([fn() => function ($attribute, $value, $fail): void { if (strlen($value) > 1000) { $fail('Use at most 1000 bytes for the reason.'); } }])];
+                })->action(function (array $data): void {
+                    self::requireManage();
+                    try { app(PslRebaseline::class)->accept(auth()->user(), $data['revision'], $data['confirmation'], $data['reason']); }
+                    catch (PslFailure $e) { $this->reviewPreview = false; Notification::make()->title(PslFacts::result($e->safeCode))->danger()->send(); return; }
+                    unset($this->cachedSchemas['content']); $this->reviewPreview = false; Notification::make()->title('Public suffix list accepted')->success()->send();
                 })];
+    }
+    private static function removedRules(?array $preview): array
+    {
+        if ($preview === null) { return ['The candidate changed. Reload before accepting.']; }
+        $lines = [$preview['icu_incompatible'] ? 'The saved rules are incompatible with the current international domain parser. Counts compare historical source identities.' : 'More than 5% of previously saved rules were removed.'];
+        $lines[] = 'Candidate SHA256: '.$preview['revision']; $lines[] = 'Saved SHA256: '.$preview['baseline_revision'];
+        $lines[] = 'Source: '.$preview['source_url']; $lines[] = 'Downloaded: '.PslFacts::time($preview['fetched_at']);
+        foreach ($preview['after_counts'] as $section => $count) { $lines[] = strtoupper($section).' rules: '.$preview['before_counts'][$section].' → '.$count; }
+        foreach ($preview['removed'] as $section => $removed) {
+            $lines[] = strtoupper($section).': '.$removed['count'].' removed. Samples (up to 20): '.implode(', ', $removed['samples']);
+        }
+        foreach ($preview['rejected'] as $section => $rejected) { $lines[] = strtoupper($section).' rejected by current parser: '.$rejected['count'].'. Samples (up to 20): '.implode(', ', $rejected['samples']); }
+        return $lines;
     }
     public function content(Schema $schema): Schema
     {
@@ -59,6 +90,8 @@ class PublicSuffixList extends Page
         $at = $list->nextAllowedAt(); $now = app(Clock::class)->now()->getTimestamp();
         return $schema->components([
             Section::make(PslFacts::state($list))->description(match (PslFacts::state($list)) {
+                'Saved list damaged' => 'The saved bytes cannot be verified. New discovery is paused. See the README to restore a verified backup.',
+                'Saved list needs review' => 'The saved list cannot be parsed with the current parser. New discovery is paused. Download a valid replacement and review it.',
                 'Not downloaded yet' => 'New discovery is paused until a validated list is downloaded.',
                 'New discovery paused' => 'The list is more than 90 days old. Download a validated list before new discovery can resume.',
                 'Out of date warning' => 'The saved list is more than 30 days old. New discovery pauses after '.PslFacts::time((int) $list->current()->validated_at + 90 * 86400).' unless a validated list is downloaded.',

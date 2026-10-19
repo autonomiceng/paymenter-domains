@@ -80,7 +80,8 @@ def main():
                 raise AssertionError('Unsafe archive reached native upload boundary')
         previous = build.build(previous_source/'Domains', root/'previous')
         assert previous['archive_sha256'] != current['archive_sha256'], 'Upgrade must replace different runtime bytes'
-        for scenario, first, count in [('held', 'current', 8), ('fresh', 'current', 8), ('upgrade', 'previous', 7)]:
+        current_migrations = len(list((ROOT/'Domains/database/migrations').glob('*.php')))
+        for scenario, first, count in [('held', 'current', current_migrations), ('fresh', 'current', current_migrations), ('upgrade', 'previous', 7)]:
             # Each initial upload must take native Install, never reuse the other scenario's files.
             if installed.exists():
                 shutil.rmtree(installed)
@@ -106,7 +107,7 @@ def main():
                 continue
             phase('seed')
             phase('upload', 'current')
-            env['PACKAGE_MIGRATIONS'] = '8'
+            env['PACKAGE_MIGRATIONS'] = str(current_migrations)
             phase('verify')
             # The native upgrade is now running current classes and migration history.
             phase('upload', 'current')
