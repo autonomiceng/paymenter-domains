@@ -70,7 +70,7 @@ class Operation extends Model
             }
             if (!array_key_exists('transfer_admission', $old) && array_key_exists('transfer_admission', $new)
                 && (($old['seal'] ?? null) !== 'absent' || ($new['seal'] ?? null) !== 'sealed' || $operation->action !== 'transfer')) { throw new \DomainException('Transfer admission requires the original seal.'); }
-            foreach (['transfer_admission', 'transfer_terminal', 'claim_key', 'dispatch_attempted_at', 'authorized_cost', 'renewal_mode', 'renewal', 'registration_admission', 'execution', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections', 'reconciliation', 'terminal', 'transfer_timeout'] as $key) {
+            foreach (['converted_completion', 'legacy_retained', 'transfer_admission', 'transfer_terminal', 'claim_key', 'dispatch_attempted_at', 'authorized_cost', 'renewal_mode', 'renewal', 'registration_admission', 'execution', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections', 'reconciliation', 'terminal', 'transfer_timeout'] as $key) {
                 if (array_key_exists($key, $old) && (!array_key_exists($key, $new) || $new[$key] !== $old[$key])) {
                     throw new \DomainException('Attempt evidence is write-once.');
                 }

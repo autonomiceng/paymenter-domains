@@ -110,7 +110,9 @@
     "tests/runtime-wire-management-test.php",
     "tests/runtime-lifecycle-test.php",
     "tests/runtime-records-test.php",
-    "tests/holding-provenance-test.php"
+    "tests/holding-provenance-test.php",
+    "tests/conversion-test.php",
+    "tests/conversion-guards-test.php"
   ],
   "ui": [],
   "runner": [

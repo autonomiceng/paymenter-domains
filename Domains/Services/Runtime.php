@@ -13,7 +13,7 @@ final class Runtime
     private bool $booted=false;
     public static function register(): void
     {
-        $app=app();if($app->bound(self::class)){return;}
+        ConversionGate::requireComplete();$app=app();if($app->bound(self::class)){return;}
         $app->singleton(self::class);
         foreach([RegistrarRegistry::class,AccountBindings::class,PricingRules::class,PriceCatalogue::class,SellerPolicies::class,NativeCatalogue::class,
             CheckoutEligibility::class,CartAdmission::class,InvoiceBinding::class,HolderPricing::class,NativeDomainGuard::class,NativeServerGuard::class,
@@ -50,7 +50,7 @@ final class Runtime
     }
     public function boot(): void
     {
-        if($this->booted){return;}$this->booted=true;
+        ConversionGate::requireComplete();if($this->booted){return;}$this->booted=true;
         // Boot runs before the global middleware and on both console and HTTP lifecycles.
         TrimStrings::skipWhen(fn(Request $r)=>$r->isMethod('POST')&&preg_match('~\Adomains/[0-9]+/(?:transfer-code|manage/(?:dns|srv))\z~D',$r->path())===1);
         View::addNamespace('domains',dirname(__DIR__).'/resources/views');
