@@ -6,6 +6,8 @@ Before implementation, read `docs/paymenter-extension-conventions.md` and `docs/
 
 Runtime belongs in `Domains/`; provider protocols belong in `Domains/Registrars/<Provider>/`. Keep Paymenter core, authentication, bundled gateways/server integrations, themes, and native schema upstream. Use native services and invoices. Registrar spending requires verified funding, current ownership, and a resolved prior outcome. Preserve invoice history, complimentary renewal cycles, and uncertain operations. Coexistence with another registrar must assign exactly one renewal authority per domain.
 
+Paymenter must stay upgradable without extension releases. Follow [Keeping Paymenter upgradable](docs/paymenter-extension-conventions.md#keeping-paymenter-upgradable): no container rebinding, native route remaps, global hooks or version gates.
+
 Provider credentials, customer/contact data, transfer codes, and raw account responses belong in local private storage. Use synthetic public fixtures. Offline work is the default. Authenticated provider calls, account funding, staging/production access, deployments, migrations, and releases need explicit task authority. The API foundation task authorizes offline client implementation and synthetic tests only.
 
 Run `scripts/test.py` before committing. Use the configured shared Git identity and signing settings. Preserve upstream copyright and contributor attribution when adapting MIT code. Request implementation code review with GPT-6.1 Sol high; architecture changes need Opus 5.5 high at standard speed. Review findings and limits belong in a dated handoff; public release claims must match actual evidence.
