@@ -24,7 +24,7 @@ same($cancelCounts,[App\Models\Invoice::count(),Paymenter\Extensions\Servers\Dom
 
 expect($reminders->remind($d->id),'Renewal-off notice');
 $offMail=Mail::queued(DomainNotice::class)->last();
-same(false,$offMail->data['invoice'],'Cancelled renewal notice offers no payment instruction');
+same(null,$offMail->data['invoice'],'Cancelled renewal notice offers no payment instruction (absent invoice is null for retained templates)');
 same(false,$offMail->data['complimentary'],'Native cancellation is not complimentary renewal');
 expect(str_contains($offMail->render(),'Renewal is turned off'),'Actual cancelled-service mail says Renewal off');
 expect(str_contains(view('domains::mail-text',$offMail->content()->with)->render(),'Renewal is turned off'),'Cancelled-service text alternative says Renewal off');

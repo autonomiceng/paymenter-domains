@@ -74,6 +74,23 @@ class PackageTests(unittest.TestCase):
                     (source/'LICENSE').write_bytes(license_bytes)
                     with self.assertRaisesRegex(ValueError, 'license must match'):
                         builder.runtime_members(source)
+    def test_one_time_converter_is_excluded(self):
+        for source in [ROOT/'scripts/convert-enom-05.php', *(ROOT/'scripts/conversion').rglob('*')]:
+            self.assertFalse(source.is_relative_to(ROOT/'Domains'))
+        with tempfile.TemporaryDirectory(prefix='domains-converter-package-') as temp:
+            root = Path(temp); source = root/'Domains'; source.mkdir()
+            for name in ['Domains.php', 'LICENSE']:
+                (source/name).write_bytes((ROOT/'Domains'/name).read_bytes())
+            scripts = root/'scripts'; scripts.mkdir()
+            (scripts/'convert-enom-05.php').write_bytes((ROOT/'scripts/convert-enom-05.php').read_bytes())
+            (scripts/'conversion').mkdir(); (scripts/'conversion/source.json').write_bytes((ROOT/'scripts/conversion/source.json').read_bytes())
+            manifest = builder.build(source, root/'output')
+            with zipfile.ZipFile(root/'output'/manifest['archive']) as package:
+                self.assertEqual(set(package.namelist()), {'Domains/Domains.php', 'Domains/LICENSE'})
+                self.assertEqual(set(package.namelist()), set(manifest['members']))
+            (source/'scripts').mkdir(); (source/'scripts/convert-enom-05.php').write_bytes((scripts/'convert-enom-05.php').read_bytes())
+            with self.assertRaisesRegex(ValueError, 'outside the extension runtime layout'):
+                builder.runtime_members(source)
     def test_symlink_and_existing_artifact_refused(self):
         with tempfile.TemporaryDirectory(prefix='domains-package-links-') as temp:
             source = Path(temp)/'Domains'; source.mkdir()
