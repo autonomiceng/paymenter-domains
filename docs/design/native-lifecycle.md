@@ -43,6 +43,7 @@ their Service references. Owned renewal items retain their separate null-referen
 RenewServiceService queues CreateJob for Pending or UnsuspendJob for Suspended, then calculates
 expiry, sets Active and saves (`P/app/Services/Service/RenewServiceService.php:18–28`).
 The managed expiry observer must neutralize that calculated date before SQL.
+Renewal credit follows Paymenter's global 'Use credits automatically' setting, mirroring CronJob::payInvoiceWithCredits.
 
 Domains create/unsuspend only wake existing eligible work; suspend/terminate are no-ops
 (`D/Domains/Domains.php:28–32`). Never create a new obligation, release a hold, replay a seal or

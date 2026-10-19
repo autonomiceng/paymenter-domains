@@ -210,3 +210,6 @@ is diagnostic evidence, not InnoDB concurrency or installed-theme acceptance.
 ### Owned holding changes
 
 `staff-holding-test.php` exercises audited reprice/stop/resume, current permission and stale/reused/expired review refusals, native end-of-period resume and retained intent refusal. It renders real owned modals and proves issued debt stays unchanged and a later paid renewal executes/completes through a future-only stop. Synthetic event schedules and SQLite do not establish InnoDB concurrency acceptance.
+
+Renewal credit cases cover global on/off/unset, ignored retained server settings, exact/insufficient balances,
+native credit transactions and remaining-only settlement after partial, full or excess earlier payment.

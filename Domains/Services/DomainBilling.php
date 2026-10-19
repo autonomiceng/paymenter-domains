@@ -66,12 +66,13 @@ final class DomainBilling
                 $d->update(['observation' => [...($d->observation ?? []), 'renewal_price_alert' => ['operation_key' => $key,
                     'code' => $price['staff_alert'] ?? 'unknown_margin', 'at' => $this->clock->now()->format(DATE_ATOM)]]]);
             }
-            // Source parity: full native account credit only; never create an extension settlement row.
+            // Match native renewal credit policy; HoldingLocks already locked the invoice-currency credit row.
             $credit = $l['credit'];
-            if (self::enabled($settings->get('credits_auto_use', false)) && self::enabled(config('settings.credits_auto_use', false))
-                && $credit && PricingRule::minor($credit->amount) >= PricingRule::minor($amount)) {
-                $credit->amount = PricingRule::decimal(PricingRule::minor($credit->amount) - PricingRule::minor($amount)); $credit->save();
-                \App\Helpers\ExtensionHelper::addPayment($invoice, null, $amount, isCreditTransaction: true);
+            $remaining = PricingRule::minor($invoice->fresh()->remaining);
+            if (config('settings.credits_auto_use', true) && $remaining > 0
+                && $credit && PricingRule::minor($credit->amount) >= $remaining) {
+                $credit->amount = PricingRule::decimal(PricingRule::minor($credit->amount) - $remaining); $credit->save();
+                \App\Helpers\ExtensionHelper::addPayment($invoice->id, null, amount: PricingRule::decimal($remaining), isCreditTransaction: true);
             }
             return $invoice->fresh();
         });

@@ -766,7 +766,7 @@ Below-cost retail never holds dispatch; fresh cost over the fixed obligation cap
 and retains a staff alert. Typed transient admission refusals stay queued; paid unsendable debts retain net-funding
 refund candidates for26. Exact-live-grant prewire refusal records definitely_unsent; no refund occurs.
 Issued paid obligations survive renew preferences, tariff and calendar changes; service cancellation requires review.
-Credit auto-use requires server `credits_auto_use` (default off) and native `settings.credits_auto_use`; both must be true. Unknown costs refuse.
+Credit auto-use follows only native `settings.credits_auto_use` (default true); stale server settings are ignored. Unknown costs refuse.
 
 Unpaid pending invoices remain payable after an early execution check. Acknowledgements become pending.
 RenewalCompletion counts at most five covered original-attempt polls (25 reads/250 seconds each), requiring one exact USD order charge/time/term plus current
