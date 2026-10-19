@@ -553,3 +553,5 @@ Registrable-name tests use only synthetic PSL fixtures: ICANN longest matches, w
 PRIVATE holds, ASCII A-labels, U-label holds, invalid hostnames and revision changes.
 PSL rebaseline tests bind acceptance to pending bytes, fresh staff rights, typed short hash and reason;
 current validation remains mandatory and acceptance retains encrypted append-only audit evidence.
+
+Watch storage tests use installed native SQLite fixtures. They cover disabled revisioned mappings, fresh/default-deny permissions, customer/name and service uniqueness, exact target invariants, immutable owner identities, encrypted evidence/audit, source retirement with retained service identity, lifecycle retention and missing migration history. No discovery runtime, public lookup or browser evidence is implied.
