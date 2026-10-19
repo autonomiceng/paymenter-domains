@@ -607,3 +607,26 @@ covering history acceptance permits Enom history reads and unique completion wit
 Terminal-proof checks assert held/sealed/expired lifecycle reasons before exercising refusal
 and re-read persisted reservations afterwards. Their example placeholders use the operation
 fixture's sole published suffix, `.com` (`Support/commerce.php`).
+
+## Paymenter upgrade re-review
+
+`tests/data/paymenter-upgrade-hashes.json` records exact approved core/vendor bytes by
+Paymenter version and names each dependent Domains contract. The native suite runs
+`tests/paymenter-upgrade-tripwire-test.php`; optional checkout and version arguments
+inspect a copied candidate directly, before the pristine fixture guard accepts it.
+Changed/missing dependencies and added PHP writers under native ServerResource,
+ServiceResource and invoice services fail with a named dependent-file/re-review list.
+The two explicit `config/app.php` hashes cover upstream's development marker and the
+fixture's exact 1.5.9 release substitution; no other normalization is performed.
+
+For a candidate, retain the old version's manifest, inspect upstream diffs for every
+reported path and newly added writer, and document the decision for each affected
+contract. Re-run native behavior, install/retention, secrecy, mixed invoice/funding,
+renewal and raw-input tests against that candidate. Only then add a separately reviewed
+version entry and its immutable hashes: **never bulk-refresh hashes to turn CI green**.
+Matching hashes are containment evidence, not permission for global infrastructure
+replacement or proof of provider, production database, theme or deployment acceptance.
+
+These fingerprints and the checker are test-only; the extension never loads them.
+They fail suite/CI qualification against the installed Paymenter tree, and impose no
+runtime version check, enablement refusal, dispatch refusal or staff banner.

@@ -25,6 +25,7 @@
   ],
   "native": [
     "tests/native-fixture-test.php",
+    "tests/paymenter-upgrade-tripwire-test.php",
     "tests/schema-test.php",
     "tests/reservation-test.php",
     "tests/binding-test.php",
