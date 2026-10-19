@@ -562,3 +562,33 @@ recovery in `Support/late-contact-matrix.php` commits and explicitly retains the
 without adding queued jobs. Synthetic clocks and SQLite do not establish production lock latency.
 
 Operation clock regressions cover elapsed fall-back boundaries and native datetime round trips. Operation rate regressions cover unchanged preclaim states, the durable 60-second retry, one eventual send and staff release of disabled writes.
+
+
+## Opt-in MariaDB conversion rehearsal
+
+The required suites always omit `mariadb`. Run it explicitly through the local suite limiter:
+set `TMPDIR` to a private scratch root, `PAYMENTER_TEST_APP` to the pristine pinned 1.5.9
+checkout, `CONVERSION_ENOM_CHECKOUT` to a local checkout containing both accepted Git
+revisions, and `CONVERSION_MARIADB_PHP` to a supported host PHP with `pdo_mysql`; then run
+`python3 scripts/test.py --suite mariadb`. No installed application or provider is used.
+Docker or the existing `mariadb:11.4.5` image being absent produces a clear skip receipt;
+there is no image pull. A skip exits 77, records incomplete acceptance in both receipts,
+and is never MariaDB evidence. Docker context/environment variables are forwarded only for
+this explicit suite. Acceptance requires two completed pin runs and no skipped status. A pre-existing dedicated container name refuses rather than being
+reused or stopped. The harness owns only `dom-c41r-mariadb`, with no network, published ports
+or persistent volumes, and stops it after success or failure.
+
+Each exact source revision runs actual native and source migrations, purchased/pending,
+payable/history refusals and queue audit scenarios, actual app-profile schema/dry/apply
+commands with real quiet windows, financial/encrypted/reminder readback and database/files
+restore. Its private receipt records command elapsed times, full re-inspections, image ID,
+source revisions, SQL invariants and unchanged pristine dependency. This proves sequential
+conversion on the pinned MariaDB image; it grants no production cutover, concurrent-lock,
+provider or distributed scheduling acceptance. Linux user, mount, PID and network namespaces
+plus a native inspectable crontab command are required. The fixture mounts an empty private
+cron spool inside its own mount namespace and inventories its own isolated processes; no host
+cron spool is changed. This proves the disposable CLI only, not shared-host process/cron readiness. The converter runbook contains host prerequisites.
+
+After an ungraceful crash, use the private `container.json` Docker endpoint and inspect only
+`dom-c41r-mariadb`; stop its immutable ID only when its `domains-conversion-rehearsal` label
+matches that file, otherwise leave it alone. Never clean up by name alone.

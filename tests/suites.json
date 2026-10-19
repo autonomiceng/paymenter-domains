@@ -133,9 +133,13 @@
     "tests/php83-compatibility-test.php",
     "tests/test_runner.py",
     "tests/test_native.py",
-    "tests/test_conversion_inventory.py"
+    "tests/test_conversion_inventory.py",
+    "tests/test_conversion_mariadb_guards.py"
   ],
   "package": [
     "tests/test_package.py"
+  ],
+  "mariadb": [
+    "tests/test_conversion_mariadb.py"
   ]
 }

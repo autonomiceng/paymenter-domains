@@ -15,7 +15,7 @@ from bootstrap import prepare
 import native
 
 ROOT = Path(__file__).resolve().parents[1]
-CATEGORIES = ['lint', 'provider', 'contracts', 'native', 'ui', 'runner', 'package']
+CATEGORIES = ['lint', 'provider', 'contracts', 'native', 'ui', 'runner', 'package', 'mariadb']
 
 
 def hashes():
@@ -36,13 +36,25 @@ def manifest():
     return suites
 
 
-def execute(argv, *, cwd, env, timeout=60):
+def execute(argv, *, cwd, env, timeout=60, graceful=0):
     with subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           start_new_session=True) as process:
         try:
             stdout, stderr = process.communicate(timeout=timeout)
             return stdout, stderr, process.returncode, False
         except subprocess.TimeoutExpired:
+            if graceful:
+                # Let opt-in resource owners run their finally cleanup before escalation.
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    stdout, stderr = process.communicate(timeout=graceful)
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    return stdout, stderr, 124, True
+                except subprocess.TimeoutExpired:
+                    pass
             # Descendants share the group: stop all of them before fixture cleanup.
             os.killpg(process.pid, signal.SIGKILL)
             try:
@@ -56,7 +68,7 @@ def execute(argv, *, cwd, env, timeout=60):
 def run(commands, env, output, selected, suites, dependency=None):
     before, results = hashes(), []
     for index, (kind, argv) in enumerate(commands):
-        stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=env, timeout=120 if kind == 'native' else 60)
+        stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=env, timeout=3000 if kind == 'mariadb' else (120 if kind == 'native' else 60), graceful=60 if kind == 'mariadb' else 0)
         (output/f'{index:03d}.stdout.txt').write_bytes(stdout)
         (output/f'{index:03d}.stderr.txt').write_bytes(stderr)
         runtime_error = None
@@ -65,7 +77,7 @@ def run(commands, env, output, selected, suites, dependency=None):
         except (ValueError, OSError) as error:
             unchanged = False
             runtime_error = type(error).__name__
-        results.append({'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out, 'runtime_unchanged': unchanged, 'runtime_error': runtime_error})
+        results.append({'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out, 'runtime_unchanged': unchanged, 'runtime_error': runtime_error, 'skipped': kind == 'mariadb' and code == 77})
         if kind != 'lint' or code:
             print(stdout.decode(errors='replace').strip(), flush=True)
         if stderr:
@@ -83,11 +95,17 @@ def run(commands, env, output, selected, suites, dependency=None):
                'selected_suites': selected, 'omitted_suites': [s for s in CATEGORIES if s not in selected],
                'unimplemented_suites': [s for s, paths in suites.items() if not paths],
                'dependency': {'commit': native.COMMIT, 'lock_sha256': native.LOCK_SHA256, 'source_sha256': dependency[1]} if dependency else None,
-               'dependency_unchanged': dependency_unchanged, 'dependency_error': dependency_error, 'real_provider_calls': 0,
+               'skipped_suites': [r['kind'] for r in results if r['skipped']], 'dependency_unchanged': dependency_unchanged, 'dependency_error': dependency_error, 'real_provider_calls': 0,
                'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
     (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
     print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands), 'receipt': str(output/'receipt.json')}))
+    if len(results) == len(commands) and any(r['skipped'] for r in results) and all(r['exit'] in [0, 77] for r in results):
+        return 77
     return 0 if complete else 1
+
+
+def default_suites():
+    return [s for s in CATEGORIES if s != 'mariadb' and (s != 'native' or os.environ.get('PAYMENTER_TEST_APP'))]
 
 
 def main():
@@ -100,7 +118,7 @@ def main():
     runtime = fixture = None
     try:
         suites = manifest()
-        selected = list(dict.fromkeys(args.suite or [s for s in CATEGORIES if s != 'native' or os.environ.get('PAYMENTER_TEST_APP')]))
+        selected = list(dict.fromkeys(args.suite or default_suites()))
         for name in selected:
             if name != 'lint' and not suites[name]:
                 if args.suite:
@@ -114,9 +132,17 @@ def main():
             fixture = output/'paymenter'
             snapshot = native.prepare(source, fixture)
             dependency = (source, snapshot)
-        runtime, binary, extension = prepare(native='native' in selected)
+        binary = extension = None
+        if selected != ['mariadb']:
+            runtime, binary, extension = prepare(native='native' in selected)
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
-               'PHPRC': '', 'PHP_INI_SCAN_DIR': '', 'PAYMENTER_TEST_PHP': str(binary), 'PAYMENTER_TEST_CURL_EXTENSION': str(extension)}
+               'PHPRC': '', 'PHP_INI_SCAN_DIR': ''}
+        if binary:
+            env.update(PAYMENTER_TEST_PHP=str(binary), PAYMENTER_TEST_CURL_EXTENSION=str(extension))
+        if 'mariadb' in selected:
+            for name in ['TMPDIR', 'CONVERSION_MARIADB_PHP', 'PAYMENTER_TEST_APP', 'CONVERSION_ENOM_CHECKOUT', 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'HOME', 'XDG_RUNTIME_DIR']:
+                if name in os.environ:
+                    env[name] = os.environ[name]
         if fixture:
             env.update(PAYMENTER_TEST_FIXTURE=str(fixture), PAYMENTER_TEST_NATIVE_EXTENSIONS=str(extension.parent),
                        LD_LIBRARY_PATH=str(runtime/'usr/lib/x86_64-linux-gnu'))
