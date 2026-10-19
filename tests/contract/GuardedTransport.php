@@ -15,8 +15,10 @@ final class GuardedTransport implements DeadlineTransport
     public readonly string $domain;
     public array $receipt = ['request_count' => 0, 'requests' => [], 'mismatches' => [], 'checks' => []];
     public function __construct(#[\SensitiveParameter] string $key, private readonly bool $write, private readonly string $output,
-        private readonly ?\Closure $fake = null, private readonly ?\Closure $clock = null, private readonly int $limit = 60)
+        private readonly ?\Closure $fake = null, private readonly ?\Closure $clock = null, private readonly int $limit = 60,
+        private readonly bool $reconcile = false)
     {
+        if ($reconcile && ($write || $limit > 15)) { throw new \RuntimeException('OTE reconciliation scope refused.'); }
         if ($limit < 1 || $limit > 60) { throw new \RuntimeException('OTE budget refused.'); }
         if ($clock !== null && $fake === null) { throw new \RuntimeException('OTE live clock cannot be overridden.'); }
         if (strlen($key) < 8) { throw new \RuntimeException('OTE credential unavailable.'); }
@@ -55,6 +57,9 @@ final class GuardedTransport implements DeadlineTransport
     public function authorizeRenewal(bool $accepted): void { $this->renewalAuthorized = $accepted; }
     private function policy(string $command, #[\SensitiveParameter] array $p): void
     {
+        if ($this->reconcile && !in_array($command, ['listOrders', 'orderDetails', 'listDomains', 'getDomainInfo'], true)) {
+            throw new \RuntimeException('OTE reconciliation reads only.');
+        }
         $keys = match ($command) {
             'getAccountBalance', 'getPrices' => [], 'checkRegisterAvailability' => ['domains'],
             'listOrders' => ['date_from', 'date_to'], 'orderDetails' => ['order_number'], 'listDomains' => ['pageSize', 'page'],

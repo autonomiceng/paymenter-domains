@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Outcome, Regis
 $wire = null; $exit = 1;
 try {
     $mode = $argv[1] ?? '';
-    if ($argc !== 2 || !in_array($mode, ['--read', '--write', '--profile-read', '--self-test'], true)) { throw new RuntimeException('Explicit phase required.'); }
+    if ($argc !== 2 || !in_array($mode, ['--read', '--write', '--profile-read', '--reconcile', '--self-test'], true)) { throw new RuntimeException('Explicit phase required.'); }
     if ($mode === '--self-test') { require __DIR__.'/offline.php'; $exit = 0; }
     else {
         GuardedTransport::window((int) gmdate('G'));
@@ -21,7 +21,7 @@ try {
         if ($output === '' || realpath($output) !== $output || !is_dir($output) || (fileperms($output) & 077) !== 0) { throw new RuntimeException('Private receipt directory required.'); }
         $limit = (string) getenv('OTE_REQUEST_LIMIT');
         if (!preg_match('/^(?:[1-9]|[1-5][0-9]|60)$/D', $limit)) { throw new RuntimeException('Explicit request limit required.'); }
-        $wire = new GuardedTransport((string) getenv('NAMESILO_SANDBOX_API_KEY'), $mode === '--write', $output, limit: (int) $limit);
+        $wire = new GuardedTransport((string) getenv('NAMESILO_SANDBOX_API_KEY'), $mode === '--write', $output, limit: (int) $limit, reconcile: $mode === '--reconcile');
         $wire->receipt['phase'] = $mode === '--write' ? 'read+write' : ($mode === '--profile-read' ? 'read+profile' : 'read');
         $wire->receipt['reference'] = 'docs/design/api-contract.md; tests/fixtures/synthetic-success.json';
         $binding = new AccountBinding('namesilo', 1, Environment::Test, 'contract-local-fixture');
@@ -34,6 +34,12 @@ try {
             if ($result->outcome !== Outcome::Success) { $wire->mismatch($request->command, 'production_parser_not_success'); }
             $wire->save(); return $result;
         };
+        if ($mode === '--reconcile') {
+            require __DIR__.'/ReconciliationProbe.php';
+            $prior = json_decode(file_get_contents((string) getenv('OTE_ATTEMPT_RECEIPT')), true, 24, JSON_THROW_ON_ERROR);
+            $wire->receipt['phase'] = 'reconcile';
+            $exit = \OteContract\ReconciliationProbe::execute($wire, $read, $prior);
+        } else {
         $readBalance = $read(RegistrarRequest::balance()); $readPrices = $read(RegistrarRequest::prices());
         $availability = $read(RegistrarRequest::availability([$wire->domain, substr($wire->domain, 0, -4).'.net'], false));
         if ($mode === '--read') {
@@ -63,6 +69,7 @@ try {
         }
         if ($wire->receipt['checks']['purchase_unresolved'] ?? false) { throw new RuntimeException('OTE purchase needs investigation.'); }
         $wire->check('completed', true); $exit = 0;
+        }
     }
 } catch (Throwable) {
     if ($wire) { $wire->check('aborted', true); if ($wire->receipt['checks']['purchase_unresolved'] ?? false) { $exit = 3; } }

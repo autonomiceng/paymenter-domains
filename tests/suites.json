@@ -13,6 +13,7 @@
     "tests/transfer-status-test.php"
   ],
   "contracts": [
+    "tests/ote-reconciliation-test.php",
     "tests/namesilo-contact-readback-test.php",
     "tests/profile-diagnostics-test.php",
     "tests/driver-contract-test.php",

@@ -66,6 +66,8 @@ def main():
     flags.add_argument('--read', action='store_true')
     flags.add_argument('--write', action='store_true')
     flags.add_argument('--profile-read', action='store_true')
+    flags.add_argument('--reconcile', action='store_true')
+    parser.add_argument('--attempt-receipt', type=Path)
     flags.add_argument('--self-test', action='store_true')
     parser.add_argument('--max-requests', type=int, choices=range(1, 61), default=None, metavar='1..60')
     args = parser.parse_args()
@@ -73,6 +75,10 @@ def main():
         parser.error('--max-requests is required for live phases')
     if args.max_requests is None:
         args.max_requests = 60
+    if args.reconcile and (args.attempt_receipt is None or not 2 <= args.max_requests <= 15):
+        parser.error('--reconcile requires --attempt-receipt and --max-requests 2..15')
+    if not args.reconcile and args.attempt_receipt is not None:
+        parser.error('--attempt-receipt requires --reconcile')
     os.umask(0o077)
     if not args.self_test and 18 <= datetime.datetime.now(datetime.timezone.utc).hour < 21:
         parser.exit(2, 'OTE time window closed.\n')
@@ -88,6 +94,8 @@ def main():
         runtime, binary, ext = prepare(native=with_native)
         env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'PHP_INI_SCAN_DIR': '', 'PHPRC': '',
                'OTE_OUTPUT': str(output), 'OTE_REQUEST_LIMIT': str(args.max_requests)}
+        if args.reconcile:
+            env['OTE_ATTEMPT_RECEIPT'] = str(args.attempt_receipt.resolve(strict=True))
         if with_native:
             if not source:
                 raise ValueError('Pinned native dependency required for --write')
@@ -108,7 +116,7 @@ def main():
         if args.self_test:
             disabled += ',curl_exec,curl_multi_exec'
         argv += ['-d', 'disable_functions='+disabled, str(ROOT/'tests/contract/namesilo-ote.php'),
-                 '--self-test' if args.self_test else '--write' if args.write else '--profile-read' if args.profile_read else '--read']
+                 '--self-test' if args.self_test else '--write' if args.write else '--profile-read' if args.profile_read else '--reconcile' if args.reconcile else '--read']
         # Never relay child stdout/stderr: native errors can contain raw responses or credentials.
         result = subprocess.run(argv, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
         if args.self_test and with_native and result.returncode == 0:

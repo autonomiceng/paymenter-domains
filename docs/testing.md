@@ -396,3 +396,17 @@ probe name. This is not funding authority for the separate write, which keeps it
 preflight and sequence reserves. The offline native OTE fixture reproduces the observed `available.domain` row object, including numeric metadata.
 Nested-wrapper acceptance is limited to one requested registration name; malformed/missing evidence
 cannot grant purchase permission. Existing list and unavailable/invalid contracts remain covered.
+
+### Lost-attempt OTE reconciliation
+
+`./scripts/ote-contract.sh --reconcile --attempt-receipt /private/prior/receipt.json --max-requests 15`
+performs one bounded read-only investigation of a redacted unresolved registration receipt.
+It permits only listOrders/orderDetails/listDomains/getDomainInfo at the guarded transport;
+it sends listOrders, one inventory page and budget-bounded details for literal two-minute-window
+headers. No domain is selected from inventory. Provider timestamps have no accepted timezone;
+literal-window and internally consistent synthetic registration/amount counts are diagnostics only.
+The original random name and authorized amount were not retained in the old redacted receipt.
+Zero, one or multiple candidates therefore remain `ambiguous`, including empty inventory or history;
+exit 3 preserves the original unknown purchase. There is no write/resume path in this mode.
+The normal time, credential, host, receipt and no-retry guards apply; use an explicit cap of 2–15.
+`ote-reconciliation-test.php` runs only synthetic transports in the offline contracts suite.
