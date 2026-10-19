@@ -33,6 +33,7 @@ foreach ([0,1] as $i) {
     expect(str_contains($html,'Awaiting review')&&str_contains($html,'Unresolved'),'Correction readback never closes original');expect(!str_contains($html,'PRIVATE'),'No correction evidence leakage');
     $op->update(['state'=>'held','safe_code'=>'contact_details_required']);
     expect(str_contains($controller->setup($request($user),$d->id)->render(),'Use updated account details'),'Held contact recovery affordance');
+    expect(str_contains($controller->setup($request($user),$d->id)->render(),'Edit account details</a>'),'Account edit link differs from the recovery heading');
     Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(fn()=>$op->update(['safe_code'=>'registry_details_unsupported']));
     expect(!$owners->present($d->fresh())->transfer['open'],'Unsupported held input remains closed');expect(!isset($owners->present($d->fresh())->actions['setup']),'Unsupported hold offers no impossible setup');
     Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(fn()=>$op->update(['state'=>'pending','safe_code'=>'transfer_pending']));
