@@ -46,7 +46,7 @@ final class RuntimePorts
             elseif(in_array($op->state,['pending','uncertain','running'],true)){$ports['reconciliation']->run((int)$op->id);}
         }
     }
-    /** The sole named attachment point for the forthcoming initial managed-record producer. */
+    /** The sole named attachment point for initial managed-record work; registration itself grants no account authority. */
     private ?\Closure $initialManagedRecordObservations=null;
     public function registerInitialManagedRecordObservations(\Closure $producer): void
     {if($this->initialManagedRecordObservations){throw new \LogicException('Initial managed-record producer already registered.');}$this->initialManagedRecordObservations=$producer;}

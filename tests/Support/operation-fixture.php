@@ -2,7 +2,7 @@
 // Synthetic adaptations of Enom 444f31c request-gates/cart-funding/provider-disposition scenarios.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require dirname(__DIR__).'/native-app.php';
+require_once dirname(__DIR__).'/native-app.php';
 require __DIR__.'/commerce.php';
 require __DIR__.'/native-commerce.php';
 use App\Models\{Invoice, InvoiceTransaction};
@@ -14,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainOperations, InvoiceBinding, OperationClaims};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
-extract(commerceFixture(true)); $clock = new FakeClock($now);
+extract(commerceFixture(true,$fixtureActivation??null)); $clock = new FakeClock($now);
 $transfers = new \Paymenter\Extensions\Servers\Domains\Services\TransferInputs($clock, new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock));
 $transferCheck = new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck(new \Paymenter\Extensions\Servers\Domains\Services\Rdap(static fn () => throw new RuntimeException('Synthetic offline RDAP')));
 App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);

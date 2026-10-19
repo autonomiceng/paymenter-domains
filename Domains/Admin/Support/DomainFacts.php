@@ -41,6 +41,19 @@ final class DomainFacts
         $result['Data retention']='Encrypted contact and operation evidence is retained. Erasure requires a separately reviewed policy.';
         return $result;
     }
+    public static function recordHold(Domain $d): ?string
+    {
+        Staff::requireView();
+        try {
+            if (!\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::stopped($d)) { return null; }
+            if (!\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($d)) { return 'Scheduled reads need staff review before they can resume.'; }
+            return match($d->observation['record_hold']['reason']??null) {
+                'history_limit'=>'Record history has reached its safety limit.',
+                'ownership_drift'=>'The registrar account no longer lists this domain.',
+                'records_unavailable'=>'Current records could not be confirmed.',
+                default=>'The record check needs review.' };
+        } catch (\Throwable) { return 'Record check details are unavailable; review encryption access.'; }
+    }
     private static function work(object $job): string
     {
         $tries=(int)$job->tries; $resumes=(int)$job->resumes;

@@ -19,9 +19,10 @@ same(1,count(Event::getListeners('navigation')),'One public navigation authority
 same(1,count(Event::getListeners('navigation.dashboard')),'One dashboard navigation authority');
 $events=app(Illuminate\Console\Scheduling\Schedule::class)->events();
 same(1,count(array_filter($events,fn($e)=>$e->description==='domains-runtime')),'One scheduler authority');
-$ports=app(RuntimePorts::class);$ports->initialManagedRecordObservations();$calls=0;
+$ports=new RuntimePorts;$ports->initialManagedRecordObservations();$calls=0;
 $ports->registerInitialManagedRecordObservations(function()use(&$calls){$calls++;});$ports->initialManagedRecordObservations();same(1,$calls,'Initial managed-record seam runs only registered producer');
 commerceReject(fn()=>$ports->registerInitialManagedRecordObservations(fn()=>null));
+commerceReject(fn()=>app(RuntimePorts::class)->registerInitialManagedRecordObservations(fn()=>null));
 // Library fixture supplies verified synthetic identities without any transport or account fallback.
 $f=commerceFixture(true,static fn()=>null);extract($f);app()->instance(AccountBindings::class,$bindings);app()->instance(NativeCatalogue::class,$native);
 $t=$tlds[0];app(NativeServerGuard::class)->pause($t->server_id);
