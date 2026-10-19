@@ -29,7 +29,7 @@ final class NativeIdentity
         Service::updating(static function(Service $s):void {
             // Numeric model updates skip saving and retain their original extra SQL values.
             if((self::columns($s->getAttributes())['expires_at']??null)!==null&&self::routed($s)){self::refuse();}
-            if(self::dirty($s,self::SERVICE)&&!NativeDomainGuard::identityProjection($s)){self::service($s);}
+            if((self::dirty($s,self::SERVICE)||self::dirty($s,['price'],persisted:false))&&!NativeDomainGuard::identityProjection($s)){self::service($s);}
         });
         Service::deleting(self::service(...));
         ServiceConfig::saving(self::config(...));ServiceConfig::updating(self::config(...));ServiceConfig::deleting(self::config(...));
@@ -75,7 +75,7 @@ final class NativeIdentity
         return array_map(self::columns(...),$rows);
     }
     /** Compare persisted/proposed values too: numeric SQL extras can be clean in a projected model. */
-    public static function dirty(Model $m,array $columns,bool $aliasesOnly=false): bool
+    public static function dirty(Model $m,array $columns,bool $aliasesOnly=false,bool $persisted=true): bool
     {
         if(!$aliasesOnly){
             $probe=$m->newInstance([],true);$probe->setRawAttributes(self::bindings($m->getRawOriginal()),true);
@@ -84,7 +84,7 @@ final class NativeIdentity
         foreach(array_keys($aliasesOnly?$m->getAttributes():$probe->getDirty()) as $key){
             $column=self::column($key);if(in_array($column,$columns,true)&&(!$aliasesOnly||$key!==$column)){return true;}
         }
-        if(!$aliasesOnly&&$m->exists){
+        if(!$aliasesOnly&&$persisted&&$m->exists){
             $rows=self::rows($m);$probe=$m->newInstance([],true);
             $probe->setRawAttributes(self::bindings($rows[0]),true);$probe->setRawAttributes(self::bindings($rows[array_key_last($rows)]));
             return $probe->isDirty($columns);

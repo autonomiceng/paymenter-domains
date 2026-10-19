@@ -67,7 +67,7 @@ final readonly class Refunds
             $op->update(['funding' => [...($op->funding ?? []), 'refund' => $refund]]);
             if (in_array($op->action, ['register', 'transfer'], true)) {
                 $l['domain']->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);
-                $l['service']->update(['status' => 'cancelled', 'expires_at' => null]);
+                NativeDomainGuard::terminal($l, $op);
             }
             $review?->record($l);
             return ['amount' => $payment['amount'], 'currency' => 'USD'];

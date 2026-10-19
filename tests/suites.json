@@ -136,7 +136,8 @@
     "tests/native-identity-test.php",
     "tests/native-identity-readiness-test.php",
     "tests/native-identity-orphans-test.php",
-    "tests/native-identity-cascade-test.php"
+    "tests/native-identity-cascade-test.php",
+    "tests/native-projection-test.php"
   ],
   "ui": [],
   "runner": [

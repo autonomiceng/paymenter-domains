@@ -752,3 +752,27 @@ The same absence race can null a newly assigned Service coupon during concurrent
 it changes coupon accounting but does not reassign ownership or create an orphan. It is a retained
 limit for later review. Parent/reference scans use bounded model batches but still query route
 identity per Service; large hosting-product identity edits may remain slow.
+
+
+### Exact native Service projections
+
+`native-projection-test.php` checks admitted checkout, funded initial completion, owned annual
+pricing and definitely-unsent refund projections. Synchronous private grants bind the exact
+Service instance, row ID, original attributes, changed fields and new values. Saving consumes
+each grant once; updating rechecks it and finally closes it on success or failure. A savepoint
+and exact post-save check contain later updating callbacks, even if callers catch the refusal. Clones,
+fresh models, changed values/fields/preimages and nested saves cannot inherit a grant. Order
+identity remains immutable; these writers never project an Order. Native price edits require
+owned pricing even when the proposed amount equals current retail.
+
+The real native paid renewal handler still writes Active without a capability and its expiry
+is neutralized to null. Paused owned/native schedules preserve each other's unrelated writes.
+These are synthetic SQLite schedules and requested-lock checks, not paired MariaDB concurrency
+acceptance. A0's adoption-off deletion/checkout gap and privileged-maintenance exclusions remain.
+
+Owned completion/terminal proof checks gate the owned decision; native billing status remains
+independently writable. Price protection checks model dirtiness so a clean native instance loaded
+before owned repricing can still activate without overwriting retail. A same-second checkout
+clock rollover cannot change the preplanned timestamp. Caught refusals restore the locked preimage.
+For Option E these rules supersede the legacy fresh-retail native-price acceptance described in
+`docs/design/storage.md`: every dirty native price edit requires an owned projection.
