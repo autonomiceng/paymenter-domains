@@ -485,3 +485,9 @@ outside it. Passing it does not establish installed Paymenter or provider accept
 Storefront catalogue parity exercises real public endings/checks with separate malformed native
 price/setup-fee, altered-marker and duplicate marker-set products. Healthy and registration-only
 endings remain usable; stale, below-cost and unknown-cost acquisition evidence never leaks.
+
+Cold public catalogue coverage compares one and ten terms across distinct selected price tables,
+checks every amount against strict offer resolution, and bounds ending/check query growth.
+Fresh-call invalidation covers native stock/plans, TLD and seller flags/revisions, rules, account
+identity, acceptance revisions and current-price proof. Query logging forbids display writes;
+only explicit synthetic availability checks read the provider port.

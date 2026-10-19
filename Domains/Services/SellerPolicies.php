@@ -74,6 +74,19 @@ final class SellerPolicies
             $policy->revision, $action, $term, 'USD', $price->id, $price->revision);
     }
 
+    /** Fresh display inputs only; not an admitted selection or a cached checkout authority. */
+    public function displayCatalogue(string $ending): array
+    {
+        $policy = SalesPolicy::where('tld', $ending)->firstOrFail();
+        if (!$policy->server_id || (!$policy->register_enabled && !$policy->transfer_enabled)) { throw new \DomainException('This acquisition is unavailable.'); }
+        $account = $this->account($policy->server_id, false);
+        $catalogue = $this->tld($account, $ending, false);
+        if ($policy->account_fingerprint !== $account->account_fingerprint || $policy->registrar_key !== $account->registrar_key) {
+            throw new \DomainException('Seller selection changed; refresh checkout.');
+        }
+        return [$policy, $account, $catalogue];
+    }
+
     /** Join native checkout AFTER user/coupon/product locks. No nested transaction or per-line commit.
      * Caller binds ALL invoice/service/reservation/operation writes before its outer commit.
      * @param non-empty-list<SaleSelection> $lines @return list<\Paymenter\Extensions\Servers\Domains\Data\PriceSnapshot> input order

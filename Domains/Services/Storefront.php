@@ -21,17 +21,16 @@ final class Storefront
 
     private function catalogueRows(): array
     {
-        $rows = [];
+        $rows = []; $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock);
         foreach (SalesPolicy::orderBy('tld')->pluck('tld') as $ending) {
-            $register = $transfer = null; $terms = [];
+            $register = $transfer = $chosen = null; $terms = [];
             foreach (range(1, 10) as $term) {
-                try { $offer = $this->offer($ending, 'register', $term); $terms[] = $term; if ($term === 1) { $register = $offer['price']; } }
+                try { $offer = $read->offer($ending, 'register', $term); $chosen ??= $offer; $terms[] = $term; if ($term === 1) { $register = $offer['price']; } }
                 catch (\Throwable) { /* A held term does not imply an unavailable longer term. */ }
             }
-            try { $transfer = $this->offer($ending, 'transfer', 1)['price']; } catch (\Throwable) {}
+            try { $offer = $read->offer($ending, 'transfer', 1); $chosen ??= $offer; $transfer = $offer['price']; } catch (\Throwable) {}
             if (!$terms && !$transfer) { continue; }
-            $action = $terms ? 'register' : 'transfer'; $term = $terms[0] ?? 1;
-            try { $renew = $this->offer($ending, $action, $term)['renew']; } catch (\Throwable) { continue; }
+            $renew = $chosen['renew'];
             $rows[] = ['tld' => $ending, 'price' => $register, 'register' => $register, 'transfer' => $transfer,
                 'renew' => $renew, 'terms' => $terms];
         }
@@ -53,12 +52,12 @@ final class Storefront
         $ending = CanonicalName::parse($name, SalesPolicy::pluck('tld')->all())['tld'];
         $base = ['domain' => $name, 'sld' => substr($name, 0, -strlen($ending)-1), 'tld' => $ending, 'status' => 'taken'];
         if (Domain::where('reservation_name', $name)->exists()) { return $base; }
-        $offers = [];
+        $offers = []; $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock);
         foreach (range(1, 10) as $term) {
-            try { $offers[$term] = $this->offer($ending, 'register', $term); } catch (\Throwable) {}
+            try { $offers[$term] = $read->offer($ending, 'register', $term); } catch (\Throwable) {}
         }
         $transfer = null;
-        try { $transfer = $this->offer($ending, 'transfer', 1); } catch (\Throwable) {}
+        try { $transfer = $read->offer($ending, 'transfer', 1); } catch (\Throwable) {}
         if (!$offers && !$transfer) { return [...$base, 'status' => 'held']; }
         $selection = ($offers ? reset($offers) : $transfer)['selection'];
         $driver = $this->bindings->reader($selection->serverId);
