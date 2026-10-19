@@ -2,7 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Real funded checkout and audited readmission.
 declare(strict_types=1);
 use App\Models\{Credit,InvoiceTransaction,Service};
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{DB,Queue};
+use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery,TransferInputs};
 require_once __DIR__.'/staff-panel.php';
@@ -49,6 +50,9 @@ foreach([$user,$staff]as$actor){
     $setTime($now->modify('+30 days +2 seconds'));$before=$row->fresh();
     $nativeBefore=[Service::findOrFail($row->service_id)->getRawOriginal(),$row->domain->fresh()->getRawOriginal(),
         DB::table('invoice_transactions')->orderBy('id')->get()->toJson(),App\Models\Invoice::count(),Operation::count(),Credit::all()->toJson()];
+    $jobsBefore=DB::table('jobs')->orderBy('id')->get()->toJson();
+    $realQueue=Queue::getFacadeRoot();Queue::fake([RunOperation::class]);
+    same(0,DB::transactionLevel(),'Late recovery fixture commits its own transaction');
     $accept=in_array($case,['accept','explicit-unsent'],true);
     if($accept){
         $result=ContactRecovery::replace($actor,$row->id,'Reviewed late owner contact correction');
@@ -69,6 +73,8 @@ foreach([$user,$staff]as$actor){
         commerceReject(fn()=>ContactRecovery::replace($actor,$row->id,'Refused unsafe late contact correction'));
         same($before->getRawOriginal(),$row->fresh()->getRawOriginal(),'Refused matrix case is read-only: '.$case);
     }
+    Queue::assertNothingPushed();Queue::swap($realQueue);
+    same($jobsBefore,DB::table('jobs')->orderBy('id')->get()->toJson(),'Committed late fix never enqueues dispatch: '.$case);
     same($nativeBefore,[Service::findOrFail($row->service_id)->getRawOriginal(),$row->domain->fresh()->getRawOriginal(),
         DB::table('invoice_transactions')->orderBy('id')->get()->toJson(),App\Models\Invoice::count(),Operation::count(),Credit::all()->toJson()],'No native/financial/dispatch side effects: '.$case);
 }}
@@ -78,7 +84,9 @@ $early=$new('late-prepayment-code.com',false);$inputs->submitCode($post($user,'S
 App\Helpers\ExtensionHelper::addPayment($early->invoice_id,null,$early->amount);$inputs->paymentAccepted($early->id);ContactRecovery::hold($early->id);
 $user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);$user->unsetRelation('properties');
 $setTime($now->modify('+30 days'));
+$realQueue=Queue::getFacadeRoot();Queue::fake([RunOperation::class]);
 same('transfer_setup_review_required',ContactRecovery::replace($user,$early->id,'Reviewed code saved before payment')->safe_code,'On-time prepayment code allows only late contact review');
+Queue::assertNothingPushed();Queue::swap($realQueue);
 $setTime($now);
 commerceReject(fn()=>$row->fresh()->update(['policy'=>[...$row->fresh()->policy,'code_saved_at'=>$now->modify('+1 second')->format(DATE_ATOM)]]));
 $stampBefore=$row->fresh()->getRawOriginal();$without=$row->fresh()->policy;unset($without['code_saved_at']);

@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 foreach ([false, true] as $seal) {
     $op = $new($seal ? 'stale-sealed.com' : 'stale-unsealed.com'); [$claimed, $domain, $binding] = $claims->claim($op->id);
     $assertNoSend($op, 'running');
-    if ($seal) { $ready = $preflight->inspect($claimed, $domain, new RequestContext($binding, Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background, $now->modify('+300 seconds'), new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(10), $clock)); $claims->seal($claimed, $ready); }
+    if ($seal) { $ready = $preflight->inspect($claimed, $domain, new RequestContext($binding, Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background, $now->modify('+300 seconds'), new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(10), $clock)); $claims->seal($claimed, $ready, $clock->now()); }
     $clock->instant = $clock->instant->modify('+361 seconds'); $result = $assertNoSend($op, 'uncertain'); same('stale_claim', $result->safe_code, 'Expired worker requires reconciliation');
     $clock->instant = $clock->instant->modify('-361 seconds');
 }
@@ -55,13 +55,55 @@ Operation::create(['domain_id' => $op->domain_id, 'service_id' => $op->service_i
     'registrar_key' => $op->registrar_key, 'account_fingerprint' => $op->account_fingerprint, 'authority_generation' => 1,
     'operation_key' => 'prior-uncertain', 'action' => 'renew', 'term' => 1, 'currency' => 'USD', 'state' => 'uncertain']);
 $assertNoSend($op);
-// Bounded slow reads fit; exactly one full send timeout remains at the accepted boundary.
-foreach ([175, 275] as $elapsed) {
+// Leave a complete request plus 30 seconds for evidence persistence before the worker alarm.
+foreach ([175, 244, 245] as $elapsed) {
     $op = $new('slow-'.$elapsed.'.com'); $before = $writer->calls;
     $preflight->during = static fn () => $clock->instant = $clock->instant->modify('+'.$elapsed.' seconds');
     same('uncertain', $engine->execute($op->id)->state, 'Bounded slow preflight retains dispatch lease');
-    same($before + 1, $writer->calls, 'Full request boundary permits one send');
+    same($before + 1, $writer->calls, 'Full request boundary permits one send: '.$elapsed);
+    same($now->modify('+'.($elapsed + 25).' seconds')->format(DATE_ATOM), $writer->context->deadline->format(DATE_ATOM), 'Dispatch deadline leaves the finish margin');
     $clock->instant = $clock->instant->modify('-'.$elapsed.' seconds'); $preflight->during = null;
+}
+// Refusing the last request leaves an unsealed, recoverable operation with its funding intact.
+foreach ([246, 275] as $elapsed) {
+    $op = $new('finish-margin-'.$elapsed.'.com'); $money = $nativeMoney();
+    $preflight->during = static fn () => $clock->instant = $clock->instant->modify('+'.$elapsed.' seconds');
+    $result = $assertNoSend($op);
+    same('seal_authority_invalid', $result->safe_code, 'Finish headroom refusal uses the safe seal hold');
+    same('absent', $result->attempt['seal'], 'Deadline refusal cannot seal');
+    same('definitely_unsent', $result->attempt['send_state'], 'Deadline refusal is recoverable without send evidence');
+    expect(!array_key_exists('execution', $result->attempt), 'Unsent deadline refusal records no execution');
+    same($money, $nativeMoney(), 'Deadline refusal preserves native funding');
+    $clock->instant = $clock->instant->modify('-'.$elapsed.' seconds'); $preflight->during = null;
+}
+// A second physical preflight read after entry +270 must be stopped by the shared context.
+$op = $new('preflight-deadline.com'); $entry = $clock->now(); $before = $writer->calls; $readStopped = false;
+$preflight->during = static function ($op, $domain, $context) use ($clock, $entry, &$readStopped): void {
+    $clock->instant = $entry->modify('+271 seconds');
+    try { $context->claimRead($context->binding); }
+    catch (RuntimeException) { $readStopped = true; throw new RuntimeException('Synthetic preflight deadline'); }
+};
+$engine->execute($op->id);
+same(true, $readStopped, 'Preflight requests share the worker finish cap');
+same($before, $writer->calls, 'Exhausted preflight cannot dispatch');
+same('absent', $op->fresh()->attempt['seal'], 'Exhausted preflight stays unsealed');
+$clock->instant = $entry; $preflight->during = null;
+// Simulate waiting on the claim's first locking read, before started_at is sampled.
+$waiting = false; $wait = 0;
+DB::listen(static function ($query) use (&$waiting, $clock, &$wait): void {
+        if ($waiting && str_contains($query->sql, '"users"')) {
+            $waiting = false; $clock->instant = $clock->instant->modify('+'.$wait.' seconds');
+        }
+});
+foreach ([44, 46] as $wait) {
+    $op = $new('claim-wait-'.$wait.'.com'); $entry = $clock->now(); $before = $writer->calls; $waiting = true;
+    $preflight->during = static fn () => $clock->instant = $clock->instant->modify('+200 seconds');
+    $result = $engine->execute($op->id); $waiting = false;
+    same($entry->modify('+'.$wait.' seconds')->format(DATE_ATOM), $result->started_at->format(DATE_ATOM), 'Claim wait precedes durable start');
+    same($before + ($wait === 44 ? 1 : 0), $writer->calls, 'Claim lock wait consumes the worker window');
+    same($wait === 44 ? 'uncertain' : 'held', $result->state, 'Claim wait keeps the ordinary safe outcome');
+    if ($wait === 46) { same('absent', $result->attempt['seal'], 'Claim wait refuses before seal'); }
+    $clock->instant = $entry; $preflight->during = null;
 }
 // Late same-worker facts survive expiry or another worker's stale classification without reopening authority.
 foreach (['expired', 'swept', 'replaced'] as $late) {

@@ -56,14 +56,24 @@ $preflight = new class($clock) implements OperationPreflight {
     public function inspect(Operation $op, Domain $domain, RequestContext $context): DispatchReadiness {
         same(0, DB::transactionLevel(), 'Preflight network never under database locks'); $this->calls++;
         $context->claimRead($context->binding);
-        if ($this->during) { ($this->during)($op, $domain); }
+        if ($this->during) { ($this->during)($op, $domain, $context); }
         if ($this->fail) { throw new RuntimeException('Synthetic preflight exception'); }
         return new DispatchReadiness($context->binding, OperationClaims::query($op, $domain),
             new Capabilities($context->binding, [$op->action => new Capability($this->supported ? Support::Supported : Support::Unsupported, $this->supported ? [1, 3] : [])]),
             new Money($this->cost, 'USD'), true, $this->premium, $this->clock->now()->modify('-'.$this->ageSeconds.' seconds'), $this->clock->now()->modify('+'.$this->freshSeconds.' seconds'), OperationClaims::payloadDigest($op));
     }
 };
-$writer = new class implements AdmittedRegistrarDriver {
+$writer = new class($clock) implements AdmittedRegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\WriteGate {
+    public ?DateTimeImmutable $blockedUntil = null; public bool $disabled = false; public int $reservations = 0;
+    public function __construct(private $clock) {}
+    public function requireEnabled(\Paymenter\Extensions\Servers\Domains\Data\Action $action): void {
+        if ($this->disabled) { throw new \Paymenter\Extensions\Servers\Domains\Services\WriteHeld('write_disabled'); }
+    }
+    public function reserve(): void {
+        $this->reservations++;
+        if ($this->blockedUntil && $this->clock->now() < $this->blockedUntil) { throw new \Paymenter\Extensions\Servers\Domains\Services\WriteHeld('write_rate_limited'); }
+    }
+    public function requireAtSeal(Operation $op, Domain $domain, DispatchReadiness $ready): void {}
     public ?DomainOperations $engine = null; public int $calls = 0; public bool $fail = false; public $during = null;
     public ?AdmittedOperation $last = null; public ?RequestContext $context = null;
     public bool $consume = true; public bool $wrongBinding = false; public Disposition $disposition = Disposition::Unknown;

@@ -54,7 +54,7 @@ final class OperationClaims
                 return null;
             }
             $now = $this->clock->now(); $digest = self::digest($op, $domain);$retry=self::capacityRetry($op);
-            if($retry&&(!$op->started_at||$now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')>$op->started_at->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'))){$op->update(['state'=>'held','safe_code'=>'write_rate_limited']);return null;}
+            if($retry&&(!$op->started_at||$now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')>$op->started_at->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'))){$op->update(['state'=>'held','safe_code'=>'write_rate_limited']);return null;}
             if($retry&&($op->request_fingerprint!==$digest||($op->funding['claim']??null)!==$paid)){$op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null;}
             $op->update(['state' => 'running', 'safe_code' => null, 'started_at' => $retry?$op->started_at:$now,
                 'lease_expires_at' => $now->modify('+'.ExecuteOperation::LEASE_SECONDS.' seconds'), 'request_fingerprint' => $digest,
@@ -64,9 +64,9 @@ final class OperationClaims
         });
     }
 
-    public function seal(Operation $claimed, DispatchReadiness $ready, ?SealPreflight $preflight = null, ?WriteGate $writer = null, ?RequestContext $wire = null): ?Operation
+    public function seal(Operation $claimed, DispatchReadiness $ready, \DateTimeImmutable $entry, ?SealPreflight $preflight = null, ?WriteGate $writer = null, ?RequestContext $wire = null): ?Operation
     {
-        return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready, $preflight, $writer, $wire): ?Operation {
+        return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready, $entry, $preflight, $writer, $wire): ?Operation {
             if (!self::sameClaim($op, $claimed)) { return null; }
             if ($this->expire($op) || !self::unsealed($op)) { return null; }
             try {
@@ -75,9 +75,10 @@ final class OperationClaims
                 ContactSetup::requireReady($op);
                 $preflight?->requireAtSeal($op, $domain, $ready);
                 $writer?->requireAtSeal($op, $domain, $ready);
-                $wire?->requireReservedCapacity();$now = $this->clock->now();
+                $wire?->requireReservedCapacity();$now = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
                 $ready->requireCurrent($binding, self::query($op, $domain), self::payloadDigest($op), $now);
-                $lastSend = $op->started_at->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
+                $lastSend = min($op->started_at->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'),
+                    $entry->setTimezone(new \DateTimeZone('UTC'))->modify('+'.(ExecuteOperation::EXECUTION_SECONDS - ExecuteOperation::FINISH_SECONDS).' seconds'));
                 if ($ready->observedAt < $op->started_at || $op->request_fingerprint !== self::digest($op, $domain)
                     || !$op->lease_expires_at || $op->lease_expires_at < $now->modify('+'.(ExecuteOperation::REQUEST_SECONDS + ExecuteOperation::CLEANUP_SECONDS).' seconds')
                     || $lastSend < $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')
