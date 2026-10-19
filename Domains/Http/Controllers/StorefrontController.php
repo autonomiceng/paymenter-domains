@@ -60,7 +60,7 @@ final class StorefrontController extends Controller
         if (!is_string($input) || strlen($input) > 253) { return response()->json(['status' => 'invalid', 'message' => 'Enter a valid domain name.'], 422); }
         try { $result = $this->storefront->check($input); }
         catch (\InvalidArgumentException) { return response()->json(['status' => 'invalid', 'message' => 'Enter a valid domain name.'], 422); }
-        catch (\Throwable) { return response()->json(['status' => 'error', 'message' => 'Couldn’t check this name.'], 503); }
+        catch (\Throwable $e) { \Illuminate\Support\Facades\Log::warning('Domains search failed.',['exception_class'=>$e::class]); return response()->json(['status' => 'error', 'message' => 'Couldn’t check this name.'], 503); }
         if (in_array($result['status'], ['available', 'transferable'], true)) {
             $result['key'] = FormKeys::issue($request, 'order:'.$result['domain']);
         }
@@ -83,7 +83,10 @@ final class StorefrontController extends Controller
             $ending = CanonicalName::parse($name, SalesPolicy::pluck('tld')->all())['tld'];
             $offer = $this->storefront->offer($ending, $action, (int) $term);
             \App\Classes\Cart::add($offer['product'], $offer['plan'], [], ['domain' => $name]);
-        } catch (\Throwable) {
+        } catch (\App\Exceptions\DisplayException $e) {
+            return redirect()->route('domains.domains.search',['name'=>$input])->with('domains_notice',$e->getMessage());
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Domains cart handoff failed.',['exception_class'=>$e::class]);
             return redirect()->route('domains.domains.search', ['name' => $input])->with('domains_notice', 'We couldn’t add that name to your cart. Check the latest results below and try again.');
         }
         return redirect()->route('cart');

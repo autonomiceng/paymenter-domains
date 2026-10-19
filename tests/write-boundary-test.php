@@ -55,6 +55,6 @@ foreach ($preseal as $key => $op) {
 }
 $preflight->during = null;
 $bridge = $build($enomBinding); Cache::put('domains-write-slot:'.$enomBinding->fingerprint, true, 60);
-$result = $engine->execute($rate->id); same('held', $result->state, 'Rate refusal precedes claim'); same('write_rate_limited', $result->safe_code, 'Neutral rate hold');
+$result = $engine->execute($rate->id); same($rate->state, $result->state, 'Rate refusal preserves retryable unclaimed state'); same(null, $result->safe_code, 'Write contention is not a permanent hold');
 same(null, $result->attempt, 'Rate refusal burns no claim or seal'); same([], $transport->calls, 'Rate budget has zero wire calls');
 echo "Sealed bridge current authority checks passed\n"; $nativeSuccessful = true;

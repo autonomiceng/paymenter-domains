@@ -1,0 +1,60 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Services;
+use Illuminate\Foundation\Http\Middleware\TrimStrings;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\{Event,Gate,Schedule,View};
+use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,ReadLimiter};
+use Paymenter\Extensions\Servers\Domains\Data\SystemClock;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+final class Runtime
+{
+    private bool $booted=false;
+    public static function register(): void
+    {
+        $app=app();if($app->bound(self::class)){return;}
+        $app->singleton(self::class);
+        foreach([RegistrarRegistry::class,AccountBindings::class,PricingRules::class,PriceCatalogue::class,SellerPolicies::class,NativeCatalogue::class,
+            CheckoutEligibility::class,CartAdmission::class,InvoiceBinding::class,HolderPricing::class,NativeDomainGuard::class,NativeServerGuard::class,
+            Storefront::class,OwnedDomains::class,Installation::class,AccountReadBudget::class,DomainObservation::class,ObservationWork::class,
+            CatalogueSync::class,Reminders::class,Refunds::class,RuntimeWork::class,RuntimePorts::class,NativePresenter::class] as $class){
+            if(!$app->bound($class)){$app->singleton($class);}
+        }
+        if(!$app->bound(Clock::class)){$app->singleton(Clock::class,SystemClock::class);}
+        if(!$app->bound(ReadLimiter::class)){$app->singleton(ReadLimiter::class,fn($a)=>new AccountReadBudget($a->make(Clock::class),48));}
+        if(!$app->bound(OwnerPorts::class)){$app->singleton(OwnerPorts::class,fn($a)=>new OwnerPorts(fn($binding)=>$a->make(RuntimePorts::class)->management($binding)));}
+        // No positive provider identity verifier or accepted write sender is inferred at install.
+        // Trusted deployment composition may register reviewed factories before boot.
+        app(NativeServerGuard::class)->boot();
+        $app->singleton(DomainManagement::class,fn($a)=>new DomainManagement($a->make(AccountBindings::class),$a->make(Clock::class)));
+    }
+    public static function limiter(): ?ReadLimiter {return app()->bound(self::class)?app(ReadLimiter::class):null;}
+    public static function management(\Paymenter\Extensions\Servers\Domains\Models\Domain $d,?DomainManagement $fallback): ?DomainManagement
+    {if(!app()->bound(self::class)){return $fallback;}return app(RuntimePorts::class)->managementEngine(CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->firstOrFail()));}
+    public static function secureNativeRoutes(): void
+    {
+        $map=[\App\Admin\Resources\ServerResource\Pages\CreateServer::class=>\Paymenter\Extensions\Servers\Domains\Admin\SecureCreateServer::class,
+            \App\Admin\Resources\ServerResource\Pages\EditServer::class=>\Paymenter\Extensions\Servers\Domains\Admin\SecureEditServer::class,
+            \App\Admin\Resources\ServiceResource\Pages\EditService::class=>\Paymenter\Extensions\Servers\Domains\Admin\SecureEditService::class];
+        foreach(app('router')->getRoutes() as $route){$class=explode('@',$route->getActionName())[0];if(isset($map[$class])){$route->uses($map[$class]);}}
+    }
+    public function boot(): void
+    {
+        if($this->booted){return;}$this->booted=true;
+        // Boot runs before the global middleware and on both console and HTTP lifecycles.
+        TrimStrings::skipWhen(fn(Request $r)=>$r->isMethod('POST')&&preg_match('~\Adomains/[0-9]+/(?:transfer-code|manage/(?:dns|srv))\z~D',$r->path())===1);
+        View::addNamespace('domains',dirname(__DIR__).'/resources/views');
+        require dirname(__DIR__).'/routes/web.php';require dirname(__DIR__).'/routes/owned.php';
+        app()->booted(self::secureNativeRoutes(...));
+        app(NativeServerGuard::class)->boot();app(NativeDomainGuard::class)->boot();
+        app(CartAdmission::class)->boot();app(InvoiceBinding::class)->boot();
+        Event::listen('permissions',fn()=>Staff::permissions());
+        Event::listen('navigation',fn()=>['name'=>'Domains','url'=>route('domains.domains.search'),'icon'=>'ri-global','priority'=>12,'spa'=>false,
+            'children'=>[['name'=>'Register a domain','url'=>route('domains.domains.search'),'spa'=>false],['name'=>'Domain pricing','url'=>route('domains.domains.pricing'),'spa'=>false]]]);
+        Event::listen('navigation.dashboard',fn()=>['name'=>'Domains','url'=>route('domains.domains.index'),'icon'=>'ri-global','priority'=>12,'spa'=>false]);
+        foreach(['Domain','Operation'] as $model){Gate::policy('Paymenter\\Extensions\\Servers\\Domains\\Models\\'.$model,'Paymenter\\Extensions\\Servers\\Domains\\Policies\\'.$model.'Policy');}
+        Event::listen(\App\Events\Invoice\Paid::class,function($e):void {\Illuminate\Support\Facades\DB::afterCommit(fn()=>app(RuntimeWork::class)->invoice((int)$e->invoice->id));});
+        Schedule::call(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\RunRuntime::dispatch())->name('domains-runtime')->everyMinute()->withoutOverlapping(15)->onOneServer();
+    }
+}

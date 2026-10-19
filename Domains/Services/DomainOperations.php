@@ -49,24 +49,25 @@ final class DomainOperations
                 if ($this->writer instanceof RegistrationBridge && !AcquisitionSetup::ready($route)) { return $route; }
                 if (in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { $this->writer->reserve(); }
             }
-            catch (WriteHeld $held) { return $this->claims->holdUnclaimed($id, $held->reason); }
+            catch (WriteHeld $held) { return $held->reason==='write_rate_limited'?$route:$this->claims->holdUnclaimed($id, $held->reason); }
         }
         $claim = $this->claims->claim($id);
         if (!$claim) { return Operation::findOrFail($id); }
         [$op, $domain, $binding] = $claim;
         $result = null;
         try {
-            $deadline = $op->started_at->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
-            $context = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget($op->action === 'transfer' ? 12 : ExecuteOperation::REQUEST_LIMIT), $this->clock);
+            $deadline = $this->clock->now()->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
+            $context = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget($op->action === 'transfer' ? 12 : ExecuteOperation::REQUEST_LIMIT), $this->clock, Runtime::limiter());
             $ready = $this->preflight->inspect($op, $domain, $context);
             if ($this->preflight instanceof TransferPreflight) { $ready = $this->preflight->inspect($op, $domain, $context); }
             if ($context->budget->remaining() < 1) { throw new \DomainException('No dispatch request budget remains.'); }
+            $dispatchDeadline = min($deadline, $ready->validUntil, $this->clock->now()->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds'));
+            $context = new RequestContext($binding, RequestOrigin::Background, $dispatchDeadline, $context->budget, $this->clock, Runtime::limiter());
+            return $context->withReservedWire(function()use(&$op,$ready,$context,$binding,&$result):Operation {
             $sealed = $this->claims->seal($op, $ready, $this->preflight instanceof SealPreflight ? $this->preflight : null,
-                $this->writer instanceof WriteGate ? $this->writer : null);
+                $this->writer instanceof WriteGate ? $this->writer : null,$context);
             if (!$sealed) { return $op->fresh(); }
             $op = $sealed;
-            $dispatchDeadline = min($deadline, $ready->validUntil, $this->clock->now()->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds'));
-            $context = new RequestContext($binding, RequestOrigin::Background, $dispatchDeadline, $context->budget, $this->clock);
             $admitted = new AdmittedOperation($binding, $ready->query, $op->operation_key,
                 $op->attempt['claim_key'], $op->authority_generation, 'operation:'.$op->id.':seal', OperationClaims::payloadDigest($op), $ready->cost);
             $this->grants[$admitted] = ['context' => $context, 'consumed' => false, 'sealed' => $op, 'ready' => $ready];
@@ -76,6 +77,9 @@ final class DomainOperations
                 $binding->requireMatch($response->binding); $result = $response;
             } finally { unset($this->grants[$admitted]); }
             return $this->claims->finish($op, $result);
+            });
+        } catch (ReadDeferred) {
+            return $this->claims->defer($op);
         } catch (WriteHeld $held) {
             return $this->claims->finish($op, $result, holdReason: $held->reason);
         } catch (\Throwable) {

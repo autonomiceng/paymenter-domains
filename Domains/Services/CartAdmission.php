@@ -24,7 +24,9 @@ final class CartAdmission
         foreach ([\App\Events\CartItem\Creating::class, \App\Events\CartItem\Updating::class] as $event) {
             Event::listen($event, fn ($e) => $this->prepare($e->cartItem));
         }
-        Event::listen(\App\Events\Order\Creating::class, fn ($e) => $this->admit($e->order));
+        Event::listen(\App\Events\Order\Creating::class,function($e):void {
+            try{$this->admit($e->order);}catch(\DomainException|\InvalidArgumentException $error){throw new \App\Exceptions\DisplayException('Your domain offer changed or expired. Remove this line from your cart and search again for a current offer.');}
+        });
         foreach ([\Illuminate\Database\Events\TransactionCommitted::class, \Illuminate\Database\Events\TransactionRolledBack::class] as $event) {
             Event::listen($event, function ($e): void {
                 if ($e->connection === DB::connection() && $e->connection->transactionLevel() === 0) { $this->order = null; $this->lines = []; }

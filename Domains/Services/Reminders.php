@@ -27,12 +27,12 @@ final readonly class Reminders
         $claim=DB::transaction(function()use($seed,$now):?array {
             $l=HoldingLocks::take($seed);$d=$l['domain'];
             $schedule=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->lockForUpdate()->first();
-            $deliver=$schedule&&$schedule->enabled&&$schedule->account_fingerprint===$d->account_fingerprint&&$l['server']->enabled;
-            $schedule??=(object)['before_days'=>'[]','after_days'=>'[]'];
+            $deliver=$schedule&&$schedule->account_fingerprint===$d->account_fingerprint&&$l['server']->enabled;
+            $schedule??=(object)['enabled'=>false,'before_days'=>'[]','after_days'=>'[]'];
             $alerts=ObligationAlerts::retained($l,$now->getTimestamp());
             if(isset($schedule->account_fingerprint)&&$schedule->account_fingerprint!==$d->account_fingerprint){$alerts[]=ObligationAlerts::record($d,'schedule_binding',$now->getTimestamp());}
             $candidates=[RenewalReminders::plan($l,$schedule,$now,$alerts,$this->bindings),TransferNotifications::plan($l,$now,$alerts),self::refund($l,$now,$alerts)];$notice=null;
-            foreach($candidates as $candidate){if($candidate&&!DB::table('domains_reminder_deliveries')->where('delivery_key',hash('sha256',$d->id.':'.$candidate['identity']))->exists()){$notice=$candidate;break;}}
+            foreach($candidates as $candidate){if($candidate&&($schedule->enabled||in_array($candidate['template'],['domains_transfer_code_paid','domains_domain_order_refunded'],true))&&!DB::table('domains_reminder_deliveries')->where('delivery_key',hash('sha256',$d->id.':'.$candidate['identity']))->exists()){$notice=$candidate;break;}}
             foreach(DB::table('domains_reminder_deliveries')->where('domain_id',$id=$d->id)->whereIn('state',['handoff','uncertain'])->get() as $delivery){
                 $alerts[]=ObligationAlerts::record($d,'delivery_uncertain',$now->getTimestamp());
             }

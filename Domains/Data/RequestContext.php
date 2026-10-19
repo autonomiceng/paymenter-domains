@@ -5,10 +5,10 @@ namespace Paymenter\Extensions\Servers\Domains\Data;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 
-final readonly class RequestContext
+final class RequestContext
 {
-    public function __construct(public AccountBinding $binding, public RequestOrigin $origin,
-        public \DateTimeImmutable $deadline, public RequestBudget $budget, private Clock $clock = new SystemClock, private ?\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter $limiter = null, private bool $stopOnReadFailure = false) {}
+    public function __construct(public readonly AccountBinding $binding, public readonly RequestOrigin $origin,
+        public readonly \DateTimeImmutable $deadline, public readonly RequestBudget $budget, private readonly Clock $clock = new SystemClock, private readonly ?\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter $limiter = null, private readonly bool $stopOnReadFailure = false) {}
 
     /** Drivers must call before each wire request, not just once per logical operation. */
     public function claimRead(#[\SensitiveParameter] AccountBinding $driver): int
@@ -26,9 +26,29 @@ final readonly class RequestContext
     public function withinRead(AccountBinding $driver, \Closure $wire): mixed
     {
         $this->claimRead($driver);
-        $token = $this->limiter?->acquire($driver, $this->origin);
+        return $this->withinClaimedWire($driver,$wire);
+    }
+
+    private bool $reserved=false;
+    private ?string $token=null;
+    private ?\DateTimeImmutable $leaseUntil=null;
+    /** Reserve the first physical exchange before financial sealing; unused reservations are released. */
+    public function withReservedWire(\Closure $work): mixed
+    {
+        if($this->reserved){throw new \LogicException('Nested wire reservation.');}
+        $this->leaseUntil=$this->clock->now()->modify('+30 seconds');$this->token=$this->limiter?->acquire($this->binding,$this->origin);$this->reserved=true;
+        try{return $work();}finally{if($this->reserved&&$this->token!==null){$this->limiter->release($this->binding,$this->origin,$this->token);}$this->reserved=false;$this->token=null;$this->leaseUntil=null;}
+    }
+    public function requireReservedCapacity(): void
+    {if(!$this->reserved||$this->leaseUntil<$this->clock->now()->modify('+25 seconds')){throw new \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred('Reservation headroom exhausted.');}}
+    /** Physical write exchanges already consumed their admitted per-operation budget. */
+    public function withinClaimedWire(AccountBinding $driver, \Closure $wire): mixed
+    {
+        $driver->requireMatch($this->binding);
+        $reserved=$this->reserved;$token=$reserved?$this->token:$this->limiter?->acquire($driver,$this->origin);if($reserved){$this->reserved=false;}
         try {
-            $remaining = (int) floor(((float)$this->deadline->format('U.u') - (float)$this->clock->now()->format('U.u')) * 1000);
+            $until=$reserved?min($this->deadline,$this->leaseUntil):$this->deadline;
+            $remaining = (int) floor(((float)$until->format('U.u') - (float)$this->clock->now()->format('U.u')) * 1000);
             if ($remaining < 1) { throw new \RuntimeException('Registrar request deadline reached.'); }
             return $wire($remaining);
         }

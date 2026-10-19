@@ -29,7 +29,7 @@ final readonly class RenewalCompletion
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp] = $capture; $proof = null; $covered = false;
         try {
-            $ctx = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock);
+            $ctx = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $ctx); $result->requireAttempt($attempt);
             if ($this->clock->now() < $ctx->deadline) {
                 $facts = $result->result()->evidence();

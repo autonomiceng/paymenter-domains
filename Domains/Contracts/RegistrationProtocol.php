@@ -14,7 +14,7 @@ abstract class RegistrationProtocol extends RegistrationTransport
         #[\SensitiveParameter] array $parameters): string
     {
         $timeout = $this->requestTimeout($op, $ctx); $this->binding->requireMatch($op->binding);
-        $body = ($this->exchange->getValue())($origin, $command, $parameters, $timeout);
+        $body = $ctx->withinClaimedWire($op->binding,function(int $remaining)use($origin,$command,$parameters,$timeout){return ($this->exchange->getValue())($origin,$command,$parameters,min($timeout,$remaining));});
         if (!is_string($body) || strlen($body) > 1048576) { throw new \RuntimeException('Registration response unavailable.'); }
         return $body;
     }

@@ -29,7 +29,7 @@ final class RegistrationProfiles
         $id = $created['contact_id'] ?? null;
         if (is_int($id)) { $id = (string) $id; }
         if (!is_string($id) || !preg_match('/^[1-9][0-9]{0,19}$/D', $id)) { throw new WriteHeld('contact_profile_proof_required'); }
-        $read = $this->request($ctx, 'contactList', ['contact_id' => $id]); $rows = $read['contact'] ?? null;
+        try{$read = $this->request($ctx, 'contactList', ['contact_id' => $id]);}catch(ReadDeferred){throw new WriteHeld('contact_profile_proof_required');} $rows = $read['contact'] ?? null;
         if (is_array($rows) && !array_is_list($rows)) { $rows = [$rows]; }
         $row = is_array($rows) && count($rows) === 1 ? $rows[0] : [];
         if ((string) ($row['contact_id'] ?? '') !== $id || !in_array($row['default_profile'] ?? null, [0, '0'], true)) {
@@ -86,13 +86,12 @@ final class RegistrationProfiles
 
     private function request(RequestContext $ctx, string $command, #[\SensitiveParameter] array $parameters): array
     {
-        $timeout = $command==='contactList'?null:min(25000,$ctx->claimRead($this->binding));
         OperationClaims::outside();
         $origin = ($this->binding->environment === \Paymenter\Extensions\Servers\Domains\Data\Environment::Live
             ? \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Environment::Live
             : \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Environment::Sandbox)->origin().'/apibatch';
         $send=fn($remaining)=>($this->exchange->getValue())($origin,$command,$parameters,min(25000,$remaining));
-        $body=$timeout===null?$ctx->withinRead($this->binding,$send):$send($timeout);
+        $body=$ctx->withinRead($this->binding,$send);
         if (!is_string($body) || strlen($body) > 1048576) { throw new WriteHeld('contact_profile_proof_required'); }
         try { $data = json_decode($body, true, 24, JSON_THROW_ON_ERROR); } catch (\Throwable) { throw new WriteHeld('contact_profile_proof_required'); }
         if (($data['request']['operation'] ?? null) !== $command || !in_array($data['reply']['code'] ?? null, [300, '300'], true)) {

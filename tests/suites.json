@@ -100,7 +100,15 @@
     "tests/reminders-test.php",
     "tests/reminder-transfer-test.php",
     "tests/reminder-safety-test.php",
-    "tests/reminder-review-test.php"
+    "tests/reminder-review-test.php",
+    "tests/runtime-install-test.php",
+    "tests/runtime-presenter-test.php",
+    "tests/runtime-notices-test.php",
+    "tests/runtime-worker-test.php",
+    "tests/runtime-wire-registration-test.php",
+    "tests/runtime-wire-renewal-test.php",
+    "tests/runtime-wire-management-test.php",
+    "tests/runtime-lifecycle-test.php"
   ],
   "ui": [],
   "runner": [

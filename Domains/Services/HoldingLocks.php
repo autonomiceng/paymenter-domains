@@ -12,7 +12,7 @@ final class HoldingLocks
 {
     public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false): array
     {
-        if (DB::transactionLevel() !== 1) { throw new \LogicException('Holding locks require the outer transaction.'); }
+        if (!$advisory && DB::transactionLevel() !== 1) { throw new \LogicException('Holding locks require the outer transaction.'); }
         $users = User::whereKey(array_filter([$seed->user_id, $staffId]))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $user = $users->firstWhere('id', $seed->user_id) ?? throw new \DomainException('Missing owner.');
         $staff = $staffId === null ? null : $users->firstWhere('id', $staffId);
@@ -21,9 +21,14 @@ final class HoldingLocks
         $credit = $user->credits()->where('currency_code', 'USD')->when(!$advisory,fn($q)=>$q->lockForUpdate())->first();
         // Current locking reads also see invoices committed after an older native cron read view.
         // All owner invoices precede ALL services, matching InvoiceFunding, including mixed invoices.
-        $invoices = Invoice::where('user_id', $user->id)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get(); $ids = $invoices->pluck('id');
-        $items = InvoiceItem::whereIn('invoice_id', $ids)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $transactions = InvoiceTransaction::whereIn('invoice_id', $ids)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $opIds=$advisory?Operation::where('domain_id',$seed->id)->orderByDesc('id')->limit(101)->pluck('id'):null;
+        if($advisory&&$opIds->count()>100){throw new \DomainException('Advisory operation history requires staff review.');}
+        $invoiceIds=$advisory?Operation::whereIn('id',$opIds)->whereNotNull('invoice_id')->limit(100)->pluck('invoice_id'):null;
+        $itemIds=$advisory?Operation::whereIn('id',$opIds)->limit(100)->pluck('invoice_item_id'):null;
+        $invoices = Invoice::where('user_id', $user->id)->when($advisory,fn($q)=>$q->whereIn('id',$invoiceIds))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get(); $ids = $invoices->pluck('id');
+        $items = InvoiceItem::whereIn('invoice_id', $ids)->when($advisory,fn($q)=>$q->whereIn('id',$itemIds))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $transactions = InvoiceTransaction::whereIn('invoice_id', $ids)->when($advisory,fn($q)=>$q->limit(101))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        if($advisory&&$transactions->count()>100){throw new \DomainException('Advisory payment history requires staff review.');}
         $serviceIds = $items->where('reference_type', (new Service)->getMorphClass())->pluck('reference_id')->push($seed->service_id)->unique();
         $services = Service::whereKey($serviceIds)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $products = Product::whereKey($services->pluck('product_id'))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
@@ -43,12 +48,11 @@ final class HoldingLocks
         $tax = TaxRate::whereIn('country', [$country, 'all'])->orderByRaw('country = ? desc', [$country])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->first() ?? 0;
         $server = Server::whereKey($seed->server_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $account = Account::where('server_id', $seed->server_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
-        $settings = $server->settings()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $settings = $server->settings()->when($advisory,fn($q)=>$q->whereIn('key',['domains_credentials','domains_verified_credentials','domains_dns_tools']))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $tld = Tld::where(['server_id' => $seed->server_id, 'tld' => $seed->tld])->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $prices = Price::where(['server_id' => $seed->server_id, 'tld' => $seed->tld, 'action' => 'renew'])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $domain = Domain::whereKey($seed->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
-        $operations = Operation::where('domain_id', $seed->id)->orderBy('id')->when($advisory,fn($q)=>$q->limit(101))->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        if ($advisory && $operations->count()>100) { throw new \DomainException('Advisory history limit reached.'); }
+        $operations = Operation::where('domain_id', $seed->id)->when($advisory,fn($q)=>$q->whereIn('id',$opIds)->limit(100))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $c = $domain->snapshot['checkout'] ?? [];
         if ($domain->service_id !== $seed->service_id || $domain->user_id !== $seed->user_id || $domain->server_id !== $seed->server_id || $domain->tld !== $seed->tld
             || !$domain->billing_managed || $domain->reservation_name !== $domain->domain || $domain->authority_generation < 1

@@ -52,8 +52,9 @@ abstract class ManagementProtocol
     final protected function write(ManagementRequest $r, RequestContext $c, string $command, #[\SensitiveParameter] array $parameters): string
     {
         if ($this->active !== $r || $this->context !== $c || $this->sent || !$this->engine || $command!==$this->requestCommand($r)) { throw new \DomainException('No live management grant.'); }
-        $this->engine->consume($r, $c, $this); $this->sent = true;
-        return $this->exchange($r, $c, $command, $parameters);
+        try{$c->claimRead($this->binding);return $c->withReservedWire(function()use($r,$c,$command,$parameters):string {
+            $this->engine->consume($r,$c,$this);return $c->withinClaimedWire($this->binding,function(int $remaining)use($r,$c,$command,$parameters):string{$this->sent=true;return $this->exchange($r,$c,$command,$parameters,$remaining);});
+        });}catch(\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $e){if(!$this->sent){throw new \Paymenter\Extensions\Servers\Domains\Services\WriteHeld('write_rate_limited');}throw $e;}
     }
     final protected function acknowledge(ManagementRequest $r, RequestContext $c, array $facts): void
     {
@@ -64,7 +65,8 @@ abstract class ManagementProtocol
     {
         OperationClaims::outside(); $this->binding->requireMatch($r->binding); $this->binding->requireMatch($c->binding);
         $timeout = min(25000, ($remaining ?? $c->claimRead($this->binding)));
-        try { $body = ($this->exchange->getValue())($this->origin($c), $command, $parameters, $timeout); }
+        try { $send=fn(int $available)=>($this->exchange->getValue())($this->origin($c),$command,$parameters,min($timeout,$available));
+            $body=$remaining===null?$c->withinClaimedWire($this->binding,$send):$send($remaining); }
         catch (\Throwable) { throw new \RuntimeException('Management transport unavailable.'); }
         if (!is_string($body) || strlen($body) > 1048576) { throw new \RuntimeException('Management response unavailable.'); }
         return $body;

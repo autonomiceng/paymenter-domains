@@ -65,7 +65,7 @@ final readonly class OwnerActionController
                 try { $this->ports->forDomain($d)->validate($action,$payload,$d->domain); }
                 catch (\Throwable) { throw new \Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation(['nameservers']); }
             }
-            $this->management->request($request->user(),$domain,$action,$payload,$nonce,$this->ports->forDomain($d),recordIdentity:in_array($action,['dns','srv'],true)?\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d):null);
+            \Paymenter\Extensions\Servers\Domains\Services\Runtime::management($d,$this->management)->request($request->user(),$domain,$action,$payload,$nonce,$this->ports->forDomain($d),recordIdentity:in_array($action,['dns','srv'],true)?\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d):null);
         },'Change requested. Check Activity for updates.');
     }
     private function submit(Request $request,int $domain,string $action,\Closure $work,string $message)

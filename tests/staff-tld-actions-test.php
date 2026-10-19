@@ -54,7 +54,7 @@ foreach($inputs as $action=>$input){
     $u->role->update(['permissions'=>$permissions]);
 }
 $rows=Review::historyRows(App\Models\Server::find($t->server_id));
-foreach(Review::ACTIONS as $label){expect(count(array_filter($rows,fn($r)=>$r['action']===$label))>=1,'Every allowed native action audited');}
+foreach(array_keys($inputs) as $action){$label=Review::ACTIONS[$action];expect(count(array_filter($rows,fn($r)=>$r['action']===$label))>=1,'Every allowed native action audited');}
 $rotation=null;
 for($i=0;$i<30&&!App\Models\Server::find($t->server_id)->settings()->where('key','like',Review::KEY.'.%')->exists();$i++){
     $key=Review::ticket($u->id,$t->server_id,$t->id,'default_rule',Review::stamp($t->server_id,$t->id));

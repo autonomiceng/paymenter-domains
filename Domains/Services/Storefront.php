@@ -64,8 +64,8 @@ final class Storefront
         $driver = $this->bindings->reader($selection->serverId);
         if ($driver->binding()->fingerprint !== $selection->fingerprint) { throw new \DomainException('Search account changed.'); }
         $started = $this->clock->now();
-        // Deliberately no optional ReadLimiter until joint interactive headroom acceptance in39.
-        $context = new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock);
+        // Installed contexts share interactive headroom with background work.
+        $context = new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock, Runtime::limiter());
         $r = $driver->availability(new Query($name, Action::Register, $offers ? (int) array_key_first($offers) : 1), $context);
         $driver->binding()->requireMatch($r->binding);
         if ($r->disposition !== Disposition::Accepted || $context->now() >= $context->deadline) { return [...$base, 'status' => 'error']; }

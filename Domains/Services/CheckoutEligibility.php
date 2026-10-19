@@ -22,10 +22,10 @@ final class CheckoutEligibility
         $transfer = null;
         if ($selection->action === 'transfer') {
             $transfer = ($this->transfers ?? throw new \DomainException('Transfer eligibility is not configured.'))->check($name, $selection, $driver,
-                new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+25 seconds'), new RequestBudget(3), $this->clock));
+                new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+25 seconds'), new RequestBudget(3), $this->clock, Runtime::limiter()));
         } else {
         $result = $driver->availability(new Query($name, Action::Register, $selection->term),
-            new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock));
+            new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock, Runtime::limiter()));
         $driver->binding()->requireMatch($result->binding);
         if ($result->disposition !== Disposition::Accepted || $result->evidence()->premium !== false || $result->evidence()->available !== true
             || $this->clock->now() >= $started->modify('+10 seconds')) { throw new \DomainException('Domain eligibility could not be confirmed.'); }

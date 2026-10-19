@@ -41,7 +41,7 @@ final class OperationClaims
             }
             if (!in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { return null; }
             if ($op->action === 'transfer' && !TransferInputs::validCode($op->payload['epp'] ?? null)) { return null; }
-            if (!self::virgin($op)) {
+            if (!self::virgin($op)&&!self::capacityRetry($op)) {
                 $op->update(['state' => 'uncertain', 'safe_code' => 'prior_attempt', 'lease_expires_at' => null]); return null;
             }
             try { [$binding, $paid] = $this->validate($op, $domain, $all, $funding, $server, $account); }
@@ -52,18 +52,20 @@ final class OperationClaims
                 DB::afterCommit(static fn () => ContactRecovery::hold((int) $op->id));
                 return null;
             }
-            $now = $this->clock->now(); $digest = self::digest($op, $domain);
-            $op->update(['state' => 'running', 'safe_code' => null, 'started_at' => $now,
+            $now = $this->clock->now(); $digest = self::digest($op, $domain);$retry=self::capacityRetry($op);
+            if($retry&&(!$op->started_at||$now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')>$op->started_at->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'))){$op->update(['state'=>'held','safe_code'=>'write_rate_limited']);return null;}
+            if($retry&&($op->request_fingerprint!==$digest||($op->funding['claim']??null)!==$paid)){$op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null;}
+            $op->update(['state' => 'running', 'safe_code' => null, 'started_at' => $retry?$op->started_at:$now,
                 'lease_expires_at' => $now->modify('+'.ExecuteOperation::LEASE_SECONDS.' seconds'), 'request_fingerprint' => $digest,
-                'attempt' => ['claim_key' => bin2hex(random_bytes(16)), 'seal' => 'absent', 'send_state' => 'definitely_unsent'],
+                'attempt' => $retry?$op->attempt:['claim_key' => bin2hex(random_bytes(16)), 'seal' => 'absent', 'send_state' => 'definitely_unsent'],
                 'funding' => [...($op->funding ?? []), 'claim' => $paid]]);
             return [$op, $domain, $binding];
         });
     }
 
-    public function seal(Operation $claimed, DispatchReadiness $ready, ?SealPreflight $preflight = null, ?WriteGate $writer = null): ?Operation
+    public function seal(Operation $claimed, DispatchReadiness $ready, ?SealPreflight $preflight = null, ?WriteGate $writer = null, ?RequestContext $wire = null): ?Operation
     {
-        return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready, $preflight, $writer): ?Operation {
+        return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed, $ready, $preflight, $writer, $wire): ?Operation {
             if (!self::sameClaim($op, $claimed)) { return null; }
             if ($this->expire($op) || !self::unsealed($op)) { return null; }
             try {
@@ -72,7 +74,7 @@ final class OperationClaims
                 ContactSetup::requireReady($op);
                 $preflight?->requireAtSeal($op, $domain, $ready);
                 $writer?->requireAtSeal($op, $domain, $ready);
-                $now = $this->clock->now();
+                $wire?->requireReservedCapacity();$now = $this->clock->now();
                 $ready->requireCurrent($binding, self::query($op, $domain), self::payloadDigest($op), $now);
                 $lastSend = $op->started_at->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
                 if ($ready->observedAt < $op->started_at || $op->request_fingerprint !== self::digest($op, $domain)
@@ -81,7 +83,7 @@ final class OperationClaims
                     || $ready->validUntil < $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')) {
                     throw new \DomainException('Insufficient dispatch lease or changed request.');
                 }
-            } catch (\Throwable $error) {
+            } catch (ReadDeferred $error) {throw $error;} catch (\Throwable $error) {
                 $op->update(['state' => 'held', 'safe_code' => $error instanceof WriteHeld ? $error->reason : 'seal_authority_invalid', 'lease_expires_at' => null]); return null;
             }
             $attempt = $op->attempt;
@@ -132,6 +134,17 @@ final class OperationClaims
         });
     }
 
+    /** Retry only an exact live, unsealed local-capacity refusal; retain the original claim identity. */
+    public function defer(Operation $claimed): Operation
+    {
+        return $this->locked((int)$claimed->id,function($op)use($claimed):Operation {
+            if(!self::sameClaim($op,$claimed)||!$op->lease_expires_at||$op->lease_expires_at<=$this->clock->now()||!self::unsealed($op)){return $op;}
+            $history=$op->attempt['capacity_deferrals']??[];$a=[...$op->attempt,'capacity_deferrals'=>[...$history,$this->clock->now()->format(DATE_ATOM)]];
+            $op->update(['state'=>count($history)<5?'queued':'held','safe_code'=>'write_rate_limited','attempt'=>$a,'lease_expires_at'=>null]);return $op;
+        });
+    }
+    private static function capacityRetry(Operation $op): bool
+    { $a=$op->attempt??[];return self::unsealed($op)&&isset($a['claim_key'],$a['capacity_deferrals'])&&is_array($a['capacity_deferrals'])&&count($a['capacity_deferrals'])<=5&&!array_diff(array_keys($a),['claim_key','seal','send_state','capacity_deferrals']); }
     /** Disabled feature gates create no claim, seal or provider traffic. */
     public function holdUnclaimed(int $id, string $reason): Operation
     {
@@ -196,7 +209,7 @@ final class OperationClaims
     /** Independent presence guard: null charge/refund/candidate facts are still uncertainty. */
     private static function requireNoSendEvidence(Operation $op): void
     {
-        if (array_diff(array_keys($op->attempt ?? []), ['claim_key', 'seal', 'send_state', 'dispatch_attempted_at', 'authorized_cost', 'registration_admission', 'transfer_admission'])
+        if (array_diff(array_keys($op->attempt ?? []), ['claim_key', 'seal', 'send_state', 'capacity_deferrals', 'dispatch_attempted_at', 'authorized_cost', 'registration_admission', 'transfer_admission'])
             || array_key_exists('refund', $op->funding ?? []) || array_key_exists('actual', $op->cost ?? [])
             || array_key_exists('execution', $op->cost ?? []) || array_key_exists('dispatch_attempted_at', $op->policy ?? [])) {
             throw new \DomainException('Prior operation evidence blocks dispatch.');

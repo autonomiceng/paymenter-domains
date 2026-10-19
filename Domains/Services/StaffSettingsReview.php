@@ -10,12 +10,12 @@ final class StaffSettingsReview
 {
     public const KEY='domains_staff_settings_audit';
     public const ACTIONS=['default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
-        'tld_settings'=>'Review TLD availability','seller'=>'Select seller','publish'=>'Publish prices','acceptance'=>'Review catalogue acceptance','history'=>'Review history acceptance','configure'=>'Save credentials','probe'=>'Test connection'];
+        'tld_settings'=>'Review TLD availability','seller'=>'Select seller','publish'=>'Publish prices','acceptance'=>'Review catalogue acceptance','history'=>'Review history acceptance','configure'=>'Save credentials','probe'=>'Test connection','processing'=>'Change processing','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
     private array $verified=[];
     private array $before=[];
     private array $input=[];
     public function input(array $data): void
-    { $this->input=array_intersect_key($data,array_flip(['ending','history_action','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention'])); }
+    { $this->input=array_intersect_key($data,array_flip(['ending','history_action','delivery_id','alert_id','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention'])); }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
         public readonly string $action,private readonly string $ticket,public readonly string $reason) {}
     public static function permission(string $action): string
