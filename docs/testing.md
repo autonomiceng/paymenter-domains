@@ -644,3 +644,11 @@ exceptions remain. Native tests run trimming and empty-string conversion before 
 owned handler, check exact encrypted transfer/TXT bytes and safe SRV rejection, and
 prove an unrelated core route's `transfer_code` is trimmed. Routes retain web CSRF,
 authentication, verified-email, throttle and session-blocking boundaries.
+
+Invoice description cases in `Support/invoice-descriptions.php` run through `invoice-binding-test.php`.
+They cover all four charges, multi-year and leap-day ranges, Unicode display and middle truncation
+at the native 255-character limit; dates and qualifiers always survive. Native binding, renewal
+billing and paid privacy tests check issued text stays frozen when registrar expiry changes.
+`invoice-lines-render.php` exports synthetic formatter examples for wording review, not installed
+invoice/theme acceptance. Privacy purchase dates are expected from invoice day; privacy renewal
+uses its own frozen subscription expiry, independently of the domain's term.
