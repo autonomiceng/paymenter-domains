@@ -1,5 +1,7 @@
 # Native runtime
 
+For the planned lifecycle replacement and accepted limits, see the [Option E native lifecycle contract](design/native-lifecycle.md).
+
 Install `Domains/` as the native `Servers/Domains` extension. Run the native extension install/upgrade lifecycle before adding registrar accounts. Installation verifies every retained schema after migration; incomplete history or shape requires restoring the original database and migration history. Rollback and uninstall retain financial records, global reservations, templates and accounts. No automatic retained-data adoption or repair exists.
 
 One boot authority registers the native financial guards, cart admission before invoice binding, authenticated routes, permissions, policies, both navigation collections, paid-invoice work and the minute scheduler. Generic server editing excludes encrypted settings; independent pre-mount/hydration guards refuse unsafe native editors when route caches are stale. Refresh route caches after installation. Disabling a native server pauses account processing; retained server identities cannot be repurposed or deleted. Legacy Enom processing must be paused before installation; it cannot be re-enabled while this runtime is installed. Returning authority to the legacy extension requires a separately reviewed migration.
