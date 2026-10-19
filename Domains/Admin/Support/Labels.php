@@ -6,7 +6,7 @@ final class Labels
 {
     public static function statuses(): array
     {
-        return ['active'=>'Active','registration_pending'=>'Registering','transfer_pending'=>'Transferring',
+        return ['adoption_pending'=>'Registration setup pending','active'=>'Active','registration_pending'=>'Registering','transfer_pending'=>'Transferring',
             'expired'=>'Expired','grace'=>'Expired, grace period','redemption'=>'Redemption','needs_review'=>'Needs review',
             'registration_rejected'=>'Registration rejected','transfer_rejected'=>'Transfer rejected','cancelled'=>'Cancelled'];
     }
@@ -19,7 +19,7 @@ final class Labels
     }
     public static function color(?string $value): string
     {
-        return match ($value) { 'active','succeeded'=>'success', 'held','grace','awaiting_code'=>'warning',
+        return match ($value) { 'active','succeeded'=>'success', 'adoption_pending','held','grace','awaiting_code'=>'warning',
             'uncertain','rejected','needs_review','transfer_rejected','registration_rejected','expired','redemption'=>'danger', default=>'gray' };
     }
     public static function action(?string $value): string

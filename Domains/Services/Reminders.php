@@ -24,6 +24,7 @@ final readonly class Reminders
     public function remind(int $id):bool
     {
         OperationClaims::outside();$now=$this->clock->now();$seed=Domain::findOrFail($id);
+        if($seed->adoptionPending()){return false;}
         $claim=DB::transaction(function()use($seed,$now):?array {
             $l=HoldingLocks::take($seed);$d=$l['domain'];
             $schedule=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->lockForUpdate()->first();

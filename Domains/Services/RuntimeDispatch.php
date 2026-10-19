@@ -12,7 +12,7 @@ final readonly class RuntimeDispatch
     public function current(Operation $op): bool
     {
         $d=Domain::find($op->domain_id);$a=Account::where('server_id',$op->server_id)->first();
-        if($d&&$a&&$a->account_fingerprint===$op->account_fingerprint&&$d->account_fingerprint===$op->account_fingerprint&&$d->authority_generation===$op->authority_generation){return true;}
+        if($d&&!$d->adoptionPending()&&$a&&$a->account_fingerprint===$op->account_fingerprint&&$d->account_fingerprint===$op->account_fingerprint&&$d->authority_generation===$op->authority_generation){return true;}
         if($d){ObligationAlerts::record($d,'operation_review',$this->clock->now()->getTimestamp(),(int)$op->id);}return false;
     }
     public function enqueue(int $id,bool $force=false): void

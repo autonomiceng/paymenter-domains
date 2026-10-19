@@ -55,7 +55,7 @@ final class HoldingLocks
         $operations = Operation::where('domain_id', $seed->id)->when($advisory,fn($q)=>$q->whereIn('id',$opIds)->limit(100))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $c = $domain->snapshot['checkout'] ?? [];
         if ($domain->service_id !== $seed->service_id || $domain->user_id !== $seed->user_id || $domain->server_id !== $seed->server_id || $domain->tld !== $seed->tld
-            || !$domain->billing_managed || $domain->reservation_name !== $domain->domain || $domain->authority_generation < 1
+            || $domain->adoptionPending() || !$domain->billing_managed || $domain->reservation_name !== $domain->domain || $domain->authority_generation < 1
             || (int) $service->user_id !== (int) $user->id || $service->currency_code !== 'USD' || (string) $service->quantity !== '1'
             || $service->expires_at !== null || $server->extension !== 'Domains' || (int) $product->server_id !== (int) $server->id
             || $account->account_fingerprint !== $domain->account_fingerprint || $account->registrar_key !== $domain->registrar_key

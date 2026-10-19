@@ -22,13 +22,22 @@ final class DomainFacts
             'Renewal billing'=>Labels::flag($d->billing_managed),
             'Who pays'=>match($d->price_mode) {'standard'=>'Standard','complimentary'=>'Complimentary',default=>'Review policy'},
             'Assignment generation'=>(string)$d->authority_generation];
+        if ($d->adoptionPending()) {
+            $result['Status']='Registration setup pending'; $result['Confirmed expiry']='Not verified';
+            $result['Renewal billing']='Paused during setup';
+            $result['Processing']='Held for this domain';
+            $result['Last recorded expiry (unverified)']=$d->provider_expires_at?->format('Y-m-d') ?? 'Unknown';
+            try { $result['Last recorded expiry (unverified)']=$d->provider_expires_at?->format('Y-m-d') ?? ($d->renewal_policy['conversion_source_expiry']??'Unknown'); } catch (\Throwable) {}
+            $result['Open domain invoices']=DB::table('domains_operations as o')->join('invoices as i','i.id','=','o.invoice_id')->where('o.domain_id',$d->id)->where('i.status','pending')->distinct()->pluck('i.id')->map(fn($id)=>'#'.$id.' — payable; review before collecting')->all() ?: ['None'];
+            $result['Setup reason']='Converted as pending: purchase evidence was not verified, or renewal billing was not managed. Renewals stay paused until adoption is available. Retained requests and invoices need review.';
+        }
         try {
             $ob = $d->observation ?? []; $facts = $ob['facts'] ?? [];
             $result += ['Observed ownership'=>Labels::flag($facts['owned']??null),
                 'Registrar auto-renew'=>Labels::flag($facts['auto_renew']??null),
                 'Transfer lock'=>Labels::flag($facts['locked']??null), 'Privacy'=>Labels::flag($facts['privacy']??null),
                 'Observation drift'=>Labels::flag($ob['drift']??null),
-                'Follow-up'=>match($ob['followup']['state']??null) {'observed'=>'Observed','pending'=>'Pending',default=>'Unknown'}];
+                'Follow-up'=>$d->adoptionPending() ? 'Paused during setup' : match($ob['followup']['state']??null) {'observed'=>'Observed','pending'=>'Pending',default=>'Unknown'}];
             $result['Automatic spending paused']=Labels::flag(($d->renewal_policy??[])['automatic_spend_paused']??null);
         } catch (\Throwable) { $result['Encrypted facts']='Unavailable; review encryption access'; }
         $jobs = DB::table('domains_observation_work')->where('domain_id',$d->id)->where('server_id',$d->server_id)

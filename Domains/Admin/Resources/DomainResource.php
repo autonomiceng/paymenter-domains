@@ -42,7 +42,7 @@ class DomainResource extends Resource
                 ->extraAttributes(['style'=>'overflow-wrap:anywhere;max-width:24rem']),
             TextColumn::make('registrar_key')->label('Registrar')->formatStateUsing(fn($state)=>match($state) {'enom'=>'Enom','namesilo'=>'NameSilo',default=>'Unknown'})
                 ->description(fn(Domain $record)=>'Server #'.$record->server_id),
-            TextColumn::make('status')->badge()->formatStateUsing(fn($state)=>Labels::status($state))->color(fn($state)=>Labels::color($state)),
+            TextColumn::make('status')->badge()->formatStateUsing(fn($state,Domain $record)=>Labels::status($record->adoptionPending()?'adoption_pending':$state))->color(fn($state,Domain $record)=>Labels::color($record->adoptionPending()?'adoption_pending':$state)),
             TextColumn::make('provider_expires_at')->label('Expires')->date('M j, Y')->placeholder('Unknown')->sortable(),
         ])->filters([
             SelectFilter::make('status')->label('Status')->multiple()->options(Labels::statuses()),

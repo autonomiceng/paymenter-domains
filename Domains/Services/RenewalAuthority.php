@@ -88,6 +88,7 @@ final readonly class RenewalAuthority
     /** Retained completion proof only; reusable by invoice creation and grants no execution authority. */
     public static function completed(Operation $op, Domain $domain, \Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): bool
     {
+        if ($domain->adoptionPending()) { return false; }
         $p = $op->attempt['reconciliation'] ?? [];
         try { if ($op->action === 'transfer' && (($p['transfer_status'] ?? null) !== 'completed'
             || !($base = $op->attempt['transfer_admission']['base_expiry'] ?? null) || ($p['base_expiry'] ?? null) !== $base

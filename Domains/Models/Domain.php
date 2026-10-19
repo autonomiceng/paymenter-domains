@@ -23,6 +23,8 @@ class Domain extends Model
     protected static function booted(): void
     {
         static::creating(static function (self $domain): void {
+            if ($domain->provenance !== null && !in_array($domain->provenance, ['purchased', 'converted_purchase', 'adopted', 'adoption_pending'], true)) { throw new \InvalidArgumentException('Unknown holding provenance.'); }
+            if ($domain->adoptionPending()) { throw new \DomainException('Pending holdings require reviewed conversion.'); }
             $name = \Paymenter\Extensions\Servers\Domains\Data\CanonicalName::parse($domain->domain, [$domain->tld]);
             if ($domain->sld !== $name['sld']) { throw new \InvalidArgumentException('Domain label mismatch.'); }
             $domain->domain = $name['domain'];
@@ -32,6 +34,7 @@ class Domain extends Model
         });
         static::deleting(static function (): void { throw new \DomainException('Domain ledger rows are retained.'); });
         static::updating(static function (self $domain): void {
+            if ($domain->isDirty('provenance') || (($domain->adoptionPending() || $domain->getRawOriginal('status') === 'adoption_pending' || $domain->getRawOriginal('provenance') === 'adoption_pending') && $domain->isDirty(['status', 'billing_managed', 'provider_expires_at', 'confirmed_revision', 'renewal_policy']))) { throw new \DomainException('Holding provenance requires verified adoption.'); }
             $checkout = ($domain->getOriginal('snapshot') ?? [])['checkout'] ?? null;
             if ($checkout !== null && ($domain->snapshot['checkout'] ?? null) !== $checkout) { throw new \DomainException('Domain checkout evidence is frozen.'); }
             if ($domain->isDirty(['id', 'domain', 'sld', 'tld', 'reservation_name', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'service_id', 'user_id'])) {
@@ -39,6 +42,8 @@ class Domain extends Model
             }
         });
     }
+
+    public function adoptionPending(): bool { return $this->status === 'adoption_pending' || $this->provenance === 'adoption_pending'; }
 
     public function service() { return $this->belongsTo(Service::class); }
     public function operations() { return $this->hasMany(Operation::class); }

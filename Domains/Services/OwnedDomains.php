@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
 final readonly class OwnedDomains
 {
-    public const STATUSES = ['active'=>'Active','registration_pending'=>'Registration in progress','transfer_pending'=>'Transfer in progress',
+    public const STATUSES = ['adoption_pending'=>'Being set up','active'=>'Active','registration_pending'=>'Registration in progress','transfer_pending'=>'Transfer in progress',
         'registration_rejected'=>'Needs attention','transfer_rejected'=>'Needs attention','needs_review'=>'Needs attention',
         'expired'=>'Expired','grace'=>'Expired','redemption'=>'In redemption','cancelled'=>'Order cancelled'];
     public function __construct(private Clock $clock, private OwnerPorts $ports, private ?DomainManagement $engine = null) {}
@@ -27,6 +27,11 @@ final readonly class OwnedDomains
     { return $operations->filter(fn($op)=>in_array($op->action,['register','transfer'],true)&&$op->authority_generation===$d->authority_generation&&$op->account_fingerprint===$d->account_fingerprint)->sortByDesc('id')->first(); }
     public function present(Domain $d, bool $forms = true): OwnedDomain
     {
+        if ($d->adoptionPending()) {
+            return new OwnedDomain($d->domain, 'Being set up', 'muted', null, 'Paused during setup', null,
+                ['show'=>route('domains.domains.show',$d->id)], [], ['required'=>false,'contacts'=>false], [], [],
+                Account::where('server_id',$d->server_id)->value('environment')==='test', setupPending:true);
+        }
         $op=$this->operation($d); $obs=$d->observation??[]; $service=$d->service;
         $actions=['show'=>route('domains.domains.show',$d->id),'setupSave'=>route('domains.domains.setup-save',$d->id),'contactsSave'=>route('domains.domains.contacts-save',$d->id),'codeSave'=>route('domains.domains.code-save',$d->id)]; $management=[]; $caps=null;
         try { $caps=$this->ports->forDomain($d)->capabilities(); } catch (\Throwable) {}
