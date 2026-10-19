@@ -520,3 +520,20 @@ Run `python3 scripts/build.py --verify /fresh/output/paymenter-domains-0.1.0.zip
 Checksums detect corruption, not publisher identity; obtain artifacts from a trusted source.
 Package tests build the real tree twice, verify every member, omit referenced roots and
 refuse converter paths, tampering, unsafe names, symlinks, collisions and oversized files.
+
+### Native archive lifecycle acceptance
+
+The native suite verifies the built ZIP before passing an upload copy to Paymenter
+1.5.9's real UploadExtensionService. A second disposable app copy uses installed files
+without the source-tree runtime autoloader. Native ZIP support uses a pinned PHP archive
+and requires the system libzip library; missing offline dependencies fail rather than simulate.
+Keep git object `e7881cf404e934e1cc84931ab9036e84804b8b61` available for the
+previous local development-build upgrade (same 0.1.0 version, before the additive PSL schema).
+Fresh-process boot checks migration history, installed classes/pages/routes and one scheduler.
+Same-ZIP reinstall, previous-build upgrade and file-removal/reinstall via native Install preserve
+raw ledgers/settings and all prior migration records; only account update timestamps are
+normalized because native pause touches them. Native server deletion calls disabled then
+refuses retained accounts; the separate uninstall hook also retains data. Upload-time schemas
+are verified before repeating the native upgrade command as an idempotency check.
+Customized notification templates and populated synthetic PSL state are retained too.
+Converter injection and a modified embedded manifest are rejected before native upload.
