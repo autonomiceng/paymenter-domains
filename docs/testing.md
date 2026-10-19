@@ -601,3 +601,9 @@ The existing registration protocol suites cover valid purchases and follow-up re
 Claimed nameserver holds also retain definitely-unsent rejection and exact once-only account credit;
 unknown execution evidence still blocks both recovery proofs. Both registrars exercise staff
 refund and terminal-rejection recovery paths.
+
+Registration reconciliation covers captured execution with a null order reference: a saved,
+covering history acceptance permits Enom history reads and unique completion without replay.
+Terminal-proof checks assert held/sealed/expired lifecycle reasons before exercising refusal
+and re-read persisted reservations afterwards. Their example placeholders use the operation
+fixture's sole published suffix, `.com` (`Support/commerce.php`).
