@@ -6,7 +6,7 @@ use App\Models\{InvoiceTransaction, Role};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, RenewalFunding};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, PricingRule, RenewalFunding};
 [$op, $d, $b, $invoice] = $makeRenewal('renew-replacement.com', false);
 $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
 $invoice->update(['status' => 'cancelled']); commerceReject(fn () => $billing->invoice($d->id, $user));
@@ -61,9 +61,27 @@ config(['settings.credits_auto_use'=>false]);
 [$op, $d, $b, $offBill] = $makeRenewal('renew-credit-global-off.com',false);
 same('pending',$offBill->status,'Native global credit opt-out respected'); same(0,$offBill->transactions()->count(),'No global opt-out settlement');
 same(10000,Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$user->credits()->where('currency_code','USD')->sole()->amount),'Global opt-out credit untouched');
+$creditBalance = static fn (): int => PricingRule::minor((string) $user->credits()->where('currency_code', 'USD')->sole()->amount);
+$creditBefore = $creditBalance();
 config(['settings.credits_auto_use'=>false]);
 [$op, $d, $b, $creditBill] = $makeRenewal('renew-credit.com', false, 1, false, static fn () => config(['settings.credits_auto_use'=>true]));
 same('paid', $creditBill->status, 'Opted-in full native credit pays renewal invoice');
 same(1, (int) $creditBill->transactions()->sole()->is_credit_transaction, 'Native credit settlement retained');
+same($creditBefore - PricingRule::minor((string) $creditBill->total), $creditBalance(), 'Full credit deducts exactly the invoice amount in minor units');
 same('pending', $runRenewal($op, $b)->state, 'Native credit is current paid funding');
+foreach (['insufficient' => -1, 'exact' => 0] as $case => $delta) {
+    config(['settings.credits_auto_use' => false]); // Acquisition stays outside the renewal credit scenario.
+    $balanceBefore = null;
+    [$op, $d, $b, $bill] = $makeRenewal('renew-credit-'.$case.'.com', false, 1, false,
+        static function ($domain) use ($user, $delta, &$balanceBefore): void {
+            $balanceBefore = PricingRule::minor((string) $domain->service->fresh()->price) + $delta;
+            $user->credits()->where('currency_code', 'USD')->sole()->update(['amount' => PricingRule::decimal($balanceBefore)]);
+            config(['settings.credits_auto_use' => true]);
+        });
+    same(PricingRule::minor((string) $bill->total) + $delta, $balanceBefore, 'Credit '.$case.' boundary is relative to actual invoice total');
+    same($delta === 0 ? 'paid' : 'pending', $bill->status, 'Auto-use '.$case.' credit invoice status');
+    same($delta === 0 ? 1 : 0, $bill->transactions()->count(), 'Auto-use '.$case.' credit transaction count');
+    same($delta === 0 ? 0 : $balanceBefore, $creditBalance(), 'Auto-use '.$case.' credit balance');
+    if ($delta === 0) { same(1, (int) $bill->transactions()->sole()->is_credit_transaction, 'Exact credit uses native settlement'); }
+}
 echo "Unpaid replacement, staff complimentary authority, fixed terms and caps passed\n"; $nativeSuccessful=true;
