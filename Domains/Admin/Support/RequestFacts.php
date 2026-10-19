@@ -12,6 +12,12 @@ final class RequestFacts
         $out = ['reason'=>$op->safe_code===null ? null : Labels::reason($op->safe_code), 'refund'=>'Customer credit: not assessed'];
         try {
             $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
+            if ($op->state==='held' && $op->safe_code==='transfer_setup_review_required' && ($op->attempt??[])===[] && OperationActions::transferCutoff($op)) {
+                try {
+                    \Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($op,$op->domain);
+                    $out['cutoff']='Code deadline passed. Release is unavailable; review account credit with funding and unsent proof.';
+                } catch (\DomainException) { /* Sent or unknown outcomes retain their original evidence guidance. */ }
+            }
             $out['refund']=array_key_exists('refund',$f) ? 'Credit marker retained; review ledger'
                 : (RefundCandidates::matches($op,$f) || ($p['renewal_execution']['refundable_later']??false)===true
                     ? 'Customer credit review candidate; funding and unsent proof required'
@@ -24,6 +30,7 @@ final class RequestFacts
                 $out['registrar_refund']=$rejected ? 'Registrar refund is manual — request it from registrar support'
                     : 'If this transfer is abandoned, request any registrar refund manually via registrar support.';
             }
+            if (isset($out['cutoff']) && $out['refund']==='Customer credit: not assessed') { $out['refund']='Customer credit: not yet assessed'; }
             $out['outcome']=match(true) {
                 array_key_exists('execution',$a) && $a['execution']===null=>$op->state==='succeeded'
                     ? 'Original send response was unknown; completion later confirmed' : 'Original send response unknown; never resend',
@@ -62,7 +69,7 @@ final class RequestFacts
     {
         $facts=self::for($op);
         return array_values(array_filter(array_map(fn($key)=>$facts[$key]??null,
-            ['outcome','registrar_refund','refund','correction','cost','metadata','audit']),fn($line)=>$line!==null));
+            ['cutoff','outcome','registrar_refund','refund','correction','cost','metadata','audit']),fn($line)=>$line!==null));
     }
     private static function count(mixed $items): string { return is_array($items) ? (string)count($items) : 'Unknown'; }
 }

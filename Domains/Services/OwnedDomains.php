@@ -60,7 +60,12 @@ final readonly class OwnedDomains
                 in_array($op->state,['running','pending'],true)=>'pending', $op->state==='uncertain'=>'review',
                 $deadline!==null&&$this->clock->now()>=$deadline=>'cutoff',
                 $transfer['paid']&&$deadline===null=>'payment',default=>'held' };
-            if (!$transfer['open']) { $setup['required']=false; $setup['contacts']=false; unset($actions['setup']); }
+            if (!$transfer['open']) {
+                $setup['required']=false;
+                $setup['contacts']=$setup['contacts'] && $transfer['paid'] && TransferInputs::contactsEditable($op,$this->clock->now());
+                if (!$setup['contacts']) { unset($actions['setup']); }
+            }
+            if ($op->state==='held' && $op->safe_code==='transfer_setup_review_required') { $transfer['phase']='setup_review'; }
             $transfer['unchecked']=($op->attempt['transfer_admission']['rdap_unchecked']??null)===true;
             $actions['code']=route('domains.domains.code',$d->id);
         }

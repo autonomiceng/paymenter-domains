@@ -186,3 +186,15 @@ transferUpdateChangeEPPCode, transferUpdateResubmitToRegistry and
 transferUpdateResendAdminEmail; none is implemented here.35/36 retain audited sent/held
 disposition and permissions,38 delivery,39 provider/support/installed/MariaDB acceptance,
 including strict added-year liveness, original-window clock skew and deadline headroom.
+
+
+Late contact correction preserves the code-entry cutoff. A paid, definitely-unsent contact hold
+may use audited owner/staff readmission after that cutoff only with a valid code and an
+owner-input `code_saved_at` stamp strictly before the original deadline. Missing/unverifiable
+stamps fail closed, including retained codes predating this evidence. The original payment,
+registry, funding and attempt facts stay frozen. Readmission stays held for staff review;
+it never reopens code/setup entry, queues a transfer or changes the existing staff-release cutoff.
+
+Late corrected transfers remain held under the existing staff-release cutoff. The
+owner copy makes no continuation promise; staff see that release is unavailable
+and can review account credit using the unchanged funding and unsent proof.

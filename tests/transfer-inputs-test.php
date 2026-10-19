@@ -138,5 +138,9 @@ same($before->payload['registry'],$after->payload['registry'],'Contact correctio
 same($before->payload['nameservers']??null,$after->payload['nameservers']??null,'Contact correction preserves nameservers');
 $clock->instant=$now->modify('+30 days'); Carbon\Carbon::setTestNow($clock->instant);Carbon\CarbonImmutable::setTestNow($clock->instant);
 ContactSetup::recoveryWrite(fn()=>$after->update(['safe_code'=>'contact_details_required']));
-commerceReject(fn()=>ContactRecovery::replace($user,$after->id,'Late correction refused'));
+$lateBefore=$after->fresh();
+ContactRecovery::replace($user,$after->id,'Late contact correction reviewed');
+same('transfer_setup_review_required',$after->fresh()->safe_code,'Late saved-code correction retains staff gate');
+same($lateBefore->payload['epp'],$after->fresh()->payload['epp'],'Late correction keeps the exact saved code');
+require __DIR__.'/Support/late-contact-matrix.php';
 echo "Transfer owner POST, encrypted inputs, cutoff, funding and timeout account credit passed.\n";$nativeSuccessful=true;

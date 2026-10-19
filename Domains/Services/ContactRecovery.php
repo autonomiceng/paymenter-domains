@@ -61,8 +61,7 @@ final class ContactRecovery
                 throw new \DomainException('Contact recovery unavailable.');
             }
             if ($op->action === 'transfer') {
-                if (!TransferInputs::deadline($op, now()->toDateTimeImmutable())) { throw new \DomainException('Transfer payment time is unverified.'); }
-                TransferInputs::requireEditable($op, now()->toDateTimeImmutable());
+                if (!TransferInputs::contactsEditable($op, now()->toDateTimeImmutable())) { throw new \DomainException('Saved transfer inputs require review.'); }
             }
             $payload = $op->payload ?? []; $policy = $op->policy ?? [];
             $history = $policy['contact_readmissions'] ?? [];
@@ -73,7 +72,7 @@ final class ContactRecovery
             $history[] = ['actor_id' => (int) $actor->id, 'owner_id' => (int) $ownerId, 'reason' => $reason,
                 'at' => now()->toIso8601String(), 'previous_code' => $op->safe_code];
             $policy['contact_readmissions'] = $history;
-            // Transfer cutoff/code admission remains 27. No new job or attempt is created here.
+            // Contact readmission never reopens code entry or queues a transfer.
             ContactSetup::recoveryWrite(static fn () => $op->update(['payload' => $payload, 'policy' => $policy,
                 'state' => $op->action === 'register' ? 'queued' : 'held',
                 'safe_code' => $op->action === 'register' ? null : 'transfer_setup_review_required']));
@@ -131,8 +130,8 @@ final class ContactRecovery
 
     private static function paidIdentity(InvoiceFunding $funding, Operation $op, Domain $domain): void
     {
-        $funding->requirePaid($op, $domain);
-        // requirePaid proves these exact rows are ALREADY held by the full native prefix.
+        $funding->requireInitial($op, $domain);
+        // requireInitial proves these exact rows are ALREADY held by the full native prefix.
         // Repeat their current locking reads; an earlier permission read may have opened an old read view.
         $service = Service::whereKey($op->service_id)->lockForUpdate()->firstOrFail();
         self::identity($op, $domain, $service, $service->product()->lockForUpdate()->firstOrFail());
