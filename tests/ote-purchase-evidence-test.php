@@ -18,7 +18,7 @@ $probe = static function (string $scenario): array {
                 expect(is_file($out.'/attempt-private.json'), 'Private evidence precedes dispatch');
                 clearstatcache(); same(0600, fileperms($out.'/attempt-private.json') & 0777, 'Private attempt mode');
                 $saved = json_decode(file_get_contents($out.'/attempt-private.json'), true);
-                same(['name', 'authorized_amount', 'term', 'route', 'dispatch_utc'], array_keys($saved), 'Private file contains only approved facts');
+                same(['name', 'authorized_amount', 'term', 'route', 'dispatch_utc', 'command'], array_keys($saved), 'Private file contains only approved facts');
                 same($p['domain'], $saved['name'], 'Exact dispatched identity retained');
                 same('8.9500', $saved['authorized_amount'], 'Exact authorized decimal retained');
                 same(1, $saved['term'], 'Exact term retained'); same('/apibatch', $saved['route'], 'Dispatch route retained');

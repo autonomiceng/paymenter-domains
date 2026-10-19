@@ -427,3 +427,35 @@ A separately authorized diagnostic `--write --registration-context interactive -
 selects the existing interactive API route inside the runner only; background remains the default
 and renewal always uses `/apibatch`. An Unknown renewal stops immediately without rerouting.
 `ote-purchase-evidence-test.php` uses synthetic transports only and is part of contracts.
+
+### Purchase-only OTE diagnostic routes
+
+This section supersedes the preceding diagnostic renewal routing/stop description.
+
+Separately authorized `--registration-context interactive` now reroutes **registerDomain only**;
+RegistrationProfiles contactAdd/contactList and all other calls retain their production routes.
+`--renewal-context interactive` similarly changes only renewDomain, and requires the continuation below. Defaults stay background.
+Every code other than 300 records only its code and closed category in the receipt; raw string
+detail is retained solely in the private mode-0600 attempt file, including pre-purchase refusals.
+Credential-bearing detail is refused. Archived attempts and private details remain receipt-redacted.
+
+Unknown renewal replies reconcile read-only in the same invocation, including transport failures:
+exact owned-name expiry versus the retained pre-renewal date plus one year, and bounded order
+history/details for the attempt window. Exactly one category is retained: renewed, not_renewed
+(unchanged expiry and no matching order), or ambiguous. Renewed needs a unique exact-term/amount
+order and full-year expiry; uncertainty is never promoted to a successful acknowledgement.
+These sandbox observations do not accept production timezone/history completeness or settle charges.
+
+Only after a separately approved batch renewal reconciles not_renewed, one explicit continuation
+may use `--renewal-only --renewal-context interactive --attempt-receipt /private/prior/receipt.json
+--max-requests N` (N at least 8, within the remaining total grant). It requires matching private
+registration/renewal evidence and a recent dispatch, claims the prior evidence once before reads,
+rechecks the original expiry, permits no contacts/registration/management, and renews the same name
+once. Failure or ambiguity stops. The initial registration phase must not be repeated to continue.
+The synthetic contracts and opt-in native self-test cover purchase-only routing, private refusals,
+renewal categories, failed/partial reads, exact order correlation and consumed continuation proof.
+
+The private snapshot now also names the purchase command and renewal expiry baseline; closed
+renewal category and non-success details are private metadata. Updates preserve original evidence
+with synced mode-0600 temporary files and atomic replacement. Continuation checks the retained
+request count plus its explicit limit against 60, and the transport requires its claimed /api route.

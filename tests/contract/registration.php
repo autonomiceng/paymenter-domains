@@ -49,7 +49,7 @@ $wire->purchaseAuthorization(static function (string $command) use (&$op) {
     return new \Paymenter\Extensions\Servers\Domains\Data\Money($cost['amount'] ?? '', $cost['currency'] ?? '');
 });
 $exchange = static function ($origin, $command, $parameters, $ms) use ($wire, &$profileParameters, &$profileId): string {
-    if (getenv('OTE_REGISTRATION_CONTEXT') === 'interactive') {
+    if ($command === 'registerDomain' && getenv('OTE_REGISTRATION_CONTEXT') === 'interactive') {
         $origin = \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Environment::Sandbox->origin().'/'
             .\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\RequestContext::Interactive->value;
     }

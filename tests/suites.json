@@ -18,7 +18,8 @@
     "tests/profile-diagnostics-test.php",
     "tests/driver-contract-test.php",
     "tests/pricing-test.php",
-    "tests/ote-purchase-evidence-test.php"
+    "tests/ote-purchase-evidence-test.php",
+    "tests/ote-renewal-probe-test.php"
   ],
   "native": [
     "tests/native-fixture-test.php",
