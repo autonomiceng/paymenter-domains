@@ -34,6 +34,7 @@ $ns = new class implements DeadlineTransport {
     }
 };
 $enom = new class implements Transport {
+    public array $disabledRegisterTerms = [];
     public int $calls = 0; public bool $fail = false; public bool $noPrice = false; public int $max = 3; public bool $registry = true;
     public function send(Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string
     {
@@ -42,7 +43,7 @@ $enom = new class implements Transport {
         $body = match ($command) {
             ReadCommand::TldInfo => '<TLDs><TLD><TLD>'.$parameters['TLD'].'</TLD><Registration><Minimum>1</Minimum><Maximum>'.$this->max.'</Maximum><Unit>year</Unit><DNSRequired>false</DNSRequired></Registration><ExtAttributes>false</ExtAttributes><Renewal><AutoRenewOnly>false</AutoRenewOnly></Renewal></TLD></TLDs>',
             ReadCommand::Attributes => $this->registry ? '<ResponseCount>0</ResponseCount>' : '<Attributes><Attribute><Name>unsupported</Name></Attribute></Attributes>',
-            ReadCommand::ProductPrice => '<ProductPrice><ProductEnabled>'.($this->noPrice ? 'false' : 'true').'</ProductEnabled><Price>8.9550</Price></ProductPrice>',
+            ReadCommand::ProductPrice => '<ProductPrice><ProductEnabled>'.($this->noPrice || ($parameters['ProductType'] === 10 && in_array($parameters['Years'], $this->disabledRegisterTerms, true)) ? 'false' : 'true').'</ProductEnabled><Price>8.9550</Price></ProductPrice>',
             default => throw new LogicException('Unexpected read'),
         };
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';
@@ -101,6 +102,16 @@ same(0, Price::where('server_id', 2)->where('term', 3)->count(), 'NameSilo does 
 same('2026-10-18T13:00:00+00:00', Price::where('server_id', 2)->firstOrFail()->fresh_until->format(DATE_ATOM), 'Shared cadence plus failure margin');
 same(['synced' => 1, 'failed' => []], $sync->refresh(1, $context(1)), 'Enom accepted exact term batch');
 same('26.8650', $prices->current(1, $bound[1]->fingerprint, 'com', 'register', 3, 'USD', $clock->now())->wholesale, 'Enom selected-term exact total');
+// Registration requires any eligible exact term, independently of a valid annual renewal.
+$enom->disabledRegisterTerms = [1];
+same(1, $sync->refresh(1, $context(1))['synced'], 'Refresh with only the later registration term priced');
+same(true, Tld::where('server_id', 1)->firstOrFail()->register_enabled, 'An eligible later term enables registration');
+$enom->disabledRegisterTerms = [1, 3];
+same(1, $sync->refresh(1, $context(1))['synced'], 'Refresh with no priced registration terms');
+same(false, Tld::where('server_id', 1)->firstOrFail()->register_enabled, 'No eligible term disables registration');
+same(true, Tld::where('server_id', 1)->firstOrFail()->renew_enabled, 'Registration refusal leaves annual renewal supported');
+$enom->disabledRegisterTerms = [];
+same(1, $sync->refresh(1, $context(1))['synced'], 'Restore priced registration terms');
 foreach (Tld::all() as $tld) { same(false, $tld->enabled, 'Import never selects or enables a seller'); $tld->update(['enabled' => true]); }
 $sellers = new SellerPolicies($prices, $bindings); $sellers->initialize('com');
 $sellers->change('com', 1, 1, true, true, $clock->now()); $old = $sellers->selection('com', 'register', 3, $clock->now());

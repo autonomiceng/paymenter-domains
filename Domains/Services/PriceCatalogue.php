@@ -75,7 +75,12 @@ final class PriceCatalogue
                 catch (\DomainException) { return false; }
             };
             $annual = $renewal && $eligible('renew', 1);
-            $locked->register_enabled = $registry && $annual && array_any($terms, static fn (int $term): bool => $eligible('register', $term));
+            $locked->register_enabled = false;
+            if ($registry && $annual) {
+                foreach ($terms as $term) {
+                    if ($eligible('register', $term)) { $locked->register_enabled = true; break; }
+                }
+            }
             $locked->transfer_enabled = $registry && $annual && in_array(1, $row['transfer'], true) && $eligible('transfer', 1);
             $locked->save();
         });
