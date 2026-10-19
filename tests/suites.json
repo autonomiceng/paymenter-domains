@@ -17,7 +17,8 @@
     "tests/namesilo-contact-readback-test.php",
     "tests/profile-diagnostics-test.php",
     "tests/driver-contract-test.php",
-    "tests/pricing-test.php"
+    "tests/pricing-test.php",
+    "tests/ote-purchase-evidence-test.php"
   ],
   "native": [
     "tests/native-fixture-test.php",

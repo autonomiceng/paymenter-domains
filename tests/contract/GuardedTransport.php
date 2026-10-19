@@ -12,6 +12,8 @@ final class GuardedTransport implements DeadlineTransport
     private array $sent = [];
     private array $latest = [];
     private bool $renewalAuthorized = false;
+    private ?\Closure $purchaseAuthorization = null;
+    private ?PurchaseAttempt $purchaseAttempt = null;
     public readonly string $domain;
     public array $receipt = ['request_count' => 0, 'requests' => [], 'mismatches' => [], 'checks' => []];
     public function __construct(#[\SensitiveParameter] string $key, private readonly bool $write, private readonly string $output,
@@ -55,6 +57,9 @@ final class GuardedTransport implements DeadlineTransport
     public function attempted(string $command): bool { return ($this->sent[$command] ?? 0) > 0; }
     public function remaining(): int { return $this->limit - $this->receipt['request_count']; }
     public function authorizeRenewal(bool $accepted): void { $this->renewalAuthorized = $accepted; }
+    public function purchaseAuthorization(\Closure $authorization): void { $this->purchaseAuthorization = $authorization; }
+    public function purchaseAttempt(): PurchaseAttempt
+    { return $this->purchaseAttempt ?? throw new \RuntimeException('Original purchase evidence unavailable.'); }
     private function policy(string $command, #[\SensitiveParameter] array $p): void
     {
         if ($this->reconcile && !in_array($command, ['listOrders', 'orderDetails', 'listDomains', 'getDomainInfo'], true)) {
@@ -105,6 +110,12 @@ final class GuardedTransport implements DeadlineTransport
         $key = $this->secret->getValue();
         $url = $origin.'/'.$command.'?'.http_build_query(['version' => 1, 'type' => 'json', 'key' => $key] + $parameters, '', '&', PHP_QUERY_RFC3986);
         if (parse_url($url, PHP_URL_HOST) !== 'ote.namesilo.com' || parse_url($url, PHP_URL_SCHEME) !== 'https') { throw new \RuntimeException('OTE resolved host refused.'); }
+        if (in_array($command, ['registerDomain', 'renewDomain'], true)) {
+            $money = $this->purchaseAuthorization ? ($this->purchaseAuthorization)($command) : null;
+            if (!$money instanceof \Paymenter\Extensions\Servers\Domains\Data\Money) { throw new \RuntimeException('Purchase authorization required.'); }
+            $this->purchaseAttempt = PurchaseAttempt::persist($this->output, $this->domain, $money,
+                $parameters['years'], '/'.basename($origin), gmdate(DATE_ATOM));
+        }
         $this->last = hrtime(true) / 1e9;
         $this->sent[$command] = ($this->sent[$command] ?? 0) + 1;
         $index = $this->receipt['request_count']++;
@@ -131,6 +142,16 @@ final class GuardedTransport implements DeadlineTransport
                 default => null,
             };
             if ($diagnosticRequest !== null) { $entry['parser'] = ParserDiagnostics::inspect($body, $diagnosticRequest, $key); }
+            $readRequest = $diagnosticRequest ?? match ($command) {
+                'getDomainInfo' => RegistrarRequest::domainInfo($parameters['domain']),
+                'listOrders' => RegistrarRequest::listOrders($parameters['date_from'], $parameters['date_to']),
+                'orderDetails' => RegistrarRequest::orderDetails($parameters['order_number']),
+                default => null,
+            };
+            if ($readRequest !== null) {
+                $entry['read_outcome'] = (new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\ResponseParser)
+                    ->parse($body, $readRequest, $key)->outcome->name;
+            }
             foreach (Shapes::check($command, $data, $command === 'checkRegisterAvailability' ? explode(',', $parameters['domains']) : []) as $error) { $this->mismatch($command, $error); }
             if ($response->httpStatus !== 200) { $this->mismatch($command, 'http_status'); $this->save(); throw new \RuntimeException('OTE HTTP response refused.'); }
             $this->save(); return $response;
@@ -174,6 +195,7 @@ final class GuardedTransport implements DeadlineTransport
     public function save(): void
     {
         $json = json_encode($this->receipt, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
+        $this->purchaseAttempt?->assertRedacted($json);
         $key = $this->secret->getValue();
         foreach (array_unique([$key, rawurlencode($key), urlencode($key), base64_encode($key)]) as $token) {
             if (str_contains($json, $token)) { throw new \RuntimeException('OTE receipt redaction failed.'); }

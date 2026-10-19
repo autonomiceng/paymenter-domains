@@ -68,6 +68,7 @@ def main():
     flags.add_argument('--profile-read', action='store_true')
     flags.add_argument('--reconcile', action='store_true')
     parser.add_argument('--attempt-receipt', type=Path)
+    parser.add_argument('--registration-context', choices=['background', 'interactive'], default='background')
     flags.add_argument('--self-test', action='store_true')
     parser.add_argument('--max-requests', type=int, choices=range(1, 61), default=None, metavar='1..60')
     args = parser.parse_args()
@@ -79,6 +80,8 @@ def main():
         parser.error('--reconcile requires --attempt-receipt and --max-requests 2..15')
     if not args.reconcile and args.attempt_receipt is not None:
         parser.error('--attempt-receipt requires --reconcile')
+    if args.registration_context != 'background' and not args.write:
+        parser.error('--registration-context interactive requires --write and separate authority')
     os.umask(0o077)
     if not args.self_test and 18 <= datetime.datetime.now(datetime.timezone.utc).hour < 21:
         parser.exit(2, 'OTE time window closed.\n')
@@ -93,7 +96,8 @@ def main():
         with_native = args.write or args.profile_read or (args.self_test and bool(source))
         runtime, binary, ext = prepare(native=with_native)
         env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'PHP_INI_SCAN_DIR': '', 'PHPRC': '',
-               'OTE_OUTPUT': str(output), 'OTE_REQUEST_LIMIT': str(args.max_requests)}
+               'OTE_OUTPUT': str(output), 'OTE_REQUEST_LIMIT': str(args.max_requests),
+               'OTE_REGISTRATION_CONTEXT': args.registration_context}
         if args.reconcile:
             env['OTE_ATTEMPT_RECEIPT'] = str(args.attempt_receipt.resolve(strict=True))
         if with_native:
@@ -120,13 +124,19 @@ def main():
         # Never relay child stdout/stderr: native errors can contain raw responses or credentials.
         result = subprocess.run(argv, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
         if args.self_test and with_native and result.returncode == 0:
-            for scenario, renewals in [('profile-read', 0), ('missing-premium', 0), ('premium-one', 0), ('malformed-registration', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
+            for scenario, renewals in [('profile-read', 0), ('missing-premium', 0), ('premium-one', 0), ('malformed-registration', 0), ('unknown-registered', 1), ('unknown-absent', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
                 uncertain_output = output/scenario
                 uncertain_output.mkdir(mode=0o700)
                 uncertain_env = dict(env, OTE_OUTPUT=str(uncertain_output), OTE_SELF_TEST_SCENARIO=scenario)
                 refused = subprocess.run(argv, cwd=ROOT, env=uncertain_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
                 evidence = json.loads((uncertain_output/'receipt.json').read_text())
                 commands = [row['command'] for row in evidence['requests']]
+                if scenario == 'unknown-registered':
+                    if refused.returncode != 0 or evidence['reconciliation']['category'] != 'registered_in_account' or commands.count('registerDomain') != 1 or commands.count('renewDomain') != 1:
+                        raise ValueError('Same-name reconciled sequence failed')
+                    continue
+                if scenario == 'unknown-absent' and evidence['reconciliation']['category'] != 'not_registered':
+                    raise ValueError('Exact absent purchase classification failed')
                 if scenario == 'profile-read':
                     if refused.returncode != 0 or commands != ['contactList']:
                         raise ValueError('Read-only contact probe guard failed')

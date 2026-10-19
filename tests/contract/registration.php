@@ -43,7 +43,16 @@ $authority = static function () use ($claims, &$op, $binding): bool {
     try { [$current] = $claims->profileAuthority($op); $binding->requireMatch($current); return true; }
     catch (Throwable) { return false; }
 };
+$wire->purchaseAuthorization(static function (string $command) use (&$op) {
+    if ($command !== 'registerDomain') { throw new RuntimeException('Registration authorization only.'); }
+    $cost = $op->fresh()->attempt['authorized_cost'] ?? [];
+    return new \Paymenter\Extensions\Servers\Domains\Data\Money($cost['amount'] ?? '', $cost['currency'] ?? '');
+});
 $exchange = static function ($origin, $command, $parameters, $ms) use ($wire, &$profileParameters, &$profileId): string {
+    if (getenv('OTE_REGISTRATION_CONTEXT') === 'interactive') {
+        $origin = \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Environment::Sandbox->origin().'/'
+            .\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\RequestContext::Interactive->value;
+    }
     if ($command === 'contactAdd') { $profileParameters = $parameters; }
     $body = $wire->raw($origin, $command, $parameters, $ms);
     $data = json_decode($body, true);
@@ -89,8 +98,15 @@ $wire->check('registration', $registered ? 'accepted_via_real_admitted_protocol'
     : ($wire->attempted('registerDomain') ? 'unresolved_possibly_sent' : 'blocked_before_purchase'));
 if (!$registered) {
     $wire->mismatch('registerDomain', 'production_registration_not_accepted'); $nativeSuccessful = true;
-    if ($wire->attempted('registerDomain')) { $wire->check('purchase_unresolved', true); throw new RuntimeException('OTE purchase needs investigation.'); }
-    return;
+    if (!$wire->attempted('registerDomain')) { return; }
+    $wire->check('purchase_unresolved', true);
+    $client = new Client($binding, (string) getenv('NAMESILO_SANDBOX_API_KEY'), $wire);
+    $category = $wire->purchaseAttempt()->reconcile($wire, $client, $binding, $clock);
+    if ($category !== 'registered_in_account') { throw new RuntimeException('OTE purchase needs investigation.'); }
+    // Sandbox sequence authority only: no engine completion, charge acceptance or retry.
+    $wire->authorizeRenewal(true);
+    $wire->receipt['checks']['purchase_unresolved'] = false; $wire->save();
+    $wire->check('registration', 'reconciled_in_account');
 }
 
 $raw = static fn ($command, $parameters) => $wire->raw('https://ote.namesilo.com/apibatch', $command, $parameters);

@@ -410,3 +410,20 @@ Zero, one or multiple candidates therefore remain `ambiguous`, including empty i
 exit 3 preserves the original unknown purchase. There is no write/resume path in this mode.
 The normal time, credential, host, receipt and no-retry guards apply; use an explicit cap of 2–15.
 `ote-reconciliation-test.php` runs only synthetic transports in the offline contracts suite.
+
+### Retained OTE purchase evidence
+
+New writes persist `attempt-private.json` with mode 0600 before purchase dispatch. It contains
+only the generated name, exact authorized decimal amount, term, route and UTC dispatch time.
+It is separate from the redacted receipt; never copy it into logs, fixtures or commits. A renewal
+archives the initial file privately as `registration-attempt-private.json` before replacing it.
+Unknown registration replies invoke the real driver reconciliation in the same process, using
+that original file and the remaining request budget. The closed observation is `registered_in_account`,
+`not_registered` (exact account absence, empty successful orders and available nonpremium name),
+or `ambiguous`. Matching account ownership requires a unique exact-name/term/amount order before
+sandbox sequence continuation. These observations never complete native financial operations or
+accept production history completeness/timezone. Ambiguity stops with exit 3 and never retries.
+A separately authorized diagnostic `--write --registration-context interactive --max-requests N`
+selects the existing interactive API route inside the runner only; background remains the default
+and renewal always uses `/apibatch`. An Unknown renewal stops immediately without rerouting.
+`ote-purchase-evidence-test.php` uses synthetic transports only and is part of contracts.
