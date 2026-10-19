@@ -93,20 +93,24 @@ $revision = $holder->renewal($domain, 'USD', $now)->revision;
 $older = new CatalogueRate('renew', 1, '1.0000', 'synthetic', $now->modify('-1 hour'), $now->modify('+1 day'));
 same(0, $catalogue->sync(1, static fn (): array => [$older])['synced'], 'Older in-flight read cannot overwrite newer observation');
 same($revision, $holder->renewal($domain, 'USD', $now)->revision, 'Stale read keeps revision');
-// The compatibility save contract delegates: dirty prices require the real locked native context.
+// Option E refuses every dirty manual price, regardless of transaction or quote freshness.
+$saveRefusal = static function (callable $call, string $message = 'Managed pricing authority requires a dedicated audited transition.'): void {
+    try { $call(); } catch (DomainException $e) { same($message, $e->getMessage(), 'Exact compatibility save refusal'); return; }
+    expect(false, 'Expected compatibility save refusal');
+};
 $service = new App\Models\Service(['product_id' => 101, 'plan_id' => 102, 'user_id' => 21, 'quantity' => 1, 'currency_code' => 'USD', 'price' => '1.00']);
 $service->id = 11; $service->exists = true; $service->syncOriginal();
 $service->setRelation('product', new App\Models\Product(['server_id' => 1]));
 $holder->assertSave($service, $domain->fresh(), $now);
-$service->price = '10.00'; $reject(static fn () => $holder->assertSave($service, $domain->fresh(), $now));
-$reject(static fn () => $holder->assertSave($service, $domain->fresh(), $now->modify('+2 days')));
+$service->price = '10.00'; $saveRefusal(static fn () => $holder->assertSave($service, $domain->fresh(), $now));
+$saveRefusal(static fn () => $holder->assertSave($service, $domain->fresh(), $now->modify('+2 days')));
 $service->price = '1.00'; $holder->assertSave($service, $domain->fresh(), $now->modify('+2 days'));
 $service->price = '9.00'; $service->syncOriginal(); $service->status = 'cancelled';
 $holder->assertSave($service, $domain->fresh(), $now); // unchanged old retail must not block lifecycle saves
 $nonstandard = $domain->fresh(); $nonstandard->price_mode = 'complimentary';
 $holder->assertSave($service, $nonstandard, $now);
-$service->price = '1.00'; $reject(static fn () => $holder->assertSave($service, $domain->fresh(), $now));
-$service->plan_id = 103; $reject(static fn () => $holder->assertSave($service, $domain->fresh(), $now));
+$service->price = '1.00'; $saveRefusal(static fn () => $holder->assertSave($service, $domain->fresh(), $now));
+$service->plan_id = 103; $saveRefusal(static fn () => $holder->assertSave($service, $domain->fresh(), $now), 'Managed service binding is permanent.');
 App\Models\Server::findOrFail(1)->update(['enabled' => false]);
 same('1.00', $holder->renewal($domain, 'USD', $now)->retail, 'Disabled native seller retains holder price access');
 same(0, $catalogue->sync(1, $read)['synced'], 'Native disabled server is uniformly read-only');
@@ -122,13 +126,13 @@ same('unknown_price', $retained->staffAlert, 'Retained unknown renewal alerts st
 same('1.00', $retained->retail, 'Unknown cost never cancels published renewal retail');
 $reject(static fn () => serialize($retained));
 $service->plan_id = 102; $service->syncOriginal(); $service->price = '2.00';
-$reject(static fn () => $holder->assertSave($service, $domain->fresh(), $now));
+$saveRefusal(static fn () => $holder->assertSave($service, $domain->fresh(), $now));
 $service->price = '1.00'; $service->syncOriginal(); $service->status = 'suspended';
 Tld::where('server_id', 1)->where('tld', 'com')->firstOrFail()->update(['use_default_rule' => false, 'pricing_mode' => 'invalid']);
 $holder->assertSave($service, $domain->fresh(), $now);
 $unknown->wholesale = '12.0000'; $unknown->revision++; $unknown->save();
 same(true, $holder->renewal($domain, 'USD', $now)->retained, 'Invalid current rule preserves published renewal');
-$service->price = '2.00'; $reject(static fn () => $holder->assertSave($service, $domain->fresh(), $now));
+$service->price = '2.00'; $saveRefusal(static fn () => $holder->assertSave($service, $domain->fresh(), $now));
 same(0, App\Models\Invoice::count(), 'No billing/invoice mutation in catalogue lane');
 $nativeSuccessful = true;
 echo "Catalogue persistence, retained read failures, holder revisions and reprice contract passed.\n";
