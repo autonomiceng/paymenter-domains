@@ -22,6 +22,10 @@ final readonly class FinancialAdjustments
             $op = $l['operations']->firstWhere('id', $operationId);
             if (!$op) { throw new \DomainException('Missing native financial obligation.'); }
             [$invoice] = RefundPayment::requireLine($op, $l);
+            // Retired debt resolves only by exact full refund; a correction would leave it permanently unsettled.
+            if ($invoice->status === 'cancelled' || RefundProof::retired($op, $l['domain'])) {
+                throw new \DomainException('Cancelled or retired financial obligations cannot be adjusted.');
+            }
             self::requireHistory($op, $l);
             $audit = $op->funding['financial_adjustments'] ?? [];
             foreach ($audit as $entry) {

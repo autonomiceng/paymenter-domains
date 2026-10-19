@@ -64,6 +64,7 @@ same($before+PricingRule::minor($op->amount),$credit(),'Proven prewire refusal c
 // Retired cancelled debt is never dispatched on late payment. Credit once to resolve financial conflict.
 [$retired,$d,$b,$bill]=$makeRenewal('refund-late-retired.com',false); $cycles->retireUnpaid($retired->id);
 commerceReject(fn()=>(new FinancialAdjustments($clock))->append($staff,$retired->id,'mint_retired',$retired->amount,'payment_correction'));
+commerceReject(fn()=>(new FinancialAdjustments($clock))->append($staff,$retired->id,'reverse_retired','-'.$retired->amount,'payment_correction'));
 same('cancelled',$bill->fresh()->status,'Correction cannot fabricate a late retired payment');
 same(0,InvoiceTransaction::where('invoice_id',$bill->id)->count(),'Retired debt retains no fabricated transaction');
 $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
