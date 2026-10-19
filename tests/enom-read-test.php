@@ -186,6 +186,10 @@ foreach (['true' => true, 'false' => false, 'unknown' => false] as $flag => $eli
     $wire->payloads['Check'] = '<Domains><Domain><Name>example.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><MinRegYear>2</MinRegYear><Transferable>'.$flag.'</Transferable></Properties></Domain></Domains>';
     same($eligible, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->evidence()->available, 'Transfer needs explicit positive property');
 }
+$wire->payloads['Check'] = '<Domains><Domain><Name>example.com</Name><RRPCode>210</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><Transferable>true</Transferable></Properties></Domain></Domains>';
+same(false, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->evidence()->available, 'Unregistered name is not transferable');
+$wire->payloads['Check'] = '<Domains><Domain><Name>example.com</Name><RRPCode>211</RRPCode><IsPremium>1</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><Transferable>true</Transferable></Properties></Domain></Domains>';
+same(true, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->evidence()->premium, 'Premium transfer is flagged');
 $before = count($wire->calls);
 try { $driver->balance(new RequestContext(new AccountBinding('enom', 2, Environment::Test, 'other'), RequestOrigin::Background, new DateTimeImmutable('+1 hour'), new RequestBudget(1))); throw new LogicException('Expected binding refusal'); } catch (InvalidArgumentException) {}
 same($before, count($wire->calls), 'Wrong binding never dispatched');
