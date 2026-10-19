@@ -469,3 +469,15 @@ request count plus its explicit limit against 60, and the transport requires its
 `runtime-records-test.php` exercises the registered observation seam with accepted synthetic ports, processing pauses, daily cadence, held manual recovery, numeric DNS/SRV presentation and source-ID preservation. Staff record holds use allowlisted current-identity reasons. Customer unknown-state notes distinguish ordinary checks from manually resumed checks. All reads stay offline; native renders accept output and supplied-shell paths as arguments.
 
 Stopped scheduled-read coverage includes a domain-read failure while processing is paused, re-enabling without automatic retry, current-phase/binding exclusion and audited manual recovery. Staff alerts verify the exact resume-action label, bound request link and missing-request guidance.
+
+## Supported PHP
+
+Runtime source targets PHP 8.3 and 8.4, matching Paymenter 1.5.9. The existing offline
+runner retains its hash-pinned PHP 8.4.26 runtime. A separate CI job parses every shipped
+PHP file on PHP 8.3 and runs `tests/php83-compatibility-test.php`.
+The token guard also runs with offline lint and the registered runner suite. It rejects
+known PHP 8.4 function calls, asymmetric visibility, property hooks and unparenthesized
+`new` dereferences, with synthetic accepted/rejected fixtures. Namespaced user functions
+and imports are resolved without executing source. This targeted check is not exhaustive:
+dynamic function names, extension availability and untested runtime behavior remain
+outside it. Passing it does not establish installed Paymenter or provider acceptance.

@@ -123,6 +123,8 @@ def main():
         php = str(ROOT/'scripts/php-test')
         commands = [('lint', [php, '-l', str(p.relative_to(ROOT))]) for area in ['Domains', 'tests']
                     for p in sorted((ROOT/area).rglob('*.php'))] if 'lint' in selected else []
+        if 'lint' in selected:
+            commands.append(('lint', [php, 'tests/php83-compatibility-test.php']))
         for kind, paths in suites.items():
             if kind in selected:
                 commands.extend((kind, [sys.executable if p.endswith('.py') else php, p]) for p in paths)
