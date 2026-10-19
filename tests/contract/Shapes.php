@@ -54,7 +54,7 @@ final class Shapes
     }
     private static function positiveInteger(mixed $value): bool
     { return (is_int($value) || is_string($value)) && preg_match('/^[1-9][0-9]*$/D', (string) $value) === 1; }
-    public static function check(string $command, mixed $data): array
+    public static function check(string $command, mixed $data, array $requested = []): array
     {
         $errors = [];
         if (!is_array($data) || ($data['request']['operation'] ?? null) !== $command || !is_array($data['reply'] ?? null)) {
@@ -69,6 +69,10 @@ final class Shapes
             $r['domains'] = []; $data['reply']['domains'] = [];
         }
         if ($command === 'checkRegisterAvailability' && is_array($r['available'] ?? null)) {
+            if (count($requested) === 1 && array_keys($r['available']) === ['domain']
+                && is_array($r['available']['domain']) && !array_is_list($r['available']['domain'])) {
+                $r['available'] = [$r['available']['domain']];
+            }
             // Explicitly ignored optional OTE metadata, matching production projection.
             if (array_is_list($r['available'])) {
                 foreach ($r['available'] as &$row) { if (is_array($row)) { unset($row['renew']); } } unset($row);

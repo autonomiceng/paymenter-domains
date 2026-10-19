@@ -86,6 +86,13 @@ foreach ($fixtures as $command => $fixture) {
     }
     if ($command !== '_fixture') { same([], Shapes::check($command, $fixture), 'Documented fixture shape '.$command); }
 }
+$singleShape = ['request' => ['operation' => 'checkRegisterAvailability', 'ip' => '192.0.2.1'],
+    'reply' => ['code' => 300, 'detail' => 'synthetic', 'available' => ['domain' =>
+        ['domain' => 'example.com', 'price' => 8.95, 'premium' => 0, 'duration' => 1, 'renew' => 9.95]]]];
+same([], Shapes::check('checkRegisterAvailability', $singleShape, ['example.com']), 'Observed singleton projection accepted');
+expect(Shapes::check('checkRegisterAvailability', $singleShape, ['example.com', 'example.net']) !== [], 'Multi-name nested projection refused');
+$badShape = $singleShape; $badShape['reply']['available']['extra'] = true;
+expect(Shapes::check('checkRegisterAvailability', $badShape, ['example.com']) !== [], 'Extra wrapper field not silently discarded');
 $diagnostic = static fn ($reply, $request) => \OteContract\ParserDiagnostics::inspect(json_encode([
     'request' => ['operation' => $request->command], 'reply' => ['code' => 300, 'detail' => 'offline-secret-token'] + $reply]), $request, 'offline-secret-token');
 $d = $diagnostic(['balance' => 'invented-secret-amount'], RegistrarRequest::balance());
@@ -188,7 +195,13 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
             } elseif ($command === 'getAccountBalance') { $r['balance'] = '100.00'; }
             elseif ($command === 'getPrices') { $r['com'] = $r['net'] = ['registration' => '8.95', 'renew' => '8.95', 'transfer' => '8.95']; }
             elseif ($command === 'checkRegisterAvailability') {
-                foreach (explode(',', $p['domains']) as $name) { $r['available'][] = ['domain' => $name, 'price' => '8.95', 'premium' => 0, 'duration' => 1]; }
+                foreach (explode(',', $p['domains']) as $name) { $r['available'][] = ['domain' => $name, 'price' => 8.95, 'premium' => 0, 'duration' => 1, 'renew' => 9.95]; }
+                if (count($r['available']) === 1) {
+                    $row = $r['available'][0];
+                    if (getenv('OTE_SELF_TEST_SCENARIO') === 'missing-premium') { unset($row['premium']); }
+                    if (getenv('OTE_SELF_TEST_SCENARIO') === 'premium-one') { $row['premium'] = 1; }
+                    $r['available'] = ['domain' => $row];
+                }
             } elseif ($command === 'registerDomain' || $command === 'renewDomain') {
                 if ($command === 'renewDomain' && getenv('OTE_SELF_TEST_SCENARIO') === 'renewal-transport-failure') { throw new RuntimeException('offline-secret-token'); }
                 $r += ['message' => 'synthetic', 'domain' => $p['domain'], 'order_amount' => '8.95'];
@@ -225,6 +238,10 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
         same(true, $wire->receipt['profile_inventory']['rows'][0]['identity_match'], 'Frozen synthetic identity compared');
         same(true, $wire->receipt['checks']['profile_read_gate'], 'Read-only identity gate');
         same(true, $wire->receipt['checks']['profile_authority_after'], 'Current authority checked after read');
+    } elseif (in_array(getenv('OTE_SELF_TEST_SCENARIO'), ['missing-premium', 'premium-one'], true)) {
+        same('held', $wire->receipt['checks']['registration_engine_state'], 'Unknown/premium availability holds standard registration');
+        same(false, $wire->attempted('registerDomain'), 'Unknown/premium singleton cannot purchase');
+        same(false, $wire->attempted('renewDomain'), 'Unknown/premium singleton cannot renew');
     } else {
     same('accepted_via_real_admitted_protocol', $wire->receipt['checks']['registration'], 'Real registration path exercised offline');
     same(true, $wire->receipt['checks']['charge_evidence_shape_matches'], 'Charge correlation exercised offline');

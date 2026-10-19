@@ -126,7 +126,7 @@ final class GuardedTransport implements DeadlineTransport
                 default => null,
             };
             if ($diagnosticRequest !== null) { $entry['parser'] = ParserDiagnostics::inspect($body, $diagnosticRequest, $key); }
-            foreach (Shapes::check($command, $data) as $error) { $this->mismatch($command, $error); }
+            foreach (Shapes::check($command, $data, $command === 'checkRegisterAvailability' ? explode(',', $parameters['domains']) : []) as $error) { $this->mismatch($command, $error); }
             if ($response->httpStatus !== 200) { $this->mismatch($command, 'http_status'); $this->save(); throw new \RuntimeException('OTE HTTP response refused.'); }
             $this->save(); return $response;
         } catch (\Throwable) {

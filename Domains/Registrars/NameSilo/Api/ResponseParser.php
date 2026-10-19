@@ -107,13 +107,21 @@ final class ResponseParser
             if (!array_key_exists($field, $reply)) { continue; }
             $records = $reply[$field];
             if (!is_array($records)) { throw new \UnexpectedValueException('Invalid availability shape.'); }
+            // OTE wraps its single registration row in available.domain, unlike multi-name lists.
+            if ($request->command === 'checkRegisterAvailability' && $field === 'available'
+                && count($requested) === 1 && array_keys($records) === ['domain']
+                && is_array($records['domain']) && !array_is_list($records['domain'])) {
+                $records = [$records['domain']];
+            }
             $records = array_is_list($records) ? $records : [$records];
             foreach ($records as &$record) {
                 $domain = $record['domain'] ?? null;
+                if (is_string($domain)) { $domain = strtolower($domain); }
                 if (!is_string($domain) || !in_array($domain, $requested, true) || isset($seen[$domain])) {
                     throw new \UnexpectedValueException('Uncorrelated availability result.');
                 }
                 $seen[$domain] = true;
+                $record['domain'] = $domain;
                 // OTE renewal metadata is not an account quote; ignore it by name.
                 unset($record['renew']);
                 if ($field === 'available') {

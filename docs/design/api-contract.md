@@ -89,8 +89,15 @@ register/renew/transfer parameters with no dispatch path. `ResponseParser` can c
 purchase evidence independently, without sending it. A later authorized write slice must introduce
 funding/ownership/premium/cost/prior-outcome admission before adding a purchase transport path.
 Availability collections normalize to lists and must cover exactly the requested names once;
-missing premium evidence is explicit null, never ordinary-name proof. Monetary JSON lexemes are
-preserved before float conversion. Grouping was observed only in balance and catalogue amounts. Financial amounts accept plain digits or strictly grouped thousands
+missing premium evidence is explicit null, never ordinary-name proof. On 2026-10-18, the
+[registration availability reference](https://www.namesilo.com/api-reference/pages?uid=domains/check-register-availability)
+showed list rows for `available`, and direct domain-string objects for `unavailable`/`invalid`.
+OTE additionally returned `available:{domain:{domain,price,premium,duration,renew}}` for one requested
+name. Normalize only that exact wrapper, only for single-name registration checks, into one row.
+Correlate every row by exact lowercase name; do not trim or infer identity. The existing row
+price/premium validation, optional duration projection and missing-premium unknown eligibility stay
+identical. No nested-wrapper support is inferred for transfer checks or the unavailable/invalid siblings.
+Monetary JSON lexemes are preserved before float conversion. Grouping was observed only in balance and catalogue amounts. Financial amounts accept plain digits or strictly grouped thousands
 with a nonzero first group and exactly two fractional digits when commas are present. Ungrouped
 financial amounts allow at most two fractional digits. Normalize grouping away and pad to two decimals. Availability
 prices also accept plain decimal lexemes with longer fractions, preserving every digit; they are

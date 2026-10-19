@@ -34,8 +34,20 @@ try {
             if ($result->outcome !== Outcome::Success) { $wire->mismatch($request->command, 'production_parser_not_success'); }
             $wire->save(); return $result;
         };
-        $read(RegistrarRequest::balance()); $read(RegistrarRequest::prices());
+        $readBalance = $read(RegistrarRequest::balance()); $readPrices = $read(RegistrarRequest::prices());
         $availability = $read(RegistrarRequest::availability([$wire->domain, substr($wire->domain, 0, -4).'.net'], false));
+        if ($mode === '--read') {
+            $single = $read(RegistrarRequest::availability([$wire->domain], false));
+            $row = $single->value('available', [])[0] ?? [];
+            $wire->check('single_name_available_nonpremium', $single->outcome === Outcome::Success
+                && ($row['domain'] ?? null) === $wire->domain && ($row['premium'] ?? null) === false);
+            try {
+                $cost = new \Paymenter\Extensions\Servers\Domains\Data\Money($readPrices->catalogueRows()['com']['registration'] ?? '', 'USD');
+                $funds = new \Paymenter\Extensions\Servers\Domains\Data\Money($readBalance->value('balance', ''), 'USD');
+                $sufficient = \Paymenter\Extensions\Servers\Domains\Services\WriteMoney::sufficient($funds, $cost);
+            } catch (Throwable) { $sufficient = false; }
+            $wire->check('single_name_price_balance_preflight', $sufficient);
+        }
         $wire->raw('https://ote.namesilo.com/api', 'listDomains', ['pageSize' => 10, 'page' => 1]);
         $read(RegistrarRequest::listOrders(gmdate('Y-m-d', time() - 86400), gmdate('Y-m-d')));
         try { $batchBody = $wire->raw('https://ote.namesilo.com/apibatch', 'getAccountBalance', []);

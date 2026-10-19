@@ -389,3 +389,10 @@ The profile probe now records `exact_match` separately from the documented US/CA
 equivalence and reports `profile_read_gate` only for one valid non-default identity match.
 The contact readback contract test covers singleton/list projection, missing identity, changed
 phone digits, malformed formatting, and unknown metadata without retaining live values.
+
+Single-name registration availability has a separately correlated read-only probe in `--read`
+(seven requests), with ordinary-name and exact registration-price/balance shape checks for that
+probe name. This is not funding authority for the separate write, which keeps its own fresh
+preflight and sequence reserves. The offline native OTE fixture reproduces the observed `available.domain` row object, including numeric metadata.
+Nested-wrapper acceptance is limited to one requested registration name; malformed/missing evidence
+cannot grant purchase permission. Existing list and unavailable/invalid contracts remain covered.

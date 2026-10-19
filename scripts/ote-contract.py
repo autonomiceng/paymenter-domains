@@ -112,7 +112,7 @@ def main():
         # Never relay child stdout/stderr: native errors can contain raw responses or credentials.
         result = subprocess.run(argv, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
         if args.self_test and with_native and result.returncode == 0:
-            for scenario, renewals in [('profile-read', 0), ('malformed-registration', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
+            for scenario, renewals in [('profile-read', 0), ('missing-premium', 0), ('premium-one', 0), ('malformed-registration', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
                 uncertain_output = output/scenario
                 uncertain_output.mkdir(mode=0o700)
                 uncertain_env = dict(env, OTE_OUTPUT=str(uncertain_output), OTE_SELF_TEST_SCENARIO=scenario)
@@ -122,6 +122,10 @@ def main():
                 if scenario == 'profile-read':
                     if refused.returncode != 0 or commands != ['contactList']:
                         raise ValueError('Read-only contact probe guard failed')
+                    continue
+                if scenario in ('missing-premium', 'premium-one'):
+                    if refused.returncode != 0 or 'registerDomain' in commands or 'renewDomain' in commands:
+                        raise ValueError('Unknown/premium singleton purchase guard failed')
                     continue
                 if scenario in ('limited-budget', 'short-budget'):
                     limit = 28 if scenario == 'limited-budget' else 26

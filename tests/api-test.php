@@ -306,4 +306,5 @@ foreach ([...$purchases, Purchase::renew('example.com', 1, false)] as $mapping) 
 }
 same(0, $fake->calls, 'Purchase mappings cannot dispatch');
 require __DIR__.'/Support/namesilo-observed.php';
+require __DIR__.'/Support/namesilo-singleton.php';
 echo "API: synthetic shapes, all 43 documented codes, redaction, bounds and builders passed.\n";
