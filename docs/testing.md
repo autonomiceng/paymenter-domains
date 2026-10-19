@@ -630,3 +630,17 @@ replacement or proof of provider, production database, theme or deployment accep
 These fingerprints and the checker are test-only; the extension never loads them.
 They fail suite/CI qualification against the installed Paymenter tree, and impose no
 runtime version check, enablement refusal, dispatch refusal or staff banner.
+
+
+Owned transfer-code and DNS/SRV handlers decode the raw POST body with `Http/RawPost`.
+The shipping Blade forms (`resources/views/partials/transfer-code.blade.php` and
+`resources/views/partials/owner-{dns,srv}.blade.php`) use ordinary POST forms with
+no enctype override or JavaScript submission: browsers send form-urlencoded bodies.
+JSON object bodies are also decoded explicitly; JSON form keys use Laravel's normal
+input API. Neither parser takes byte-sensitive fields from query parameters or falls
+back to transformed input bags. Multipart bodies, malformed JSON, oversized bodies and
+form input that would exceed PHP's field limit are refused. No global TrimStrings
+exceptions remain. Native tests run trimming and empty-string conversion before the
+owned handler, check exact encrypted transfer/TXT bytes and safe SRV rejection, and
+prove an unrelated core route's `transfer_code` is trimmed. Routes retain web CSRF,
+authentication, verified-email, throttle and session-blocking boundaries.

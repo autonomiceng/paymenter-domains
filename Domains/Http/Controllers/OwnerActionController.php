@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Http\Controllers;
 use Illuminate\Http\Request;
-use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
+use Paymenter\Extensions\Servers\Domains\Http\{FormKeys,RawPost};
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, DomainManagement, OwnedDomains, OwnerPorts, OwnerSetup, TransferInputs};
 /** Dormant owner POST boundary. Never calls a driver write or queues a purchase. */
 final readonly class OwnerActionController
@@ -13,13 +13,15 @@ final readonly class OwnerActionController
         private DomainManagement $management, private OwnerPorts $ports) {}
     public function code(#[\SensitiveParameter] Request $request,int $domain)
     {
-        $query=$request->query->has('transfer_code'); $code=$request->request->all()['transfer_code']??null;
+        $query=$request->query->has('transfer_code');
+        try { $code=RawPost::body($request)['transfer_code']??null; }
+        catch (\DomainException) { $code=null; }
         $request->request->remove('transfer_code'); $request->query->remove('transfer_code');
         if ($request->isJson()) { $request->json()->remove('transfer_code'); }
         $request->session()->forget('_old_input.transfer_code');
         $d=$this->owners->owned($request->user(),$domain); $op=$this->owners->operation($d);
         $context='owner:'.$domain.':code'; FormKeys::verify($request,$context);
-        if ($query||!TransferInputs::validCode($code)||$request->isJson()) {
+        if ($query||!TransferInputs::validCode($code)) {
             return redirect()->route('domains.domains.code',$domain)->withErrors(['transfer_code'=>'Enter a valid transfer code.']);
         }
         FormKeys::consume($request,$context);
@@ -50,6 +52,11 @@ final readonly class OwnerActionController
         abort_unless(in_array($action,self::ACTIONS,true),404);
         return $this->submit($request,$domain,$action,function($nonce)use($request,$domain,$action):void {
             $d=$this->owners->owned($request->user(),$domain); $p=$request->request->all();
+            if (in_array($action,['dns','srv'],true)) {
+                $p=RawPost::body($request);
+                // The fixed-field draft uses these same raw records after validation errors.
+                $request->request->set('records',$p['records']??[]);
+            }
             if (($p['confirmed']??null)!=='1') { throw new \DomainException; }
             if (in_array($action,['dns','srv'],true)&&!isset(\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::forDomain($d)[$action])) { throw new \DomainException('Current records required.'); }
             $payload=match($action) {

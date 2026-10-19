@@ -194,6 +194,7 @@
       },
       "request-input": {
         "consumers": [
+          "Domains/Http/RawPost.php",
           "Domains/Services/Runtime.php",
           "Domains/routes/owned.php",
           "Domains/Http/Controllers/OwnerActionController.php"

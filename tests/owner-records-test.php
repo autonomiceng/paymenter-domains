@@ -18,7 +18,7 @@ expect(str_contains($html,'Only child nameservers added or changed here are list
 $observer=new \Paymenter\Extensions\Servers\Domains\Services\DomainObservation($readBindings,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),$ports);
 same('refreshed',$observer->run($d->id),'Initial producer proves complete empty records before editing');
 $cases=[
-    'dns'=>['records'=>[['name'=>'@','type'=>'TXT','address'=>' exact  text ','mx_pref'=>''],[]],'preimage_digest'=>ManagementPayload::digest([])],
+    'dns'=>['records'=>[['name'=>'@','type'=>'TXT','address'=>' exact + % é雪  text ','mx_pref'=>''],[]],'preimage_digest'=>ManagementPayload::digest([])],
     'srv'=>['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'0','weight'=>'5','port'=>'443','target'=>'sip.example.com.']],'preimage_digest'=>ManagementPayload::digest([],'srv')],
     'ds_add'=>['ds'=>$ds], 'ds_delete'=>['ds'=>$ds],
     'glue_add'=>['host'=>'ns1.record-owner.com','ip'=>'2606:4700:4700::1111'],
@@ -31,7 +31,7 @@ foreach($cases as$action=>$payload){
     $op=$d->operations()->orderByDesc('id')->firstOrFail();same('queued',$op->state,'Queued is not sent');
     try{$controller->manage($stale,$d->id,$action);expect(false,'Replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Single-use action key');}
     same('succeeded',$management->run($op->id,$driver)->state,$action.' uses existing grant and typed readback');
-    if($action==='dns'){same(' exact  text ',$op->payload['records'][0]['address'],'TXT bytes preserved');expect(str_contains($page(),' exact  text '),'Confirmed records reach real Blade');}
+    if($action==='dns'){same(' exact + % é雪  text ',$op->payload['records'][0]['address'],'TXT bytes preserved');expect(str_contains($page(),' exact + % é雪  text '),'Confirmed records reach real Blade');}
     if($action==='ds_add'){same(1,count($owners->present($d->fresh())->management['ds']['records']),'Single DS tuple renders');}
     if($action==='glue_update'){$writes=array_values(array_filter($state->calls,fn($c)=>$c[0]==='UpdateNameServer'));same('2606:4700:4700::1111',end($writes)[1]['OldIP'],'Old IP comes from fresh preflight');}
 }
@@ -57,12 +57,9 @@ $forms=$dom->query('//form[@method="POST"]')->length;
 foreach(['_token','_request_key','confirmed']as$key){same($forms,$dom->query('//form//input[@name="'.$key.'"]')->length,'Every form has '.$key);}
 foreach(['account_fingerprint','provider_domain_id','old_ip','profile_id','cost']as$private){expect(!str_contains($html,'name="'.$private.'"'),'No private authority serialized');}
 expect(str_contains($html,'DNS records')&&str_contains($html,'SRV records')&&str_contains($html,'DNSSEC')&&str_contains($html,'Child nameservers'),'All supported sections rendered');
-// Native middleware preserves TXT bytes while trimming ordinary fields.
-$r=Illuminate\Http\Request::create('/domains/1/manage/dns','POST',['records'=>[['name'=>' @ ','address'=>' exact  TXT ']]]);
-$previous=app('request');app()->instance('request',$r); // Livewire's skip callback inspects the container request.
-(new Illuminate\Foundation\Http\Middleware\TrimStrings)->handle($r,fn($r)=>$r);
-app()->instance('request',$previous);
-same(' exact  TXT ',$r->input('records.0.address'),'Native middleware must not trim TXT');same('@',$r->input('records.0.name'),'Ordinary inputs remain trimmed');
+// SRV whitespace must reach strict validation instead of being silently repaired by middleware.
+$before=Operation::count();$r=$post('srv',['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'0','weight'=>'5','port'=>'443','target'=>' sip.example.com. ']],'preimage_digest'=>ManagementPayload::digest($state->srv,'srv')]);
+$response=$controller->manage($r,$d->id,'srv');same(422,$response->getStatusCode(),'Original SRV target whitespace is invalid');same($before,Operation::count(),'Trimming cannot turn invalid SRV input into a queued change');
 $before=Operation::count();$r=$post('dns',['records'=>[...$rows,$rows[0]],'preimage_digest'=>ManagementPayload::digest($state->dns)]);$controller->manage($r,$d->id,'dns');same($before,Operation::count(),'Fifty-one rows rejected before any operation');
 $server->settings()->where('key','domains_dns_tools')->update(['value'=>'0']);$dto=$owners->present($d->fresh());foreach(['dns','srv','ds']as$kind){expect(!isset($dto->management[$kind]),'Tools off removes each action');}expect(isset($dto->management['glue']),'Glue follows its own engine authority');
 $nativeSuccessful=true;echo "Native owner DNS/SRV/DS/glue grants, replay, exact TXT, current preimage, safe real Blade and maximum records passed.\n";
