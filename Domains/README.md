@@ -63,3 +63,5 @@ baseline, retains encrypted audit, and never bypasses current parsing, size, mar
 checks. Historical raw identities explain ICU differences only; they never resolve hostnames.
 Acceptance keeps the original download age. Unparseable saved data immediately holds discovery
 and forces an unconditional download. A normal new validated revision clears stale candidates.
+
+Domain watch storage is dormant: [retained identities and disabled mappings](../docs/watch-storage.md). Discovery and the mapping preview/enable screen remain follow-on work.
