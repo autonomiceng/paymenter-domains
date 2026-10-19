@@ -18,7 +18,10 @@ $compositionReady=true;$dueRecords();$clock->instant=$clock->now()->modify('+1 h
 expect(count($state->calls)>0,'Installed scheduler reaches registered producer');same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Native producer publishes complete records');
 $job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();same(0,$job->tries,'Successful native refresh resets tries');same($clock->now()->getTimestamp()+86400,$job->due_at,'Ordinary refresh cadence is daily');
 $io=count($state->calls);$runtimePorts->initialManagedRecordObservations();same($io,count($state->calls),'No duplicate early refresh');
+DB::enableQueryLog();DB::flushQueryLog();
 $dto=$owners->present($d->fresh());
+$stoppedReads=array_filter(DB::getQueryLog(),static fn($q)=>str_contains($q['query'],'from "domains_observation_work"')&&str_contains($q['query'],'exists'));
+same(1,count($stoppedReads),'One stopped-state read serves all record sections in this owner projection');DB::disableQueryLog();
 same(array_map(fn($i)=>'record'.$i,range(1,12)),array_column($dto->management['dns']['records'],'name'),'Customer DNS numeric order');
 same(array_map(fn($i)=>'sip'.$i,range(1,12)),array_column($dto->management['srv']['records'],'service'),'Customer SRV numeric order');
 $html=$page();$dom=storefrontDom($html);

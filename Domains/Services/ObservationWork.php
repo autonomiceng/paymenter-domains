@@ -14,9 +14,19 @@ final class ObservationWork
     public static function stopped(Domain $d): bool
     {
         if (!Schema::hasTable('domains_observation_work')) { return false; }
+        return self::current($d)->whereIn('safe_code',self::STOPPED)->exists();
+    }
+    /** Advisory selection only; resume revalidates the locked holding and job. */
+    public static function currentId(Domain $d): ?int
+    {
+        $id=self::current($d)->orderByDesc('id')->value('id');
+        return $id===null?null:(int)$id;
+    }
+    private static function current(Domain $d): \Illuminate\Database\Query\Builder
+    {
         return DB::table('domains_observation_work')->where('domain_id',$d->id)->where('server_id',$d->server_id)
             ->where('account_fingerprint',$d->account_fingerprint)->where('generation',$d->authority_generation)
-            ->where('phase',self::phase($d))->whereIn('safe_code',self::STOPPED)->exists();
+            ->where('phase',self::phase($d));
     }
     public function __construct(private readonly DomainObservation $observer, private readonly Clock $clock,
         private readonly ReadLimiter $budget, private readonly ?CatalogueSync $catalogue=null) {}
