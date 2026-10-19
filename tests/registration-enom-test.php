@@ -17,6 +17,7 @@ $exchange = static function ($origin, $command, $parameters, $timeout) use ($reg
     same('https://resellertest.enom.com/interface.asp', $origin, 'Fixed Enom origin'); expect($timeout > 0 && $timeout <= 25000, 'Bounded timeout');
     $registration->calls[] = $command;
     if ($command === 'Purchase') {
+        $registration->purchases[] = $parameters;
         same('default', $parameters['UseDNS'], 'Purchase on default DNS'); expect(!isset($parameters['NS1']), 'Follow-up separate');
         same(0, $parameters['RenewName'], 'Provider renewal off'); same('no', $parameters['UseCreditCard'], 'Account funds only');
         expect(isset($parameters['AuxBillingFirstName']), 'Frozen four-role casing');
@@ -86,4 +87,28 @@ $rogue = new class($protocol, $features, $acceptance) implements \Paymenter\Exte
 $engine = new DomainOperations($claims, $fresh, $rogue, $clock); $rogue->engine = $engine;
 $before = $registration->calls; $result = $runRegistration($new('rogue-writer.com'));
 same('uncertain', $result->state, 'Refused production composition stays sealed'); same($before, $registration->calls, 'Nonbridge writer sends zero requests');
+// One real bridge Purchase requests three years; both response and later owned readback prove only one.
+require __DIR__.'/Support/reconciliation-fixture.php';
+$registration->mode = 'clean'; $registration->calls = []; $registration->purchases = []; $makeEngine($binding, $exchange);
+$op = $new('three-year-short-readback.com', term: 3); $money = $nativeMoney();
+$result = $runRegistration($op);
+same([3], array_column($registration->purchases, 'NumYears'), 'M8 exactly one Purchase requests the paid three-year term');
+same(['pending', 'registration_evidence_required', '2027-10-18'],
+    [$result->state, $result->safe_code, $result->attempt['registration']['response_expiry']], 'M8 short Purchase remains financially unresolved');
+$observation->name = $op->domain->domain; $observation->years = 3; $observation->expiryYears = 1; $observation->reference = '1234';
+$result = $reconcile->run($op->id);
+same([\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Info,
+    \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Renewal,
+    \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Lock,
+    \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Privacy,
+    \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Info,
+    \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Expiry,
+    \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Order], $observation->calls,
+    'M8 original order and dedicated one-year expiry are actually observed');
+same(['pending', 'registration_evidence_required', 'original_attempt_unresolved', null, null, null, null, $op->domain->domain],
+    [$result->state, $result->safe_code, $result->policy['reconciliation']['reason'], $result->confirmed_expires_at,
+        $result->domain->provider_expires_at, $result->domain->renewal_policy['billing_anchor'] ?? null,
+        $result->cost['actual'] ?? null, $result->domain->reservation_name], 'M8 one-year readback cannot confirm three years or release the name');
+$calls = [$registration->reads, $registration->calls, $observation->calls]; $engine->execute($op->id);
+same([$calls, $money], [[$registration->reads, $registration->calls, $observation->calls], $nativeMoney()], 'M8 unresolved short term cannot replay or change native finance');
 echo "Enom registration, correction, guard and policy composition checks passed\n"; $nativeSuccessful = true;
