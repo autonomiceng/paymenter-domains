@@ -84,7 +84,7 @@ def run(commands, env, output, selected, suites, dependency=None):
                'unimplemented_suites': [s for s, paths in suites.items() if not paths],
                'dependency': {'commit': native.COMMIT, 'lock_sha256': native.LOCK_SHA256, 'source_sha256': dependency[1]} if dependency else None,
                'dependency_unchanged': dependency_unchanged, 'dependency_error': dependency_error, 'real_provider_calls': 0,
-               'scope': 'Synthetic offline tests; native fixture only, no Domains install/billing/UI/provider acceptance.'}
+               'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
     (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
     print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands), 'receipt': str(output/'receipt.json')}))
     return 0 if complete else 1

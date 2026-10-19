@@ -63,6 +63,8 @@ if($phase==='server-delete'){
         same(0,Account::count(),'Fresh package creates no activated accounts');
         echo "Native upload/extract/Install branch passed.\n";
     }else{assertRetained($receipt);echo "Native upload retained all recorded data (".$phase.").\n";}
+}elseif($phase==='held'){
+    require __DIR__.'/Support/registration-held.php';
 }elseif($phase==='seed'){
     require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';
     expect(!is_link(base_path('extensions/Servers/Domains')),'Runtime is installed files, never a source link');

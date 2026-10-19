@@ -80,7 +80,7 @@ def main():
                 raise AssertionError('Unsafe archive reached native upload boundary')
         previous = build.build(previous_source/'Domains', root/'previous')
         assert previous['archive_sha256'] != current['archive_sha256'], 'Upgrade must replace different runtime bytes'
-        for scenario, first, count in [('fresh', 'current', 8), ('upgrade', 'previous', 7)]:
+        for scenario, first, count in [('held', 'current', 8), ('fresh', 'current', 8), ('upgrade', 'previous', 7)]:
             # Each initial upload must take native Install, never reuse the other scenario's files.
             if installed.exists():
                 shutil.rmtree(installed)
@@ -101,6 +101,9 @@ def main():
                     run_env['PACKAGE_ZIP'] = str(upload)
                 subprocess.run([str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')], cwd=ROOT, env=run_env, check=True, timeout=45)
             phase('install', first)
+            if scenario == 'held':
+                phase('held')
+                continue
             phase('seed')
             phase('upload', 'current')
             env['PACKAGE_MIGRATIONS'] = '8'
@@ -116,7 +119,7 @@ def main():
             phase('verify')
         print(json.dumps({'installed_package': True, 'previous_revision': PREVIOUS,
                           'previous_zip_sha256': previous['archive_sha256'], 'zip_sha256': current['archive_sha256'],
-                          'fresh_install': True, 'same_zip_reinstall': True, 'upgrade': True, 'native_delete_refused': True, 'retained_install_branch': True, 'uninstall_hook_retained': True,
+                          'fresh_installed_registration_held': True, 'fresh_install': True, 'same_zip_reinstall': True, 'upgrade': True, 'native_delete_refused': True, 'retained_install_branch': True, 'uninstall_hook_retained': True,
                           'real_provider_calls': 0}))
 
 

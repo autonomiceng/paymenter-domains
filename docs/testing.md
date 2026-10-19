@@ -537,3 +537,14 @@ refuses retained accounts; the separate uninstall hook also retains data. Upload
 are verified before repeating the native upgrade command as an idempotency check.
 Customized notification templates and populated synthetic PSL state are retained too.
 Converter injection and a modified embedded manifest are rejected before native upload.
+
+### Default-held registration from installed bytes
+
+The installed-package fixture starts a third fresh native Install and proves no catalogue
+ending/offer, no admitted native cart line and no checkout order/service/invoice/operation.
+An adversarial native cart row with positive stock/price must receive the specific neutral
+checkout refusal and roll back. Identity verification and audited catalogue review leave
+processing off without accepted runtime composition and shared workers. A backfilled queued
+registration cannot reach a provider executor; the real registration writer refuses with
+`write_disabled` before engine resolution or wire calls. Transfer and renewal feature gates
+remain independent and default off. No provider requests or live acceptance are implied.
