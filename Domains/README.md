@@ -26,3 +26,36 @@ restoration questions resolved. Availability premium=null means unknown, not ord
 
 Run the [offline tests](../docs/testing.md). Provider/sandbox acceptance and Paymenter 1.5.9
 compatibility remain unverified. The distributable license is [MIT](LICENSE).
+
+## Public suffix list
+
+Domains → Public suffix list shows saved local status. Viewing requires domain-view and
+`admin.domains.watch.view`; updating or changing the source also requires
+`admin.domains.watch.manage`. Both new permissions default to denied.
+The existing runtime scheduler checks weekly, including when no registrar account exists.
+Manual and scheduled updates share one rolling 24-hour network allowance.
+The extension-wide native setting `domains_psl_source_url` is editable on that page; its default
+is `https://publicsuffix.org/list/public_suffix_list.dat`. Only credential-free HTTPS URLs
+without query/fragment on public endpoints are allowed. Redirects and retries are refused.
+The Public Suffix List data is licensed under [MPL-2.0](https://publicsuffix.org/list/) and
+comes from publicsuffix.org; no downloaded list or runtime package is bundled.
+
+Validation requires 100 KiB–1 MiB, at least 1,000 ICANN and 100 PRIVATE rules, ordered section
+markers, valid UTF-8/IDNA rules, and com/co.uk/github.io sentinels. These deliberately broad
+bounds accommodate the approximately 230 KB / 10,000-rule source while refusing truncated
+responses. More than 5% of either section’s previous rules disappearing rejects the update,
+even if added rules hide the net loss. Only the current and one previous compressed copy remain.
+No-change 304 responses update checked time only; successful 200 downloads (including identical
+bytes) revalidate freshness. Warning starts strictly after 30 days; new discovery is held
+before the first validated download and strictly after 90 days. No discovery or resolver is
+shipped here. The native intl extension is required to parse IDNs.
+The HTTP connect/transfer limits are 10/30 seconds. Native DNS resolution is checked before the
+HTTP exchange and deducted from its remaining budget; the system resolver itself has no PHP timeout.
+
+Once the list is more than 30 days old, requests omit conditional validators so an unchanged
+200 download can revalidate freshness. Stored baselines ignore current acceptance floors;
+a damaged or no-longer-parseable baseline is reported separately as a saved-copy failure.
+Restore a verified compatible database backup before retrying a saved-copy failure; do not
+remove snapshots to bypass the loss guard. A legitimate removal above 5% remains held.
+Before discovery is enabled, a separately designed audited baseline-replacement procedure
+is required for that case and for stored rules rejected by a newer ICU version; this slice intentionally provides no loss-check override.

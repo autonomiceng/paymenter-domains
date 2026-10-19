@@ -15,6 +15,8 @@ final class Staff
     {
         $permissions = [self::VIEW => 'View domains', self::COSTS => 'View domain costs',
             self::METADATA => 'View domain secret metadata', self::POLICY => 'Manage domain policy',
+            'admin.domains.watch.view' => 'View domain watch and public suffix list',
+            'admin.domains.watch.manage' => 'Manage domain watch and public suffix list',
             'admin.domains.manage' => 'Manage domain operations', 'admin.domains.fund' => 'Fund domain renewals'];
         foreach(\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS as $action=>$label){
             $permissions[\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission($action)]=$label;

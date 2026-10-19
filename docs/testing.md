@@ -495,3 +495,14 @@ only explicit synthetic availability checks read the provider port.
 Holding provenance tests pair purchased holdings with pending conversions: billing, renewal proof, reminders, direct dispatch, observation and owner/staff presentation refuse pending authority. The additive migration retains existing rows without fabricating purchase provenance.
 
 Slice 41: `tests/conversion-test.php` and `tests/conversion-guards-test.php` exercise exact synthetic legacy schemas, offline accepted evidence, staged ID-map recovery, native financial/evidence retention, pending exclusions, configuration/queue/maintenance/backup refusals and replay safety. The one-time development converter is excluded from the runtime archive; see `scripts/conversion/README.md` for its guarded operator workflow. Real application databases and registrar transports are never used by these suites.
+
+PSL updater tests use small synthetic ICANN/PRIVATE lists and injected clocks/transports.
+`psl-test.php` covers retained copies, validation refusals, conditional requests, shared daily admission,
+weekly eligibility and exact 30/90-day boundaries. `psl-transport-test.php` uses namespaced cURL
+fakes to verify public-address pinning, HTTPS, no redirects/retries, deadlines and response caps.
+No list download, discovery/resolver or provider acceptance is established.
+
+`psl-staff-test.php` mounts the installed native page, submits source/update actions,
+revokes permissions after mount, checks all age states and exercises weekly runtime work
+without accounts. Native fixture defaults inject a failing PSL transport so incidental ticks
+can never resolve DNS or download data.
