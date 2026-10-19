@@ -592,3 +592,12 @@ cron spool is changed. This proves the disposable CLI only, not shared-host proc
 After an ungraceful crash, use the private `container.json` Docker endpoint and inspect only
 `dom-c41r-mariadb`; stop its immutable ID only when its `domains-conversion-rehearsal` label
 matches that file, otherwise leave it alone. Never clean up by name alone.
+`registration-nameservers-test.php` exercises both registrars through the real registration
+preflight and native claim/finish path with a synthetic writer, independently of the bridge's
+earlier owner-setup guard. Empty hosts, excessive counts and invalid hostname labels hold
+unsealed as `nameservers_required`, with zero reads/writes and a specific staff label. Enom
+privacy refusal keeps precedence; valid inputs still seal and reach the synthetic writer.
+The existing registration protocol suites cover valid purchases and follow-up readback.
+Claimed nameserver holds also retain definitely-unsent rejection and exact once-only account credit;
+unknown execution evidence still blocks both recovery proofs. Both registrars exercise staff
+refund and terminal-rejection recovery paths.

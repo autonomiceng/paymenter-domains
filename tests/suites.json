@@ -125,7 +125,8 @@
     "tests/operation-clock-test.php",
     "tests/operation-rate-test.php",
     "tests/conversion-new-pin-test.php",
-    "tests/conversion-app-native-test.php"
+    "tests/conversion-app-native-test.php",
+    "tests/registration-nameservers-test.php"
   ],
   "ui": [],
   "runner": [
