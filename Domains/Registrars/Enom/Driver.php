@@ -137,6 +137,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         // Name-specific Check restrictions override the account/TLD catalogue. Missing bounds
         // retain the source 1..10 defaults; malformed or conflicting evidence is unknown.
         $properties = $row['properties'] ?? [];
+        if ($properties === '') { $properties = []; }
         if (!is_array($properties) || ($properties !== [] && array_is_list($properties))) { return $this->neutral(new ProtocolResult('unknown', 'invalid_payload')); }
         if ($query->action === Action::Register) {
         $min = $properties['minregyear'] ?? '1'; $max = $properties['maxregyear'] ?? '10';
