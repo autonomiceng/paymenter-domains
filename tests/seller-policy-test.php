@@ -7,7 +7,7 @@ use App\Models\Server;
 use Illuminate\Support\Facades\{DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CatalogueEntry, CatalogueRate, Disposition, DriverResult, Environment, ResultReason, SaleSelection, SendState};
-use Paymenter\Extensions\Servers\Domains\Models\{Domain, SalesPolicy, Tld};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, Price, SalesPolicy, Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, DomainReservations, FoundationSchema, HolderPricing, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 FoundationSchema::install(); SalesPolicySchema::install();
@@ -19,7 +19,7 @@ $factory = static fn (AccountBinding $b, array $c): FakeRegistrar => new FakeReg
     new DriverResult($b, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unverified));
 foreach (['enom', 'namesilo'] as $key) { $registry->register($key, ['token'], $verifier, $factory); }
 $bindings = new AccountBindings($registry); $accounts = [];
-foreach ([1 => 'enom', 2 => 'namesilo'] as $id => $key) {
+foreach ([1 => 'enom', 2 => 'namesilo', 3 => 'enom'] as $id => $key) {
     Server::create(['id' => $id, 'name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
     $b = $bindings->configure($id, $key, Environment::Test, ['token' => 'account-'.$id]);
     $bindings->setProcessing($id, true);
@@ -30,11 +30,11 @@ Tld::create([...$accounts[2], 'tld' => 'net', 'enabled' => true, 'register_enabl
 $now = new DateTimeImmutable('2026-10-18T12:00:00Z');
 $rate = static fn (string $action, int $term, string $cost): CatalogueRate => new CatalogueRate($action, $term, $cost, 'synthetic', $now, $now->modify('+1 day'));
 $prices = new PriceCatalogue(new PricingRules); $holder = new HolderPricing($prices);
-foreach ([1, 2] as $id) { $prices->sync($id, static fn (): array => [$rate('register', 1, (string) ($id * 5)), $rate('register', 3, '4.00'), $rate('renew', 1, (string) ($id * 6)), $rate('transfer', 1, '5.00')]); }
-foreach ([1, 2] as $id) {
+foreach ([1, 2, 3] as $id) { $prices->sync($id, static fn (): array => [$rate('register', 1, (string) ($id * 5)), $rate('register', 3, '4.00'), $rate('renew', 1, (string) ($id * 6)), $rate('transfer', 1, '5.00')]); }
+foreach ([1, 2, 3] as $id) {
     $binding = $bindings->reader($id)->binding();
     $row = ['register' => $id === 1 ? [1, 3] : [1], 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true];
-    $accepted = CatalogueAcceptances::save($binding, 0, $id === 1 ? ['com' => $row] : ['com' => $row, 'net' => $row]);
+    $accepted = CatalogueAcceptances::save($binding, 0, $id === 2 ? ['com' => $row, 'net' => $row] : ['com' => $row]);
     foreach (array_keys($accepted->endings) as $tld) {
         $prices->import(new CatalogueEntry($binding, $tld, [$rate('register', 1, (string) ($id * 5)), ...($id === 1 ? [$rate('register', 3, '4.00')] : []),
             $rate('renew', 1, (string) ($id * 6)), $rate('transfer', 1, '5.00')], $row['register'], true, true), $accepted, static fn () => null, $now);
@@ -62,7 +62,53 @@ $oldCart = $sellers->selection('com', 'register', 1, $now);
 $reject(static fn () => $sellers->admit([$oldCart], $now));
 $sellers->initialize('net'); $sellers->change('net', 1, 2, true, false, $now);
 $netCart = $sellers->selection('net', 'register', 1, $now);
-$batch = DB::transaction(static fn (): array => $sellers->admit([$netCart, $oldCart], $now));
+// Inspect the real batch builders and hydrated rows; SQLite itself cannot prove row-lock concurrency.
+$lockQueries = []; $returned = ['domains_tlds' => [], 'domains_prices' => []]; $captureLocks = true;
+foreach ([Tld::class, Price::class] as $model) {
+    $model::addGlobalScope('batch-lock-evidence', static function ($builder) use (&$lockQueries, &$captureLocks): void {
+        $query = $builder->getQuery();
+        if ($captureLocks && $query->orders === [['column' => 'id', 'direction' => 'asc']]) {
+            $lockQueries[$query->from] = clone $query;
+        }
+    });
+    $model::retrieved(static function ($row) use (&$returned, &$captureLocks): void {
+        if ($captureLocks) { $returned[$row->getTable()][] = $row->id; }
+    });
+}
+try { $batch = DB::transaction(static fn (): array => $sellers->admit([$netCart, $oldCart], $now)); }
+finally { $captureLocks = false; }
+same(['domains_tlds', 'domains_prices'], array_keys($lockQueries), 'Both ordered batch lock queries captured');
+$tuples = ['domains_tlds' => [], 'domains_prices' => []]; $bindingsByTable = $tuples;
+foreach ([$netCart, $oldCart] as $line) {
+    $tuples['domains_tlds'][] = '(`server_id` = ? and `tld` = ? and `account_fingerprint` = ?)';
+    array_push($bindingsByTable['domains_tlds'], $line->serverId, $line->tld, $line->fingerprint);
+    foreach ([['renew', 1], [$line->action, $line->term]] as [$action, $term]) {
+        $tuples['domains_prices'][] = '(`server_id` = ? and `tld` = ? and `account_fingerprint` = ? and `currency` = ? and `action` = ? and `term` = ?)';
+        array_push($bindingsByTable['domains_prices'], $line->serverId, $line->tld, $line->fingerprint, $line->currency, $action, $term);
+    }
+}
+foreach ($lockQueries as $table => $query) {
+    same(true, $query->lock, $table.' batch requests FOR UPDATE');
+    // Compile the actual builder with MySQL grammar to retain FOR UPDATE, absent in SQLite SQL.
+    $query->grammar = new Illuminate\Database\Query\Grammars\MySqlGrammar(DB::connection());
+    same('select * from `'.$table.'` where ('.implode(' or ', $tuples[$table]).') order by `id` asc for update',
+        $query->toSql(), $table.' batch SQL uses AND tuples joined by OR');
+    same($bindingsByTable[$table], $query->getBindings(), $table.' batch SQL has exact tuple bindings');
+    $actualIds = array_values(array_unique($returned[$table])); sort($actualIds);
+    $expectedIds = [];
+    foreach ([$netCart, $oldCart] as $line) {
+        $base = ['server_id' => $line->serverId, 'tld' => $line->tld, 'account_fingerprint' => $line->fingerprint];
+        if ($table === 'domains_tlds') { $expectedIds[] = Tld::where($base)->sole()->id; }
+        else {
+            foreach ([['renew', 1], [$line->action, $line->term]] as [$action, $term]) {
+                $expectedIds[] = Price::where([...$base, 'currency' => $line->currency, 'action' => $action, 'term' => $term])->sole()->id;
+            }
+        }
+    }
+    sort($expectedIds);
+    same($expectedIds, $actualIds, $table.' returns only this checkout tuple set, excluding unrelated accounts and terms');
+    expect(DB::table($table)->where('server_id', 3)->exists(), $table.' has unrelated-account decoys');
+}
 same([2, 1], array_map(static fn ($price): int => $price->serverId, $batch), 'Batch returns input order after ordered locks');
 $reject(static fn () => DB::transaction(static fn () => $sellers->admit([], $now)));
 $reject(static fn () => $sellers->change('net', 2, 1, true, false, $now)); // no matching TLD

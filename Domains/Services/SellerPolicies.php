@@ -101,14 +101,18 @@ final class SellerPolicies
             }
         }
         $catalogues = Tld::where(function ($query) use ($lines): void {
-            foreach ($lines as $s) { $query->orWhere(['server_id' => $s->serverId, 'tld' => $s->tld, 'account_fingerprint' => $s->fingerprint]); }
+            foreach ($lines as $s) {
+                $query->orWhere(static fn ($tuple) => $tuple->where('server_id', $s->serverId)
+                    ->where('tld', $s->tld)->where('account_fingerprint', $s->fingerprint));
+            }
         })->orderBy('id')->lockForUpdate()->get()->keyBy(static fn (Tld $t): string => $t->server_id.':'.$t->tld);
         // Lock the entire batch before reentrant per-line price validation, regardless of cart order.
         Price::where(function ($query) use ($lines): void {
             foreach ($lines as $s) {
-                $base = ['server_id' => $s->serverId, 'tld' => $s->tld, 'account_fingerprint' => $s->fingerprint, 'currency' => $s->currency];
-                $query->orWhere([...$base, 'action' => 'renew', 'term' => 1]);
-                $query->orWhere([...$base, 'action' => $s->action, 'term' => $s->term]);
+                $query->orWhere(static fn ($tuple) => $tuple->where('server_id', $s->serverId)->where('tld', $s->tld)
+                    ->where('account_fingerprint', $s->fingerprint)->where('currency', $s->currency)->where('action', 'renew')->where('term', 1));
+                $query->orWhere(static fn ($tuple) => $tuple->where('server_id', $s->serverId)->where('tld', $s->tld)
+                    ->where('account_fingerprint', $s->fingerprint)->where('currency', $s->currency)->where('action', $s->action)->where('term', $s->term));
             }
         })->orderBy('id')->lockForUpdate()->get();
         $prices = [];
