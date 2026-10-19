@@ -116,6 +116,8 @@
     "tests/runtime-records-test.php",
     "tests/holding-provenance-test.php",
     "tests/conversion-test.php",
+    "tests/conversion-evidence-test.php",
+    "tests/test_conversion_evidence_cli.py",
     "tests/conversion-guards-test.php",
     "tests/psl-test.php",
     "tests/psl-staff-test.php",

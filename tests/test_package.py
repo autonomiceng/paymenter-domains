@@ -78,7 +78,7 @@ class PackageTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'license must match'):
                         builder.runtime_members(source)
     def test_one_time_converter_is_excluded(self):
-        for source in [ROOT/'scripts/convert-enom-05.php', *(ROOT/'scripts/conversion').rglob('*')]:
+        for source in [ROOT/'scripts/convert-enom-05.php', ROOT/'scripts/collect-conversion-evidence.php', *(ROOT/'scripts/conversion').rglob('*')]:
             self.assertFalse(source.is_relative_to(ROOT/'Domains'))
         with tempfile.TemporaryDirectory(prefix='domains-converter-package-') as temp:
             root = Path(temp)
@@ -131,7 +131,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='domains-runtime-refusal-') as temp:
             source = Path(temp)/'Domains'
             shutil.copytree(ROOT/'Domains', source)
-            for name in ['scripts/run.php', 'tests/probe.php', 'docs/note.php', '.github/ci.php', 'Services/convert-enom-05.php', 'Services/pin-source.php', 'Services/dev-tool.php', 'Services/conversion.php', 'Services/Runtime.PHP', 'Services/bad\udcff.php']:
+            for name in ['scripts/run.php', 'tests/probe.php', 'docs/note.php', '.github/ci.php', 'Services/convert-enom-05.php', 'Services/collect-conversion-evidence.php', 'Services/pin-source.php', 'Services/dev-tool.php', 'Services/conversion.php', 'Services/Runtime.PHP', 'Services/bad\udcff.php']:
                 with self.subTest(name=name):
                     path = source/name; path.parent.mkdir(exist_ok=True)
                     path.write_bytes(b'<?php')
