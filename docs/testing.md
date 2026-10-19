@@ -548,3 +548,8 @@ processing off without accepted runtime composition and shared workers. A backfi
 registration cannot reach a provider executor; the real registration writer refuses with
 `write_disabled` before engine resolution or wire calls. Transfer and renewal feature gates
 remain independent and default off. No provider requests or live acceptance are implied.
+
+Registrable-name tests use only synthetic PSL fixtures: ICANN longest matches, wildcard/exception,
+PRIVATE holds, ASCII A-labels, U-label holds, invalid hostnames and revision changes.
+PSL rebaseline tests bind acceptance to pending bytes, fresh staff rights, typed short hash and reason;
+current validation remains mandatory and acceptance retains encrypted append-only audit evidence.

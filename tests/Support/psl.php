@@ -4,7 +4,7 @@ declare(strict_types=1);
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 function pslFixture(int $icann = 40, int $private = 40): string
 {
-    $a = ['com', 'co.uk', '*.ck', '!www.ck', '公司.cn']; $b = ['github.io'];
+    $a = ['com', 'co.uk', '*.ck', '!www.ck', '公司.cn', 'io']; $b = ['github.io'];
     for ($i = count($a); $i < $icann; $i++) { $a[] = 'i'.$i.'.example'; }
     for ($i = count($b); $i < $private; $i++) { $b[] = 'p'.$i.'.example'; }
     return "// synthetic MPL-style parser fixture\n// ===BEGIN ICANN DOMAINS===\n".implode("\n", $a).

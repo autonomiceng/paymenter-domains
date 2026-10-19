@@ -2,12 +2,16 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
-use Paymenter\Extensions\Servers\Domains\Services\PublicSuffixList;
+use Paymenter\Extensions\Servers\Domains\Services\{PublicSuffixList,PslFailure};
 final class PslFacts
 {
     public static function result(?string $code): string
     {
         return match ($code) {
+            'rebaselined' => 'The reviewed list was accepted.',
+            'confirmation_invalid' => 'Enter the displayed short hash and a reason of at most 1000 bytes.',
+            'candidate_changed', 'rebaseline_not_required' => 'The pending list changed. Reload and review it again.',
+            'stored_rules_rejected' => 'The current parser rejected saved rules. New discovery is paused. Staff with manage permission can review a valid replacement.',
             null => 'No update attempted yet.', 'checking' => 'An update started. If it was interrupted, try again after the 24-hour limit.',
             'updated' => 'A validated list was saved.', 'identical' => 'The downloaded list is unchanged.', 'not_modified' => 'The source reports no change.',
             'rate_limited' => 'The 24-hour update limit has been reached.',
@@ -18,8 +22,8 @@ final class PslFacts
             'markers_order', 'markers_missing' => 'The list sections were missing or in the wrong order.',
             'rule_invalid', 'invalid_utf8' => 'The downloaded list could not be parsed completely.',
             'sentinel_missing' => 'The downloaded list was missing required rules.',
-            'rules_lost_icann' => 'More than 5% of the ICANN section’s previous rules were missing. The saved list was kept. See the README before changing anything.',
-            'rules_lost_private' => 'More than 5% of the private section’s previous rules were missing. The saved list was kept. See the README before changing anything.',
+            'rules_lost_icann' => 'More than 5% of the ICANN section’s previous rules were missing. The saved list was kept. Staff with manage permission can review the removed rules and accept the exact download.',
+            'rules_lost_private' => 'More than 5% of the private section’s previous rules were missing. The saved list was kept. Staff with manage permission can review the removed rules and accept the exact download.',
             'unexpected_304' => 'The source reported no change without a matching saved list.',
             'internal_error' => 'The update failed internally. Review server logs.',
             'parser_unavailable' => 'The server’s international domain parser is unavailable.',
@@ -31,6 +35,8 @@ final class PslFacts
     public static function state(PublicSuffixList $list): string
     {
         if ($list->revision() === null) { return 'Not downloaded yet'; }
+        try { PublicSuffixList::body($list->current()); } catch (PslFailure) { return 'Saved list damaged'; }
+        if (!$list->parserUsable()) { return 'Saved list needs review'; }
         return !$list->discoveryAllowed() ? 'New discovery paused' : ($list->staleWarning() ? 'Out of date warning' : 'Current');
     }
     public static function rows(PublicSuffixList $list): array

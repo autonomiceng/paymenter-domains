@@ -20,7 +20,9 @@ final readonly class PslValidator
     }
     /** Previously accepted data is not subject to today's size/count/sentinel floors. */
     public function baseline(#[\SensitiveParameter] string $body): array { return $this->rules($body, false); }
-    private function rules(#[\SensitiveParameter] string $body, bool $current): array
+    /** Historical raw identities are only used to explain an ICU-incompatible baseline, never to resolve names. */
+    public function historicalIdentities(string $body): array { return $this->rules($body, false, false); }
+    private function rules(#[\SensitiveParameter] string $body, bool $current, bool $normalize = true): array
     {
         $bytes = strlen($body);
         if ($current && $bytes < $this->minBytes) { throw new PslFailure('too_small'); }
@@ -38,12 +40,7 @@ final readonly class PslValidator
             }
             if ($line === '' || str_starts_with($line, '//')) { continue; }
             if (!in_array($stage, [1, 3], true)) { throw new PslFailure('rule_invalid'); }
-            $prefix = str_starts_with($line, '*.') ? '*.' : (str_starts_with($line, '!') ? '!' : '');
-            $name = substr($line, strlen($prefix));
-            if (!function_exists('idn_to_ascii')) { throw new PslFailure('parser_unavailable'); }
-            $ascii = idn_to_ascii($name, IDNA_NONTRANSITIONAL_TO_ASCII | IDNA_USE_STD3_RULES | IDNA_CHECK_BIDI | IDNA_CHECK_CONTEXTJ, INTL_IDNA_VARIANT_UTS46, $info);
-            if ($ascii === false || $info['errors'] !== 0 || strlen($ascii) > 253 || str_ends_with($ascii, '.')) { throw new PslFailure('rule_invalid'); }
-            $section = $stage === 1 ? 'icann' : 'private'; $rule = $prefix.$ascii;
+            $section = $stage === 1 ? 'icann' : 'private'; $rule = $this->rule($line, $normalize);
             if (isset($rules[$section][$rule])) { throw new PslFailure('rule_invalid'); }
             $rules[$section][$rule] = true;
         }
@@ -56,4 +53,24 @@ final readonly class PslValidator
         }
         return $rules;
     }
+    private function rule(string $line, bool $normalize): string
+    {
+        $prefix = str_starts_with($line, '*.') ? '*.' : (str_starts_with($line, '!') ? '!' : '');
+        $name = substr($line, strlen($prefix));
+        if (!function_exists('idn_to_ascii')) { throw new PslFailure('parser_unavailable'); }
+        $ascii = $normalize ? idn_to_ascii($name, IDNA_NONTRANSITIONAL_TO_ASCII | IDNA_USE_STD3_RULES | IDNA_CHECK_BIDI | IDNA_CHECK_CONTEXTJ, INTL_IDNA_VARIANT_UTS46, $info) : $name;
+        if ($ascii === false || ($normalize && $info['errors'] !== 0) || strlen($ascii) > 253 || str_ends_with($ascii, '.')) { throw new PslFailure('rule_invalid'); }
+        return $prefix.$ascii;
+    }
+    public function incompatibleRules(string $body): array
+    {
+        $rejected = [];
+        foreach ($this->historicalIdentities($body) as $section => $rules) {
+            $bad = [];
+            foreach ($rules as $rule => $_) { try { $this->rule($rule, true); } catch (PslFailure) { $bad[] = $rule; } }
+            $rejected[$section] = ['count' => count($bad), 'samples' => array_slice($bad, 0, 20)];
+        }
+        return $rejected;
+    }
+
 }

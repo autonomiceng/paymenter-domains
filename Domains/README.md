@@ -47,15 +47,19 @@ responses. More than 5% of either section’s previous rules disappearing reject
 even if added rules hide the net loss. Only the current and one previous compressed copy remain.
 No-change 304 responses update checked time only; successful 200 downloads (including identical
 bytes) revalidate freshness. Warning starts strictly after 30 days; new discovery is held
-before the first validated download and strictly after 90 days. No discovery or resolver is
-shipped here. The native intl extension is required to parse IDNs.
+before the first validated download and strictly after 90 days. The resolver derives names only; discovery is not enabled. The native intl extension is required to parse IDNs.
 The HTTP connect/transfer limits are 10/30 seconds. Native DNS resolution is checked before the
 HTTP exchange and deducted from its remaining budget; the system resolver itself has no PHP timeout.
 
 Once the list is more than 30 days old, requests omit conditional validators so an unchanged
 200 download can revalidate freshness. Stored baselines ignore current acceptance floors;
 a damaged or no-longer-parseable baseline is reported separately as a saved-copy failure.
-Restore a verified compatible database backup before retrying a saved-copy failure; do not
-remove snapshots to bypass the loss guard. A legitimate removal above 5% remains held.
-Before discovery is enabled, a separately designed audited baseline-replacement procedure
-is required for that case and for stored rules rejected by a newer ICU version; this slice intentionally provides no loss-check override.
+A damaged stored copy still requires restoring a verified compatible backup; do not remove
+snapshots to bypass validation. For legitimate removals or stored rules rejected by a newer ICU,
+**Public suffix list → Accept this list** shows the pending hash/source/date, saved baseline,
+section counts and up to 20 removed-rule samples per section. Watch view/manage permission,
+the typed short hash and a reason are required. Acceptance binds the exact pending bytes and
+baseline, retains encrypted audit, and never bypasses current parsing, size, marker or sentinel
+checks. Historical raw identities explain ICU differences only; they never resolve hostnames.
+Acceptance keeps the original download age. Unparseable saved data immediately holds discovery
+and forces an unconditional download. A normal new validated revision clears stale candidates.
