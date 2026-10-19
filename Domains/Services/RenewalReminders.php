@@ -10,6 +10,7 @@ final class RenewalReminders
     {
         $d=$l['domain'];$s=$l['service'];$at=$now->getTimestamp();
         $alert=static function(string $code,?int $op=null)use(&$alerts,$d,$at):void {$alerts[]=ObligationAlerts::record($d,$code,$at,$op);};
+        if($d->adoptionPending()){return null;}
         if($s->status!=='active'||!in_array($d->status,['active','grace','expired'],true)){return null;}
         if(!$d->provider_expires_at){$alert('unknown_expiry');return null;}
         $day=CarbonImmutable::instance($now)->utc()->startOfDay();$expiry=$d->provider_expires_at->utc()->startOfDay();

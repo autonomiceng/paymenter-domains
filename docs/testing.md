@@ -491,3 +491,5 @@ checks every amount against strict offer resolution, and bounds ending/check que
 Fresh-call invalidation covers native stock/plans, TLD and seller flags/revisions, rules, account
 identity, acceptance revisions and current-price proof. Query logging forbids display writes;
 only explicit synthetic availability checks read the provider port.
+
+Holding provenance tests pair purchased holdings with pending conversions: billing, renewal proof, reminders, direct dispatch, observation and owner/staff presentation refuse pending authority. The additive migration retains existing rows without fabricating purchase provenance.

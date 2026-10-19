@@ -109,7 +109,8 @@
     "tests/runtime-wire-renewal-test.php",
     "tests/runtime-wire-management-test.php",
     "tests/runtime-lifecycle-test.php",
-    "tests/runtime-records-test.php"
+    "tests/runtime-records-test.php",
+    "tests/holding-provenance-test.php"
   ],
   "ui": [],
   "runner": [

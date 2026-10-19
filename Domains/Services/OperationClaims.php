@@ -22,7 +22,8 @@ final class OperationClaims
         $route = Operation::findOrFail($id);
         if ($route->state === 'running') {
             DB::transaction(function () use ($route): void {
-                Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
+                $held = Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
+                if ($held->adoptionPending()) { return; }
                 $all = Operation::where('domain_id', $route->domain_id)->orderBy('id')->lockForUpdate()->get();
                 $current = $all->firstWhere('id', $route->id);
                 if ($current?->state === 'running' && (!$current->lease_expires_at || $current->lease_expires_at <= $this->clock->now())) {
@@ -150,9 +151,10 @@ final class OperationClaims
     {
         self::outside(); $route = Operation::findOrFail($id);
         return DB::transaction(function () use ($route, $reason): Operation {
-            Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
+            $held = Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
             $all = Operation::where('domain_id', $route->domain_id)->orderBy('id')->lockForUpdate()->get();
             $op = $all->firstWhere('id', $route->id);
+            if ($held->adoptionPending()) { return $op; }
             if ($op->action === 'transfer' && $op->state === 'awaiting_code' && !TransferInputs::validCode($op->payload['epp'] ?? null)) { return $op; }
             if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
                 $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
@@ -269,6 +271,7 @@ final class OperationClaims
                 || $domain->user_id !== $holding->user_id || $op->domain_id !== $domain->id) {
                 throw new \DomainException('Claim route changed.');
             }
+            if ($domain->adoptionPending()) { throw new \DomainException('Registration verification required.'); }
             return $callback($op, $domain, $all, $funding, $server, $account, $staff);
         });
     }

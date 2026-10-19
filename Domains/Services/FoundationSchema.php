@@ -41,6 +41,8 @@ final class FoundationSchema
             $table->string('price_mode', 32)->default('standard');
             $table->longText('reminders')->nullable();
             $table->timestamps();
+            // The additive provenance migration follows the original retained declaration.
+            if (Schema::hasColumn('domains_domains', 'provenance')) { $table->string('provenance', 32)->nullable(); }
         });
         self::table('domains_operations', function (Blueprint $table) {
             $table->id();

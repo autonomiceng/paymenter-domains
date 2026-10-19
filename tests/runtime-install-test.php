@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,RuntimeP
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 $entry=new Domains([]);$entry->installed();
 foreach(Installation::SCHEMAS as $schema){$schema::verify();}
-same(6,DB::table('migrations')->where('migration','like','%create_%')->where('migration','like','2026_10_18_%')->count(),'All extension migrations recorded');
+same(7,DB::table('migrations')->where('migration','like','2026_10_18_%')->count(),'All extension migrations recorded');
 $entry->upgraded('0.0.1');$entry->uninstalled();$entry->installed();
 Runtime::register();same(app(RuntimePorts::class),app(RuntimePorts::class),'One port authority');
 $entry->boot();$entry->boot();

@@ -5,6 +5,7 @@
 <a class="domains-back" href="{{ route('domains.domains.index') }}">Domains</a>
 <div class="domains-dhead"><div><h1 class="domains-title domains-record-value" tabindex="0">{{ $domain->name }}</h1><div class="domains-dhead__meta"><span class="domains-badge domains-tone-{{ $domain->tone }}">{{ $domain->status }}</span>@if ($domain->expiry)<span>Expires <strong>@include('domains::partials.date', ['date' => $domain->expiry])</strong></span>@endif</div></div></div>
 @include('domains::partials.notices', ['fieldKeys'=>['nameservers','contact','dns','srv','ds','glue']])
+@if ($domain->setupPending)<div class="domains-notice" role="status">Our team will confirm this domain’s registration. Renewals and changes are paused until then. If your domain expires soon or you need a change, contact support.</div>@endif
 @if ($domain->changesUnavailable)<div class="domains-notice" role="status">You can’t change this domain’s settings right now. Try again later, or contact support if this continues.</div>@endif
 @if (isset($domain->actions['setup']))
 @if (($domain->transfer['phase'] ?? null) === 'cutoff' && $domain->setup['contacts'])
@@ -19,7 +20,9 @@
 @endif
 <section id="overview" class="domains-panel domains-section"><h2 class="domains-h2">Overview</h2><dl class="domains-facts"><div class="domains-fact"><dt>Auto-renew</dt><dd>{{ $domain->renewal }}</dd></div>@if ($domain->renewalPrice)<div class="domains-fact"><dt>Renewal price</dt><dd>{{ $domain->renewalPrice }}/yr</dd></div>@endif</dl></section>
 @include('domains::partials.owner-management')
+@unless ($domain->setupPending)
 @include('domains::partials.activity')
+@endunless
 @include('domains::partials.client-script')
 </div></div>
 @endcomponent
