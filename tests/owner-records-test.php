@@ -40,8 +40,27 @@ $known=$d->operations()->where('action','srv')->sole();$attempt=$known->attempt;
 // Fixture-only encrypted evidence augmentation through SQL, avoiding any production evidence mutation path.
 $known->attempt=$attempt;Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$known->id)->update(['attempt'=>$known->getAttributes()['attempt']]);
 $html=$page();expect(!str_contains($html,'host_id')&&!str_contains($html,'HostID'),'Provider IDs stay out of HTML');
-$record=$owners->present($d->fresh())->management['srv']['records'][0];$record['port']=8443;$record['_source']='0';$record['host_id']=999;
-Cache::flush();$r=$post('srv',['records'=>[$record],'preimage_digest'=>ManagementPayload::digest($state->srv,'srv')]);$controller->manage($r,$d->id,'srv');
+$form=storefrontDom($html);$formPath='//form[contains(@action,"/manage/srv")]';
+$renderDigest=$form->query($formPath.'//input[@name="preimage_digest"]')->item(0)->getAttribute('value');
+$record=$owners->present($d->fresh())->management['srv']['records'][0];$record['port']=8443;
+$record['_source']=$form->query($formPath.'//input[@name="records[0][_source]"]')->item(0)->getAttribute('value');$record['host_id']=999;
+// A confirmed readback arriving after render inserts a different identity before source 0.
+$earlier=[...$attempt['management_reads'][0]['facts']['records'][0],'service'=>'aaa','host_id'=>19];
+$attempt['management_reads'][0]['facts']['records'][]=$earlier;
+$known->attempt=$attempt;Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$known->id)->update(['attempt'=>$known->getAttributes()['attempt']]);
+$state->srv[]=$earlier;$current=$owners->present($d->fresh())->management['srv'];
+same(['aaa','sip'],array_column($current['records'],'service'),'New confirmed record shifts displayed source indexes');
+same(ManagementPayload::digest($attempt['management_reads'][0]['facts']['records'],'srv'),$current['digest'],'Form and identity lookup digest the same canonical row set');
+$before=Operation::count();$payloads=Operation::orderBy('id')->get()->map(fn($op)=>$op->payload)->all();$io=count($state->calls);
+Cache::flush();$response=$controller->manage($post('srv',['records'=>[$record],'preimage_digest'=>$renderDigest]),$d->id,'srv');
+same(422,$response->getStatusCode(),'Stale SRV source indexes require a reload before queueing');
+expect(str_contains($response->getContent(),'We couldn’t save this change. Reload the page and try again.'),'Stale source error is visible');
+same($before,Operation::count(),'Stale source creates no operation');same($payloads,Operation::orderBy('id')->get()->map(fn($op)=>$op->payload)->all(),'Stale source creates or changes no frozen payload');
+same($io,count($state->calls),'Stale source validation performs no provider I/O');
+try { \Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::restoreSrv($d->fresh(),['records'=>[$record],'record_sources'=>['0'],'preimage_digest'=>$renderDigest]);expect(false,'Stale source must fail field validation'); }
+catch (\Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation $error) { same(['srv.records'],$error->fields,'Stale source identifies the reload field'); }
+// Reloaded indexes/digest still select the original HostID, even though raw readback order differs.
+$record['_source']='1';Cache::flush();$r=$post('srv',['records'=>[$record],'preimage_digest'=>$current['digest']]);$controller->manage($r,$d->id,'srv');
 $op=$d->operations()->orderByDesc('id')->firstOrFail();same(31,$op->payload['records'][0]['host_id'],'Proven server-side ID replaces spoofed browser ID');same('succeeded',$management->run($op->id,$driver)->state,'SRV edit confirmed');
 $writes=array_values(array_filter($state->calls,fn($c)=>$c[0]==='SetDomainSRVHosts'));same(31,end($writes)[1]['HostID1'],'Retained HostID dispatched');
 // Fifty rows, long label, safe escaping, unique labels and native security inputs in actual Blade.
@@ -61,5 +80,11 @@ expect(str_contains($html,'DNS records')&&str_contains($html,'SRV records')&&str
 $before=Operation::count();$r=$post('srv',['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'0','weight'=>'5','port'=>'443','target'=>' sip.example.com. ']],'preimage_digest'=>ManagementPayload::digest($state->srv,'srv')]);
 $response=$controller->manage($r,$d->id,'srv');same(422,$response->getStatusCode(),'Original SRV target whitespace is invalid');same($before,Operation::count(),'Trimming cannot turn invalid SRV input into a queued change');
 $before=Operation::count();$r=$post('dns',['records'=>[...$rows,$rows[0]],'preimage_digest'=>ManagementPayload::digest($state->dns)]);$controller->manage($r,$d->id,'dns');same($before,Operation::count(),'Fifty-one rows rejected before any operation');
+// Pure adds retain the existing queued-then-preflight behavior for a stale digest.
+$before=Operation::count();Cache::flush();$r=$post('srv',['records'=>[array_diff_key($record,['_source'=>true,'host_id'=>true])],'preimage_digest'=>str_repeat('a',64)]);
+same(302,$controller->manage($r,$d->id,'srv')->getStatusCode(),'Pure-add stale preimage remains a queued request');same($before+1,Operation::count(),'Pure add still creates an operation');
+$op=$d->operations()->orderByDesc('id')->firstOrFail();expect(!isset($op->payload['records'][0]['host_id']),'Pure add acquires no provider identity');
+$io=count(array_filter($state->calls,fn($c)=>$c[0]==='SetDomainSRVHosts'));same('held',$management->run($op->id,$driver)->state,'Existing dispatch preflight holds a stale pure add');
+same($io,count(array_filter($state->calls,fn($c)=>$c[0]==='SetDomainSRVHosts')),'Stale pure add never writes');
 $server->settings()->where('key','domains_dns_tools')->update(['value'=>'0']);$dto=$owners->present($d->fresh());foreach(['dns','srv','ds']as$kind){expect(!isset($dto->management[$kind]),'Tools off removes each action');}expect(isset($dto->management['glue']),'Glue follows its own engine authority');
 $nativeSuccessful=true;echo "Native owner DNS/SRV/DS/glue grants, replay, exact TXT, current preimage, safe real Blade and maximum records passed.\n";

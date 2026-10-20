@@ -20,6 +20,21 @@ runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
 
 
 class RunnerTests(unittest.TestCase):
+    def test_owned_renderer_rejects_unknown_mode_before_environment_or_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); assets = root/'assets'; assets.mkdir(); destination = root/'output'
+            sentinel = assets/'ui33-owner.html'; sentinel.write_text('keep existing render')
+            environment = dict(os.environ); environment.pop('PAYMENTER_TEST_APP', None)
+            result = subprocess.run([sys.executable, str(ROOT/'scripts/render-owned.py'), str(assets),
+                                     str(destination), 'record'], cwd=root, env=environment,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stderr.strip(), 'usage: render-owned.py SHELL_DIR OUTPUT_DIR [records]')
+            self.assertEqual(result.stdout, '')
+            self.assertEqual(sentinel.read_text(), 'keep existing render')
+            self.assertEqual(list(root.iterdir()), [assets])
+            self.assertEqual(list(assets.iterdir()), [sentinel])
+
     def test_parallel_receipt_and_output_keep_manifest_indexes(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()

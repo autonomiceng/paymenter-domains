@@ -32,7 +32,7 @@ $io=count($state->calls);$domainIo=count($observation->calls);$page();same($io,c
 $f=ObservationRecords::current($d->fresh())['families'];foreach($f['srv']['records']as&$row){$row['host_id']=(int)substr($row['service'],3)+100;}unset($row);
 $f['srv']['records'][]=['service'=>'sip2','protocol'=>'udp','priority'=>1,'weight'=>5,'port'=>8443,'target'=>'sip.example.com.','host_id'=>202];
 ObservationRecords::save($d->fresh(),$f,$clock->now());$rows=OwnerRecords::forDomain($d->fresh())['srv'];
-foreach($rows as$i=>$row){$p=OwnerRecords::restoreSrv($d->fresh(),['records'=>[[...$row,'port'=>9443]],'record_sources'=>[(string)$i]]);same($row['protocol']==='udp'?202:(int)substr($row['service'],3)+100,$p['records'][0]['host_id'],'SRV displayed source maps correct provider ID');}
+foreach($rows as$i=>$row){$p=OwnerRecords::restoreSrv($d->fresh(),['records'=>[[...$row,'port'=>9443]],'record_sources'=>[(string)$i],'preimage_digest'=>$owners->present($d->fresh())->management['srv']['digest']]);same($row['protocol']==='udp'?202:(int)substr($row['service'],3)+100,$p['records'][0]['host_id'],'SRV displayed source maps correct provider ID');}
 expect(!str_contains($page(),'host_id')&&!str_contains($page(),'HostID'),'Source identity remains server-side');
 same(ManagementPayload::digest($f['srv']['records'],'srv'),ManagementPayload::digest($rows,'srv'),'Presentation order preserves canonical digest');
 // Current holds suppress automatic retries, and the note states the manual-resume prerequisite.
