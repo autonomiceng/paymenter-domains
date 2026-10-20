@@ -508,3 +508,15 @@ Owner fairness, bounded source rotation, managed-only DTO selection and registra
 isolation are exercised without network. The existing watch observer runs through the same
 pool. Mutation checks reject stamp bypass, watch creation and separate quota admission.
 These serialized SQLite checks do not establish live resolver or MariaDB concurrency acceptance.
+
+
+## Native paid-loop qualification and closed-order payment review
+
+The same offline matrix runs with the retained paid-invoice adapter and with a test-only
+unbound native processor. It covers mixed hosting/domain/Credit, early synchronous and
+serialized delayed native jobs, duplicate wakes, contact recovery, multi-day transfers,
+refund interruption, re-payment/reactivation, capability loss and scheduler recovery.
+Existing acquisition alerts distinguish new payment activity and expose a staff filter and
+permission-aware invoice/request links. Ordinary completed cancellation and retained refunded
+payments stay quiet. Publication initializes approved product mail once and preserves later
+staff changes, including null and blank. Native paid-loop dependencies are test-only tripwires.

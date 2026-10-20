@@ -127,6 +127,8 @@ final class TransferInputs
             $attempt = ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent',
                 'transfer_timeout' => ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'deadline' => $deadline->format(DATE_ATOM)]];
             ContactSetup::recoveryWrite(fn () => $op->update(['state' => 'rejected', 'safe_code' => 'transfer_code_timeout', 'attempt' => $attempt, 'completed_at' => $this->clock->now()]));
+            AcquisitionRetirement::retainClosure($op,$l['transactions']->where('invoice_id',$op->invoice_id),
+                $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$this->clock->now(),cancelled:true);
             $l['domain']->update(['status' => 'transfer_rejected']);
             NativeDomainGuard::terminal($l, $op);
             return true;

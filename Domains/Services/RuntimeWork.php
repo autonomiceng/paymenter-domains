@@ -11,10 +11,14 @@ final readonly class RuntimeWork
 {
     public function __construct(private Clock $clock,private RuntimePorts $ports) {}
     public function service(int $service): void
-    {foreach(Operation::where('service_id',$service)->whereIn('state',['queued','awaiting_payment','awaiting_code'])->pluck('id') as $id){$this->enqueue((int)$id,true);}}
+    {foreach(Operation::where('service_id',$service)->whereIn('state',['queued','awaiting_payment','awaiting_code'])->get() as $op){
+        // Sync CreateJob can arrive before the native Active save and before Invoice Paid.
+        if($op->action==='transfer'){$this->attempt('transfer_payment',fn()=>app(TransferInputs::class)->paymentAccepted((int)$op->id));}
+        $this->enqueue((int)$op->id,true);
+    }}
     public function invoice(int $invoice): void
     {
-        foreach(Operation::where('invoice_id',$invoice)->orderBy('id')->get() as $op){if($op->action==='transfer'){$this->attempt('transfer_payment',fn()=>app(TransferInputs::class)->paymentAccepted((int)$op->id));}$this->attempt('invoice_dispatch',fn()=>$this->enqueue((int)$op->id,true));$this->notice((int)$op->domain_id);}
+        foreach(Operation::where('invoice_id',$invoice)->orderBy('id')->get() as $op){$this->attempt('late_money',fn()=>app(AcquisitionRetirement::class)->inspect((int)$op->domain_id));if($op->action==='transfer'){$this->attempt('transfer_payment',fn()=>app(TransferInputs::class)->paymentAccepted((int)$op->id));}$this->attempt('invoice_dispatch',fn()=>$this->enqueue((int)$op->id,true));$this->notice((int)$op->domain_id);}
     }
     private function enqueue(int $id,bool $force=false): void {app(RuntimeDispatch::class)->enqueue($id,$force);}
     public function operation(int $id): void

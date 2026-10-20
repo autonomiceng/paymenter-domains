@@ -156,6 +156,7 @@ final class NativeCatalogue
                         $product->settings()->create(['key' => $key, 'value' => $value, 'type' => 'string', 'encrypted' => false]);
                     }
                 }
+                NativeActivationInformation::initialize($product);
                 $available = [];
                 foreach ($action === 'register' ? range(1, 10) : [1] as $term) {
                     if (!$tld->enabled || !$tld->{$action.'_enabled'} || !$tld->renew_enabled

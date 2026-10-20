@@ -2,8 +2,9 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\{Invoice,InvoiceTransaction,Service,User};
-use Illuminate\Support\Facades\{Crypt,DB,Log};
+use App\Models\{Invoice,InvoiceTransaction,Service,ServiceCancellation,User};
+use App\Enums\InvoiceTransactionStatus as PaymentStatus;
+use Illuminate\Support\Facades\{Crypt,DB,Log,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 /** Owned acquisition closure. Every decision takes the native W/A0 prefix before domain/operations. */
@@ -55,8 +56,8 @@ final readonly class AcquisitionRetirement
     {
         try{
             $d=Domain::find($id);if(!$d){return;}
-            $retired=$d->operations()->where('safe_code',UnpaidAcquisitionProof::CODE)->exists();
-            if($retired){$this->lateMoney($d);return;}
+            $this->lateMoney($d);
+            if($d->operations()->where('safe_code',UnpaidAcquisitionProof::CODE)->exists()){return;}
             $service=Service::find($d->service_id);
             if($d->reservation_name===null||!in_array($d->status,['registration_pending','transfer_pending'],true)||!$service
                 ||($service->status!=='cancelled'&&!($service->status==='pending'&&$service->created_at<$this->clock->now()->modify('-'.max(0,(int)config('settings.cronjob_order_cancel',7)).' days')))){return;}
@@ -68,19 +69,67 @@ final readonly class AcquisitionRetirement
     }
     private function lateMoney(Domain $seed): void
     {
-        // Advisory miss is retried by the durable cursor. Only a hit needs the full money prefix.
-        $ids=$seed->operations()->where('safe_code',UnpaidAcquisitionProof::CODE)->pluck('invoice_id');
-        if(!InvoiceTransaction::whereIn('invoice_id',$ids)->exists()&&!Invoice::whereKey($ids)->where('status','paid')->exists()
-            &&Service::whereKey($seed->service_id)->value('status')!=='active'){return;}
+        $service=Service::whereKey($seed->service_id)->value('status');
+        $cancelled=ServiceCancellation::where('service_id',$seed->service_id)->exists()
+            ||(Schema::hasTable('domains_native_intents')&&DB::table('domains_native_intents')->where('service_id',$seed->service_id)->exists());
+        // Quiet closed history never locks the owner's unrelated hosting/money rows.
+        $hit=$seed->operations()->whereIn('action',['register','transfer'])->get()->contains(function($op)use($seed,$service,$cancelled){
+            return self::needsSnapshot($op,$service)||(self::closed($op,$seed,$service,$cancelled)&&self::activity($op,$service,
+                Invoice::whereKey($op->invoice_id)->value('status'),InvoiceTransaction::where('invoice_id',$op->invoice_id)->orderBy('id')->get()));
+        });
+        if(!$hit){return;}
         DB::transaction(function()use($seed):void {
             $l=HoldingNativeLocks::take((int)$seed->user_id,(int)$seed->service_id,seed:$seed);
             $d=Domain::whereKey($seed->id)->lockForUpdate()->firstOrFail();$ops=$d->operations()->orderBy('id')->lockForUpdate()->get();
-            foreach($ops->where('safe_code',UnpaidAcquisitionProof::CODE)as$op){
-                if($l['transactions']->contains('invoice_id',$op->invoice_id)||$l['invoices']->firstWhere('id',$op->invoice_id)?->status==='paid'||$l['service']->status==='active'){
-                    ObligationAlerts::record($d,'acquisition_late_money',$this->clock->now()->getTimestamp(),(int)$op->id);
+            $service=$l['service']->status;$cancelled=$l['cancel']->where('service_id',$d->service_id)->isNotEmpty();
+            foreach($ops->whereIn('action',['register','transfer'])as$op){
+                $transactions=$l['transactions']->where('invoice_id',$op->invoice_id);$status=$l['invoices']->firstWhere('id',$op->invoice_id)?->status;
+                if(self::needsSnapshot($op,$service)){
+                    self::retainClosure($op,$transactions,$status,$this->clock->now(),cancelled:true);
+                    continue;
                 }
+                if(!self::closed($op,$d,$service,$cancelled)||!self::activity($op,$service,$status,$transactions)){continue;}
+                // Existing alert identities distinguish later activity from repeated observations.
+                $identity=hash('sha256',json_encode([$service,$status,$transactions->map(fn($t)=>[(int)$t->id,$t->status->value,(string)$t->amount])->values()->all()],JSON_THROW_ON_ERROR));
+                ObligationAlerts::record($d,'acquisition_late_money',$this->clock->now()->getTimestamp(),(int)$op->id,$identity);
             }
         });
+    }
+    private static function closed($op,Domain $d,?string $service,bool $cancelled): bool
+    {
+        if(isset($op->policy['native_acquisition_closure'])){return true;}
+        if(isset($op->funding['refund_authorization'])){return true;}
+        if($op->state==='succeeded'){return false;}
+        return $op->safe_code===UnpaidAcquisitionProof::CODE||isset($op->funding['refund'])
+            ||(($service==='cancelled'||$cancelled)&&in_array($d->status,['registration_pending','transfer_pending','cancelled'],true));
+    }
+    private static function needsSnapshot($op,?string $service): bool
+    {return $service==='cancelled'&&$op->safe_code!==UnpaidAcquisitionProof::CODE&&!isset($op->funding['refund'])&&(!isset($op->policy['native_acquisition_closure'])||!isset($op->policy['native_acquisition_cancelled_at']));}
+    /** Caller already owns the native invoice/service prefix and the operation lock. */
+    public static function retainClosure(\Paymenter\Extensions\Servers\Domains\Models\Operation $op,\Illuminate\Support\Collection $transactions,?string $invoice,\DateTimeInterface $at,bool $cancelled=false): void
+    {
+        if(!in_array($op->action,['register','transfer'],true)||$op->safe_code===UnpaidAcquisitionProof::CODE
+            ||isset($op->funding['refund'])){return;}
+        $policy=$op->policy??[];
+        if(!isset($policy['native_acquisition_closure'])){$policy['native_acquisition_closure']=[
+            'at'=>$at->format(DATE_ATOM),'payments'=>self::payments($transactions),'invoice_status'=>$invoice];}
+        if($cancelled&&!isset($policy['native_acquisition_cancelled_at'])){$policy['native_acquisition_cancelled_at']=$at->format(DATE_ATOM);}
+        if($policy!==($op->policy??[])){$op->update(['policy'=>$policy]);}
+    }
+    private static function payments(\Illuminate\Support\Collection $transactions): array
+    {return $transactions->map(fn($t)=>[(int)$t->id,$t->status->value,(string)$t->amount])->values()->all();}
+    private static function activity($op,?string $service,?string $invoice,\Illuminate\Support\Collection $transactions): bool
+    {
+        if($service==='active'&&(isset($op->policy['native_acquisition_cancelled_at'])||!isset($op->funding['refund_authorization'])||isset($op->funding['refund']))){return true;}
+        $closure=$op->policy['native_acquisition_closure']??null;
+        if(is_array($closure)){return self::payments($transactions)!==$closure['payments']||($invoice==='paid'&&$closure['invoice_status']!=='paid');}
+        $refund=$op->funding['refund']??null;
+        if(is_array($refund)&&($refund['to']??null)==='account_credit'){
+            $payments=$transactions->filter(fn($t)=>$t->status===PaymentStatus::Succeeded)
+                ->map(fn($t)=>['id'=>(int)$t->id,'amount_minor'=>PricingRule::minor($t->amount)])->values()->all();
+            return $payments!==($refund['payments']??null)||$transactions->contains(fn($t)=>$t->status===PaymentStatus::Processing);
+        }
+        return $transactions->isNotEmpty()||$invoice==='paid';
     }
     public static function boot(): void
     {

@@ -29,7 +29,7 @@ class ViewDomain extends ViewRecord
             $entries[]=TextEntry::make('fact_'.count($entries))->label($label)->state($value)->listWithLineBreaks()
                 ->extraAttributes(['style'=>'overflow-wrap:anywhere']);
         }
-        $sections=[];$hold=DomainFacts::recordHold($this->getRecord());
+        $sections=\Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview::section($this->getRecord());$hold=DomainFacts::recordHold($this->getRecord());
         if ($hold!==null) {
             $d=$this->getRecord();$request=DomainQueries::operations($d)->orderByDesc('id')->value('id');
             $stopped=ObservationWork::stopped($d);

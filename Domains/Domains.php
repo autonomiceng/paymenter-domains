@@ -26,7 +26,11 @@ class Domains extends Server
     public function disabled($record): void { Runtime::register(); app(Services\NativeServerGuard::class)->pause((int)$record->id); }
     public function updated($record): void {} // The model guard owns relevant lifecycle pauses.
     public function createServer(Service $service, $settings = [], $properties = []): array
-    { app(Services\RuntimeWork::class)->service((int)$service->id); return ['status'=>'Processing. View progress on the Domains page.']; }
+    {
+        try{app(Services\RuntimeWork::class)->service((int)$service->id);}
+        catch(\Throwable $e){logger()->warning('Domains native wake deferred to scheduler.',['service_id'=>(int)$service->id,'exception_class'=>$e::class]);}
+        return ['status'=>'Processing. View progress on the Domains page.'];
+    }
     public function unsuspendServer(Service $service, $settings = [], $properties = []): array { return $this->createServer($service,$settings,$properties); }
     public function suspendServer(Service $service, $settings = [], $properties = []): array { return []; }
     public function terminateServer(Service $service, $settings = [], $properties = []): array { return []; }

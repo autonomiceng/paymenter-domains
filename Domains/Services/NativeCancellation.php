@@ -42,7 +42,7 @@ final class NativeCancellation
                 ||(!NativeIdentity::dirty($s,['status'])&&!array_diff(array_intersect($proposed,$unsafe),[(string)$stored])
                     &&!array_intersect(array_map('strtolower',self::values($aliases,'status')),$unsafe))
                 ||!array_intersect($proposed,$unsafe)){return;}
-            foreach(array_unique(array_filter(array_column(NativeIdentity::rows($s),'id')))as$id){self::guard((int)$id,'status');}
+            foreach(array_unique(array_filter(array_column(NativeIdentity::rows($s),'id')))as$id){self::guard((int)$id,'status',closing:strtolower((string)$s->status)==='cancelled');}
         });
     }
     /** Exact one-row public model write under the retained native prefix; no general callback grant. */
@@ -79,7 +79,7 @@ final class NativeCancellation
             ->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         return $cancel->toBase()->concat($rows);
     }
-    private static function guard(int $id,string $kind,?ServiceCancellation $cancellation=null): void
+    private static function guard(int $id,string $kind,?ServiceCancellation $cancellation=null,bool $closing=false): void
     {
         $seed=Service::find($id);if(!$seed||!NativeIdentity::routed($seed)){return;}
         if(!Schema::hasTable('domains_native_intents')){
@@ -87,7 +87,7 @@ final class NativeCancellation
         }
         // Invoice prefix before all orders/services, then owned intents/domains/operations. We
         // never acquire a user lock after a native cron caller already locked its invoices.
-        $write=static function()use($seed,$kind,$cancellation):void {
+        $write=static function()use($seed,$kind,$cancellation,$closing):void {
             $invoiceIds=InvoiceItem::where('reference_type',$seed->getMorphClass())->where('reference_id',$seed->id)->pluck('invoice_id')
                 ->merge(Operation::where('service_id',$seed->id)->whereNotNull('invoice_id')->pluck('invoice_id'))->unique()->sort()->values();
             $invoices=Invoice::whereKey($invoiceIds)->orderBy('id')->lockForUpdate()->get();
@@ -146,6 +146,12 @@ final class NativeCancellation
             // timeout or staff acknowledgement: the paused native request could still insert.
             // An unpaid pending service has no paid period to finish, including a closed ledger.
             if($cancellation&&$service->status==='pending'&&!$invoices->contains('status','paid')){$cancellation->type='immediate';}
+            // Keep closure evidence at the guarded decision, before a lost after-commit wake
+            // or native re-payment can erase the observable Cancelled state.
+            if($closing){foreach($acquisitions as$op){
+                AcquisitionRetirement::retainClosure($op,$money->where('invoice_id',$op->invoice_id),
+                    $invoices->firstWhere('id',$op->invoice_id)?->status,now(),cancelled:true);
+            }}
             if(!$allTerminal){
                 DB::table('domains_native_intents')->insertOrIgnore(['service_id'=>$seed->id,'kind'=>$kind,'created_at'=>now()]);
             }

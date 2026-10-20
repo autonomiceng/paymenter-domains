@@ -34,6 +34,8 @@ final readonly class Refunds
             if (in_array($op->action,['register','transfer'],true)&&($op->attempt??[])===[]) {
                 $op->update(['attempt'=>OperationTerminalProof::rejectedAttempt($op,$l['domain'])]);
             }
+            AcquisitionRetirement::retainClosure($op,$l['transactions']->where('invoice_id',$op->invoice_id),
+                $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$this->clock->now());
             $review?->record($l);
         });
         return $this->creditRejected($id);

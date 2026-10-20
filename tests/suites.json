@@ -193,7 +193,9 @@
     "tests/managed-public-reconciliation-test.php",
     "tests/managed-public-relink-test.php",
     "tests/managed-public-source-drift-test.php",
-    "tests/managed-public-stamp-test.php"
+    "tests/managed-public-stamp-test.php",
+    "tests/native-paid-baseline-test.php",
+    "tests/native-paid-candidate-test.php"
   ],
   "ui": [],
   "runner": [
