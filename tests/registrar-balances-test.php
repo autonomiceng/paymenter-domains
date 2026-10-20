@@ -17,7 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price}
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,BalanceForecast,BalanceReads,BalanceSchema,CatalogueAcceptances,ObservationSchema,RegistrarBalances,RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 extract(commerceFixture(true));$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now);
-BalanceSchema::install();ObservationSchema::install();
+app()->instance(AccountBindings::class,$bindings);BalanceSchema::install();ObservationSchema::install();
 $a=Account::where('server_id',$tlds[0]->server_id)->sole();$b=Account::where('server_id',$tlds[1]->server_id)->sole();
 $binding=CatalogueAcceptances::binding($a);$other=CatalogueAcceptances::binding($b);
 $row=static fn($a)=>DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->first();

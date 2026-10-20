@@ -16,6 +16,9 @@ final class NativeServerGuard
             if($a){$a->processing_enabled=false;Account::withVerifiedBindingWrite(fn()=>$a->save());}
         });
     }
+    /** Qualification seam only; production always retains interception until its removal slice. */
+    public static function testingNativeEditors(): bool
+    {return app()->runningUnitTests()&&config('domains.tests.native_editors')===true;}
     public function boot(): void
     {
         if($this->booted){return;}$this->booted=true;
@@ -26,7 +29,7 @@ final class NativeServerGuard
             $service=$class===\App\Admin\Resources\ServiceResource\Pages\EditService::class&&Schema::hasTable('domains_domains')&&\Paymenter\Extensions\Servers\Domains\Models\Domain::where('service_id',$id)->exists();
             if($server||$service){abort(503,'Refresh the native route cache before editing managed domain records.');}
         };
-        app(\Livewire\EventBus::class)->before('mount',$guard);app(\Livewire\EventBus::class)->before('hydrate',$guard);
+        if(!self::testingNativeEditors()){app(\Livewire\EventBus::class)->before('mount',$guard);app(\Livewire\EventBus::class)->before('hydrate',$guard);}
         foreach([Server::class,Extension::class] as $model){
             $model::creating(function($s):void {if($s->extension==='Domains'){
                 try{app(Installation::class)->install();}catch(\DomainException|\RuntimeException|\Illuminate\Contracts\Cache\LockTimeoutException $e){

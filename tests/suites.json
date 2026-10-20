@@ -170,7 +170,8 @@
     "tests/seller-switch-namesilo-renewal-test.php",
     "tests/operation-claim-lifecycle-test.php",
     "tests/transfer-input-evidence-test.php",
-    "tests/transfer-input-contacts-test.php"
+    "tests/transfer-input-contacts-test.php",
+    "tests/native-server-settings-test.php"
   ],
   "ui": [],
   "runner": [

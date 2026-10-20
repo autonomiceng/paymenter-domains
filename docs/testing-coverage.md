@@ -338,3 +338,20 @@ gates. This coverage does not close the documented User-deletion/checkout activa
 `tests/operation-claim-lifecycle-test.php` covers initial lifecycle claim and seal refusals alongside `tests/operation-claims-test.php`. Each command boots a fresh in-memory native database.
 
 Transfer input coverage is split between `tests/transfer-inputs-test.php` (code submission, cutoff and refunds), `tests/transfer-input-evidence-test.php` (payment evidence, authority and timezones), and `tests/transfer-input-contacts-test.php` (contact correction and late readmission). Each starts with an unrelated service cancellation to check that refusal stays scoped to the affected service.
+
+## Native registrar server settings
+
+`native-server-settings-test.php` disables the legacy Secure route remaps and Livewire
+mount/hydrate interception through a testing-only switch. It exercises native creation
+from absent extension tables, encrypted setting exposure to native server-edit staff,
+unchanged/name saves, ignored undeclared credential payloads, native permissions and
+compiled server-route metadata (without compiled-route dispatch). Native Edit Service without its Secure editor is not
+qualified by this suite and requires the lifecycle/paid-path and removal integration. Synthetic verifiers exercise both registrar bindings,
+same-account rotation, wrong-account refusal, credential/digest and copied-pair holds before reader
+construction, distinct disabled-server/live-site recovery messages and cached balance hiding without erasing the row.
+Scoped server/account identity/deletion guards, disable/re-enable pause and legacy Enom
+exclusion remain active. Owned configuration actions retain redacted audit history; the
+rendered history omits the retained account fingerprint. No provider transport runs.
+See [Native registrar settings](design/native-server-settings.md) for the accepted access
+boundary and the separate removal gate. SQLite and Livewire fixtures do not establish
+installed UI, production database concurrency or provider acceptance.
