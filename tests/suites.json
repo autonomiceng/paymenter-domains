@@ -162,7 +162,8 @@
     "tests/renewal-deadline-test.php",
     "tests/adopted-renewal-deadline-test.php",
     "tests/acquisition-retirement-test.php",
-    "tests/native-stock-test.php"
+    "tests/native-stock-test.php",
+    "tests/paired-driver-test.php"
   ],
   "ui": [],
   "runner": [
