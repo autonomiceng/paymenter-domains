@@ -643,3 +643,18 @@ The receipt records runtime and confirms container removal and pristine dependen
 The measured two-case run took 45 seconds, with a 512 MiB container and a 1.5 GiB
 available-memory preflight. It is omitted from default runs; no provider calls, ZIP-uploader, checkout/worker race or live
 acceptance is claimed. Its cost is one container startup and two fresh native lifecycle runs.
+
+## Customer presentation polish (2026-10-20)
+
+`owned-pages-test.php` includes `Support/owned-tone-cases.php`: a table-driven presenter
+unit matrix covers every D3 status/tone row, both adoption-pending predicates, held and
+uncertain registration/transfer operations, awaiting payment, actionable setup, unknown
+states, and adopted expiry before/at/after the boundary. Labels stay unchanged. Existing
+real controller pages also assert the shared all-test banner copy.
+
+`storefront-test.php` includes `Support/customer-polish-views.php`: real Blade/DOM cases
+cover all/some/none test banners and per-row tags on pricing, index and search (plus empty
+index), annual-only column hiding, mixed/absent/longer terms, annual mobile renewal labels,
+missing renewal prices and both footnotes. Initial idle and checked AJAX results retain
+test labels using only the public selected seller's environment. No private holding identity
+or provider I/O is added. These offline tests do not establish installed-theme acceptance.

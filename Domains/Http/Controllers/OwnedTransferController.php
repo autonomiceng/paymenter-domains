@@ -21,7 +21,7 @@ final readonly class OwnedTransferController
             else { $error='Choose an ending from the list.'; }
         }
         $sld=$parsed['sld']; $results=$sld!==null&&$error===null&&$preferred!==null
-            ? [['domain'=>$sld.'.'.$preferred,'sld'=>$sld,'tld'=>$preferred,'status'=>'idle']] : [];
+            ? [['domain'=>$sld.'.'.$preferred,'sld'=>$sld,'tld'=>$preferred,'status'=>'idle','testEnvironment'=>collect($endings)->firstWhere('tld',$preferred)['testEnvironment']]] : [];
         return view('domains::transfer',compact('endings','preferred','sld','error','results')+['name'=>$raw,
             'testEnvironment'=>$this->storefront->testEnvironment($endings),'checkKey'=>FormKeys::issue($request,'search')]);
     }

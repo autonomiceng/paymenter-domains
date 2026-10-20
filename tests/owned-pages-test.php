@@ -22,7 +22,7 @@ foreach ([0,1] as $i) {
     foreach(['fingerprint','server_id','provider_order','profile_id','wholesale','syntheticonly']as$secret){expect(!str_contains($serialized,$secret),'Safe owner DTO: '.$secret);}
     foreach(['show','setup','code']as$page){
         if ($page==='setup' && !$i) { try { $controller->setup($request($user),$d->id); expect(false,'No empty transfer setup step'); } catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(404,$e->getStatusCode(),'No-op setup has no page'); } }
-        else { $html=$controller->$page($request($user),$d->id)->render();expect(str_contains($html,$d->domain),'Native controller real Blade page '.$page); }
+        else { $html=$controller->$page($request($user),$d->id)->render();expect(str_contains($html,$d->domain),'Native controller real Blade page '.$page); expect(str_contains($html,'This page uses a test system. Nothing here is registered for real.'),'D7 per-domain pages use all-test copy'); }
         foreach([$d->id,999999]as$id){try{$controller->$page($request($other),$id);expect(false,'Foreign and missing locator refused');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}}
     }
     $d->update(['status'=>'active']); $d->service->update(['status'=>'active']); $active=$owners->present($d->fresh());
@@ -66,4 +66,5 @@ expect(str_contains($html,'We couldn’t check this domain’s public registrati
 same(0,storefrontDom($html)->query('//input[@name="transfer_code"]')->length,'Provenance grants no code editor');same($calls,$state->calls,'Rendering provenance performs no I/O');
 require __DIR__.'/Support/late-contact-pages.php';
 foreach(['show','setup','code','index','transfer']as$route){$r=Illuminate\Support\Facades\Route::getRoutes()->getByName('domains.domains.'.$route);expect(in_array('auth',$r->gatherMiddleware(),true)&&in_array('web',$r->gatherMiddleware(),true),'Dormant routes have native auth/session boundary');}
+require __DIR__.'/Support/owned-tone-cases.php';
 $nativeSuccessful=true;echo "Owned DTO, native controllers, real Blade, held/correction/capability and ownership checks passed.\n";

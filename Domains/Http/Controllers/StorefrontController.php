@@ -33,7 +33,8 @@ final class StorefrontController extends Controller
         if ($sld !== null && $error === null) {
             usort($names, static fn ($a, $b) => ($b === $preferred) <=> ($a === $preferred));
             foreach (array_slice($names, 0, 12) as $ending) {
-                $results[] = ['domain' => $sld.'.'.$ending, 'sld' => $sld, 'tld' => $ending, 'status' => 'idle'];
+                $results[] = ['domain' => $sld.'.'.$ending, 'sld' => $sld, 'tld' => $ending, 'status' => 'idle',
+                    'testEnvironment' => collect($endings)->firstWhere('tld', $ending)['testEnvironment']];
             }
         }
         return view('domains::search', ['endings' => $endings, 'name' => $raw, 'preferred' => $preferred,

@@ -27,7 +27,7 @@
 <p class="domains-small domains-muted">Domains registered or transferred in the last 60 days can’t be transferred yet. Most transfers finish within 5 to 7 days.</p>
 </section><section class="domains-section" aria-labelledby="domains-transfer-prices"><h2 id="domains-transfer-prices" class="domains-h2">Transfer prices</h2>
 <div class="domains-tablewrap"><table class="domains-tbl"><thead><tr><th scope="col">Ending</th><th scope="col" class="domains-end">Transfer, includes 1 year</th></tr></thead><tbody>
-@foreach ($endings as $ending)<tr><td class="domains-domain">.{{ $ending['tld'] }}</td><td class="domains-end domains-num">{{ $ending['transfer'] }}</td></tr>@endforeach
+@foreach ($endings as $ending)<tr><td class="domains-domain">.{{ $ending['tld'] }}@if ($ending['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</td><td class="domains-end domains-num">{{ $ending['transfer'] }}</td></tr>@endforeach
 </tbody></table></div><p class="domains-small domains-muted">Prices plus tax where applicable.</p></section></div>
 @endif
 </div></div>

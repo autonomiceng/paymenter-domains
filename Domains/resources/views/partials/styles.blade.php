@@ -148,6 +148,7 @@
 .domains .domains-tbl tbody tr:last-child td { border-bottom: 0; }
 .domains .domains-tbl tbody tr:hover td { background: color-mix(in srgb, var(--e-line) 22%, transparent); }
 .domains .domains-tbl .domains-end { text-align: right; }
+.domains .domains-domain, .domains .domains-num .domains-domain { font-variant-numeric: normal; }
 .domains .domains-domain { font-weight: 700; letter-spacing: -.005em; color: var(--e-fg); }
 .domains a.domains-domain:hover { color: var(--e-accent); }
 @media (max-width: 719px) {
@@ -165,11 +166,10 @@
 /* Search */
 .domains .domains-searchbar { display: flex; align-items: stretch; gap: .375rem; padding: .375rem; border: 1px solid var(--e-line); border-radius: .875rem;
     background: var(--e-panel); transition: border-color .15s, box-shadow .15s; }
-.domains .domains-searchbar:focus-within { border-color: var(--e-accent); box-shadow: 0 0 0 4px hsl(var(--color-primary) / .14); }
+.domains .domains-searchbar:focus-within { border-color: var(--e-accent); box-shadow: 0 0 0 1px var(--e-accent), 0 0 0 4px hsl(var(--color-primary) / .2); }
 .domains .domains-searchbar input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--e-fg); font-size: 1.1875rem; font-weight: 600; padding: .625rem .875rem; letter-spacing: -.005em; }
 .domains .domains-searchbar input::placeholder { color: var(--e-muted); font-weight: 400; }
-.domains .domains-searchbar :is(input, select):focus { outline: none; box-shadow: none; }
-.domains .domains-searchbar :is(input, select):focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+.domains .domains-searchbar :is(input, select):is(:focus, :focus-visible) { outline: none; box-shadow: none; }
 .domains .domains-searchbar select { flex: none; border: 0; border-left: 1px solid var(--e-line); border-radius: 0; background-color: transparent; color: var(--e-fg);
     font-size: 1rem; font-weight: 700; padding: 0 2.25rem 0 1rem; min-height: 3rem; width: auto; }
 .domains .domains-searchbar .domains-btn { min-height: 3rem; padding: 0 1.375rem; border-radius: .5rem; font-size: .9375rem; }

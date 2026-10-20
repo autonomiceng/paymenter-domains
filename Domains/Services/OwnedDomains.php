@@ -28,7 +28,7 @@ final readonly class OwnedDomains
     public function present(Domain $d, bool $forms = true): OwnedDomain
     {
         if ($d->adoptionPending()) {
-            return new OwnedDomain($d->domain, 'Being set up', 'muted', null, 'Paused during setup', null,
+            return new OwnedDomain($d->domain, 'Being set up', 'info', null, 'Paused during setup', null,
                 ['show'=>route('domains.domains.show',$d->id)], [], ['required'=>false,'contacts'=>false], [], [],
                 Account::where('server_id',$d->server_id)->value('environment')==='test', setupPending:true);
         }
@@ -36,10 +36,15 @@ final readonly class OwnedDomains
         $renewalState=RenewalStop::read($d);
         $actions=['show'=>route('domains.domains.show',$d->id),'setupSave'=>route('domains.domains.setup-save',$d->id),'contactsSave'=>route('domains.domains.contacts-save',$d->id),'codeSave'=>route('domains.domains.code-save',$d->id)]; $management=[]; $caps=null;
         try { $caps=$this->ports->forDomain($d)->capabilities(); } catch (\Throwable) {}
-        $status=self::STATUSES[$d->status]??'Needs attention'; $tone=$d->status==='active'?'ok':'muted';
-        if ($d->provenance === 'adopted' && $d->provider_expires_at !== null && $this->clock->now() >= $d->provider_expires_at) { $status = 'Registry expiry reached'; $tone = 'muted'; }
-        if ($op && in_array($op->state,['held','uncertain'],true)) { $status=$op->action==='register'?'Processing':'Needs attention'; $tone='muted'; }
-        if ($op?->state==='awaiting_payment') { $status='Awaiting payment'; }
+        $status=self::STATUSES[$d->status]??'Needs attention';
+        $tone=match ($d->status) {
+            'active'=>'ok', 'adoption_pending','registration_pending','transfer_pending'=>'info',
+            'awaiting_payment','registration_rejected','transfer_rejected','needs_review'=>'warn',
+            'expired','grace','redemption'=>'bad', default=>'muted',
+        };
+        if ($d->provenance === 'adopted' && $d->provider_expires_at !== null && $this->clock->now() >= $d->provider_expires_at) { $status = 'Registry expiry reached'; $tone = 'warn'; }
+        if ($op && in_array($op->state,['held','uncertain'],true)) { $status=$op->action==='register'?'Processing':'Needs attention'; $tone=$op->action==='register'?'info':'warn'; }
+        if ($op?->state==='awaiting_payment') { $status='Awaiting payment'; $tone='warn'; }
         $setup=['contacts'=>false,'required'=>false,'nameservers'=>false,'privacy'=>false,'defaults'=>$d->registrar_key==='enom'];
         if ($caps && $op && ($op->state!=='held'||in_array($op->safe_code,['contact_details_required','transfer_setup_review_required','nameservers_required'],true))
             && in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true) && ($op->attempt??[])===[]
@@ -76,6 +81,7 @@ final readonly class OwnedDomains
             $transfer['unchecked']=($op->attempt['transfer_admission']['rdap_unchecked']??null)===true;
             $actions['code']=route('domains.domains.code',$d->id);
         }
+        if ($setup['required'] || $setup['contacts']) { $tone='warn'; }
         $progress=$d->provenance === 'adopted' ? [['label' => 'Registration adopted', 'state' => 'Confirmed']] : [];
         foreach ($d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(100)->get() as $entry) {
             if (!isset($entry->policy['management']) || isset($entry->policy['management']['correction'])) { continue; }
