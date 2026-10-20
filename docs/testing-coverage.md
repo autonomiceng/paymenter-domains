@@ -452,3 +452,13 @@ The PHP 8.3 scanner and planted-call matrix cover the same 40 PHP 8.4 global fun
 including optional Intl, OPcache, PCNTL, PgSQL and Sodium functions. Every name is tested
 as an unqualified fallback and an uppercase fully qualified call, and as a user-defined
 namespaced function. This remains a targeted static guard, not full runtime qualification.
+
+
+W2D: `doh-reader-test.php` exercises strict DNS JSON/Question validation, RCODE mapping,
+CNAME owner semantics, transport-only fallback, source/reason facts, per-job breaker reset,
+ten shared slots, public bootstrap validation and remaining-deadline limits through injected
+Guzzle handlers. `doh-settings-test.php` checks native encrypted first save/readback, invalid
+configuration, stock staff permissions/revocation, form validation and bounded diagnostic states.
+All exchanges are fake. `doh-render.php` renders stock native staff states for both-theme review.
+Mutation checks target NXDOMAIN/SERVFAIL fallback, false native-empty proof, missing breaker,
+ignored deadline and zone-content fallback. Native fallback still cannot impose a per-call timeout.

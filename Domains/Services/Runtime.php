@@ -19,6 +19,10 @@ final class Runtime
             RegistrarBalances::class,PublicSuffixList::class,PslTransport::class,PslValidator::class,CatalogueSync::class,Reminders::class,Refunds::class,RuntimeWork::class,RuntimePorts::class,NativePresenter::class] as $class){
             if(!$app->bound($class)){$app->singleton($class);}
         }
+        if (!$app->bound(\Paymenter\Extensions\Servers\Domains\Contracts\DnsReader::class)) {
+            $app->bind(\Paymenter\Extensions\Servers\Domains\Contracts\DnsReader::class,
+                fn($a) => $a->make(DnsResolverSettings::class)->reader());
+        }
         if(!$app->bound(Clock::class)){$app->singleton(Clock::class,SystemClock::class);}
         if(!$app->bound(ReadLimiter::class)){$app->singleton(ReadLimiter::class,fn($a)=>new AccountReadBudget($a->make(Clock::class),48));}
         if(!$app->bound(OwnerPorts::class)){$app->singleton(OwnerPorts::class,fn($a)=>new OwnerPorts(fn($binding)=>$a->make(RuntimePorts::class)->management($binding)));}

@@ -124,6 +124,8 @@
     "tests/conversion-guards-test.php",
     "tests/psl-test.php",
     "tests/psl-staff-test.php",
+    "tests/doh-settings-test.php",
+    "tests/doh-reader-test.php",
     "tests/registrable-name-test.php",
     "tests/psl-rebaseline-test.php",
     "tests/psl-review-staff-test.php",
