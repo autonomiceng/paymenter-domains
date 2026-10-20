@@ -668,3 +668,20 @@ permits staff failure evidence and the rest of the sweep; a healthy next holding
 receives its notice and repeat selection does not resend it. Unmanaged holdings
 skip before managed-authority locks without deliveries or false failure alerts.
 These are synthetic native SQLite checks with fake mail and no provider calls.
+
+## Staff UI polish (batch A)
+
+`staff-ui-polish-test.php` renders the native Domains table and counts the single
+current-acquisition query and eager customer query. It covers held/uncertain/no-open
+badges, resolved/stale/foreign lookalikes, identity fallbacks, normal-text unknown
+expiry and exact uncertainty wording at zero, one and several hours.
+`native-identity-readiness-test.php` checks each moved site fact once, retained
+account facts, runtime copy and display-only reminder sorting.
+`native-server-settings-test.php` checks processing disabled before configuration
+and after mismatch, enabled when matched, and pause available during a hold.
+`staff-adopt-commit-test.php` checks the escaped readiness lists and customer-first
+selection/confirmation. Both native service-refusal guard orders now assert Delete
+unmounts with its danger notification while records and finance remain retained;
+Save keeps its draft. The Cancel dependency is pinned in the upgrade tripwire.
+These are offline native HTML/Livewire checks, not installed screenshot, contrast,
+MariaDB concurrency or live registrar acceptance.

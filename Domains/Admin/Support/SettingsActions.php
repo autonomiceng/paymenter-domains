@@ -31,7 +31,7 @@ final class SettingsActions
     public static function make(int $server,?int $tld,string $stamp,bool $setup=false): array
     {
         $out=[];$names=$setup?['configure','probe','acceptance','history','processing','delivery_review','alert_review']:['default_rule','override','remove_override','tld_settings','seller','publish'];
-        $target=fn()=>TldFacts::registrar((string)Account::where('server_id',$server)->value('registrar_key')).' · account #'.$server;
+        $target=fn()=>\App\Models\Server::find($server)?->name ?? 'Server #'.$server;
         foreach($names as $name){
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp))];
             if(in_array($name,['default_rule','override'],true)){
@@ -79,16 +79,18 @@ final class SettingsActions
                 foreach(['uid'=>'Enom user ID','token'=>'Enom API token','api_key'=>'NameSilo API key'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->password()->autocomplete('new-password')->maxLength(4096)->visible(fn($get)=>$get('registrar')===($key==='api_key'?'namesilo':'enom'))->required();}
             }
             $fields[]=Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:/\A[^\x00-\x1f\x7f]*\z/'])->helperText('Use one line. Do not include credentials.');
-            $processing=fn()=>(bool)Account::where('server_id',$server)->value('processing_enabled');$label=$name==='processing'?fn()=>$processing()?'Pause processing…':'Enable processing…':Review::ACTIONS[$name];
+            $processing=fn()=>(bool)Account::where('server_id',$server)->value('processing_enabled');
+            $cannotEnable=fn()=>$name==='processing'&&!$processing()&&(!Account::where('server_id',$server)->exists()||app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class)->configurationStatus($server)!=='matched');$label=$name==='processing'?fn()=>$processing()?'Pause processing…':'Enable processing…':Review::ACTIONS[$name];
             $out[]=Action::make($name.($setup?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
-                ->disabled(fn()=>in_array($name,['configure','probe'],true)&&!app(StaffSettingsWrites::class)->connectionAvailable())
+                ->disabled(fn()=>$cannotEnable()||(in_array($name,['configure','probe'],true)&&!app(StaffSettingsWrites::class)->connectionAvailable()))
+                ->tooltip(fn()=>$cannotEnable()?'Configure and verify this account first.':null)
                 ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission($name)))
                 ->requiresConfirmation()->modalHeading($name==='processing'?fn()=>($processing()?'Pause':'Enable').' processing for '.$target().'?':$label)
                 ->modalDescription($name==='processing'?fn()=>$processing()?'Stops new registrar work for this account. Domains, invoices and queued work are kept; requests already sent keep reconciling.':self::description($name):self::description($name))->modalSubmitActionLabel($name==='processing'?fn()=>$processing()?'Confirm pause':'Confirm enable':'Confirm')->schema($fields)
-                ->action(function(#[\SensitiveParameter] array $data,$livewire)use($name,$server,$tld){
+                ->action(function(#[\SensitiveParameter] array $data,$livewire)use($name,$server,$tld,$target){
                     try{$r=new Review((int)Auth::id(),$server,$tld,$name,(string)($data['review_key']??''),trim((string)($data['reason']??'')));
                         app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
-                        Notification::make()->success()->title($name==='processing'?($account->processing_enabled?'Processing enabled':'Processing paused').' for '.TldFacts::registrar($account->registrar_key).' · account #'.$server:'Change recorded')->body($name==='processing'?null:'Reload this page before another change.')->send();
+                        Notification::make()->success()->title($name==='processing'?($account->processing_enabled?'Processing enabled':'Processing paused').' for '.$target():'Change recorded')->body($name==='processing'?null:'Reload this page before another change.')->send();
                         if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl());}
                     }catch(\Throwable $error){
                         $message=match($error->getMessage()){'Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',

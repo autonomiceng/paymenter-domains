@@ -12,23 +12,24 @@ final class PaidUncertainty
         $grants ??= Staff::requireView();
         if ($op->funding_basis!=='paid_invoice' || (!in_array($op->state,['running','pending','uncertain'],true)
             && !in_array($op->safe_code,['transfer_provider_rejected','transfer_needs_action','management_provider_refused'],true))) { return null; }
-        return 'Paid outcome review · '.self::details($op)
+        return 'Paid, outcome unconfirmed · '.self::details($op)
             .' · Missing: verified original outcome and charge or settlement evidence. No staff release or credit is available.';
     }
     public static function holdSummary(Operation $op, ?StaffGrants $grants = null): ?string
     {
         $grants ??= Staff::requireView();
-        return AccountSpendingHolds::matches($op)?'Account spending hold · '.self::details($op)
+        return AccountSpendingHolds::matches($op)?'Spending on hold for this account · '.self::details($op)
             .' · Missing: verified original outcome'.($op->funding_basis==='paid_invoice'?' and charge or settlement evidence':'')
-            .'. Re-check the original attempt; no staff release is available.':null;
+            .'. Check the original request with the registrar. Staff cannot release this hold.':null;
     }
     private static function details(Operation $op): string
     {
         $at=$op->started_at??$op->created_at;
-        $age=$at ? max(0,(int)floor((time()-$at->getTimestamp())/3600)).' hours' : 'Unknown age';
+        $hours=$at ? max(0,(int)floor((time()-$at->getTimestamp())/3600)) : null;
+        $age=match($hours){null=>'Age unknown',0=>'less than 1 hour',1=>'1 hour',default=>$hours.' hours'};
         return 'Request #'.$op->id.' · '.Labels::action($op->action).' · '.Labels::state($op->state)
             .' · '.($op->safe_code===null?'Original outcome unresolved':Labels::reason($op->safe_code))
-            .' · '.$age.($at?' (since '.$at->format('Y-m-d H:i').' UTC)':'');
+            .' · '.$age.($at?' · since '.$at->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC':'');
     }
     public static function for(Domain $d): array
     {

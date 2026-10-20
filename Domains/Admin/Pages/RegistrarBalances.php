@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
 use Filament\Actions\Action;
+use Filament\Support\Enums\IconPosition;
 use Filament\Pages\Page;
 use Filament\Schemas\{Schema,Components\Section,Components\Actions};
 use Filament\Infolists\Components\TextEntry;
@@ -21,16 +22,18 @@ class RegistrarBalances extends Page
     public function content(Schema $schema): Schema
     {
         Staff::requireView();$sections=[];
+        $names=\App\Models\Server::where('extension','Domains')->pluck('name','id');
         foreach(Account::orderBy('server_id')->get() as $a){
             $facts=Balances::facts($a,app(Clock::class)->now());$id=(int)$a->server_id;
             $entries=[];
             foreach(['Balance'=>$facts['balance'],'As of'=>$facts['as_of'],'Status'=>$facts['status'],
                 'Renewals in the next 30 days and open obligations'=>$facts['total'],'Unknown renewals'=>(string)$facts['unknown'],
                 'Last read error'=>$facts['error']] as $label=>$value){$entries[]=TextEntry::make('s'.$id.'_'.count($entries))->label($label)->state($value);}
-            $sections[]=Section::make(TldFacts::registrar($a->registrar_key).' · account #'.$id)
-                ->description($a->environment==='live'?'Live':'Test')->key('account_'.$id)->columns(2)->schema([...$entries,
+            $sections[]=Section::make($names[$id] ?? 'Server #'.$id)
+                ->description(TldFacts::registrar($a->registrar_key).' · Server #'.$id.' · '.($a->environment==='live'?'Live':'Test'))->key('account_'.$id)->columns(2)->schema([...$entries,
                     Actions::make([
-                        Action::make('funds_'.$id)->label('Add funds')->url(Balances::fundsUrl($a->registrar_key))->openUrlInNewTab()->extraAttributes(['rel'=>'noopener noreferrer']),
+                        Action::make('funds_'.$id)->label('Add funds')->color('gray')->outlined()->icon('heroicon-m-arrow-top-right-on-square')->iconPosition(IconPosition::After)
+                            ->tooltip("Opens the registrar's site in a new tab")->url(Balances::fundsUrl($a->registrar_key))->openUrlInNewTab()->extraAttributes(['rel'=>'noopener noreferrer']),
                         Action::make('refresh_'.$id)->label('Refresh now')->action(function()use($id):void {
                             Staff::requireView();$code=app(Balances::class)->refresh($id);
                             \Filament\Notifications\Notification::make()->title(match($code){'refreshed'=>'Balance refreshed','rate_limited'=>'Wait before refreshing again','configuration_unavailable'=>'Configuration unavailable',default=>'Balance read failed'})->send();

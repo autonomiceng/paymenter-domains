@@ -35,7 +35,7 @@ final class RequestFacts
                 array_key_exists('execution',$a) && $a['execution']===null=>$op->state==='succeeded'
                     ? 'Original send response was unknown; completion later confirmed' : 'Original send response unknown; never resend',
                 ($a['seal']??null)==='sealed'=>'Original attempt possibly sent; never resend or credit automatically',
-                $op->state==='uncertain'=>'Unconfirmed; never resend or credit automatically',
+                $op->state==='uncertain'=>'Unconfirmed. Do not resend or refund until the registrar result is known.',
                 default=>null,
             };
             $corrections=$a['corrections']??[];

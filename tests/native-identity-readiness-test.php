@@ -3,7 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/staff-tlds.php';
 use Filament\Facades\Filament;
-use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\{Blade,DB};
 use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
@@ -14,8 +14,27 @@ Paymenter\Extensions\Servers\Domains\Services\NativeIdentityDiscrepancies::inspe
 $staff=staffUser(array_keys(Staff::permissions()));$panel=Filament::getCurrentPanel();
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $test=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful();
-$test->assertSee('Adoption readiness')->assertSee('Off. Staff deleting a customer while that customer is checking out can remove the new domain’s Paymenter order and service. This can happen now, with adoption off. Affected domains appear under Missing Paymenter records. Adoption stays off until a later release closes this gap. Before any activation, let in-progress customer, order and service edits finish, then restart web and queue workers. Direct database edits bypass these checks.');
+$test->assertSee('Adoption readiness')->assertSee("Off. Deleting a customer during checkout can remove their new domain's Paymenter order and service, today as well. Affected domains appear under Missing Paymenter records on each account. Adoption stays off until a later release closes this gap. Before switching it on, let in-progress edits finish, then restart web and queue workers. Direct database edits bypass these checks.");
 $test->assertSee('Missing Paymenter records')->assertSee('Customer, order or service missing')->assertSee('missing-native.com')->assertSee('The domain and its name stay reserved until a later release adds a resolution step.')->assertSee('Do not restore deleted records manually.');
+// Every moved site fact has one entry, independent of the number of configured accounts.
+$site=\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::site();
+$flat=$test->instance()->content(\Filament\Schemas\Schema::make($test->instance()))->getFlatComponents();
+foreach(['Renewal safety','Adoption readiness','Credentials',...array_keys($site)] as $label){
+    $entries=array_values(array_filter($flat,fn($entry)=>$entry instanceof \Filament\Infolists\Components\TextEntry && $entry->getLabel()===$label));
+    same(1,count($entries),'Site fact appears exactly once: '.$label);
+    if(isset($site[$label])){same($site[$label],$entries[0]->getState(),'Moved site value is unchanged: '.$label);}
+    foreach($tlds as $tld){expect(!array_key_exists($label,\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for($tld->server_id)),'Site fact removed from per-account health: '.$label);}
+}
+same('Waiting for the first scheduled run',\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for($tlds[0]->server_id)['Runtime account'],'Scheduled run copy snapshot');
+same('No registrar requests recorded',\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for($tlds[0]->server_id)['Read capacity'],'Empty request budget copy snapshot');
+same('60, 30, 7, 1',\Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule($tlds[0]->server_id)['Days before expiry'],'Default reminder display order');
+$scheduleTable=DB::table('domains_reminder_schedules');
+$scheduleTable->insert(['server_id'=>$tlds[0]->server_id,'account_fingerprint'=>$tlds[0]->account_fingerprint,'before_days'=>'[1,7,30,60]','after_days'=>'[7,1,3]','audit'=>'synthetic']);
+$raw=$scheduleTable->where('server_id',$tlds[0]->server_id)->first();
+$sorted=\Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule($tlds[0]->server_id);
+same('60, 30, 7, 1',$sorted['Days before expiry'],'Saved reminders display descending');
+same('1, 3, 7',$sorted['Days after expiry'],'Saved after reminders display ascending');
+same((array)$raw,(array)$scheduleTable->where('server_id',$tlds[0]->server_id)->first(),'Display sorting never changes stored JSON');
 $out=$argv[1]??null;
 if($out!==null){
     expect(is_dir($out)&&is_writable($out),'Output directory required');

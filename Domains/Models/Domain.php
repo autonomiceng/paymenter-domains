@@ -156,6 +156,19 @@ class Domain extends Model
 
     public function adoptionPending(): bool { return $this->status === 'adoption_pending' || $this->provenance === 'adoption_pending'; }
 
+    public function user() { return $this->belongsTo(\App\Models\User::class); }
+    public function server() { return $this->belongsTo(\App\Models\Server::class); }
+    /** Latest current acquisition, including resolved outcomes so older holds cannot resurface. */
+    public function latestAcquisition()
+    {
+        return $this->hasOne(Operation::class)->ofMany(['id' => 'max'], fn ($q) => $q
+            ->whereIn('action', ['register', 'transfer'])
+            ->whereExists(fn ($d) => $d->selectRaw('1')->from('domains_domains as current_domain')
+                ->whereColumn('current_domain.id', 'domains_operations.domain_id')
+                ->whereColumn('current_domain.authority_generation', 'domains_operations.authority_generation')
+                ->whereColumn('current_domain.account_fingerprint', 'domains_operations.account_fingerprint')));
+    }
+
     public function service() { return $this->belongsTo(Service::class); }
     public function operations() { return $this->hasMany(Operation::class); }
 }

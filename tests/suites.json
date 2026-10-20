@@ -227,7 +227,8 @@
     "tests/watch-notice-priority-test.php",
     "tests/watch-notice-pages-test.php",
     "tests/watch-notice-snapshot-test.php",
-    "tests/watch-notice-overflow-test.php"
+    "tests/watch-notice-overflow-test.php",
+    "tests/staff-ui-polish-test.php"
   ],
   "ui": [],
   "runner": [

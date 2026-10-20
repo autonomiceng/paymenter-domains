@@ -15,11 +15,16 @@ app()->instance(AdoptionReader::class, $reader); app()->instance(AdoptionCommit:
 $viewOnly = staffUser([Staff::VIEW]); Livewire::actingAs($viewOnly)->test(AdoptDomain::class)->assertForbidden();
 config(['domains.adoption.enabled' => false]);
 $page = Livewire::actingAs($staff)->test(AdoptDomain::class)->assertSee('Adoption is not enabled yet')->assertSee('Choose a dedicated domain service.')
-    ->assertSee('Still needed before adoption can be switched on')->assertSee('Switching adoption on is a site configuration change, not a staff action.');
+    ->assertSee('Still needed')->assertSee('Switching adoption on is a site configuration change, not a staff action.');
 foreach (['A0:', 'Scenario baseline', 'Provider contract', 'Before activation', 'enrollment is retained'] as $jargon) { expect(!str_contains($page->html(), $jargon), 'Staff checklist has no internal jargon '.$jargon); }
+same(1,substr_count($page->html(),'Registrar test scenarios pass.'),'Done fact appears exactly once');
+$page->assertSee('Done')->assertSee('Still needed')->assertSee('Registrar account')->assertDontSee('Proof account')->assertSeeHtml('list-style:disc outside;padding-inline-start:1.25rem;margin:0');
+$readinessList=new ReflectionMethod(AdoptDomain::class,'readinessList');
+expect(str_contains($readinessList->invoke(null,['<script>unsafe</script>']),'&lt;script&gt;unsafe&lt;/script&gt;'),'Every readiness bullet is escaped');
 same(0, count($wire->calls), 'Wizard GET never reads registrar');
 $choose = ['customer' => $owner->id, 'service' => $service->id, 'account' => $binding->serverId];
-$page->callAction('choose', data: $choose)->assertHasNoActionErrors()->assertSee('example.com')->assertSee('2. Fresh readback');
+$page->callAction('choose', data: $choose)->assertHasNoActionErrors()->assertSee('example.com')->assertSee('2. Fresh readback')->assertSee($owner->email)->assertSee('Registrar account');
+same('Adopt example.com for '.$owner->email,$page->instance()->confirmAction()->getModalHeading(),'Confirmation identifies the registration and customer first');
 same(0, count($wire->calls), 'Choosing mapping performs no wire');
 $page->callAction('readback', data: ['reason' => 'Verified native dedicated service for original customer', 'do_not_renew' => true])->assertHasNoActionErrors()
     ->assertSee('Verified preview')->assertSee('No renewal')->assertActionDisabled('confirm')
@@ -37,7 +42,7 @@ $page->callAction('readback', data: ['reason' => 'Preview without adopt permissi
     ->assertSee('your role can preview but not confirm adoptions');
 $role(array_values(array_diff($permissions, ['admin.services.update'])));
 $page->callAction('readback', data: ['reason' => 'Preview without service update permission', 'do_not_renew' => true])->assertDontSee('Confirmation is unavailable')
-    ->assertSee('Simultaneous staff and customer edits have not yet been checked');
+    ->assertSee('Check simultaneous staff and customer edits');
 $page->callAction('confirm', data: ['verified' => true])->assertSee('your role is missing a permission adoption needs'); same(0, Domain::count(), 'Permission refusal rolls back');
 $role($permissions);
 // Every typed code has staff text independent of the exception's diagnostic message.

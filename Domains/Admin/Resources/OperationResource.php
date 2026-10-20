@@ -33,13 +33,13 @@ class OperationResource extends Resource
             TextColumn::make('id')->label('Request')->prefix('#')->sortable(),
             TextColumn::make('domain.domain')->label('Domain')->searchable()->wrap()
                 ->formatStateUsing(fn($state)=>new \Illuminate\Support\HtmlString(str_replace(['.','-'],['.<wbr>','-<wbr>'],e($state))))
-                ->extraAttributes(['style'=>'min-width:12rem;width:25vw;max-width:22rem;word-break:normal;overflow-wrap:break-word']),
+                ->extraAttributes(['style'=>'min-width:10rem;max-width:16rem;overflow-wrap:anywhere']),
             TextColumn::make('action')->label('Request type')->formatStateUsing(fn($state)=>Labels::action($state))->visibleFrom('xl'),
             TextColumn::make('state')->label('Status')->badge()->color(fn($state)=>Labels::color($state))
                 ->formatStateUsing(fn($state)=>Labels::state($state))->wrap()
                 ->description(fn($record)=>$record->safe_code===null?null:Labels::reason($record->safe_code)),
             TextColumn::make('review')->label('Review')->state(fn($record)=>array_values(array_unique(array_filter([PaidUncertainty::holdSummary($record,$grants)??PaidUncertainty::summary($record,$grants),...RequestFacts::review($record,$grants)]))))->listWithLineBreaks()->wrap()->placeholder('None')
-                ->extraAttributes(['style'=>'max-width:30rem;overflow-wrap:break-word;display:grid;row-gap:0.5rem']),
+                ->extraAttributes(['style'=>'min-width:24rem;max-width:40rem;overflow-wrap:break-word;display:grid;row-gap:0.5rem']),
         ])->filters([
             SelectFilter::make('state')->label('Status')->multiple()->options(['held'=>'On hold','uncertain'=>'Unconfirmed',
                 'pending'=>'In progress','running'=>'Sending','rejected'=>'Rejected','succeeded'=>'Completed']),

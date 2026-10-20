@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Admin\Resources\ServiceResource\Pages\EditService;
 use App\Models\Service;
 use Filament\Notifications\Notification;
-use Filament\Support\Exceptions\Halt;
+use Filament\Support\Exceptions\{Cancel,Halt};
 use Livewire\Livewire;
 
 /** UI-only adapter at an already-refused write; other writers keep their original exception. */
@@ -24,12 +24,14 @@ final class NativeServiceRefusal
             default=>['Service change refused','Product, plan, user, quantity, currency and coupon are fixed for managed domains. This service was not saved.'],
         };
         Notification::make()->danger()->title($title)->body($message)->send();
+        if($operation==='delete'){throw (new Cancel)->rollBackDatabaseTransaction();}
         throw new Halt;
     }
     public static function missing(): ?string
     {
         foreach([\Livewire\LivewireManager::class=>'current',EditService::class=>'getMountedAction',
             Notification::class=>'make'] as $class=>$method){if(!class_exists($class)||!method_exists($class,$method)){return $class.'::'.$method;}}
-        return class_exists(Halt::class)?null:Halt::class;
+        foreach([Halt::class,Cancel::class] as $class){if(!class_exists($class)){return $class;}}
+        return null;
     }
 }
