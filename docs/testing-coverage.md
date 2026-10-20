@@ -273,3 +273,22 @@ admission passes inherit entry+270 and the stricter 250-second and quote limits;
 requires a full 25-second wire. The same matrix covers checkout, original adoption and later
 completed-renewal anchors, late physical reads, response retention and unchanged native finance.
 Completion capture waits consume its entry+250 read budget; original adoption proof is retained.
+
+### Unpaid acquisition retirement and stock
+
+`native-stock-test.php` covers idempotent legacy stock normalization, finite save refusal,
+unaffected hosting products, native increment/decrement without throwing, withdrawal without
+prices and stale-cart checkout refusal. `acquisition-retirement-test.php` exercises the actual
+native old-Pending cron and shared hosting invoice bulk update, missing-event sweep recovery,
+after-commit/rollback wake timing, fresh reservation after retirement and retained intent/audit.
+Partial/processing/failed/reversed money, sent/claimed/present-null evidence, provider identity
+and sibling operations retain the name and require review. It also checks old Pending financial
+review, late-money non-reopening, unpaid immediate cancellation normalization, staff permission,
+stale/replayed review and reason checks, plus real Filament success/refusal modals. SQLite event
+schedules do not establish InnoDB concurrency or installed supplied-site-shell acceptance.
+`registration-nameservers-test.php` also checks refund-once and terminal recovery for the
+write-acceptance pre-seal hold, including present-null execution refusal.
+
+Retirement coverage also exercises the actual native immediate-cancellation listener on a shared
+invoice, configured cancellation delays, incomplete service-only cancellation alerts and their
+resolution after proven retirement, and redirect to a fresh view without the retired action.

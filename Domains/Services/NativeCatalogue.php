@@ -151,7 +151,7 @@ final class NativeCatalogue
                 else {
                     $product = Product::create(['name' => ($action === 'register' ? 'Register .' : 'Transfer .').$tld->tld,
                         'slug' => self::slug($tld, $action), 'category_id' => $category->id, 'server_id' => $tld->server_id,
-                        'hidden' => true, 'stock' => 0, 'per_user_limit' => 0, 'allow_quantity' => 'separated']);
+                        'hidden' => true, 'stock' => null, 'per_user_limit' => 0, 'allow_quantity' => 'separated']);
                     foreach (array_combine(self::KEYS, ['1', (string) $tld->id, $action, $tld->registrar_key]) as $key => $value) {
                         $product->settings()->create(['key' => $key, 'value' => $value, 'type' => 'string', 'encrypted' => false]);
                     }
@@ -181,7 +181,7 @@ final class NativeCatalogue
                         $price->fill(['price' => $available[$term], 'setup_fee' => '0.00'])->save();
                     } else { $plan->prices()->delete(); }
                 }
-                $product->stock = $available !== [] ? null : 0; $product->save();
+                $product->stock = null; $product->save();
             }
             $review?->record();
         });

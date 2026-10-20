@@ -17,7 +17,7 @@ final class NativeCancellation
         // unsupported: Eloquent passes extras to SQL after events, concealing arithmetic targets.
         foreach(['creating','updating']as$event){ServiceCancellation::$event(static function(ServiceCancellation $c):void {
             $ids=[...array_column(NativeIdentity::rows($c),'service_id'),...self::values($c->getAttributes(),'service_id')];
-            foreach(array_unique(array_filter($ids))as$id){self::guard((int)$id,'cancellation');}
+            foreach(array_unique(array_filter($ids))as$id){self::guard((int)$id,'cancellation',$c);}
         });}
         Service::updating(static function(Service $s):void {
             // Active is native paid billing state, regardless of caller or registrar progress.
@@ -39,7 +39,7 @@ final class NativeCancellation
             ->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         return $cancel->toBase()->concat($rows);
     }
-    private static function guard(int $id,string $kind): void
+    private static function guard(int $id,string $kind,?ServiceCancellation $cancellation=null): void
     {
         $seed=Service::find($id);if(!$seed||!NativeIdentity::routed($seed)){return;}
         if(!Schema::hasTable('domains_native_intents')){
@@ -47,7 +47,7 @@ final class NativeCancellation
         }
         // Invoice prefix before all orders/services, then owned intents/domains/operations. We
         // never acquire a user lock after a native cron caller already locked its invoices.
-        $write=static function()use($seed,$kind):void {
+        $write=static function()use($seed,$kind,$cancellation):void {
             $invoiceIds=InvoiceItem::where('reference_type',$seed->getMorphClass())->where('reference_id',$seed->id)->pluck('invoice_id')
                 ->merge(Operation::where('service_id',$seed->id)->whereNotNull('invoice_id')->pluck('invoice_id'))->unique()->sort()->values();
             $invoices=Invoice::whereKey($invoiceIds)->orderBy('id')->lockForUpdate()->get();
@@ -88,6 +88,8 @@ final class NativeCancellation
             }
             // The committed intent closes the creating-check/INSERT gap. Never clear it on a
             // timeout or staff acknowledgement: the paused native request could still insert.
+            // An unpaid pending service has no paid period to finish, including a closed ledger.
+            if($cancellation&&$service->status==='pending'&&!$invoices->contains('status','paid')){$cancellation->type='immediate';}
             if(!$allTerminal){
                 DB::table('domains_native_intents')->insertOrIgnore(['service_id'=>$seed->id,'kind'=>$kind,'created_at'=>now()]);
             }

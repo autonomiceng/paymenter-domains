@@ -46,7 +46,7 @@ foreach (['enom', 'namesilo'] as $index => $registrar) {
                 Labels::reason($result->safe_code), $registrar.' held operation renders its staff reason');
         }
         same($money, $nativeMoney(), $registrar.' setup validation preserves native finance');
-        if ($result->safe_code === 'nameservers_required') {
+        if (in_array($result->safe_code, ['nameservers_required', 'write_acceptance_required'], true)) {
             // A specific refusal retains the old definitely-unsent recovery, never unknown execution.
             // Privileged corruption bypasses the normal write-once evidence guard.
             $raw = $result->getRawOriginal('attempt'); $result->attempt = [...$result->attempt, 'execution' => null];

@@ -52,7 +52,7 @@ function identityReject(callable $attempt,string $label):void {
     expect($refused,$label.' refused before mutation');
 }
 // Uncast native booleans retain their SQL meaning on fresh and retrieved catalogue saves.
-$published=Product::create(['name'=>'Native stock control','slug'=>'domains-enom-s'.$p->server_id.'-positive-registration','server_id'=>$p->server_id,'category_id'=>$p->category_id,'hidden'=>true,'allow_quantity'=>'separated','stock'=>0]);
+$published=Product::create(['name'=>'Native stock control','slug'=>'domains-enom-s'.$p->server_id.'-positive-registration','server_id'=>$p->server_id,'category_id'=>$p->category_id,'hidden'=>true,'allow_quantity'=>'separated','stock'=>null]);
 $published->stock=null;$published->save();same(null,$published->fresh()->stock,'New routed product stock save remains native');
 $published=$published->fresh();$published->hidden=true;$published->name='Native display control';$published->save();
 same('Native display control',$published->fresh()->name,'Equivalent retrieved boolean does not refuse display save');
@@ -120,7 +120,7 @@ $rejects=[
     'product delete'=>fn()=>$p->fresh()->delete(),
     'plan delete'=>fn()=>App\Models\Plan::findOrFail($s->plan_id)->delete(),
     'plan proposed route'=>fn()=>App\Models\Plan::findOrFail($host->plan_id)->forceFill(['priceable_id'=>$p->id])->save(),
-    'product proposed route'=>fn()=>$hosting->fresh()->update(['server_id'=>$p->server_id]),
+    'product proposed route'=>fn()=>$hosting->fresh()->update(['server_id'=>$p->server_id,'stock'=>null]),
     'order delete'=>fn()=>$order->fresh()->delete(),
     'service delete'=>fn()=>$s->fresh()->delete(),
     'property delete'=>fn()=>$property->fresh()->delete(),
