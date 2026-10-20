@@ -563,3 +563,13 @@ The upgrade tripwire pins native delete dispatch and Filament's handled Halt beh
 The runner hygiene suite requires the conventions exceptions section to be empty.
 Old Secure-class snapshots and caches require drained deployment, cache rebuild and page
 reload; offline native fixtures do not establish installed-theme or provider acceptance.
+
+## Owner retry input and list projections
+
+The paired owner-management suites exercise normalized native POST input, allowlisted contact
+and role retention, field errors in only the failed contact step, escaped redisplay and domain
+scoping. Nameserver, lock and setup retries retain their nonsecret values; confirmations and
+injected private fields are excluded. Owner-action tests assert code failures flash no input.
+Record-error suites retain bounded public DNS/SRV/DS/glue drafts without session flashing.
+Real active holdings compare full and list DTO facts and assert zero settings queries for list
+projections. These offline fixtures do not establish provider or installed browser acceptance.

@@ -93,25 +93,27 @@ final readonly class OwnedDomains
             $label=['contacts'=>'Domain contacts','nameservers'=>'Nameservers','privacy'=>'Domain privacy','auto_renew'=>'Renewal settings'][$row['section']??'']??null;
             if ($label) { $progress[]=['label'=>$label,'state'=>($row['state']??null)==='readback_confirmed_awaiting_review'?'Awaiting review':'Unresolved']; }
         }
-        $labels=['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'Domain privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code'];
-        if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Child nameservers']; }
-        foreach ($labels as $cap=>$label) {
-            if ($d->status==='active' && $service?->status==='active' && !RenewalStop::blocksExisting($renewalState) && !($d->renewal_policy['automatic_spend_paused']??false) && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
-        }
-        if (isset($management['privacy'])) { $management['privacy']['free']=$caps->privacy===PrivacyMode::Free;
-            $retail=\App\Models\Server::find($d->server_id)?->settings()->where('key','domains_privacy_price')->value('value');
-            try { $management['privacy']['price']=PricingRule::minor($retail)>0?Storefront::money(RetailLine::decimal($retail)):null; } catch(\Throwable) { $management['privacy']['price']=null; } }
-        if ($caps) {
-            $setup['maxNameservers']=$d->registrar_key==='enom'?12:13;
-            if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $management['nameservers']['defaults']=$d->registrar_key==='enom'; }
-            if (isset($management['contacts'])) { $management['contacts']['staged']=$d->registrar_key==='namesilo'; $management['contacts']['limits']=ContactDetails::limits($d->registrar_key); }
-            if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'domain’s administrative contact':'domain owner'; }
-        }
-        $records=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?OwnerRecords::forDomain($d):[];
-        $recordCheckHeld=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?ObservationRecords::stopped($d):false;
-        foreach (['dns','srv','ds','glue'] as $kind) {
-            if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['recordCheckHeld']=$recordCheckHeld; }
-            if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
+        if ($caps) { $setup['maxNameservers']=$d->registrar_key==='enom'?12:13; }
+        if ($forms) {
+            $labels=['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'Domain privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code'];
+            if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Child nameservers']; }
+            foreach ($labels as $cap=>$label) {
+                if ($d->status==='active' && $service?->status==='active' && !RenewalStop::blocksExisting($renewalState) && !($d->renewal_policy['automatic_spend_paused']??false) && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
+            }
+            if (isset($management['privacy'])) { $management['privacy']['free']=$caps->privacy===PrivacyMode::Free;
+                $retail=\App\Models\Server::find($d->server_id)?->settings()->where('key','domains_privacy_price')->value('value');
+                try { $management['privacy']['price']=PricingRule::minor($retail)>0?Storefront::money(RetailLine::decimal($retail)):null; } catch(\Throwable) { $management['privacy']['price']=null; } }
+            if ($caps) {
+                if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $management['nameservers']['defaults']=$d->registrar_key==='enom'; }
+                if (isset($management['contacts'])) { $management['contacts']['staged']=$d->registrar_key==='namesilo'; $management['contacts']['limits']=ContactDetails::limits($d->registrar_key); }
+                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'domain’s administrative contact':'domain owner'; }
+            }
+            $records=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?OwnerRecords::forDomain($d):[];
+            $recordCheckHeld=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?ObservationRecords::stopped($d):false;
+            foreach (['dns','srv','ds','glue'] as $kind) {
+                if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['recordCheckHeld']=$recordCheckHeld; }
+                if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
+            }
         }
         $renewal=$d->status==='active'?(RenewalStop::stopped($renewalState)?'Off':'On'):'—'; $price=null;
         try { if($service?->currency_code==='USD'){$price=Storefront::money(RetailLine::decimal($service->price));} } catch(\Throwable){}
@@ -128,7 +130,7 @@ final readonly class OwnedDomains
             try { $allowed=Runtime::management($d,$this->engine)?->available($d->service->user,$d,$this->ports->forDomain($d),$all)??[]; } catch (\Throwable) { $allowed=[]; }
             foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions']) { unset($management[$key]); } } unset($section);
             $unavailable=$management===[];
-        } elseif (!$forms) { $management=[]; }
+        }
         // Only the exact retained issued renewal invoice supplies a due date.
         $renewalDue=null;
         $debt=$d->operations()->where('action','renew')->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->whereIn('state',['awaiting_payment','queued','pending','uncertain'])->orderByDesc('id')->first();

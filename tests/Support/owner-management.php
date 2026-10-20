@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Real completed holdings and engine, synthetic transport.
 declare(strict_types=1);
 require __DIR__.'/owner-pages.php';
+require_once __DIR__.'/raw-input.php';
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnerActionController, OwnedDomainController};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
@@ -17,7 +18,9 @@ $stoppedDto=$owners->present($d->fresh());same('Off',$stoppedDto->renewal,'Custo
 $controller=new OwnerActionController($owners,new OwnerSetup($clock,$ports),new TransferInputs($clock,new Refunds($clock)),$management,$ports);
 $session=app('request')->session();$session->put('_token','owner-csrf');
 $post=static function(string $action,array $data=[])use($d,$user,$session):Request {
-    $r=Request::create('/domains/'.$d->id.'/manage/'.$action,'POST',['confirmed'=>'1',...$data]);$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
+    $data=['confirmed'=>'1',...$data];
+    $r=Request::create('/domains/'.$d->id.'/manage/'.$action,'POST',$data,[],[],['CONTENT_TYPE'=>'application/x-www-form-urlencoded'],http_build_query($data));
+    nativeNormalizeInput($r);$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
     $r->request->set('_request_key',FormKeys::issue($r,'owner:'.$d->id.':'.$action));return $r;
 };
 $r=$post('nameservers',['nameservers'=>"ns1.example.com\nns2.example.com"]);$stale=$session->get('domains.form_keys');$again=clone $r;
@@ -45,6 +48,7 @@ else {
     same('succeeded',$management->run($reset->id,$driver)->state,'Explicit default reset requires provider default readback');
     $writes=array_values(array_filter($state->calls,fn($call)=>$call[0]==='ModifyNS'));same('default',end($writes)[1]['UseDNS'],'The grant sends explicit default DNS intent');$state->apply=true;
 }
+require __DIR__.'/owner-input.php';
 $before=Operation::count();$r=$post('lock',['locked'=>'0','confirmed'=>'0']);$controller->manage($r,$d->id,'lock');same($before,Operation::count(),'Missing confirmation creates no request');
 $r=$post('contacts',['role'=>'all','contact'=>[]]);$controller->manage($r,$d->id,'contacts');
 expect($session->get('errors')->has('contact.phone'),'Engine contact paths map to submitted fields');

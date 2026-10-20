@@ -21,8 +21,10 @@ $replay=static function($call):void {try{$call();expect(false,'Replay refused');
 foreach([0,1]as$i){
     $op=$newTransfer('owner-code-'.$i.'.com',$i,true,false);$d=$op->domain;$exact='  Synthetic:Case-Sensitive + % é雪  ';
     foreach(['',"bad\nvalue",str_repeat('x',513),['private']]as$bad){
-        $r=$req($d,'code',['transfer_code'=>$bad]);$action->code($r,$d->id);
+        $session->forget('_old_input');
+        $r=$req($d,'code',['transfer_code'=>$bad,'password'=>'PRIVATE-PASSWORD','auth_code'=>'PRIVATE-AUTH']);$action->code($r,$d->id);
         expect(!$r->request->has('transfer_code'),'Even malformed code is scrubbed');expect(!$session->has('_old_input.transfer_code'),'Code is never flashed');
+        same([],$session->get('_old_input',[]),'Code failure flashes no submitted fields');
         expect(!isset($op->fresh()->payload['epp']),'Invalid code not stored');
     }
     $r=$req($d,'code',['transfer_code'=>$exact]);$stale=clone $r;
@@ -58,8 +60,9 @@ foreach([0,1]as$i){
     $registration=Paymenter\Extensions\Servers\Domains\Models\Domain::where('domain','owner-register-'.$i.'.com')->sole()->operations()->sole();
     if($i){
         foreach([[],['ns1.owner-register-1.com','ns2.example.com'],['xn--bad.example.com','ns2.example.com']]as$invalid){
-            $r=$req($registration->domain,'setup',['nameservers'=>implode("\n",$invalid),'confirmed'=>'1']);$action->setup($r,$registration->domain_id);
+            $r=$req($registration->domain,'setup',['nameservers'=>implode("\n",$invalid),'privacy'=>'1','confirmed'=>'1','password'=>'PRIVATE-PASSWORD']);$action->setup($r,$registration->domain_id);
             expect($session->get('errors')->has('nameservers'),'Purchase grammar maps to a fixed field error');
+            same(['nameservers'=>implode("\n",$invalid),'privacy'=>'1'],$session->get('_old_input'),'Setup retains only submitted nonsecret fields');
             expect(!isset($registration->fresh()->policy['owner_setup']),'Invalid settings never freeze');
         }
         $us=clone $registration->domain;$us->domain='synthetic.us';$us->tld='us';
@@ -68,6 +71,8 @@ foreach([0,1]as$i){
         storefrontViews();app('view')->share('errors',$session->get('errors'));
         $html=(new OwnedDomainController($owners))->setup($r,$registration->domain_id)->render();
         same(1,storefrontDom($html)->query('//textarea[@name="nameservers"][@aria-invalid="true"]')->length,'Real Blade identifies setup error');
+        same(implode("\n",$invalid),storefrontDom($html)->query('//textarea[@name="nameservers"]')->item(0)->textContent,'Setup redisplays submitted nameservers');
+        same(1,storefrontDom($html)->query('//input[@name="privacy"][@checked]')->length,'Setup retains the privacy choice');
         app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
     }
     $setup->save($user,$registration->domain_id,['nameservers'=>$i?['ns1.example.com','ns2.example.com']:[],'privacy'=>$i===1]);
