@@ -704,9 +704,13 @@ missing axes. A freshness chip (Not checked yet, then Checks are out of date, th
 complete) covers missing axes; otherwise a single muted "Some details unavailable" chip does.
 A row with three unknown axes renders exactly one muted chip. An exhaustive DNS/pointer/partial
 matrix asserts the collapse never adds a label, never shows a per-axis unknown chip, and never
-gives unknown or partial evidence a positive or empty-case label. The detail view still lists
-every axis. Five mutations (old order, uncollapsed related rows, gap plus freshness, kept unknown
-axes, invented "DNS only") each fail the test. These checks are offline Blade/DOM checks.
+gives unknown or partial evidence a positive or empty-case label. Shuffled freshness states pin
+the priority order. The detail view still lists every axis and keeps the "Check details and
+timestamps" disclosure with its check times. Related rows keep the not-registered and no-coverage
+notices out of the chips, and managed context still hides adoption chips. Eight mutations (old
+order, uncollapsed related rows, gap plus freshness, kept unknown axes, invented "DNS only",
+swapped freshness priority, dropped managed exclusion, dropped check times) each fail the test.
+These checks are offline Blade/DOM checks.
 
 ### 2026-10-20 — staff reviews and active worker evidence
 

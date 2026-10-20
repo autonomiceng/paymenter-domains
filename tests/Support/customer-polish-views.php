@@ -65,8 +65,8 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
         'partly-known' => ['domain.registration.platform', DnsSignalLabels::keys('platform', true, null, partial: true), ['domain.active'], ['domain.active', 'domain.registration.platform', 'domain.dns.platform', 'domain.points.website', 'domain.details.partial']],
         'known' => ['domain.registration.platform', DnsSignalLabels::keys('platform', false, false), ['domain.active'], ['domain.active', 'domain.registration.platform', 'domain.dns.platform', 'domain.points.platform_empty']],
     ];
-    $summaries = array_map(fn ($name) => $dto($name.'.com', 'managed', ...array_slice($rows[$name], 0, 3)), array_keys($rows));
-    $watches = [$dto('watch-unchecked.com', 'watch', 'domain.registration.unknown', $unknown, ['watch.not_checked']), $dto('watch-known.com', 'watch', 'domain.registration.external', DnsSignalLabels::keys('external', false, false), [])];
+    $summaries = array_map(fn ($name) => $dto($name.'.example', 'managed', ...array_slice($rows[$name], 0, 3)), array_keys($rows));
+    $watches = [$dto('watch-unchecked.example', 'watch', 'domain.registration.unknown', $unknown, ['watch.not_checked']), $dto('watch-known.example', 'watch', 'domain.registration.external', DnsSignalLabels::keys('external', false, false), [])];
     $html = view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator($summaries, count($summaries), 25), 'watches' => new \Illuminate\Pagination\LengthAwarePaginator($watches, 2, 25)])->render();
     $dom = storefrontDom($html);
     $chips = static fn ($cell) => array_map(fn ($span) => [trim($span->textContent), $span->getAttribute('class')], iterator_to_array($dom->query('.//span[contains(@class,"domains-badge")]', $cell)));
@@ -84,11 +84,31 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     same(array_map(fn ($key) => $strings[$key], ['domain.registration.external', 'domain.dns.external', 'domain.points.external_empty']), array_column($chips($related->item(1)), 0), 'Related watch rows keep known evidence');
     $detail = view('domains::partials.summary', ['summary' => $summaries[2]])->render();
     foreach (['domain.registration.unknown', 'domain.dns.unknown', 'domain.points.unknown', 'watch.not_checked'] as $key) { expect(str_contains($detail, '>'.$strings[$key].'<'), 'Detail keeps every axis: '.$key); }
+    $fresh = ['delegation' => ['checkedAt' => null, 'stale' => false, 'partial' => false, 'nextCheck' => 1767225600], 'points' => ['checkedAt' => 1767139200, 'stale' => true, 'partial' => true, 'nextCheck' => null]];
+    $detailDom = storefrontDom(view('domains::partials.summary', ['summary' => new DomainSummary('held.example', null, 'managed', 'domain.registration.unknown', $unknown, null, null, ['domain.review', 'watch.not_checked'], $strings, null, null, null, $fresh, null, null, [], [], [])])->render());
+    same('Check details and timestamps', trim($detailDom->query('//details[@class="domains-checks"]/summary')->item(0)?->textContent ?? ''), 'Detail keeps the check disclosure');
+    $facts = array_map(fn ($node) => preg_replace('/\s+/', ' ', trim($node->textContent)), iterator_to_array($detailDom->query('//details[@class="domains-checks"]//dd')));
+    same(['Not checked yet Next check Jan 1, 2026, 00:00 UTC', 'Checks are out of date Last checked Dec 31, 2025, 00:00 UTC'], $facts, 'Detail disclosure keeps freshness and timestamps');
+    // Related rows keep their exclusions: notices stay notices, and managed context hides adoption chips.
+    $compact = static fn (DomainSummary $summary, array $with = []) => storefrontDom(view('domains::partials.summary', ['summary' => $summary, 'summaryCompact' => true, ...$with])->render());
+    $texts = static fn ($dom, $path = '//span[contains(@class,"domains-badge")]') => array_map(fn ($node) => trim($node->textContent), iterator_to_array($dom->query($path)));
+    foreach (['watch.not_registered' => 'domain.registration.unknown', 'watch.no_coverage' => 'domain.registration.external'] as $state => $registration) {
+        $dom = $compact($dto('notice.example', 'watch', $registration, $unknown, [$state]));
+        same([...($state === 'watch.no_coverage' ? [$strings[$registration]] : []), $strings['domain.details.partial']], $texts($dom), 'Related row chips exclude '.$state);
+        same([$strings[$state]], $texts($dom, '//p[@class="domains-notice"]'), 'Related row keeps notice: '.$state);
+    }
+    $adopting = $dto('adopting.example', 'managed', 'domain.registration.platform', DnsSignalLabels::keys('platform', true, true), ['adopt.pending', 'adopt.provenance', 'domain.active']);
+    same(array_map(fn ($key) => $strings[$key], ['adopt.pending', 'adopt.provenance', 'domain.active', 'domain.dns.platform', 'domain.points.both']), $texts($compact($adopting)), 'Pending adoption hides registration, keeps state chips first');
+    same(array_map(fn ($key) => $strings[$key], ['domain.active', 'domain.dns.platform', 'domain.points.both']), $texts($compact($adopting, ['summaryOnManaged' => true])), 'Managed context hides adoption chips');
+    $gapEvidence = ['domain.registration.unknown', ...$unknown];
+    foreach ([[['watch.partial', 'watch.stale', 'domain.active', 'watch.not_checked'], 'watch.not_checked'], [['watch.partial', 'watch.stale'], 'watch.stale'], [['watch.partial'], 'watch.partial'], [[], 'domain.details.partial']] as [$states, $chip]) {
+        same([...array_values(array_diff($states, DomainSummaryBadges::FRESHNESS)), $chip], DomainSummaryBadges::compact($gapEvidence, $states), 'Freshness priority: '.$chip);
+    }
     // No combination of evidence earns a label the summary did not supply, and only one chip covers missing axes.
     foreach ([null, 'platform', 'external'] as $d) { foreach ([null, true, false] as $w) { foreach ([null, true, false] as $e) { foreach ([false, true] as $partial) {
-        foreach (['domain.registration.platform', 'domain.registration.unknown'] as $registration) { foreach ([[], ['domain.active'], ['domain.active', 'watch.not_checked'], ['watch.stale', 'watch.partial']] as $states) {
+        foreach (['domain.registration.platform', 'domain.registration.unknown'] as $registration) { foreach ([[], ['domain.active'], ['domain.active', 'watch.not_checked'], ['watch.stale', 'watch.partial'], ['watch.partial', 'watch.not_checked', 'watch.stale'], ['watch.partial']] as $states) {
             $evidence = [$registration, ...DnsSignalLabels::keys($d, $w, $e, partial: $partial)];
-            $badges = $dto('x.com', 'managed', $registration, [], $states)->listBadges($evidence, $states);
+            $badges = $dto('x.example', 'managed', $registration, [], $states)->listBadges($evidence, $states);
             $gaps = array_intersect($evidence, DomainSummaryBadges::GAPS); $fresh = array_intersect($states, DomainSummaryBadges::FRESHNESS);
             same([], array_diff($badges, $evidence, $states, ['domain.details.partial']), 'Collapse never invents a label');
             same([], array_intersect($badges, DomainSummaryBadges::GAPS), 'Per-axis unknown chips collapse');
