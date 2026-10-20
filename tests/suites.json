@@ -183,7 +183,9 @@
     "tests/adoption-enrollment-test.php",
     "tests/adoption-customer-test.php",
     "tests/transfer-dispatch-namesilo-test.php",
-    "tests/transfer-dispatch-refusals-test.php"
+    "tests/transfer-dispatch-refusals-test.php",
+    "tests/managed-public-storage-test.php",
+    "tests/managed-public-upgrade-test.php"
   ],
   "ui": [],
   "runner": [

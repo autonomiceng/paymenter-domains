@@ -486,3 +486,11 @@ and input/feature/pre-seal refusals (`transfer-dispatch-refusals-test.php`). The
 five-mode dispatch assertions once per registrar. Splitting bounds cumulative fixture rows
 without replacing native checkout or weakening replay, refund, admission or uncertainty checks.
 These are offline synthetic SQLite scenarios; provider and concurrent-database acceptance remain separate.
+
+## Managed public DNS storage
+
+`managed-public-storage-test.php` covers the target union, separate encrypted immutable
+facts, no managed watch creation, dormant defaults, retention and missing-history refusal.
+`managed-public-upgrade-test.php` upgrades original 000018 enrollment rows in place,
+preserving IDs, continuity/profile pointers and awaiting-acceptance state. Partial retained
+upgrades refuse repair. These serialized SQLite tests make no DNS or registrar calls.

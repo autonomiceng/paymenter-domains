@@ -20,6 +20,9 @@ final class WatchName extends WatchRecord
         if (($this->state === 'linked') !== ($this->managed_domain_id !== null) || ($this->registration === 'platform' && $this->state !== 'linked')) {
             throw new \DomainException('Managed registration requires a linked tombstone.');
         }
+        if (in_array($this->state, ['active','paused'], true) && WatchManagedTarget::exists((int)$this->user_id,$this->canonical_name)) {
+            throw new \DomainException('Managed holdings cannot have active external watches.');
+        }
         if ($this->managed_domain_id !== null) {
             $domain = WatchManagedTarget::resolve((int) $this->managed_domain_id, (int) $this->user_id, $this->canonical_name);
             if ($this->registration === 'platform' && !in_array($domain->status, WatchManagedTarget::MANAGED, true)) { throw new \DomainException('Pending acquisition does not establish platform registration.'); }
