@@ -243,3 +243,10 @@ and makes no provider calls. Shared-database concurrency and activation remain o
   shared union; an unverified current revision cannot reuse complimentary authority.
 - The existing Eloquent Model upgrade hash also covers the Domain save boundary;
   its contract names attachment savepoints and checks after public model callbacks.
+
+Registrar balance coverage (`registrar-balances-test.php`) uses fake readers and renders
+its Filament page. It checks the earlier known renewal due/expiry date, missing dates and
+costs, overdue unsent renewals, issued obligations through future-only stops, cancelled
+invoices and lifecycle exclusions, exact shortfall boundaries, account isolation, current
+permissions, refresh cooldown and daily wire spacing.
+See [Registrar balances](design/registrar-balances.md) for storage and forecast rules.
