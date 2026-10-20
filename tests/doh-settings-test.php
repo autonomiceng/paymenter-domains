@@ -41,7 +41,7 @@ $setRights = function ($permissions) use ($staff) { $staff->role()->first()->upd
 $setRights([]); Livewire::actingAs($staff)->test(Page::class)->assertForbidden();
 $setRights([Staff::VIEW, PublicSuffixList::MANAGE]); same(false, Page::canAccess(), 'Manage alone cannot view');
 $setRights([Staff::VIEW, PublicSuffixList::VIEW]);
-Livewire::actingAs($staff)->test(Page::class)->assertSee('DNS-over-HTTPS configured')->assertActionHidden('configure')->assertActionHidden('check');
+Livewire::actingAs($staff)->test(Page::class)->assertSee('DNS-over-HTTPS configured')->assertSee('Scheduled public domain checks are disabled.')->assertActionHidden('configure')->assertActionHidden('check');
 same(0, $calls, 'Rendering no query'); $setRights($rights);
 // Card text must match FallbackDnsReader: transport failures retry natively, valid DNS answers never do.
 Livewire::actingAs($staff)->test(Page::class)->assertSee("If it cannot be reached or its reply cannot be read, that query is retried once with the server's resolver if time remains")

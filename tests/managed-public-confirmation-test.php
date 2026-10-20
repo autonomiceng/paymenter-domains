@@ -19,6 +19,8 @@ $time->now+=21600;
 expect($signals->observe($id,$uid,'delegation'),'TTL-separated sample accepted after candidate badge expired');
 same(true,ManagedPublicObservation::where('check_kind','delegation')->orderByDesc('id')->first()->ns_confirmed,'Long TTL can confirm hourly DNS-only holding');
 same($time->now+3600,(int)DB::table(ManagedPublicWorkSchema::TABLE)->where('kind','delegation')->value('due_at'),'Confirmed DNS-only holding resumes hourly cadence');
+managedDue($id,$time->now+1);$late=$signals->begin($id,$uid,'delegation',$time->now+1);expect(!$signals->finish($late,new Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation',dns:'platform'),$time->now+46),'Late managed NS refresh discarded');
+managedDue($id,$time->now+47);$wait=$signals->begin($id,$uid,'delegation',$time->now+47);$signals->defer($wait,$time->now+47);expect((new Paymenter\Extensions\Servers\Domains\Services\PublicSignalsProjection())->read(Paymenter\Extensions\Servers\Domains\Dns\PublicSignalsTarget::managed($id,$uid,$d->account_fingerprint,$d->authority_generation,$d->confirmed_revision),$time->now+48)['dns']['stale'],'Quota cannot revive deadline-failed managed evidence');
 $time->now+=7201;managedDue($id,$time->now);
 expect($signals->observe($id,$uid,'delegation'),'Expired confirmation replaced by a fresh candidate');
 same(false,ManagedPublicObservation::where('check_kind','delegation')->orderByDesc('id')->first()->ns_confirmed,'Expired confirmed sample never carries forward');

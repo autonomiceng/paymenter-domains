@@ -23,7 +23,7 @@ final class WatchDnsProjection
                 $watch->state !== 'active' || !$profile?->enabled || (int) $good->profile_id !== (int) $profile?->id ||
                 (int) $good->profile_revision !== (int) $profile?->revision || (int) $good->watch_revision !== (int) $watch->revision || $good->psl_revision !== $watch->psl_revision;
             $out[$axis] = ['value' => $good?->{$axis}, 'checked_at' => $good?->started_at, 'valid_until' => $good?->valid_until,
-                'stale' => $stale, 'available' => $latest !== null && $latest->{$axis} !== null, 'mixed' => $good?->mixed ?? false];
+                'stale' => $stale, 'notice_eligible'=>!$stale && ($kind!=='delegation' || ($good?->facts['ns_confirmed']??false)), 'available' => $latest !== null && $latest->{$axis} !== null, 'mixed' => $good?->mixed ?? false];
         }
         $out['partial'] = !$out['dns']['available'] || !$out['website']['available'] || !$out['email']['available'] ||
             $out['dns']['stale'] || $out['website']['stale'] || $out['email']['stale'];

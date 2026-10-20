@@ -45,6 +45,7 @@ final class ManagedPublicSignals
             if (!$w || $w->retired_at!==null || $w->safe_code==='awaiting_acceptance' || (int)$w->user_id!==$owner
                 || $w->account_fingerprint!==$d->account_fingerprint || $w->due_at>$now || ($w->backoff_until??0)>$now
                 || ($w->lease_until??0)>$now || (int)$w->source_cursor!==(int)$peek->source_cursor) { return null; }
+            if ($w->claim!==null) { $q->update(PublicCheckRetry::abandoned($w,$id,$kind,$now));return null; }
             $claim=bin2hex(random_bytes(32));$q->update(['claim'=>$claim,'lease_until'=>$now+120,'target_stamp'=>$t['stamp'],
                 'domain_revision'=>$d->confirmed_revision,'config_revision'=>$c->revision,'profile_id'=>$p?->id,'profile_revision'=>$p?->revision]);
             $points=ManagedPublicObservation::where('domain_id',$id)->where('check_kind','points')->where('source_digest',$t['stamp'])
@@ -67,14 +68,14 @@ final class ManagedPublicSignals
         if ($token===null) { $this->defer($ticket,($this->clock)());return false; }
         try {
             $reader=new QuotaDnsReader($this->reader,$quota,$token,$this->clock);
-            [$reading,$cursor,$sourceCursor]=(new DnsCollector($reader))->collect($ticket,new DnsContext());
+            [$reading,$cursor,$sourceCursor]=(new DnsCollector($reader))->collect($ticket,new DnsContext($this->clock));
             return $this->finish($ticket,$reading,($this->clock)(),$cursor,$sourceCursor,$reader->saturated);
         } finally { $quota->release($token); }
     }
     public function defer(ManagedDnsTicket $t,int $now): void
     {
         DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$t->target->id)->where('generation',$t->target->generation)
-            ->where('kind',$t->kind)->where('claim',$t->claim)->update(['claim'=>null,'lease_until'=>null,'due_at'=>max($now,$t->startedAt)+60,'safe_code'=>'budget_exhausted']);
+            ->where('kind',$t->kind)->where('claim',$t->claim)->update(['claim'=>null,'lease_until'=>null,'due_at'=>max($now,$t->startedAt)+60,'safe_code'=>DB::raw("CASE WHEN safe_code IN ('ready','rotation') OR safe_code IS NULL THEN 'budget_exhausted' ELSE safe_code END")]);
     }
     public function finish(ManagedDnsTicket $ticket,DnsReading $reading,int $now,int $cursor=0,?int $sourceCursor=null,bool $saturated=false): bool
     {
@@ -117,7 +118,7 @@ final class ManagedPublicSignals
             $d=Domain::whereKey($id)->where('user_id',$owner)->first();if (!$d) { return; }
             $q=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('user_id',$owner)
                 ->where('account_fingerprint',$d->account_fingerprint)->where('generation',$d->authority_generation)->where('kind',$kind)
-                ->whereNull('retired_at')->where('safe_code','<>','awaiting_acceptance')->where('due_at','<=',$now)
+                ->whereNull('retired_at')->where(fn($q)=>$q->whereNull('safe_code')->orWhere('safe_code','<>','awaiting_acceptance'))->where('due_at','<=',$now)
                 ->where(fn($q)=>$q->whereNull('lease_until')->orWhere('lease_until','<=',$now))
                 ->where(fn($q)=>$q->whereNull('backoff_until')->orWhere('backoff_until','<=',$now));
             $w=$q->lockForUpdate()->first();if (!$w) { return; }
@@ -136,7 +137,7 @@ final class ManagedPublicSignals
             ->where('result','complete')->orderByDesc('id')->first();
         $ttls=[];foreach($prior?->facts['queries']??[]as$q){foreach($q['records']as$r){$ttls[]=$r['ttl'];}}
         $wait=min(21600,max(900,...($ttls?:[0])));
-        $same=$prior && hash_equals($prior->digest,$reading->digest());
+        $same=$prior && $prior->dns===$reading->dns;
         $fresh=$prior && $now>=$prior->started_at && $now<$prior->valid_until;
         // A candidate may wait longer than badge freshness for its TTL; expired confirmation never carries forward.
         $candidate=$prior && !$prior->ns_confirmed && $now>=$prior->started_at

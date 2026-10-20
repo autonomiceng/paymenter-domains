@@ -20,7 +20,7 @@ final class WatchDnsObserver
         if ($token===null) { $this->checks->defer($ticket,($this->clock)());return false; }
         try {
             $reader=new QuotaDnsReader($this->reader,$quota,$token,$this->clock);
-            [$reading,$cursor,$sourceCursor]=(new DnsCollector($reader))->collect($ticket,new DnsContext());
+            [$reading,$cursor,$sourceCursor]=(new DnsCollector($reader))->collect($ticket,new DnsContext($this->clock));
             if ($reader->saturated) { $this->checks->defer($ticket,($this->clock)());return false; }
             return $this->checks->finish($ticket,$reading,($this->clock)(),$cursor,$sourceCursor);
         } finally { $quota->release($token); }
