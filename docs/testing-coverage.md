@@ -777,3 +777,13 @@ savings require independently verified, matching annual USD/tax-exclusive renewa
 no such source is supplied to the runtime UI. Transfer completion exercises a failed relink
 audit, atomic rollback, local repair, retained source history and definitely-unsent notice
 suppression while accepted/uncertain deliveries survive. Public workers remain dormant.
+
+Installed watch/adoption gate: repeated same-version native upload/upgrade and reinstall
+retain encrypted
+registry facts, adoption previews, watch source/profile/map rows, outstanding work leases,
+notice episodes, uncertain deliveries and customer opt-outs byte for byte. The fixtures
+prove previews remain unattached and maps/profiles, adoption and comparison activation
+stay off. Repeated native upload, refused server deletion and file removal/reinstall share
+the same retained snapshot. These are SQLite/offline checks; live provider acceptance,
+shared-database races and actual delivery remain separate operator gates.
+Cross-version watch-table retention awaits a previous build containing those tables.
