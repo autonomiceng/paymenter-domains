@@ -28,7 +28,7 @@ class WatchResource extends WatchReadResource
             TextColumn::make('delegation.dns')->label('Last observed DNS')->visibleFrom('lg')->formatStateUsing(fn($state)=>WatchQueries::observed($state))->placeholder('Unknown'),
             TextColumn::make('work_due')->label('Next attempt')->visibleFrom('xl')->state(fn($record)=>$record->state==='active' && $record->work->min('due_at')?\Carbon\CarbonImmutable::createFromTimestampUTC($record->work->min('due_at')):null)->dateTime('M j, Y H:i')->placeholder('Not scheduled'),
         ])->filters([
-            Filter::make('attention')->label('Needs attention · first 250 active names')->query(WatchFindings::filter(...)),
+            Filter::make('attention')->label('Needs attention · first 1,000 active names')->query(WatchFindings::filter(...)),
             Filter::make('customer')->schema([TextInput::make('id')->label('Customer ID')->numeric()])->query(fn(Builder $query,array $data)=>ctype_digit((string)($data['id']??''))?$query->where('user_id',(int)$data['id']):$query),
             SelectFilter::make('state')->options(['active'=>'Checking','paused'=>'Paused','retired'=>'Ended','linked'=>'Linked']),
             SelectFilter::make('registration')->options(['external'=>'External','platform'=>'Platform']),

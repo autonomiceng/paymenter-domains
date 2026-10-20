@@ -59,7 +59,7 @@ Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['healthy']])->a
 Livewire::actingAs($editor)->test(ViewWatch::class,['record'=>$w['expired']])->assertSeeInOrder(['Registry expiry reached','Avery Customer','avery@example.test'])->assertSeeHtml('href="'.e(UserResource::getUrl('edit',['record'=>$uid])).'"');
 Livewire::actingAs($users)->test(ViewWatch::class,['record'=>$w['expired']])->assertSee('avery@example.test')->assertDontSeeHtml('/admin/users/'.$uid.'/edit');
 same($before,$writes(),'Staff list, filter and detail GETs write nothing');
-// 25 rows cost the same as one row for a customer; extra customers cost one owner batch each, never per row.
+// 25 rows cost the same across customers as for one customer.
 for($i=count($w);$i<25;$i++){$add('bulk'.$i.'.example');}same(25,WatchName::count(),'Twenty-five synthetic watches');
 $count=function(callable $run):int{DB::flushQueryLog();DB::enableQueryLog();$run();$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
 $one=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->searchTable('healthy.example')->assertCountTableRecords(1));
@@ -67,10 +67,10 @@ $many=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->search
 same($one,$many,'Same-customer query count does not grow per row ('.$one.')');
 $batch=$count(fn()=>$reader->batch($owner,[],[$id]));$page25=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->assertCountTableRecords(25));$others=[];for($i=0;$i<4;$i++){$others[]=staffUser([])->id;}
 foreach(WatchName::where('canonical_name','like','bulk%')->orderBy('id')->get()->values() as $i=>$bulk){DB::table('domains_watch_names')->where('id',$bulk->id)->update(['user_id'=>$others[$i%4]]);}
-// One mounted render each: four more customers add at most one owner batch each.
+// One mounted render each: four more customers add no per-owner queries.
 $spread=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->assertCountTableRecords(25));
-$filtered=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->filterTable('attention')->assertCountTableRecords(23));expect($filtered<=2*$spread+5*$batch+10,'Filtering is one more render plus one owner batch per customer, evaluated once per request ('.$filtered.' <= 2 x '.$spread.' + 5 x '.$batch.' + 10)');
-expect($spread<=$page25+4*$batch,'Five customers cost at most one batch each ('.$spread.' <= '.$page25.' + 4 x '.$batch.')');expect($spread<=$page25+4*40,'Bounded page query count');
+$filtered=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->filterTable('attention')->assertCountTableRecords(23));expect($filtered<=2*$spread+$batch+10,'Filtering is one more render plus one multi-owner batch, evaluated once per request ('.$filtered.' <= 2 x '.$spread.' + '.$batch.' + 10)');
+same($page25,$spread,'Five customers cost the same as one customer');
 // Filament stacks the header as a column below 40rem; flex-basis there becomes height and pushes findings off the first screen.
 $header=file_get_contents(dirname(__DIR__).'/Domains/resources/views/staff/watch-header.blade.php');[$narrow,$wide]=explode('@media (min-width:40rem){',$header,2)+[1=>''];
 expect(!str_contains($narrow,'flex:1 1')&&substr_count($wide,'flex:1 1')===2,'Watch header flex bases apply only to the wide row layout');

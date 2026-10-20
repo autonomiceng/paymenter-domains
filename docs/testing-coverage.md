@@ -761,9 +761,9 @@ equal the customer `DomainSummaries` state keys, render with the customer tones,
 rows. Customer name and email appear only with `admin.users.view`; the native user link also
 needs `admin.users.update`; revocation falls back on the next request. List, filter and
 detail GETs leave work, observation, registry and notice rows unchanged. Query counts are
-equal for 1 and 25 rows of one customer and grow by at most one summary batch per extra
-customer. The filter evaluates the first 250 active names once per request; applying it costs
-one more render plus one batch per customer. Mutations to the attention rule, permission
+equal for 1 and 25 rows of one customer and for a 25-row page across one or five customers.
+The filter evaluates the first 1,000 active names once per request in batches of at most 250;
+applying it costs one more render plus one multi-owner batch per chunk. Mutations to the attention rule, permission
 checks, expiry window, tones, stopped-watch handling and the filter memo each fail this test.
 Offline only; no installed or live checks.
 
