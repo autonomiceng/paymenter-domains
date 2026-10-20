@@ -15,7 +15,7 @@ final class DomainBilling
 
     public static function calendar(Domain $domain, int $issueDays = 21, int $dueDays = 7): array
     {
-        if (!$domain->provider_expires_at) { throw new \DomainException('Confirmed expiry required.'); }
+        if (!$domain->provider_expires_at) { throw new RuntimeIneligible(RuntimeReason::MissingAnchor); }
         return BillingCalendar::dates($domain->provider_expires_at, $issueDays, $dueDays);
     }
 
@@ -33,7 +33,7 @@ final class DomainBilling
             }
             // A native cancellation disables scheduled billing without touching retained debts.
             if ($actor === null && RenewalStop::stopped($l)) { return null; }
-            if (!$d->provider_expires_at) { throw new \DomainException('Confirmed expiry required.'); }
+            if (!$d->provider_expires_at) { throw new RuntimeIneligible(RuntimeReason::MissingAnchor); }
             $key = RenewalCycles::key($d);
             // Issued debt keeps its calendar, term and amount through later configuration changes.
             $existing = $l['operations']->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
@@ -43,10 +43,10 @@ final class DomainBilling
             $settings = $l['settings']->pluck('value', 'key');
             $calendar = self::calendarFor($l); $years ??= 1;
             if (!self::enabled($settings->get($actor ? 'domains_manual_renewals_enabled' : 'domains_billing_enabled', false))) {
-                throw new \DomainException('Requested renewal billing gate is disabled.');
+                throw new RuntimeIneligible(RuntimeReason::BillingOff);
             }
             $today = $this->clock->now()->format('Y-m-d');
-            if ($today >= $calendar['due'] || (!$actor && $today < $calendar['issue'])) { throw new \DomainException('Outside renewal invoice calendar.'); }
+            if ($today >= $calendar['due'] || (!$actor && $today < $calendar['issue'])) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
             if ($years < 1 || $years > 10 || $d->provider_expires_at->addYearsNoOverflow($years) > $this->clock->now()->modify('+10 years')) {
                 throw new \DomainException('Renewal term exceeds the registry horizon.');
             }
@@ -96,9 +96,9 @@ final class DomainBilling
     {
         $d=$l['domain'];$s=$l['service'];
         $bindings->requireProcessingLocked($l['server'],$l['account']);
-        if($d->renewal_policy['automatic_spend_paused']??false){throw new \DomainException('Renewal spending requires review.');}
+        if($d->renewal_policy['automatic_spend_paused']??false){throw new RuntimeIneligible(RuntimeReason::SpendingPaused);}
         if ($s->status !== 'active' || !in_array($d->status, ['active', 'expired', 'grace'], true)
-            || RenewalStop::stopped($l) || $d->price_mode !== 'standard') { throw new \DomainException('Renewal billing lifecycle requires review.'); }
+            || RenewalStop::stopped($l) || $d->price_mode !== 'standard') { throw new RuntimeIneligible(RuntimeReason::LifecycleNotReady); }
         $anchor = HoldingAnchor::resolve($l); $prior = $anchor->operation;
         if ($prior) { RenewalAuthority::requireCostAnchor($prior); }
         if ($l['operations']->contains(fn ($op) => $op->id !== $prior?->id && !HoldingAnchor::resolved($op, $l))) {

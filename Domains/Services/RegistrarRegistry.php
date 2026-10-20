@@ -25,6 +25,8 @@ final class RegistrarRegistry
         $this->entries[$key] = [array_keys($keys), $verifier, $readerFactory];
     }
 
+    public function keys(): array { return array_keys($this->entries); }
+
     public function credentialKeys(string $key): array { return $this->entry($key)[0]; }
 
     public function credentials(string $key, #[\SensitiveParameter] array $values): array

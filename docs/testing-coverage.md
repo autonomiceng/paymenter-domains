@@ -25,7 +25,6 @@ These fingerprints and the checker are test-only; the extension never loads them
 They fail suite/CI qualification against the installed Paymenter tree, and impose no
 runtime version check, enablement refusal, dispatch refusal or staff banner.
 
-
 Owned transfer-code and DNS/SRV handlers decode the raw POST body with `Http/RawPost`.
 The shipping Blade forms (`resources/views/partials/transfer-code.blade.php` and
 `resources/views/partials/owner-{dns,srv}.blade.php`) use ordinary POST forms with
@@ -146,7 +145,6 @@ The same absence race can null a newly assigned Service coupon during concurrent
 it changes coupon accounting but does not reassign ownership or create an orphan. It is a retained
 limit for later review. Parent/reference scans use bounded model batches but still query route
 identity per Service; large hosting-product identity edits may remain slow.
-
 
 ### Exact native Service projections
 
@@ -403,7 +401,6 @@ checks immediate conflict, existing stop reuse and cross-object grant isolation;
 `adoption-renewal-intent-test.php` checks a later ordinary end-of-period owner stop.
 These use serialized SQLite and closed fake transport, without concurrency acceptance.
 
-
 The adoption consequences fixture renders the native holding page with retained
 issue-window/cutoff flags and original renewal-off intent; no invoice warning appears.
 The later-stop fixture separately preserves issued-debt reminder wording.
@@ -453,7 +450,6 @@ including optional Intl, OPcache, PCNTL, PgSQL and Sodium functions. Every name 
 as an unqualified fallback and an uppercase fully qualified call, and as a user-defined
 namespaced function. This remains a targeted static guard, not full runtime qualification.
 
-
 W2D: `doh-reader-test.php` exercises strict DNS JSON/Question validation, RCODE mapping,
 CNAME owner semantics, transport-only fallback, source/reason facts, per-job breaker reset,
 ten shared slots, public bootstrap validation and remaining-deadline limits through injected
@@ -495,7 +491,6 @@ facts, no managed watch creation, dormant defaults, retention and missing-histor
 preserving IDs, continuity/profile pointers and awaiting-acceptance state. Partial retained
 upgrades refuse repair. These serialized SQLite tests make no DNS or registrar calls.
 
-
 ## Managed public DNS runtime
 
 Synthetic reader tests cover dormant A3 row acceptance in place, do-not-renew holdings,
@@ -508,7 +503,6 @@ Owner fairness, bounded source rotation, managed-only DTO selection and registra
 isolation are exercised without network. The existing watch observer runs through the same
 pool. Mutation checks reject stamp bypass, watch creation and separate quota admission.
 These serialized SQLite checks do not establish live resolver or MariaDB concurrency acceptance.
-
 
 ## Native paid-loop qualification and closed-order payment review
 
@@ -542,7 +536,6 @@ real native checkout, cron, cancellation listener, paid activation and Filament 
 remain exercised. These synthetic SQLite checks do not establish provider or concurrent
 shared-database acceptance.
 
-
 ## Native paid processing after override removal
 
 Both historically named baseline/candidate entrypoints now run the same native-only matrix.
@@ -573,7 +566,6 @@ injected private fields are excluded. Owner-action tests assert code failures fl
 Record-error suites retain bounded public DNS/SRV/DS/glue drafts without session flashing.
 Real active holdings compare full and list DTO facts and assert zero settings queries for list
 projections. These offline fixtures do not establish provider or installed browser acceptance.
-
 
 ## Installed-package scenario commands
 
@@ -797,3 +789,8 @@ widening and restoration. Recent history is bounded independently of retained re
 The historical installed-package fixture adopts the unreleased review-key/archive
 declaration explicitly; it tests native uploads and additive migrations from that
 baseline, not conversion or automatic repair of superseded missing-table schemas.
+
+Installed default-held package acceptance also covers runtime candidate isolation for offline
+display rows and missing native invoice authority. It verifies retained reconciliation/refund
+selection, safe actionable warnings, shared UTC daily diagnostic slots, permission revocation
+and secret-free read-only Activation status rendering from the extracted ZIP.
