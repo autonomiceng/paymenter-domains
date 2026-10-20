@@ -181,7 +181,9 @@
     "tests/adoption-renewal-intent-test.php",
     "tests/staff-adopt-commit-test.php",
     "tests/adoption-enrollment-test.php",
-    "tests/adoption-customer-test.php"
+    "tests/adoption-customer-test.php",
+    "tests/transfer-dispatch-namesilo-test.php",
+    "tests/transfer-dispatch-refusals-test.php"
   ],
   "ui": [],
   "runner": [
