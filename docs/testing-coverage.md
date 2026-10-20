@@ -373,3 +373,5 @@ renewal/acquisition prices, its rendered list description and overall sales-paus
 Public catalogue, search and strict offers remain unavailable while renewal is off; restoring
 renewal restores the healthy contrast. Exact saved price rows, revisions and freshness survive
 these switch changes and reads without provider I/O. This is synthetic native SQLite coverage.
+
+- DNS readback: equivalent IP spellings share canonical tuples and digests; provider CNAME/MX root-dot variants confirm through preflight, observation and reconciliation. Desired targets remain strict; malformed provider targets refuse, MX preference stays significant, and TXT/redirect bytes remain exact.
