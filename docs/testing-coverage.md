@@ -734,3 +734,7 @@ replacement preserves every unrelated attempt key. Temporary guard-removal
 mutations must make each isolated refusal assertion fail, with the guards restored
 before the full suite. These are sequential synthetic SQLite interleavings, not
 shared-database concurrency, provider acceptance or production evidence.
+
+## Transport refusals before cURL setup
+
+`tests/enom-curl-test.php` and `tests/curl-transport-test.php` count `curl_init` as well as `curl_exec`. Every pre-dispatch refusal (invalid deadline or credentials, TLS key logging, unsafe parameters, purchase mapping) asserts that no handle was created and no request was sent.
