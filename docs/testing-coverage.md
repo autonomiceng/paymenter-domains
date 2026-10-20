@@ -267,3 +267,9 @@ and slow preparation share the 270-second background finish cap; interactive dis
 privacy billing and explicit reconciliation use a 250-second entry budget. Tests cover exact
 25-second headroom, subsecond refusal before seal, blocked late physical reads, retained
 privacy response IDs and unchanged native finance. No provider or concurrency acceptance.
+
+Renewal deadline coverage reuses the monotonic entry scope before capture waits. Both complete
+admission passes inherit entry+270 and the stricter 250-second and quote limits; seal/consume
+requires a full 25-second wire. The same matrix covers checkout, original adoption and later
+completed-renewal anchors, late physical reads, response retention and unchanged native finance.
+Completion capture waits consume its entry+250 read budget; original adoption proof is retained.

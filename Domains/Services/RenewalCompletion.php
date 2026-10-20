@@ -12,6 +12,10 @@ final readonly class RenewalCompletion
     public function __construct(private AccountBindings $bindings, private Clock $clock) {}
     public function run(int $id): Operation
     {
+        return EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $deadline), RenewalAdmission::READ_SECONDS);
+    }
+    private function runEntered(int $id, \DateTimeImmutable $deadline): Operation
+    {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $capture = DB::transaction(function () use ($seed, $id) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
@@ -29,7 +33,7 @@ final readonly class RenewalCompletion
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp] = $capture; $proof = null; $covered = false;
         try {
-            $ctx = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock, Runtime::limiter());
+            $ctx = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $ctx); $result->requireAttempt($attempt);
             if ($this->clock->now() < $ctx->deadline) {
                 $facts = $result->result()->evidence();
