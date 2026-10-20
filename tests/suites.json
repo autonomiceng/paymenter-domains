@@ -163,7 +163,11 @@
     "tests/adopted-renewal-deadline-test.php",
     "tests/acquisition-retirement-test.php",
     "tests/native-stock-test.php",
-    "tests/paired-driver-test.php"
+    "tests/paired-driver-test.php",
+    "tests/seller-switch-lifecycle-test.php",
+    "tests/seller-switch-renewal-test.php",
+    "tests/namesilo-only-holder-test.php",
+    "tests/seller-switch-namesilo-renewal-test.php"
   ],
   "ui": [],
   "runner": [
