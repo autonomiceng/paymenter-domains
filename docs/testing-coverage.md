@@ -520,3 +520,13 @@ Existing acquisition alerts distinguish new payment activity and expose a staff 
 permission-aware invoice/request links. Ordinary completed cancellation and retained refunded
 payments stay quiet. Publication initializes approved product mail once and preserves later
 staff changes, including null and blank. Native paid-loop dependencies are test-only tripwires.
+
+## Seller-switch lifecycle command budget
+
+Seller-switch lifecycle runs one native command per registrar/acquisition action through
+`Support/seller-switch-lifecycle.php`; the original command keeps the two native checkout
+transaction guards. Each original register/transfer schedule still runs once for each
+registrar: stale carts after switching back, canonical contention, unpaid funding, fresh
+reads, durable seals and unknown workers. Native checkout, funding and retained-byte
+assertions are unchanged. Independent processes bound accumulated commerce rows. These
+synthetic SQLite checks do not establish provider or concurrent-database acceptance.

@@ -195,7 +195,11 @@
     "tests/managed-public-source-drift-test.php",
     "tests/managed-public-stamp-test.php",
     "tests/native-paid-baseline-test.php",
-    "tests/native-paid-candidate-test.php"
+    "tests/native-paid-candidate-test.php",
+    "tests/seller-switch-lifecycle-enom-register-test.php",
+    "tests/seller-switch-lifecycle-enom-transfer-test.php",
+    "tests/seller-switch-lifecycle-namesilo-register-test.php",
+    "tests/seller-switch-lifecycle-namesilo-transfer-test.php"
   ],
   "ui": [],
   "runner": [
