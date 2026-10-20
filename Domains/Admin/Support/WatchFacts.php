@@ -15,7 +15,8 @@ final class WatchFacts
     {
         self::gate();$owner=User::find($w->user_id);$summary=$owner?(new DomainSummaries())->one($owner,'watch',(int)$w->id):null;
         $inactive=!in_array($w->state,['active'],true);$stopped=$w->state==='paused'?'Checks paused':($w->state==='retired'?'Watch ended · no further checks':'Linked to registration · watch checks stopped');
-        $facts=['Customer'=>'Customer #'.$w->user_id,'Watch state'=>match($w->state){'active'=>'Checking','paused'=>'Checks paused','retired'=>'Watch ended','linked'=>'Linked to registration',default=>'Needs review'},'Expected DNS'=>WatchQueries::observed($w->expected_dns)];
+        $c=WatchFindings::customers([$w->user_id])[$w->user_id];
+        $facts=['Customer'=>[$c['label'],...($c['email']?[$c['email']]:[])],'Watch state'=>match($w->state){'active'=>'Checking','paused'=>'Checks paused','retired'=>'Watch ended','linked'=>'Linked to registration',default=>'Needs review'},'Expected DNS'=>WatchQueries::observed($w->expected_dns)];
         if($summary){$facts['Registration / DNS']=array_map(fn($k)=>$summary->labels[$k]??'Details unavailable',[$summary->registrationKey,...$summary->dnsKeys,...$summary->stateKeys]);
             $facts['Public registry expiry']=$summary->expiry?\Carbon\CarbonImmutable::parse($summary->expiry)->format('M j, Y'):'Unknown';
             foreach($summary->freshness as $family=>$f){$facts[match($family){'delegation'=>'Nameservers','points'=>'Website / email pointers',default=>'Public registry'}]=[!$f['checkedAt']?'Not checked':($f['stale']?'Out of date':($f['partial']?'Partial':'Current')),'Checked: '.self::date($f['checkedAt']),...($inactive?[]:['Next attempt: '.self::date($f['nextCheck'])])];}

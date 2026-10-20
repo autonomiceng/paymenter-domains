@@ -235,7 +235,8 @@
     "tests/domain-portal-test.php",
     "tests/staff-watch-test.php",
     "tests/staff-operation-lease-test.php",
-    "tests/staff-reason-test.php"
+    "tests/staff-reason-test.php",
+    "tests/staff-watch-findings-test.php"
   ],
   "ui": [],
   "runner": [

@@ -7,8 +7,6 @@ use Paymenter\Extensions\Servers\Domains\Models\WatchRegistryObservation;
 use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
 final class WatchQueries
 {
-    public static function stale(Builder $query): Builder
-    {return $query->where(fn($query)=>$query->whereDoesntHave('delegation',fn($query)=>$query->where('valid_until','>',time())->whereNotNull('dns'))->orWhereDoesntHave('points',fn($query)=>$query->where('valid_until','>',time())->where('partial',false)->whereNotNull('website')->whereNotNull('email'))->orWhereDoesntHave('registry',fn($query)=>$query->where('valid_until','>',time())->where('result','facts')));}
     /** Explicit historical filter over encrypted registry facts. Streaming decrypt, no provider reads. */
     public static function expiry(Builder $query,int $days): Builder
     {

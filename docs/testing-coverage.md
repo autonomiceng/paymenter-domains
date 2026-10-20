@@ -742,3 +742,19 @@ shared-database concurrency, provider acceptance or production evidence.
 ## Transport refusals before cURL setup
 
 `tests/enom-curl-test.php` and `tests/curl-transport-test.php` count `curl_init` as well as `curl_exec`. Every pre-dispatch refusal (invalid deadline or credentials, TLS key logging, unsafe parameters, purchase mapping) asserts that no handle was created and no request was sent.
+
+### Staff watch findings
+
+`staff-watch-findings-test.php` renders the native staff watch list and detail over eight
+synthetic watches (healthy, confirmed and unconfirmed nameserver change, expiry reached,
+expiry within 30 days, out-of-date registry, not checked, paused). Each row's findings must
+equal the customer `DomainSummaries` state keys, render with the customer tones, and show
+"No findings" when healthy. The native attention filter must return exactly the six actionable
+rows. Customer name and email appear only with `admin.users.view`; the native user link also
+needs `admin.users.update`; revocation falls back on the next request. List, filter and
+detail GETs leave work, observation, registry and notice rows unchanged. Query counts are
+equal for 1 and 25 rows of one customer and grow by at most one summary batch per extra
+customer. The filter evaluates the first 250 active names once per request; applying it costs
+one more render plus one batch per customer. Mutations to the attention rule, permission
+checks, expiry window, tones, stopped-watch handling and the filter memo each fail this test.
+Offline only; no installed or live checks.
