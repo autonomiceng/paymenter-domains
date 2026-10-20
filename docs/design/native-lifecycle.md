@@ -273,3 +273,13 @@ Unpaid acquisition retirement is now implemented separately from holding changes
 [acquisition retirement](acquisition-retirement.md) for its locked proof, audit and late-money
 rules. This supersedes the unpaid-retirement deferral above. Managed stock is always null;
 withdrawal removes acquisition prices. Unpaid Pending native cancellations normalize to immediate.
+
+
+## Paid-invoice override removed
+
+Slices 1–4 passed together with the retained adapter and the unbound native processor before
+slice 5 removed the binding and adapter. Native Active means paid; owned request state and
+registrar expiry remain authoritative. Ordinary native paid/cron writes continue and unsafe
+paid in-flight cancellation remains guarded. Completion's fresh funding checks and native
+activation projection are retained. This supersedes the historical paid-adapter description
+in storage; remaining native paid internals stay pinned by test-only upgrade tripwires.

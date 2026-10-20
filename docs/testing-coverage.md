@@ -541,3 +541,11 @@ unchanged native setup. Related released-name and shared-invoice scenarios stay 
 real native checkout, cron, cancellation listener, paid activation and Filament actions
 remain exercised. These synthetic SQLite checks do not establish provider or concurrent
 shared-database acceptance.
+
+
+## Native paid processing after override removal
+
+Both historically named baseline/candidate entrypoints now run the same native-only matrix.
+The test switch and self-rebinding are gone; composition asserts the processor is unbound
+and resolves to the native class. Existing paid/cron, cancellation, identity and projection
+coverage qualifies the removal together. No upstream hashes were changed.
