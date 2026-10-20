@@ -54,7 +54,7 @@ final class RefundPayment
     public static function requireCurrent(Operation $op, array $l): array
     {
         [$invoice, $item] = self::requireLine($op, $l);
-        if ($invoice->status !== 'paid' && !($invoice->status === 'cancelled' && RefundProof::retired($op, $l['domain']))) {
+        if ($invoice->status !== 'paid' && !($invoice->status === 'cancelled' && (RefundProof::retired($op, $l['domain']) || PrivacyRetirement::safe($op, $l['domain'])))) {
             throw new \DomainException('Native invoice must be paid or proven retired.');
         }
         $total = $net = 0; $payments = [];

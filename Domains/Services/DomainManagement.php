@@ -104,8 +104,9 @@ final class DomainManagement
                 if((int)$actor->id!==(int)$l['domain']->user_id||!$invoice||!in_array($invoice->status,['pending','cancelled'],true)||$l['transactions']->contains('invoice_id',$invoice->id)){throw new \DomainException('Privacy financial activity requires review.');}
                 $invoice->update(['status'=>'cancelled']);
             }
-            $op->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$this->clock->now(),
-                'attempt'=>[...($op->attempt??[]),'seal'=>'absent','send_state'=>'definitely_unsent','management_terminal'=>['actor_id'=>(int)$actor->id,'at'=>$this->clock->now()->format(DATE_ATOM)]]]);return $op;
+            $at=$this->clock->now();$terminal=$op->invoice_id?PrivacyRetirement::terminal($op,$l['domain'],(int)$actor->id,$at):['actor_id'=>(int)$actor->id,'at'=>$at->format(DATE_ATOM)];
+            $op->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$at,
+                'attempt'=>[...($op->attempt??[]),'seal'=>'absent','send_state'=>'definitely_unsent','management_terminal'=>$terminal]]);return $op;
         });
     }
     public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive): Operation

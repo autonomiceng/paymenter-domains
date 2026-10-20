@@ -375,3 +375,5 @@ renewal restores the healthy contrast. Exact saved price rows, revisions and fre
 these switch changes and reads without provider I/O. This is synthetic native SQLite coverage.
 
 - DNS readback: equivalent IP spellings share canonical tuples and digests; provider CNAME/MX root-dot variants confirm through preflight, observation and reconciliation. Desired targets remain strict; malformed provider targets refuse, MX preference stays significant, and TXT/redirect bytes remain exact.
+
+- Retired privacy: both paid actions cover native late payment, cancelled invoices, current staff credit, atomic failure/retry, retained claims/deferrals, queue visibility and forged/sent/changed-line or insufficient-funding refusals. Older retirement markers remain review-only.

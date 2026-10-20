@@ -54,7 +54,7 @@ final readonly class Refunds
                 throw new \DomainException('Refund authorization identity changed.');
             }
             if ($op->action === 'transfer' && !RefundProof::transferTimeout($op, $l['domain']) && !OperationTerminalProof::safe($op, $l['domain'])) { throw new \DomainException('Transfer timeout proof required.'); }
-            if (!$approved && !RefundProof::transferTimeout($op, $l['domain']) && !RefundProof::retired($op, $l['domain']) && !OperationTerminalProof::safe($op, $l['domain'])) {
+            if (!$approved && !RefundProof::transferTimeout($op, $l['domain']) && !RefundProof::retired($op, $l['domain']) && !PrivacyRetirement::safe($op, $l['domain']) && !OperationTerminalProof::safe($op, $l['domain'])) {
                 throw new \DomainException('No retained refund disposition.');
             }
             $payment = RefundPayment::requireCurrent($op, $l);
@@ -63,7 +63,7 @@ final readonly class Refunds
             $credit->save();
             $refund = [...$payment, 'to' => 'account_credit', 'credit_id' => (int) $credit->id,
                 'at' => $this->clock->now()->format(DATE_ATOM), 'actor_id' => $approved['actor_id'] ?? null,
-                'reason' => $approved['reason'] ?? (RefundProof::transferTimeout($op, $l['domain']) ? 'transfer_code_timeout' : (RefundProof::retired($op, $l['domain']) ? 'late_retired_payment' : 'terminal_unsent'))];
+                'reason' => $approved['reason'] ?? (RefundProof::transferTimeout($op, $l['domain']) ? 'transfer_code_timeout' : (RefundProof::retired($op, $l['domain']) || PrivacyRetirement::safe($op, $l['domain']) ? 'late_retired_payment' : 'terminal_unsent'))];
             $op->update(['funding' => [...($op->funding ?? []), 'refund' => $refund]]);
             if (in_array($op->action, ['register', 'transfer'], true)) {
                 $l['domain']->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);

@@ -171,7 +171,8 @@
     "tests/operation-claim-lifecycle-test.php",
     "tests/transfer-input-evidence-test.php",
     "tests/transfer-input-contacts-test.php",
-    "tests/native-server-settings-test.php"
+    "tests/native-server-settings-test.php",
+    "tests/management-privacy-retirement-test.php"
   ],
   "ui": [],
   "runner": [

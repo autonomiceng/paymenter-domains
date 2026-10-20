@@ -102,8 +102,8 @@ Acknowledgement IDs are retained only through the live sent grant, never from ob
 31/33 must link each separately authorized correction to the original operation key and named
 immutable `attempt.corrections` section, then append separate progress. This slice supplies the
 execution capability but does not claim automatic correction fulfillment or alter original proofs.
-Late financial activity on retired privacy invoices requires 35–37's reviewed disposition;
-retirement is never permission to discard native financial history or dispatch another write.
+Late full native payments on proven unsent privacy retirements receive account credit once;
+staff can retry account credit. Older or unresolved evidence stays in review, with no new purchase or history deletion.
 
 Documented Enom validation/policy/glue refusals are normalized separately from unknown errors.
 A documented nonfinancial refusal is terminal rejected when readback does not confirm or is
