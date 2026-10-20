@@ -167,7 +167,8 @@
     "tests/seller-switch-lifecycle-test.php",
     "tests/seller-switch-renewal-test.php",
     "tests/namesilo-only-holder-test.php",
-    "tests/seller-switch-namesilo-renewal-test.php"
+    "tests/seller-switch-namesilo-renewal-test.php",
+    "tests/operation-claim-lifecycle-test.php"
   ],
   "ui": [],
   "runner": [
