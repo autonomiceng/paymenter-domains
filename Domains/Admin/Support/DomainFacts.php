@@ -23,6 +23,13 @@ final class DomainFacts
             'Renewal billing'=>Labels::flag($d->billing_managed),
             'Who pays'=>match($d->price_mode) {'standard'=>'Standard','complimentary'=>'Complimentary',default=>'Review policy'},
             'Assignment generation'=>(string)$d->authority_generation];
+        if ($d->adoption_id !== null) {
+            try {
+                $a = \Paymenter\Extensions\Servers\Domains\Models\Adoption::find($d->adoption_id);
+                $readable = is_array($a?->evidence) && is_array($d->snapshot['holding'] ?? null);
+                $result['Adoption evidence'] = $readable ? 'Retained; checked before renewal' : 'Unavailable; staff review required';
+            } catch (\Throwable) { $result['Adoption evidence'] = 'Unavailable; staff review required'; }
+        }
         if ($d->adoptionPending()) {
             $result['Status']='Registration setup pending'; $result['Confirmed expiry']='Not verified';
             $result['Renewal billing']='Paused during setup';

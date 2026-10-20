@@ -13,7 +13,7 @@ final class RenewalFunding
         FinancialAdjustments::requireHistory($op, $l);
         $d = $l['domain']; $s = $l['service']; $r = $op->policy['renewal'] ?? [];
         $binding = CatalogueAcceptances::binding($l['account']);
-        $prior = $l['operations']->firstWhere('operation_key', $d->renewal_policy['billing_anchor']['operation_key'] ?? null);
+        $anchor = HoldingAnchor::resolve($l);
         if ($op->action !== 'renew' || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
             || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key
             || $op->account_fingerprint !== $d->account_fingerprint || $op->authority_generation !== $d->authority_generation
@@ -27,9 +27,8 @@ final class RenewalFunding
             // Original sent-attempt reconciliation retains identity/funding checks, not send eligibility.
             || !in_array($d->status, ['active', 'expired', 'grace'], true)
             || (!$sent && ($s->status !== 'active' || RenewalStop::blocksExisting($l)))
-            || !$prior || !RenewalAuthority::completed($prior, $d, $binding)
             || ($d->renewal_policy['billing_anchor']['expiry'] ?? null) !== $d->provider_expires_at?->format('Y-m-d')
-            || $l['operations']->contains(fn ($other) => $other->id !== $op->id && !RenewalAuthority::resolved($other, $d, $binding))
+            || $l['operations']->contains(fn ($other) => $other->id !== $op->id && !HoldingAnchor::resolved($other, $l))
             || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Renewal obligation authority changed.'); }
         foreach ($l['operations'] as $other) {
             if ($other->safe_code === 'renewal_cancelled_unpaid' && ($l['invoices']->firstWhere('id', $other->invoice_id)?->status !== 'cancelled'

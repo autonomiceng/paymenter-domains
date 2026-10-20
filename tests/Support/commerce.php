@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, FoundationSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
-function commerceFixture(bool $eligible = false, ?Closure $activation = null): array
+function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test): array
 {
     FoundationSchema::install(); SalesPolicySchema::install();
     Currency::firstOrCreate(['code' => 'USD'], ['name' => 'US Dollar', 'format' => '1,000.00', 'prefix' => '$', 'suffix' => '']);
@@ -32,7 +32,8 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null): a
     $now = new DateTimeImmutable('2026-10-18T12:00:00Z'); $tlds = [];
     foreach (['enom', 'namesilo'] as $key) {
         $server = Server::create(['name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
-        $binding = $bindings->configure($server->id, $key, Environment::Test, ['token' => 'account-'.$key]);
+        $binding = $bindings->configure($server->id, $key, $environment, ['token' => 'account-'.$key]);
+        if ($environment === Environment::Live) { $bindings->confirmLiveSite($server->id, rtrim(config('app.url'), '/')); }
         $bindings->setProcessing($server->id, true, $activation);
         $tld = Tld::create(['server_id' => $server->id, 'registrar_key' => $key, 'account_fingerprint' => $binding->fingerprint,
             'tld' => 'com', 'enabled' => true, 'min_years' => 1, 'max_years' => 3]);

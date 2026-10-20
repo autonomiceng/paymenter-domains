@@ -44,13 +44,14 @@ final readonly class RenewalAuthority
                     throw new RenewalRefused(RenewalCode::Anchor);
                 }
                 if ($domain->renewal_policy['automatic_spend_paused'] ?? false) { throw new RenewalRefused(RenewalCode::Paused); }
-                $anchor = $domain->renewal_policy['billing_anchor'] ?? [];
-                $prior = $all->firstWhere('operation_key', $anchor['operation_key'] ?? null);
-                if (($anchor['expiry'] ?? null) !== $request->expiry || !$prior || !self::completed($prior, $domain, $binding)
-                    || $all->contains(fn ($op) => $op->id !== $prior->id && !self::resolved($op, $domain, $binding) && !self::expected($op, $request))) {
+                try { $anchor = HoldingAnchor::resolve($l); }
+                catch (RenewalRefused $error) { throw $error; }
+                catch (\Throwable) { throw new RenewalRefused(RenewalCode::Prior); }
+                $prior = $anchor->operation;
+                if ($all->contains(fn ($op) => $op->id !== $prior?->id && !HoldingAnchor::resolved($op, $l) && !self::expected($op, $request))) {
                     throw new RenewalRefused(RenewalCode::Prior);
                 }
-                self::requireCostAnchor($prior);
+                if ($prior) { self::requireCostAnchor($prior); }
                 $current = $l['stamp'];
                 if (($stamp !== null && $stamp !== $current) || ($until !== null && $until <= $this->clock->now())) {
                     throw new RenewalRefused(RenewalCode::Changed);
@@ -58,12 +59,12 @@ final readonly class RenewalAuthority
                 $annual = $prices->where('term', 1)->where('currency', 'USD')->where('account_fingerprint', $binding->fingerprint)->first();
                 $retail = $annual?->retail !== null ? PricingRule::total(PriceCatalogue::retail($annual->retail), $request->years) : null;
                 // Resolve original registration proof after the latest anchor advances to a renewal.
-                $registration = $all->first(fn ($op) => in_array($op->action, ['register', 'transfer'], true) && $op->state === 'succeeded' && self::resolved($op, $domain, $binding));
+                $registration = $l['identity_source']['kind'] !== 'checkout' ? null : $all->first(fn ($op) => in_array($op->action, ['register', 'transfer'], true) && $op->state === 'succeeded' && self::resolved($op, $domain, $binding));
                 $prior = $registration ?? $prior;
-                $admission = $prior->attempt[$prior->action === 'transfer' ? 'transfer_admission' : 'registration_admission'] ?? [];
+                $admission = $prior?->attempt[$prior?->action === 'transfer' ? 'transfer_admission' : 'registration_admission'] ?? [];
                 $nonpremium = false;
                 try {
-                    $nonpremium = ($admission['premium'] ?? null) === false && ($admission['name'] ?? null) === $domain->domain
+                    $nonpremium = $prior !== null && ($admission['premium'] ?? null) === false && ($admission['name'] ?? null) === $domain->domain
                         && ($admission['years'] ?? null) === (int) $prior->term
                         && ($admission['cost'] ?? null) === ($prior->attempt['authorized_cost'] ?? null)
                         && ($admission['cost']['currency'] ?? null) === 'USD'

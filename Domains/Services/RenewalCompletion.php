@@ -61,7 +61,8 @@ final readonly class RenewalCompletion
             $d->update(['status' => 'active', 'provider_expires_at' => $proof['expiry'], 'provider_order_id' => $proof['order_reference'],
                 'confirmed_revision' => $d->confirmed_revision + 1, 'last_synced_at' => $this->clock->now(),
                 'renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => $over || ($d->renewal_policy['automatic_spend_paused'] ?? false),
-                    'billing_anchor' => ['expiry' => $proof['expiry'], 'operation_key' => $op->operation_key]]]);
+                    'billing_anchor' => ['expiry' => $proof['expiry'], 'operation_key' => $op->operation_key,
+                        ...($l['identity_source']['kind'] === 'adoption' ? ['kind' => 'completed_operation', 'confirmed_revision' => $d->confirmed_revision + 1] : [])]]]);
             return $op;
         });
     }

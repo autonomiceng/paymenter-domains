@@ -242,9 +242,10 @@
         "consumers": [
           "Domains/Services/NativeExpiry.php",
           "Domains/Services/NativeCancellation.php",
-          "Domains/Admin/Support/NativeEditorNotice.php"
+          "Domains/Admin/Support/NativeEditorNotice.php",
+          "Domains/Models/Domain.php"
         ],
-        "review": "Re-review numeric extras after updating, cancellation creating before native effects, paid Active saves and scoped Filament hook/form validation paths.",
+        "review": "Re-review numeric extras after updating, cancellation creating before native effects, paid Active saves and scoped Filament hook/form validation paths. Re-review local Domain savepoints and post-save attachment/provenance checks after model callbacks.",
         "files": {
           "vendor/laravel/framework/src/Illuminate/Database/Eloquent/Model.php": "c4c2a8e8755df5e912ec941f8881dcc515ff3802211855874e6b839469ddc3dc",
           "vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php": "807b1ec61c5649b9e11d4418cc11162b59312d77564aeca65361fcaac97e333c",

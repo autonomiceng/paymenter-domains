@@ -25,6 +25,7 @@ final class DomainBilling
         OperationClaims::outside(); $seed = Domain::findOrFail($domainId);
         return DB::transaction(function () use ($seed, $actor, $years): ?Invoice {
             $l = HoldingLocks::take($seed); $d = $l['domain']; $s = $l['service'];
+            if ($l['identity_source']['kind'] === 'adoption') { HoldingAnchor::resolve($l); }
             if ($actor && (int) $actor->id !== (int) $l['user']->id) { throw new \DomainException('Domain renewal is unavailable.'); }
             // A native cancellation disables scheduled billing without touching retained debts.
             if ($actor === null && RenewalStop::stopped($l)) { return null; }
@@ -94,14 +95,11 @@ final class DomainBilling
         if($d->renewal_policy['automatic_spend_paused']??false){throw new \DomainException('Renewal spending requires review.');}
         if ($s->status !== 'active' || !in_array($d->status, ['active', 'expired', 'grace'], true)
             || RenewalStop::stopped($l) || $d->price_mode !== 'standard') { throw new \DomainException('Renewal billing lifecycle requires review.'); }
-        $anchor = $d->renewal_policy['billing_anchor'] ?? [];
-        $prior = $l['operations']->firstWhere('operation_key', $anchor['operation_key'] ?? null);
-        if (($anchor['expiry'] ?? null) !== $d->provider_expires_at?->format('Y-m-d') || !$prior
-            || !RenewalAuthority::completed($prior, $d, CatalogueAcceptances::binding($l['account']))
-            || $l['operations']->contains(fn ($op) => $op->id !== $prior->id && !RenewalAuthority::resolved($op, $d, CatalogueAcceptances::binding($l['account'])))) {
+        $anchor = HoldingAnchor::resolve($l); $prior = $anchor->operation;
+        if ($prior) { RenewalAuthority::requireCostAnchor($prior); }
+        if ($l['operations']->contains(fn ($op) => $op->id !== $prior?->id && !HoldingAnchor::resolved($op, $l))) {
             throw new \DomainException('Confirmed renewal anchor or prior outcome requires review.');
         }
-        RenewalAuthority::requireCostAnchor($prior);
     }
 
     private function existing(Operation $op, array $l, ?int $years): Invoice

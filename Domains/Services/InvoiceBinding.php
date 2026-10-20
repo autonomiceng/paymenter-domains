@@ -134,6 +134,9 @@ final class InvoiceBinding
     /** Current native rows must match the frozen operation; no DTO alone grants authority. */
     public static function requireIdentity(Operation $op, Domain $domain, Service $service, Invoice $invoice, InvoiceItem $item, ?Product $product = null): void
     {
+        if ($domain->adoption_id !== null || isset($domain->snapshot['holding']) || $domain->provenance === 'adopted') {
+            throw new \DomainException('Adoption does not authorize acquisition.');
+        }
         $c = $op->policy['checkout'] ?? [];
         $product ??= $service->product()->firstOrFail();
         foreach (['user_id' => $service->user_id, 'order_id' => $service->order_id, 'service_id' => $service->id,
