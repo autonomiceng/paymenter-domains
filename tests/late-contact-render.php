@@ -31,6 +31,7 @@ $emit($late,'customer-contact-fix');$emit($missing,'customer-no-code');
 $user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);$user->unsetRelation('properties');
 $r=$request();$r->setMethod('POST');$r->request->set('_request_key',Paymenter\Extensions\Servers\Domains\Http\FormKeys::issue($r,'owner:'.$late->domain_id.':recovery'));
 $actions->contacts($r,$late->domain_id);same('transfer_setup_review_required',$late->fresh()->safe_code,'Actual owner POST committed a staff-review hold');
+same('held',$late->fresh()->state,'Late contact correction remains held');
 $emit($late,'customer-contact-review');
 $staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');

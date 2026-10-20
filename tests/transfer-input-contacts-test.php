@@ -22,6 +22,7 @@ $clock->instant=$now->modify('+30 days'); Carbon\Carbon::setTestNow($clock->inst
 ContactSetup::recoveryWrite(fn()=>$after->update(['safe_code'=>'contact_details_required']));
 $lateBefore=$after->fresh();
 ContactRecovery::replace($user,$after->id,'Late contact correction reviewed');
+same('held',$after->fresh()->state,'Late contact correction remains held');
 same('transfer_setup_review_required',$after->fresh()->safe_code,'Late saved-code correction retains staff gate');
 same($lateBefore->payload['epp'],$after->fresh()->payload['epp'],'Late correction keeps the exact saved code');
 require __DIR__.'/Support/late-contact-matrix.php';

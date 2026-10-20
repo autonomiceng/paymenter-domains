@@ -27,6 +27,7 @@ foreach([0,1]as$i){
     $r=$request($user);$r->setMethod('POST');$r->request->set('_request_key',Paymenter\Extensions\Servers\Domains\Http\FormKeys::issue($r,'owner:'.$late->domain_id.':recovery'));
     $before=[$state->calls,$state->reads,$late->fresh()->payload['epp'],$late->fresh()->policy['paid_at']];
     $response=$actions->contacts($r,$late->domain_id);same(302,$response->getStatusCode(),'Real owner recovery POST redirects');
+    same('held',$late->fresh()->state,'Late contact correction remains held');
     same('transfer_setup_review_required',$late->fresh()->safe_code,'POST commits a staff-review hold');
     same(1,count($late->fresh()->policy['contact_readmissions']),'POST has one audited readmission');
     Illuminate\Support\Facades\Auth::setUser($lateViewer);

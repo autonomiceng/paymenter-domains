@@ -337,7 +337,7 @@ gates. This coverage does not close the documented User-deletion/checkout activa
 
 `tests/operation-claim-lifecycle-test.php` covers initial lifecycle claim and seal refusals alongside `tests/operation-claims-test.php`. Each command boots a fresh in-memory native database.
 
-Transfer input coverage is split between `tests/transfer-inputs-test.php` (code submission, cutoff and refunds), `tests/transfer-input-evidence-test.php` (payment evidence, authority and timezones), and `tests/transfer-input-contacts-test.php` (contact correction and late readmission). Each starts with an unrelated service cancellation to check that refusal stays scoped to the affected service.
+Transfer input coverage is split between `tests/transfer-inputs-test.php` (code submission, cutoff and refunds), `tests/transfer-input-evidence-test.php` (payment evidence, authority and timezones), and `tests/transfer-input-contacts-test.php` (contact correction and late readmission). Each starts with an unrelated service cancellation to check that refusal stays scoped to the affected service. Late contact corrections assert both the held state and staff-review code; replayed payment acceptance and a stale `RunOperation` job preserve that hold without queueing, provider preflight or commands.
 
 ## Native registrar server settings
 

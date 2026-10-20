@@ -158,9 +158,15 @@ expect(!in_array('auth', $orderRoute->gatherMiddleware(), true) && in_array('web
 expect(!Route::has('domains.domains.transfer'), 'Dedicated transfer route waits for its real owner view');
 // Exercise the native HTTP boundary (CSRF is normally bypassed in the testing environment).
 Illuminate\Support\Facades\Auth::logout(); app()->instance('env', 'production'); config(['app.debug' => false]);
+// Discard earlier controller-test intent keys so this kernel request has a fresh session.
+app('session')->driver()->flush();
 $kernel = app(Illuminate\Contracts\Http\Kernel::class);
+$before = $reads->calls;
 $csrf = $kernel->handle(Request::create('/domains/check', 'POST', ['domain' => 'example.com', '_request_key' => $key], server: ['HTTP_ACCEPT' => 'application/json']));
 same(419, $csrf->getStatusCode(), 'Native HTTP rejects missing CSRF before provider read');
+same($before, $reads->calls, 'Missing CSRF makes zero provider reads');
+// A bare FormKeys abort(419) renders an empty message, so status alone cannot prove CSRF ran.
+same(['message' => 'CSRF token mismatch.'], json_decode($csrf->getContent(), true), 'Native CSRF middleware caused the rejection');
 app()->instance('env', 'testing');
 $data = storefrontData(); $html = view('domains::search', $data)->render(); $dom = storefrontDom($html);
 same(7, $dom->query('//li[@data-domains-result]')->length, 'Real Blade renders every state');
