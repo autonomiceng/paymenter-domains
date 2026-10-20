@@ -64,6 +64,18 @@ final class DomainFacts
         $result['Data retention']='Encrypted contact and operation evidence is retained. Erasure requires a separately reviewed policy.';
         return $result;
     }
+    public static function adoptionReview(Domain $d): array
+    {
+        Staff::requireView();
+        if ($d->provenance !== 'adopted') { return []; }
+        try {
+            $review = $d->observation['adoption_review'] ?? []; $notes = [];
+            if (($review['near_due'] ?? false) === true) { $notes[] = 'The renewal billing cutoff was reached at adoption. Review this registration; no new automatic invoice can be promised.'; }
+            elseif (($review['inside_issue_window'] ?? false) === true) { $notes[] = 'This registration was inside its billing window at adoption. Ordinary billing may issue an invoice and apply available credit immediately when its gates pass.'; }
+            if (($review['price'] ?? null) !== null) { $notes[] = \Paymenter\Extensions\Servers\Domains\Data\Adoption\Review::priceNotice($review['price']); }
+            return $notes;
+        } catch (\Throwable) { return ['Adoption review details are unavailable. Ask an administrator to review encryption access.']; }
+    }
     public static function recordHold(Domain $d): ?string
     {
         Staff::requireView();

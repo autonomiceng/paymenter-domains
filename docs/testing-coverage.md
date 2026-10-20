@@ -377,3 +377,15 @@ these switch changes and reads without provider I/O. This is synthetic native SQ
 - DNS readback: equivalent IP spellings share canonical tuples and digests; provider CNAME/MX root-dot variants confirm through preflight, observation and reconciliation. Desired targets remain strict; malformed provider targets refuse, MX preference stays significant, and TXT/redirect bytes remain exact.
 
 - Retired privacy: both paid actions cover native late payment, cancelled invoices, current staff credit, atomic failure/retry, retained claims/deferrals, queue visibility and forged/sent/changed-line or insufficient-funding refusals. Older retirement markers remain review-only.
+
+A3 core `adoption-commit-test.php` uses the reusable lifecycle money/authority
+snapshots against serialized native SQLite. It covers default-off activation,
+actor/digest/permission checks, 120-second expiry and future proof, changed native
+owners/order/property/quantity/expiry, credentials/site/price revision, no-charge
+new-name adoption, pending promotion with retained IDs, native Order-before-Service
+query order, idempotent replay without repricing and full rollback after a native
+projection callback fails. All provider traffic uses closed fake transports;
+confirmation makes zero provider calls. This is not concurrent database acceptance.
+
+A3 core also renders the native holding review warning for retained billing-window
+and price alerts, checks cutoff wording and excludes arbitrary provider alert text.

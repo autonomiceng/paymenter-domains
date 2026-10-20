@@ -125,7 +125,7 @@ class Domain extends Model
             || (int) $a->domain_id !== (int) $d->id || (int) $a->service_id !== (int) $d->service_id
             || (int) $a->user_id !== (int) $d->user_id || (int) $a->server_id !== (int) $d->server_id
             || $a->registrar_key !== $d->registrar_key || $a->account_fingerprint !== $d->account_fingerprint
-            || $a->authority_generation !== $d->authority_generation + 1 || $d->authority_generation < 1
+            || $a->authority_generation !== $d->authority_generation + 1 || $d->authority_generation < 0
             || ($e['version'] ?? null) !== 1 || ($e['canonical_name'] ?? null) !== $d->domain
             || ($e['native_identity'] ?? null) !== $native || $native['route_action'] !== 'register'
             || $owners['order_id'] !== $native['order_id'] || ($e['prior_generation'] ?? null) !== $d->authority_generation || ($e['resulting_generation'] ?? null) !== $a->authority_generation

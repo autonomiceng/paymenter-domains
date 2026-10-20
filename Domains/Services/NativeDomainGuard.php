@@ -146,6 +146,17 @@ final class NativeDomainGuard
         self::persist($service, $service->getRawOriginal(), $service->getDirty());
     }
 
+    /** Confirmed adoption projects a retained native service without purchase or payment authority. */
+    public static function adopt(HoldingIdentityLock $lock, Domain $domain, \Paymenter\Extensions\Servers\Domains\Models\Adoption $a): void
+    {
+        $rows = $lock->nativeRows((int) $domain->user_id); $s = $rows['service']; $e = $a->evidence;
+        if ($a->state !== 'committed' || $domain->adoption_id !== (int) $a->id || (int) $a->domain_id !== (int) $domain->id
+            || ($e['native_identity'] ?? null) !== $lock->nativeIdentity($domain) || $s->isDirty()) {
+            throw new \DomainException('Unadmitted adoption projection.');
+        }
+        self::persist($s, $s->getRawOriginal(), ['status' => Service::STATUS_ACTIVE, 'price' => $e['retail']['annual_gross'], 'expires_at' => null]);
+    }
+
     /** Caller holds HoldingLocks; retained retail is allowed only through this billing projection. */
     public function project(array $locked): array
     {
