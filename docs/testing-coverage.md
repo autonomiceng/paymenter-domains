@@ -261,3 +261,9 @@ between staff resume and successful record confirmation. A primary failure under
 hold also preserves evidence and blocks the previously healthy family. Healthy-primary partial-record
 refreshes still save healthy facts and explicit complete/unknown families. The older 51-host overflow case
 alone did not establish ordinary all-failed retention. Fixtures use synthetic transports and native SQLite.
+
+Management deadline coverage uses synthetic transports and native SQLite. Entry claim waits
+and slow preparation share the 270-second background finish cap; interactive dispatch,
+privacy billing and explicit reconciliation use a 250-second entry budget. Tests cover exact
+25-second headroom, subsecond refusal before seal, blocked late physical reads, retained
+privacy response IDs and unchanged native finance. No provider or concurrency acceptance.

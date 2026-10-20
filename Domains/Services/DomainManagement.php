@@ -47,6 +47,11 @@ final class DomainManagement
     public function request(User $actor, int $id, string $action, #[\SensitiveParameter] array $payload, string $nonce,
         ManagementProtocol $driver, string $reason = 'owner_request', ?string $correction = null, ?array $recordIdentity = null): Operation
     {
+        return EntryDeadline::run($this->clock, fn ($deadline) => $this->requestEntered($actor, $id, $action, $payload, $nonce, $driver, $reason, $correction, $recordIdentity, $deadline), EntryDeadline::INTERACTIVE_SECONDS);
+    }
+    private function requestEntered(User $actor, int $id, string $action, #[\SensitiveParameter] array $payload, string $nonce,
+        ManagementProtocol $driver, string $reason, ?string $correction, ?array $recordIdentity, \DateTimeImmutable $deadline): Operation
+    {
         OperationClaims::outside(); self::capability($action);
         if (!preg_match('/^[a-f0-9]{64}$/D', $nonce) || !in_array($reason,['owner_request','staff_correction'],true)) { throw new \DomainException('Invalid management request identity.'); }
         $seed = Domain::findOrFail($id); $paid = in_array($action, ['privacy_purchase', 'privacy_renew'], true); $terms = null; $initial = null;
@@ -58,7 +63,7 @@ final class DomainManagement
                 return [new ManagementRequest(CatalogueAcceptances::binding($l['account']), 'manage:'.$seed->id.':'.$nonce, $seed->domain, $action, [], $seed->provider_domain_id), $l['stamp'], $old];
             });
             if ($existing) { if ($existing->action !== $action || (int)$existing->authorized_by !== (int)$actor->id) { throw new \DomainException('Management key reused.'); } return $existing; }
-            $terms = $driver->billingTerms($request, new RequestContext($request->binding, RequestOrigin::Interactive, $this->clock->now()->modify('+250 seconds'), new RequestBudget(10), $this->clock, Runtime::limiter()));
+            $terms = $driver->billingTerms($request, new RequestContext($request->binding, RequestOrigin::Interactive, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter()));
         }
         return DB::transaction(function () use ($seed, $actor, $action, $payload, $nonce, $driver, $reason, $terms, $initial, $correction, $recordIdentity): Operation {
             $l = HoldingLocks::take($seed, (int) $actor->id); $d = $l['domain']; $this->authority($l, (int) $actor->id, $action, $driver, correction: $correction);
@@ -105,6 +110,11 @@ final class DomainManagement
     }
     public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive): Operation
     {
+        return EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
+            $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : EntryDeadline::INTERACTIVE_SECONDS);
+    }
+    private function runEntered(int $id, ManagementProtocol $driver, RequestOrigin $origin, \DateTimeImmutable $deadline): Operation
+    {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $op = Operation::findOrFail($id);
         if(!isset($op->policy['management'])){throw new \DomainException('Not a management operation.');}
@@ -128,7 +138,7 @@ final class DomainManagement
                 return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int)$op->authorized_by)['stamp']];
             });
             $claimed=true;
-            $ctx = new RequestContext($r->binding, $origin, $this->clock->now()->modify('+300 seconds'), new RequestBudget(10), $this->clock, Runtime::limiter());
+            $ctx = new RequestContext($r->binding, $origin, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter());
             $prepared = $driver->prepare($r, $ctx);
             [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($prepared, $driver, $stamp): array {
                 if ($l['stamp'] !== $stamp) { throw new \DomainException('Management authority changed during preparation.'); }
@@ -161,7 +171,7 @@ final class DomainManagement
         if (!$g || $g[0] !== $r || $g[1] !== $ctx || $g[2] !== $driver) { throw new \DomainException('No live management grant.'); }
         $this->locked($g[4], $g[5], $driver, function ($l, $op) use ($g, $ctx): void {
             $this->features->requireManagement(); $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action);
-            if (!$this->accepted || $l['stamp'] !== $g[3] || $ctx->deadline->getTimestamp() - $this->clock->now()->getTimestamp() < 25
+            if (!$this->accepted || $l['stamp'] !== $g[3] || $ctx->deadline < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')
                 || $op->state !== 'running' || ($op->attempt['seal'] ?? null) !== 'absent') { throw new \DomainException('Management authority changed.'); }
             $ctx->requireReservedCapacity();
             if($op->action==='auth_code_email'){foreach($l['operations'] as $peer){$at=$peer->attempt['dispatch_attempted_at']??null;if($peer->id!==$op->id&&$peer->action===$op->action&&is_string($at)&&new \DateTimeImmutable($at)>$this->clock->now()->modify('-10 minutes')){throw new \DomainException('Transfer code cooldown active.');}}}
@@ -188,6 +198,10 @@ final class DomainManagement
     /** Explicit read-only reconciliation. Never calls prepare or perform, and cannot retry a write/email. */
     public function reconcile(int $id, ManagementProtocol $driver): Operation
     {
+        return EntryDeadline::run($this->clock, fn ($deadline) => $this->reconcileEntered($id, $driver, $deadline), EntryDeadline::INTERACTIVE_SECONDS);
+    }
+    private function reconcileEntered(int $id, ManagementProtocol $driver, \DateTimeImmutable $deadline): Operation
+    {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver): array {
             if(count($op->attempt['management_reads']??[])>=20){throw new \DomainException('Management read budget exhausted.');}
@@ -197,7 +211,7 @@ final class DomainManagement
             $this->bindings->requireReadableLocked($l['server'],$l['account']);
             return [$this->descriptor($op, $l), $l['stamp']];
         }, false, false);
-        $ctx = new RequestContext($r->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(10), $this->clock, Runtime::limiter());
+        $ctx = new RequestContext($r->binding, RequestOrigin::Background, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter());
         try { $result = $driver->observe($r, $ctx); return $this->finish($seed, $id, $driver, $result, $stamp); }
         catch (\Throwable) { return Operation::findOrFail($id); }
     }
