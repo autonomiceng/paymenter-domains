@@ -26,7 +26,9 @@ final class Transfer extends TransferProtocol
             foreach ($fields as $local => $wire) { $parameters[($role === 'auxbilling' ? 'AuxBilling' : ucfirst($role)).$wire] = $contact[$local]; }
         }
         $reply = (new ResponseParser)->parse(RegistrationCommand::Transfer, $this->request($op, $ctx, $origin, 'TP_CreateOrder', $parameters));
-        $id = $reply->value('transferorderid');
+        // Enom documents TP_CreateOrder with the ID under <transferorder>; a top-level ID is accepted only if it agrees.
+        $nested = $reply->value('transferorder.transferorderid'); $top = $reply->value('transferorderid');
+        $id = $nested !== null && $top !== null && $nested !== $top ? null : ($nested ?? $top);
         if ($reply->status !== 'success' || !is_string($id) || !preg_match('/^[1-9][0-9]{0,19}$/D', $id)) {
             return new DriverResult($op->binding, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved);
         }

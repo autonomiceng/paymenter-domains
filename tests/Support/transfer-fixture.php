@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\{FakeClock, FakeRegistrar};
 extract(commerceFixture(true)); $clock = new FakeClock($now);
 $guard=new Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices),$clock); $guard->boot();
 Carbon\Carbon::setTestNow($now); Carbon\CarbonImmutable::setTestNow($now); ContactProfileSchema::install();
-$state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false];
+$state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false,'createShape'=>'nested'];
 foreach ($tlds as $tld) { App\Models\Server::find($tld->server_id)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']); }
 $rdap = new Rdap(static function ($url) use ($state): array {
     same(0, DB::transactionLevel(), 'RDAP outside financial locks'); $state->rdap++;
@@ -62,7 +62,10 @@ $exchange = static function ($origin,$command,$p,$timeout) use ($state): string 
             same('https://resellertest.enom.com/interface.asp',$origin,'Fixed Enom route');
             same([1,0,1,0,'no'],[$p['DomainCount'],$p['PreConfig'],$p['Lock'],$p['Renew'],$p['UseCreditCard']],'Frozen external-transfer flags');
             expect(isset($p['AuthInfo1'],$p['RegistrantEmailAddress'],$p['AuxBillingEmailAddress']),'Frozen input and four roles mapped');
-            return '<interface-response><Command>TP_CreateOrder</Command><ErrCount>0</ErrCount><Done>true</Done><TransferOrderID>7001</TransferOrderID></interface-response>';
+            // Documented shape nests the ID under <transferorder>; 'top' and 'conflict' cover a top-level ID.
+            $id=['nested'=>'<transferorder><transferorderid>7001</transferorderid><statusid>5</statusid></transferorder>','top'=>'<TransferOrderID>7001</TransferOrderID>',
+                'conflict'=>'<transferorder><transferorderid>7001</transferorderid></transferorder><TransferOrderID>7002</TransferOrderID>'][$state->createShape];
+            return '<interface-response><Command>TP_CreateOrder</Command><ErrCount>0</ErrCount><Done>true</Done>'.$id.'</interface-response>';
         }
         same('transferDomain',$command,'Only monetary transfer command'); same('https://ote.namesilo.com/apibatch',$origin,'Fixed batch route');
         same(0,$p['auto_renew'],'No automatic registrar renewal'); same(0,$p['private'],'Frozen privacy'); expect(str_starts_with($p['auth'],'base64:'),'Encoded auth');
