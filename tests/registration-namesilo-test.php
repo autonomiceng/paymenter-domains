@@ -74,7 +74,9 @@ foreach (['300', '301', '302', 'amount', 'badns', 'remove', 'stillon', 'lost', '
     if (in_array($mode, ['remove', 'stillon'], true)) {
         same(['contactAdd', 'contactList', 'registerDomain', 'getDomainInfo', 'removeAutoRenewal', 'getDomainInfo'], $registration->calls, 'Removal followed by fresh readback');
     }
+    $nativeBeforeReplay = nativeFinancialSnapshot($result);
     $before = $registration->calls; $engine->execute($result->id); same($before, $registration->calls, 'No replay/refund/fallback');
+    same($nativeBeforeReplay, nativeFinancialSnapshot($result), 'Replay preserves native/financial state');
     expect($profiles->hasProof($result), 'Exact proof retained for current payload');
     $foreign = clone $result; $foreign->account_fingerprint = str_repeat('f', 64); expect(!$profiles->hasProof($foreign), 'Proof account isolated');
     $changed = clone $result; $changed->payload = $result->payload + ['changed' => true]; expect(!$profiles->hasProof($changed), 'Proof payload isolated');

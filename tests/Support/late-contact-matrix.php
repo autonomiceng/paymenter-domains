@@ -1,10 +1,9 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Real funded checkout and audited readmission.
 declare(strict_types=1);
-use App\Models\{Credit,InvoiceTransaction,Service};
+use App\Models\{InvoiceTransaction,Service};
 use Illuminate\Support\Facades\{DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
-use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery,TransferInputs};
 require_once __DIR__.'/staff-panel.php';
 $staff=staffUser(['admin.domains.manage']);
@@ -48,8 +47,7 @@ foreach([$user,$staff]as$actor){
     // Deliberately bypass model guards only for corrupted historical-evidence fixtures.
     foreach(['policy'=>$policy,...$changes]as$key=>$value){DB::table('domains_operations')->where('id',$row->id)->update([$key=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($value))]);}
     $setTime($now->modify('+30 days +2 seconds'));$before=$row->fresh();
-    $nativeBefore=[Service::findOrFail($row->service_id)->getRawOriginal(),$row->domain->fresh()->getRawOriginal(),
-        DB::table('invoice_transactions')->orderBy('id')->get()->toJson(),App\Models\Invoice::count(),Operation::count(),Credit::all()->toJson()];
+    $nativeBefore=nativeFinancialSnapshot($row);
     $jobsBefore=DB::table('jobs')->orderBy('id')->get()->toJson();
     $realQueue=Queue::getFacadeRoot();Queue::fake([RunOperation::class]);
     same(0,DB::transactionLevel(),'Late recovery fixture commits its own transaction');
@@ -75,8 +73,7 @@ foreach([$user,$staff]as$actor){
     }
     Queue::assertNothingPushed();Queue::swap($realQueue);
     same($jobsBefore,DB::table('jobs')->orderBy('id')->get()->toJson(),'Committed late fix never enqueues dispatch: '.$case);
-    same($nativeBefore,[Service::findOrFail($row->service_id)->getRawOriginal(),$row->domain->fresh()->getRawOriginal(),
-        DB::table('invoice_transactions')->orderBy('id')->get()->toJson(),App\Models\Invoice::count(),Operation::count(),Credit::all()->toJson()],'No native/financial/dispatch side effects: '.$case);
+    same($nativeBefore,nativeFinancialSnapshot($row),'No native/financial/dispatch side effects: '.$case);
 }}
 $setTime($now);
 $user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');

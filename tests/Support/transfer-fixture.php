@@ -4,6 +4,7 @@ declare(strict_types=1);
 require dirname(__DIR__).'/native-app.php';
 require __DIR__.'/commerce.php';
 require __DIR__.'/native-commerce.php';
+require_once __DIR__.'/native-financial-snapshot.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CostUnit, Disposition, DriverResult, Environment, Evidence, Money, QuoteEvidence, ResultReason, SendState};

@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__).'/native-app.php';
 require __DIR__.'/commerce.php';
 require __DIR__.'/native-commerce.php';
+require_once __DIR__.'/native-financial-snapshot.php';
 use App\Models\{Invoice, InvoiceTransaction};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, OperationPreflight};

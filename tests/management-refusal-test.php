@@ -29,9 +29,13 @@ foreach ([false,true] as $ambiguous) {
     same('sealed',$op->attempt['seal'],'Provider reply never makes the send unsent');
     same(!$ambiguous,ManagementEvidence::resolved($op,$d),'Ambiguous refusal retains the domain blocker');
     same(['GetDomainInfo','SetRegLock','GetDomainInfo','GetRegLock'],array_column($state->calls,0),'One write and inconclusive owned readback');
+    $nativeBeforeReplay=nativeFinancialSnapshot($op);
     $calls=$state->calls;$management->run($op->id,$driver);same($calls,$state->calls,'Refusal never replays the original write');
+    same($nativeBeforeReplay,nativeFinancialSnapshot($op),'Refusal replay preserves native/financial state');
 }
 [$d,$driver]=$holding('manage-privacy-sent-refusal.com');$state->privacy=false;$product->server->settings()->create(['key'=>'domains_privacy_price','value'=>'5.00','type'=>'string']);$op=$submit($d,$driver,'privacy_purchase');DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$op->amount,'fee'=>'0.00','status'=>'succeeded']);$state->fault='refused';
 same('uncertain',$management->run($op->id,$driver)->state,'Sent paid refusal retains financial uncertainty');same('management_provider_refused',$op->fresh()->safe_code,'Named refusal recorded');same('sealed',$op->fresh()->attempt['seal'],'Sent refusal never becomes unsent');same(null,(new Refunds($clock))->creditRejected($op->id),'Sent refusal never credits');
+$nativeBeforeReplay=nativeFinancialSnapshot($op);
 $before=count($state->calls);$management->run($op->id,$driver);same($before,count($state->calls),'Sent refusal never resends');
+same($nativeBeforeReplay,nativeFinancialSnapshot($op),'Refusal replay preserves native/financial state');
 $nativeSuccessful=true;echo "management refusal passed\n";

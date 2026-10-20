@@ -41,12 +41,15 @@ app()->instance(Clock::class,$clock);app()->instance(RuntimeDispatch::class,new 
 expect($account->processing_enabled&&$ports->accepted($account),'Replay worker has an accepted processing composition');
 expect(app(RuntimeDispatch::class)->current($early->fresh()),'Replay worker has current operation authority');
 $providerReads=$reads->calls;$beforeReplay=$early->fresh()->getRawOriginal();
+$nativeBeforeReplay=nativeFinancialSnapshot($early);
 $inputs->paymentAccepted($early->id);
 (new RunOperation($early->id))->handle(new RuntimeWork($clock,$ports));
 $replayed=$early->fresh();
 same('held',$replayed->state,'Payment and worker replay preserve late contact hold');
 same('transfer_setup_review_required',$replayed->safe_code,'Payment and worker replay preserve staff review gate');
 same($beforeReplay,$replayed->getRawOriginal(),'Payment and worker replay leave corrected operation unchanged');
+same($nativeBeforeReplay,nativeFinancialSnapshot($early),
+    'Payment and worker replay preserve native/financial state (reminder alerts and deliveries excluded)');
 Queue::assertNotPushed(RunOperation::class);
 same(0,$preflight->calls,'Held transfer never enters provider preflight');
 same([],$writer->commands,'Payment and worker replay send no provider command');

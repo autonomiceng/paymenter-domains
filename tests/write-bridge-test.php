@@ -34,7 +34,9 @@ commerceReject(fn () => $bridge->transferIn($call['op'], $call['context'])); com
 same(1, count($transport->calls), 'Descriptors, clones, contexts and other methods confer no authority');
 $transport->fail = true; $build($enomBinding); $op = $new('bridge-lost.com'); $result = $engine->execute($op->id); $transport->fail = false;
 same(null, $result->attempt['execution'], 'Thrown transport retains recorded-null uncertainty'); same('uncertain', $result->state, 'No retry on transport exception');
+$nativeBeforeReplay = nativeFinancialSnapshot($op);
 $engine->execute($op->id); same(2, count($transport->calls), 'No replay');
+same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
 // NameSilo profile proof is unavailable by default even with explicit catalogue acceptance.
 $sellers->change('com', 2, $tlds[1]->server_id, true, true, $clock->now());
 $product = $native->product($tlds[1], 'register');

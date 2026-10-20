@@ -18,14 +18,18 @@ same('pending', $engine->run($op->id, $writer)->state, 'Late paid obligation sur
 same(1, $state->writes, 'One renewal write'); same(16, count($state->calls), 'Initial and final full read sequences, single reservation');
 same('2027-10-18', $d->fresh()->provider_expires_at->format('Y-m-d'), 'Acknowledgement cannot advance expiry');
 same(null, $d->service->fresh()->expires_at, 'Native expiry stays null');
+$nativeBeforeReplay = nativeFinancialSnapshot($op);
 $engine->run($op->id, $writer); same(1, $state->writes, 'No replay after acknowledgement');
+same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
 $state->expiry = '2028-10-18'; $state->charge = '8.00';
 same('succeeded', $completion->run($op->id)->state, 'Unique original charge plus full term completes');
 same('2028-10-18', $d->fresh()->provider_expires_at->format('Y-m-d'), 'Confirmed provider expiry stored');
 same($op->operation_key, $d->fresh()->renewal_policy['billing_anchor']['operation_key'], 'Latest completed renewal anchor advances');
 same(null, $d->service->fresh()->expires_at, 'Completion preserves null native expiry');
 same($before, serialize(DB::table('invoices')->get()), 'Renewal execution never rewrites debt'); same($items, serialize(DB::table('invoice_items')->get()), 'Issued line unchanged');
+$nativeBeforeReplay = nativeFinancialSnapshot($op);
 $completion->run($op->id); same(1, $state->writes, 'Completion idempotent');
+same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
 // Subsequent cycle accepts original registration plus completed renewal history.
 $clock->instant = new DateTimeImmutable('2028-09-27T12:00:00Z');
 $settings->updateOrCreate(['key' => 'domains_manual_renewals_enabled'], ['value' => true, 'type' => 'boolean']);

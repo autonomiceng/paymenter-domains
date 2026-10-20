@@ -28,9 +28,10 @@ $early=[];Service::updating(static function($s)use(&$early,$mixed,$writer):void 
 same('active',$host->fresh()->status,'Hosting sibling activates');expect($host->fresh()->expires_at!==null,'Hosting keeps native expiry');same('3.00',number_format((float)$user->credits()->sole()->amount,2,'.',''),'Native Credit sibling processed');
 same(1,$writer->calls,'Native sync/Paid wakes send once');same('uncertain',$mixed->fresh()->state,'Owned status does not become active on payment');same(null,$mixed->domain->service->fresh()->expires_at,'Managed expiry stays null');same(null,$mixed->domain->fresh()->provider_expires_at,'No fabricated registrar expiry');
 expect(count($early)>0&&$early[0]===['stored'=>'pending','writes'=>1],'Synchronous CreateJob sends before native Active save');
-$count=Operation::count();$attempt=$mixed->fresh()->attempt;
+$count=Operation::count();$attempt=$mixed->fresh()->attempt;$nativeBeforeReplay=nativeFinancialSnapshot($mixed);
 for($n=0;$n<2;$n++){event(new App\Events\Invoice\Paid($invoice->fresh()));$manual($mixed);$work->operation($mixed->id);}
 same(1,$writer->calls,'Duplicate Paid/manual CreateJob never resend sealed work');same($count,Operation::count(),'No duplicate operation admission');same($attempt,$mixed->fresh()->attempt,'Sealed evidence retained');same('3.00',number_format((float)$user->credits()->sole()->amount,2,'.',''),'Duplicate Paid wake never processes Credit again');
+same($nativeBeforeReplay,nativeFinancialSnapshot($mixed),'Duplicate Paid/manual/worker replay preserves native/financial state (reminder alerts and deliveries excluded)');
 // Queue/wake failure cannot interrupt unrelated native siblings.
 $wakeFailure=$new('paid-wake-failure.com',paid:false);
 $wakeInvoice=Invoice::find($wakeFailure->invoice_id);
@@ -45,7 +46,10 @@ app()->instance(Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::c
 // Missing contacts can arrive after payment; native callbacks never readmit a hold.
 $late=$new('paid-late-contact.com',paid:false,setup:false);$before=$writer->calls;$paid($late);
 same($before,$writer->calls,'Incomplete contacts never send');same('held',$late->fresh()->state,'Contact setup holds');
+$nativeBeforeReplay=nativeFinancialSnapshot($late);$heldBeforeReplay=$late->fresh()->getRawOriginal();
 $manual($late);event(new App\Events\Invoice\Paid(Invoice::find($late->invoice_id)));same('held',$late->fresh()->state,'Native wake never readmits contact hold');
+same($heldBeforeReplay,$late->fresh()->getRawOriginal(),'Native contact-hold replay preserves operation bytes');
+same($nativeBeforeReplay,nativeFinancialSnapshot($late),'Native contact-hold replay preserves native/financial state (reminder alerts and deliveries excluded)');
 ContactRecovery::replace($user,$late->id,'Owner supplied late contacts');$manual($late);same($before+1,$writer->calls,'Audited contact recovery permits one send');
 // Explicit failure before send can be credited once; original payment history is quiet.
 $failed=$new('paid-failed.com',paid:false);$preflight->supported=false;$paid($failed);$preflight->supported=true;
