@@ -292,3 +292,10 @@ write-acceptance pre-seal hold, including present-null execution refusal.
 Retirement coverage also exercises the actual native immediate-cancellation listener on a shared
 invoice, configured cancellation delays, incomplete service-only cancellation alerts and their
 resolution after proven retirement, and redirect to a fresh view without the retired action.
+
+Nested Enom transfer-order evidence alongside a documented management refusal stays unknown.
+`management-refusal-test.php` covers the parser and a non-billable lock action with inconclusive
+readback: uncertain, uncompleted, sealed, blocking and never replayed. The clean refusal contrast
+still closes as rejected, and sent paid refusals retain financial uncertainty without credit.
+`transfer-dispatch-test.php` adds agreeing nested/top-level transfer IDs to the existing matrix
+and checks that transfer references never become billing order IDs. All transports are synthetic.

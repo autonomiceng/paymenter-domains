@@ -60,9 +60,10 @@ foreach (['premium','unknown','funds','changed','reverse','rules','profile','rda
 $op=$newTransfer('rdap-unchecked.com'); $makeTransfer(); $state->rdapUnknown=true; $r=$engine->execute($op->id);
 same(true,$r->attempt['transfer_admission']['rdap_unchecked'],'Explicit unchecked provenance'); same(null,$r->attempt['transfer_admission']['base_expiry'],'Missing baseline never inferred');
 // Enom TP_CreateOrder: the documented nested ID and an agreeing top-level ID are retained; disagreeing IDs retain none.
-foreach (['nested'=>'7001','top'=>'7001','conflict'=>null] as $shape=>$expected) {
+foreach (['nested'=>'7001','top'=>'7001','agree'=>'7001','conflict'=>null] as $shape=>$expected) {
     $state->mode='ok'; $state->rdapUnknown=false; $state->createShape=$shape; $state->calls=[]; $state->reads=0; $op=$newTransfer('shape-'.$shape.'.com'); $makeTransfer();
     $r=$engine->execute($op->id); same($expected,$r->attempt['evidence']['transferReference']??null,'Transfer order ID read from the '.$shape.' shape');
+    same(null,$r->provider_order_id,'Transfer reference never becomes a billing order ID');
 }
 $state->createShape='nested';
 expect(Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('source','preflight')->exists(),'Existing balance path records without extra reads');
