@@ -16,7 +16,7 @@ final class Runtime
         foreach([RegistrarRegistry::class,AccountBindings::class,PricingRules::class,PriceCatalogue::class,SellerPolicies::class,NativeCatalogue::class,
             CheckoutEligibility::class,CartAdmission::class,InvoiceBinding::class,HolderPricing::class,NativeDomainGuard::class,NativeServerGuard::class,
             Storefront::class,OwnedDomains::class,Installation::class,AccountReadBudget::class,ObservationWork::class,
-            PublicSuffixList::class,PslTransport::class,PslValidator::class,CatalogueSync::class,Reminders::class,Refunds::class,RuntimeWork::class,RuntimePorts::class,NativePresenter::class] as $class){
+            RegistrarBalances::class,PublicSuffixList::class,PslTransport::class,PslValidator::class,CatalogueSync::class,Reminders::class,Refunds::class,RuntimeWork::class,RuntimePorts::class,NativePresenter::class] as $class){
             if(!$app->bound($class)){$app->singleton($class);}
         }
         if(!$app->bound(Clock::class)){$app->singleton(Clock::class,SystemClock::class);}

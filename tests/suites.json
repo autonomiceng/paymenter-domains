@@ -156,7 +156,8 @@
     "tests/adopted-renewal-refusals-test.php",
     "tests/adopted-test-environment-test.php",
     "tests/adopted-renewal-history-test.php",
-    "tests/adopted-complimentary-test.php"
+    "tests/adopted-complimentary-test.php",
+    "tests/registrar-balances-test.php"
   ],
   "ui": [],
   "runner": [

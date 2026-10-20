@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\SalesPolicy;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Data\{Capabilities,Disposition,DriverResult,Evidence,ResultReason,SendState};
-extract(commerceFixture(true));tldPanel();Carbon\Carbon::setTestNow($now);$t=$tlds[0];
+extract(commerceFixture(true));\Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();tldPanel();Carbon\Carbon::setTestNow($now);$t=$tlds[0];
 // Staff actions read the engine clock; pin it so fixture price freshness never depends on the wall clock.
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new class($now) implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock{public function __construct(private DateTimeImmutable $at){} public function now():DateTimeImmutable{return $this->at;}});
 $registry=new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
@@ -19,7 +19,7 @@ $registry->register('enom',['uid','token'],new class implements \Paymenter\Exten
 },static function($binding,$credentials){
     expect(Illuminate\Support\Facades\DB::transactionLevel()===0,'Injected native probe outside locks');
     return new \Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar($binding,new Capabilities($binding,[]),
-        new DriverResult($binding,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence));
+        new DriverResult($binding,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence(balance:new \Paymenter\Extensions\Servers\Domains\Data\Money('9.99','USD'))));
 });
 $bindings=new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($registry);
 $permissions=[Staff::VIEW,Staff::POLICY];foreach(array_keys(Review::ACTIONS) as $action){$permissions[]=Review::permission($action);}
@@ -68,4 +68,5 @@ expect(!array_diff(array_column($rows,'key'),array_column(Review::historyRows(Ap
 if($rotation){commerceReject(fn()=>$writer->run($rotation,$fixed,$now));}
 app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sellers,$bindings));
 foreach(['configure','probe'] as $action){$name=\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content');Livewire::actingAs($u)->test(RegistrarSetup::class)->assertActionDisabled($name);}
+same('9.99',Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('server_id',$t->server_id)->value('amount'),'Existing account probe records its balance');
 echo "Ten native action submissions, stale refusals, replay, fresh denial and retained audit passed.\n";$nativeSuccessful=true;

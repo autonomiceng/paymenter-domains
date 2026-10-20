@@ -36,7 +36,7 @@ final readonly class RegistrationPreflight implements SealPreflight
         $capability = $this->accepted->requireCurrent($context->binding, $query, $op);
         $reader = $this->bindings->reader($context->binding->serverId); $context->binding->requireMatch($reader->binding());
         $observed = $context->now();
-        $availability = $reader->availability($query, $context); $quote = $reader->quote($query, $context); $balance = $reader->balance($context);
+        $availability = $reader->availability($query, $context); $quote = $reader->quote($query, $context); $balance = BalanceReads::read($reader, $context, 'preflight');
         foreach ([$availability, $quote, $balance] as $result) {
             $context->binding->requireMatch($result->binding);
             if ($result->disposition !== Disposition::Accepted) { throw new WriteHeld('write_acceptance_required'); }

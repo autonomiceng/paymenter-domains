@@ -81,7 +81,7 @@ final class StaffSettingsWrites
             $r->local(fn()=>null,'connection_requested');$phase='connection_refused';
             try{
                 $driver=$this->bindings->reader($r->serverId);$binding=$driver->binding();
-                $result=$driver->balance(new RequestContext($binding,RequestOrigin::Interactive,$now->modify('+10 seconds'),new RequestBudget(1),$clock,Runtime::limiter()));
+                $result=BalanceReads::read($driver,new RequestContext($binding,RequestOrigin::Interactive,$now->modify('+10 seconds'),new RequestBudget(1),$clock,Runtime::limiter()),'manual');
                 $binding->requireMatch($result->binding);
                 \Illuminate\Support\Facades\DB::transaction(function()use($r,$result){$r->lockActor();$r->lockAccounts();$r->check(true);
                     $r->record($result->disposition===\Paymenter\Extensions\Servers\Domains\Data\Disposition::Accepted?'connection_verified':'connection_unverified');});

@@ -49,7 +49,7 @@ final readonly class RenewalAdmission
             if ($binding->registrarKey === 'namesilo' && $flags->evidence()->domain->active !== true) { throw new RenewalRefused(RenewalCode::State); }
             if ($flags->evidence()->domain->expiry != $facts->domain->expiry) { throw new RenewalRefused(RenewalCode::Anchor); }
             if ($flags->evidence()->domain->providerAutoRenew !== false) { throw new RenewalRefused(RenewalCode::AutoRenew); }
-            $balance = $reader->balance($context); $binding->requireMatch($balance->binding);
+            $balance = BalanceReads::read($reader, $context, 'renewal'); $binding->requireMatch($balance->binding);
             if ($balance->disposition !== Disposition::Accepted || !WriteMoney::sufficient($balance->evidence()->balance, $cost)) {
                 throw new RenewalRefused(RenewalCode::Balance);
             }
