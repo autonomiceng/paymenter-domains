@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Account extends Model
 {
+    use InvalidatesStorefront;
+
     private static int $bindingWriteDepth = 0;
 
     protected $table = 'domains_accounts';

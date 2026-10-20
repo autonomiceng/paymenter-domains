@@ -185,6 +185,7 @@ final class NativeCatalogue
                 $product->stock = null; $product->save();
             }
             $review?->record();
+            StorefrontCatalogueCache::invalidateAfterCommit();
         });
     }
 }

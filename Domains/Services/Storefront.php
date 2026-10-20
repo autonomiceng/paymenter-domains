@@ -16,9 +16,10 @@ final class Storefront
 
     public function endings(): array
     {
-        $rows = (new StorefrontCatalogueCache($this->clock))->remember(fn () => $this->catalogueRows());
-        $tests = $this->testEndings($rows);
-        return array_map(static fn ($row) => [...$row, 'testEnvironment' => in_array($row['tld'], $tests, true)], $rows);
+        return (new StorefrontCatalogueCache($this->clock))->remember(function (): array {
+            $rows = $this->catalogueRows(); $tests = $this->testEndings($rows);
+            return array_map(static fn ($row) => [...$row, 'testEnvironment' => in_array($row['tld'], $tests, true)], $rows);
+        });
     }
 
     private function catalogueRows(): array
@@ -41,7 +42,7 @@ final class Storefront
 
     public function testEnvironment(array $rows): bool|string
     {
-        $tests = count($this->testEndings($rows));
+        $tests = count(array_filter($rows, static fn ($row) => $row['testEnvironment'] ?? false));
         return $tests === 0 ? false : ($tests === count($rows) ? true : 'some');
     }
 

@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class SalesPolicy extends Model
 {
+    use InvalidatesStorefront;
+
     private static int $writeDepth = 0;
     protected $table = 'domains_sales_policies';
     protected $guarded = [];

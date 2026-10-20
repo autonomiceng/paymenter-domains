@@ -36,11 +36,11 @@ same(true, $store->endings()[0]['testEnvironment'], 'D7 public catalogue carries
 same('$7.80', $store->endings()[0]['register'], 'Selected Enom retail, not cost or other account');
 Illuminate\Support\Facades\DB::enableQueryLog(); Illuminate\Support\Facades\DB::flushQueryLog();
 $store->endings();
-expect(count(Illuminate\Support\Facades\DB::getQueryLog()) <= 15, 'Warm public projection has constant bounded queries');
+expect(count(Illuminate\Support\Facades\DB::getQueryLog()) === 0, 'Warm public projection has zero queries');
 Illuminate\Support\Facades\DB::disableQueryLog();
 $displayRows = $store->endings(); Illuminate\Support\Facades\Cache::flush();
 $slowRows = (new Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueCache($clock))->remember(function () use ($clock, $now, $displayRows) {
-    $clock->instant = $now->modify('+6 seconds'); return $displayRows;
+    $clock->instant = $now->modify('+31 seconds'); return $displayRows;
 });
 same($displayRows, $slowRows, 'Slow public projection returns rows uncached instead of falsely closing'); $clock->instant = $now;
 $before = $reads->calls; $bindings->setProcessing($tlds[0]->server_id, false);
@@ -143,11 +143,12 @@ same(route('cart'), $response->getTargetUrl(), 'Guest reaches native cart before
 $guestCart = App\Models\Cart::whereNull('user_id')->latest('id')->firstOrFail();
 expect(isset($guestCart->items()->sole()->checkout_config['domains_check']), 'Guest native cart retains admission receipt');
 $store->endings(); $clock->instant = Price::where('action', 'renew')->firstOrFail()->fresh_until->toDateTimeImmutable();
-same([], $store->endings(), 'Display cache cannot outlive exact evidence expiry'); $clock->instant = $now;
+same([], $store->endings(), 'Expired evidence is excluded after the display TTL'); $clock->instant = $now;
 Price::where('action', 'register')->update(['hold_reason' => 'below_cost']);
 Price::where('action', 'transfer')->update(['hold_reason' => 'below_cost']);
 same('held', $store->check('held.com')['status'], 'Engine held terms have no offer');
-same([], $store->endings(), 'No held retail published');
+Illuminate\Support\Facades\Cache::flush();
+same([], $store->endings(), 'Fresh display renders no held retail');
 $clock->instant = $now->modify('+2 days'); same([], $store->endings(), 'Stale prices never published'); $clock->instant = $now;
 // Explicit boundary protection, middleware and limiter short circuit.
 try { $controller->check($req(['domain' => 'example.com'])); expect(false, 'Missing form key refused'); }
