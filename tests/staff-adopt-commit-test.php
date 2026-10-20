@@ -7,8 +7,9 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\AdoptDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Data\Adoption\RefusalCode;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, AdoptionReader};
+use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, AdoptionEnrollment, AdoptionReader, AdoptionRefused};
 extract(adoptionCommitFixture()); staffPanel();
 app()->instance(AdoptionReader::class, $reader); app()->instance(AdoptionCommit::class, $commit); app()->instance(Clock::class, $clock);
 $viewOnly = staffUser([Staff::VIEW]); Livewire::actingAs($viewOnly)->test(AdoptDomain::class)->assertForbidden();
@@ -39,14 +40,27 @@ $page->callAction('readback', data: ['reason' => 'Preview without service update
     ->assertSee('Simultaneous staff and customer edits have not yet been checked');
 $page->callAction('confirm', data: ['verified' => true])->assertSee('your role is missing a permission adoption needs'); same(0, Domain::count(), 'Permission refusal rolls back');
 $role($permissions);
-// Fixed refusal sentences key on these exact commit messages; keep them in step. Anything unmapped may follow a commit, so it reads as uncertain.
-$source = file_get_contents(dirname(__DIR__).'/Domains/Services/AdoptionCommit.php'); $refused = new ReflectionMethod(AdoptDomain::class, 'refused');
-foreach (['Verification details changed or expired. Verify again.' => 'the preview expired or a detail changed', 'Adoption request changed. Verify again.' => 'the preview expired or a detail changed',
-    'You do not have permission to adopt registrations.' => 'missing a permission', 'Adoption result needs staff review.' => 'do not match this preview',
-    'Registration identity needs staff review.' => 'do not match this preview', 'Adoption holding requires review.' => 'do not match this preview',
-    'Adoption is not enabled yet.' => 'switched off on this site'] as $message => $sentence) {
-    expect(str_contains($source, "DomainException('".$message."')"), 'Wizard refusal mapping matches commit message '.$message);
-    $text = $refused->invoke(null, new DomainException($message)); expect(str_contains($text, $sentence) && str_contains($text, 'this attempt changed and charged nothing'), 'Mapped refusal '.$message);
+// Every typed code has staff text independent of the exception's diagnostic message.
+$refused = new ReflectionMethod(AdoptDomain::class, 'refused');
+$pageSource = array_slice(file($refused->getFileName()), $refused->getStartLine() - 1, $refused->getEndLine() - $refused->getStartLine() + 1);
+expect(!str_contains(implode('', $pageSource), 'getMessage'), 'Page never reads exception messages to select refusal text');
+$diagnostic = new ReflectionProperty(Exception::class, 'message');
+foreach (RefusalCode::cases() as $code) {
+    [$message, $sentence] = match ($code) {
+        RefusalCode::VerificationChanged => ['Verification details changed or expired. Verify again.', 'the preview expired or a detail changed'],
+        RefusalCode::RequestChanged => ['Adoption request changed. Verify again.', 'the preview expired or a detail changed'],
+        RefusalCode::Permission => ['You do not have permission to adopt registrations.', 'missing a permission'],
+        RefusalCode::ResultReview => ['Adoption result needs staff review.', 'do not match this preview'],
+        RefusalCode::IdentityReview => ['Registration identity needs staff review.', 'do not match this preview'],
+        RefusalCode::HoldingReview => ['Adoption holding requires review.', 'do not match this preview'],
+        RefusalCode::Disabled => ['Adoption is not enabled yet.', 'switched off on this site'],
+    };
+    $error = new AdoptionRefused($code); same($message, $error->getMessage(), 'Original diagnostic preserved '.$code->value);
+    $text = $refused->invoke(null, $error);
+    expect(str_contains($text, $sentence) && str_contains($text, 'this attempt changed and charged nothing'), 'Every refusal code has staff text '.$code->value);
+    $diagnostic->setValue($error, 'private-diagnostic-changed');
+    same($text, $refused->invoke(null, $error), 'Diagnostic wording cannot change staff outcome '.$code->value);
+    expect(str_contains($refused->invoke(null, new DomainException($message)), 'outcome is unknown'), 'Untyped matching text never claims refusal '.$code->value);
 }
 foreach ([new RuntimeException('private-sink-detail'), new DomainException('private-sink-detail')] as $unknown) {
     $text = $refused->invoke(null, $unknown); expect(str_contains($text, 'outcome is unknown') && !str_contains($text, 'private-sink-detail') && !str_contains($text, 'charged nothing'), 'Unmapped refusal is uncertain and hides exception text');
@@ -57,7 +71,45 @@ same('Unconfirmed', $when->invoke(null, null), 'Missing staff date');
 $page->callAction('readback', data: ['reason' => 'Rechecked after stale evidence', 'do_not_renew' => true])->assertHasNoActionErrors()->assertSee('Verified preview');
 $calls = count($wire->calls); $money = scenarioMoney();
 $page->mountAction('confirm'); expect(str_contains((string) $page->instance()->getMountedAction()->getModalDescription(), 'Expiry: Oct 20, 2027 06:14 UTC'), 'Confirm modal shows UTC expiry');
-$page->setActionData(['verified' => true])->callMountedAction()->assertHasNoActionErrors()->assertSee('Adopted')->assertSee('Renewal off')->assertSee('Expires Oct 20, 2027');
+// The own-class container seam injects a postcommit enrollment failure without changing native services.
+$enrollment = new class {
+    public array $ids = [];
+    public ?int $transactionLevel = null;
+    public ?string $state = null;
+    public function repair(int $id): void
+    {
+        $this->ids[] = $id;
+        $this->transactionLevel = DB::transactionLevel();
+        $this->state = Adoption::where('domain_id', $id)->sole()->state;
+        throw new RuntimeException('private-enrollment-failure');
+    }
+};
+$clockSeen = null;
+app()->bind(AdoptionEnrollment::class, static function ($app, array $parameters) use (&$clockSeen, $enrollment) {
+    $clockSeen = $parameters['clock']; return $enrollment;
+});
+$handler = new class extends \Monolog\Handler\AbstractHandler {
+    public array $warnings = [];
+    public function handle(\Monolog\LogRecord $record): bool
+    {
+        if ($record->message !== 'Adoption enrollment deferred.') { return false; }
+        $this->warnings[] = $record->context;
+        throw new RuntimeException('private-logger-failure');
+    }
+};
+$logger = logger()->getLogger(); $logger->pushHandler($handler);
+try {
+    $page->setActionData(['verified' => true])->callMountedAction()->assertHasNoActionErrors()->assertSee('Adopted')->assertSee('Renewal off')->assertSee('Expires Oct 20, 2027')
+        ->assertDontSee('Confirmation not completed')->assertDontSee('outcome is unknown')->assertDontSee('private-enrollment-failure')->assertDontSee('private-logger-failure');
+} finally { $logger->popHandler(); app()->offsetUnset(AdoptionEnrollment::class); }
+same([Domain::sole()->id], $enrollment->ids, 'Failing enrollment was invoked for the committed holding');
+same(0, $enrollment->transactionLevel, 'Enrollment runs after the adoption transaction');
+same('committed', $enrollment->state, 'Adoption is durable before enrollment fails');
+same($clock, $clockSeen, 'Container enrollment retains the confirmer clock');
+same([['domain_id' => Domain::sole()->id, 'exception_class' => RuntimeException::class]], $handler->warnings, 'Failed warning contains only safe identifiers');
+same('committed', Adoption::findOrFail($page->get('previewId'))->state, 'Double failure retains committed adoption');
+same(Domain::sole()->id, $page->get('adoptedId'), 'Page receives the committed domain despite double failure');
+same(null, $page->get('refusal'), 'Double failure is the adopted outcome, never a refusal');
 same(1, Domain::count(), 'Wizard uses real confirmer'); same($calls, count($wire->calls), 'Confirmation no provider call'); same($money, scenarioMoney(), 'Wizard no financial fabrication');
 $page->assertActionHidden('confirm'); same(1, Domain::count(), 'Completed UI has no second confirm action');
 DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode([Staff::VIEW])]); $page->call('$refresh')->assertForbidden();
