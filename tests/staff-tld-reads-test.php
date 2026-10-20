@@ -9,7 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price};
-use Paymenter\Extensions\Servers\Domains\Services\{ObservationSchema,PricingRule};
+use Paymenter\Extensions\Servers\Domains\Services\{CheckoutEligibility,ObservationSchema,PricingRule,PublicationEligibility,Storefront};
+use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $f=commerceFixture();extract($f);tldPanel();ObservationSchema::install();Carbon\Carbon::setTestNow($now);
 $t=$tlds[0];$server=App\Models\Server::findOrFail($t->server_id);
 $server->settings()->create(['key'=>'private-sentinel','type'=>'string','encrypted'=>true,'value'=>'PRIVATE-CREDENTIAL']);
@@ -29,6 +30,33 @@ foreach([[],[Staff::COSTS],[Staff::VIEW],[Staff::VIEW,Staff::COSTS]] as $permiss
     expect(!str_contains(json_encode($detail->snapshot),'8.0000'),'Cost not public component state');
 }
 $u=staffUser([Staff::VIEW,Staff::COSTS]);Auth::setUser($u);
+// Renewal-off feedback must distinguish a disabled switch from missing retained prices.
+$clock=new FakeClock($now);$store=new Storefront($sellers,$prices,$native,$bindings,new CheckoutEligibility($bindings,$clock),$clock);
+$savedPrices=static fn()=>DB::table('domains_prices')->where('server_id',$t->server_id)->orderBy('id')->get()->map(fn($p)=>(array)$p)->all();
+$retained=$savedPrices();same(4,count($retained),'Current renewal, transfer and both registration terms retained');
+foreach($retained as $p){
+    $prices->current($t->server_id,$t->account_fingerprint,$t->tld,$p['action'],(int)$p['term'],'USD',$now);
+    if($p['action']!=='renew'){PublicationEligibility::require($t,$p['action'],(int)$p['term']);}
+}
+$healthy='Price eligible · check selected seller';
+same($healthy,TldFacts::salesState($t->fresh()),'Accepted renewal-enabled ending is price eligible');
+same(['com'],array_column($store->endings(),'tld'),'Healthy selected ending is on sale');
+$calls=$reads->calls;$t->update(['renew_enabled'=>false]);
+$renewalOff='New sales held · renewal is turned off. Enable Annual renewal catalogue support to sell this ending.';
+same($renewalOff,TldFacts::salesState($t->fresh()),'Renewal-off explains the switch even with valid current prices');
+Livewire::actingAs($u)->test(ListTlds::class)->assertSee($renewalOff);
+same([],$store->endings(),'Renewal-off withdraws public registration and transfer sales');
+same('held',$store->check('example.com')['status'],'Renewal-off search offers no sale');
+foreach(['register','transfer'] as $action){commerceReject(fn()=>$store->offer('com',$action,1));}
+same($retained,$savedPrices(),'Renewal-off staff and public reads retain exact price rows and freshness');
+same($calls,$reads->calls,'Renewal-off feedback and sales checks make no provider reads');
+$t->update(['enabled'=>false]);same('New sales paused',TldFacts::salesState($t->fresh()),'Overall pause takes precedence over renewal-off');
+$t->update(['enabled'=>true,'register_enabled'=>false,'transfer_enabled'=>false]);
+same('New sales paused',TldFacts::salesState($t->fresh()),'Both acquisition switches off take pause precedence');
+$t->update(['register_enabled'=>true,'transfer_enabled'=>true,'renew_enabled'=>true]);
+same($healthy,TldFacts::salesState($t->fresh()),'Restored renewal-enabled contrast is price eligible');
+same(['com'],array_column($store->endings(),'tld'),'Renewal-enabled contrast restores public sales');
+same($retained,$savedPrices(),'Switch changes preserve all saved prices');
 foreach (['12.0000'=>'12.00 USD','12.3000'=>'12.30 USD','12.3450'=>'12.345 USD','12.3456'=>'12.3456 USD','0.0000'=>'0.00 USD'] as $amount=>$label) { same($label,TldFacts::money($amount,4),'Wholesale precision stays exact while redundant zeros are trimmed'); }
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;
 $rules->saveDefaultRule($t->server_id,['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],$prices->republish(...));

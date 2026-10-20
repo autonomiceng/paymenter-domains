@@ -367,3 +367,9 @@ and neighboring records. Credit-review cases distinguish state, action, paid/com
 funding and provider-rejection reasons, including null reasons and the intentionally included
 credited queue row. Existing paid-uncertainty projection parity remains independent. These
 synthetic offline SQLite/Livewire checks do not establish provider or database concurrency acceptance.
+
+`staff-tld-reads-test.php` checks the explicit renewal-off staff message with accepted current
+renewal/acquisition prices, its rendered list description and overall sales-pause precedence.
+Public catalogue, search and strict offers remain unavailable while renewal is off; restoring
+renewal restores the healthy contrast. Exact saved price rows, revisions and freshness survive
+these switch changes and reads without provider I/O. This is synthetic native SQLite coverage.
