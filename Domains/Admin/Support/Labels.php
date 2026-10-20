@@ -72,6 +72,9 @@ final class Labels
             'registration_managed'=>'Registration managed','ready'=>'Ready for check',
             'expiry_unknown'=>'Registry expiry unknown','no_coverage'=>'Public registry coverage unavailable',
             'not_registered'=>'No registry record found','deadline'=>'Public check deadline passed',
+            'preference_off'=>'Public notices turned off','target_or_preference_changed'=>'Public notice target or preferences changed',
+            'daily_mail_limit'=>'Public notice daily email limit reached','handoff_started'=>'Public notice handoff unconfirmed',
+            'render_failed'=>'Public notice template could not render',
             'awaiting_acceptance'=>'Awaiting feature acceptance'][$value] ?? 'Review retained evidence';
     }
     public static function flag(mixed $value): string { return match ($value) { true=>'Yes', false=>'No', default=>'Unknown' }; }

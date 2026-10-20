@@ -646,3 +646,7 @@ Watch notice policy is exercised offline by `watch-notice-plan-test.php`: exact 
 nearest discovery, bounded catch-up, retained correction keys, clock reversal, independent DNS
 confirmation and restoration only for previously handed-off channels. Pure inputs grant no
 owner, installed queue, public resolver or SMTP acceptance.
+
+Public notice delivery coverage uses independent native mail/app fakes, retained per-channel claims,
+opt-out and owner/role/retirement checks, daily priority, render failures, and managed relink proof.
+The owner preference page uses native web/auth, CSRF and one-use session keys with stale revisions refused.

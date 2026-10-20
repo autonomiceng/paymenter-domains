@@ -613,3 +613,9 @@ acceptance. Native Active expiry validation remains an accepted upstream limitat
 
 Public notice planner: `watch-notice-plan-test.php` covers expiry-window and DNS-episode policy
 with synthetic current/stale/revision inputs; persistence, delivery and installed acceptance remain separate.
+
+Watch notice delivery: independent native channels, queued versus uncertain states, render-before-claim,
+missing-only template installation, native and public preferences, urgent priority, owner/role changes,
+retirement, managed proof/claim continuity, accepted-only restoration and stale predecessor interleaving.
+
+Watch notice overflow: a conflicting profile outside the observed source cohort refuses fresh DNS proof and reserved mail.

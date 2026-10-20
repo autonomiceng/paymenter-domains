@@ -217,7 +217,15 @@
     "tests/watch-discovery-work-test.php",
     "tests/watch-maintenance-test.php",
     "tests/native-service-refusal-test.php",
-    "tests/native-service-refusal-holding-test.php"
+    "tests/native-service-refusal-holding-test.php",
+    "tests/watch-notice-delivery-test.php",
+    "tests/watch-notice-negative-test.php",
+    "tests/watch-notice-managed-test.php",
+    "tests/watch-notice-managed-claim-test.php",
+    "tests/watch-notice-priority-test.php",
+    "tests/watch-notice-pages-test.php",
+    "tests/watch-notice-snapshot-test.php",
+    "tests/watch-notice-overflow-test.php"
   ],
   "ui": [],
   "runner": [
