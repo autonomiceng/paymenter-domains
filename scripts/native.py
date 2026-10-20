@@ -4,6 +4,7 @@
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -15,25 +16,50 @@ LOCK_SHA256 = 'fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be'
 
 def hashes(root):
     result = {}
-    for path in sorted(root.rglob('*')):
-        if path.is_symlink():
-            raise ValueError('Dependency symlinks are not accepted.')
-        if path.is_file():
-            result[str(path.relative_to(root))] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return result
+
+    pending = [(root, '')] if root.is_dir() else []
+    while pending:
+        directory, prefix = pending.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                name = prefix + entry.name
+                if entry.is_symlink():
+                    raise ValueError('Dependency symlinks are not accepted.')
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append((entry.path, name+'/'))
+                elif entry.is_file(follow_symlinks=False):
+                    result[name] = hashlib.sha256(Path(entry.path).read_bytes()).hexdigest()
+    return dict(sorted(result.items(), key=lambda item: Path(item[0])))
 
 
 def git(source, *args):
     return subprocess.check_output(['git', '-C', str(source), *args], stderr=subprocess.PIPE)
 
 
-def verify(source):
+def verify(source, *, fixture_snapshot=None):
     source = Path(source)
     if not source.is_absolute() or source.is_symlink() or source.resolve() != source or str(source).startswith('/var/www/'):
         raise ValueError('Use a canonical pristine development dependency.')
     for forbidden in ['.env', 'bootstrap/cache/config.php']:
         if (source/forbidden).exists() or (source/forbidden).is_symlink():
             raise ValueError('Installed environment or cached configuration refused.')
+    if fixture_snapshot is not None:
+        # Generated views, caches and installed extensions are fixture-local. Every
+        # pristine file and the complete vendor tree must retain their original bytes.
+        files = {name: digest for name, digest in fixture_snapshot.items() if not name.startswith('vendor/')}
+        ancestors = {parent for name in files for parent in (source/name).parents if parent.is_relative_to(source)}
+        if (source/'vendor').is_symlink() or any(parent.is_symlink() for parent in ancestors):
+            raise ValueError('Fixture dependency path is linked.')
+        for name, digest in files.items():
+            path = source/name
+            if path.is_symlink():
+                raise ValueError('Fixture dependency path is linked.')
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+                raise ValueError('Fixture dependency changed: '+name)
+        vendor = {'vendor/'+name: digest for name, digest in hashes(source/'vendor').items()}
+        if vendor != {name: digest for name, digest in fixture_snapshot.items() if name.startswith('vendor/')}:
+            raise ValueError('Fixture vendor inventory changed.')
+        return {}, fixture_snapshot
     if git(source, 'rev-parse', '--show-toplevel').decode().strip() != str(source):
         raise ValueError('Dependency must be its own checkout.')
     if git(source, 'rev-parse', 'HEAD').decode().strip() != COMMIT:
