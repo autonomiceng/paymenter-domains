@@ -3,6 +3,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, CostUnit, DispatchSeal, Discrepancy, Disposition,
     DriverResult, Environment, Evidence, ExecutionRecord, ExpiryPrecision, Money, PersistedExecution, Query, QuoteEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, RenewalStatus, SendState};
@@ -54,7 +55,7 @@ $wire->data['ProductPrice'] = '<ProductPrice><ProductEnabled>true</ProductEnable
 same('0.0000', $driver->catalogueRate('com', 'renew', 1, $context(), new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness(86400, 86400))->perYear, 'Known annual zero survives');
 $wire->data['ProductPrice'] = str_replace('</ProductPrice>', '<Currency>CAD</Currency></ProductPrice>', $wire->data['ProductPrice']);
 same('unknown', $driver->productPrice('com', 'renew', 1, $context())->status, 'Currency contradiction cannot withdraw');
-foreach ([['query' => new Query('other.com', Action::Register, 3)], ['currency' => 'CAD'], ['cost' => null], ['total' => '26.865001'],
+foreach ([['query' => new Query(reservedFixtureName('example.net'), Action::Register, 3)], ['currency' => 'CAD'], ['cost' => null], ['total' => '26.865001'],
     ['total' => '26.8651'], ['at' => $clock->now()->modify('+1 second')], ['until' => $clock->now()]] as $fault) {
     $q = $fault['query'] ?? $query; $at = $fault['at'] ?? $clock->now();
     $cost = array_key_exists('cost', $fault) ? null : new Money($fault['total'] ?? '26.8650', $fault['currency'] ?? 'USD');
@@ -178,7 +179,7 @@ same(null, Pricing::cents('$8.95'), 'Order dollar decoration never loosens quote
 foreach (['orderid' => '9002', 'result' => 'false', 'orderbillamount' => '$9.95', 'currency' => 'EUR', 'orderdetail' => [$header['orderdetail'], $header['orderdetail']]] as $field => $value) {
     same(null, OrderCharge::read($attempt(), $execution, $order(array_replace($header, [$field => $value]))), 'Ambiguous header/split order has unknown charge');
 }
-foreach ([['description', 'other.com'], ['producttype', 'Domain'], ['quantity', '2'], ['status', 'Failed'], ['orderstatus', 'Open'],
+foreach ([['description', reservedFixtureName('example.net')], ['producttype', 'Domain'], ['quantity', '2'], ['status', 'Failed'], ['orderstatus', 'Open'],
     ['amountpaid', '8.950'], ['currency', '']] as [$field, $value]) {
     $bad = $header; $bad['orderdetail'][$field] = $value;
     same(null, OrderCharge::read($attempt(), $execution, $order($bad)), 'Unbound/ambiguous item never charge proof');

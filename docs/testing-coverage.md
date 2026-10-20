@@ -438,3 +438,17 @@ exclusion and counts. Registry duplicate cases discriminate option order, title 
 assert the existing safe flags/options messages and retain both empty-option fill directions
 and flags-before-fill checks. Driver conflicts still yield unknown with no schema facts. These
 are synthetic offline tests, not provider or installed-browser acceptance.
+
+### Reserved fixture names and PHP 8.3 guard
+
+`fixture-policy-test.php` checks the opt-in reserved-name helper. Rate, terminal-proof,
+reconciliation and wrong-domain money/management fixtures pass their actual generated
+names through it. The three commerce suites publish a synthetic `example.com` compound
+ending so distinct subdomains retain normal checkout, funding and reconciliation paths.
+The timestamp-boundary case retains its model/query-builder clock assertions.
+Other synthetic fixtures remain outside this bounded policy check.
+
+The PHP 8.3 scanner and planted-call matrix cover the same 40 PHP 8.4 global functions,
+including optional Intl, OPcache, PCNTL, PgSQL and Sodium functions. Every name is tested
+as an unqualified fallback and an uppercase fully qualified call, and as a user-defined
+namespaced function. This remains a targeted static guard, not full runtime qualification.

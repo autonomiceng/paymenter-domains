@@ -1,13 +1,14 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/reserved-fixtures.php';
 
 Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 $queueRoot = Illuminate\Support\Facades\Queue::getFacadeRoot();
 try {
     foreach (['queued', 'awaiting_payment'] as $state) {
         Illuminate\Support\Facades\Queue::fake([Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class]);
-        $op = $new('rate-'.str_replace('_', '-', $state).'.com'); $op->update(['state' => $state]);
+        $op = $new(reservedFixtureName('rate-'.str_replace('_', '-', $state).'.example.com')); $op->update(['state' => $state]);
         $entry = $clock->now(); $writer->blockedUntil = $entry->modify('+60 seconds');
         $before = $writer->calls; $reads = $preflight->calls; $money = $nativeMoney();
         $original = $op->getRawOriginal();
@@ -35,7 +36,7 @@ try {
         same($before + 1, $writer->calls, 'Rate retry and replay send exactly once');
         $clock->instant = $entry; $writer->blockedUntil = null;
     }
-    $op = $new('write-disabled-release.com'); $writer->disabled = true; $before = $writer->calls;
+    $op = $new(reservedFixtureName('write-disabled-release.example.com')); $writer->disabled = true; $before = $writer->calls;
     $held = $engine->execute($op->id);
     same('held', $held->state, 'Disabled writes still require a hold');
     same('write_disabled', $held->safe_code, 'Disabled write hold retains its reason');
