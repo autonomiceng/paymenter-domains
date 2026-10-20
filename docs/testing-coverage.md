@@ -787,3 +787,13 @@ stay off. Repeated native upload, refused server deletion and file removal/reins
 the same retained snapshot. These are SQLite/offline checks; live provider acceptance,
 shared-database races and actual delivery remain separate operator gates.
 Cross-version watch-table retention awaits a previous build containing those tables.
+
+Staff TLD query coverage compares 25/100 rows and repeats each size with extra price
+terms, retaining fresh-grant revocation checks. Settings review coverage measures
+queries and encrypted-setting retrievals with 10/500 audit archives, exercises real
+archive rotation, exact unchanged-stamp replay refusals and transactional key rollback.
+Corrupt acceptance permits narrower terms and a sales pause while still refusing
+widening and restoration. Recent history is bounded independently of retained replay keys.
+The historical installed-package fixture adopts the unreleased review-key/archive
+declaration explicitly; it tests native uploads and additive migrations from that
+baseline, not conversion or automatic repair of superseded missing-table schemas.

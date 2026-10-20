@@ -46,9 +46,7 @@ final class ReminderSchedules
             if(count($audit)>=100||strlen(encrypt([...$audit,$entry]))>60000){
                 if(!$audit){throw new \DomainException('Reminder audit entry too large.');}
                 $json=json_encode(['through_revision'=>$revision,'rows'=>$audit],JSON_THROW_ON_ERROR);
-                if(strlen(\Illuminate\Support\Facades\Crypt::encryptString($json))>64000){throw new \DomainException('Reminder audit archive too large.');}
-                $archive=$s->settings()->make(['key'=>'domains_reminder_audit.'.bin2hex(random_bytes(16))]);
-                $archive->encrypted=true;$archive->type='string';$archive->value=$json;$archive->save();$audit=[];
+                AuditArchives::append((int)$s->id,'reminders',$json);$audit=[];
             }
             $audit[]=$entry;
             $q->update([...$next,'revision'=>$revision+1,'audit'=>encrypt($audit)]);

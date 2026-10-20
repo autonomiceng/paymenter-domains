@@ -106,8 +106,10 @@ final class StaffSettingsWrites
                 if(!$t){throw new \DomainException('TLD required.');}
                 $min=filter_var($data['min_years']??null,FILTER_VALIDATE_INT);$max=filter_var($data['max_years']??null,FILTER_VALIDATE_INT);
                 if(!$min||!$max||$min<1||$max>10||$min>$max){throw new \DomainException('Valid term bounds required.');}
-                $accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding($a),true)->endings[$t->tld]??null;
-                if(($min<$t->min_years||$max>$t->max_years)&&(($data['verified']??false)!==true||!in_array($min,$accepted['register']??[],true)||!in_array($max,$accepted['register']??[],true))){throw new \DomainException('Explicit verified widening required.');}
+                if($min<$t->min_years||$max>$t->max_years){
+                    $accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding($a),true)->endings[$t->tld]??null;
+                    if(($data['verified']??false)!==true||!in_array($min,$accepted['register']??[],true)||!in_array($max,$accepted['register']??[],true)){throw new \DomainException('Explicit verified widening required.');}
+                }
                 $renew=(bool)($data['renew']??false);
                 if(!$renew&&Domain::where(['server_id'=>$s->id,'tld'=>$t->tld,'account_fingerprint'=>$a->account_fingerprint])->whereNotNull('reservation_name')->orderBy('id')->lockForUpdate()->get()->isNotEmpty()){throw new \DomainException('Retained holders require annual renewal support.');}
                 $t->fill(['min_years'=>$min,'max_years'=>$max,'enabled'=>(bool)($data['enabled']??false),'renew_enabled'=>$renew]);

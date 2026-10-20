@@ -186,13 +186,19 @@ final class PriceCatalogue
             'action' => $action, 'term' => $term, 'currency' => $currency]);
         if ($lock) { $query->lockForUpdate(); }
         $price = $query->first();
+        return self::currentEvidence($price, $hash, $now);
+    }
+
+    /** Pure saved-price validation for render snapshots; callers qualify the row's binding and action. */
+    public static function currentEvidence(?Price $price, ?string $ruleHash, \DateTimeImmutable $now): PriceSnapshot
+    {
         if (!$price || $price->wholesale === null || $price->retail === null || $price->hold_reason !== null
             || $price->unit !== 'term_total' || !$price->fresh_until || $price->observed_at > $now || $price->fresh_until <= $now) {
             throw new \DomainException('No current eligible price.');
         }
-        if (($price->eligibility['rule_hash'] ?? null) !== $hash) { throw new \DomainException('Price rule changed; republication required.'); }
-        return new PriceSnapshot($price->id, $price->revision, $serverId, $price->registrar_key, $fingerprint, $tld, $action, $term,
-            $currency, self::cost($price->wholesale), self::retail($price->retail), $price->source,
+        if ($ruleHash === null || ($price->eligibility['rule_hash'] ?? null) !== $ruleHash) { throw new \DomainException('Price rule changed; republication required.'); }
+        return new PriceSnapshot($price->id, $price->revision, $price->server_id, $price->registrar_key, $price->account_fingerprint, $price->tld, $price->action, $price->term,
+            $price->currency, self::cost($price->wholesale), self::retail($price->retail), $price->source,
             $price->observed_at->toDateTimeImmutable(), $price->fresh_until->toDateTimeImmutable(), $price->eligibility['staff_alert'] ?? null);
     }
 

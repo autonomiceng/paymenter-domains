@@ -16,3 +16,9 @@ function tldPanel(): void
     });
     app('router')->getRoutes()->refreshNameLookups();app('router')->getRoutes()->refreshActionLookups();
 }
+
+function tldRefusal(callable $call,string $message): void
+{
+    try{$call();expect(false,'Expected exact settings refusal: '.$message);}
+    catch(DomainException $e){same($message,$e->getMessage(),'Exact settings refusal: expected '.$message.'; got '.$e->getMessage());}
+}

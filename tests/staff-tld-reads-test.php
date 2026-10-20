@@ -41,6 +41,10 @@ foreach($retained as $p){
 }
 $healthy='Price eligible · check selected seller';
 same($healthy,TldFacts::salesState($t->fresh()),'Accepted renewal-enabled ending is price eligible');
+$wrong=clone $t;$wrong->account_fingerprint=str_repeat('f',64);
+DB::table('domains_prices')->where('server_id',$t->server_id)->update(['account_fingerprint'=>$wrong->account_fingerprint]);
+same('New sales held · pending import or acceptance',TldFacts::salesState($wrong),'Matching TLD/price corruption cannot borrow the current account acceptance');
+DB::table('domains_prices')->where('server_id',$t->server_id)->update(['account_fingerprint'=>$t->account_fingerprint]);
 same(['com'],array_column($store->endings(),'tld'),'Healthy selected ending is on sale');
 $calls=$reads->calls;$t->update(['renew_enabled'=>false]);
 $renewalOff='New sales held · renewal is turned off. Enable Annual renewal catalogue support to sell this ending.';

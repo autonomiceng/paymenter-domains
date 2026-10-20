@@ -99,7 +99,7 @@ final class SettingsActions
                             'Runtime acceptance and shared workers are required.'=>'Provider acceptance and shared cache, sessions and queue workers are required before enabling processing.',
                             'Pause processing on every legacy Enom server before installing or enabling Domains.'=>'Pause processing on every legacy Enom server first.',
                             'Connection checks are unavailable.'=>'Connection checks are unavailable. No provider call was made.',
-                            'Review key used or history full.'=>'This confirmation was already used. Reload this page.',
+                            'Review key used.'=>'This confirmation was already used. Reload this page.',
                             default=>'Reload and check current permissions, saved facts and acceptance.'};
                         if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains staff setting failed.',['action'=>$name,'exception_class'=>$error::class]);}
                         Notification::make()->danger()->title('Change refused')->body($message)->send();}

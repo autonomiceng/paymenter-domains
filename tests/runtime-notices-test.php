@@ -5,7 +5,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/transfer-fixture.php';require __DIR__.'/Support/staff-panel.php';require __DIR__.'/Support/reminder-mail.php';
 use Illuminate\Support\Facades\{DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
-use Paymenter\Extensions\Servers\Domains\Services\{ReminderSchedules,Reminders,StaffSettingsReview as Review,StaffSettingsWrites,Runtime,RuntimeSchema,RuntimeWork,RuntimePorts};
+use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,ReminderSchedules,Reminders,StaffSettingsReview as Review,StaffSettingsWrites,Runtime,RuntimeSchema,RuntimeWork,RuntimePorts};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 $staff=staffUser([...array_keys(Staff::permissions())]);$reminders=new Reminders($clock,$bindings);
 foreach($tlds as $t){ReminderSchedules::enroll($t->server_id);}
@@ -22,7 +22,8 @@ $clock->instant=$now;$t=$tlds[0];$q=DB::table('domains_reminder_schedules')->whe
 for($i=1;$i<=100;$i++){$audit[]=['revision'=>$i,'actor_id'=>$staff->id,'reason'=>'prior_review'];}
 $q->update(['revision'=>101,'audit'=>encrypt($audit)]);ReminderSchedules::save($staff,$t->server_id,101,false,'1,7','3','review_rotation');
 same(1,count(decrypt($q->sole()->audit)),'Active audit starts next retained segment');
-$archive=App\Models\Server::find($t->server_id)->settings()->where('key','like','domains_reminder_audit.%')->sole();expect($archive->encrypted,'Schedule history encrypted');same(100,count(json_decode($archive->value,true)['rows']),'All100 prior rows retained');
+$archive=DB::table(AuditArchives::TABLE)->where('server_id',$t->server_id)->where('family','reminders')->sole();expect(!str_contains($archive->payload,'prior_review'),'Schedule history encrypted');same(100,count(json_decode(AuditArchives::latest($t->server_id,'reminders'),true)['rows']),'All100 prior rows retained');
+expect(!App\Models\Server::find($t->server_id)->settings()->where('key','like','domains_reminder_audit.%')->exists(),'Archives stay outside native settings loads');
 // A manual disposition records staff review without any resend or release of the claim.
 $op=$newTransfer('manual-outcome.com',0,true,false);$id=DB::table('domains_reminder_deliveries')->insertGetId(['domain_id'=>$op->domain_id,'delivery_key'=>hash('sha256','manual-review'),'template'=>'domains_transfer_code_paid','state'=>'uncertain','created_at'=>$now->getTimestamp()]);
 $r=new Review($staff->id,$t->server_id,null,'delivery_review',Review::ticket($staff->id,$t->server_id,null,'delivery_review',Review::stamp($t->server_id,null)),'Independently checked notification outcome');
