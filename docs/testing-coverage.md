@@ -431,3 +431,10 @@ end-of-period cancellation; issued-debt/reminder rules remain visible.
 Offline TEST captures keep the deployment flag on while live confirmation stays disabled.
 
 The native staff label inventory covers adopted watch retirement and dormant public work.
+
+Parity filter/registry follow-up adds simultaneous TLD rows for two Enom accounts and a NameSilo
+account, all with the same ending. Individual and combined selectors assert exact inclusion,
+exclusion and counts. Registry duplicate cases discriminate option order, title and description,
+assert the existing safe flags/options messages and retain both empty-option fill directions
+and flags-before-fill checks. Driver conflicts still yield unknown with no schema facts. These
+are synthetic offline tests, not provider or installed-browser acceptance.
