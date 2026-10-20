@@ -334,3 +334,5 @@ The [release runbook](release-runbook.md) coordinates installed ZIP, converter/p
 supplied-shell acceptance, native-expiry cleanup, rollback boundaries and held/unknown support.
 Provider acceptance, shared-database races and installed-shell checks remain separate release
 gates. This coverage does not close the documented User-deletion/checkout activation gap.
+
+`tests/operation-claim-lifecycle-test.php` covers initial lifecycle claim and seal refusals alongside `tests/operation-claims-test.php`. Each command boots a fresh in-memory native database.
