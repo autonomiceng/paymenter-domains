@@ -7,17 +7,17 @@ use Paymenter\Extensions\Servers\Domains\Services\AccountSpendingHolds;
 /** Read-only projection, never a settlement or spending-release authority. */
 final class PaidUncertainty
 {
-    public static function summary(Operation $op): ?string
+    public static function summary(Operation $op, ?StaffGrants $grants = null): ?string
     {
-        Staff::requireView();
+        $grants ??= Staff::requireView();
         if ($op->funding_basis!=='paid_invoice' || (!in_array($op->state,['running','pending','uncertain'],true)
             && !in_array($op->safe_code,['transfer_provider_rejected','transfer_needs_action','management_provider_refused'],true))) { return null; }
         return 'Paid outcome review · '.self::details($op)
             .' · Missing: verified original outcome and charge or settlement evidence. No staff release or credit is available.';
     }
-    public static function holdSummary(Operation $op): ?string
+    public static function holdSummary(Operation $op, ?StaffGrants $grants = null): ?string
     {
-        Staff::requireView();
+        $grants ??= Staff::requireView();
         return AccountSpendingHolds::matches($op)?'Account spending hold · '.self::details($op)
             .' · Missing: verified original outcome'.($op->funding_basis==='paid_invoice'?' and charge or settlement evidence':'')
             .'. Re-check the original attempt; no staff release is available.':null;
@@ -32,13 +32,13 @@ final class PaidUncertainty
     }
     public static function for(Domain $d): array
     {
-        Staff::requireView();
-        return self::rows(AccountSpendingHolds::query(Operation::where('account_fingerprint',$d->account_fingerprint)),self::holdSummary(...));
+        $grants=Staff::requireView();
+        return self::rows(AccountSpendingHolds::query(Operation::where('account_fingerprint',$d->account_fingerprint)),fn($op)=>self::holdSummary($op,$grants));
     }
     public static function reviews(Domain $d): array
     {
-        Staff::requireView();
-        return self::rows(OperationQueries::paidUncertainty(Operation::where('account_fingerprint',$d->account_fingerprint))->whereNotIn('state',['running','pending','uncertain']),self::summary(...));
+        $grants=Staff::requireView();
+        return self::rows(OperationQueries::paidUncertainty(Operation::where('account_fingerprint',$d->account_fingerprint))->whereNotIn('state',['running','pending','uncertain']),fn($op)=>self::summary($op,$grants));
     }
     private static function rows(\Illuminate\Database\Eloquent\Builder $query,\Closure $summary): array
     {

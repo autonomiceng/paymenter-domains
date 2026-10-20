@@ -6,9 +6,9 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CorrectionProgress, ManagementEvidence};
 final class RequestFacts
 {
-    public static function for(Operation $op): array
+    public static function for(Operation $op, ?StaffGrants $grants = null, ?Domain $domain = null): array
     {
-        Staff::requireView();
+        $grants ??= Staff::requireView();
         $out = ['reason'=>$op->safe_code===null ? null : Labels::reason($op->safe_code), 'refund'=>'Customer credit: not assessed'];
         try {
             $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
@@ -42,7 +42,7 @@ final class RequestFacts
             if (is_array($corrections) && $corrections!==[]) { $out['correction']='Original corrections retained; separate review required'; }
             elseif (!is_array($corrections)) { $out['correction']='Correction evidence unavailable'; }
             if (isset($p['management']['correction_link'])) {
-                $d=Domain::find($op->domain_id);
+                $d=$domain??Domain::find($op->domain_id);
                 $key=$p['management']['correction_link']['operation_key']??null;
                 $original=$d && is_string($key) ? DomainQueries::operations($d)->where('operation_key',$key)->first() : null;
                 $confirmed=$original && CorrectionProgress::matches($op,$original,$d)
@@ -51,12 +51,12 @@ final class RequestFacts
             }
             $counts=[self::count($p['contact_readmissions']??[]),self::count($p['reconciliation_resumptions']??[]),self::count($f['financial_adjustments']??[])];
             if ($counts!==['0','0','0']) { $out['audit']='Contact readmissions: '.$counts[0].' · Read resumes: '.$counts[1].' · Financial adjustments: '.$counts[2]; }
-            if (Staff::can(Staff::COSTS)) {
+            if ($grants->costs) {
                 $c=$op->cost??[];
                 $out['cost']='Estimated '.Labels::money(($c['currency']??null)==='USD' ? ($c['estimated']??null) : null)
                     .' · Actual '.Labels::money(($c['actual']['currency']??null)==='USD' ? ($c['actual']['amount']??null) : null);
             }
-            if (Staff::can(Staff::METADATA)) {
+            if ($grants->metadata) {
                 $payload=$op->payload??[];
                 $out['metadata']='Transfer code: '.(is_string($payload['epp']??null)&&$payload['epp']!==''?'Stored':'Not recorded')
                     .' · Contacts: '.(array_key_exists('contacts',$payload)?'Stored':'Not recorded')
@@ -65,9 +65,9 @@ final class RequestFacts
         } catch (\Throwable) { $out['outcome']='Encrypted evidence unavailable; no outcome inferred'; }
         return $out;
     }
-    public static function review(Operation $op): array
+    public static function review(Operation $op, ?StaffGrants $grants = null, ?Domain $domain = null): array
     {
-        $facts=self::for($op);
+        $facts=self::for($op,$grants,$domain);
         return array_values(array_filter(array_map(fn($key)=>$facts[$key]??null,
             ['cutoff','outcome','registrar_refund','refund','correction','cost','metadata','audit']),fn($line)=>$line!==null));
     }
