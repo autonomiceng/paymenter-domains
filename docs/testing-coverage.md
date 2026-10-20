@@ -530,3 +530,14 @@ registrar: stale carts after switching back, canonical contention, unpaid fundin
 reads, durable seals and unknown workers. Native checkout, funding and retained-byte
 assertions are unchanged. Independent processes bound accumulated commerce rows. These
 synthetic SQLite checks do not establish provider or concurrent-database acceptance.
+
+## Acquisition retirement command budget
+
+Acquisition retirement runs as independent native commands for cron/wake-up/cancellation
+(`acquisition-retirement-test.php`), uncertain money/send/sibling/age refusals
+(`acquisition-retirement-refusals-test.php`) and staff review/audit/late-money/modals
+(`acquisition-retirement-staff-test.php`). `Support/acquisition-retirement.php` shares
+unchanged native setup. Related released-name and shared-invoice scenarios stay together;
+real native checkout, cron, cancellation listener, paid activation and Filament actions
+remain exercised. These synthetic SQLite checks do not establish provider or concurrent
+shared-database acceptance.

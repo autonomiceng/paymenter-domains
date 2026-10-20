@@ -199,7 +199,9 @@
     "tests/seller-switch-lifecycle-enom-register-test.php",
     "tests/seller-switch-lifecycle-enom-transfer-test.php",
     "tests/seller-switch-lifecycle-namesilo-register-test.php",
-    "tests/seller-switch-lifecycle-namesilo-transfer-test.php"
+    "tests/seller-switch-lifecycle-namesilo-transfer-test.php",
+    "tests/acquisition-retirement-refusals-test.php",
+    "tests/acquisition-retirement-staff-test.php"
   ],
   "ui": [],
   "runner": [
