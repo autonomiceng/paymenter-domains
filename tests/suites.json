@@ -205,6 +205,7 @@
     "tests/seller-switch-lifecycle-namesilo-transfer-test.php",
     "tests/acquisition-retirement-refusals-test.php",
     "tests/acquisition-retirement-staff-test.php",
+    "tests/domain-counts-test.php",
     "tests/watch-registry-work-test.php",
     "tests/watch-registry-observer-test.php",
     "tests/rdap-quota-test.php",
