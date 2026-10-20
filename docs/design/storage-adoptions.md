@@ -62,7 +62,7 @@ Request keys/digests, account fingerprints, evidence and reasons are hidden from
 
 `HistoryLink` stores domain/service/user/invoice IDs, nullable invoice-item ID, source
 (`native_service|staff_verified_import`), linked-by actor, reason, linked time and encrypted
-`evidence` with version1. It is append-only: ordinary edits, numeric updates and deletes refuse.
+`evidence` with version 1. It is append-only: ordinary edits, numeric updates and deletes refuse.
 `link_key` is SHA-256 of the JSON array `[domain_id, invoice_id, invoice_item_id]` using integer
 IDs and explicit JSON null. The model derives it and rejects inconsistent supplied values;
 invoice-only links therefore remain unique despite their null item. Distinct items, invoices

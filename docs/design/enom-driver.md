@@ -131,7 +131,7 @@ contracts; 23 owns saved expected-ID/expiry, auto-renew-off, balance, funding, g
 and complimentary caps. Neither billing nor dispatch gains a cost floor. Provider acceptance,
 installed hooks and production account identity remain open.
 
-Slice25 supersedes the earlier expired-command charge exclusion: explicitly admitted one-year
+Slice 25 supersedes the earlier expired-command charge exclusion: explicitly admitted one-year
 UpdateExpiredDomains accepts its nested ReactivateDomainName acknowledgement/order ID, then
 requires the same exact singleton successful closed Renew item, original order/time binding and
 owned full-term expiry as ordinary renewal. An acknowledgement never supplies actual cost or
