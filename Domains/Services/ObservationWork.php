@@ -50,13 +50,23 @@ final class ObservationWork
         $summary=[];
         foreach ($queues as $queue) {
             try {
-                $this->discover($queue); if ($this->catalogue) { try { $this->catalogue($queue); } catch (\Throwable) {} }
+                $this->discover($queue); if ($this->catalogue) {
+                    try { $this->catalogue($queue); }
+                    catch (\Throwable $e) {
+                        try { logger()->warning('Domains catalogue check failed.', ['server_id' => (int) $queue->server_id, 'exception_class' => $e::class]); }
+                        catch (\Throwable) { /* Logging cannot prevent this account's observation work. */ }
+                    }
+                }
                 $job=$this->claim($queue); if (!$job) { $summary[$queue->server_id]='idle'; continue; }
                 try { $code=$this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint); }
                 catch (ReadDeferred) { $code='read_deferred'; }
                 catch (\Throwable) { $code='read_unavailable'; }
                 $this->finish($job,$code); $summary[$queue->server_id]=$code;
-            } catch (\Throwable) { $summary[$queue->server_id]='account_unavailable'; }
+            } catch (\Throwable $e) {
+                try { logger()->warning('Domains observation account failed.', ['server_id' => (int) $queue->server_id, 'exception_class' => $e::class]); }
+                catch (\Throwable) { /* Logging cannot interrupt other account turns. */ }
+                $summary[$queue->server_id]='account_unavailable';
+            }
         }
         return $summary;
     }

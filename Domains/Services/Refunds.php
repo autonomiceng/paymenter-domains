@@ -82,7 +82,13 @@ final readonly class Refunds
         if ($afterId < 0 || $limit < 1 || $limit > 100) { throw new \InvalidArgumentException('Invalid refund batch.'); }
         $done = 0;
         $ids = RefundCandidates::query(Operation::where('id', '>', $afterId))->orderBy('id')->limit($limit)->pluck('id');
-        foreach ($ids as $id) { try { $done += $this->creditRejected((int) $id) !== null ? 1 : 0; } catch (\Throwable) {} }
+        foreach ($ids as $id) {
+            try { $done += $this->creditRejected((int) $id) !== null ? 1 : 0; }
+            catch (\Throwable $e) {
+                try { logger()->warning('Domains refund retry failed.', ['operation_id' => (int) $id, 'exception_class' => $e::class]); }
+                catch (\Throwable) { /* Logging cannot interrupt the remaining retries. */ }
+            }
+        }
         return $done;
     }
 }

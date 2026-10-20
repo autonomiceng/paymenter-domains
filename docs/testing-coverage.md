@@ -658,3 +658,13 @@ index), annual-only column hiding, mixed/absent/longer terms, annual mobile rene
 missing renewal prices and both footnotes. Initial idle and checked AJAX results retain
 test labels using only the public selected seller's environment. No private holding identity
 or provider I/O is added. These offline tests do not establish installed-theme acceptance.
+
+## Reminder failure visibility
+
+`reminder-safety-test.php` drives the real account schedule and reminder sweep with
+an injected private exception. It checks warning severity, the exact constant text,
+and context limited to domain ID and exception class. A throwing logger still
+permits staff failure evidence and the rest of the sweep; a healthy next holding
+receives its notice and repeat selection does not resend it. Unmanaged holdings
+skip before managed-authority locks without deliveries or false failure alerts.
+These are synthetic native SQLite checks with fake mail and no provider calls.
