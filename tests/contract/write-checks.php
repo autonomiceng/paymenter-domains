@@ -81,9 +81,10 @@ $wire->check('txt_readback', $id !== null && count($found) === 1);
 if ($id !== null) {
     $raw('dnsDeleteRecord', ['domain' => $wire->domain, 'rrid' => (string) $id]);
     $raw('dnsListRecords', ['domain' => $wire->domain]);
-    $records = $wire->latest('dnsListRecords')['resource_record'] ?? [];
+    $reply = $wire->latest('dnsListRecords'); $records = $reply['resource_record'] ?? null;
     if (is_array($records) && !array_is_list($records)) { $records = [$records]; }
-    $wire->check('txt_deleted', !array_filter(is_array($records) ? $records : [], static fn ($r) => (string) ($r['record_id'] ?? '') === (string) $id));
+    $wire->check('txt_deleted', in_array($reply['code'] ?? null, [300, '300'], true) && is_array($records)
+        && !array_filter($records, static fn ($r) => (string) ($r['record_id'] ?? '') === (string) $id));
 }
 } else { $wire->check('txt_sequence', 'skipped_budget'); }
 // Diagnostic purchase routing is confined to this runner, with same-invocation Unknown reconciliation.

@@ -51,6 +51,7 @@ final class GuardedTransport implements DeadlineTransport
     { return $this->sendWithin($e, $c, $r, $key, 25000); }
     public function sendWithin(Environment $e, RequestContext $c, RegistrarRequest $r, #[\SensitiveParameter] string $key, int $ms): TransportResponse
     {
+        $this->clearReply($r->command, $r->parameters());
         if ($e !== Environment::Sandbox || !hash_equals($this->secret->getValue(), $key)) { throw new \RuntimeException('OTE environment refused.'); }
         return $this->exchange($e->origin().'/'.$c->value, $r->command, $r->parameters(), $ms,
             fn () => (new CurlTransport)->sendWithin($e, $c, $r, $key, $ms));
@@ -118,8 +119,16 @@ final class GuardedTransport implements DeadlineTransport
         if ($command === 'dnsAddRecord' && (($p['rrtype'] ?? '') !== 'TXT' || ($p['rrhost'] ?? '') !== '_contract'
             || ($p['rrvalue'] ?? '') !== 'synthetic-contract' || ($p['rrttl'] ?? null) !== 3600)) { throw new \RuntimeException('OTE DNS refused.'); }
     }
+    private function clearReply(string $command, array $parameters): void
+    {
+        unset($this->latest[$command]);
+        if ($command === 'orderDetails' && (is_string($parameters['order_number'] ?? null) || is_int($parameters['order_number'] ?? null))) {
+            unset($this->details[(string) $parameters['order_number']]);
+        }
+    }
     private function exchange(string $origin, string $command, #[\SensitiveParameter] array $parameters, int $ms, ?\Closure $read = null): TransportResponse
     {
+        $this->clearReply($command, $parameters);
         self::origin($origin);
         $origin = self::purchaseOrigin($command, $origin);
         self::origin($origin);
@@ -154,8 +163,6 @@ final class GuardedTransport implements DeadlineTransport
             $response = $this->fake ? ($this->fake)($command, $parameters) : ($read ? $read() : $this->curl($url, $ms));
             $body = $response->body();
             $data = strlen($body) <= CurlTransport::BODY_LIMIT ? json_decode($body, true, 24) : null;
-            $this->latest[$command] = new \SensitiveParameterValue($data);
-            if ($command === 'orderDetails') { $this->details[(string) $parameters['order_number']] = new \SensitiveParameterValue($data['reply'] ?? []); }
             $entry = &$this->receipt['requests'][$index]; $entry['http_status'] = $response->httpStatus;
             $code = $data['reply']['code'] ?? null;
             $entry['code'] = (is_int($code) || is_string($code)) && preg_match('/^[1-9][0-9]{2}$/D', (string) $code) ? (int) $code : null;
@@ -196,7 +203,12 @@ final class GuardedTransport implements DeadlineTransport
             }
             foreach (Shapes::check($command, $data, $command === 'checkRegisterAvailability' ? explode(',', $parameters['domains']) : []) as $error) { $this->mismatch($command, $error); }
             if ($response->httpStatus !== 200) { $this->mismatch($command, 'http_status'); $this->save(); throw new \RuntimeException('OTE HTTP response refused.'); }
-            $this->save(); return $response;
+            $this->save();
+            if (is_array($data['reply'] ?? null)) {
+                $this->latest[$command] = new \SensitiveParameterValue($data);
+                if ($command === 'orderDetails') { $this->details[(string) $parameters['order_number']] = new \SensitiveParameterValue($data['reply']); }
+            }
+            return $response;
         } catch (\Throwable) {
             $this->receipt['requests'][$index]['transport_failed'] = true;
             if (in_array($command, ['registerDomain', 'renewDomain'], true)) { $this->receipt['checks']['purchase_unresolved'] = true; }

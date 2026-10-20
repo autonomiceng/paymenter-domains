@@ -108,7 +108,7 @@ def main():
         argparse.ArgumentParser().exit(2, 'OTE time window closed.\n')
     if not args.self_test and not os.environ.get('NAMESILO_SANDBOX_API_KEY'):
         argparse.ArgumentParser().exit(2, 'NAMESILO_SANDBOX_API_KEY must be supplied in the environment.\n')
-    output = Path(tempfile.mkdtemp(prefix='domains-ote-'))
+    output = Path(tempfile.mkdtemp(prefix='domains-ote-')).resolve()
     runtime = fixture = snapshot = None
     source = os.environ.get('PAYMENTER_TEST_APP')
     try:
@@ -145,7 +145,7 @@ def main():
         # Never relay child stdout/stderr: native errors can contain raw responses or credentials.
         result = subprocess.run(argv, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
         if args.self_test and with_native and result.returncode == 0:
-            for scenario, renewals in [('interactive-route', 1), ('profile-read', 0), ('missing-premium', 0), ('premium-one', 0), ('malformed-registration', 0), ('unknown-registered', 1), ('unknown-absent', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
+            for scenario, renewals in [('failed-readbacks', 1), ('interactive-route', 1), ('profile-read', 0), ('missing-premium', 0), ('premium-one', 0), ('malformed-registration', 0), ('unknown-registered', 1), ('unknown-absent', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
                 uncertain_output = output/scenario
                 uncertain_output.mkdir(mode=0o700)
                 uncertain_env = dict(env, OTE_OUTPUT=str(uncertain_output), OTE_SELF_TEST_SCENARIO=scenario)
@@ -154,6 +154,10 @@ def main():
                 refused = subprocess.run(argv, cwd=ROOT, env=uncertain_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
                 evidence = json.loads((uncertain_output/'receipt.json').read_text())
                 commands = [row['command'] for row in evidence['requests']]
+                if scenario == 'failed-readbacks':
+                    if refused.returncode != 0 or evidence['checks'].get('nameservers_readback') is not False or evidence['checks'].get('txt_deleted') is not False:
+                        raise ValueError('Failed readback must remain unobserved')
+                    continue
                 if scenario == 'interactive-route':
                     if refused.returncode != 0 or commands.count('registerDomain') != 1 or commands.count('renewDomain') != 1:
                         raise ValueError('Interactive purchase diagnostic failed')

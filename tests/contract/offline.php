@@ -14,71 +14,78 @@ $fake = static function ($command, $p) use (&$calls): TransportResponse {
 $hour = 17;
 $clock = static function () use (&$hour): int { return $hour; };
 $guard = new GuardedTransport('offline-secret-token', false, $output, $fake, $clock);
-$refuse = static function ($fn): void {
-    try { $fn(); } catch (Throwable) { return; } throw new RuntimeException('Missing contract refusal');
+$refuse = static function (callable $fn, string $expected): void {
+    try { $fn(); } catch (Throwable $error) {
+        same(RuntimeException::class, $error::class, 'Contract refusal class');
+        same($expected, $error->getMessage(), 'Contract refusal must name its guard'); return;
+    }
+    throw new RuntimeException('Missing contract refusal: '.$expected);
 };
-$refuse(fn () => new GuardedTransport('offline-secret-token', true, $output, null, static fn () => 21));
+$refuse(fn () => new GuardedTransport('offline-secret-token', true, $output, null, static fn () => 21), 'OTE live clock cannot be overridden.');
 foreach (['https://www.namesilo.com/api', 'http://ote.namesilo.com/api', 'https://ote.namesilo.com.evil.test/api',
     'https://ote.namesilo.com:443/api', 'https://ote.namesilo.com/api/../api', 'https://ote.namesilo.com/apibatch?x=1',
-    'https://ote.namesilo.com@other.test/api'] as $origin) { $refuse(fn () => $guard->raw($origin, 'getAccountBalance', [])); }
-$refuse(fn () => $guard->send(WireEnvironment::Live, WireContext::Interactive, RegistrarRequest::balance(), 'offline-secret-token'));
-foreach ([18, 19, 20] as $hour) { $refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getAccountBalance', [])); }
+    'https://ote.namesilo.com@other.test/api'] as $origin) { $refuse(fn () => $guard->raw($origin, 'getAccountBalance', []), 'OTE origin refused.'); }
+$refuse(fn () => $guard->send(WireEnvironment::Live, WireContext::Interactive, RegistrarRequest::balance(), 'offline-secret-token'), 'OTE environment refused.');
+foreach ([18, 19, 20] as $hour) { $refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getAccountBalance', []), 'OTE time window closed.'); }
 $hour = 21;
-$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'registerDomain', ['domain' => $guard->domain]));
-$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getDomainInfo', ['domain' => 'example.com']));
-$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getDomainInfo', ['domain' => 'contract-ote-123456789abc.org']));
-$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getAccountBalance', ['key' => 'override']));
-$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'transferDomain', []));
-$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getDomainInfo', []));
-$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'checkRegisterAvailability', []));
+$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'registerDomain', ['domain' => $guard->domain]), 'OTE write flag required.');
+$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getDomainInfo', ['domain' => 'example.com']), 'OTE domain scope refused.');
+$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getDomainInfo', ['domain' => 'contract-ote-123456789abc.org']), 'OTE domain scope refused.');
+$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getAccountBalance', ['key' => 'override']), 'OTE parameters refused.');
+$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'transferDomain', []), 'OTE command refused.');
+$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getDomainInfo', []), 'OTE domain scope refused.');
+$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'checkRegisterAvailability', []), 'OTE availability scope required.');
 same(0, $calls, 'All unsafe inputs refused before sender');
 $boundaryChecks = 0;
 $boundary = new GuardedTransport('offline-secret-token', false, $output, $fake,
     static function () use (&$boundaryChecks): int { return ++$boundaryChecks === 1 ? 17 : 18; });
-$refuse(fn () => $boundary->raw('https://ote.namesilo.com/api', 'getAccountBalance', []));
+$refuse(fn () => $boundary->raw('https://ote.namesilo.com/api', 'getAccountBalance', []), 'OTE time window closed.');
 same(0, $calls, 'Crossing closed window before send refused');
 $badStore = $output.'/failed-save'; mkdir($badStore, 0700); mkdir($badStore.'/receipt.json', 0700);
 $storageGuard = new GuardedTransport('offline-secret-token', false, $badStore, $fake, $clock);
 $beforeCalls = $calls;
-$refuse(fn () => $storageGuard->raw('https://ote.namesilo.com/api', 'getAccountBalance', []));
+$refuse(fn () => $storageGuard->raw('https://ote.namesilo.com/api', 'getAccountBalance', []), 'OTE receipt persistence failed.');
 same($beforeCalls, $calls, 'Receipt failure prevents network send');
 $guard->send(WireEnvironment::Sandbox, WireContext::Interactive, RegistrarRequest::balance(), 'offline-secret-token');
 $receipt = file_get_contents($output.'/receipt.json'); expect(!str_contains($receipt, 'offline-secret-token'), 'Echoed secrets omitted');
 same('[redacted]', $guard->receipt['requests'][0]['request']['key'], 'Key query capture redacted');
 for ($i = 1; $i < 60; $i++) { $guard->raw('https://ote.namesilo.com/api', 'getAccountBalance', []); }
-$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getAccountBalance', [])); same(60, $calls, 'Hard budget');
+$refuse(fn () => $guard->raw('https://ote.namesilo.com/api', 'getAccountBalance', []), 'OTE budget refused.'); same(60, $calls, 'Hard budget');
 $limited = new GuardedTransport('offline-secret-token', false, $output, $fake, $clock, 1);
 $limited->raw('https://ote.namesilo.com/api', 'getAccountBalance', []); $beforeCalls = $calls;
-$refuse(fn () => $limited->raw('https://ote.namesilo.com/api', 'getAccountBalance', []));
+$refuse(fn () => $limited->raw('https://ote.namesilo.com/api', 'getAccountBalance', []), 'OTE budget refused.');
 same($beforeCalls, $calls, 'Lower slice cap enforced before sender'); same(0, $limited->remaining(), 'Lower cap remaining');
-foreach ([0, 61] as $badLimit) { $refuse(fn () => new GuardedTransport('offline-secret-token', false, $output, $fake, $clock, $badLimit)); }
+foreach ([0, 61] as $badLimit) { $refuse(fn () => new GuardedTransport('offline-secret-token', false, $output, $fake, $clock, $badLimit), 'OTE budget refused.'); }
 $writer = new GuardedTransport('offline-secret-token', true, $output, $fake, $clock);
 $writer->purchaseAuthorization(static fn () => new \Paymenter\Extensions\Servers\Domains\Data\Money('8.95', 'USD'));
 $p = ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0, 'private' => 0];
 foreach ([['years' => 2], ['private' => 1], ['auto_renew' => 1], ['payment_id' => '1'], ['ns1' => 'ns1.other.test']] as $bad) {
-    $refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'registerDomain', array_replace($p, $bad)));
+    $expected = match (array_key_first($bad)) {
+        'payment_id' => 'OTE parameters refused.', 'ns1' => 'OTE nameserver refused.', default => 'OTE purchase refused.',
+    };
+    $refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'registerDomain', array_replace($p, $bad)), $expected);
 }
-$refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'domainLock', []));
-$refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'domainLock', ['domain' => substr($writer->domain, 0, -4).'.net']));
+$refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'domainLock', []), 'OTE domain scope refused.');
+$refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'domainLock', ['domain' => substr($writer->domain, 0, -4).'.net']), 'OTE domain scope refused.');
 $writer->raw('https://ote.namesilo.com/api', 'registerDomain', $p);
-$refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'registerDomain', $p));
-$refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]));
+$refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'registerDomain', $p), 'OTE purchase refused.');
+$refuse(fn () => $writer->raw('https://ote.namesilo.com/apibatch', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]), 'OTE durable registration required.');
 $writer->authorizeRenewal(true); $writer->renewalBefore('2027-01-01');
-$refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]));
+$refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]), 'Renewal route requires claimed continuation.');
 $writer->raw('https://ote.namesilo.com/apibatch', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]);
-$refuse(fn () => $writer->raw('https://ote.namesilo.com/apibatch', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]));
+$refuse(fn () => $writer->raw('https://ote.namesilo.com/apibatch', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]), 'OTE purchase refused.');
 $http = new GuardedTransport('offline-secret-token', true, $output,
     static fn () => new TransportResponse(500, json_encode(['request' => ['operation' => 'registerDomain'], 'reply' => ['code' => 300, 'detail' => 'synthetic', 'domain' => 'synthetic', 'order_amount' => '8.95']])), $clock);
 $http->purchaseAuthorization(static fn () => new \Paymenter\Extensions\Servers\Domains\Data\Money('8.95', 'USD'));
-$refuse(fn () => $http->raw('https://ote.namesilo.com/api', 'registerDomain', ['domain' => $http->domain, 'years' => 1, 'auto_renew' => 0, 'private' => 0]));
+$refuse(fn () => $http->raw('https://ote.namesilo.com/api', 'registerDomain', ['domain' => $http->domain, 'years' => 1, 'auto_renew' => 0, 'private' => 0]), 'OTE exchange unresolved.');
 same(true, $http->receipt['checks']['purchase_unresolved'], 'HTTP error preserves uncertain purchase');
 $failedCalls = 0;
 $failure = new GuardedTransport('offline-secret-token', true, $output,
     static function () use (&$failedCalls) { $failedCalls++; throw new RuntimeException('offline-secret-token'); }, $clock);
 $failure->purchaseAuthorization(static fn () => new \Paymenter\Extensions\Servers\Domains\Data\Money('8.95', 'USD'));
-$refuse(fn () => $failure->raw('https://ote.namesilo.com/api', 'registerDomain', ['domain' => $failure->domain, 'years' => 1, 'auto_renew' => 0, 'private' => 0]));
+$refuse(fn () => $failure->raw('https://ote.namesilo.com/api', 'registerDomain', ['domain' => $failure->domain, 'years' => 1, 'auto_renew' => 0, 'private' => 0]), 'OTE exchange unresolved.');
 same(1, $failedCalls, 'Transport error never retries');
-$refuse(fn () => $failure->raw('https://ote.namesilo.com/api', 'registerDomain', ['domain' => $failure->domain, 'years' => 1, 'auto_renew' => 0, 'private' => 0]));
+$refuse(fn () => $failure->raw('https://ote.namesilo.com/api', 'registerDomain', ['domain' => $failure->domain, 'years' => 1, 'auto_renew' => 0, 'private' => 0]), 'OTE purchase refused.');
 same(1, $failedCalls, 'Uncertain purchase cannot replay');
 $shape = Shapes::shape(['account-identifier' => ['key' => 'offline-secret-token']]);
 expect(!str_contains(json_encode($shape), 'account-identifier'), 'Dynamic field names never escape');
@@ -214,6 +221,7 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
                 if ($command === 'registerDomain' && str_starts_with((string) getenv('OTE_SELF_TEST_SCENARIO'), 'unknown-')) { $r = ['code' => null, 'detail' => null]; }
                 if ($command === 'renewDomain') { $state->renewed = true; $state->expiry = (new DateTimeImmutable($state->expiry))->modify('+1 year')->format('Y-m-d'); }
             } elseif ($command === 'getDomainInfo') {
+                if ($state->failInfo ?? false) { $state->failInfo = false; throw new RuntimeException('Synthetic readback failure'); }
                 $r += ['created' => gmdate('Y-m-d'), 'expires' => $state->expiry, 'status' => 'Active', 'locked' => $state->locked,
                     'private' => 'No', 'auto_renew' => 'No', 'traffic_type' => 'Custom DNS', 'email_verification_required' => 'No', 'portfolio' => '', 'forward_url' => 'N/A', 'forward_type' => 'N/A', 'nameservers' => [['nameserver' => 'ns1.namesilo.com', 'position' => 1], ['nameserver' => 'ns2.namesilo.com', 'position' => 2]],
                     'contact_ids' => array_fill_keys(['registrant','administrative','technical','billing'], '101')];
@@ -228,10 +236,12 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
             elseif ($command === 'domainLock') { $state->locked = 'Yes'; }
             elseif ($command === 'removeAutoRenewal') { $r['code'] = 251; }
             elseif ($command === 'dnsAddRecord') { $state->record = true; $r['record_id'] = 'txt-record'; }
-            elseif ($command === 'dnsDeleteRecord') { $state->record = false; }
+            elseif ($command === 'dnsDeleteRecord') { $state->record = false; $state->failDns = getenv('OTE_SELF_TEST_SCENARIO') === 'failed-readbacks'; }
             elseif ($command === 'dnsListRecords') {
-                $r['resource_record'] = $state->record ? [['record_id' => 'txt-record', 'type' => 'TXT', 'host' => '_contract', 'value' => 'synthetic-contract', 'ttl' => 3600, 'distance' => 0]] : [];
-            } elseif ($command !== 'changeNameServers') { throw new RuntimeException('Unexpected offline command'); }
+                if ($state->failDns ?? false) { $state->failDns = false; }
+                else { $r['resource_record'] = $state->record ? [['record_id' => 'txt-record', 'type' => 'TXT', 'host' => '_contract', 'value' => 'synthetic-contract', 'ttl' => 3600, 'distance' => 0]] : []; }
+            } elseif ($command === 'changeNameServers') { $state->failInfo = getenv('OTE_SELF_TEST_SCENARIO') === 'failed-readbacks'; }
+            elseif ($command !== 'changeNameServers') { throw new RuntimeException('Unexpected offline command'); }
             return new TransportResponse(200, json_encode(['request' => ['operation' => $command, 'ip' => '192.0.2.1'], 'reply' => $r], JSON_THROW_ON_ERROR));
         }, static fn () => 21, match (getenv('OTE_SELF_TEST_SCENARIO')) { 'limited-budget' => 28, 'short-budget' => 26, default => 60 });
     if (in_array(getenv('OTE_SELF_TEST_SCENARIO'), ['limited-budget', 'short-budget'], true)) {
@@ -265,9 +275,12 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
     } else {
     same(true, $wire->receipt['checks']['renew_added_one_year'], 'One renewal exercised offline');
     same(true, $wire->receipt['checks']['renewal_charge_evidence_shape_matches'], 'Renewal charge correlation exercised offline');
-    same(true, $wire->receipt['checks']['txt_deleted'], 'TXT cleanup exercised offline');
+    same(getenv('OTE_SELF_TEST_SCENARIO') !== 'failed-readbacks', $wire->receipt['checks']['txt_deleted'], 'TXT cleanup requires observed readback');
     }
-    if (getenv('OTE_SELF_TEST_SCENARIO') !== 'unknown-registered') { same([], $wire->receipt['mismatches'], 'Native fake matches all contract projections'); }
+    if (getenv('OTE_SELF_TEST_SCENARIO') === 'failed-readbacks') {
+        same(false, $wire->receipt['checks']['nameservers_readback'], 'Failed read cannot reuse pre-change nameservers');
+    }
+    elseif (getenv('OTE_SELF_TEST_SCENARIO') !== 'unknown-registered') { same([], $wire->receipt['mismatches'], 'Native fake matches all contract projections'); }
     else { same('registered_in_account', $wire->receipt['reconciliation']['category'], 'Unknown reconciles before continuing same sequence'); }
     }
 }
