@@ -25,10 +25,11 @@ Keep credentials, contact data, transfer codes and raw provider replies out of t
    Conversion tools, evidence collectors, development fixtures and the supplied site
    shell are separate artifacts and must not be added to the runtime ZIP.
 3. Rehearse native upload/install, upgrade and uninstall/reinstall in an isolated copy
-   with synthetic holdings and money. `tests/test_installed_package.py` drives the real
-   native uploader and checks held/fresh/previous-runtime upgrade paths, migration
-   history and retained data. Partial-schema refusal is exercised separately by
-   `tests/runtime-install-test.php`, not by an injected installed-ZIP scenario. Its previous runtime is a pinned
+   with synthetic holdings and money. `tests/test_installed_package.py` (held),
+   `tests/test_installed_package_fresh.py` and `tests/test_installed_package_upgrade.py`
+   drive the real native uploader and check held, fresh and previous-runtime upgrade
+   paths, migration history and retained data. Partial-schema refusal is exercised separately by
+   `tests/runtime-install-test.php`, not by an injected installed-ZIP scenario. The upgrade test's previous runtime is a pinned
    local development commit, not a compatibility claim for an earlier release.
 4. Inspect both registrar accounts independently: binding/environment, exact accepted
    terms, annual renewal support, retail publication and selected seller. Install

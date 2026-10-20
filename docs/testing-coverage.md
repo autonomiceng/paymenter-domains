@@ -573,3 +573,17 @@ injected private fields are excluded. Owner-action tests assert code failures fl
 Record-error suites retain bounded public DNS/SRV/DS/glue drafts without session flashing.
 Real active holdings compare full and list DTO facts and assert zero settings queries for list
 projections. These offline fixtures do not establish provider or installed browser acceptance.
+
+
+## Installed-package scenario commands
+
+`test_installed_package.py` runs default-held registration and all three unsafe-archive
+refusals. `test_installed_package_fresh.py` runs the current-build lifecycle;
+`test_installed_package_upgrade.py` builds the pinned previous revision, applies the
+existing observation-index fixture adjustment and runs the previous-to-current lifecycle.
+Both lifecycle commands retain install, seed, repeated upload/verify, server-delete/verify
+and file-removal/reinstall/verify phases. Each command gates on 1.5 GiB available memory
+and owns a temporary application/database under the runner fixture parent.
+Each prints only its scenario's JSON evidence; together they retain every original key,
+including both archive hashes and previous-fixture provenance. Offline native SQLite
+acceptance does not establish provider, installed-theme or concurrent-database acceptance.
