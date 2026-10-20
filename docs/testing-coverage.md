@@ -462,3 +462,17 @@ configuration, stock staff permissions/revocation, form validation and bounded d
 All exchanges are fake. `doh-render.php` renders stock native staff states for both-theme review.
 Mutation checks target NXDOMAIN/SERVFAIL fallback, false native-empty proof, missing breaker,
 ignored deadline and zone-content fallback. Native fallback still cannot impose a per-call timeout.
+
+### Account observation claim index and budget refusals
+
+`schema-test.php` pins the physical `(server_id, account_fingerprint, due_at)`
+observation-work index and checks that retained verification rejects its loss even
+when native migration history skips creation. Restoring it permits install/verify.
+The installed-package test explicitly aligns its pinned older local fixture's
+creation baseline with this unreleased index; it still tests retained native
+upload/reinstall and additive migrations, not upgrade from the obsolete index set.
+`observation-budget-test.php` accepts only `ReadDeferred` for durable quota and
+concurrency refusals; a planted binding-change `DomainException` must escape that
+assertion. Existing runtime-worker headroom/ceiling assertions already use the
+specific refusal. These are synthetic offline SQLite checks; they do not establish
+MariaDB query plans, concurrent locking or provider acceptance.
