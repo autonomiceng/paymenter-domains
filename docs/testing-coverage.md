@@ -712,6 +712,14 @@ order, uncollapsed related rows, gap plus freshness, kept unknown axes, invented
 swapped freshness priority, dropped managed exclusion, dropped check times) each fail the test.
 These checks are offline Blade/DOM checks.
 
+The domain index shows "Renewal off" once, in its Renewal column: the row drops the matching
+state chip only when that column says "Renewal off". Related rows, the compact summary and the
+detail summary have no Renewal column and keep the chip, as does a row whose column says
+something else or "Pending verification". The matrix asserts the column variant drops only that
+chip. Eight mutations (duplicate chip, chip dropped everywhere, related rows claiming the column,
+ignored column text, an extra dropped state, pending counted as shown, chip dropped from the
+managed detail, column text removed) each fail the test.
+
 ### 2026-10-20 — staff reviews and active worker evidence
 
 `staff-operation-lease-test.php` uses real funded claims, seals and send verification

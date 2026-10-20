@@ -54,11 +54,11 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     // List density: state first, known evidence next, then one chip for every missing axis. Detail keeps each axis.
     $strings = DomainSummaryStrings::all();
     $dto = static fn (string $name, string $kind, string $registration, array $dnsKeys, array $states) => new DomainSummary($name, null, $kind,
-        $registration, $dnsKeys, null, null, $states, $strings, null, null, null, [], null, null, [], [], ['detail' => '/domains/'.$name]);
+        $registration, $dnsKeys, null, null, $states, $strings, null, null, null, [], null, null, [], [], ['detail' => '/domains/'.$name], renewalOff: in_array('adopt.renewal_off', $states, true));
     $unknown = DnsSignalLabels::keys(null, null, null);
     $rows = [
         'active-unchecked' => ['domain.registration.platform', $unknown, ['domain.active', 'watch.not_checked'], ['domain.active', 'domain.registration.platform', 'watch.not_checked']],
-        'renewal-off' => ['domain.registration.platform', $unknown, ['domain.active', 'adopt.renewal_off', 'watch.not_checked'], ['domain.active', 'adopt.renewal_off', 'domain.registration.platform', 'watch.not_checked']],
+        'renewal-off' => ['domain.registration.platform', $unknown, ['domain.active', 'adopt.renewal_off', 'watch.not_checked'], ['domain.active', 'domain.registration.platform', 'watch.not_checked']],
         'held' => ['domain.registration.unknown', $unknown, ['domain.review', 'watch.not_checked'], ['domain.review', 'watch.not_checked']],
         'unknown-current' => ['domain.registration.unknown', $unknown, ['domain.review'], ['domain.review', 'domain.details.partial']],
         'stale' => ['domain.registration.platform', DnsSignalLabels::keys(null, null, null, partial: true), ['domain.active', 'watch.stale', 'watch.partial'], ['domain.active', 'domain.registration.platform', 'watch.stale']],
@@ -66,8 +66,8 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
         'known' => ['domain.registration.platform', DnsSignalLabels::keys('platform', false, false), ['domain.active'], ['domain.active', 'domain.registration.platform', 'domain.dns.platform', 'domain.points.platform_empty']],
     ];
     $summaries = array_map(fn ($name) => $dto($name.'.example', 'managed', ...array_slice($rows[$name], 0, 3)), array_keys($rows));
-    $watches = [$dto('watch-unchecked.example', 'watch', 'domain.registration.unknown', $unknown, ['watch.not_checked']), $dto('watch-known.example', 'watch', 'domain.registration.external', DnsSignalLabels::keys('external', false, false), [])];
-    $html = view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator($summaries, count($summaries), 25), 'watches' => new \Illuminate\Pagination\LengthAwarePaginator($watches, 2, 25)])->render();
+    $watches = [$dto('watch-unchecked.example', 'watch', 'domain.registration.unknown', $unknown, ['watch.not_checked']), $dto('watch-known.example', 'watch', 'domain.registration.external', DnsSignalLabels::keys('external', false, false), []), $dto('related-off.example', 'managed', 'domain.registration.platform', DnsSignalLabels::keys('platform', false, false), ['domain.active', 'adopt.renewal_off'])];
+    $html = view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator($summaries, count($summaries), 25), 'watches' => new \Illuminate\Pagination\LengthAwarePaginator($watches, count($watches), 25)])->render();
     $dom = storefrontDom($html);
     $chips = static fn ($cell) => array_map(fn ($span) => [trim($span->textContent), $span->getAttribute('class')], iterator_to_array($dom->query('.//span[contains(@class,"domains-badge")]', $cell)));
     foreach (array_keys($rows) as $i => $name) {
@@ -100,17 +100,36 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     $adopting = $dto('adopting.example', 'managed', 'domain.registration.platform', DnsSignalLabels::keys('platform', true, true), ['adopt.pending', 'adopt.provenance', 'domain.active']);
     same(array_map(fn ($key) => $strings[$key], ['adopt.pending', 'adopt.provenance', 'domain.active', 'domain.dns.platform', 'domain.points.both']), $texts($compact($adopting)), 'Pending adoption hides registration, keeps state chips first');
     same(array_map(fn ($key) => $strings[$key], ['domain.active', 'domain.dns.platform', 'domain.points.both']), $texts($compact($adopting, ['summaryOnManaged' => true])), 'Managed context hides adoption chips');
+    // The index Renewal column already says "Renewal off", so that row has no matching chip. Views without the column keep it.
+    $index = storefrontDom($html); $offRow = $index->query('//tbody/tr[td/a[normalize-space()="renewal-off.example"]]')->item(0);
+    same('Renewal off', trim($index->query('td[@data-label="Renewal"]', $offRow)->item(0)->textContent), 'Renewal column says renewal off');
+    same(1, substr_count($offRow->textContent, 'Renewal off'), 'Index row says renewal off once');
+    $knownOff = [$strings['domain.active'], $strings['adopt.renewal_off'], ...array_map(fn ($key) => $strings[$key], ['domain.registration.platform', 'domain.dns.platform', 'domain.points.platform_empty'])];
+    same($knownOff, $texts($index, '//section[@class="domains-related"]/section[h3[normalize-space()="related-off.example"]]//div[contains(@class,"domains-summary-badges")]/span'), 'Related rows have no Renewal column and keep the chip');
+    same($knownOff, $texts($compact($watches[2])), 'Compact summary without a Renewal column keeps the chip');
+    foreach ([[], ['summaryOnManaged' => true, 'summaryFinancials' => false]] as $with) {
+        expect(in_array($strings['adopt.renewal_off'], $texts(storefrontDom(view('domains::partials.summary', ['summary' => $watches[2], ...$with])->render()), '//div[contains(@class,"domains-summary-badges")]/span'), true), 'Detail summary keeps the renewal off chip: '.json_encode($with));
+    }
+    $silent = new DomainSummary('silent-off.example', null, 'managed', 'domain.registration.platform', DnsSignalLabels::keys('platform', false, false), null, null, ['domain.active', 'adopt.renewal_off'], $strings, null, null, null, [], null, null, [], [], ['detail' => '/domains/silent-off.example']);
+    $silentRow = storefrontDom(view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator([$silent], 1, 25)])->render())->query('//tbody/tr')->item(0);
+    same(1, substr_count($silentRow->textContent, 'Renewal off'), 'Chip stays when the Renewal column does not say renewal off');
+    $pendingOff = new DomainSummary('pending-off.example', null, 'managed', 'domain.registration.unknown', $unknown, null, null, ['adopt.pending', 'adopt.renewal_off'], $strings, null, null, null, [], null, null, [], [], ['detail' => '/domains/pending-off.example'], renewalOff: true);
+    $pendingRow = storefrontDom(view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator([$pendingOff], 1, 25)])->render())->query('//tbody/tr')->item(0);
+    expect(!$pendingOff->renewalOffShown(), 'Pending verification never counts as a shown renewal off');
+    same('Pending verification', trim($pendingRow->getElementsByTagName('td')->item(3)->textContent), 'Pending row Renewal column');
+    same(1, substr_count($pendingRow->textContent, 'Renewal off'), 'Pending row keeps the renewal off chip');
     $gapEvidence = ['domain.registration.unknown', ...$unknown];
     foreach ([[['watch.partial', 'watch.stale', 'domain.active', 'watch.not_checked'], 'watch.not_checked'], [['watch.partial', 'watch.stale'], 'watch.stale'], [['watch.partial'], 'watch.partial'], [[], 'domain.details.partial']] as [$states, $chip]) {
         same([...array_values(array_diff($states, DomainSummaryBadges::FRESHNESS)), $chip], DomainSummaryBadges::compact($gapEvidence, $states), 'Freshness priority: '.$chip);
     }
     // No combination of evidence earns a label the summary did not supply, and only one chip covers missing axes.
     foreach ([null, 'platform', 'external'] as $d) { foreach ([null, true, false] as $w) { foreach ([null, true, false] as $e) { foreach ([false, true] as $partial) {
-        foreach (['domain.registration.platform', 'domain.registration.unknown'] as $registration) { foreach ([[], ['domain.active'], ['domain.active', 'watch.not_checked'], ['watch.stale', 'watch.partial'], ['watch.partial', 'watch.not_checked', 'watch.stale'], ['watch.partial']] as $states) {
+        foreach (['domain.registration.platform', 'domain.registration.unknown'] as $registration) { foreach ([[], ['domain.active'], ['domain.active', 'watch.not_checked'], ['watch.stale', 'watch.partial'], ['watch.partial', 'watch.not_checked', 'watch.stale'], ['watch.partial'], ['domain.active', 'adopt.renewal_off', 'watch.stale']] as $states) {
             $evidence = [$registration, ...DnsSignalLabels::keys($d, $w, $e, partial: $partial)];
             $badges = $dto('x.example', 'managed', $registration, [], $states)->listBadges($evidence, $states);
             $gaps = array_intersect($evidence, DomainSummaryBadges::GAPS); $fresh = array_intersect($states, DomainSummaryBadges::FRESHNESS);
             same([], array_diff($badges, $evidence, $states, ['domain.details.partial']), 'Collapse never invents a label');
+            same(array_values(array_diff($badges, ['adopt.renewal_off'])), $dto('x.example', 'managed', $registration, [], $states)->listBadges($evidence, $states, renewalColumn: true), 'A Renewal column drops only the renewal off chip');
             same([], array_intersect($badges, DomainSummaryBadges::GAPS), 'Per-axis unknown chips collapse');
             same($gaps || $fresh ? 1 : 0, count(array_intersect($badges, [...DomainSummaryBadges::FRESHNESS, 'domain.details.partial'])), 'One evidence-gap chip at most');
             same(array_values(array_diff($states, DomainSummaryBadges::FRESHNESS)), array_slice($badges, 0, count($states) - count($fresh)), 'State chips first');
