@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Models;
 use Illuminate\Database\Eloquent\Model;
 
-/** Append-only associations. Native owner/service/import validation belongs to the future linker. */
+/** Append-only associations. AdoptionHistory validates locked native relations; these links never grant funding. */
 final class HistoryLink extends Model
 {
     public $timestamps = false;

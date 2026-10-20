@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 final class HoldingNativeLocks
 {
     public static function take(int $ownerId, int $serviceId, ?int $staffId = null, bool $advisory = false,
-        ?Domain $seed = null, ?int $expectedOrderId = null, bool $adoption = false): array
+        ?Domain $seed = null, ?int $expectedOrderId = null, bool $adoption = false, array $additionalServices = []): array
     {
         if (!$advisory && DB::transactionLevel() !== 1) { throw new \LogicException('Holding locks require the outer transaction.'); }
         $users = User::whereKey(array_filter([$ownerId, $staffId]))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
@@ -35,7 +35,7 @@ final class HoldingNativeLocks
         if ($adoption && $items->pluck('invoice_id')->diff($ids)->isNotEmpty()) { throw new \DomainException('Adoption invoice coverage changed. Verify again.'); }
         $transactions = InvoiceTransaction::whereIn('invoice_id', $ids)->when($advisory,fn($q)=>$q->limit(101))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         if($advisory&&$transactions->count()>100){throw new \DomainException('Advisory payment history requires staff review.');}
-        $serviceIds = $items->where('reference_type', (new Service)->getMorphClass())->pluck('reference_id')->push($serviceId)->unique();
+        $serviceIds = $items->where('reference_type', (new Service)->getMorphClass())->pluck('reference_id')->push($serviceId)->merge($additionalServices)->unique();
         [$orders, $services] = self::lockServices($serviceIds->all(), $advisory, $expectedOrderId === null ? [] : [$expectedOrderId]);
         $products = Product::whereKey($services->pluck('product_id'))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $plans = Plan::whereKey($services->pluck('plan_id'))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
@@ -44,6 +44,7 @@ final class HoldingNativeLocks
         $cancel = ServiceCancellation::whereIn('service_id', $serviceIds)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $cancel = NativeCancellation::withIntents($cancel, $serviceIds->all(), $advisory);
         $configs = $service->configs()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $relatedProperties = \App\Models\Property::where('model_type', $service->getMorphClass())->whereIn('model_id', $additionalServices)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $properties = $service->properties()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         if (!$product || !$plan) { throw new \DomainException('Missing holding route.'); }
         $markers = $product->settings()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
@@ -53,7 +54,7 @@ final class HoldingNativeLocks
         $country = $user->properties->where('key', 'country')->value('value');
         if ($country) { $country = array_search($country, config('app.countries')) ?: $country; }
         $tax = TaxRate::whereIn('country', [$country, 'all'])->orderByRaw('country = ? desc', [$country])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->first() ?? 0;
-        return compact('user', 'staff', 'credit', 'invoices', 'items', 'transactions', 'orders', 'services', 'products', 'plans', 'service', 'product', 'plan', 'cancel', 'configs', 'properties', 'markers', 'upgrades', 'links', 'tax', 'opIds');
+        return compact('user', 'staff', 'credit', 'invoices', 'items', 'transactions', 'orders', 'services', 'products', 'plans', 'service', 'product', 'plan', 'cancel', 'configs', 'properties', 'markers', 'upgrades', 'links', 'tax', 'opIds', 'relatedProperties');
     }
 
     /** Shared current-read prefix for mixed invoices. Never acquire an order after a service. */

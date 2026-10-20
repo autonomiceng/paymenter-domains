@@ -389,3 +389,45 @@ confirmation makes zero provider calls. This is not concurrent database acceptan
 
 A3 core also renders the native holding review warning for retained billing-window
 and price alerts, checks cutoff wording and excludes arbitrary provider alert text.
+
+A3 history `adoption-consequences-test.php` covers exact paid/cancelled invoice links,
+fresh invoice-view permission, pending-debt refusal, cancellation/history exceptions
+and first/second save veto rollback. Real DNR confirmation retains active/null native
+expiry, original history/cancellation on replay and byte-identical money. Scheduled,
+manual, complimentary, reminder, funded-admission/funding, installed dispatch and
+direct executor paths refuse renewal; sent outcomes remain reconcilable. A fully
+funded counterfactual proves the funding refusal is the DNR boundary. Expired display
+is read-only and keeps the reservation. Original cancellation deletion refuses; a
+privileged missing-row fixture fails authority closed. `adoption-intent-test.php`
+checks immediate conflict, existing stop reuse and cross-object grant isolation;
+`adoption-renewal-intent-test.php` checks a later ordinary end-of-period owner stop.
+These use serialized SQLite and closed fake transport, without concurrency acceptance.
+
+
+The adoption consequences fixture renders the native holding page with retained
+issue-window/cutoff flags and original renewal-off intent; no invoice warning appears.
+The later-stop fixture separately preserves issued-debt reminder wording.
+
+A3 `staff-adopt-commit-test.php` exercises native wizard selection/readback/review,
+default-off confirmation, current permissions, stale refusal, actual adoption and
+safe browser state. `adoption-enrollment-test.php` injects postcommit audit failure,
+repairs atomically, retains NS history/work cursors, isolates owners, suppresses old
+watch work and proves no network, financial change or duplicate enrollment on replay.
+`adoption-customer-test.php` renders actual customer Blade with escaped company text,
+original invoice route-key collisions, expiry/renewal-off and activity. Issued pending
+due dates survive settings changes; paid current cycles never promise another invoice.
+Offline screenshots cover native wizard 1440/1024 and customer detail 1440/1024/375,
+both themes. Customer capture framing is synthetic; installed supplied-site-shell,
+managed public DNS execution and delivered notices still need separate acceptance.
+Unissued renewal presentation also checks the day before, at and after the billing
+cutoff; dates at/after cutoff show review without promising new debt.
+Local clock cases on either side of UTC midnight match the actual billing cutoff.
+Existing invoice/model and native staff framework tripwires name the new consumers;
+no approved dependency hash is changed.
+
+The customer Blade fixture adopts renewal-on, issues debt and then creates a native
+end-of-period cancellation; issued-debt/reminder rules remain visible.
+
+Offline TEST captures keep the deployment flag on while live confirmation stays disabled.
+
+The native staff label inventory covers adopted watch retirement and dormant public work.

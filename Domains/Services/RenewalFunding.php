@@ -26,7 +26,7 @@ final class RenewalFunding
             || ($r['order_id'] ?? null) !== (int) $s->order_id
             // Original sent-attempt reconciliation retains identity/funding checks, not send eligibility.
             || !in_array($d->status, ['active', 'expired', 'grace'], true)
-            || (!$sent && ($s->status !== 'active' || RenewalStop::blocksExisting($l)))
+            || (!$sent && ($s->status !== 'active' || RenewalStop::blocksRenewal($l)))
             || ($d->renewal_policy['billing_anchor']['expiry'] ?? null) !== $d->provider_expires_at?->format('Y-m-d')
             || $l['operations']->contains(fn ($other) => $other->id !== $op->id && !HoldingAnchor::resolved($other, $l))
             || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Renewal obligation authority changed.'); }

@@ -173,7 +173,13 @@
     "tests/transfer-input-contacts-test.php",
     "tests/native-server-settings-test.php",
     "tests/management-privacy-retirement-test.php",
-    "tests/adoption-commit-test.php"
+    "tests/adoption-commit-test.php",
+    "tests/adoption-consequences-test.php",
+    "tests/adoption-intent-test.php",
+    "tests/adoption-renewal-intent-test.php",
+    "tests/staff-adopt-commit-test.php",
+    "tests/adoption-enrollment-test.php",
+    "tests/adoption-customer-test.php"
   ],
   "ui": [],
   "runner": [

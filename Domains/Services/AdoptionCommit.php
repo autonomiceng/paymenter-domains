@@ -28,7 +28,7 @@ final class AdoptionCommit
             (int) $seed->server_id, Environment::from($seed->environment));
         $suffixes = Tld::where('server_id', $seed->server_id)->pluck('tld')->all();
         $name = CanonicalName::parse($target->name, $suffixes);
-        return DB::transaction(function () use ($seed, $e, $target, $name, $expectedDigest, $actor): Domain {
+        $result = DB::transaction(function () use ($seed, $e, $target, $name, $expectedDigest, $actor): Domain {
             $lock = HoldingIdentityLock::lockForAdoption($e['native_identity']['order_id'], $target->serviceId, (int) $actor->id);
             $rows = $lock->nativeRows($target->customerId); self::permissions($rows['staff'], $e);
             $identitySeed = new Domain(['user_id' => $target->customerId, 'service_id' => $target->serviceId,
@@ -74,22 +74,26 @@ final class AdoptionCommit
             }
             $comparable = $capture; unset($comparable['binding']);
             if (!hash_equals($e['capture_digest'], AdoptionMapping::stamp($comparable))) { throw new \DomainException('Verification details changed or expired. Verify again.'); }
-            // History and cancellation qualification follow in a separate, still disabled feature slice.
-            if ($a->do_not_renew || $e['history_link_ids'] !== []) { throw new \DomainException('History and renewal preference require adoption review.'); }
             $d = $capture['domain_id'] === null ? $this->reserve($lock, $capture, $target, $name) : Domain::findOrFail($capture['domain_id']);
             if ($d->reservation_name === null) {
                 // Sole reviewed reservation acquisition for an existing converted pending row.
                 Domain::whereKey($d->id)->update(['reservation_name' => $target->name]); $d->refresh();
             }
             if ($d->reservation_name !== $target->name || $d->price_mode !== 'standard') { throw new \DomainException('Adoption holding requires review.'); }
-            $a->fill(['state' => 'committed', 'domain_id' => $d->id, 'authority_generation' => $e['resulting_generation'], 'committed_at' => $now])->save();
+            $cancellation = NativeCancellation::forAdoption($lock, $a);
+            $a->fill(['cancellation_id' => $cancellation, 'state' => 'committed', 'domain_id' => $d->id, 'authority_generation' => $e['resulting_generation'], 'committed_at' => $now])->save();
             $d->attachAdoption($lock, (int) $a->id);
             NativeDomainGuard::adopt($lock, $d, $a);
+            AdoptionHistory::link($lock, $d, $a, $now);
             if ($e['calendar']['issue'] <= $now->format('Y-m-d') || $e['retail']['staff_alert'] !== null) {
                 $d->update(['observation' => [...($d->observation ?? []), 'adoption_review' => ['inside_issue_window' => $e['calendar']['issue'] <= $now->format('Y-m-d'), 'near_due' => $e['calendar']['due'] <= $now->format('Y-m-d'), 'price' => $e['retail']['staff_alert']]]]);
             }
             return $d->fresh();
         }); // Every duplicate/deadlock/timeout aborts the complete transaction; never catch and continue.
+        // Adoption is durable before enrollment; its committed state repairs a lost schedule.
+        try { (new AdoptionEnrollment($this->clock))->repair((int) $result->id); }
+        catch (\Throwable $e) { logger()->warning('Adoption enrollment deferred.', ['domain_id' => $result->id, 'exception_class' => $e::class]); }
+        return $result;
     }
 
     private static function request(Adoption $a, string $digest, int $actor): void

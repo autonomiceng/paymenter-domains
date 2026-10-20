@@ -239,3 +239,75 @@ consumer policies remain open. NameSilo adoption remains unsupported.
 
 The native holding page shows retained issue-window/cutoff and safe price review
 notes. It warns about ordinary invoice creation and credit application after adoption.
+
+## Atomic history and original renewal-off intent
+
+This boundary supersedes the temporary core refusal above. Confirmation links only
+verified same-owner paid/cancelled native invoices for the exact service. Any pending
+native debt still refuses. Links retain actor/reason, adoption ID, request digest and
+native row stamps; financial rows, references and statuses stay unchanged. A save
+veto or exception rolls every link, cancellation, projection and holding back.
+
+An effective do-not-renew request reuses one original end-of-period cancellation or
+creates it through an exact-object, transaction-scoped grant. Immediate/conflicting
+cancellations refuse. Model mutation/deletion of the original committed cancellation
+refuses with a staff validation message. Privileged SQL removal fails all holding
+authority closed; no automatic cancellation replacement or repair is granted.
+
+Structural adoption identity now accepts this exact retained cancellation, so history
+and observation can retain the holding. TEST still refuses live structural authority.
+Renewal-only eligibility uses blocksRenewal separately from ordinary end-of-period
+management semantics: original adoption DNR blocks even already-issued obligations,
+manual/complimentary renewals, reminders, admission, funding and last-local execution.
+Sent attempts remain available only for original outcome reconciliation. New authority
+never silently cancels, refunds or rewrites debt. Later owner end-of-period cancellation
+of a renewal-on adoption uses its immutable original identity and stops future billing.
+
+Read-only owner projection shows registry expiry reached after confirmed expiry; it
+never terminates the service or releases the reservation. Non-renewal consumers still
+need separate acceptance. Existing management/privacy policy for an ordinary
+end-of-period stop is unchanged; this slice does not qualify adopted management,
+privacy purchases, staff resume/reprice or refunds. Raw SQL repair is privileged.
+Activation remains OFF with the native deletion race and provider/concurrency gates open.
+
+
+Renewal-off staff review suppresses issue-window and cutoff invoice warnings, so
+retained review facts never imply billing against the current renewal stop.
+Later stops preserve the separate rules for issued debt and its reminders.
+
+## Staff confirmation and repairable enrollment
+
+The native staff wizard separates selected customer/service/account, explicit fresh
+readback, verified preview and confirmed adoption. Reason and renewal intent belong
+to the server-side actor-bound request. Confirmation repeats current permissions and
+120-second freshness; browser state contains only safe labels and locked IDs. TEST
+rehearsal never supplies live authority. The deployment flag defaults off and has no
+staff activation control. Readiness lists identity drain, accepted scenarios, live
+provider contract and separately accepted public DNS readers/notice delivery.
+
+After the adoption transaction commits, repair locks the original holding and native
+hosting identities before relinking exact same-owner mapped sources. Retirement is
+audited before the replacement managed link acquires its unique service identity.
+External watch identity, prior NS observation, DNS preferences, work IDs/cursors and
+backoff remain retained; external expiry notices are suppressed and old watch claims
+cannot project results. No public observation or delivered notice is fabricated.
+
+Migration 000018 retains managed public work keyed by holding/generation/kind, with
+account and target stamps and original watch/profile/NS observation pointers. Both
+delegation and points intents remain awaiting acceptance; no reader consumes them
+in this slice. Ordinary registrar observation is enrolled independently. Audit and
+work are atomic with the enrollment marker. Failure retains committed adoption as
+retry intent; an idempotent replay or runtime cursor repairs it without re-adoption.
+
+Customer detail uses the company registration label, independent annual price/expiry,
+original invoice model routes and registration-adopted activity. Original renewal-off
+intent has a pinned notice and read-only expired history. A current issued obligation
+suppresses projected new-invoice wording, including paid or held cycles; pending due
+comes from its frozen calendar. These fixtures qualify actual extension Blade and
+native staff components only. The installed supplied site shell remains unqualified.
+Activation remains OFF; enrollment is not public DNS or mail-delivery acceptance.
+Unissued renewals at or after the calendar cutoff show review rather than promising
+an invoice that the billing boundary will refuse.
+
+Customer renewal-off copy also distinguishes original adoption intent from later
+stops, which retain the separate rules for previously issued obligations.

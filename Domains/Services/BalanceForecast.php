@@ -17,7 +17,7 @@ final class BalanceForecast
             ->whereIn('status',['active','expired','grace'])->with(['service','operations'])->lazyById(100) as $d){
             if(!$d->billing_managed||!$d->service||$d->service->status!=='active'
                 ||($d->renewal_policy['automatic_spend_paused']??false)){continue;}
-            $stop=RenewalStop::read($d);if(RenewalStop::blocksExisting($stop)){continue;}
+            $stop=RenewalStop::read($d);if(RenewalStop::blocksRenewal($stop)){continue;}
             $ops=$d->operations->filter(fn($o)=>$o->action==='renew'&&$o->account_fingerprint===$d->account_fingerprint
                 &&$o->registrar_key===$d->registrar_key&&(int)$o->server_id===(int)$d->server_id&&$o->authority_generation===$d->authority_generation);
             $open=$ops->filter(fn($o)=>in_array($o->state,['awaiting_payment','queued','held','running'],true)

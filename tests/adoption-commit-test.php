@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, Operation, Price};
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, HoldingAdoptionSchema, NativeDomainGuard, HolderPricing};
 config(['app.url' => 'https://domains-tests.invalid']);
-extract(adoptionFixture(Environment::Live)); HoldingAdoptionSchema::install();
+extract(adoptionFixture(Environment::Live)); HoldingAdoptionSchema::install(); \Paymenter\Extensions\Servers\Domains\Services\HistoryLinkSchema::install();
 $permissions = [Staff::VIEW, Staff::ADOPT_PREVIEW, Staff::ADOPT, 'admin.domains.manage', 'admin.services.update'];
 DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode($permissions)]);
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot();
@@ -82,18 +82,6 @@ foreach ($payloads as $key => $value) { $wire->payloads[$key] = str_replace(['10
 $expiring = $preview(); $clock->time = $clock->time->modify('+60 seconds');
 $refuse(fn () => $confirm($expiring), 'Registrar expiry crossing inside preview lifetime refused');
 $clock->time = new DateTimeImmutable('2026-10-19T00:00:00Z'); $wire->payloads = $payloads;
-// The first core slice deliberately refuses consequences until their atomic linker lands.
-$dnr = $reader->preview($target, new \Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext($staff->id, 'Reviewed renewal-off request', true));
-$refuse(fn () => $confirm(Adoption::findOrFail($dnr->previewId)), 'Core refuses requested do-not-renew');
-$c = ServiceCancellation::create(['service_id' => $service->id, 'type' => 'end_of_period', 'reason' => 'Existing stop']);
-$existing = $preview(); $refuse(fn () => $confirm($existing), 'Core refuses existing end-of-period intent');
-DB::table('service_cancellations')->where('id', $c->id)->delete();
-DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode([...$permissions, 'admin.invoices.view'])]);
-$historical = Invoice::create(['user_id' => $owner->id, 'currency_code' => 'USD', 'status' => 'paid']);
-$item = InvoiceItem::create(['invoice_id' => $historical->id, 'reference_type' => $service->getMorphClass(), 'reference_id' => $service->id, 'description' => 'Historical registration', 'quantity' => 1, 'price' => '10.00']);
-$history = $preview(); $refuse(fn () => $confirm($history), 'Core refuses history rather than silently dropping links');
-DB::table('invoice_items')->where('id', $item->id)->delete(); DB::table('invoices')->where('id', $historical->id)->delete();
-DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode($permissions)]);
 $before = scenarioMoney(); $calls = count($wire->calls); $ops = Operation::count(); $nativeIds = [$order->id, $service->id, $owner->id, $product->id, $plan->id];
 $queries = []; DB::listen(function ($q) use (&$queries): void { $queries[] = strtolower($q->sql); });
 $d = $confirm($a);

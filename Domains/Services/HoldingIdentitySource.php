@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain};
 /** Derives provenance from retained locked rows, never a caller-provided identity. */
 final class HoldingIdentitySource
 {
-    public static function resolve(Domain $d, array $native, ?Adoption $a, $account): array
+    public static function resolve(Domain $d, array $native, ?Adoption $a, $account, ?\Illuminate\Support\Collection $cancel = null): array
     {
         try { $snapshot = $d->snapshot ?? []; $e = $a?->evidence; }
         catch (\Throwable) { throw new \DomainException('Adoption evidence unavailable; staff review required.'); }
@@ -28,7 +28,9 @@ final class HoldingIdentitySource
             || (int) $a->server_id !== (int) $d->server_id || $a->registrar_key !== $d->registrar_key
             || $a->account_fingerprint !== $d->account_fingerprint || $a->account_fingerprint !== $account->account_fingerprint
             || $a->environment !== 'live' || $account->environment !== 'live' || $a->environment !== ($e['environment'] ?? null)
-            || ($e['do_not_renew'] ?? null) !== $a->do_not_renew || $a->do_not_renew || $a->cancellation_id !== null
+            || ($e['do_not_renew'] ?? null) !== $a->do_not_renew
+            || ($a->do_not_renew ? !$cancel?->contains(fn ($c) => $c instanceof \App\Models\ServiceCancellation
+                && (int) $c->id === (int) $a->cancellation_id && (int) $c->service_id === (int) $d->service_id && $c->type === 'end_of_period') : $a->cancellation_id !== null)
             || $a->authority_generation !== $d->authority_generation || $d->authority_generation < 1
             || !is_array($h) || ($e['version'] ?? null) !== 1 || ($e['canonical_name'] ?? null) !== $d->domain
             || ($e['registrar_key'] ?? null) !== $d->registrar_key || ($e['account_proof_digest'] ?? null) !== $d->account_fingerprint
@@ -52,6 +54,6 @@ final class HoldingIdentitySource
             || ($d->registrar_key === 'enom' && !preg_match('/^[1-9][0-9]{0,19}$/D', $d->provider_domain_id ?? ''))) {
             throw new \DomainException('Original adoption identity requires staff review.');
         }
-        return ['kind' => 'adoption', 'native_identity' => $native, 'holding' => $h, 'prior_operations_stamp' => $e['revisions']['operations'] ?? null];
+        return ['kind' => 'adoption', 'do_not_renew' => $a->do_not_renew, 'native_identity' => $native, 'holding' => $h, 'prior_operations_stamp' => $e['revisions']['operations'] ?? null];
     }
 }
