@@ -13,13 +13,16 @@ final class WatchTransferController
     public function show(Request $request,int $id)
     {
         $current=$this->transfers->current($request->user(),$id,$this->clock->now()->getTimestamp());
-        return $this->page($request,$id,$current,'help');
+        $action=$this->transfers->cartAction($request->user(),$current['watch']->canonical_name);
+        return $this->page($request,$id,$current,$action==='transfer'?'in_cart':($action==='register'?'unavailable':'help'));
     }
     public function check(Request $request,int $id)
     {
         FormKeys::verify($request,'watch-transfer:'.$id);FormKeys::consume($request,'watch-transfer:'.$id);
         $current=$this->transfers->current($request->user(),$id,$this->clock->now()->getTimestamp());
         $review=$request->session()->pull('domains.watch-transfer.'.$id);
+        $action=$this->transfers->cartAction($request->user(),$current['watch']->canonical_name);
+        if ($action!==null) { return $this->page($request,$id,$current,$action==='transfer'?'in_cart':'unavailable'); }
         $confirm=$request->input('step')==='confirm';
         if ($request->input('revision')!==(string)$current['watch']->revision || ($confirm && (!is_array($review)
             || ($review['owner']??null)!==(int)$request->user()->id || ($review['stamp']??null)!==$current['stamp']
@@ -37,7 +40,14 @@ final class WatchTransferController
                 function()use($request,$id,$after):void {
                     $latest=$this->transfers->current($request->user(),$id,$this->clock->now()->getTimestamp());
                     if (!$latest['offer'] || $latest['stamp']!==$after['stamp']) { throw new \DomainException('Transfer details changed.'); }
-                }); } catch (\Throwable $e) { logger()->warning('Watch transfer handoff refused.',['exception_class'=>$e::class]);return $this->page($request,$id,$after,($e instanceof \OverflowException || $e instanceof \App\Exceptions\DisplayException || ($e instanceof \DomainException && $e->getMessage()==='Domain already in cart.'))?'unavailable':'changed'); }
+                    if ($this->transfers->cartAction($request->user(),$latest['watch']->canonical_name)!==null) { throw new \DomainException('Domain already in cart.'); }
+                }); } catch (\Throwable $e) {
+                    logger()->warning('Watch transfer handoff refused.',['exception_class'=>$e::class]);
+                    $action=$this->transfers->cartAction($request->user(),$after['watch']->canonical_name);
+                    $state=($e instanceof \OverflowException || $e instanceof \App\Exceptions\DisplayException)?'unavailable':
+                        (($e instanceof \DomainException && $action!==null)?($action==='transfer'?'in_cart':'unavailable'):'changed');
+                    return $this->page($request,$id,$after,$state);
+                }
         }
         $request->session()->put('domains.watch-transfer.'.$id,['owner'=>(int)$request->user()->id,'stamp'=>$after['stamp'],
             'expires'=>$this->clock->now()->getTimestamp()+300]);

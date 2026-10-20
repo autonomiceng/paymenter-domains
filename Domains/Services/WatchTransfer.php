@@ -8,7 +8,20 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,SalesPolicy,WatchName};
 /** Owner-scoped local projection. Read evidence is obtained separately, never on GET. */
 final class WatchTransfer
 {
-    public function __construct(private Storefront $storefront,private DomainSummaries $summaries) {}
+    public function __construct(private Storefront $storefront,private DomainSummaries $summaries,private NativeCatalogue $native) {}
+    public function cartAction(User $owner,string $name): ?string
+    {
+        // Read the current native cart afresh; a cookie alone is not customer ownership.
+        $cart=\App\Classes\Cart::getOnce();
+        if (!$cart->exists || (int)$cart->user_id!==(int)$owner->id) { return null; }
+        foreach ($cart->items as $item) {
+            if (($item->checkout_config['domain']??null)!==$name || !$item->product || !$item->plan) { continue; }
+            try { $action=$this->native->mapping($item->product,$item->plan)['action']??null;
+                if (in_array($action,['register','transfer'],true)) { return $action; } }
+            catch (\DomainException) { /* An invalid product cannot establish a domain line. */ }
+        }
+        return null;
+    }
     public function current(User $owner,int $id,int $now): array
     {
         $watch=WatchName::whereKey($id)->where('user_id',$owner->id)->firstOrFail();$offer=null;

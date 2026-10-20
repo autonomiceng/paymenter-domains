@@ -7,9 +7,11 @@
           "Domains/Services/CartAdmission.php",
           "Domains/Services/InvoiceBinding.php",
           "Domains/Http/Controllers/StorefrontController.php",
-          "Domains/Services/CheckoutEligibility.php"
+          "Domains/Services/CheckoutEligibility.php",
+          "Domains/Services/WatchTransfer.php",
+          "Domains/Http/Controllers/WatchTransferController.php"
         ],
-        "review": "Re-review outer transaction, ordered locks, event payloads, prices and atomic mixed-cart rollback. Verify Cart::add creates a new line and returns its id, synchronous admission events run the comparison guard, and failed handoff cleanup deletes only that new line.",
+        "review": "Re-review outer transaction, ordered locks, event payloads, prices and atomic mixed-cart rollback. Verify Cart::add creates a new line and returns its id, synchronous admission events run the comparison guard, and failed handoff cleanup deletes only that new line. Verify Cart::getOnce reads the cookie cart uncached and carts.user_id remains the owner for WatchTransfer::cartAction.",
         "files": {
           "app/Classes/Cart.php": "b6ee7562fd6e8bd79c6521356e04af92204cd682fd9627a502205e6de10529d8",
           "app/Events/CartItem/Created.php": "8630b3b609a74bd7087a0c40f603894abeba944adfb4a312af94fa7ca151da06",

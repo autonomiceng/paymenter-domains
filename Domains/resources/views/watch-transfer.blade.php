@@ -6,7 +6,10 @@
 <div class="domains-head"><div><h1 class="domains-title">{{ $strings['watch.transfer_compare'] }}</h1>
 <p class="domains-lede domains-domain">{{ $name }}</p></div></div>
 <p>{{ $strings['watch.transfer_help'] }}</p>
-@if ($state === 'eligible')
+@if ($state === 'in_cart')
+<div class="domains-notice" role="status">{{ $strings['watch.transfer_in_cart'] }}</div>
+<a class="domains-btn domains-btn--primary" href="{{ route('cart') }}">Go to cart</a>
+@elseif ($state === 'eligible')
 <div class="domains-panel"><section class="domains-section" aria-labelledby="transfer-offer">
 <h2 class="domains-h2" id="transfer-offer">Current transfer offer</h2>
 <dl class="domains-facts"><div class="domains-fact"><dt>Transfer, includes 1 year</dt><dd class="domains-num">{{ $price }}</dd></div><div class="domains-fact"><dt>Annual renewal</dt><dd class="domains-num">{{ $renew }}</dd></div>@if ($saving && ($verifiedRenew ?? null))<div class="domains-fact"><dt>Your current renewal (verified)</dt><dd>{{ $verifiedRenew }}</dd></div>@endif</dl>
