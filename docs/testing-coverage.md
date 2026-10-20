@@ -758,3 +758,5 @@ customer. The filter evaluates the first 250 active names once per request; appl
 one more render plus one batch per customer. Mutations to the attention rule, permission
 checks, expiry window, tones, stopped-watch handling and the filter memo each fail this test.
 Offline only; no installed or live checks.
+
+`staff-watch-findings-test.php` also pins the watch detail header: its flex bases apply only at 40rem and wider. Below that Filament stacks the header as a column, where a flex basis becomes height and left about 800 px of blank space above Findings at 375 px.

@@ -71,4 +71,7 @@ foreach(WatchName::where('canonical_name','like','bulk%')->orderBy('id')->get()-
 $spread=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->assertCountTableRecords(25));
 $filtered=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->filterTable('attention')->assertCountTableRecords(23));expect($filtered<=2*$spread+5*$batch+10,'Filtering is one more render plus one owner batch per customer, evaluated once per request ('.$filtered.' <= 2 x '.$spread.' + 5 x '.$batch.' + 10)');
 expect($spread<=$page25+4*$batch,'Five customers cost at most one batch each ('.$spread.' <= '.$page25.' + 4 x '.$batch.')');expect($spread<=$page25+4*40,'Bounded page query count');
+// Filament stacks the header as a column below 40rem; flex-basis there becomes height and pushes findings off the first screen.
+$header=file_get_contents(dirname(__DIR__).'/Domains/resources/views/staff/watch-header.blade.php');[$narrow,$wide]=explode('@media (min-width:40rem){',$header,2)+[1=>''];
+expect(!str_contains($narrow,'flex:1 1')&&substr_count($wide,'flex:1 1')===2,'Watch header flex bases apply only to the wide row layout');
 $nativeSuccessful=true;echo "Staff watch findings, attention filter, permission-checked customer identity and bounded queries passed (queries: 1 row {$one}, 25 rows {$many}, one render {$page25}, five customers {$spread}, filtered {$filtered}, owner batch {$batch}).\n";
