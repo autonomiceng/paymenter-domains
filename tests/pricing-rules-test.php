@@ -29,6 +29,10 @@ same('2.00', $rules->rule($override)['markup'], 'Per-TLD override unaffected');
 $unbound = Server::create(['id' => 3, 'name' => 'Unbound registrar', 'extension' => 'Domains', 'type' => 'server', 'enabled' => true]);
 $unbound->settings()->create(['key' => 'domains_pricing_default_rule', 'type' => 'array', 'encrypted' => false,
     'value' => [...PricingRule::DEFAULT, 'markup' => '17.00']]);
+// An orphaned default-rule ending makes "does not republish" meaningful; Tld::create() refuses an unbound server.
+DB::table('domains_tlds')->insert(['server_id' => 3, 'registrar_key' => 'enom', 'account_fingerprint' => str_repeat('0', 64),
+    'tld' => 'com', 'use_default_rule' => true, 'created_at' => now(), 'updated_at' => now()]);
+same(1, Tld::where('server_id', 3)->where('use_default_rule', true)->count(), 'Unbound server has a default-rule ending');
 $storedDefaults = static fn (): array => DB::table('settings')->where('key', 'domains_pricing_default_rule')->orderBy('id')->get()
     ->map(static fn (object $setting): array => (array) $setting)->all();
 $rejectDefaultSave = static function (int $serverId, array $rule, string $exception, string $message, string $label) use ($rules, $storedDefaults): void {
