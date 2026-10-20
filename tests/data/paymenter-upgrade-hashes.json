@@ -262,6 +262,23 @@
           "app/Admin/Resources/ServiceResource.php": "5addbba443f72f96716b9b2aad3737e3f6d6e5fa4622bc7a2d5cd78ea6d39816"
         }
       },
+      "native-service-refusal": {
+        "consumers": [
+          "Domains/Services/NativeServiceRefusal.php",
+          "tests/Support/native-service-refusal.php"
+        ],
+        "review": "Re-review current-component/record scoping, native Save and mounted Delete Halt handling, unchanged draft-only Recalculate Price and notification delivery. Retained native editor, EditRecord, action and Halt pins remain required. Recheck Active Delete native terminate audit before refusal, retained no-op semantics and audit delivery.",
+        "files": {
+          "vendor/livewire/livewire/src/LivewireManager.php": "fc947ef755ae2c8fb8c11fa9cbee8f171460e38e0a4f1dd07881cbbd82f4af7f",
+          "vendor/filament/filament/src/Resources/Pages/Concerns/InteractsWithRecord.php": "377b49a7db1837db233ca0d7c04c16a68a5432659a7e371983070900ede5ae76",
+          "vendor/filament/notifications/src/Notification.php": "bf0acd3ba9d45c38748933b9b90b2001ef95e2568b219e12d149a4ad83f66804",
+          "vendor/filament/notifications/src/Concerns/HasTitle.php": "1c5fecb6fd997d187efa79e512a9c87fe4e0b7853b52ba6b602bcd85533ac349",
+          "vendor/filament/notifications/src/Concerns/HasBody.php": "ce6a0c19f2c90bb55eb38346bb8029a199941f1c6f9ad89f6d9e016d564363d5",
+          "app/Helpers/ExtensionHelper.php": "ec1ce54906765e3a3d110ab80c06137bc0ef65fabe59b31be26a245ab5ce4a24",
+          "vendor/owen-it/laravel-auditing/src/Listeners/RecordCustomAudit.php": "b4806ce1650afd43793872ccadd327cef05ad0a297707ee967c1f7fd97cc1f4b",
+          "vendor/owen-it/laravel-auditing/src/Auditor.php": "90fa6b8730061c46acbe1382e67520678810590d11d18629c1118de42126bb73"
+        }
+      },
       "native-cancellation-audit": {
         "consumers": [
           "Domains/Services/StaffHoldingReview.php"

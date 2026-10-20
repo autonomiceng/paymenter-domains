@@ -19,6 +19,7 @@ final class RuntimeHealth
         $identity=DB::table('domains_obligation_alerts as a')->join('domains_domains as d','d.id','=','a.domain_id')->where('d.server_id',$server)->where('a.code','native_identity_missing')->whereNull('a.resolved_at')->orderBy('a.id')->limit(10)->get(['a.id','d.domain']);
         return [...NativePaidHooks::notices(),...(NativeServerGuard::deletionNoticeMissing()===null?[]:['Server delete notice'=>'Unavailable · missing '.NativeServerGuard::deletionNoticeMissing().'. Deletion is still refused.']),'Missing Paymenter records'=>$identity->isEmpty()?'None recorded':$identity->pluck('domain')->implode(', ').' — '.ObligationAlerts::LABELS['native_identity_missing'],
             'Domain editor notice'=>($missing=\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::missing())===null?'Available':'Paused · missing '.$missing,
+            ...(NativeServiceRefusal::missing()===null?[]:['Service refusal notice'=>'Unavailable · missing '.NativeServiceRefusal::missing().'. Unsafe changes are still refused.']),
             'Registrar configuration'=>match(app(AccountBindings::class)->configurationStatus($server)){
                 'matched'=>'Matches verified account',
                 'not_configured'=>'Not configured',

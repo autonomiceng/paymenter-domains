@@ -587,3 +587,26 @@ and owns a temporary application/database under the runner fixture parent.
 Each prints only its scenario's JSON evidence; together they retain every original key,
 including both archive hashes and previous-fixture provenance. Offline native SQLite
 acceptance does not establish provider, installed-theme or concurrent-database acceptance.
+
+## Native service refusal feedback
+
+`native-service-refusal-test.php` and `native-service-refusal-holding-test.php` run
+the real native Edit Service page with each guard boot order. Manual price Save,
+each native identity field (product, plan, user, quantity, currency, coupon), and
+Delete return handled danger notices with unchanged service, ledger, invoice, settings
+and processing state. The Active Delete case checks the default terminate-server
+branch against the real Domains no-op with native auditing enabled: only its native
+terminate audit is added and the same refusal is handled. No workflow or registrar
+job is queued; only the fixture's existing native checkout after-response callbacks
+replay.
+Recalculate Price exercises the actual hint action: the native
+success notice and draft value remain, stored state stays unchanged, and Save of the
+changed draft is handled as a price refusal. Hosting saves and deletion still work.
+
+Non-UI writes keep the exact original DomainException type/message. Scoping probes
+exercise an unrelated Livewire page, a different native record, unrelated mounted
+actions, Save during Delete and deletion without the Delete action. Mutation probes
+remove these checks independently and must fail the same acceptance matrix. Offline
+rendered notifications cover price, recalculated-price Save, identity and Delete at
+1440/1024 in dark/light; they do not establish installed-theme or browser interaction
+acceptance. Native Active expiry validation remains an accepted upstream limitation.

@@ -295,6 +295,23 @@ see [native server settings](native-server-settings.md). Historical removal gate
 are superseded by this qualification; native Active still means paid, and owned registrar
 state and confirmed expiry remain authoritative.
 
-Native Edit Service identity, price and delete guards still raise the existing domain
-exception; their handled staff feedback remains follow-up work. E9 handles native
-Edit Server Delete without changing other guard semantics.
+Native Edit Service handles refused identity, price and delete writes with a danger
+notification and public Filament Halt, scoped to that native page, its record and the
+matching Save/Delete context. No service or ledger change is saved and no deletion
+occurs. Other writers keep the original guard exception and message. Required feedback
+capabilities are checked locally; Registrar setup reports missing capabilities while
+the guard continues to refuse unsafe writes.
+
+Recalculate Price keeps the native draft-only behavior and its native success notice.
+It changes no stored price. Saving a changed recalculated price is refused with the
+same Update renewal price guidance as a manual price edit. The native Active expiry
+validation limitation above remains unchanged. Native service deletion does not pause
+account processing; native server deletion retains its separately reported pause.
+
+On an Active service, native Delete first runs the extension terminate step (a Domains
+no-op) and records its native terminate audit event before deletion is refused. The
+service, domain and processing are unchanged. The native Delete confirmation stays
+open after a refusal, which is Filament Halt behavior. Repeating Delete is refused again.
+
+Refusals from the Properties and Configs tabs and from Services list bulk delete still
+raise the original guard exception. Handled feedback for those paths is follow-up work.

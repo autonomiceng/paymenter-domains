@@ -211,7 +211,9 @@
     "tests/watch-dns-confirmation-test.php",
     "tests/watch-scheduler-test.php",
     "tests/watch-discovery-work-test.php",
-    "tests/watch-maintenance-test.php"
+    "tests/watch-maintenance-test.php",
+    "tests/native-service-refusal-test.php",
+    "tests/native-service-refusal-holding-test.php"
   ],
   "ui": [],
   "runner": [
