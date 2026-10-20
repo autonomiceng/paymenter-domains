@@ -81,9 +81,7 @@ final class StorefrontController extends Controller
         try {
             $name = CanonicalName::normalize($input); $action = $request->input('action'); $term = $request->input('term');
             if (!in_array($action, ['register', 'transfer'], true) || !is_string($term) || !preg_match('/^(?:[1-9]|10)$/D', $term)) { throw new \DomainException; }
-            $ending = CanonicalName::parse($name, SalesPolicy::pluck('tld')->all())['tld'];
-            $offer = $this->storefront->offer($ending, $action, (int) $term);
-            \App\Classes\Cart::add($offer['product'], $offer['plan'], [], ['domain' => $name]);
+            $this->add($name,$action,(int)$term);
         } catch (\App\Exceptions\DisplayException $e) {
             return redirect()->route('domains.domains.search',['name'=>$input])->with('domains_notice',$e->getMessage());
         } catch (\Throwable $e) {
@@ -91,6 +89,21 @@ final class StorefrontController extends Controller
             return redirect()->route('domains.domains.search', ['name' => $input])->with('domains_notice', 'We couldn’t add that name to your cart. Check the latest results below and try again.');
         }
         return redirect()->route('cart');
+    }
+
+    /** Internal handoff; the owning watch controller verifies its own one-use form key. */
+    public function transfer(Request $request,string $name,\Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility $eligibility,callable $guard)
+    {
+        if ($this->limit($request)) { throw new \OverflowException('Transfer read limit reached.'); }
+        $item=null;
+        try { $eligibility->comparison($name,function()use($name,&$item){return $item=$this->add($name,'transfer',1);},$guard); }
+        catch (\Throwable $error) { if ($item!==null) { \App\Models\CartItem::whereKey($item)->delete(); }throw $error; }
+        return redirect()->route('cart');
+    }
+    private function add(string $name,string $action,int $term): int
+    {
+        $ending=CanonicalName::parse($name,SalesPolicy::pluck('tld')->all())['tld'];$offer=$this->storefront->offer($ending,$action,$term);
+        return \App\Classes\Cart::add($offer['product'],$offer['plan'],[],['domain'=>$name]);
     }
 
     private function limit(Request $request)

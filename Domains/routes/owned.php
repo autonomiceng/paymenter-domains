@@ -11,6 +11,8 @@ Route::middleware(['web','auth',MustVerfiyEmail::class,'throttle:60,1,domains.ow
     Route::post('/domains/{domain}/transfer-code',[Action::class,'code'])->whereNumber('domain')->name('domains.domains.code-save')->block(10,10);
     Route::post('/domains/{domain}/manage/{action}',[Action::class,'manage'])->whereNumber('domain')->where('action',implode('|',Action::ACTIONS))->name('domains.domains.manage')->block(10,10);
     Route::get('/domains',[Owner::class,'index'])->name('domains.domains.index');
+    Route::get('/domains/watches/{id}/transfer',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchTransferController::class,'show'])->whereNumber('id')->name('domains.watch.transfer');
+    Route::post('/domains/watches/{id}/transfer',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchTransferController::class,'check'])->whereNumber('id')->name('domains.watch.transfer-check')->block(10,10);
     Route::get('/domains/transfer',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController::class,'show'])->name('domains.domains.transfer');
     Route::get('/domains/{domain}',[Owner::class,'show'])->whereNumber('domain')->name('domains.domains.show');
     Route::get('/domains/{domain}/setup',[Owner::class,'setup'])->whereNumber('domain')->name('domains.domains.setup');

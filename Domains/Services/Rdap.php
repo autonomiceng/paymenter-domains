@@ -66,7 +66,8 @@ final class Rdap
             $transferred = $dates['transfer'] ?? null;
             if (!$created || !$expiry || $created > $today || $expiry <= $created
                 || $transferred && ($transferred > $today || $transferred < $created || $transferred >= $expiry)) { return $unknown; }
-            $result = ['allowed' => true, 'code' => null, 'warning' => null, 'expires_at' => $expiry->format('Y-m-d')];
+            $result = ['allowed' => true, 'code' => null, 'warning' => null, 'expires_at' => $expiry->format('Y-m-d'),
+                'comparison_allowed' => !array_diff($statuses, ['ok', 'active', 'clientdeleteprohibited', 'clientupdateprohibited', 'serverdeleteprohibited', 'serverupdateprohibited'])];
             foreach (['clienttransferprohibited' => 'transfer_locked', 'servertransferprohibited' => 'transfer_locked',
                 'redemptionperiod' => 'transfer_redemption', 'pendingdelete' => 'transfer_pending_delete', 'pendingtransfer' => 'transfer_pending'] as $status => $code) {
                 if (in_array($status, $statuses, true)) { return array_replace($result, ['allowed' => false, 'code' => $code]); }

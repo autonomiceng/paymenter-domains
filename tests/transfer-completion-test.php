@@ -1,6 +1,8 @@
 <?php
 // Enom 444f31c/f7175ff transfer reconciliation, stricter unique charge; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/bootstrap.php';
+$transferEnvironment=Paymenter\Extensions\Servers\Domains\Data\Environment::Live; // All transports remain synthetic.
 require __DIR__.'/Support/transfer-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, HistoryAcceptance};
@@ -38,7 +40,8 @@ $prepare=static function($name)use($newTransfer,$makeTransfer,&$engine,&$binding
     HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,86400,'enom_transfer_v1'));
     $observe->name=$name; $observe->fault=''; $observe->calls=[]; $clock->instant=$now->modify('+6 minutes'); return $r;
 };
-$op=$prepare('full-transfer.com'); $r=$reconcile->run($op->id);
+require __DIR__.'/Support/transfer-watch.php';
+$predecessor=transferWatchFixture('full-transfer.com',(int)$user->id);$op=$prepare('full-transfer.com');$r=$reconcile->run($op->id);
 same('succeeded',$r->state,'Status, exact unique original charge, expiry and ownership complete'); same('9001',$r->provider_order_id,'Independent billing order ID');
 same('8.95',$r->cost['actual']['amount'],'Exact charged USD amount'); same('2028-01-01',$r->confirmed_expires_at->format('Y-m-d'),'Full year added to original expiry');
 same('active',$r->domain->status,'Active only after proof'); same('2028-01-01',$r->domain->renewal_policy['billing_anchor']['expiry'],'Transfer billing anchor');
@@ -78,4 +81,5 @@ same('2028-01-01',$renew->base_expires_at->format('Y-m-d'),'Transfer full-term a
 same('2029-01-01',$renew->expected_expires_at->format('Y-m-d'),'One complete renewal year'); same('awaiting_payment',$renew->state,'Billing grants no write authority');
 same($invoice->id,$billing->invoice($completed->domain_id,$user)->id,'Transfer renewal billing is idempotent');
 same(null,$invoice->items->sole()->reference_id,'Renewal debt has no native service dispatch');
+assertTransferWatch($predecessor,$completed,$clock->now()->getTimestamp());
 echo "Transfer unique-charge completion, native funding races, terminal refusal and renewal anchors passed.\n"; $nativeSuccessful=true;

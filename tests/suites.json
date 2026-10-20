@@ -237,7 +237,8 @@
     "tests/staff-operation-lease-test.php",
     "tests/staff-reason-test.php",
     "tests/staff-watch-findings-test.php",
-    "tests/staff-watch-summary-owners-test.php"
+    "tests/staff-watch-summary-owners-test.php",
+    "tests/watch-transfer-test.php"
   ],
   "ui": [],
   "runner": [

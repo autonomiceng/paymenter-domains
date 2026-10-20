@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 final class ObligationAlerts
 {
     public const LABELS=[
+        'transfer_watch_relink'=>'External watch needs relinking after transfer · review source history and notices',
         'acquisition_retirement_review'=>'Unpaid order needs review · automatic retirement was refused; the name stays reserved',
         'acquisition_late_money'=>'Paid after order closed · check the invoice and its payments; nothing is sent to the registrar',
         'native_identity_missing'=>'Customer, order or service missing. The domain and its name stay reserved until a later release adds a resolution step. Do not restore deleted records manually.',
@@ -71,7 +72,7 @@ final class ObligationAlerts
     /** Resolve only after a successful, complete inspection, retaining all historical rows. */
     public static function finish(Domain $d,array $active,int $now):void
     {
-        $q=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->whereNotIn('code',['template_failed','reminder_failed','acquisition_retirement_review','acquisition_late_money']);
+        $q=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->whereNotIn('code',['template_failed','reminder_failed','acquisition_retirement_review','acquisition_late_money','transfer_watch_relink']);
         if($active){$q->whereNotIn('alert_key',$active);}$q->update(['resolved_at'=>$now]);
     }
 }

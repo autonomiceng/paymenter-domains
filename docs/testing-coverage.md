@@ -768,3 +768,12 @@ checks, expiry window, tones, stopped-watch handling and the filter memo each fa
 Offline only; no installed or live checks.
 
 `staff-watch-findings-test.php` also pins the watch detail header: its flex bases apply only at 40rem and wider. Below that Filament stacks the header as a column, where a flex basis becomes height and left about 800 px of blank space above Findings at 375 px.
+
+External watch transfer comparison: `watch-transfer-test.php` checks a local help-only GET,
+strict annual transfer evidence, the 90–14 day window, status/premium/unknown refusals,
+owner and revision revalidation, explicit authority and the real neutral native cart.
+A second unknown registry read inside cart admission must refuse the handoff. Numeric
+savings require independently verified, matching annual USD/tax-exclusive renewal evidence;
+no such source is supplied to the runtime UI. Transfer completion exercises a failed relink
+audit, atomic rollback, local repair, retained source history and definitely-unsent notice
+suppression while accepted/uncertain deliveries survive. Public workers remain dormant.
