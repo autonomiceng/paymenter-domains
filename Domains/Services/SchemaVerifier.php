@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 
@@ -10,15 +11,28 @@ final class SchemaVerifier
 {
     public static function verify(string $table, \Closure $definition): void
     {
-        $reference = 'domains_verify_'.bin2hex(random_bytes(6));
+        // No longer than the retained logical name, so the connection prefix and
+        // implicit (or table-derived explicit) index names cannot grow either.
+        $reference = substr(bin2hex(random_bytes(16)), 0, strlen($table));
+        $connection = Schema::getConnection();
+        $blueprint = new Blueprint($connection, $reference);
+        $blueprint->create();
+        $definition($blueprint);
+        $created = false;
         try {
-            Schema::create($reference, $definition);
+            // Like Schema::create, CREATE precedes the separate index statements.
+            // Only a successful CREATE grants cleanup ownership; a concurrent
+            // name collision must never drop the other invocation's reference.
+            foreach ($blueprint->toSql() as $statement) {
+                $connection->statement($statement);
+                $created = true;
+            }
             if (self::columns($table) !== self::columns($reference)
                 || self::indexes($table) !== self::indexes($reference)
                 || Schema::getForeignKeys($table) !== []) {
                 throw new \RuntimeException('Retained Domains schema mismatch: '.$table);
             }
-        } finally { Schema::dropIfExists($reference); }
+        } finally { if ($created) { Schema::dropIfExists($reference); } }
     }
 
     private static function columns(string $table): array

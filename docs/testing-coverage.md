@@ -619,3 +619,27 @@ missing-only template installation, native and public preferences, urgent priori
 retirement, managed proof/claim continuity, accepted-only restoration and stale predecessor interleaving.
 
 Watch notice overflow: a conflicting profile outside the observed source cohort refuses fresh DNS proof and reserved mail.
+
+## MySQL/MariaDB schema identifiers and native lifecycle
+
+`schema-identifiers-test.php` compiles the real migration/create/alter and retained-reference
+Blueprints with Laravel's MySQL grammar, without a MySQL server or PDO connection. It checks
+all quoted identifiers, every verifier call site and every migrated table, with index prefixes
+on/off and empty, short and maximum-fitting table prefixes. This runs in the ordinary native
+suite. It caught both the long verifier reference names and the 65-character watch-observation
+index; that index now has a table-derived `_facts_idx` name. Retained index names are not compared.
+`schema-reference-safety-test.php` forces a reference collision and a failure after CREATE:
+foreign reference rows survive the collision, while owned partial DDL is cleaned up.
+
+`test_schema_mariadb.py` is a separate opt-in `mariadb` test: Paymenter 1.5.9's fresh native
+Domains install, uninstall/reinstall, upgrade, every retained table, data/metadata retention,
+and reference cleanup after success and schema drift run on `mariadb:11.4.5`, with empty and
+`p` connection prefixes (one character fits the existing 63-character balance index). Upstream's invoice migration contains literal unprefixed SQL, so the
+prefixed fixture migrates native tables first, renames them, then runs the Domains lifecycle. Use `TMPDIR=/private/scratch PAYMENTER_TEST_APP=/pristine/paymenter
+CONVERSION_MARIADB_PHP=/path/to/php-with-pdo_mysql python3 tests/test_schema_mariadb.py`.
+It uses only an existing image and its own randomly named `dom-schema-*` container, with
+`--network none`, a Unix socket, a temporary data filesystem and network-isolated PHP.
+The receipt records runtime and confirms container removal and pristine dependency preservation.
+The measured two-case run took 45 seconds, with a 512 MiB container and a 1.5 GiB
+available-memory preflight. It is omitted from default runs; no provider calls, ZIP-uploader, checkout/worker race or live
+acceptance is claimed. Its cost is one container startup and two fresh native lifecycle runs.

@@ -21,7 +21,7 @@ final class WatchDnsSchema
         $t->unsignedBigInteger('completed_at'); $t->unsignedBigInteger('valid_until')->nullable(); $t->string('result', 16);
         $t->string('dns', 16)->nullable(); $t->boolean('website')->nullable(); $t->boolean('email')->nullable();
         $t->boolean('mixed'); $t->boolean('partial'); $t->string('safe_code', 64)->nullable(); $t->longText('facts'); $t->string('digest', 64);
-        $t->index(['watch_id', 'check_kind', 'completed_at']);
+        $t->index(['watch_id', 'check_kind', 'completed_at'], $t->getTable().'_facts_idx');
     }
     private static function work(Blueprint $t): void
     {

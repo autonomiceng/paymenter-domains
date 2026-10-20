@@ -10,12 +10,29 @@ import unittest
 from unittest import mock
 
 import test_conversion_mariadb as harness
+import test_schema_mariadb as schema_harness
 
 
 class MariaGuardTests(unittest.TestCase):
     def environment(self, directory, **extra):
         return dict(TMPDIR=directory, PATH='/usr/bin:/bin', CONVERSION_MARIADB_PHP='/synthetic/php',
                     PAYMENTER_TEST_APP='/synthetic/app', CONVERSION_ENOM_CHECKOUT='/synthetic/source', **extra)
+
+    def test_schema_fixture_overrides_inherited_database_url(self):
+        with mock.patch.dict(os.environ, {'DB_URL': 'mysql://operator:synthetic@localhost/host_database?unix_socket=/host/mysql.sock',
+                                          'DB_DATABASE': 'host_database', 'DB_SOCKET': '/host/mysql.sock'}):
+            env = schema_harness.php_environment('/owned/app', '/owned/socket', 'owned_database', 'synthetic', 'p_')
+        self.assertEqual(env['DB_URL'], '')
+        self.assertEqual(env['DB_SOCKET'], '/owned/socket')
+        self.assertEqual(env['DB_DATABASE'], 'owned_database')
+        self.assertEqual(env['SCHEMA_PREFIX'], 'p_')
+
+    def test_schema_remote_host_refuses_without_any_docker_call(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_HOST='tcp://remote.invalid'), clear=True), \
+             mock.patch.object(schema_harness.shutil, 'which', return_value='/usr/bin/docker'), mock.patch.object(schema_harness.subprocess, 'run') as called, contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(ValueError, 'local Unix-socket'):
+                schema_harness.run()
+            called.assert_not_called()
 
     def test_remote_host_refuses_without_any_docker_call(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_HOST='tcp://remote.invalid'), clear=True), \

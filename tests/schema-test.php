@@ -13,6 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, Observation
 
 $migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000001_create_domains_foundation.php';
 app(Illuminate\Database\Migrations\Migrator::class)->run([dirname(__DIR__).'/Domains/database/migrations']);
+$installedTables = Schema::getTableListing(); sort($installedTables);
 FoundationSchema::verify();
 expect(DB::table('migrations')->where('migration', '2026_10_18_000001_create_domains_foundation')->exists(), 'Native migration history recorded');
 foreach (Schema::getTableListing() as $table) {
@@ -112,7 +113,8 @@ Schema::table('domains_domains', static fn (Blueprint $t) => $t->unique('reserva
 Schema::table('domains_operations', static fn (Blueprint $t) => $t->dropColumn('attempt'));
 try { FoundationSchema::install(); expect(false, 'Missing evidence column accepted'); }
 catch (RuntimeException $e) { expect(str_contains($e->getMessage(), 'schema mismatch'), 'Column refusal'); }
-expect(!array_filter(Schema::getTableListing(), static fn (string $name): bool => str_contains($name, 'domains_verify_')), 'Reference tables cleaned');
+$afterVerification = Schema::getTableListing(); sort($afterVerification);
+same($installedTables, $afterVerification, 'All reference tables cleaned after success and schema refusals');
 Schema::drop('domains_operations');
 try { FoundationSchema::install(); expect(false, 'Partial retained installation accepted'); }
 catch (RuntimeException $e) { expect(str_contains($e->getMessage(), 'Partial retained'), 'Partial installation refusal'); }
