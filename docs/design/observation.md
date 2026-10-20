@@ -119,3 +119,9 @@ Frozen MIT provenance: Enom `444f31ce0bfd07216e5200544bffe863119d0e7d`,
 `tests/Enom/glue-records.php`, `provider-contracts.php`, `capability-readbacks.php`
 and `automatic-refresh.php`. Existing strict parsers are reused; native initial-inventory
 cases cover empty/unknown, identity races, partial glue retention and sequence ordering.
+
+A wholly failed primary observation leaves the saved inventory and successful fact timestamps intact.
+Separate identity-bound `record_failure` evidence blocks DNS/SRV whole-list forms and owner POSTs;
+it survives staff resume and clears only when new record inventory is saved. The current record hold
+stops discovery until resume, including when the primary failure follows an existing partial-record hold.
+Healthy primary reads with failed record families retain the complete/unknown publication rules above.

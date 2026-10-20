@@ -37,9 +37,11 @@ final class OwnerRecords
     public static function forDomain(Domain $d): array
     {
         $facts=ObservationProjection::sections($d); $out=[]; $inventory=ObservationRecords::current($d);
+        // Retained complete lists are historical after a wholly failed primary observation.
+        $primaryFailed=($d->observation['record_failure']['identity']??null)===ObservationRecords::identity($d);
         foreach (['dns','srv','ds'] as $kind) {
             try {
-                if (in_array($kind,['dns','srv'],true)&&(!$inventory||($inventory['families'][$kind]['state']??null)!=='complete')) { continue; }
+                if (in_array($kind,['dns','srv'],true)&&($primaryFailed||!$inventory||($inventory['families'][$kind]['state']??null)!=='complete')) { continue; }
                 $rows=$facts[$kind]['facts']['records']??null;
                 if (!is_array($rows)||!array_is_list($rows)||count($rows)>50) { continue; }
                 $out[$kind]=self::ordered($kind,ManagementPayload::canonical($kind,$rows));

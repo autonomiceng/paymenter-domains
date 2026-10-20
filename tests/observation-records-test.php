@@ -30,6 +30,7 @@ same($financial,[$d->fresh()->provider_expires_at->format(DATE_ATOM),$d->fresh()
 $staleIdentity=ObservationRecords::identity($d);$staleIdentity['generation']=2;$count=Operation::count();
 try{$management->request($user,$d->id,'dns',[],hash('sha256','stale-owner-records'),$driver,recordIdentity:$staleIdentity);expect(false,'Locked owner record identity rejects stale admission');}catch(DomainException){}
 same($count,Operation::count(),'No owner operation created with stale inventory identity');
+require __DIR__.'/Support/observation-failed-primary.php';
 // Refresh replaces stale records, preserves complete empty vs unknown, stops at first failed wire.
 $state->dns=[];$state->srv=[];$state->ds=[];$clock->instant=$clock->now()->modify('+61 seconds');
 same('refreshed',$observer->run($d->id),'Positive empty record containers are complete');
@@ -41,6 +42,14 @@ same('unknown',$r['families']['srv']['state'],'Failed family unknown');same('unk
 expect(!in_array('GetDnsSec',array_column($state->calls,0),true),'No further wire after failure');
 $html=$page();expect(str_contains($html,'Editing isn’t available yet'),'Unknown SRV held');
 same(0,storefrontDom($html)->query('//form[contains(@action,"/manage/srv")]')->length,'Failed refresh cannot retain old edit form');
+expect(isset(OwnerRecords::forDomain($d->fresh())['dns']),'Healthy primary retains independently complete DNS under partial-record hold');
+// A later primary failure also invalidates the healthy family under an existing partial-record hold.
+$prior=$d->fresh()->observation;$observation->fault='info_missing';$clock->instant=$clock->now()->modify('+61 seconds');
+same('read_unavailable',$observer->run($d->id),'Failed primary under existing partial-record hold');
+same($prior['records'],$d->fresh()->observation['records'],'Existing hold cannot allow failed-primary inventory replacement');
+same($prior['record_hold'],$d->fresh()->observation['record_hold'],'Existing record hold evidence is retained');
+expect(!isset(OwnerRecords::forDomain($d->fresh())['dns']),'Failed primary blocks previously healthy DNS family under existing hold');
+$observation->fault='';
 $state->fault='';$clearRecords();$clock->instant=$clock->now()->modify('+61 seconds');$observer->run($d->id);
 // A changed provider ID/account/generation cannot reuse the saved inventory, even offline.
 foreach(['provider_domain_id'=>'999','authority_generation'=>2,'account_fingerprint'=>str_repeat('f',64),'domain'=>'other.com','registrar_key'=>'namesilo']as$field=>$value){

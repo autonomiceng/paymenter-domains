@@ -250,3 +250,14 @@ costs, overdue unsent renewals, issued obligations through future-only stops, ca
 invoices and lifecycle exclusions, exact shortfall boundaries, account isolation, current
 permissions, refresh cooldown and daily wire spacing.
 See [Registrar balances](design/registrar-balances.md) for storage and forecast rules.
+
+### Failed primary observations
+
+`observation-records-test.php` covers ordinary complete nonempty DNS/SRV/DS inventories, known child hosts
+and saved nameservers under current identity, without overflow or an existing hold. Malformed and transport
+failures on the first primary read preserve the exact inventory, watermark and successful fact timestamps;
+separate current failure/hold evidence stops work and blocks stale DNS/SRV forms and POSTs, including
+between staff resume and successful record confirmation. A primary failure under an existing partial-record
+hold also preserves evidence and blocks the previously healthy family. Healthy-primary partial-record
+refreshes still save healthy facts and explicit complete/unknown families. The older 51-host overflow case
+alone did not establish ordinary all-failed retention. Fixtures use synthetic transports and native SQLite.
