@@ -83,3 +83,33 @@ eligible for funding, reconciliation or refunds. No funding/settlement flag is s
 Offline SQLite fixtures cover uniqueness, encryption, frozen intent, append-only history,
 schema drift and retained ciphertext on lifecycle operations. Provider proof, native relation
 validation, concurrent MariaDB lock behavior and adoption activation remain separate gates.
+
+## Holding attachment
+
+Migration `2026_10_19_000014_add_holding_adoption` adds nullable retained
+`domains_domains.adoption_id`. Installation checks its recorded history and complete
+foundation declaration, including when migrations skip. Checkout holdings keep it null.
+
+`Domain::attachAdoption` is a transaction-bound storage method for a future confirmer.
+It requires the live `HoldingIdentityLock`. The extension prefix locks server, account,
+server settings and TLD before the domain and committed adoption. A future confirmer
+must call `nativeIdentity($domain)`, lock the domain, then commit the adoption and
+call attachment in that same outer transaction. Committing the adoption first would
+reverse the lock order. Attachment may re-read rows already locked by that prefix.
+It derives `snapshot.holding` v1 from frozen adoption evidence and the retained native
+prefix; it accepts no caller-supplied holding identity. The committed reverse domain
+link must match. Attachment advances the pending generation exactly once and writes
+pointer, adopted provenance, original identity, revision, expiry and initial billing
+anchor together. Prior and resulting revisions must match the pending revision and
+its immediate successor. Active status records the committed holding; it is not a
+freshness decision. A3 must refuse past-expiry proof before committing. This method
+grants no permissions, does no fresh provider read and
+is not a confirmation workflow. The future confirmer owns those checks.
+
+Ordinary saves cannot attach, replace or clear the pointer or holding snapshot. They
+cannot change provenance or generation. Checkout proof remains frozen and cannot be
+promoted as adoption. Numeric domain updates refuse. Observation metadata, current
+confirmed revision/expiry and current billing anchor may still evolve; the original
+holding snapshot stays byte-for-byte equivalent after decryption. Privileged raw SQL,
+and bulk writes remain outside these guarantees. Quiet saves still pass the
+retained-identity checks in `save()`; event-free creation is not an import API.

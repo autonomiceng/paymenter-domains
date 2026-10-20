@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
 {
-    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class];
+    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class];
     public static function legacy(): void
     {
         foreach(Server::where('extension','Enom')->get() as $server){
@@ -59,6 +59,9 @@ final class Installation
                 if(Schema::hasTable($table)&&!$recorded){throw new \DomainException('Retained holding storage has no installation record.');}
                 if($recorded){$schema::verify();} // Refuse lost/drifted tables before any migration can fill gaps.
             }
+            $adoptionRecorded = in_array('2026_10_19_000014_add_holding_adoption', $ran, true);
+            if (Schema::hasColumn('domains_domains', 'adoption_id') && !$adoptionRecorded) { throw new \DomainException('Retained adoption pointer has no installation record.'); }
+            if ($adoptionRecorded) { HoldingAdoptionSchema::verify(); }
             $dnsPresent = array_map(Schema::hasTable(...), WatchDnsSchema::tables());
             $dnsRecorded = in_array('2026_10_19_000012_create_watch_dns', $ran, true);
             if (in_array(true, $dnsPresent, true) && !$dnsRecorded) { throw new \DomainException('Retained DNS history has no installation record.'); }

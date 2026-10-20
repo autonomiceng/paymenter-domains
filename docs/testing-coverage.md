@@ -213,3 +213,12 @@ is diagnostic evidence, not InnoDB concurrency or installed-theme acceptance.
 
 Renewal credit cases cover global on/off/unset, ignored retained server settings, exact/insufficient balances,
 native credit transactions and remaining-only settlement after partial, full or excess earlier payment.
+
+## Holding adoption storage
+
+`holding-adoption-test.php` uses native synthetic fixtures to attach a committed
+reverse-linked adoption under the existing identity prefix. It covers expired locks,
+one-way linkage, noncommitted/terminal rows, pointer and every original holding field
+freeze, numeric-update refusal, ordinary revision/expiry/observation/anchor evolution,
+retained migration and missing-column verification. It adds no confirmation action
+and makes no provider calls. Shared-database concurrency and activation remain open.

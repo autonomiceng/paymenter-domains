@@ -21,7 +21,7 @@ final class NativeDomainGuard
         if ($this->booted) { return; } $this->booted = true; NativeExpiry::boot();
         app()->bind(\App\Services\Invoice\ProcessPaidInvoiceService::class, ManagedPaidInvoice::class);
         Domain::updating(static function (Domain $d): void {
-            if ($d->isDirty(['price_mode', 'billing_managed'])) { throw new \DomainException('Managed pricing authority requires a dedicated audited transition.'); }
+            if ($d->isDirty('price_mode') || (!$d->attachingAdoption() && $d->isDirty('billing_managed'))) { throw new \DomainException('Managed pricing authority requires a dedicated audited transition.'); }
         });
         foreach (['updating', 'deleting'] as $event) {
             InvoiceTransaction::$event(static function (InvoiceTransaction $payment) use ($event): void {
