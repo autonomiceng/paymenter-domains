@@ -695,3 +695,15 @@ Known expired/grace/redemption remains bad, while a reported expiry-day boundary
 OwnedDomain retains its D3 matrix and serves owner forms and NativePresenter theme consumers.
 Real controller pages cover all/some/none owned test mixes; reserved public results retain the
 selected seller test flag when a private holding account is live. These checks stay offline.
+
+### Customer list chip density
+
+`Support/customer-polish-views.php` pins the list rule shared by the domain index and the
+"Related to your hosting" rows: state chips first, then known evidence, then one chip for all
+missing axes. A freshness chip (Not checked yet, then Checks are out of date, then Checks partly
+complete) covers missing axes; otherwise a single muted "Some details unavailable" chip does.
+A row with three unknown axes renders exactly one muted chip. An exhaustive DNS/pointer/partial
+matrix asserts the collapse never adds a label, never shows a per-axis unknown chip, and never
+gives unknown or partial evidence a positive or empty-case label. The detail view still lists
+every axis. Five mutations (old order, uncollapsed related rows, gap plus freshness, kept unknown
+axes, invented "DNS only") each fail the test. These checks are offline Blade/DOM checks.

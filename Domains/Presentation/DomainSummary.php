@@ -12,4 +12,6 @@ final readonly class DomainSummary
         public ?string $expirySource,public array $freshness,public ?string $renewalDueAt,public ?string $renewalPrice,
         public array $relatedServices,public array $hostnames,public array $urls,public bool $renewalOff=false,public array $lastKnown=[],public int $relatedOverflow=0,public array $noticeKeys=[],public array $noticeDates=[],public bool $renewalReminderOff=false,public bool $renewalDueProjected=false,public bool $testEnvironment=false) {}
     public function tone(string $key): string { return DomainSummaryTones::for($key); }
+    /** Customer list rows: see DomainSummaryBadges. Callers pass the evidence and states their view shows. */
+    public function listBadges(array $evidence,array $states): array { return DomainSummaryBadges::compact($evidence,$states); }
 }
