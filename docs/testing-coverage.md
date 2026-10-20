@@ -336,3 +336,5 @@ Provider acceptance, shared-database races and installed-shell checks remain sep
 gates. This coverage does not close the documented User-deletion/checkout activation gap.
 
 `tests/operation-claim-lifecycle-test.php` covers initial lifecycle claim and seal refusals alongside `tests/operation-claims-test.php`. Each command boots a fresh in-memory native database.
+
+Transfer input coverage is split between `tests/transfer-inputs-test.php` (code submission, cutoff and refunds), `tests/transfer-input-evidence-test.php` (payment evidence, authority and timezones), and `tests/transfer-input-contacts-test.php` (contact correction and late readmission). Each starts with an unrelated service cancellation to check that refusal stays scoped to the affected service.
