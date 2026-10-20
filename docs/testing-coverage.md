@@ -707,3 +707,30 @@ matrix asserts the collapse never adds a label, never shows a per-axis unknown c
 gives unknown or partial evidence a positive or empty-case label. The detail view still lists
 every axis. Five mutations (old order, uncollapsed related rows, gap plus freshness, kept unknown
 axes, invented "DNS only") each fail the test. These checks are offline Blade/DOM checks.
+
+### 2026-10-20 — staff reviews and active worker evidence
+
+`staff-operation-lease-test.php` uses real funded claims, seals and send verification
+with the existing fake clock and offline preflight. Recheck, reconciliation resume
+and scheduled-read resume are refused during a live running lease, in both the
+claim→seal and seal→verifySend windows. The UI hides all review actions; a stale
+callback returns fixed user-safe text. Equal-to-now, past and absent leases retain
+staff recheck/reconciliation recovery. A read-finished audit also refuses a lease
+acquired during unlocked I/O, retaining the durable requested audit unchanged.
+No claim-evidence comparison or append-only guarantee is relaxed.
+
+`staff-reason-test.php` checks four/500/501 Unicode characters, invalid UTF-8,
+control characters, actual Filament form/server behavior and safe refusal text.
+Arbitrary DomainException/runtime messages remain behind the generic notification.
+Settings, holdings, contact recovery, acquisition retirement, reminder schedules,
+watch writes/mappings/profiles, notice resend and PSL tests cover their own Unicode
+limits. Adoption already validates UTF-8 and its max-only 500-character form rule.
+Watch storage's internal 1000-character limit and the PSL 1000-character rule remain
+distinct from the usual staff 5–500 and resend 10–500 rules.
+
+Staff audit removal/empty replacement changes only `staff_actions`. Management
+policy removal changes only `management`; management read-history removal/empty
+replacement preserves every unrelated attempt key. Temporary guard-removal
+mutations must make each isolated refusal assertion fail, with the guards restored
+before the full suite. These are sequential synthetic SQLite interleavings, not
+shared-database concurrency, provider acceptance or production evidence.

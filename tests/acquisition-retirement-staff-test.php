@@ -9,13 +9,14 @@ use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,DomainR
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionActions;
 // Staff action, fresh identity/permission/reason snapshot and retained audit.
 $staffOp=$new('unpaid-staff.com',paid:false);$key=$ticket($staffOp);
+foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>$retirement->retire($staffOp->domain_id,$staff,$ticket($staffOp),$bad));}
 commerceReject(fn()=>$retirement->retire($staffOp->domain_id,$staff,$key,"Bad\nreason"));
 $staffOp->domain->service->forceFill(['label'=>'Changed after review'])->save();commerceReject(fn()=>$retirement->retire($staffOp->domain_id,$staff,$key,'Stale review refuses'));
 $key=$ticket($staffOp);$staff->role->update(['permissions'=>['admin.domains.view']]);commerceReject(fn()=>$retirement->retire($staffOp->domain_id,$staff,$key,'Revoked staff refuses'));$staff->role->update(['permissions'=>$permissions]);
 $key=$ticket($staffOp);$other=staffUser($permissions);commerceReject(fn()=>$retirement->retire($staffOp->domain_id,$other,$key,'Wrong actor refuses'));
-$retirement->retire($staffOp->domain_id,$staff,$ticket($staffOp),'Customer abandoned unpaid order');
+$retirement->retire($staffOp->domain_id,$staff,$ticket($staffOp),str_repeat('🦦',500));
 same(null,$staffOp->domain->fresh()->reservation_name,'Staff action releases unpaid name');same('cancelled',App\Models\Invoice::find($staffOp->invoice_id)->status,'Staff action closes sole pending debt');
-$audit=$staffOp->fresh()->policy['unpaid_retirement'];same($staff->id,$audit['actor_id'],'Staff audit actor');same('Customer abandoned unpaid order',$audit['reason'],'Staff audit reason');same('awaiting_payment',$audit['before']['operation'],'Staff audit prior state');
+$audit=$staffOp->fresh()->policy['unpaid_retirement'];same($staff->id,$audit['actor_id'],'Staff audit actor');same(str_repeat('🦦',500),$audit['reason'],'Staff audit reason');same('awaiting_payment',$audit['before']['operation'],'Staff audit prior state');
 commerceReject(fn()=>$retirement->retire($staffOp->domain_id,$staff,$key,'Replay cannot retire again'));
 commerceReject(fn()=>$staffOp->fresh()->update(['policy'=>array_diff_key($staffOp->fresh()->policy,['unpaid_retirement'=>true])]));
 // Released names stay released after money arrives; terminal work remains nonspendable.

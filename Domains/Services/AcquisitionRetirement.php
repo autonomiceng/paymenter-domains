@@ -43,9 +43,8 @@ final readonly class AcquisitionRetirement
         $staff=$l['staff'];$d=$l['domain'];
         if(!$staff||!$staff->hasPermission('admin.domains.view')||!$staff->hasPermission('admin.domains.manage')
             ||!$staff->hasPermission(self::PERMISSION)){throw new \DomainException('Current staff permissions required. Reload this page.');}
-        if($reason===null||mb_strlen($reason)<5||mb_strlen($reason)>500||$reason!==trim($reason)||preg_match('/[\x00-\x1f\x7f]/',$reason)){
-            throw new \DomainException('Enter a one-line reason of 5–500 characters.');
-        }
+        if($reason===null){throw new StaffReviewRefused('A review reason is required.');}
+        StaffReason::require($reason);
         try{$t=json_decode(Crypt::decryptString($ticket??''),true,8,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Invalid review key. Reload this page.');}
         if(($t['actor']??null)!==(int)$actor->id||($t['domain']??null)!==(int)$d->id||($t['action']??null)!=='retire_unpaid'
             ||!is_int($t['until']??null)||$t['until']<=$this->clock->now()->getTimestamp()||!is_string($t['stamp']??null)

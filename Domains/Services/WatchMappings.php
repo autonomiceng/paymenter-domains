@@ -13,11 +13,11 @@ final class WatchMappings
     public static function enabling(): bool { return self::$enabling; }
     public function enable(User $actor,int $id,int $revision,string $reason): WatchProductMap
     {
-        $this->authorize($actor);
+        $this->authorize($actor);StaffReason::require(trim($reason));
         return DB::transaction(function()use($actor,$id,$revision,$reason){
             $peek=WatchProductMap::findOrFail($id);Product::whereKey($peek->product_id)->lockForUpdate()->firstOrFail();
             $row=WatchProductMap::whereKey($id)->lockForUpdate()->firstOrFail();$this->authorize($actor);
-            if($row->revision!==$revision || $row->enabled || strlen(trim($reason))<5){throw new \DomainException('Review the saved disabled mapping before enabling it.');}
+            if($row->revision!==$revision || $row->enabled){throw new \DomainException('Review the saved disabled mapping before enabling it.');}
             if($row->expected_ns_profile_id && !\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::whereKey($row->expected_ns_profile_id)->where('enabled',true)->lockForUpdate()->exists()){throw new \DomainException('Choose an enabled routing profile first.');}
             self::$enabling=true;try{$row->fill(['enabled'=>true,'revision'=>$revision+1,'edited_by'=>$actor->id,'reason'=>trim($reason)])->save();}finally{self::$enabling=false;}
             WatchAudit::create(['subject_type'=>'product_map','subject_id'=>$id,'actor_id'=>$actor->id,'event'=>'mapping_enabled','reason'=>trim($reason),'before_revision'=>(string)$revision,'after_revision'=>(string)$row->revision,'data'=>[],'created_at'=>now()]);return $row;
@@ -25,7 +25,7 @@ final class WatchMappings
     }
     public function save(User $actor, int $productId, string $key, int $expectedRevision, string $reason, ?int $profileId = null): WatchProductMap
     {
-        $this->authorize($actor);
+        $this->authorize($actor);StaffReason::require(trim($reason));
         $withProfile=func_num_args()>=6;
         return DB::transaction(function () use ($actor, $productId, $key, $expectedRevision, $reason, $profileId, $withProfile): WatchProductMap {
             Product::whereKey($productId)->lockForUpdate()->firstOrFail(); $this->authorize($actor);

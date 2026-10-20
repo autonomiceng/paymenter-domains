@@ -174,8 +174,6 @@ final class ContactRecovery
 
     private static function reason(string $reason): void
     {
-        if ($reason !== trim($reason) || strlen($reason) < 5 || strlen($reason) > 500 || preg_match('/[\x00-\x1f\x7f]/', $reason)) {
-            throw new \DomainException('Enter a review reason between 5 and 500 bytes.');
-        }
+        StaffReason::require($reason);
     }
 }

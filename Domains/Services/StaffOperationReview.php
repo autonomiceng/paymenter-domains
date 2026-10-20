@@ -17,7 +17,7 @@ final class StaffOperationReview
     public function __construct(public readonly int $actorId, public readonly int $domainId, public readonly int $operationId,
         public readonly string $action, private readonly string $ticket, public readonly string $reason, private readonly Clock $clock) {}
     public static function permission(string $action): string
-    { if(!isset(self::ACTIONS[$action])){throw new \DomainException('Unknown review action.');} return 'admin.domains.operations.'.$action; }
+    { if(!isset(self::ACTIONS[$action])){throw new StaffReviewRefused('Unknown review action.');} return 'admin.domains.operations.'.$action; }
     public static function stamp(Operation $op,Domain $d): string
     { return hash('sha256',json_encode([$op->getRawOriginal(),$d->getRawOriginal()],JSON_THROW_ON_ERROR)); }
     public static function ticket(int $actor,int $domain,int $op,string $action,string $stamp,Clock $clock): string
@@ -34,35 +34,43 @@ final class StaffOperationReview
             || (!in_array($this->action,['recheck','resume_reads','resume_observation'],true)&&!$staff->hasPermission('admin.domains.manage'))
             || (in_array($this->action,['refund','credit','replacement'],true)&&!$staff->hasPermission('admin.invoices.update'))
             || ($this->action==='release'&&$op?->funding_basis==='complimentary'&&!$staff->hasPermission('admin.domains.fund'))) {
-            throw new \DomainException('Current staff permissions are required. Reload this page.');
+            throw new StaffReviewRefused('Current staff permissions are required. Reload this page.');
         }
-        if(strlen($this->reason)<5||strlen($this->reason)>500||$this->reason!==trim($this->reason)||preg_match('/[\x00-\x1f\x7f]/',$this->reason)) {
-            throw new \DomainException('Enter a reason between 5 and 500 bytes.');
-        }
+        StaffReason::require($this->reason);
+        if($op){$this->requireIdle($op);}
         $t=$this->decode();
         if(!$op || (int)$d->id!==$this->domainId || $op->domain_id!==$d->id || $op->service_id!==$d->service_id
             || $op->server_id!==$d->server_id || $op->registrar_key!==$d->registrar_key || $op->account_fingerprint!==$d->account_fingerprint
             || $op->authority_generation!==$d->authority_generation || $op->authority_generation<1
-            || !hash_equals($t['stamp'],self::stamp($op,$d))) { throw new \DomainException('This request changed. Reload this page.'); }
+            || !hash_equals($t['stamp'],self::stamp($op,$d))) { throw new StaffReviewRefused('This request changed. Reload this page.'); }
         $history=$op->policy['staff_actions']??[];
         $limit=in_array($this->action,['recheck','resume_reads','resume_observation'],true)?($this->action==='recheck'?88:89):99;
         if(!is_array($history)||!array_is_list($history)||count($history)>$limit
-            || array_filter($history,fn($a)=>($a['key']??null)===$t['key'])) { throw new \DomainException('Review key used or audit full. Reload this page.'); }
+            || array_filter($history,fn($a)=>($a['key']??null)===$t['key'])) { throw new StaffReviewRefused('Review key used or audit full. Reload this page.'); }
         $this->verifiedTicket=$t; $this->before=self::state($op,$d);
+    }
+    public static function liveLease(Operation $op,Clock $clock): bool
+    { return $op->state==='running' && $op->lease_expires_at!==null && $op->lease_expires_at>$clock->now(); }
+    private function requireIdle(Operation $op): void
+    {
+        if(self::liveLease($op,$this->clock)){
+            throw new StaffReviewRefused('A worker is processing this request. Wait for its lease to expire, then reload this page.');
+        }
     }
     private function decode(): array
     {
         try { $t=json_decode(Crypt::decryptString($this->ticket),true,8,JSON_THROW_ON_ERROR); }
-        catch(\Throwable){throw new \DomainException('Invalid review key. Reload this page.');}
+        catch(\Throwable){throw new StaffReviewRefused('Invalid review key. Reload this page.');}
         if(($t['actor']??null)!==$this->actorId||($t['domain']??null)!==$this->domainId||($t['operation']??null)!==$this->operationId
             ||($t['action']??null)!==$this->action||!is_int($t['until']??null)||$t['until']<=$this->clock->now()->getTimestamp()
-            ||!is_string($t['stamp']??null)||!is_string($t['key']??null)){throw new \DomainException('Review key expired or changed. Reload this page.');}
+            ||!is_string($t['stamp']??null)||!is_string($t['key']??null)){throw new StaffReviewRefused('Review key expired or changed. Reload this page.');}
         return $t;
     }
     public function record(array $l,string $phase='completed'): void
     {
         if(!$this->before||DB::transactionLevel()!==1){throw new \LogicException('Missing locked review.');}
         $op=$l['operations']->firstWhere('id',$this->operationId)->fresh(); $d=$l['domain']->fresh(); $t=$this->verifiedTicket;
+        $this->requireIdle($op);
         $history=$op->policy['staff_actions']??[];
         $history[]=['key'=>$t['key'],'action'=>$this->action,'phase'=>$phase,'actor_id'=>$this->actorId,'reason'=>$this->reason,
             'at'=>$this->clock->now()->format(DATE_ATOM),'operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,

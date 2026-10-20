@@ -56,7 +56,7 @@ final readonly class PslRebaseline
     {
         if (!Staff::allows($actor, 'admin.domains.watch.view') || !Staff::allows($actor, 'admin.domains.watch.manage')) { abort(403); }
         $reason = trim($reason);
-        if ($reason === '' || strlen($reason) > 1000 || !preg_match('/\A[a-f0-9]{64}\z/', $revision) || $confirmation !== substr($revision, 0, 12)) { throw new PslFailure('confirmation_invalid'); }
+        if ($reason === '' || !StaffReason::valid($reason,1,1000) || !preg_match('/\A[a-f0-9]{64}\z/', $revision) || $confirmation !== substr($revision, 0, 12)) { throw new PslFailure('confirmation_invalid'); }
         DB::transaction(function () use ($actor, $revision, $reason): void {
             DB::table('domains_psl_status')->where('id', 1)->lockForUpdate()->firstOrFail();
             if (!Staff::allows($actor, 'admin.domains.watch.view') || !Staff::allows($actor, 'admin.domains.watch.manage')) { abort(403); }

@@ -17,7 +17,10 @@ same('succeeded',$management->run($op->id,$driver)->state,'Lock fresh readback c
 $nativeBeforeReplay = nativeFinancialSnapshot($op);
 $before=count($state->calls);$management->run($op->id,$driver);same($before,count($state->calls),'Completed write never replayed');same(true,ManagementEvidence::resolved($op->fresh(),$d),'Durable proof resolves management');
 same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
-commerceReject(fn()=>$op->fresh()->update(['policy'=>[]]));commerceReject(fn()=>$op->fresh()->update(['attempt'=>['seal'=>'sealed']]));
+commerceReject(fn()=>$op->fresh()->update(['policy'=>array_diff_key($op->fresh()->policy,['management'=>true])]));
+foreach([array_diff_key($op->fresh()->attempt,['management_reads'=>true]),[...$op->fresh()->attempt,'management_reads'=>[]]] as $changed){
+    commerceReject(fn()=>$op->fresh()->update(['attempt'=>$changed]));
+}
 $r=new ManagementRequest($driver->capabilities()->binding,'forged',$d->domain,'lock',['locked'=>true],'456');$ctx=new RequestContext($r->binding,RequestOrigin::Interactive,$clock->now()->modify('+100 seconds'),new RequestBudget(10),$clock);
 commerceReject(fn()=>$driver->perform($r,$ctx,$management));same($before,count($state->calls),'Forged descriptor no wire authority');
 Cache::flush();$ns=$submit($d,$driver,'nameservers',['nameservers'=>['NS3.Example.com.','ns4.example.com']]);same('succeeded',$management->run($ns->id,$driver)->state,'Canonical nameservers read back');

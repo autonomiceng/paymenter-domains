@@ -21,6 +21,9 @@ $row=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->
 same((array)$row,(array)DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->first(),'Custom schedule survives upgrade');
 same(1,count(decrypt($row->audit)),'Schedule change has retained actor/reason/before/after audit');
 commerceReject(fn()=>ReminderSchedules::save($staff,(int)$d->server_id,1,true,'7','3','test_stale'));
+foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>ReminderSchedules::save($staff,(int)$d->server_id,$row->revision,true,'7','3',$bad));}
+ReminderSchedules::save($staff,(int)$d->server_id,$row->revision,true,'7','3',str_repeat('🦦',500));
+$unicodeRow=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->first();$unicodeAudit=decrypt($unicodeRow->audit);same(str_repeat('🦦',500),end($unicodeAudit)['reason'],'Schedule accepts 500 Unicode characters');
 commerceReject(fn()=>ReminderSchedules::offsets('bogus,7'));ReminderSchema::install();ReminderSchema::verify();
 // Unknowns and missing/held obligations create staff alerts without a customer guess.
 foreach(['expiry','cost','price','held','missing'] as $case){

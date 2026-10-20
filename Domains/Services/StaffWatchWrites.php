@@ -17,7 +17,7 @@ final class StaffWatchWrites
     public function run(User $actor,string $kind,int $id,string $action,string $ticket,string $reason,array $input=[]): void
     {
         self::authorize($actor);$reason=trim($reason);
-        if(mb_strlen($reason)<5 || mb_strlen($reason)>500 || preg_match('/[\x00-\x1f\x7f]/',$reason)){throw new \DomainException('Enter a one-line reason (5–500 characters).');}
+        StaffReason::require($reason);
         try{$t=json_decode(Crypt::decryptString($ticket),true,16,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Reload and try again.');}
         if(($t['actor']??null)!==(int)$actor->id || ($t['kind']??null)!==$kind || ($t['id']??null)!==$id || ($t['action']??null)!==$action || ($t['until']??0)<=time()){throw new \DomainException('Reload and try again.');}
         DB::transaction(function()use($actor,$kind,$id,$action,$ticket,$reason,$input,$t):void {
