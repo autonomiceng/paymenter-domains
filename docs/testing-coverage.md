@@ -299,3 +299,38 @@ readback: uncertain, uncompleted, sealed, blocking and never replayed. The clean
 still closes as rejected, and sent paid refusals retain financial uncertainty without credit.
 `transfer-dispatch-test.php` adds agreeing nested/top-level transfer IDs to the existing matrix
 and checks that transfer references never become billing order IDs. All transports are synthetic.
+
+### Paired acquisition and seller-switch schedules
+
+`paired-driver-test.php` drives real native checkout and payments with the production
+registration/transfer bridges and closed fake transports. It covers Enom-only then both
+holders, one original provider send after changing seller, exact operation/holding/finance
+retention across repeated switches, losing canonical register/transfer checkouts and cart
+admission refusal, and independent per-account retail for an expensive non-selling holder.
+`namesilo-only-holder-test.php` exercises both acquisition actions with only NameSilo holdings.
+
+`seller-switch-lifecycle-test.php` covers stale carts after switch-back, two pre-existing
+competing register/transfer carts with one canonical winner, original unpaid orders funded
+while another account sells, unlocked fresh-read changes, a committed seal before switching,
+lost provider replies and repeated pending/unknown worker delivery. The after-admission native
+event asserts the lock-order guard refuses a nested seller change and rolls back checkout; these are deterministic SQLite schedules, not simultaneous
+InnoDB transaction acceptance. Unknown outcomes retain exact evidence and their reservation,
+with no credit, account fallback or second send.
+
+`seller-switch-renewal-test.php` and `seller-switch-namesilo-renewal-test.php` exercise both
+non-default holders through paid and complimentary renewal cycles, exact and exceeded caps,
+repeated seller/no-seller changes, retained native finance and confirmed annual expiry advances.
+The NameSilo case resolves a lost complimentary response through original authenticated fake
+history, without replay. No unified retail policy exists: each holder uses its own account table.
+
+Reusable entry points for adopted-holding consumer scenarios are in the bootstrap-free
+`Support/lifecycle-scenarios.php`: `scenarioSwitch`, `scenarioMoney`, `scenarioAuthority`,
+`scenarioRetained`, `scenarioFund` and `scenarioExecution`. Install the current provenance/adoption schema in the
+calling native fixture. `Support/paired-driver.php` composes the checkout acquisition fixture;
+its `$scenarioNew`, `$scenarioCompose` and `$scenarioSends` closures are checkout-specific.
+Do not use that acquisition authority for an adopted holding.
+
+The [release runbook](release-runbook.md) coordinates installed ZIP, converter/profile/evidence,
+supplied-shell acceptance, native-expiry cleanup, rollback boundaries and held/unknown support.
+Provider acceptance, shared-database races and installed-shell checks remain separate release
+gates. This coverage does not close the documented User-deletion/checkout activation gap.
