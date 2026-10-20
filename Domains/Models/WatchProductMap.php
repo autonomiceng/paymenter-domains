@@ -8,10 +8,11 @@ final class WatchProductMap extends WatchRecord
     protected $attributes = ['revision' => 1, 'enabled' => false];
     protected $casts = ['revision' => 'integer', 'enabled' => 'boolean'];
     protected array $identity = ['id', 'product_id'];
+    public function product(): \Illuminate\Database\Eloquent\Relations\BelongsTo {return $this->belongsTo(\App\Models\Product::class,'product_id');}
     protected function validateRecord(): void
     {
         if (!is_string($this->property_key) || preg_match('/\A[a-zA-Z][a-zA-Z0-9_-]{0,63}\z/D', $this->property_key) !== 1 ||
-            preg_match('/(?:^|[_-])(?:alias(?:es)?|additional[_-]domains)(?:[_-]|$)|(?:alias(?:es)?|additionalDomains)$/i', $this->property_key) || $this->enabled ||
+            preg_match('/(?:^|[_-])(?:alias(?:es)?|additional[_-]domains)(?:[_-]|$)|(?:alias(?:es)?|additionalDomains)$/i', $this->property_key) || ($this->enabled && (!$this->exists || $this->isDirty(['enabled','property_key','expected_ns_profile_id'])) && !\Paymenter\Extensions\Servers\Domains\Services\WatchMappings::enabling()) ||
             !is_string($this->reason) || trim($this->reason) === '' || strlen($this->reason) > 1000 || !$this->edited_by) {
             throw new \DomainException('A scalar primary property key, editor and reason are required.');
         }

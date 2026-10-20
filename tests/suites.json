@@ -231,7 +231,8 @@
     "tests/staff-ui-polish-test.php",
     "tests/domain-summaries-test.php",
     "tests/domain-summary-managed-test.php",
-    "tests/domain-portal-test.php"
+    "tests/domain-portal-test.php",
+    "tests/staff-watch-test.php"
   ],
   "ui": [],
   "runner": [

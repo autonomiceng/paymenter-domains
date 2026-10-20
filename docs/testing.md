@@ -667,3 +667,7 @@ service fields have no documented append hook. It only changes view data, fails
 closed to an omitted row, and never mutates the native component. The test-only
 tripwire pins its template/component dependencies; upgrading requires rechecking
 this narrow adapter when those files change.
+
+Staff watch coverage uses native Filament pages, fresh permission checks and actor-bound one-use revision tickets.
+It exercises stale/revoked actions, local queue wakeup limits, retained leases, disabled configuration saves,
+separate reviewed enablement, archived source links, schema drift and read-only pending adoption.
