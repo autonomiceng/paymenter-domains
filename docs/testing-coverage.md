@@ -610,3 +610,6 @@ remove these checks independently and must fail the same acceptance matrix. Offl
 rendered notifications cover price, recalculated-price Save, identity and Delete at
 1440/1024 in dark/light; they do not establish installed-theme or browser interaction
 acceptance. Native Active expiry validation remains an accepted upstream limitation.
+
+Public notice planner: `watch-notice-plan-test.php` covers expiry-window and DNS-episode policy
+with synthetic current/stale/revision inputs; persistence, delivery and installed acceptance remain separate.

@@ -641,3 +641,8 @@ Watch scheduling tests use synthetic local discovery and dispatch callbacks, an 
 and an asynchronous queue configuration. They cover five-minute turns, bounded product/owner
 rotation, duplicate hints, queue timeouts, outage deduplication, and 90-day evidence retention.
 Activation and live/concurrent resolver/queue acceptance remain separate operator gates.
+
+Watch notice policy is exercised offline by `watch-notice-plan-test.php`: exact UTC windows,
+nearest discovery, bounded catch-up, retained correction keys, clock reversal, independent DNS
+confirmation and restoration only for previously handed-off channels. Pure inputs grant no
+owner, installed queue, public resolver or SMTP acceptance.
