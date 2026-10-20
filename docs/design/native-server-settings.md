@@ -11,7 +11,6 @@ second credential store is introduced.
 Treat staff with server-edit permission as able to access saved credentials. With the
 native server editor restored, its Livewire state exposes decrypted credentials and the
 verification digest even though the visible form contains only the Domains setup note.
-The production Secure editor withholds these settings until its separate removal slice.
 The native editor's exposure is the accepted native secret-key permission boundary.
 Domains permissions separately control Registrar setup and Registrar balances. The owned
 pages do not display saved credentials, digests or account fingerprints. Encrypted review
@@ -53,13 +52,22 @@ legacy Enom processing enablement. Registrar-account identity and deletion guard
 These events apply independently of editor route selection. Privileged bulk, quiet and
 raw database writes are outside these ordinary model-event guarantees.
 
-`domains.tests.native_editors=true` disables only the legacy route remaps and EventBus
-mount/hydrate interception when the application is running unit tests. Production ignores
-the switch. The suite inspects ordinary and compiled native server-route metadata, then
-exercises native server forms and owned actions on ordinary routes with interception
-disabled. It does not dispatch a request through compiled routes. Native
-Edit Service without SecureEditService is not qualified here; the lifecycle and paid-path
-lanes and the removal integration must qualify it before removal. The Secure editors
-and interception remain in production until the separate removal slice; this qualification
-does not authorize their removal or establish provider, installed-theme or InnoDB concurrency
-acceptance. Production health retains its stale-route-cache warning until removal.
+Native Edit Server Delete still asks for confirmation. When a retained server is refused,
+the scoped deleting observer sends a danger notice and halts that native action without
+a 500 or success notice. Its native before hook still pauses account processing; the
+server, verified binding and settings remain. Other writers retain the guard exception,
+and unrelated native server deletion continues. Missing notification/action capabilities
+are reported in Registrar setup; the underlying deletion guard remains in force.
+
+Native Create Server, Edit Server and Edit Service use unchanged native routes. No
+Secure editor, route remap, global Livewire interception or testing-only editor switch
+remains. Harmless native saves continue; scoped model guards refuse unsafe writes.
+The native service form still requires an expiry for Active recurring services; enter
+a date to pass native validation and the managed expiry observer discards it on update.
+
+Before deploying this removal, drain web/queue work, rebuild the native route cache
+and reload open editor pages. Caches and open pages from the old Secure editors refer
+to deleted classes; they cannot be retained across this deployment. New native routes
+are exercised with the real route:cache command, fresh HTTP boot and Livewire hydration.
+The remaining native editor/write paths stay pinned by the test-only upgrade tripwire.
+Offline fixtures do not establish provider, installed-theme or InnoDB concurrency acceptance.

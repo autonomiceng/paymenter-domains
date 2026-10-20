@@ -9,7 +9,6 @@ function installedPanel(): void
     $panel=(new App\Providers\Filament\AdminPanelProvider(app()))->panel(Filament\Panel::make());
     app(Filament\PanelRegistry::class)->register($panel);
     require base_path('vendor/filament/filament/routes/web.php');
-    \Paymenter\Extensions\Servers\Domains\Services\Runtime::secureNativeRoutes();
     app('router')->getRoutes()->refreshNameLookups();app('router')->getRoutes()->refreshActionLookups();
     Filament\Facades\Filament::setCurrentPanel($panel);
     Qirolab\Theme\Theme::set('default','default');

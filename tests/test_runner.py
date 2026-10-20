@@ -307,6 +307,12 @@ class RunnerTests(unittest.TestCase):
                 runner.main()
             self.assertFalse(json.loads((output/'receipt.json').read_text())['complete'])
 
+    def test_conventions_exceptions_are_empty(self):
+        doc = (ROOT/'docs/paymenter-extension-conventions.md').read_text()
+        section = doc.split('## Known exceptions\n', 1)[1].split('\n## ', 1)[0].strip()
+        self.assertEqual('There are no known exceptions.', section,
+                         'Review and qualify any new architecture exception before changing this assertion.')
+
     def test_hygiene_and_physical_file_limit(self):
         paths = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).decode().split('\0')
         private = {'.local', '.scratch', '.cache', 'private', 'backups', 'vendor', 'node_modules', 'dist', '__pycache__'}

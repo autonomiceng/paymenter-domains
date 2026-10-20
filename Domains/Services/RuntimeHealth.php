@@ -17,22 +17,17 @@ final class RuntimeHealth
             ->where('d.server_id',$server)->whereIn('n.state',['handoff','uncertain'])->orderBy('n.id')->limit(10)->get(['n.id','n.state','d.domain']);
         $failures=DB::table('domains_obligation_alerts as a')->join('domains_domains as d','d.id','=','a.domain_id')->where('d.server_id',$server)->whereNull('a.resolved_at')->whereIn('a.code',['template_failed','reminder_failed'])->orderBy('a.id')->limit(10)->get(['a.id','a.code','d.domain']);
         $identity=DB::table('domains_obligation_alerts as a')->join('domains_domains as d','d.id','=','a.domain_id')->where('d.server_id',$server)->where('a.code','native_identity_missing')->whereNull('a.resolved_at')->orderBy('a.id')->limit(10)->get(['a.id','d.domain']);
-        $editors=[];
-        if(!NativeServerGuard::testingNativeEditors()){
-            $unsafe=collect(app('router')->getRoutes()->getRoutes())->contains(fn($r)=>in_array(explode('@',$r->getActionName())[0],[\App\Admin\Resources\ServerResource\Pages\CreateServer::class,\App\Admin\Resources\ServerResource\Pages\EditServer::class,\App\Admin\Resources\ServiceResource\Pages\EditService::class],true));
-            $editors=['Native editors'=>$unsafe?'Refresh the native route cache; unsafe editors are refused':'Protected'];
-        }
-        return [...NativePaidHooks::notices(),'Missing Paymenter records'=>$identity->isEmpty()?'None recorded':$identity->pluck('domain')->implode(', ').' — '.ObligationAlerts::LABELS['native_identity_missing'],
+        return [...NativePaidHooks::notices(),...(NativeServerGuard::deletionNoticeMissing()===null?[]:['Server delete notice'=>'Unavailable · missing '.NativeServerGuard::deletionNoticeMissing().'. Deletion is still refused.']),'Missing Paymenter records'=>$identity->isEmpty()?'None recorded':$identity->pluck('domain')->implode(', ').' — '.ObligationAlerts::LABELS['native_identity_missing'],
             'Domain editor notice'=>($missing=\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::missing())===null?'Available':'Paused · missing '.$missing,
             'Registrar configuration'=>match(app(AccountBindings::class)->configurationStatus($server)){
                 'matched'=>'Matches verified account',
                 'not_configured'=>'Not configured',
-                'server_disabled'=>'Off · server disabled. Re-enable it in Servers before reviewing Registrar setup.',
+                'server_disabled'=>'Off · server disabled. Re-enable it in Servers, then resume processing in Registrar setup.',
                 'server_unavailable'=>'On hold · Domains server unavailable. Review the server in Servers.',
                 'site_invalid'=>'On hold · live mode requires a canonical HTTPS site address. Ask the installation administrator to review the application URL.',
                 'site_unbound'=>'On hold · live mode is not bound to this site address. This release has no staff action to bind it; processing stays off.',
                 'site_mismatch'=>'On hold · live mode is bound to a different site address. Ask the installation administrator to restore the original site configuration.',
-                default=>'On hold · saved credentials no longer match the verified account. In Registrar setup, re-enter credentials for the original account before resuming processing.'},
+                default=>'On hold · saved settings no longer match the verified account. In Registrar setup, re-enter credentials for the original account before resuming processing.'},
             'Native server settings'=>'Encrypted at rest. Treat staff with server-edit permission as able to access saved credentials.',
             'Runtime account'=>$row?($row->account_fingerprint===$binding?'Current binding':'On hold · restore the original account binding'):'Waiting for first scheduler enrollment',
             'Last worker turn'=>$row&&$row->finished_at?gmdate('M j, Y H:i \U\T\C',(int)$row->finished_at):'Not completed',
@@ -41,6 +36,6 @@ final class RuntimeHealth
             'Notification claims to review'=>$claims->map(fn($r)=>'#'.$r->id.' · '.$r->domain.' · '.($r->state==='handoff'?'Handoff not confirmed':'Outcome unconfirmed'))->implode('; ')?:'None recorded',
             'Notification checks to review'=>$failures->map(fn($r)=>'#'.$r->id.' · '.$r->domain.' · '.ObligationAlerts::LABELS[$r->code])->implode('; ')?:'None recorded',
             'Worker recovery'=>'An interrupted turn resumes after its due time. Review failed queue jobs before retrying; unresolved registrar outcomes remain reserved.',
-            'Binding recovery'=>'Do not rebind retained accounts. Restore the original verified identity; processing requires a fresh staff confirmation.']+$editors;
+            'Binding recovery'=>'Do not rebind retained accounts. Restore the original verified identity; processing requires a fresh staff confirmation.'];
     }
 }

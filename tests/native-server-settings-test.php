@@ -23,10 +23,6 @@ function serverSettingsReject(callable $call): void
     $refused=false;try{$call();}catch(DomainException|Illuminate\Validation\ValidationException $e){$refused=true;}
     expect($refused,'Unsafe native account mutation must refuse at line '.debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS,1)[0]['line']);
 }
-// Disable only the to-be-removed interception, before either registration path runs.
-config(['domains.tests.native_editors'=>true]);
-expect(NativeServerGuard::testingNativeEditors(),'Explicit testing switch enables native qualification');
-app()->instance('env','production');expect(!NativeServerGuard::testingNativeEditors(),'Production ignores qualification switch');app()->instance('env','testing');
 $registry=new RegistrarRegistry;$io=(object)['verifications'=>0,'readers'=>0];
 $verifier=new class($io) implements AccountVerifier {
     public function __construct(private object $io) {}
@@ -77,10 +73,10 @@ foreach([$first,$second] as $server){
     expect($bindings->configurationAvailable($server->id),'Local configuration validated without constructing reader');
     same('42.17 USD',RegistrarBalances::facts($a,$clock->now())['balance'],'Valid original account displays own cached amount');
     $route=app('router')->getRoutes()->getByName('filament.admin.resources.servers.edit');
-    same(EditServer::class,explode('@',$route->getActionName())[0],'Native route remains native with interception disabled');
+    same(EditServer::class,explode('@',$route->getActionName())[0],'Native route remains native');
     // Cached native route remains native; no Secure* class or mount guard participates.
     $cached=new Illuminate\Routing\RouteCollection;$copy=clone $route;$copy->prepareForSerialization();$cached->add($copy);
-    $all=app('router')->getRoutes();app('router')->setCompiledRoutes($cached->compile());Runtime::secureNativeRoutes();
+    $all=app('router')->getRoutes();app('router')->setCompiledRoutes($cached->compile());
     same(EditServer::class,explode('@',app('router')->getRoutes()->getByName($route->getName())->getActionName())[0],'Cached editor is not remapped');
     app('router')->setRoutes($all);app('url')->setRoutes($all);
     Livewire::actingAs($noNative)->test(EditServer::class,['record'=>$server->id])->assertForbidden();
@@ -106,7 +102,7 @@ foreach([$first,$second] as $server){
     same($readerCalls,$io->readers,'Changed credentials refuse before reader or spending transport composition');
     $facts=RegistrarBalances::facts($a,$clock->now());same('Unknown',$facts['balance'],'Wrong account never displays original account balance');same('Configuration unavailable',$facts['error'],'Changed credentials give safe balance status');
     same('42.17',DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->value('amount'),'Held display retains original balance history');
-    $health=RuntimeHealth::for($server->id);expect(str_contains($health['Registrar configuration'],'re-enter credentials for the original account'),'Local health gives actionable hold');
+    $health=RuntimeHealth::for($server->id);expect(str_contains($health['Registrar configuration'],'saved settings no longer match the verified account'),'Hold covers credential and digest settings');expect(str_contains($health['Registrar configuration'],'re-enter credentials for the original account'),'Local health gives actionable hold');
     Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('On hold')->assertSee('re-enter credentials for the original account')->assertDontSee('PRIVATE-WRONG');
     Livewire::actingAs($staff)->test(BalancesPage::class)->assertDontSee('PRIVATE-WRONG');
     // A positively verified different account still cannot repurpose the retained binding.
@@ -120,13 +116,21 @@ foreach([$first,$second] as $server){
     serverSettingsReject(fn()=>$bindings->reader($server->id));same('Unknown',RegistrarBalances::facts($a,$clock->now())['balance'],'Digest-only changes also hide the balance');$digest->update(['value'=>$savedDigest]);
     $bindings->setProcessing($server->id,true,static fn()=>null);$server->refresh()->update(['enabled'=>false]);
     same(false,$a->fresh()->processing_enabled,'Native disable pauses the retained account');
-    expect(str_contains(RuntimeHealth::for($server->id)['Registrar configuration'],'Re-enable it in Servers'),'Disabled-server health names its actual recovery path');same('Unknown',RegistrarBalances::facts($a,$clock->now())['balance'],'Disabled account hides balance');
+    expect(str_contains(RuntimeHealth::for($server->id)['Registrar configuration'],'Re-enable it in Servers, then resume processing in Registrar setup'),'Disabled-server health names its actual recovery path');same('Unknown',RegistrarBalances::facts($a,$clock->now())['balance'],'Disabled account hides balance');
     serverSettingsReject(fn()=>$bindings->reader($server->id));$server->refresh()->update(['enabled'=>true]);same(false,$a->fresh()->processing_enabled,'Re-enable does not resume spending');
     foreach([Server::class,Extension::class] as $model){
         foreach(['extension'=>'Enom','type'=>'other','id'=>999999] as $field=>$value){$s=$model::findOrFail($server->id);$s->$field=$value;serverSettingsReject(fn()=>$s->save());}
         $s=$model::findOrFail($server->id);serverSettingsReject(fn()=>$s->delete());
         $s=$model::findOrFail($server->id);$s->id=999999;serverSettingsReject(fn()=>$s->delete());
     }
+    $bindings->setProcessing($server->id,true,static fn()=>null);
+    $retained=DB::table('settings')->where('settingable_id',$server->id)->orderBy('id')->get()->toJson();
+    Livewire::actingAs($staff)->test(EditServer::class,['record'=>$server->id])->callAction('delete')
+        ->assertSuccessful()->assertActionHalted('delete')->assertNotified('Server could not be deleted')->assertNotNotified('Deleted');
+    expect(Server::whereKey($server->id)->exists(),'Handled native delete retains server');
+    same(false,$a->fresh()->processing_enabled,'Native before-delete hook still pauses processing');
+    same($retained,DB::table('settings')->where('settingable_id',$server->id)->orderBy('id')->get()->toJson(),'Handled refusal retains encrypted settings');
+    same($binding->fingerprint,$a->fresh()->account_fingerprint,'Handled refusal retains the account binding');
     serverSettingsReject(fn()=>$a->fresh()->delete());
     $owned=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Treat staff with server-edit permission as able to access them');
     foreach([$secret,'PRIVATE-ROTATED-'.$a->registrar_key,$savedDigest,$a->account_fingerprint] as $private){expect(!str_contains($owned->html(),$private),'Owned setup excludes saved credentials, HMAC and fingerprints');}
@@ -135,6 +139,10 @@ foreach([$first,$second] as $server){
     $history=json_encode(TldFacts::history($server->id));
     foreach(['PRIVATE-ORIGINAL','PRIVATE-ROTATED','PRIVATE-WRONG',$savedDigest,$a->account_fingerprint] as $private){expect(!str_contains($history,$private),'Owned history projection excludes secrets, digest and account fingerprint');}
 }
+class_alias(App\Classes\Extension\Server::class,'Paymenter\\Extensions\\Servers\\SyntheticHosting\\SyntheticHosting');
+$control=Server::create(['type'=>'server','extension'=>'SyntheticHosting','name'=>'Unrelated hosting control','enabled'=>false]);
+Livewire::actingAs($staff)->test(EditServer::class,['record'=>$control->id])->callAction('delete')->assertSuccessful()->assertNotified('Deleted');
+expect(!Server::whereKey($control->id)->exists(),'Unrelated native server deletion continues');
 // Local site holds have different recovery from credential edits and never construct a reader.
 $live=Server::create(['type'=>'server','extension'=>'Domains','name'=>'Live site qualification','enabled'=>true]);
 $liveBinding=$bindings->configure($live->id,'namesilo',Environment::Live,['api_key'=>'PRIVATE-SITE-LIVE']);
@@ -159,9 +167,8 @@ same('Unknown',RegistrarBalances::facts(Account::where('server_id',$destination-
 foreach($saved as $key=>$value){$destination->settings()->where('key',$key)->sole()->update(['value'=>$value]);}
 config(['app.url'=>$savedUrl]);
 expect(!array_key_exists('Native editors',RuntimeHealth::for($first->id)),'Server qualification health needs no remap fact');
-config(['domains.tests.native_editors'=>false]);
-expect(str_contains(RuntimeHealth::for($first->id)['Native editors'],'Refresh the native route cache'),'Production-path health retains stale-cache warning until removal');
-config(['domains.tests.native_editors'=>true]);
+same(null,NativeServerGuard::deletionNoticeMissing(),'Native delete notice capabilities are available');
+expect(!array_key_exists('Server delete notice',RuntimeHealth::for($first->id)),'Available native delete notice needs no unavailable warning');
 Livewire::actingAs($nativeOnly)->test(RegistrarSetup::class)->assertForbidden();Livewire::actingAs($nativeOnly)->test(BalancesPage::class)->assertForbidden();
 // Legacy processing exclusion and installation refusal are scoped model events, with no remaps.
 $legacy=Server::create(['type'=>'server','extension'=>'Enom','name'=>'Paused legacy','enabled'=>false]);

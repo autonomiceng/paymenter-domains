@@ -16,9 +16,6 @@ final class NativeEditorNotice
         static $booted=false;if($booted){return;}$booted=true;
         if(($missing=self::missing())!==null){logger()->warning('Domain editor notice paused: '.$missing);return;}
         $scopes=[\App\Admin\Resources\ServiceResource\Pages\EditService::class];
-        // This stack still serves A0's editor subclass until the later route-removal slice.
-        $secure=\Paymenter\Extensions\Servers\Domains\Admin\SecureEditService::class;
-        if(class_exists($secure)){$scopes[]=$secure;}
         $view='App\\Admin\\Resources\\ServiceResource\\Pages\\ViewService';if(class_exists($view)){$scopes[]=$view;}
         FilamentView::registerRenderHook(PanelsRenderHook::PAGE_START,static function()use($scopes):string {
             $page=\Livewire\Livewire::current();

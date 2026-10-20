@@ -16,20 +16,28 @@ final class NativeServerGuard
             if($a){$a->processing_enabled=false;Account::withVerifiedBindingWrite(fn()=>$a->save());}
         });
     }
-    /** Qualification seam only; production always retains interception until its removal slice. */
-    public static function testingNativeEditors(): bool
-    {return app()->runningUnitTests()&&config('domains.tests.native_editors')===true;}
+    /** A native action handles Halt; other writers retain the ordinary exception. */
+    public static function notifyDeletionRefusal(\Illuminate\Database\Eloquent\Model $record): void
+    {
+        if(self::deletionNoticeMissing()===null&&($page=\Livewire\Livewire::current()) instanceof \App\Admin\Resources\ServerResource\Pages\EditServer
+            &&$page->getRecord()->is($record)&&$page->getMountedAction()?->getName()==='delete'){
+            logger()->warning('Managed Domains server deletion refused.');
+            $message='Domains still needs this server, so it cannot be deleted.';
+            if(Schema::hasTable('domains_accounts')&&Account::where('server_id',$record->getRawOriginal('id'))->where('processing_enabled',false)->exists()){$message.=' Processing is paused.';}
+            $message.=' Review processing in Registrar setup.';
+            \Filament\Notifications\Notification::make()->danger()->title('Server could not be deleted')->body($message)->send();
+            throw new \Filament\Support\Exceptions\Halt;
+        }
+    }
+    public static function deletionNoticeMissing(): ?string
+    {
+        foreach([\Livewire\LivewireManager::class=>'current',\App\Admin\Resources\ServerResource\Pages\EditServer::class=>'getMountedAction',
+            \Filament\Notifications\Notification::class=>'make'] as $class=>$method){if(!class_exists($class)||!method_exists($class,$method)){return $class.'::'.$method;}}
+        return class_exists(\Filament\Support\Exceptions\Halt::class)?null:\Filament\Support\Exceptions\Halt::class;
+    }
     public function boot(): void
     {
         if($this->booted){return;}$this->booted=true;
-        // Before native mount/hydration: stale route caches must never serialize encrypted settings.
-        $guard=static function($component,array $params=[]):void {
-            $class=get_class($component);$id=$params['record']??($component->record->id??null);
-            $server=$class===\App\Admin\Resources\ServerResource\Pages\EditServer::class&&Server::whereKey($id)->where('extension','Domains')->exists();
-            $service=$class===\App\Admin\Resources\ServiceResource\Pages\EditService::class&&Schema::hasTable('domains_domains')&&\Paymenter\Extensions\Servers\Domains\Models\Domain::where('service_id',$id)->exists();
-            if($server||$service){abort(503,'Refresh the native route cache before editing managed domain records.');}
-        };
-        if(!self::testingNativeEditors()){app(\Livewire\EventBus::class)->before('mount',$guard);app(\Livewire\EventBus::class)->before('hydrate',$guard);}
         foreach([Server::class,Extension::class] as $model){
             $model::creating(function($s):void {if($s->extension==='Domains'){
                 try{app(Installation::class)->install();}catch(\DomainException|\RuntimeException|\Illuminate\Contracts\Cache\LockTimeoutException $e){
@@ -43,7 +51,7 @@ final class NativeServerGuard
                     throw new \DomainException('A retained Domains account cannot change extension.');}
             });
             $model::deleting(function($s):void {if($s->getOriginal('type')==='server'&&$s->getOriginal('extension')==='Domains'){$this->pause((int)$s->getOriginal('id'));
-                if(Schema::hasTable('domains_accounts')&&Account::where('server_id',$s->getOriginal('id'))->exists()){throw new \DomainException('Retained registrar accounts cannot be deleted. Disable processing instead.');}}});
+                if(Schema::hasTable('domains_accounts')&&Account::where('server_id',$s->getOriginal('id'))->exists()){self::notifyDeletionRefusal($s);logger()->warning('Managed Domains server deletion refused.');throw new \DomainException('Retained registrar accounts cannot be deleted. Disable processing instead.');}}});
         }
         Setting::saving(function(Setting $s):void {
             if($s->key!=='operations_enabled'||$s->settingable_type!==(new Server)->getMorphClass()||!filter_var($s->value,FILTER_VALIDATE_BOOLEAN)){return;}

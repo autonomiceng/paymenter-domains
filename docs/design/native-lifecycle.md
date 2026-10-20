@@ -108,8 +108,8 @@ actions. Update renewal price and stop/resume renewal are implemented below. Unp
 Since slice 2, every ordinary native price change requires an owned audited transition, even
 when its amount equals current retail (`D/Domains/Services/NativeDomainGuard.php:130–131`).
 Private exact-object projection authority selects the locked Service and planned values.
-SecureEditService still supplies a transaction and modifies expiry form fields
-(`D/Domains/Admin/SecureEditService.php:11–26`); its removal remains a separate gate.
+Native editor subclasses and route interception have been removed. Scoped model guards
+remain the write boundary; the native form-validation limitation above still applies.
 
 ## Publication, cancellation and money after closure
 
@@ -283,3 +283,18 @@ registrar expiry remain authoritative. Ordinary native paid/cron writes continue
 paid in-flight cancellation remains guarded. Completion's fresh funding checks and native
 activation projection are retained. This supersedes the historical paid-adapter description
 in storage; remaining native paid internals stay pinned by test-only upgrade tripwires.
+
+## Native editors restored
+
+Slice 9 removes all Secure editor classes, native route remaps and global Livewire
+mount/hydrate interception, including the temporary qualification switch. Scoped
+installation, lifecycle, identity and legacy Enom observers remain. Native cached routes
+and open native pages retain their ordinary editor classes. Prior Secure-class route
+caches must be rebuilt and old editor pages reloaded during the drained deployment;
+see [native server settings](native-server-settings.md). Historical removal gates above
+are superseded by this qualification; native Active still means paid, and owned registrar
+state and confirmed expiry remain authoritative.
+
+Native Edit Service identity, price and delete guards still raise the existing domain
+exception; their handled staff feedback remains follow-up work. E9 handles native
+Edit Server Delete without changing other guard semantics.

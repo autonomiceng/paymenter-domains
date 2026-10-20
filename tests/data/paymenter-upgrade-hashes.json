@@ -162,17 +162,15 @@
       },
       "admin-secrecy": {
         "consumers": [
-          "Domains/Admin/SecureCreateServer.php",
-          "Domains/Admin/SecureEditServer.php",
-          "Domains/Admin/SecureEditService.php",
           "Domains/Services/NativeServerGuard.php",
+          "Domains/Services/NativeIdentityParents.php",
           "Domains/Services/Runtime.php",
           "Domains/Services/AccountBindings.php",
           "Domains/Services/RegistrarBalances.php",
           "tests/native-server-settings-test.php",
           "Domains/Admin/Resources/DomainResource/Pages/AdoptDomain.php"
         ],
-        "review": "Re-review native server creation, permissions, accepted decrypted settings exposure, declared-option-only persistence and unchanged saves; qualify credential/digest holds and fingerprint-keyed balance hiding with remaps and mount/hydrate interception disabled. Re-review remaining editor/write paths, field traversal and save transactions; containment does not authorize global hooks.",
+        "review": "Re-review native server creation, permissions, accepted decrypted settings exposure, declared-option-only persistence and unchanged saves; qualify credential/digest holds and fingerprint-keyed balance hiding on unchanged native routes. Re-review remaining editor/write paths, field traversal and save transactions; native server-edit access is privileged. Verify native DeleteAction still catches the scoped Halt refusal without a success notification or record deletion, while its before hook pauses processing.",
         "files": {
           "app/Admin/Resources/ServerResource.php": "ae95123726c07ca46dfc5d97ba289feabe1ff793e99f8ba42c2809eaa87efccc",
           "app/Admin/Resources/ServerResource/Pages/CreateServer.php": "e0a789c03919493f19e464783890acdeef7f5a89651cc2f24c6ee281f9a673fe",
@@ -188,12 +186,13 @@
           "app/Providers/Filament/AdminPanelProvider.php": "50c13f67807e2c494dff3afa6b1e9e118aaedec79b02301c824e1b6020b99a59",
           "routes/web.php": "e91e7f4369867e12074fc955aa67db2e546daf690db3a4eb14f35ab70e51ae6c",
           "vendor/filament/actions/src/Action.php": "f97dc89c351b46e5c93a3269bbbc032ae2957c0bc926310cfa45b7f304288b30",
+          "vendor/filament/actions/src/DeleteAction.php": "bd1fa348090d7e8f778ebce582ef03c18810291bec11d4d64bc66aa93a9e4556",
+          "vendor/filament/actions/src/Concerns/InteractsWithActions.php": "64f80ec03336de7d101158069ee119443d4511d10eb12de081d78f07c1f80c94",
+          "vendor/filament/support/src/Exceptions/Halt.php": "d65bbbe5f1fcca9f7384e9f8544d33bc1ebe93670a35f6134b205d8e3f27459e",
           "vendor/filament/actions/src/Concerns/CanUseDatabaseTransactions.php": "556402622570342c3cc5ac8b54a074948a53e0235573f106341b201a04fb57c5",
           "vendor/filament/filament/src/Pages/Concerns/CanUseDatabaseTransactions.php": "5c27fb508b106a7faaee445dc3a2abeddbd328e9931c5dff43b5ed2643c53b8c",
           "vendor/filament/filament/src/Resources/Pages/CreateRecord.php": "a2b10956d7973d0beeb73e3bfa396dcfb3d486a1d89e417574675cee360a11ae",
-          "vendor/filament/filament/src/Resources/Pages/EditRecord.php": "369fce445119a7042aa7fff2b324ec4d11a65f4da5c482dd98f5f09feeee2221",
-          "vendor/livewire/livewire/src/EventBus.php": "e5446f10eda12066edbc6297ad5a5ff9bf1ca0a5660cd244cb712d46f9150ab3",
-          "vendor/livewire/livewire/src/Mechanisms/HandleComponents/HandleComponents.php": "1db85f3949a766bff3f62e51e3a7bc0363a337b3aae105baa7a75296fa2c52de"
+          "vendor/filament/filament/src/Resources/Pages/EditRecord.php": "369fce445119a7042aa7fff2b324ec4d11a65f4da5c482dd98f5f09feeee2221"
         }
       },
       "request-input": {

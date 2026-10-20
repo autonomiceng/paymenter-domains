@@ -12,9 +12,9 @@ final class NativeIdentityParents
         foreach([\App\Models\Server::class,Extension::class] as $class){foreach(['updating','deleting'] as $event){
             $class::$event(static function($s)use($event):void {
                 if($event==='updating'&&!NativeIdentity::dirty($s,['id','type','extension'])){return;}
-                foreach(Product::whereIn('server_id',[$s->getRawOriginal('id'),$s->id])->pluck('id') as $id){if(NativeIdentity::retainedProduct((int)$id)){NativeIdentity::refuse();}}
+                foreach(Product::whereIn('server_id',[$s->getRawOriginal('id'),$s->id])->pluck('id') as $id){if(NativeIdentity::retainedProduct((int)$id)){self::parentRefusal($s,$event);}}
                 foreach(NativeIdentity::rows($s) as $r){
-                    if(($r['extension']??null)==='Domains'){NativeIdentity::refuse();}
+                    if(($r['extension']??null)==='Domains'){self::parentRefusal($s,$event);}
                 }
             });
         }}
@@ -50,5 +50,7 @@ final class NativeIdentityParents
             });
         }
     }
+    private static function parentRefusal($record,string $event): never
+    {if($event==='deleting'){NativeServerGuard::notifyDeletionRefusal($record);}NativeIdentity::refuse();}
     private static function services(iterable $rows): void {foreach($rows as $s){if(NativeIdentity::routed($s)){NativeIdentity::refuse();}}}
 }

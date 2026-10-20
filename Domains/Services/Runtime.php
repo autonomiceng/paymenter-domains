@@ -43,20 +43,11 @@ final class Runtime
     public static function limiter(): ?ReadLimiter {return app()->bound(self::class)?app(ReadLimiter::class):null;}
     public static function management(\Paymenter\Extensions\Servers\Domains\Models\Domain $d,?DomainManagement $fallback): ?DomainManagement
     {if(!app()->bound(self::class)){return $fallback;}return app(RuntimePorts::class)->managementEngine(CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->firstOrFail()));}
-    public static function secureNativeRoutes(): void
-    {
-        if(NativeServerGuard::testingNativeEditors()){return;}
-        $map=[\App\Admin\Resources\ServerResource\Pages\CreateServer::class=>\Paymenter\Extensions\Servers\Domains\Admin\SecureCreateServer::class,
-            \App\Admin\Resources\ServerResource\Pages\EditServer::class=>\Paymenter\Extensions\Servers\Domains\Admin\SecureEditServer::class,
-            \App\Admin\Resources\ServiceResource\Pages\EditService::class=>\Paymenter\Extensions\Servers\Domains\Admin\SecureEditService::class];
-        foreach(app('router')->getRoutes() as $route){$class=explode('@',$route->getActionName())[0];if(isset($map[$class])){$route->uses($map[$class]);}}
-    }
     public function boot(): void
     {
         ConversionGate::requireComplete();if($this->booted){return;}$this->booted=true;
         View::addNamespace('domains',dirname(__DIR__).'/resources/views');
         require dirname(__DIR__).'/routes/web.php';require dirname(__DIR__).'/routes/owned.php';
-        app()->booted(self::secureNativeRoutes(...));
         app(NativeServerGuard::class)->boot();app(NativeDomainGuard::class)->boot();
         NativeCancellation::boot();AcquisitionRetirement::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::boot();
         \Illuminate\Console\Application::starting(static fn($console)=>$console->resolve(\Paymenter\Extensions\Servers\Domains\Console\ClearNativeExpiry::class));
