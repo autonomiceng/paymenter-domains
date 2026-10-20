@@ -22,7 +22,9 @@ $wire=new class($observe) implements Transport {
             ReadCommand::Privacy=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
             ReadCommand::Transfer=>$s->fault==='status'?'':'<TransferOrder><TransferOrderID>7001</TransferOrderID><StatusID>'.$header.'</StatusID><TransferOrderDetail><SLD>'.$label.'</SLD><TLD>'.$tld.'</TLD><StatusID>'.$detail.'</StatusID></TransferOrderDetail></TransferOrder>',
             ReadCommand::Orders=>'<OrderCount>1</OrderCount><OrderList><Order><OrderID>9001</OrderID></Order></OrderList>',
-            ReadCommand::Order=>in_array($s->fault,['charge','reject','reject_owned'],true)?'':'<Order><OrderID>9001</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>10/18/2026 '.($s->fault==='late'?'5:10:00':'5:00:01').' AM</BillDate><OrderDetail>'.$item.'</OrderDetail>'.($s->fault==='duplicate'?'<OrderDetail>'.$item.'</OrderDetail>':'').'</Order>',
+            // A clean rejection has complete history whose only order is for another domain.
+            ReadCommand::Order=>$s->fault==='reject'?'<Order><OrderID>9001</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>10/18/2026 5:00:01 AM</BillDate><OrderDetail>'.str_replace($s->name,'unrelated-'.$s->name,$item).'</OrderDetail></Order>'
+                :(in_array($s->fault,['charge','reject_owned'],true)?'':'<Order><OrderID>9001</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>10/18/2026 '.($s->fault==='late'?'5:10:00':'5:00:01').' AM</BillDate><OrderDetail>'.$item.'</OrderDetail>'.($s->fault==='duplicate'?'<OrderDetail>'.$item.'</OrderDetail>':'').'</Order>'),
             default=>throw new LogicException('Unexpected observation command'),
         };
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$data.'</interface-response>';
@@ -56,6 +58,11 @@ $op=$prepare('sent-rejected-transfer.com'); $observe->fault='reject'; $r=$reconc
 same('rejected',$r->state,'Bound terminal refusal retained'); same('transfer_rejected',$r->domain->status,'Terminal transfer observation');
 commerceReject(fn()=>$refunds->creditRejected($r->id)); commerceReject(fn()=>Paymenter\Extensions\Servers\Domains\Services\DomainReservations::releaseTerminal($r->domain->domain));
 same(null,$r->fresh()->funding['refund']??null,'Sent rejection never credited'); same($r->domain->domain,$r->domain->fresh()->reservation_name,'Sent rejection retains reservation');
+// A rejection without complete charge history stays open: no candidates were looked for, so none were ruled out.
+$op=$prepare('unreconciled-rejected-transfer.com'); $observe->fault='reject';
+App\Models\Server::find($op->server_id)->settings()->where('key',HistoryAcceptances::KEY.'_transfer')->delete(); $r=$reconcile->run($op->id);
+same('uncertain',$r->state,'Unreconciled rejection is not terminal'); same(null,$r->attempt['transfer_terminal']??null,'No terminal evidence without charge history');
+same('transfer_rejection_unreconciled',$r->policy['reconciliation']['reason'],'Staff see why it stays open'); expect($r->domain->status!=='transfer_rejected','Domain not marked rejected yet');
 // Unknown baseline is advisory for sending, never a made-up full-term anchor.
 $clock->instant=$now; $op=$newTransfer('missing-transfer-baseline.com'); $makeTransfer(); $state->rdapUnknown=true; $r=$engine->execute($op->id);
 $observe->name=$op->domain->domain; $observe->fault=''; $clock->instant=$now->modify('+6 minutes');
