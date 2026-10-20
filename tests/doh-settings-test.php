@@ -43,6 +43,10 @@ $setRights([Staff::VIEW, PublicSuffixList::MANAGE]); same(false, Page::canAccess
 $setRights([Staff::VIEW, PublicSuffixList::VIEW]);
 Livewire::actingAs($staff)->test(Page::class)->assertSee('DNS-over-HTTPS configured')->assertActionHidden('configure')->assertActionHidden('check');
 same(0, $calls, 'Rendering no query'); $setRights($rights);
+// Card text must match FallbackDnsReader: transport failures retry natively, valid DNS answers never do.
+Livewire::actingAs($staff)->test(Page::class)->assertSee("If it cannot be reached or its reply cannot be read, that query is retried once with the server's resolver if time remains")
+    ->assertSee("It never tries the server's resolver, even when it fails")->assertDontSee('Connection and response failures use')
+    ->assertSee("They go to the server's resolver instead when DNS-over-HTTPS is not configured, when a failed query is retried there, and for the rest of a domain check run after two failures.");
 $page = Livewire::actingAs($staff)->test(Page::class); $cachedCheck = $page->instance()->getCachedHeaderActions()[1]->getActionFunction();
 $cachedSave = $page->instance()->getCachedHeaderActions()[0]->getActionFunction();
 $setRights([Staff::VIEW, PublicSuffixList::VIEW]);
@@ -56,15 +60,18 @@ $nativeBefore = $nativeCalls;
 $page = Livewire::actingAs($staff)->test(Page::class)->callAction('check')->assertSee('DNS-over-HTTPS working (cloudflare-dns.com,');
 same(1, $calls, 'Check is exactly one query');
 $response = new RuntimeException('PRIVATE-DETAIL');
-$page->callAction('check')->assertSee("DNS-over-HTTPS failed: using the server's resolver (could not connect)")->assertDontSee('PRIVATE-DETAIL');
-same(2, $calls, 'Failed check once'); same($nativeBefore, $nativeCalls, 'Bounded check never calls native');
+$page->callAction('check')->assertSee("DNS-over-HTTPS check failed: could not connect. The check did not try the server's resolver, but domain checks retry a query that fails this way once with the server's resolver if time remains.")->assertDontSee('PRIVATE-DETAIL')
+    ->assertDontSee("using the server's resolver (");
+$response = new \Paymenter\Extensions\Servers\Domains\Dns\DohFailure('timeout'); $page->callAction('check')->assertSee('DNS-over-HTTPS check failed: timed out.'); $response = new RuntimeException('PRIVATE-DETAIL');
+same(3, $calls, 'Failed check once'); same($nativeBefore, $nativeCalls, 'Bounded check never calls native');
 foreach ([2 => 'SERVFAIL', 5 => 'REFUSED'] as $code => $label) {
     $response = ['status' => 200, 'body' => '{"Status":'.$code.',"Question":[{"name":"example.com","type":1}]}'];
-    $page->callAction('check')->assertSee('resolver answered '.$label)->assertSee("do not use the server's resolver");
+    $page->callAction('check')->assertSee('resolver answered '.$label.". The check did not try the server's resolver, and domain checks record this answer as unknown without retrying it.");
 }
-$response = ['status' => 200, 'body' => '{"Status":3,"Question":[{"name":"example.com","type":1}]}']; $page->callAction('check')->assertSee('example.com has no address');
+$response = ['status' => 200, 'body' => '{"Status":3,"Question":[{"name":"example.com","type":1}]}']; $page->callAction('check')->assertSee('example.com has no address')->assertSee('domain checks accept a &quot;no such name&quot; or &quot;no records&quot; answer as final.', false);
+same($nativeBefore, $nativeCalls, 'Checks never call native for any answer');
 Setting::where('key', DnsResolverSettings::KEY)->delete();
-$before = $calls; Livewire::actingAs($staff)->test(Page::class)->assertSee('Resolver settings are missing')->callAction('check')->assertSee("DNS-over-HTTPS not configured: using the server's resolver.");
+$before = $calls; Livewire::actingAs($staff)->test(Page::class)->assertSee('Resolver settings are missing')->callAction('check')->assertSee("DNS-over-HTTPS is not configured, so domain checks use the server's resolver. No query was sent.");
 same($before, $calls, 'Missing settings check no network');
 putenv('SSLKEYLOGFILE=/synthetic-disabled');
 expect(str_contains($settings->configuration()[1], 'TLS key logging'), 'TLS logging has a visible native-only reason');

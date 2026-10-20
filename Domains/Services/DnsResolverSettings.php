@@ -40,32 +40,35 @@ final class DnsResolverSettings
         [$endpoint] = $this->configuration();
         return new FallbackDnsReader($endpoint === null ? null : new DohDnsReader($endpoint, $this->transport), $this->native);
     }
-    /** Exactly one DoH query; a failed diagnostic never starts a blocking native resolver call. */
+    /** Exactly one DoH query; a failed diagnostic never starts a blocking native resolver call. Messages describe what domain checks do with the same answer (FallbackDnsReader). */
     public function check(): array
     {
         OperationClaims::outside(); [$endpoint, $reason] = $this->configuration();
-        if ($endpoint === null) { return ['ok' => false, 'message' => "DNS-over-HTTPS not configured: using the server's resolver. ".$reason]; }
+        if ($endpoint === null) { return ['ok' => false, 'message' => "DNS-over-HTTPS is not configured, so domain checks use the server's resolver. No query was sent. ".$reason]; }
         $start = hrtime(true);
         $answer = (new DohDnsReader($endpoint, $this->transport))->read(new DnsQuery('example.com', 'A'), new DnsContext());
         $ms = (int) round((hrtime(true) - $start) / 1e6);
-        if (str_starts_with($answer->code, 'transport_') || $answer->code === 'deadline') {
+        if ($answer->code === 'deadline') {
+            return ['ok' => false, 'message' => "DNS-over-HTTPS check failed: the query ran out of time. The check did not try the server's resolver, and domain checks that run out of time record the answer as unknown."];
+        }
+        if (str_starts_with($answer->code, 'transport_')) {
             $reason = match ($answer->code) {
                 'transport_timeout' => 'timed out', 'transport_connect' => 'could not connect',
                 'transport_tls' => 'TLS certificate or connection failed', 'transport_http_status' => 'HTTP response was not 200',
                 'transport_too_large' => 'response exceeded 64 KiB', 'transport_malformed' => 'response was not valid DNS JSON',
-                'deadline' => 'query deadline reached', default => 'HTTP client unavailable',
+                default => 'HTTP client unavailable',
             };
-            return ['ok' => false, 'message' => "DNS-over-HTTPS failed: using the server's resolver (".$reason.')'];
+            return ['ok' => false, 'message' => "DNS-over-HTTPS check failed: ".$reason.". The check did not try the server's resolver, but domain checks retry a query that fails this way once with the server's resolver if time remains."];
         }
         $identity = $endpoint->host.', '.$ms.' ms';
         if ($answer->state === 'rrset') { return ['ok' => true, 'message' => 'DNS-over-HTTPS working ('.$identity.')']; }
         if ($answer->state === 'negative') {
-            return ['ok' => false, 'message' => 'DNS-over-HTTPS reachable ('.$identity.'), but the resolver says example.com has no address. Check the endpoint. The server’s resolver was not used.'];
+            return ['ok' => false, 'message' => 'DNS-over-HTTPS reachable ('.$identity.'), but it reported that example.com has no address. Check the endpoint. The check did not try the server\'s resolver, and domain checks accept a "no such name" or "no records" answer as final.'];
         }
         $code = str_starts_with($answer->code, 'dns_rcode_') ? match ($answer->code) {
             'dns_rcode_1' => 'FORMERR', 'dns_rcode_2' => 'SERVFAIL', 'dns_rcode_4' => 'NOTIMP', 'dns_rcode_5' => 'REFUSED',
             default => 'RCODE '.substr($answer->code, 10),
         } : 'an unusable DNS answer';
-        return ['ok' => false, 'message' => 'DNS-over-HTTPS reachable, but the resolver answered '.$code.' ('.$identity.'). Domain checks that receive this answer are recorded as unknown and do not use the server\'s resolver.'];
+        return ['ok' => false, 'message' => 'DNS-over-HTTPS reachable ('.$identity.'), but the resolver answered '.$code.'. The check did not try the server\'s resolver, and domain checks record this answer as unknown without retrying it.'];
     }
 }
