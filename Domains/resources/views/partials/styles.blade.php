@@ -15,7 +15,7 @@
     --e-warn: color-mix(in srgb, hsl(var(--color-warning)) 78%, black);
     --e-bad: color-mix(in srgb, hsl(var(--color-error)) 80%, black);
     --e-quiet: hsl(var(--color-muted));
-    max-width: 72rem; margin-inline: auto; color: var(--e-fg); overflow-wrap: anywhere;
+    max-width: 72rem; margin-inline: auto; color: var(--e-fg); overflow-wrap: break-word;
 }
 .dark .domains {
     --e-ok: color-mix(in srgb, hsl(var(--color-success)) 80%, white);
@@ -357,5 +357,20 @@
 .domains .domains-dhead > div { min-width: 0; max-width: 100%; }
 .domains .domains-record-value { white-space: nowrap; overflow-wrap: normal; overflow-x: auto; max-width: 100%; }
 .domains .domains-inline-token { display: inline-block; max-width: 100%; white-space: nowrap; overflow-wrap: normal; overflow-x: auto; vertical-align: bottom; }
+.domains .domains-wrap { overflow-wrap:anywhere; word-break:normal; white-space:normal; }
+.domains .domains-summary { min-width:0; }
+.domains .domains-summary-badges { margin-block:.75rem; align-items:flex-start; }
+.domains .domains-summary .domains-small { display:block; }
+.domains .domains-summary-links { margin-block:1rem; }
+.domains .domains-checks { margin-block:1rem; }
+.domains .domains-checks > summary { cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+.domains .domains-related { margin-top:2.5rem; }
+.domains .domains-related > .domains-panel { margin-block:1rem; }
+.domains .domains-badge { white-space:normal; }
+.domains a:focus-visible,.domains summary:focus-visible { outline:2px solid var(--e-accent);outline-offset:3px; }
+@media(max-width:639px) { .domains .domains-summary .domains-facts { grid-template-columns:1fr; } .domains .domains-summary .domains-fact { min-width:0; } }
+.domains fieldset{min-width:0}.domains .domains-checkbox{overflow-wrap:anywhere}
+.domains-name-cell{min-width:11rem}.domains-name-cell .domains-domain{display:inline-block}
+@media(max-width:719px){.domains-stackable .domains-name-cell{min-width:0;grid-column:1}.domains-stackable td.domains-cell-wide{grid-column:1/-1}.domains-stackable td.domains-end{grid-column:2;grid-row:1}}
 </style>
 @endonce

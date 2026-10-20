@@ -29,8 +29,9 @@ $make=static function(bool $free=false,bool $setup=false,bool $held=false):Owned
         ['open'=>!$held,'received'=>false,'paid'=>true,'deadline'=>'Nov 17, 2026, 12:00 UTC','held'=>$held,'unchecked'=>false,'phase'=>$held?'held':'editing'],$setup?[]:$management,false);
 };
 $enom=$make();$ns=$make(true);$setup=$make(true,true);$held=$make(false,true,true);
+$summary=static fn(OwnedDomain $d)=>new \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(name:$d->name,displayName:null,kind:'managed',registrationKey:'domain.registration.platform',dnsKeys:[],website:null,email:null,stateKeys:[],labels:\Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings::all(),expiry:$d->expiry,expiryPrecision:'date',expirySource:'Confirmed registration',freshness:[],renewalDueAt:null,renewalPrice:$d->renewalPrice,relatedServices:[],hostnames:[],urls:['detail'=>$d->actions['show'],'preferences'=>null]);
 $entry=storefrontData();$entry['results']=[[...$entry['results'][1],'sld'=>$entry['sld'],'domain'=>$entry['sld'].'.com','price'=>'$11.00']];
-$pages=['transfer-entry'=>view('domains::transfer',$entry)->render(),'owned-index'=>view('domains::index',['domains'=>new LengthAwarePaginator([$enom,$ns,$held],3,25),'filterCounts'=>[''=>3,'active'=>2,'attention'=>1]])->render(),
+$pages=['transfer-entry'=>view('domains::transfer',$entry)->render(),'owned-index'=>view('domains::index',['domains'=>new LengthAwarePaginator(array_map($summary,[$enom,$ns,$held]),3,25),'filterCounts'=>[''=>3,'active'=>2,'attention'=>1]])->render(),
     'show-enom'=>view('domains::show',['domain'=>$enom])->render(),'show-namesilo'=>view('domains::show',['domain'=>$ns])->render(),
     'setup'=>view('domains::setup',['domain'=>$setup])->render(),'transfer-code'=>view('domains::code',['domain'=>$setup])->render()];
 app('view')->share('errors',(new Illuminate\Support\ViewErrorBag)->put('default',new Illuminate\Support\MessageBag(['owner_action'=>'We couldn’t save this change. Check the details and try again. If it keeps happening, contact support.'])));

@@ -30,7 +30,7 @@ final class WatchRegistryChecks
             if (!$t || !$w || $w->due_at>$now || $w->backoff_until>$now || $w->lease_until>$now || $w->source_cursor!==$peek->source_cursor) { return null; }
             if ($w->claim!==null) { $q->update(PublicCheckRetry::abandoned($w,$id,'expiry',$now));return null; }
             $claim=bin2hex(random_bytes(32)); $q->update(['claim'=>$claim,'lease_until'=>$now+120,'watch_revision'=>$t['watch']->revision]);
-            return new WatchRegistryTicket($id,$owner,$t['watch']->canonical_name,$t['stamp'],$claim,$now,(int)$w->source_cursor,$t['next_source_cursor']);
+            return new WatchRegistryTicket($id,$owner,$t['watch']->canonical_name,$t['stamp'],$claim,$now,(int)$w->source_cursor,$t['next_source_cursor'],DomainSummaryContext::evidence('watch',$id,$owner,'registry'));
         });
     }
     public static function jitter(int $id,string $kind,int $bound): int
@@ -49,6 +49,7 @@ final class WatchRegistryChecks
                 $q->update($this->failure($t,(int)$w->attempts,$now,'deadline')); return false;
             }
             if ($r['reason']==='deferred') { $q->update(['claim'=>null,'lease_until'=>null,'due_at'=>max($now+60,$endpointUntil),'safe_code'=>$w->safe_code??'budget_exhausted']); return false; }
+            $r['presentation_stamp']=$t->presentationStamp;
             $facts=$r['result']==='facts'; $urgent=$facts && self::urgent($r['expiry'],$now);
             $row=WatchRegistryObservation::create(['watch_id'=>$t->watchId,'user_id'=>$t->userId,'stamp'=>$t->stamp,'source_cursor'=>$t->sourceCursor,
                 'bootstrap_revision'=>$revision,'started_at'=>$t->startedAt,'completed_at'=>$now,'valid_until'=>$facts?$t->startedAt+($urgent?43200:172800):null,

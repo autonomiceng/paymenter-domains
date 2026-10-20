@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, WatchAudit, WatchName, WatchProfile, WatchProductMap, WatchSource, WatchDnsObservation};
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionEnrollment, ManagedPublicWorkSchema, WatchDnsSchema, WatchDnsChecks};
 use Paymenter\Extensions\Servers\Domains\Dns\DnsReading;
-extract(adoptionCommitFixture()); WatchDnsSchema::install(); ManagedPublicWorkSchema::install();
+extract(adoptionCommitFixture()); WatchDnsSchema::install(); ManagedPublicWorkSchema::install(); \Paymenter\Extensions\Servers\Domains\Services\ManagedPublicSchema::install();
 $hostingServer = Server::create(['name'=>'Synthetic hosting','extension'=>'SyntheticHosting','type'=>'server','enabled'=>true]);
 $hostingProduct = Product::create(['name'=>'Hosting','slug'=>'adoption-hosting','category_id'=>$product->category_id,'server_id'=>$hostingServer->id,'hidden'=>true,'allow_quantity'=>'combined']);
 $hostingPlan = $hostingProduct->plans()->create(['name'=>'Monthly','type'=>'recurring','billing_period'=>1,'billing_unit'=>'month']);

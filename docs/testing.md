@@ -650,3 +650,20 @@ owner, installed queue, public resolver or SMTP acceptance.
 Public notice delivery coverage uses independent native mail/app fakes, retained per-channel claims,
 opt-out and owner/role/retirement checks, daily priority, render failures, and managed relink proof.
 The owner preference page uses native web/auth, CSRF and one-use session keys with stale revisions refused.
+
+Domain summaries use batched native/ledger owner checks and local observation display stamps.
+Coverage checks source/property/order/profile changes, partial empty-label refusal, safe hosting
+links, constant query counts and no display writes. Public reads remain synthetic and offline.
+Managed cases also cover adopted generations, retired work, the expiry-day boundary and retained
+last-known values. Current badges require fresh evidence; historical values carry per-axis stale flags.
+
+The domain portal suite covers the registered/related section order, neutral unknown labels,
+read-only paused/retired detail, fresh preference eligibility, owner-safe hosting rows,
+local GETs and query-free extension Blade. The exact native service view adapter is pinned
+by the upgrade tripwire; it composes one named view and changes no native component state.
+
+The hosting Domain row uses an exact `services.show` view composer because native
+service fields have no documented append hook. It only changes view data, fails
+closed to an omitted row, and never mutates the native component. The test-only
+tripwire pins its template/component dependencies; upgrading requires rechecking
+this narrow adapter when those files change.

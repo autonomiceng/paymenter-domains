@@ -45,7 +45,7 @@ final class WatchDnsChecks
                 ->where('valid_until', '>', $now)->where('started_at', '<=', $now)->orderByDesc('id')->first();
             $interval = $kind === 'points' ? 86400 : ($watch->expected_dns === 'platform' && $dnsOnly?->website === false && $dnsOnly?->email === false ? 3600 : 21600);
             return new WatchDnsTicket($watchId, $userId, $kind, $claim, $now, $t['stamp'], (int) $profile->id, $profile->revision,
-                $watch->psl_revision, $watch->revision, $profile->profile(), $t['hosts'], (int) $work->cursor, $interval, (int) $work->source_cursor, $t['next_source_cursor'], $t['overflow']);
+                $watch->psl_revision, $watch->revision, $profile->profile(), $t['hosts'], (int) $work->cursor, $interval, (int) $work->source_cursor, $t['next_source_cursor'], $t['overflow'], DomainSummaryContext::evidence('watch',$watchId,$userId));
         });
     }
     public function finish(WatchDnsTicket $ticket, DnsReading $reading, int $now, int $nextCursor = 0, ?int $nextSourceCursor = null): bool
@@ -74,6 +74,7 @@ final class WatchDnsChecks
             $confirmed=false; $confirmedDelay=$ticket->interval; $early=false;
             if ($complete && $ticket->kind==='delegation') { [$confirmed,$confirmedDelay,$early]=$this->confirmation($ticket,$reading,$now); }
             $facts['ns_confirmed']=$confirmed;
+            $facts['presentation_stamp']=$ticket->presentationStamp;
             $code = $reading->safeCode(); $rotation = $code === 'rotation'; $budget = $rotation || $code === 'budget_exhausted';
             $valid = $result === 'unknown' ? null : $ticket->startedAt + 2 * $ticket->interval;
             $row = WatchDnsObservation::create(['watch_id' => $ticket->watchId, 'user_id' => $ticket->userId,

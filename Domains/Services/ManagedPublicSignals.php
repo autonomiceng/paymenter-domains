@@ -57,7 +57,7 @@ final class ManagedPublicSignals
             $interval=$kind==='points'?86400:($c->expected_dns==='platform' && $points?->website===false && $points?->email===false?3600:21600);
             return new ManagedDnsTicket(PublicSignalsTarget::managed($id,$owner,$d->account_fingerprint,$d->authority_generation,$d->confirmed_revision),
                 $kind,$claim,$now,$t['stamp'],$p?(int)$p->id:null,$p?->revision,$c->revision,$p?->profile(),$t['hosts'],(int)$w->cursor,$interval,
-                (int)$w->source_cursor,$t['next_source_cursor'],$t['overflow']);
+                (int)$w->source_cursor,$t['next_source_cursor'],$t['overflow'],DomainSummaryContext::evidence('managed',$id,$owner));
         });
     }
     public function observe(int $id,int $owner,string $kind): bool
@@ -104,7 +104,7 @@ final class ManagedPublicSignals
                 'profile_id'=>$ticket->profileId,'profile_revision'=>$ticket->profileRevision,'source_digest'=>$ticket->stamp,'source_cursor'=>$ticket->sourceCursor,
                 'check_kind'=>$ticket->kind,'started_at'=>$ticket->startedAt,'completed_at'=>$now,'valid_until'=>$reading->result()==='unknown'?null:$ticket->startedAt+2*$ticket->interval,
                 'result'=>$reading->result(),'dns'=>$reading->dns,'website'=>$reading->website,'email'=>$reading->email,'mixed'=>$reading->mixed,'partial'=>!$complete,
-                'ns_confirmed'=>$confirmed,'safe_code'=>$code,'facts'=>$reading->facts(),'digest'=>$reading->digest()]);
+                'ns_confirmed'=>$confirmed,'safe_code'=>$code,'facts'=>[...$reading->facts(),'presentation_stamp'=>$ticket->presentationStamp],'digest'=>$reading->digest()]);
             $budget=$saturated || in_array($code,['budget_exhausted','rotation'],true);
             $values=$complete?['attempts'=>0,'due_at'=>$now+$delay,'backoff_until'=>null]:($budget?
                 ['attempts'=>$w->attempts,'due_at'=>$now+($saturated?60:($code==='rotation'?$ticket->interval:60)),'backoff_until'=>null]:$this->failure($w,$id,$ticket->kind,$ticket->startedAt,$now,$code));

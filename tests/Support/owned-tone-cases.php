@@ -19,6 +19,11 @@ declare(strict_types=1);
         $d = $base->fresh(); $d->status = $state;
         $dto = $quiet->present($d, false);
         same($expected, [$dto->status, $dto->tone], 'D3 status label/tone: '.$state);
+        $keys = ['active'=>'domain.active','adoption_pending'=>'adopt.pending','registration_pending'=>'domain.pending',
+            'transfer_pending'=>'domain.transfer','registration_rejected'=>'domain.review','transfer_rejected'=>'domain.review',
+            'needs_review'=>'domain.review','expired'=>'domain.expired','grace'=>'domain.expired','redemption'=>'domain.redemption',
+            'cancelled'=>'domain.cancelled','unknown_status'=>'future.unknown'];
+        same($dto->tone, \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummaryTones::for($keys[$state]), 'D3 retained OwnedDomain and summary tone vocabulary: '.$state);
     }
     $d = $base->fresh(); $d->provenance = 'adoption_pending'; $d->status = 'active';
     $dto = $quiet->present($d, false);
