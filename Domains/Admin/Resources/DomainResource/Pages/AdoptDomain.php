@@ -117,7 +117,7 @@ class AdoptDomain extends Page
         };
     }
     /** Registrar expiry and calendar dates for staff: date-only stays a date, instants show in UTC. */
-    private static function when(?string $value): string
+    public static function when(?string $value): string
     {
         if ($value === null || $value === '') { return 'Unconfirmed'; }
         try {
