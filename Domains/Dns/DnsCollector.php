@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\DnsReader;
 final class DnsCollector
 {
     public function __construct(private DnsReader $reader) {}
-    public function collect(WatchDnsTicket $ticket, DnsContext $context): array
+    public function collect(WatchDnsTicket|ManagedDnsTicket $ticket, DnsContext $context): array
     {
         $answers = []; $profile = $ticket->profile; $hosts = $ticket->hostnames;
         if (!$hosts || count($hosts) > 101) { throw new \InvalidArgumentException('Bounded watch hostnames are required.'); }
@@ -20,7 +20,7 @@ final class DnsCollector
         };
         if ($ticket->kind === 'delegation') {
             $read($hosts[0], 'NS');
-            return [DnsSignals::delegation($hosts[0], $profile, $answers), $ticket->cursor, $ticket->sourceOverflow ? $ticket->nextSourceCursor : $ticket->sourceCursor];
+            return [DnsSignals::delegation($hosts[0], $profile, $answers), $ticket->cursor, ($ticket instanceof ManagedDnsTicket) ? $ticket->sourceCursor : ($ticket->sourceOverflow ? $ticket->nextSourceCursor : $ticket->sourceCursor)];
         }
         // Email gets an independent opportunity before any long website chain can exhaust the job.
         $mx = $read($hosts[0], 'MX');
@@ -36,6 +36,11 @@ final class DnsCollector
         }
         $offset = $ticket->cursor % count($hosts);
         $ordered = array_merge(array_slice($hosts, $offset), array_slice($hosts, 0, $offset));
+        if ($ticket instanceof ManagedDnsTicket) {
+            // The independent apex always gets its turn; only hosting primaries rotate behind it.
+            $primaries=array_slice($hosts,1);$offset=$primaries?$ticket->cursor%count($primaries):0;
+            $ordered=[$hosts[0],...array_slice($primaries,$offset),...array_slice($primaries,0,$offset)];
+        }
         $finished = [];
         foreach ($ordered as $primary) {
             $host = $primary; $seen = []; $hops = 0; $covered = false;
@@ -55,7 +60,9 @@ final class DnsCollector
         $reading = DnsSignals::points($hosts, $profile, $answers);
         if ($ticket->sourceOverflow) { $reading = $reading->withOmittedHosts(); }
         $primary = $hosts[1] ?? $hosts[0];
-        $sourceCursor = $ticket->sourceOverflow && ($finished[$primary] ?? false) ? $ticket->nextSourceCursor : $ticket->sourceCursor;
+        // Managed cohorts yield even when long chains cannot fit after the independent apex.
+        $advance=$ticket instanceof ManagedDnsTicket || ($finished[$primary]??false);
+        $sourceCursor = $ticket->sourceOverflow && $advance ? $ticket->nextSourceCursor : $ticket->sourceCursor;
         return [$reading, ($ticket->cursor + 1) % 2147483647, $sourceCursor];
     }
 }

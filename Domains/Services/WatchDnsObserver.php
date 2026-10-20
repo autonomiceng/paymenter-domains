@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\DnsReader;
-use Paymenter\Extensions\Servers\Domains\Dns\{DnsCollector,DnsContext};
+use Paymenter\Extensions\Servers\Domains\Dns\{DnsCollector,DnsContext,QuotaDnsReader};
 /** Explicit internal composition only. No jobs, routes, bindings or scheduled activation ship here. */
 final class WatchDnsObserver
 {
@@ -16,7 +16,13 @@ final class WatchDnsObserver
         if (DB::transactionLevel() !== 0) { return false; }
         $ticket = $this->checks->begin($watchId, $userId, $kind, ($this->clock)());
         if ($ticket === null) { return false; }
-        [$reading, $cursor, $sourceCursor] = (new DnsCollector($this->reader))->collect($ticket, new DnsContext());
-        return $this->checks->finish($ticket, $reading, ($this->clock)(), $cursor, $sourceCursor);
+        $quota=new PublicDnsQuota();$token=$quota->acquire(($this->clock)());
+        if ($token===null) { $this->checks->defer($ticket,($this->clock)());return false; }
+        try {
+            $reader=new QuotaDnsReader($this->reader,$quota,$token,$this->clock);
+            [$reading,$cursor,$sourceCursor]=(new DnsCollector($reader))->collect($ticket,new DnsContext());
+            if ($reader->saturated) { $this->checks->defer($ticket,($this->clock)());return false; }
+            return $this->checks->finish($ticket,$reading,($this->clock)(),$cursor,$sourceCursor);
+        } finally { $quota->release($token); }
     }
 }

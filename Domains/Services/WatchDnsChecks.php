@@ -90,6 +90,11 @@ final class WatchDnsChecks
             return true;
         });
     }
+    public function defer(WatchDnsTicket $t,int $now): void
+    {
+        DB::table('domains_watch_work')->where('watch_id',$t->watchId)->where('kind',$t->kind)->where('claim',$t->claim)
+            ->update(['claim'=>null,'lease_until'=>null,'due_at'=>max($now,$t->startedAt)+60,'safe_code'=>'budget_exhausted']);
+    }
     /** Current read-only identity for projections; never claims work or performs DNS. */
     public function currentStamp(int $watchId, int $userId, int $sourceCursor = 0): ?string
     {
@@ -99,7 +104,7 @@ final class WatchDnsChecks
     {
         // Discovery owns source enrollment. Capture a bounded native prefix before watch/work locks.
         $candidate = WatchName::whereKey($watchId)->where('user_id', $userId)->first();
-        if ($candidate === null || $candidate->state !== 'active') { return null; }
+        if ($candidate === null || $candidate->state !== 'active' || WatchManagedTarget::exists($userId,$candidate->canonical_name)) { return null; }
         [$sources, $overflow] = $this->sources($watchId, $sourceCursor, false);
         if ($sources->isEmpty() || !User::whereKey($userId)->when($lock, fn($q) => $q->lockForUpdate())->exists()) { return null; }
         $orderIds = Service::whereIn('id', $sources->pluck('service_id'))->pluck('order_id');
