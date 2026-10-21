@@ -122,6 +122,9 @@ same(true, $d['price_key_structure']['[other-field]'][0]['punycode_label'], 'Key
 expect(!str_contains(json_encode($d), 'xn--synthetic'), 'Dynamic rejected key omitted');
 $d = $diagnostic(['com' => ['registration' => '1.00', 'transfer' => '1.00']], RegistrarRequest::prices());
 same('prices.amount.renew', $d['predicate'], 'Missing amount predicate diagnosed');
+$d = \OteContract\ParserDiagnostics::inspect(json_encode(['request' => ['operation' => 'getPrices'],
+    'reply' => ['code' => 300, 'detail' => null, 'com' => $validPrices, 'net' => $validPrices]]), RegistrarRequest::prices(), 'offline-secret-token');
+same('envelope', $d['predicate'], 'Envelope failure not replaced by per-row predicate');
 $d = $diagnostic(['com' => null], RegistrarRequest::prices());
 same('prices.entry_object', $d['predicate'], 'Malformed entry predicate diagnosed');
 foreach (['missing' => [], 'null' => ['registration' => null], 'zero' => ['registration' => '0.00'], 'json-type' => ['registration' => false],
@@ -243,7 +246,7 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
             } elseif ($command === 'changeNameServers') { $state->failInfo = getenv('OTE_SELF_TEST_SCENARIO') === 'failed-readbacks'; }
             elseif ($command !== 'changeNameServers') { throw new RuntimeException('Unexpected offline command'); }
             return new TransportResponse(200, json_encode(['request' => ['operation' => $command, 'ip' => '192.0.2.1'], 'reply' => $r], JSON_THROW_ON_ERROR));
-        }, static fn () => 21, match (getenv('OTE_SELF_TEST_SCENARIO')) { 'limited-budget' => 28, 'short-budget' => 26, default => 60 });
+        }, static fn () => 21, in_array(getenv('OTE_SELF_TEST_SCENARIO'), ['limited-budget', 'short-budget'], true) ? (int) getenv('OTE_REQUEST_LIMIT') : 60);
     if (in_array(getenv('OTE_SELF_TEST_SCENARIO'), ['limited-budget', 'short-budget'], true)) {
         // Reserve the same six requests as write mode's initial read phase.
         for ($i = 0; $i < 6; $i++) { $wire->raw('https://ote.namesilo.com/api', 'getAccountBalance', []); }
@@ -265,7 +268,7 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
     same(getenv('OTE_SELF_TEST_SCENARIO') === 'unknown-registered' ? 'reconciled_in_account' : 'accepted_via_real_admitted_protocol', $wire->receipt['checks']['registration'], 'Real registration path exercised offline');
     same(true, $wire->receipt['checks']['charge_evidence_shape_matches'], 'Charge correlation exercised offline');
     if (in_array(getenv('OTE_SELF_TEST_SCENARIO'), ['limited-budget', 'short-budget'], true)) {
-        expect($wire->receipt['request_count'] <= (getenv('OTE_SELF_TEST_SCENARIO') === 'short-budget' ? 26 : 28), 'Constrained write never exceeds remaining slice allowance');
+        expect($wire->receipt['request_count'] <= (int) getenv('OTE_REQUEST_LIMIT'), 'Constrained write never exceeds remaining slice allowance');
         if (getenv('OTE_SELF_TEST_SCENARIO') === 'short-budget') {
             same('skipped_budget', $wire->receipt['checks']['remove_auto_renew_readback'], 'Management reserves its complete readback group');
         }
