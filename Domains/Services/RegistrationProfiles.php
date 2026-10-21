@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AccountBindingMismatch, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{ContactProfile, Operation};
 /** Fresh creation/readback only. No account-inventory adoption, shared update or provider-ID input. */
 final class RegistrationProfiles
@@ -52,7 +52,7 @@ final class RegistrationProfiles
     private function authority(Operation $op, string $predicate): array
     {
         try { $result = $this->claims->profileAuthority($op); $this->binding->requireMatch($result[0]); }
-        catch (\Throwable $error) { $this->signal($predicate, false); throw $error; }
+        catch (ProfileAuthorityMismatch|AccountBindingMismatch $error) { $this->signal($predicate, false); throw $error; }
         $this->signal($predicate, true); return $result;
     }
     private function signal(string $predicate, bool $passed): void

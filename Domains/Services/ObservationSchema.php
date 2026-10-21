@@ -39,7 +39,12 @@ final class ObservationSchema
         $present=array_filter(array_keys(self::definitions()),fn($name)=>Schema::hasTable($name));
         if ($present && count($present)!==count(self::definitions())) { throw new \RuntimeException('Partial retained observation schema.'); }
         foreach (self::definitions() as $name=>$definition) {
-            if (Schema::hasTable($name)) { SchemaVerifier::verify($name,$definition); }
+            if (Schema::hasTable($name)) {
+                if ($name === 'domains_observation_work' && !Schema::hasIndex($name, $name.'_account_due_index')) {
+                    Schema::table($name, static fn (Blueprint $t) => $t->index(['server_id','account_fingerprint','due_at'], $t->getTable().'_account_due_index'));
+                }
+                SchemaVerifier::verify($name,$definition);
+            }
             else { Schema::create($name,$definition); }
         }
     }

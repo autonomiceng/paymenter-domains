@@ -171,9 +171,10 @@ final class OperationClaims
     {
         return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed): array {
             [$binding] = $this->validate($op, $domain, $all, $funding, $server, $account);
-            self::requireSameEvidence($op, $claimed); ContactSetup::requireReady($op);
+            if (!self::sameEvidence($op, $claimed)) { throw new ProfileAuthorityMismatch('Operation evidence changed.'); }
+            ContactSetup::requireReady($op);
             if (!self::sameClaim($op, $claimed) || !self::unsealed($op) || $op->lease_expires_at <= $this->clock->now()
-                || self::payloadDigest($op) !== self::payloadDigest($claimed)) { throw new \DomainException('Profile claim unavailable.'); }
+                || self::payloadDigest($op) !== self::payloadDigest($claimed)) { throw new ProfileAuthorityMismatch('Profile claim unavailable.'); }
             return [$binding, (int) $domain->user_id];
         });
     }
@@ -205,9 +206,14 @@ final class OperationClaims
 
     private static function requireSameEvidence(Operation $current, Operation $snapshot): void
     {
+        if (!self::sameEvidence($current, $snapshot)) { throw new \DomainException('Operation evidence changed.'); }
+    }
+    private static function sameEvidence(Operation $current, Operation $snapshot): bool
+    {
         foreach (['attempt', 'funding', 'cost', 'policy'] as $field) {
-            if ($current->$field !== $snapshot->$field) { throw new \DomainException('Operation evidence changed.'); }
+            if ($current->$field !== $snapshot->$field) { return false; }
         }
+        return true;
     }
     /** Independent presence guard: null charge/refund/candidate facts are still uncertainty. */
     private static function requireNoSendEvidence(Operation $op): void

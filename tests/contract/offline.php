@@ -196,17 +196,32 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
     foreach (glob($output.'/*attempt-private*.json') as $private) { unlink($private); }
     putenv('NAMESILO_SANDBOX_API_KEY=offline-secret-token');
     $state = (object) ['profile' => [], 'locked' => 'Yes', 'expiry' => gmdate('Y-m-d', strtotime('+1 year')), 'record' => false, 'renewed' => false];
-    $wire = new GuardedTransport('offline-secret-token', getenv('OTE_SELF_TEST_SCENARIO') !== 'profile-read', $output,
+    $scenario = (string) getenv('OTE_SELF_TEST_SCENARIO'); $profileRead = str_starts_with($scenario, 'profile-read');
+    if ($scenario === 'profile-read-claim') {
+        require_once dirname(__DIR__).'/native-app.php';
+        \Paymenter\Extensions\Servers\Domains\Models\Operation::updated(static function ($row): void {
+            if ($row->wasChanged('payload') && $row->attempt === null) {
+                \Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $row->id)->update(['state' => 'held']);
+            }
+        });
+    }
+    $wire = new GuardedTransport('offline-secret-token', !$profileRead, $output,
         static function ($command, $p) use ($state, &$wire, &$op): TransportResponse {
             $r = ['code' => 300, 'detail' => 'synthetic'];
             if ($command === 'contactAdd') { $state->profile = $p; $r['contact_id'] = '101'; }
             elseif ($command === 'contactList') {
-                if (getenv('OTE_SELF_TEST_SCENARIO') === 'profile-read') {
+                if (str_starts_with((string) getenv('OTE_SELF_TEST_SCENARIO'), 'profile-read')) {
                     $state->profile = \Paymenter\Extensions\Servers\Domains\Services\RegistrationProfiles::parameters(
                         \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate('namesilo', $op->payload['contacts'])['registrant']);
                 }
                 $fields = ['first_name','last_name','company','address','address2','city','state','zip','country','email','phone'];
                 $r['contact'] = [array_combine($fields, array_values($state->profile)) + ['contact_id' => '101', 'default_profile' => '0', 'nickname' => '', 'fax' => '']];
+                $scenario = getenv('OTE_SELF_TEST_SCENARIO');
+                if ($scenario === 'profile-read-contact') { $r['contact'][0]['email'] = 'other@example.com'; }
+                if ($scenario === 'profile-read-authority') { $op->fresh()->update(['policy' => $op->policy + ['diagnostic_drift' => true]]); }
+                if ($scenario === 'profile-read-status') { $r['code'] = 200; }
+                if ($scenario === 'profile-read-malformed') { unset($r['code']); }
+                if ($scenario === 'profile-read-transport') { throw new RuntimeException('Synthetic read failure'); }
             } elseif ($command === 'getAccountBalance') { $r['balance'] = '100.00'; }
             elseif ($command === 'getPrices') { $r['com'] = $r['net'] = ['registration' => '8.95', 'renew' => '8.95', 'transfer' => '8.95']; }
             elseif ($command === 'checkRegisterAvailability') {
@@ -251,15 +266,29 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
         // Reserve the same six requests as write mode's initial read phase.
         for ($i = 0; $i < 6; $i++) { $wire->raw('https://ote.namesilo.com/api', 'getAccountBalance', []); }
     }
-    $mode = getenv('OTE_SELF_TEST_SCENARIO') === 'profile-read' ? '--profile-read' : '--write';
-    require __DIR__.'/registration.php';
+    $mode = $profileRead ? '--profile-read' : '--write';
+    try { require __DIR__.'/registration.php'; }
+    catch (RuntimeException $error) {
+        if ($scenario !== 'profile-read-transport') { throw $error; }
+        same('OTE exchange unresolved.', $error->getMessage(), 'Transport failure remains a transport mismatch');
+    }
     if ($mode === '--profile-read') {
-        same(1, $wire->receipt['request_count'], 'Read-only probe reuses existing synthetic contact');
+        same($scenario === 'profile-read-claim' ? 0 : 1, $wire->receipt['request_count'], 'Read-only probe has bounded reads');
+        expect($op->fresh()->state !== 'running', 'Read-only probe always finishes its synthetic claim');
         same(false, $wire->attempted('contactAdd'), 'Read-only probe creates no contact');
         same(false, $wire->attempted('registerDomain'), 'Read-only probe cannot purchase');
-        same(true, $wire->receipt['profile_inventory']['rows'][0]['identity_match'], 'Frozen synthetic identity compared');
-        same(true, $wire->receipt['checks']['profile_read_gate'], 'Read-only identity gate');
-        same(true, $wire->receipt['checks']['profile_authority_after'], 'Current authority checked after read');
+        if ($scenario === 'profile-read-claim') {
+            same(false, $wire->receipt['checks']['profile_claim'], 'Claim refusal has its own closed predicate');
+            same('blocked_profile_claim', $wire->receipt['checks']['registration'], 'Claim refusal has its own result');
+            expect(!array_key_exists('profile_authority_before', $wire->receipt['checks']), 'Claim refusal never diagnoses authority');
+        } elseif ($scenario === 'profile-read-transport') {
+            same(true, $wire->receipt['requests'][0]['transport_failed'], 'Transport mismatch retained');
+        } else {
+            same($scenario !== 'profile-read-contact', $wire->receipt['profile_inventory']['rows'][0]['identity_match'], 'Frozen synthetic identity compared');
+            same($scenario !== 'profile-read-contact', $wire->receipt['checks']['profile_read_gate'], 'Read-only identity gate');
+            same($scenario !== 'profile-read-authority', $wire->receipt['checks']['profile_authority_after'], 'Current authority checked after read');
+            same(!in_array($scenario, ['profile-read-status', 'profile-read-malformed'], true), $wire->receipt['checks']['profile_contact_list_success'], 'Reply status independently diagnosed');
+        }
     } elseif (in_array(getenv('OTE_SELF_TEST_SCENARIO'), ['missing-premium', 'premium-one'], true)) {
         same('held', $wire->receipt['checks']['registration_engine_state'], 'Unknown/premium availability holds standard registration');
         same(false, $wire->attempted('registerDomain'), 'Unknown/premium singleton cannot purchase');
@@ -286,6 +315,7 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
     elseif (getenv('OTE_SELF_TEST_SCENARIO') !== 'unknown-registered') { same([], $wire->receipt['mismatches'], 'Native fake matches all contract projections'); }
     else { same('registered_in_account', $wire->receipt['reconciliation']['category'], 'Unknown reconciles before continuing same sequence'); }
     }
+    $nativeSuccessful = true; // All expected native refusals and their receipt assertions completed.
 }
 $summary = ['self_test' => 'passed', 'real_provider_calls' => 0, 'native_protocol_exercised' => (bool) getenv('OTE_SELF_TEST_NATIVE')];
 if ($wire) { $wire->receipt += $summary; $wire->save(); }

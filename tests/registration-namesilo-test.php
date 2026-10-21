@@ -65,5 +65,6 @@ $result = $engine->execute($op->id); same($op->state, $result->state, 'Missing d
 same(null, $result->attempt, 'Missing desired servers consume no acquisition attempt');
 same($op->safe_code, $result->safe_code, 'No unrecoverable hold is invented before owner setup');
 same($before, $registration->calls, 'No profile or purchase without desired servers');
+require __DIR__.'/Support/namesilo-profile-authority.php';
 require __DIR__.'/Support/namesilo-nexus.php';
 echo "NameSilo fresh profile, acceptance and ancillary correction checks passed\n"; $nativeSuccessful = true;
