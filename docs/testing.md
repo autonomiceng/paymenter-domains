@@ -615,7 +615,8 @@ fixture's sole published suffix, `.com` (`Support/commerce.php`).
 ## Coverage notes
 
 Upgrade re-review, native identity, adoption and later per-feature coverage notes are in
-[testing-coverage.md](testing-coverage.md). Append new coverage notes there; this file keeps setup and suites.
+[testing-coverage.md](testing-coverage.md) (at its size cap) and per-area `testing-coverage-<area>.md` files.
+Append new coverage notes to the matching area file; this file keeps setup and suites.
 
 ## Parallel offline suites
 

@@ -214,6 +214,7 @@
     "tests/acquisition-retirement-staff-test.php",
     "tests/domain-counts-test.php",
     "tests/staff-table-grants-test.php",
+    "tests/staff-review-history-test.php",
     "tests/staff-tld-grants-test.php",
     "tests/watch-registry-work-test.php",
     "tests/watch-registry-observer-test.php",

@@ -22,7 +22,7 @@ class ViewOperation extends ViewRecord
     {
         $op=$this->getRecord(); Staff::requireView();
         $facts=['Domain'=>$op->domain->domain,'Request type'=>Labels::action($op->action),'Status'=>Labels::state($op->state),
-            'Created'=>$op->created_at?->format('Y-m-d H:i').' UTC','Review'=>RequestFacts::review($op)];
+            'Created'=>$op->created_at?->format('Y-m-d H:i').' UTC','Review'=>RequestFacts::review($op,detail:true)];
         if ($op->safe_code!==null) { $facts['Reason']=RequestFacts::for($op)['reason']; }
         $holds=PaidUncertainty::for($op->domain); if($holds){$facts['Account spending holds']=$holds;}
         $reviews=PaidUncertainty::reviews($op->domain);if($reviews){$facts['Paid outcome review']=$reviews;}

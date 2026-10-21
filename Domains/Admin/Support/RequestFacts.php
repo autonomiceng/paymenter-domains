@@ -65,11 +65,13 @@ final class RequestFacts
         } catch (\Throwable) { $out['outcome']='Encrypted evidence unavailable; no outcome inferred'; }
         return $out;
     }
-    public static function review(Operation $op, ?StaffGrants $grants = null, ?Domain $domain = null): array
+    public static function review(Operation $op, ?StaffGrants $grants = null, ?Domain $domain = null, bool $detail = false): array
     {
+        $grants ??= Staff::requireView();
         $facts=self::for($op,$grants,$domain);
-        return array_values(array_filter(array_map(fn($key)=>$facts[$key]??null,
-            ['cutoff','outcome','registrar_refund','refund','correction','cost','metadata','audit']),fn($line)=>$line!==null));
+        return [...array_values(array_filter(array_map(fn($key)=>$facts[$key]??null,
+            ['cutoff','outcome','registrar_refund','refund','correction','cost','metadata','audit']),fn($line)=>$line!==null)),
+            ...StaffReviewHistory::for($op,$grants,$detail)];
     }
     private static function count(mixed $items): string { return is_array($items) ? (string)count($items) : 'Unknown'; }
 }
