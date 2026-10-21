@@ -36,6 +36,10 @@ class RegistrarSetup extends Page
                 'Verified user ID'=>$a?->registrar_key==='enom'&&config('domains.enom_identity.environment')===$a->environment?$a->stable_identity:'Unavailable',
                 'Catalogue acceptance'=>$a?TldFacts::acceptance($a):'Unavailable · new sales held',
                 'Connection'=>app(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class)->connectionAvailable()?'Not tested this visit':'Unavailable','Retained domains'=>$a?\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count():0];
+            if ($a?->registrar_key==='enom' && $a->environment==='test') { $facts['Enom TEST daily calls']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::facts(); }
+            if ($a?->registrar_key==='enom' && $a->environment==='test' && config('domains.enom_writes.registration')===true) {
+                $facts['Enom TEST registration']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRegistration::reason();
+            }
             $facts += \Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for((int)$s->id);
             $facts += \Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule((int)$s->id);
             $entries=[];foreach($facts as $label=>$value){$entries[]=TextEntry::make('s'.$s->id.'_'.count($entries))->label($label)->state((string)$value)->badge($label==='Environment');}

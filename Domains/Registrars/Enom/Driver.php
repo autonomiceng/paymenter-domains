@@ -44,6 +44,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
                     $fields['supported'] === true && $facts['requires_nameservers'] === false && $facts['registry_attributes'] !== null,
                     $facts['auto_renew_only'] === false, $fields['fields']);
             } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $error) { throw $error; }
+            catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $error) { throw $error; }
             catch (\Throwable) { $entries[$tld] = null; }
         }
         return $entries;

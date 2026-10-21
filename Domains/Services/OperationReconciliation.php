@@ -28,6 +28,7 @@ final class OperationReconciliation
         });
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp, $contract] = $capture; $proof = null; $covered = false; $transferConflict = false; $chargeChecked = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
+        $callCapBlocked = false;
         try {
             $context = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $context);
@@ -44,8 +45,26 @@ final class OperationReconciliation
                 if ($attempt->query->action->value === 'transfer' && $transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown) { $covered = true; }
                 $proof = ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
             }
+        } catch (EnomTestCallLimit) {
+            $callCapBlocked = true;
         } catch (\Throwable) {} // Safe retained alert; transport/contract failures do not manufacture facts.
-        if (!$covered) { return Operation::findOrFail($id); }
+        if (!$covered) {
+            if (!$callCapBlocked) {
+                return $this->claims->locked($id,function($op,$domain)use($stamp):Operation {
+                    if(!self::eligible($op)||self::stamp($op,$domain)!==$stamp||$op->safe_code!=='enom_test_reconciliation_call_cap'){return $op;}
+                    $policy=$op->policy;$policy['reconciliation']['reason']='reconciliation_required';
+                    $op->update(['safe_code'=>'reconciliation_required','policy'=>$policy]);return $op;
+                });
+            }
+            return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($stamp): Operation {
+                if (!self::eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
+                $policy = $op->policy;
+                $policy['reconciliation']['staff_alert'] = true;
+                $policy['reconciliation']['reason'] = 'enom_test_reconciliation_call_cap';
+                $op->update(['safe_code' => 'enom_test_reconciliation_call_cap', 'policy' => $policy]);
+                return $op;
+            });
+        }
         $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $transfer, $transferConflict, $chargeChecked): Operation {
             if (!$this->eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
             try {

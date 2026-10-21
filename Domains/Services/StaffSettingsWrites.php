@@ -129,10 +129,19 @@ final class StaffSettingsWrites
             $binding=CatalogueAcceptances::binding($a);
             try{$old=CatalogueAcceptances::load($binding,true);}catch(\DomainException){$old=null;}
             $ending=(string)($data['ending']??'');\Paymenter\Extensions\Servers\Domains\Data\CanonicalName::parse('example.'.$ending,[$ending]);$endings=$old?->endings??[];
+            $registrationRoute=$old?->registrationRoute;$registrationInterval=$old?->registrationIntervalSeconds??0;
+            $testRegistration=$binding->registrarKey==='enom'&&$binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Test
+                &&EnomTestRegistration::deploymentEnabled();
             if(!$old&&Domain::where('server_id',$s->id)->whereNotNull('reservation_name')->orderBy('id')->lockForUpdate()->get()->isNotEmpty()){throw new \DomainException('Repair must preserve all holder renewal acceptance.');}
             if(($data['accept']??false)===true){
                 // Explicit independent exact-term evidence is required. Annual NameSilo prices prove no multiyear terms.
                 if(($data['verified']??false)!==true){throw new \DomainException('Independent term verification required.');}
+                if($testRegistration){
+                    if(($data['test_registration_accepted']??false)!==true){throw new \DomainException('Review the Enom TEST Purchase route and request interval before accepting registration terms.');}
+                    $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
+                    if(!$protocol['batch_route']||$protocol['interval_seconds']<25){throw new \DomainException('Enom TEST Purchase route acceptance is unavailable.');}
+                    $registrationRoute=$protocol['route'];$registrationInterval=$protocol['interval_seconds'];
+                }
                 $terms=array_map(static fn($v)=>is_string($v)&&preg_match('/^(?:[1-9]|10)$/D',$v)?(int)$v:$v,$data['terms']??[]);
                 $endings[$ending]=['register'=>$terms,'renew'=>[1],'transfer'=>($data['transfer']??false)?[1]:[],
                     'registry'=>(bool)($data['registry']??false),'renewal_safe'=>true];
@@ -145,7 +154,7 @@ final class StaffSettingsWrites
             }
             $revision=$old?->revision??0;
             foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$s->id)->orderBy('id')->lockForUpdate()->get() as $price){$revision=max($revision,(int)($price->eligibility['catalogue_revision']??0));}
-            $next=new CatalogueAcceptance($binding,$revision+1,$endings);
+            $next=new CatalogueAcceptance($binding,$revision+1,$endings,$registrationRoute,$registrationInterval);
             CatalogueAcceptances::saveLocked($next);
             // Narrow immediately; widening never imports prices, enables a TLD, or restores withdrawn actions.
             foreach(Tld::where('server_id',$s->id)->orderBy('id')->lockForUpdate()->get() as $row){$accepted=$next->endings[$row->tld]??null;

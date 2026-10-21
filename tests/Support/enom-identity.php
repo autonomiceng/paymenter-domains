@@ -35,5 +35,9 @@ function curl_exec($handle): bool
             ?identityXml('<Balance>9876.54</Balance><AvailableBalance>9876.54</AvailableBalance><DomainCount>0</DomainCount><Site>eNom</Site>')
             :identityXml('<errors><Err1>Bad User name or Password</Err1></errors><responses><response><ResponseNumber>304155</ResponseNumber><ResponseString>Validation error; invalid ; loginid</ResponseString></response></responses>','1'),
     };
-    return ($o[CURLOPT_WRITEFUNCTION])($handle,$body)===strlen($body);
+    $written=($o[CURLOPT_WRITEFUNCTION])($handle,$body);
+    if($written===strlen($body)&&isset($GLOBALS['enomTestCallClock'])){
+        $GLOBALS['enomTestCallClock']->instant=$GLOBALS['enomTestCallClock']->now()->modify('+61 seconds');
+    }
+    return $written===strlen($body);
 }

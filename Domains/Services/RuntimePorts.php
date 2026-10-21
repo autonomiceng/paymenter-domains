@@ -15,10 +15,16 @@ final class RuntimePorts
         if(!preg_match('/^[a-f0-9]{64}$/D',$fingerprint)||isset($this->factories[$fingerprint])){throw new \DomainException('Duplicate or invalid runtime binding.');}
         $this->factories[$fingerprint]=$factory;
     }
-    public function registered(Account $account): bool {return isset($this->factories[$account->account_fingerprint]);}
+    public function registered(Account $account): bool
+    {
+        if(isset($this->factories[$account->account_fingerprint])){return true;}
+        try{return EnomTestRegistration::enabled(CatalogueAcceptances::binding($account));}catch(\Throwable){return false;}
+    }
     private function composition(Account $account): array
     {
-        $factory=$this->factories[$account->account_fingerprint]??throw new \DomainException('Runtime provider acceptance is required.');
+        $binding=CatalogueAcceptances::binding($account);
+        $factory=$this->factories[$account->account_fingerprint]??(EnomTestRegistration::enabled($binding)?EnomTestRegistration::factory($binding):null)
+            ??throw new \DomainException('Runtime provider acceptance is required.');
         $ports=$factory(CatalogueAcceptances::binding($account));
         foreach(self::TYPES as $key=>$type){if(!($ports[$key]??null) instanceof $type){throw new \DomainException('Incomplete runtime composition.');}}
         $ports['acquisition']->requireBinding(CatalogueAcceptances::binding($account));

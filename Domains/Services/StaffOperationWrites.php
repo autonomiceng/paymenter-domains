@@ -14,11 +14,20 @@ final class StaffOperationWrites
     }
     public static function release(Operation $op,array $l,\DateTimeImmutable $now): void
     {
+        $testOnly=['enom_test_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required',
+            'write_rate_limited','registry_details_unsupported','usd_balance_required','enom_test_setup_required'];
+        $testRegistration=$op->action==='register'&&$op->registrar_key==='enom'&&($l['account']->environment??null)==='test'
+            &&EnomTestRegistration::deploymentEnabled();
+        $ordinary=['staff_review_required','funding','processing','write_disabled','write_acceptance_required',
+            'renewal_funding_or_authority','renewal_authority_invalid','transfer_setup_review_required'];
+        $testRetry=$testRegistration&&OperationClaims::testCallRefusalRetryable($op);
+        $testVirgin=$testRegistration&&in_array($op->safe_code,$testOnly,true)&&($op->attempt??[])===[];
         if($op->state!=='held'||!in_array($op->action,['register','transfer','renew'],true)
-            ||!in_array($op->safe_code,['staff_review_required','funding','processing','write_disabled','write_acceptance_required',
-                'renewal_funding_or_authority','renewal_authority_invalid','transfer_setup_review_required'],true)) {
+            ||(!in_array($op->safe_code,$ordinary,true)&&!($testRetry||$testVirgin))
+            ||($op->safe_code==='enom_test_call_cap'&&!$testRetry)) {
             throw new \DomainException('This hold requires its original recovery or evidence path.'); }
-        self::virgin($op,$l);
+        if($testRetry) { RefundProof::requireUnsent($op,$l['domain']); }
+        else { self::virgin($op,$l); }
         if(($op->action==='renew'?RenewalStop::blocksRenewal($l):$l['cancel']->contains('service_id',$op->service_id))||!in_array($l['service']->status,['pending','active'],true)) { throw new \DomainException('Service lifecycle changed.'); }
         if($op->action==='renew'){RenewalFunding::requireCurrent($op,$l);}
         else { RefundPayment::requireCurrent($op,$l);ContactSetup::validate($op);

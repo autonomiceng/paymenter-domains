@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Contracts;
 use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, DriverResult, Environment, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations, OperationClaims, WriteAcceptance, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations, EnomTestCallLimit, OperationClaims, WriteAcceptance, WriteFeatures};
 /** Final admitted entry. Every real sender MUST extend RegistrationProtocol with its bound bridge/preflight.
  * Direct subclasses are synthetic seams only. Descriptors/payloads/receipts alone cannot reach real senders.
  */
@@ -31,6 +31,8 @@ abstract class RegistrationTransport
         try {
             $result = $this->sendRegistration($operation, $context, $payload, $origin, $timeout);
             $operation->binding->requireMatch($result->binding); return $result;
+        } catch (EnomTestCallLimit) {
+            throw new EnomTestCallLimit;
         } catch (\Throwable) { throw new \RuntimeException('Registrar registration outcome is unresolved.'); }
         finally { $this->flight = null; }
     }

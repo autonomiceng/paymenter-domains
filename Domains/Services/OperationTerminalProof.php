@@ -10,9 +10,9 @@ final class OperationTerminalProof
     {
         return $claims->locked($id, static function ($op, $domain, $all): Operation {
             $a = $op->attempt ?? [];
-            if ($op->state !== 'held' || !in_array($op->safe_code, ['pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required'], true)
+            if ($op->state !== 'held' || !in_array($op->safe_code, ['pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required', 'enom_test_call_cap', 'usd_balance_required', 'enom_test_setup_required'], true)
                 || !isset($a['claim_key']) || ($a['seal'] ?? null) !== 'absent' || ($a['send_state'] ?? null) !== 'definitely_unsent'
-                || array_diff(array_keys($a), ['claim_key', 'seal', 'send_state']) || $op->lease_expires_at !== null
+                || array_diff(array_keys($a), ['claim_key', 'seal', 'send_state', 'capacity_deferrals', 'test_call_refusals']) || $op->lease_expires_at !== null
                 || $op->provider_order_id !== null || $op->confirmed_expires_at !== null || array_key_exists('actual', $op->cost ?? [])
                 || array_key_exists('execution', $op->cost ?? []) || array_key_exists('refund', $op->funding ?? [])
                 || array_key_exists('dispatch_attempted_at', $op->policy ?? []) || $domain->status !== ($op->action === 'transfer' ? 'transfer_pending' : 'registration_pending')

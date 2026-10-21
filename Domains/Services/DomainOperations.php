@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, Clock, OperationPreflight, SealPreflight, WriteGate};
-use Paymenter\Extensions\Servers\Domains\Data\{AdmittedOperation, RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 
@@ -58,15 +58,37 @@ final class DomainOperations
             }
             catch (WriteHeld $held) { return $held->reason==='write_rate_limited'?$route:$this->claims->holdUnclaimed($id, $held->reason); }
         }
-        $claim = $this->claims->claim($id);
+        if (EnomTestRegistration::applies($route)) {
+            try {
+                $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$route->server_id)->first();
+                if(!$account) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
+                $binding = CatalogueAcceptances::binding($account);
+                if(!EnomTestRegistration::enabled($binding)) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
+                if(($reason=EnomTestRegistration::localHoldReason($binding,$route))!==null){return $this->claims->holdUnclaimed($id,$reason);}
+                return EnomTestCalls::withPurchase($binding,fn()=> $this->executeClaimed($id,$entry,$binding),(int)$route->id);
+            } catch (EnomTestCallLimit) { return $this->claims->holdUnclaimed($id,'enom_test_call_cap'); }
+            catch (ReadDeferred) { return $route->fresh(); }
+            catch (WriteHeld $held) { return $this->claims->holdUnclaimed($id,$held->reason); }
+            catch (\Throwable) { return $this->claims->holdUnclaimed($id,'enom_test_setup_required'); }
+        }
+        return $this->executeClaimed($id,$entry);
+    }
+
+    private function executeClaimed(int $id, \DateTimeImmutable $entry, ?AccountBinding $testPurchase=null): Operation
+    {
+        $claim = $this->claims->claim($id,$testPurchase!==null?$entry:null);
         if (!$claim) { return Operation::findOrFail($id); }
         [$op, $domain, $binding] = $claim;
         $result = null;
         try {
+            if($testPurchase!==null){$binding->requireMatch($testPurchase);}
             $deadline = $entry->modify('+'.(ExecuteOperation::EXECUTION_SECONDS - ExecuteOperation::FINISH_SECONDS).' seconds');
             $context = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget($op->action === 'transfer' ? 12 : ExecuteOperation::REQUEST_LIMIT), $this->clock, Runtime::limiter());
             $ready = $this->preflight->inspect($op, $domain, $context);
-            if ($this->preflight instanceof TransferPreflight) { $ready = $this->preflight->inspect($op, $domain, $context); }
+            if ($this->preflight instanceof TransferPreflight) {
+                $ready = $this->preflight->inspect($op, $domain, $context);
+            }
+            if($testPurchase!==null){EnomTestCalls::assertPurchaseCurrent($binding);EnomTestCalls::reservePurchase($binding);}
             if ($context->budget->remaining() < 1) { throw new \DomainException('No dispatch request budget remains.'); }
             $dispatchDeadline = min($deadline, $ready->validUntil, $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds'));
             $context = new RequestContext($binding, RequestOrigin::Background, $dispatchDeadline, $context->budget, $this->clock, Runtime::limiter());
@@ -85,6 +107,8 @@ final class DomainOperations
             } finally { unset($this->grants[$admitted]); }
             return $this->claims->finish($op, $result);
             });
+        } catch (EnomTestCallLimit) {
+            return $this->claims->holdTestCallCap($op);
         } catch (ReadDeferred) {
             return $this->claims->defer($op);
         } catch (WriteHeld $held) {

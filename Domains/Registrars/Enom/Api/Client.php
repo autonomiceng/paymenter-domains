@@ -27,6 +27,7 @@ final class Client
             [$uid, $token, $transport] = self::$secrets[$this];
             $body = $transport->send($this->binding->environment, $command, $parameters, $uid, $token, min(25000, $remaining));
             return (new ResponseParser)->parse($command, $body);
+        } catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit;
         } catch (\Throwable) { return new ProtocolResult('unknown', 'transport'); }
         });
         $context->requireReadSuccess($result->status==='success'); return $result;

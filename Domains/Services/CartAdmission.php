@@ -69,7 +69,8 @@ final class CartAdmission
             $product = Product::findOrFail($item->product_id);
             if (!$this->native->mapping($product)) { continue; }
             $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $product->server_id)->firstOrFail();
-            if (TestCatalogue::enabled(CatalogueAcceptances::binding($account)) && !$account->processing_enabled) {
+            $binding = CatalogueAcceptances::binding($account);
+            if (EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::enabled($binding)) {
                 throw new \App\Exceptions\DisplayException('TEST domains are for preview. Checkout is unavailable; no order or payment was created. Remove TEST domain lines to check out other items.');
             }
             if (DB::transactionLevel() !== 1 || $this->order || (int) Auth::id() !== (int) $order->user_id
@@ -77,6 +78,9 @@ final class CartAdmission
                 throw new \DomainException('Domain checkout requires its native transaction and owner.');
             }
             $mapping = $this->validate($item, $product);
+            if ($mapping['action'] !== 'register' && EnomTestRegistration::enabled($binding)) {
+                throw new \App\Exceptions\DisplayException('TEST transfers are unavailable; no order or payment was created. Remove TEST transfer lines and check out registrations only.');
+            }
             $name = $this->name($item, $mapping);
             if (isset($names[$name])) { throw new \DomainException('Duplicate domain cart line.'); } $names[$name] = true;
             $selection = $this->eligibility->require((string) ($item->checkout_config['domains_check'] ?? ''), $name, $this->identity($item));

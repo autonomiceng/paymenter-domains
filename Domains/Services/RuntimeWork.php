@@ -22,8 +22,13 @@ final readonly class RuntimeWork
     private function enqueue(int $id,bool $force=false): void {app(RuntimeDispatch::class)->enqueue($id,$force);}
     public function operation(int $id): void
     {
-        $op=Operation::findOrFail($id);try{$a=Account::where('server_id',$op->server_id)->first();if($a&&($a->processing_enabled||in_array($op->state,['pending','uncertain','running'],true))&&$this->ports->accepted($a)){if(app(RuntimeDispatch::class)->current($op)){$this->ports->operation($op);}}}finally{$this->notice((int)$op->domain_id);}
+        $op=Operation::findOrFail($id);try{$a=Account::where('server_id',$op->server_id)->first();$pausedTest=$a&&!$a->processing_enabled&&$op->action==='register'&&$op->state==='awaiting_payment'
+            &&\App\Models\Invoice::whereKey($op->invoice_id)->value('status')==='paid'&&self::testRegistrationEnabled($a);
+            if($pausedTest){if(app(RuntimeDispatch::class)->current($op)){app(OperationClaims::class)->holdUnclaimed((int)$op->id,'processing');}return;}
+            if($a&&($a->processing_enabled||in_array($op->state,['pending','uncertain','running'],true))&&$this->ports->accepted($a)){if(app(RuntimeDispatch::class)->current($op)){$this->ports->operation($op);}}}finally{$this->notice((int)$op->domain_id);}
     }
+    private static function testRegistrationEnabled(Account $account): bool
+    {try{return EnomTestRegistration::enabled(CatalogueAcceptances::binding($account));}catch(\Throwable){return false;}}
     private function notice(int $id): void {$this->attempt('notices',fn()=>app(Reminders::class)->remind($id),$id);}
     private function attempt(string $producer,\Closure $run,?int $row=null): void
     {(new RuntimeDiagnostics($this->clock))->attempt($producer,$run,$row);}
@@ -58,7 +63,8 @@ final readonly class RuntimeWork
             });if(!$row){break;}
             $a=Account::where('server_id',$row->server_id)->first();
             if(!$a||$a->account_fingerprint!==$row->account_fingerprint){continue;}
-            $this->attempt('registrar_balance',fn()=>app(RegistrarBalances::class)->daily($a),(int)$a->server_id);
+            $testRegistration=self::testRegistrationEnabled($a);
+            if(!$testRegistration){$this->attempt('registrar_balance',fn()=>app(RegistrarBalances::class)->daily($a),(int)$a->server_id);}
             $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->where('id','>',$row->operation_cursor)
                 ->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])->orderBy('id')->limit(25)->get();
             foreach($ops as $op){if($op->action==='transfer'){$this->transferPayment($op);}$this->attempt('operation',fn()=>$this->enqueue((int)$op->id),(int)$op->id);}

@@ -22,6 +22,7 @@ final class RefundProof
             throw new \DomainException('Unknown adjustment evidence.');
         }
         if (PrivacyRetirement::safe($op, $d)) { return; }
+        if (OperationClaims::testCallRefusalUnsent($op)) { return; }
         if ($op->action === 'transfer' && array_key_exists('transfer_timeout', $a)) {
             if (!self::transferTimeout($op, $d)) { throw new \DomainException('Transfer is not a definitely-unsent timeout.'); }
             return;
@@ -59,7 +60,7 @@ final class RefundProof
             throw new \DomainException('Unsealed financial seal or unknown claim prevents refund.');
         }
         if (!$sealed && array_key_exists('claim_key', $a) && (!is_string($a['claim_key']) || !preg_match('/^[a-f0-9]{32}$/D', $a['claim_key'])
-            || !in_array($op->safe_code, ['pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required', 'write_rate_limited', 'refund_approved'], true))) {
+            || !in_array($op->safe_code, ['pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required', 'write_rate_limited', 'refund_approved', 'usd_balance_required', 'enom_test_setup_required'], true))) {
             throw new \DomainException('Unresolved local claim.');
         }
         if (array_key_exists('terminal', $a) && (($a['terminal']['operation_key'] ?? null) !== $op->operation_key
