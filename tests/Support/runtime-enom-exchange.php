@@ -123,5 +123,6 @@ $seamDenied(fn()=>$load(false),'binding');DB::table('settings')->where('id',$pro
 DB::table('settings')->where('id',$setting->id)->update(['value'=>'invalid-ciphertext']);$seamDenied(fn()=>$load(false),'encrypted configuration');
 DB::table('settings')->where('id',$setting->id)->update(['value'=>$raw]);
 echo "Installed exchange credential seam passed.\n";
+require __DIR__.'/runtime-enom-reconciliation.php';
 require __DIR__.'/runtime-enom-held.php';
 echo "Installed authenticated Enom: paid action routing, shared capacity, duplicate workers, restart and timeout uncertainty passed.\n";
