@@ -2,6 +2,7 @@
 """Run registered offline suites with pinned PHP and optional pristine native fixture."""
 # Adapted from Paymenter Enom scripts/test.py; MIT, Copyright (c) 2026 Autonomic Engineering.
 import argparse
+from contextlib import contextmanager
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import json
 import os
@@ -68,10 +69,24 @@ def execute(argv, *, cwd, env, timeout=60, graceful=0):
             return stdout, stderr, 124, True
 
 
-def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None):
+@contextmanager
+def timing(name, timings):
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        timings[name] = time.monotonic() - started
+        print(json.dumps({'timing': 'stage', 'stage': name, 'seconds': timings[name]}), flush=True)
+
+
+def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None):
+    started_run = time.monotonic()
+    timings = {} if timings is None else timings
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
-    before, completed = hashes(), {}
-    fingerprint = runtime_fingerprint() if jobs > 1 else None
+    completed = {}
+    with timing('runtime_snapshot', timings):
+        before = hashes()
+        fingerprint = runtime_fingerprint() if jobs > 1 else None
     stopped, scheduling = threading.Event(), threading.Lock()
 
     def command(index, worker):
@@ -82,70 +97,81 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         if code:
             with scheduling:
                 stopped.set()
+        started_guard = time.monotonic()
         unchanged, runtime_error = runtime_matches(before, fingerprint)
+        guard_seconds = time.monotonic() - started_guard
         if not unchanged:
             with scheduling:
                 stopped.set()
         return stdout, stderr, {'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out,
                                'runtime_unchanged': unchanged, 'runtime_error': runtime_error,
-                               'skipped': kind == 'mariadb' and code == 77, 'seconds': seconds}
+                               'skipped': kind == 'mariadb' and code == 77, 'seconds': seconds,
+                               'guard_seconds': guard_seconds}
 
     def record(index, value):
         stdout, stderr, result = value
         (output/f'{index:03d}.stdout.txt').write_bytes(stdout)
         (output/f'{index:03d}.stderr.txt').write_bytes(stderr)
         completed[index] = result
+        print(json.dumps({'timing': 'command', 'index': index, **{key: result[key] for key in
+                         ['kind', 'argv', 'exit', 'timed_out', 'seconds', 'guard_seconds']}}), flush=True)
         if result['kind'] != 'lint' or result['exit']:
             print(stdout.decode(errors='replace').strip(), flush=True)
         if stderr:
             print(stderr.decode(errors='replace').strip(), file=sys.stderr, flush=True)
 
-    if jobs == 1:
-        for index in range(len(commands)):
-            record(index, command(index, 0))
-            if stopped.is_set():
-                break
-    else:
-        with ThreadPoolExecutor(max_workers=jobs) as pool:
-            pending, index, available = {}, 0, list(range(jobs))
-            while pending or (index < len(commands) and not stopped.is_set()):
-                while available and index < len(commands):
-                    with scheduling:
-                        if stopped.is_set():
-                            break
-                        worker = available.pop()
-                        pending[pool.submit(command, index, worker)] = (index, worker)
-                        index += 1
-                if not pending:
+    with timing('commands', timings):
+        if jobs == 1:
+            for index in range(len(commands)):
+                record(index, command(index, 0))
+                if stopped.is_set():
                     break
-                done, _ = wait(pending, return_when=FIRST_COMPLETED)
-                # Drain every completed result before assigning another command.
-                for future in done:
-                    position, worker = pending.pop(future)
-                    record(position, future.result())
-                    available.append(worker)
+        else:
+            with ThreadPoolExecutor(max_workers=jobs) as pool:
+                pending, index, available = {}, 0, list(range(jobs))
+                while pending or (index < len(commands) and not stopped.is_set()):
+                    while available and index < len(commands):
+                        with scheduling:
+                            if stopped.is_set():
+                                break
+                            worker = available.pop()
+                            pending[pool.submit(command, index, worker)] = (index, worker)
+                            index += 1
+                    if not pending:
+                        break
+                    done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                    # Drain every completed result before assigning another command.
+                    for future in done:
+                        position, worker = pending.pop(future)
+                        record(position, future.result())
+                        available.append(worker)
     results = [completed[index] for index in sorted(completed)]
-    # A final guard catches changes after the last per-command check as well.
-    unchanged, runtime_error = runtime_matches(before, fingerprint)
-    if results and not unchanged:
-        results[-1].update(runtime_unchanged=False, runtime_error=runtime_error)
-    dependency_error = None
-    try:
-        dependency_unchanged = dependency is None or native.verify(dependency[0])[1] == dependency[1]
-        if worker_check:
-            worker_check()
-    except (ValueError, RuntimeError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
-        dependency_unchanged = False
-        dependency_error = type(error).__name__
+    with timing('final_guards', timings):
+        # A final guard catches changes after the last per-command check as well.
+        unchanged, runtime_error = runtime_matches(before, fingerprint)
+        if results and not unchanged:
+            results[-1].update(runtime_unchanged=False, runtime_error=runtime_error)
+        dependency_error = None
+        try:
+            dependency_unchanged = dependency is None or native.verify(dependency[0])[1] == dependency[1]
+            if worker_check:
+                worker_check()
+        except (ValueError, RuntimeError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+            dependency_unchanged = False
+            dependency_error = type(error).__name__
     complete = len(results) == len(commands) and all(r['exit'] == 0 and r['runtime_unchanged'] for r in results) and dependency_unchanged
-    receipt = {'complete': complete, 'jobs': jobs, 'php_version': '8.4.26', 'results': results, 'runtime_sha256': before,
+    timings['run'] = time.monotonic() - started_run
+    planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
+    receipt = {'timings': timings, 'only_tests': sorted(set(only or [])),
+               'omitted_tests': [path for paths in suites.values() for path in paths if path not in planned],
+               'complete': complete, 'jobs': jobs, 'php_version': '8.4.26', 'results': results, 'runtime_sha256': before,
                'selected_suites': selected, 'omitted_suites': [s for s in CATEGORIES if s not in selected],
                'unimplemented_suites': [s for s, paths in suites.items() if not paths],
                'dependency': {'commit': native.COMMIT, 'lock_sha256': native.LOCK_SHA256, 'source_sha256': dependency[1]} if dependency else None,
                'skipped_suites': [r['kind'] for r in results if r['skipped']], 'dependency_unchanged': dependency_unchanged, 'dependency_error': dependency_error, 'real_provider_calls': 0,
                'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
     (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
-    print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands), 'receipt': str(output/'receipt.json')}))
+    print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands), 'only_tests': sorted(set(only or [])), 'receipt': str(output/'receipt.json')}))
     if len(results) == len(commands) and any(r['skipped'] for r in results) and all(r['exit'] in [0, 77] for r in results):
         return 77
     return 0 if complete else 1
@@ -153,11 +179,18 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
 
 def runtime_fingerprint():
     root = ROOT/'Domains'
-    result = {}
-    for path in [root, *sorted(root.rglob('*'))]:
-        stat = path.lstat()
-        result[str(path.relative_to(root))] = (stat.st_ino, stat.st_mode, stat.st_size,
-                                             stat.st_mtime_ns, stat.st_ctime_ns)
+    def facts(stat):
+        return (stat.st_ino, stat.st_mode, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    result = {'.': facts(root.lstat())}
+    pending = [(root, '')]
+    while pending:
+        directory, prefix = pending.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                name = prefix + entry.name
+                result[name] = facts(entry.stat(follow_symlinks=False))
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append((entry.path, name+'/'))
     return result
 
 
@@ -181,7 +214,10 @@ def default_suites():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--suite', choices=CATEGORIES, action='append')
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument('--suite', choices=CATEGORIES, action='append')
+    selection.add_argument('--only', nargs='+', action='extend', metavar='TEST_PATH',
+                           help='Run only exact registered test paths; not a full boundary run.')
     parser.add_argument('--jobs', type=positive_jobs,
                         default=os.environ.get('DOMAINS_TEST_JOBS', max(1, min(4, (os.cpu_count() or 1)//2))))
     args = parser.parse_args()
@@ -190,9 +226,15 @@ def main():
     selected = args.suite or []
     runtime = fixture = None
     workers = None
+    timings = {}
     try:
         suites = manifest()
-        selected = list(dict.fromkeys(args.suite or default_suites()))
+        requested = set(args.only or [])
+        unknown = requested - {path for paths in suites.values() for path in paths}
+        if unknown:
+            raise ValueError('Unregistered test path: '+', '.join(sorted(unknown)))
+        selected = ([kind for kind, paths in suites.items() if requested.intersection(paths)] if args.only
+                    else list(dict.fromkeys(args.suite or default_suites())))
         for name in selected:
             if name != 'lint' and not suites[name]:
                 if args.suite:
@@ -204,11 +246,13 @@ def main():
             if not source:
                 raise ValueError('Native suite requires PAYMENTER_TEST_APP.')
             fixture = output/'paymenter'
-            snapshot = native.prepare(source, fixture)
+            with timing('native_fixture', timings):
+                snapshot = native.prepare(source, fixture)
             dependency = (source, snapshot)
         binary = extension = None
         if selected != ['mariadb']:
-            runtime, binary, extension = prepare(native='native' in selected)
+            with timing('php_runtime', timings):
+                runtime, binary, extension = prepare(native='native' in selected)
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                'PHPRC': '', 'PHP_INI_SCAN_DIR': ''}
         if 'DOMAINS_UPGRADE_FROM' in os.environ:
@@ -229,18 +273,22 @@ def main():
             commands.append(('lint', [php, 'tests/php83-compatibility-test.php']))
         for kind, paths in suites.items():
             if kind in selected:
-                commands.extend((kind, [sys.executable if p.endswith('.py') else php, p]) for p in paths)
+                commands.extend((kind, [sys.executable if p.endswith('.py') else php, p])
+                                for p in paths if not requested or p in requested)
         if not commands:
             raise ValueError('No runnable suites selected.')
         jobs = 1 if 'mariadb' in selected else args.jobs
         worker_check = None
         if jobs > 1:
-            workers, fixture_snapshot, runtime_snapshot = test_workers.environments(env, output, jobs, runtime)
+            with timing('worker_environments', timings):
+                workers, fixture_snapshot, runtime_snapshot = test_workers.environments(env, output, jobs, runtime)
             worker_check = lambda: test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
-        return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check)
+        return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
+                   timings=timings, only=args.only)
     except BaseException as error:
         if not (output/'receipt.json').exists():
-            (output/'receipt.json').write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected})+'\n')
+            (output/'receipt.json').write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,
+                                                          'only_tests': args.only or [], 'timings': timings})+'\n')
             print('Setup failed; receipt: '+str(output/'receipt.json'), file=sys.stderr)
         raise
     finally:
