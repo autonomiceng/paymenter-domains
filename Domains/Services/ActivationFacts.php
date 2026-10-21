@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-/** Whitelisted local facts only. Never construct readers, executors or serialize saved settings. */
+/** Whitelisted local facts only. Explicit deployment factories must be pure; never serialize saved settings. */
 final class ActivationFacts
 {
     public static function all(): array
@@ -43,7 +43,14 @@ final class ActivationFacts
         catch(\Throwable){$facts['No accepted catalogue']='Registrar setup → Catalogue acceptance: independently verify exact USD terms, registry fields and safe annual renewal, then import prices. In TLDs, review action flags, pricing, selected seller and publication.';}
         $registered=app(RuntimePorts::class)->registered($a);
         $facts[$registered?'Runtime composition review required':'Runtime ports unavailable']='Deployment: supply account-bound acquisition, reconciliation, renewal execution/writer/completion and management engine/protocol. Registered factories alone do not prove provider acceptance.';
-        foreach(['Registration','Transfer','Renewal','Management'] as $action){$facts[$action.($registered?' writes unverified':' writes off')]='Deployment: independently accept and enable the '.$action.' feature in this account’s WriteFeatures. No saved server switch proves this permission.';}
+        foreach(app(RuntimePorts::class)->acquisitionGates($a) as $action=>$enabled){
+            $label=$action==='register'?'Registration':'Transfer';
+            $facts[$label.match($enabled){null=>' composition unavailable',false=>' feature off',true=>' composition review required'}]=match($enabled){
+                null=>'Deployment: supply a complete account-bound runtime composition with all seven roles, including an action selector with separate registration and transfer preflights, bridges and protocols. Keep processing off until the composition and provider path have been independently reviewed.',
+                false=>'Deployment: '.$label.' is off in this account’s WriteFeatures. Independently accept the '.strtolower($label).' provider path before enabling it; enabling it does not prove provider acceptance.',
+                true=>'Local only: the account-bound '.strtolower($label).' composition resolves and its WriteFeatures flag is on. This is not provider acceptance or processing authority. Enabled processing, current catalogue acceptance, contact and nameserver setup, a fresh preflight, verified funding, current ownership, resolved prior outcomes and one-use dispatch authority are still required.'};
+        }
+        foreach(['Renewal','Management'] as $action){$facts[$action.($registered?' writes unverified':' writes off')]='Deployment: independently accept and enable the '.$action.' feature in this account’s WriteFeatures. No saved server switch proves this permission.';}
         return $facts;
     }
     private static function reviews(): array

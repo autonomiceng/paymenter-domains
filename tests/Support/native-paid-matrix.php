@@ -118,7 +118,7 @@ $clock->instant=$now;
 // Lost Paid listener: native siblings continue; fair scheduler recovers only retained work.
 Event::forget(App\Events\Invoice\Paid::class);expect(str_contains(NativePaidHooks::notices()['Start after payment'],'Paused'),'Missing exact Paid listener is visible');
 $lost=$new('paid-lost-event.com',paid:false);$queue=Queue::getFacadeRoot();Queue::fake();$paid($lost);same('awaiting_payment',$lost->fresh()->state,'Missing event leaves recoverable operation');
-Queue::assertNotPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class);Queue::swap($queue);$work->tick();$work->operation($lost->id);same('uncertain',$lost->fresh()->state,'Scheduler recovers lost Paid wake');NativePaidHooks::boot();
+Queue::assertNotPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class);Queue::swap($queue);$work->tick();$clock->instant=$clock->now()->modify('+61 seconds');Illuminate\Support\Facades\Cache::flush();$work->operation($lost->id);same('uncertain',$lost->fresh()->state,'Scheduler recovers lost Paid wake');NativePaidHooks::boot();
 // Multi-day transfer reconciliation cannot turn into a second acquisition send.
 $transfer=$new('paid-long-transfer.com',paid:false,action:'transfer');$paid($transfer);expect(in_array($transfer->fresh()->state,['pending','uncertain'],true),'Transfer entered processing on first sync job: '.$transfer->fresh()->state.' / '.$transfer->fresh()->safe_code);$sent=$writer->calls;
 $clock->instant=$now->modify('+4 days');$work->operation($transfer->id);$manual($transfer);event(new App\Events\Invoice\Paid(Invoice::find($transfer->invoice_id)));

@@ -96,6 +96,8 @@ if($phase==='server-delete'){
     assertRetained($receipt);require __DIR__.'/Support/installed-watch.php';seedInstalledWatch();
     file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
     echo "Installed watch observations, notices and adoption preview seeded with all gates off.\n";
+}elseif($phase==='acquisition'){
+    require __DIR__.'/Support/runtime-acquisition.php';
 }elseif($phase==='seed'){
     require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';
     expect(!is_link(base_path('extensions/Servers/Domains')),'Runtime is installed files, never a source link');

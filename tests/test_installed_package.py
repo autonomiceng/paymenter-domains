@@ -72,7 +72,7 @@ def refuse_unsafe_archives(root, current):
 
 
 def main(scenario):
-    if scenario not in ('held', 'fresh', 'upgrade', 'previous'):
+    if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'acquisition'):
         raise ValueError('Unknown installed package scenario')
     began = time.monotonic()
     fixture = Path(os.environ['PAYMENTER_TEST_FIXTURE'])
@@ -152,6 +152,9 @@ def main(scenario):
             phase('catalogue-retained')
             evidence['test_catalogue_fresh_reinstall'] = True
             evidence['fresh_installed_registration_held'] = True
+        elif scenario == 'acquisition':
+            phase('acquisition')
+            evidence['typed_acquisition_routing'] = True
         else:
             phase('seed')
             if scenario == 'previous':
