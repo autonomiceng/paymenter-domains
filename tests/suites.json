@@ -38,6 +38,7 @@
     "tests/schema-reference-safety-test.php",
     "tests/reservation-test.php",
     "tests/binding-test.php",
+    "tests/enom-identity-test.php",
     "tests/pricing-rules-test.php",
     "tests/catalogue-test.php",
     "tests/enom-pricing-test.php",

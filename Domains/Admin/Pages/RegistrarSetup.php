@@ -30,14 +30,15 @@ class RegistrarSetup extends Page
         $servers=Server::where('extension','Domains')->orderBy('id')->get();
         foreach($servers as $s){
             $a=Account::where('server_id',$s->id)->first();
-            $facts=['Environment'=>$a?->environment==='live'?'Live':($a?'Test':'Not configured'),
+            $facts=['Environment'=>$a?->environment==='live'?'Live':($a?'TEST':'Not configured'),
                 'Processing'=>$a?->processing_enabled?(app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class)->configurationAvailable((int)$s->id)?'On':'On hold'):'Off',
                 'Account binding'=>$a?'Verified · immutable':'Not configured',
+                'Verified user ID'=>$a?->registrar_key==='enom'&&config('domains.enom_identity.environment')===$a->environment?$a->stable_identity:'Unavailable',
                 'Catalogue acceptance'=>$a?TldFacts::acceptance($a):'Unavailable · new sales held',
                 'Connection'=>app(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class)->connectionAvailable()?'Not tested this visit':'Unavailable','Retained domains'=>$a?\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count():0];
             $facts += \Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for((int)$s->id);
             $facts += \Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule((int)$s->id);
-            $entries=[];foreach($facts as $label=>$value){$entries[]=TextEntry::make('s'.$s->id.'_'.count($entries))->label($label)->state((string)$value);}
+            $entries=[];foreach($facts as $label=>$value){$entries[]=TextEntry::make('s'.$s->id.'_'.count($entries))->label($label)->state((string)$value)->badge($label==='Environment');}
             $sections[]=Section::make($s->name)
                 ->key('account_'.$s->id)->description(($a?TldFacts::registrar($a->registrar_key):'Registrar').' · Server #'.$s->id.' · '.($s->enabled?'Viewing uses saved local facts.':'This server is off in Paymenter.'))
                 ->columns(2)->schema([...$entries,\Filament\Schemas\Components\Actions::make([...SettingsActions::make((int)$s->id,null,$this->reviewStamps[$s->id]??'',true),\Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderAction::make((int)$s->id)])->columnSpanFull()])->columnSpanFull();

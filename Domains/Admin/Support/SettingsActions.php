@@ -24,8 +24,8 @@ final class SettingsActions
             'seller'=>'Selects the registrar for new sales only. Existing domains and renewal obligations keep their holding registrar. No automatic fallback.',
             'acceptance'=>'Accept only independently verified exact terms. Any change holds new sales for every TLD on this account until a new import. Retained holders keep accepted annual renewal support.',
             'history'=>'Accept only a verified complete USD history contract for this action. Revocation stops new reconciliation reads; saved attempts and financial evidence stay retained.',
-            'configure'=>'Verifies the supplied credentials before saving them encrypted. An existing account keeps its identity. Processing stays off. Connection checks are currently unavailable.',
-            'probe'=>'Checks the bound account without authorizing purchases or new sales. Connection checks are currently unavailable.',
+            'configure'=>'Sends one account read to check the supplied credentials, then saves them encrypted. The verified account cannot change. Saving pauses processing until it is re-enabled.',
+            'probe'=>'Reads the verified account balance once and saves it to Registrar balances. Does not enable processing, purchases or new sales.',
         };
     }
     public static function make(int $server,?int $tld,string $stamp,bool $setup=false): array
@@ -75,7 +75,7 @@ final class SettingsActions
             }
             if($name==='configure'){
                 $fields[]=Select::make('registrar')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo'])->default(fn()=>Account::where('server_id',$server)->value('registrar_key'))->live()->required();
-                $fields[]=Select::make('environment')->label('Environment')->options(['test'=>'Test','live'=>'Live'])->default(fn()=>Account::where('server_id',$server)->value('environment')??'test')->required();
+                $fields[]=Select::make('environment')->label('Environment')->options(['test'=>'TEST','live'=>'Live'])->default(fn()=>Account::where('server_id',$server)->value('environment')??'test')->required();
                 foreach(['uid'=>'Enom user ID','token'=>'Enom API token','api_key'=>'NameSilo API key'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->password()->autocomplete('new-password')->maxLength(4096)->visible(fn($get)=>$get('registrar')===($key==='api_key'?'namesilo':'enom'))->required();}
             }
             $fields[]=Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:/\A[^\x00-\x1f\x7f]*\z/'])->helperText('Use one line. Do not include credentials.');
@@ -90,7 +90,7 @@ final class SettingsActions
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($name,$server,$tld,$target){
                     try{$r=new Review((int)Auth::id(),$server,$tld,$name,(string)($data['review_key']??''),trim((string)($data['reason']??'')));
                         app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
-                        Notification::make()->success()->title($name==='processing'?($account->processing_enabled?'Processing enabled':'Processing paused').' for '.$target():'Change recorded')->body($name==='processing'?null:'Reload this page before another change.')->send();
+                        Notification::make()->success()->title($name==='processing'?($account->processing_enabled?'Processing enabled':'Processing paused').' for '.$target():'Change recorded')->body($name==='processing'?null:($name==='probe'?'Balance read saved. See Registrar balances.':'Reload this page before another change.'))->send();
                         if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl());}
                     }catch(\Throwable $error){
                         $message=match($error->getMessage()){'Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',
@@ -99,6 +99,12 @@ final class SettingsActions
                             'Runtime acceptance and shared workers are required.'=>'Provider acceptance and shared cache, sessions and queue workers are required before enabling processing.',
                             'Pause processing on every legacy Enom server before installing or enabling Domains.'=>'Pause processing on every legacy Enom server first.',
                             'Connection checks are unavailable.'=>'Connection checks are unavailable. No provider call was made.',
+                            'identity_credentials_refused'=>'Enom refused the user ID or API token. Check both for the selected environment.',
+                            'identity_unavailable'=>'Enom did not confirm this account. Nothing was saved. Try again later.',
+                            'Connection not verified.'=>'Enom did not confirm the balance. The last saved balance was kept.',
+                            'identity_environment_refused'=>'This environment is not enabled for Enom account reads on this site. No provider call was made.',
+                            'identity_account_changed'=>'These credentials belong to a different account. The saved account was kept.',
+                            'namesilo_identity_unavailable'=>'NameSilo identity verification is unavailable. This account cannot be connected.',
                             'Review key used.'=>'This confirmation was already used. Reload this page.',
                             default=>'Reload and check current permissions, saved facts and acceptance.'};
                         if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains staff setting failed.',['action'=>$name,'exception_class'=>$error::class]);}

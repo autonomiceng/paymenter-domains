@@ -82,13 +82,8 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     {
         $reply = $this->read(ReadCommand::Balance, [], $context);
         if ($reply->status !== 'success') { return $this->neutral($reply); }
-        $value = $reply->value('availablebalance');
-        if ($reply->status !== 'success' || !is_string($value)
-            || !preg_match('/^(?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\.[0-9]{1,2})?$/D', $value)) {
-            return $this->neutral(new ProtocolResult('unknown', 'invalid_payload'));
-        }
-        try { $balance = new Money(str_replace(',', '', $value).(str_contains($value, '.') ? '' : '.00'), 'USD'); }
-        catch (\InvalidArgumentException) { return $this->neutral(new ProtocolResult('unknown', 'invalid_payload')); }
+        $balance = Balance::read($reply);
+        if ($balance === null) { return $this->neutral(new ProtocolResult('unknown', 'invalid_payload')); }
         return $this->neutral($reply, new Evidence(balance: $balance));
     }
     public function catalogue(#[\SensitiveParameter] RequestContext $context): ReadResult

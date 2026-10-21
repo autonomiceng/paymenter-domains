@@ -14,7 +14,9 @@ final class ActivationFacts
         foreach(array_unique([...$registered,'enom','namesilo']) as $key){
             $facts=[];
             if(!in_array($key,$registered,true)||!app(StaffSettingsWrites::class)->connectionAvailable()){
-                $facts['No connection check available']='Deployment: register an approved account verifier and reader, then explicitly enable the reviewed Registrar setup connection action. Identity verification must prove the owning account.';
+                $facts['No connection check available']=$key==='enom'
+                    ?'Deployment: deliberately set domains.enom_identity.environment to test or live before extension boot to enable bounded identity and staff balance reads. This does not activate catalogue or processing.'
+                    :'NameSilo identity verification is unavailable. No accepted account identity check exists; this account cannot be connected.';
             }
             $accounts=Account::where('registrar_key',$key)->orderBy('server_id')->get();
             if($accounts->isEmpty()){$facts['No verified account']='Registrar setup: configure an enabled native Domains server after connection checks are available. Keep retained account identities unchanged.';}

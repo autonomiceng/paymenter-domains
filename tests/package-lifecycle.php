@@ -66,6 +66,9 @@ if($phase==='server-delete'){
 }elseif($phase==='held'){
     require __DIR__.'/Support/registration-held.php';
     require __DIR__.'/Support/runtime-activation.php';
+}elseif($phase==='identity'){
+    require __DIR__.'/Support/enom-identity.php';$GLOBALS['identityCalls']=[];
+    require __DIR__.'/Support/enom-identity-staff.php';
 }elseif($phase==='watch-seed'){
     assertRetained($receipt);require __DIR__.'/Support/installed-watch.php';seedInstalledWatch();
     file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));

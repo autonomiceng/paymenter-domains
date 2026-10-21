@@ -130,6 +130,7 @@ def main(scenario):
         phase('install', first)
         if scenario == 'held':
             phase('held')
+            phase('identity')
             evidence['fresh_installed_registration_held'] = True
         else:
             phase('seed')
