@@ -55,6 +55,7 @@ final class StaffSettingsWrites
                 });
             });return;
         }
+        if($r->action==='import'){TestCatalogue::import($r,$data,$this->bindings,$clock);return;}
         if($r->action==='publish'){$this->native->publish($r->tldId??0,$now,$r);return;}
         if($r->action==='seller'){
             $t=Tld::findOrFail($r->tldId);$p=SalesPolicy::where('tld',$t->tld)->firstOrFail();
@@ -122,7 +123,7 @@ final class StaffSettingsWrites
                     }
                     $t->{$action.'_enabled'}=$enable;
                 }
-                $t->save();return;
+                $t->save();TestCatalogue::withdrawCarts(CatalogueAcceptances::binding($a),$t->tld,true);return;
             }
             if($r->action!=='acceptance'){throw new \DomainException('Unsupported settings action.');}
             $binding=CatalogueAcceptances::binding($a);
@@ -150,6 +151,7 @@ final class StaffSettingsWrites
             foreach(Tld::where('server_id',$s->id)->orderBy('id')->lockForUpdate()->get() as $row){$accepted=$next->endings[$row->tld]??null;
                 $row->register_enabled=$row->register_enabled&&($accepted['registry']??false)&&!empty($accepted['register']);
                 $row->transfer_enabled=$row->transfer_enabled&&($accepted['registry']??false)&&!empty($accepted['transfer']);$row->save();}
+            TestCatalogue::withdrawCarts($binding);
         });
     }
 }

@@ -147,6 +147,10 @@ def main(scenario):
         if scenario == 'held':
             phase('held')
             phase('identity')
+            phase('catalogue')
+            phase('upload', 'current')
+            phase('catalogue-retained')
+            evidence['test_catalogue_fresh_reinstall'] = True
             evidence['fresh_installed_registration_held'] = True
         else:
             phase('seed')

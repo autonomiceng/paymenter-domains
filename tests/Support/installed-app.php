@@ -20,9 +20,9 @@ $loader=require $fixture.'/vendor/autoload.php';
 $loader->addPsr4('App\\',$fixture.'/app/',true);
 $loader->addPsr4('Paymenter\\Extensions\\',$fixture.'/extensions/',true);
 $app=require $fixture.'/bootstrap/app.php';
-if(getenv('PACKAGE_PHASE')==='identity'){
+if(in_array(getenv('PACKAGE_PHASE'), ['identity','catalogue','catalogue-retained'], true)){
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
-        static fn()=>config(['domains.enom_identity.environment'=>'test']));
+        static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>getenv('PACKAGE_PHASE')!=='identity']));
 }
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 config(['hashing.bcrypt.rounds'=>4,'audit.enabled'=>false,'settings.mail_disabled'=>true,

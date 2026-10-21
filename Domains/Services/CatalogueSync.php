@@ -10,9 +10,10 @@ use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry, CatalogueFreshnes
 final class CatalogueSync
 {
     public function __construct(private readonly AccountBindings $bindings, private readonly PriceCatalogue $prices) {}
-    public function refresh(int $serverId, RequestContext $context, CatalogueFreshness $freshness = new CatalogueFreshness, ?array $suffixes = null): array
+    public function refresh(int $serverId, RequestContext $context, CatalogueFreshness $freshness = new CatalogueFreshness, ?array $suffixes = null, ?StaffSettingsReview $review = null): array
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Catalogue reads must finish outside locks.'); }
+        if (TestCatalogue::enabled($context->binding) && $review === null) { throw new \DomainException('TEST catalogue import requires staff review.'); }
         $reader = $this->bindings->reader($serverId); // enabled, identity, credentials, site BEFORE any provider read
         if (!$reader instanceof CatalogueReader) { throw new \DomainException('Catalogue reader unavailable.'); }
         $reader->binding()->requireMatch($context->binding);
@@ -54,7 +55,7 @@ final class CatalogueSync
                         throw new \DomainException('Unaccepted catalogue evidence.');
                     }
                 }
-                $this->prices->import($entry, $accepted, $recheck, $context->now());
+                $this->prices->import($entry, $accepted, $recheck, $context->now(), $review);
                 $summary['synced']++;
             } catch (\Throwable) { $summary['failed'][] = '.'.$tld; }
         }

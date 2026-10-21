@@ -15,6 +15,7 @@ function curl_exec($handle): bool
 {
     $o=$GLOBALS['identityOptions'];parse_str($o[CURLOPT_POSTFIELDS],$form);$GLOBALS['identityCalls'][]=$form;
     \same(0,\Illuminate\Support\Facades\DB::transactionLevel(),'Identity/balance read outside locks');
+    if (isset($GLOBALS['catalogueWire'])) { return ($GLOBALS['catalogueWire'])($handle, $o, $form); }
     \same('GetBalance',$form['Command'],'Account-only allowlist');\same('XML',$form['ResponseType'],'XML response');
     \same(['Command','UID','PW','ResponseType'],array_keys($form),'No domain/contact/override parameters');
     \same(false,$o[CURLOPT_FOLLOWLOCATION],'No redirects');\same(0,$o[CURLOPT_MAXREDIRS],'No redirects limit');

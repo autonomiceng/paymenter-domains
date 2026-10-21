@@ -51,9 +51,11 @@ final class SellerPolicies
                     if (!$available) { throw new \DomainException('Seller has no eligible action price.'); }
                 }
             }
+            $previous = $policy->server_id === null ? null : Account::where('server_id', $policy->server_id)->first();
             $policy->fill(['server_id' => $serverId, 'registrar_key' => $account?->registrar_key, 'account_fingerprint' => $account?->account_fingerprint,
                 'register_enabled' => $register, 'transfer_enabled' => $transfer, 'revision' => $policy->revision + 1]);
             SalesPolicy::withPolicyWrite(static fn () => $policy->save());
+            if ($previous) { TestCatalogue::withdrawCarts(CatalogueAcceptances::binding($previous), $tld); }
             $review?->record();
             return $policy;
         });
@@ -151,6 +153,11 @@ final class SellerPolicies
         if ($lock) { $accountQuery->lockForUpdate(); }
         $account = $accountQuery->firstOrFail();
         if (!$server->enabled || $server->extension !== 'Domains') { throw new \DomainException('Seller server is disabled.'); }
+        if (TestCatalogue::enabled(CatalogueAcceptances::binding($account))) {
+            if ($lock) { $this->bindings->requireReadableLocked($server, $account); }
+            elseif (!$this->bindings->configurationAvailable($serverId)) { throw new \DomainException('Catalogue account unavailable.'); }
+            return $account;
+        }
         if ($lock) { $this->bindings->requireProcessingLocked($server, $account); return $account; }
         $binding = new \Paymenter\Extensions\Servers\Domains\Data\AccountBinding($account->registrar_key, $serverId,
             \Paymenter\Extensions\Servers\Domains\Data\Environment::from($account->environment), $account->stable_identity);

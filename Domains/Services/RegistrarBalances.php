@@ -24,6 +24,7 @@ final readonly class RegistrarBalances
     public function daily(Account $account): void
     {
         OperationClaims::outside();
+        if (TestCatalogue::enabled(CatalogueAcceptances::binding($account))) { return; }
         if(!Schema::hasTable(BalanceSchema::TABLE)){return;}
         $claimedUntil=$this->claim($account,'daily_due_at',86400);if($claimedUntil===null){return;}
         if($this->read($account,'daily',RequestOrigin::Background)==='rate_limited'){
@@ -50,7 +51,8 @@ final readonly class RegistrarBalances
     private function read(Account $account,string $source,RequestOrigin $origin): string
     {
         $binding=CatalogueAcceptances::binding($account);
-        try{$reader=$this->bindings->reader((int)$account->server_id);$binding->requireMatch($reader->binding());}
+        try{$reader=$this->bindings->reader((int)$account->server_id);$binding->requireMatch($reader->binding());
+            if ($reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\CataloguePreview) { throw new \DomainException('Use the reviewed staff balance probe.'); }}
         catch(\Throwable){BalanceReads::record($binding,null,$this->clock->now(),$source,'configuration_unavailable');return 'configuration_unavailable';}
         $c=new RequestContext($binding,$origin,$this->clock->now()->modify('+25 seconds'),new RequestBudget(1),$this->clock,$this->limiter);
         try{

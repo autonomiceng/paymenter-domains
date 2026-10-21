@@ -17,7 +17,12 @@ final class RegistrarFactories
         $environment = \Paymenter\Extensions\Servers\Domains\Data\Environment::tryFrom((string)config('domains.enom_identity.environment', ''));
         if (!$environment) { return false; }
         $registry->register('enom', ['uid', 'token'], new Enom\AccountVerifier($environment),
-            static fn()=>throw new \DomainException('Production catalogue reads require separate deployment composition.'),
+            static function(AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): Enom\CataloguePreview {
+                if ($binding->environment !== $environment) { throw new IdentityRefused('identity_environment_refused'); }
+                if (!TestCatalogue::enabled($binding)) { throw new \DomainException('TEST catalogue reads are unavailable.'); }
+                $accepted = CatalogueAcceptances::load($binding);
+                return new Enom\CataloguePreview(new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), array_keys($accepted->endings)));
+            },
             static function(AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): Enom\Driver {
                 if ($binding->environment !== $environment) { throw new IdentityRefused('identity_environment_refused'); }
                 return new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), []);

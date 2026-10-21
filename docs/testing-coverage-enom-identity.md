@@ -24,10 +24,11 @@ Reload to see the verified lowercase UID and TEST/Live badge. Credential fields 
 Open **Registrar balances** to see its cached amount and read time; rendering makes no request.
 NameSilo retains an explicit unavailable identity reason.
 
-The bootstrap provides only identity and staff balance access. General catalogue/background readers
-and adoption domain readers still require separate deployment composition, even with a saved
-catalogue acceptance. No write
-ports, seller, prices, billing, processing or action features are enabled. Same-account verified
+With only the identity opt-in, the bootstrap provides identity and staff balance access.
+The separate [TEST catalogue opt-in](testing-coverage-enom-catalogue.md) permits accepted
+catalogue/search/cart reads; background imports and adoption readers remain closed.
+Prices and seller publication require the documented staff steps. Neither opt-in installs
+write ports or enables billing, processing or action features. Same-account verified
 rotation retains the binding and pauses processing; another authenticated UID cannot replace it.
 
 ## Offline coverage

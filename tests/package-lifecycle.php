@@ -79,6 +79,19 @@ if($phase==='server-delete'){
 }elseif($phase==='identity'){
     require __DIR__.'/Support/enom-identity.php';$GLOBALS['identityCalls']=[];
     require __DIR__.'/Support/enom-identity-staff.php';
+}elseif($phase==='catalogue'){
+    require __DIR__.'/Support/enom-catalogue-wire.php';
+    require __DIR__.'/Support/enom-catalogue.php';
+    file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
+}elseif($phase==='catalogue-retained'){
+    assertRetained($receipt);
+    $before=retained();
+    $rows=app(Paymenter\Extensions\Servers\Domains\Services\Storefront::class)->endings();
+    same(['com'],array_column($rows,'tld'),'Reinstalled TEST catalogue remains published');
+    same(true,$rows[0]['testEnvironment'],'Reinstalled catalogue keeps TEST provenance');
+    same($before,retained(),'Reinstalled page projection changes no retained data');
+    expect(Account::where('processing_enabled',true)->doesntExist(),'Reinstall preserves processing off');
+    echo "Installed catalogue, prices, seller and one-use audit survive reinstall.\n";
 }elseif($phase==='watch-seed'){
     assertRetained($receipt);require __DIR__.'/Support/installed-watch.php';seedInstalledWatch();
     file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));

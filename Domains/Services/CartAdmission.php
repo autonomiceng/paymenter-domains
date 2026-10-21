@@ -68,6 +68,10 @@ final class CartAdmission
         foreach ($cart->items as $item) {
             $product = Product::findOrFail($item->product_id);
             if (!$this->native->mapping($product)) { continue; }
+            $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $product->server_id)->firstOrFail();
+            if (TestCatalogue::enabled(CatalogueAcceptances::binding($account)) && !$account->processing_enabled) {
+                throw new \App\Exceptions\DisplayException('TEST domains are for preview. Checkout is unavailable; no order or payment was created. Remove TEST domain lines to check out other items.');
+            }
             if (DB::transactionLevel() !== 1 || $this->order || (int) Auth::id() !== (int) $order->user_id
                 || ($cart->user_id !== null && (int) $cart->user_id !== (int) $order->user_id) || $order->currency_code !== 'USD') {
                 throw new \DomainException('Domain checkout requires its native transaction and owner.');
