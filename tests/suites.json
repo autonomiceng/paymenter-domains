@@ -95,6 +95,7 @@
     "tests/observation-catalogue-test.php",
     "tests/storefront-test.php",
     "tests/storefront-cache-test.php",
+    "tests/policy-ending-reads-test.php",
     "tests/owned-pages-test.php",
     "tests/owner-actions-test.php",
     "tests/owner-management-test.php",

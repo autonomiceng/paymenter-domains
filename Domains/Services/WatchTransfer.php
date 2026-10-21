@@ -3,8 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\User;
-use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,SalesPolicy,WatchName};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName};
 /** Owner-scoped local projection. Read evidence is obtained separately, never on GET. */
 final class WatchTransfer
 {
@@ -30,7 +29,7 @@ final class WatchTransfer
             && !($summary->freshness['registry']['stale']??true) && WatchTransferPolicy::window(substr($summary->expiry??'',0,10),$now)
             && !Domain::where('reservation_name',$watch->canonical_name)->exists()) {
             try {
-                $ending=CanonicalName::parse($watch->canonical_name,SalesPolicy::pluck('tld')->all())['tld'];
+                $ending=PolicyEndings::parse($watch->canonical_name)['tld'];
                 $offer=$this->storefront->offer($ending,'transfer',1);TransferPrecheck::rules($offer['selection']);
             } catch (\Throwable) { $offer=null; }
         }

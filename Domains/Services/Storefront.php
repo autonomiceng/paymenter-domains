@@ -58,7 +58,7 @@ final class Storefront
     public function check(string $input): array
     {
         $name = CanonicalName::normalize($input);
-        $ending = CanonicalName::parse($name, SalesPolicy::pluck('tld')->all())['tld'];
+        $ending = PolicyEndings::parse($name)['tld'];
         $base = ['domain' => $name, 'sld' => substr($name, 0, -strlen($ending)-1), 'tld' => $ending, 'status' => 'taken',
             'testEnvironment' => $this->testEndings([['tld' => $ending]]) !== []];
         if (Domain::where('reservation_name', $name)->exists()) { return $base; }

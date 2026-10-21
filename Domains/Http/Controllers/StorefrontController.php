@@ -8,8 +8,7 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\RateLimiter;
 use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Models\SalesPolicy;
-use Paymenter\Extensions\Servers\Domains\Services\Storefront;
+use Paymenter\Extensions\Servers\Domains\Services\{PolicyEndings, Storefront};
 
 /** Dormant until39 explicitly loads routes, views and the shared native cart admission hooks. */
 final class StorefrontController extends Controller
@@ -102,7 +101,7 @@ final class StorefrontController extends Controller
     }
     private function add(string $name,string $action,int $term): int
     {
-        $ending=CanonicalName::parse($name,SalesPolicy::pluck('tld')->all())['tld'];$offer=$this->storefront->offer($ending,$action,$term);
+        $ending=PolicyEndings::parse($name)['tld'];$offer=$this->storefront->offer($ending,$action,$term);
         return \App\Classes\Cart::add($offer['product'],$offer['plan'],[],['domain'=>$name]);
     }
 
