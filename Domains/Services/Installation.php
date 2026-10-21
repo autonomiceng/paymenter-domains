@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
 {
-    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class];
+    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class];
     public static function legacy(): void
     {
         foreach(Server::where('extension','Enom')->get() as $server){
@@ -62,6 +62,10 @@ final class Installation
                 if(Schema::hasTable($table)&&!$recorded){throw new \DomainException('Retained holding storage has no installation record.');}
                 if($recorded){$schema::verify();} // Refuse lost/drifted tables before any migration can fill gaps.
             }
+            $auditRecorded=in_array(StaffAuditSchema::MIGRATION,$ran,true);
+            $auditPresent=array_filter(array_map(Schema::hasTable(...),StaffAuditSchema::tables()));
+            if($auditPresent&&!$auditRecorded){throw new \DomainException('Retained staff audit storage has no installation record.');}
+            if($auditRecorded){StaffAuditSchema::verify();}
             $publicRecorded = in_array('2026_10_19_000030_extend_managed_public_signals', $ran, true);
             $publicPresent = array_filter(array_map(Schema::hasTable(...), ManagedPublicSchema::tables()));
             if (($publicPresent || Schema::hasColumn(ManagedPublicWorkSchema::TABLE, 'claim')) && !$publicRecorded) {

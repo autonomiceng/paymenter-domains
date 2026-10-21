@@ -116,6 +116,7 @@
     "tests/reminder-safety-test.php",
     "tests/reminder-review-test.php",
     "tests/runtime-install-test.php",
+    "tests/staff-audit-upgrade-test.php",
     "tests/runtime-presenter-test.php",
     "tests/runtime-notices-test.php",
     "tests/runtime-worker-test.php",

@@ -6,12 +6,14 @@ use App\Models\{Category, Currency, Server};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CatalogueEntry, CatalogueRate, Disposition, DriverResult, Environment, Evidence, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, FoundationSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
 function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com'): array
 {
     FoundationSchema::install(); SalesPolicySchema::install();
+    // Historical installed ZIPs predate this schema; current partial fixtures need it explicitly.
+    if (class_exists(StaffAuditSchema::class)) { StaffAuditSchema::install(); }
     Currency::firstOrCreate(['code' => 'USD'], ['name' => 'US Dollar', 'format' => '1,000.00', 'prefix' => '$', 'suffix' => '']);
     Category::create(['name' => 'Domains', 'slug' => 'domains', 'description' => 'Domains']);
     $registry = new RegistrarRegistry;
