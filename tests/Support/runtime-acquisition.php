@@ -19,6 +19,7 @@ $clock=new class($now) implements Clock {
     public function now(): DateTimeImmutable {return $this->at;}
 };
 app()->instance(Clock::class,$clock);
+if(getenv('PACKAGE_PHASE')==='enom-exchange'){require __DIR__.'/runtime-enom-exchange.php';return;}
 foreach([AccountBindings::class=>$bindings,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$instance){app()->instance($type,$instance);}
 $offline=static fn()=>throw new LogicException('No exchange supplied to this fixture');
 $checkoutCheck=new TransferPrecheck(new Rdap($offline));
