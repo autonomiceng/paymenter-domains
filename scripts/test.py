@@ -211,6 +211,8 @@ def main():
             runtime, binary, extension = prepare(native='native' in selected)
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                'PHPRC': '', 'PHP_INI_SCAN_DIR': ''}
+        if 'DOMAINS_UPGRADE_FROM' in os.environ:
+            env['DOMAINS_UPGRADE_FROM'] = os.environ['DOMAINS_UPGRADE_FROM']
         if binary:
             env.update(PAYMENTER_TEST_PHP=str(binary), PAYMENTER_TEST_CURL_EXTENSION=str(extension))
         if 'mariadb' in selected:

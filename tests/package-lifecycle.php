@@ -2,21 +2,30 @@
 // Native upload, boot and retained-data acceptance; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/installed-app.php';
+require __DIR__.'/Support/installed-upgrade.php';
 use Illuminate\Support\Facades\{Artisan,DB,Event,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,AccountBindings,NativeCatalogue,PriceCatalogue,SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 $phase=(string)getenv('PACKAGE_PHASE');$receipt=(string)getenv('PACKAGE_RETAINED');
 function retained(): array
 {
-    $tables=array_filter(Schema::getTableListing(),fn($t)=>str_starts_with($t,'domains_')||in_array($t,['users','orders','services','invoices','invoice_items','invoice_transactions','credits','settings','email_templates','notification_templates'],true));
+    $tables=array_filter(Schema::getTableListing(null,false),fn($t)=>str_starts_with($t,'domains_')||in_array($t,['users','orders','services','invoices','invoice_items','invoice_transactions','credits','settings','email_templates','notification_templates'],true));
     $result=[];sort($tables);
-    foreach($tables as $table){$rows=DB::table($table)->get()->map(function($r)use($table){$row=(array)$r;if($table==='domains_accounts'){unset($row['updated_at']);}return $row;})->all();usort($rows,fn($a,$b)=>strcmp(json_encode($a),json_encode($b)));$result[$table]=$rows;}
+    foreach($tables as $table){$rows=DB::table($table)->get()->map(function($r)use($table){$row=(array)$r;if($table==='domains_accounts'){unset($row['updated_at']);}ksort($row);return $row;})->all();usort($rows,fn($a,$b)=>strcmp(json_encode($a),json_encode($b)));$result[$table]=$rows;}
+    expect(isset($result['domains_accounts'],$result['domains_operations'],$result['users']),'Retained snapshot includes Domains and native tables');
     return $result;
 }
 function assertRetained(string $receipt): void
 {
     $before=json_decode(file_get_contents($receipt),true,512,JSON_THROW_ON_ERROR);$after=retained();
-    foreach($before as $table=>$rows){same($rows,$after[$table]??null,'Retained raw rows unchanged: '.$table);}
+    foreach($before as $table=>$rows){
+        expect(array_key_exists($table,$after),'Retained table exists: '.$table);
+        // Additive migrations may append columns or template/default rows. Every
+        // original row must survive with all its original raw values unchanged.
+        $columns=array_fill_keys(array_keys($rows[0]??[]),true);
+        $counts=array_count_values(array_map(fn($row)=>json_encode(array_intersect_key($row,$columns),JSON_THROW_ON_ERROR),$after[$table]));
+        foreach($rows as $row){$key=json_encode($row,JSON_THROW_ON_ERROR);expect(($counts[$key]??0)>0,'Retained raw rows unchanged: '.$table);$counts[$key]--;}
+    }
 }
 function seedPsl(): void
 {
@@ -60,6 +69,7 @@ if($phase==='server-delete'){
         app(Installation::class)->verify();
         same((int)getenv('PACKAGE_MIGRATIONS'),count(glob(base_path('extensions/Servers/Domains/database/migrations/*.php'))),'Installed migration inventory');
         foreach(glob(base_path('extensions/Servers/Domains/database/migrations/*.php')) as $migration){same(1,DB::table('migrations')->where('migration',basename($migration,'.php'))->count(),'Native install ran each extension migration once');}
+        assertInstalledMigrationOrder();
         same(0,Account::count(),'Fresh package creates no activated accounts');
         echo "Native upload/extract/Install branch passed.\n";
     }else{assertRetained($receipt);echo "Native upload retained all recorded data (".$phase.").\n";}
@@ -91,6 +101,7 @@ if($phase==='server-delete'){
     expect(Account::where('processing_enabled',true)->doesntExist(),'Processing parked for retained acceptance');
     seedPsl();
     same(1,DB::table('notification_templates')->where('key','domains_domain_expiring')->update(['subject'=>'Retained synthetic operator subject','body'=>'Retained synthetic operator content.']),'Seed customized notification template');
+    if(getenv('PACKAGE_STANDING_UPGRADE')){seedInstalledUpgrade();}
     file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
     file_put_contents((string)getenv('PACKAGE_MIGRATION_RECEIPT'),json_encode(DB::table('migrations')->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),JSON_THROW_ON_ERROR));
     echo "Native checkout, uncertain evidence, invoice/payment/credit and reservations seeded.\n";
@@ -104,6 +115,8 @@ if($phase==='server-delete'){
     same($before,array_slice($after,0,count($before)),'Original migration history unchanged');
     same((int)getenv('PACKAGE_MIGRATIONS'),count(glob(base_path('extensions/Servers/Domains/database/migrations/*.php'))),'Installed additive migration count');
     foreach(glob(base_path('extensions/Servers/Domains/database/migrations/*.php')) as $migration){same(1,DB::table('migrations')->where('migration',basename($migration,'.php'))->count(),'Each installed migration ran once');}
+    assertInstalledMigrationOrder();
+    if(getenv('PACKAGE_STANDING_UPGRADE')){assertInstalledUpgradeAudit();assertInstalledUpgradePages();assertRetained($receipt);}
     // A second native command is solely an idempotency check, after proving upload.
     Artisan::call(App\Console\Commands\Extension\Upgrade::class,['type'=>'server','name'=>'Domains','oldVersion'=>'0.1.0']);
     same($after,DB::table('migrations')->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),'Repeated native upgrade changes no migration history');

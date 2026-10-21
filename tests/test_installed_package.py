@@ -23,9 +23,9 @@ import build
 PREVIOUS = 'e7881cf404e934e1cc84931ab9036e84804b8b61'
 
 
-def previous_build(root):
+def previous_build(root, revision=PREVIOUS, *, legacy=True):
     previous_source = root/'previous-source'; previous_source.mkdir()
-    archive = subprocess.check_output(['git', 'archive', PREVIOUS, 'Domains'], cwd=ROOT)
+    archive = subprocess.check_output(['git', 'archive', revision, 'Domains'], cwd=ROOT)
     with tarfile.open(fileobj=io.BytesIO(archive)) as source:
         for member in source:
             path = previous_source/member.name
@@ -36,14 +36,15 @@ def previous_build(root):
                 path.write_bytes(source.extractfile(member).read())
             else:
                 raise ValueError('Unsafe previous source member')
-    # The unreleased observation creation baseline now includes this index.
-    # Keep the historical runtime/additive migrations, without claiming an
-    # upgrade path from its superseded synthetic index set.
-    observation = previous_source/'Domains/Services/ObservationSchema.php'
-    old = observation.read_text()
-    anchor = "                $t->unsignedBigInteger('due_at')->index(); $t->unsignedInteger('tries')->default(0);\n"
-    assert old.count(anchor) == 1, 'Pinned observation fixture changed'
-    observation.write_text(old.replace(anchor, anchor + "                $t->index(['server_id','account_fingerprint','due_at'], $t->getTable().'_account_due_index');\n"))
+    if legacy:
+        # The unreleased observation creation baseline now includes this index.
+        # Keep the historical runtime/additive migrations, without claiming an
+        # upgrade path from its superseded synthetic index set.
+        observation = previous_source/'Domains/Services/ObservationSchema.php'
+        old = observation.read_text()
+        anchor = "                $t->unsignedBigInteger('due_at')->index(); $t->unsignedInteger('tries')->default(0);\n"
+        assert old.count(anchor) == 1, 'Pinned observation fixture changed'
+        observation.write_text(old.replace(anchor, anchor + "                $t->index(['server_id','account_fingerprint','due_at'], $t->getTable().'_account_due_index');\n"))
     return build.build(previous_source/'Domains', root/'previous')
 
 
@@ -71,8 +72,9 @@ def refuse_unsafe_archives(root, current):
 
 
 def main(scenario):
-    if scenario not in ('held', 'fresh', 'upgrade'):
+    if scenario not in ('held', 'fresh', 'upgrade', 'previous'):
         raise ValueError('Unknown installed package scenario')
+    began = time.monotonic()
     fixture = Path(os.environ['PAYMENTER_TEST_FIXTURE'])
     if not (fixture/'.domains-fixture.json').is_file():
         raise ValueError('Runner-created pristine copy required')
@@ -99,6 +101,7 @@ def main(scenario):
         evidence = {'installed_package': True, 'scenario': scenario,
                     'zip_sha256': current['archive_sha256'], 'real_provider_calls': 0}
         previous = None
+        baseline_migrations = None
         if scenario == 'held':
             refuse_unsafe_archives(root, current)
             evidence['unsafe_archives_refused'] = 3
@@ -108,14 +111,27 @@ def main(scenario):
             evidence.update(previous_revision=PREVIOUS,
                             previous_fixture_adjustments=['observation_account_due_index'],
                             previous_zip_sha256=previous['archive_sha256'])
+        elif scenario == 'previous':
+            requested = os.environ.get('DOMAINS_UPGRADE_FROM', 'HEAD~1')
+            revision = subprocess.check_output(['git', 'rev-parse', '--verify', '--end-of-options',
+                                                requested+'^{commit}'], cwd=ROOT, timeout=10).decode().strip()
+            previous = previous_build(root, revision, legacy=False)
+            baseline_migrations = len(list((root/'previous-source/Domains/database/migrations').glob('*.php')))
+            unchanged = previous['archive_sha256'] == current['archive_sha256']
+            print('Runtime-selected baseline: '+revision+('; no Domains diff; still running' if unchanged else '; Domains differ'), flush=True)
+            evidence.update(previous_revision=revision, previous_fixture_adjustments=[],
+                            previous_zip_sha256=previous['archive_sha256'], no_domains_diff=unchanged)
         current_migrations = len(list((ROOT/'Domains/database/migrations').glob('*.php')))
-        first, count = ('previous', 7) if scenario == 'upgrade' else ('current', current_migrations)
-        # Every command has absent runtime files, its own app copy and database.
+        first, count = 'current', current_migrations
+        if scenario in ('upgrade', 'previous'):
+            first, count = 'previous', 7 if scenario == 'upgrade' else baseline_migrations
+        # Every scenario owns its app copy and retained database.
         database = root/(scenario+'.sqlite'); database.touch()
         retained = root/(scenario+'-retained.json')
         migrations = root/(scenario+'-migrations.json')
         env = dict(os.environ, PAYMENTER_TEST_FIXTURE=str(app), PACKAGE_DATABASE=str(database),
-                   PACKAGE_RETAINED=str(retained), PACKAGE_MIGRATION_RECEIPT=str(migrations), PACKAGE_MIGRATIONS=str(count))
+                   PACKAGE_RETAINED=str(retained), PACKAGE_MIGRATION_RECEIPT=str(migrations), PACKAGE_MIGRATIONS=str(count),
+                   PACKAGE_STANDING_UPGRADE='1' if scenario == 'previous' else '')
         def phase(name, package=None):
             run_env = dict(env, PACKAGE_PHASE=name)
             if package:
@@ -134,9 +150,18 @@ def main(scenario):
             evidence['fresh_installed_registration_held'] = True
         else:
             phase('seed')
-            phase('upload', 'current')
+            if scenario == 'previous':
+                shutil.rmtree(installed)
+                phase('reinstall', 'current')
+            else:
+                phase('upload', 'current')
             env['PACKAGE_MIGRATIONS'] = str(current_migrations)
             phase('verify')
+            if scenario == 'previous':
+                evidence.update(upgrade=True, native_install_retained=True, retained_rows=True, migration_history_ordered=True,
+                                seconds=round(time.monotonic()-began, 3))
+                print(json.dumps(evidence), flush=True)
+                return
             phase('watch-seed')
             phase('verify')
             evidence.update(watch_adoption_retained=True, activation_default_off=True)
