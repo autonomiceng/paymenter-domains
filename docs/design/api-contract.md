@@ -144,7 +144,9 @@ before accepting Paymenter renewal authority.
 **Renewal gate:** the task requires explicit `auto_renew=0` and privacy on all three purchase
 builders. Preserve those fields in a draft renewal mapping, but provide no purchase dispatch
 until support confirms their behavior or an approved readback/control sequence replaces that
-mapping. Undocumented parameters cannot enforce policy. Disable restores in API Manager and
+mapping. Support recommended explicit `auto_renew=0` on 2026-10-18; honoring it remains unproven.
+The admitted renewal writer sends it and completion requires fresh off readback plus charge/expiry proof.
+Undocumented parameters cannot enforce policy. Disable restores in API Manager and
 prove normal/grace eligibility independently. Renewal builder output alone is not safe fulfillment.
 
 The provider confirms there is no idempotency key or maximum-price parameter. Future

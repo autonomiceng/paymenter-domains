@@ -18,6 +18,11 @@ final class RequestFacts
                     $out['cutoff']='Code deadline passed. Release is unavailable; review account credit with funding and unsent proof.';
                 } catch (\DomainException) { /* Sent or unknown outcomes retain their original evidence guidance. */ }
             }
+            if ($op->registrar_key==='namesilo' && $op->action==='renew'
+                && (($p['renewal_execution']['reason']??null)==='provider_auto_renew_unconfirmed'
+                    || $op->safe_code==='provider_auto_renew_unconfirmed')) {
+                $out['auto_renew']=(($p['renewal_polls']??0)>=5 ? Labels::reason('poll_limit_reached').'. ' : '').'Check auto-renew for this domain at NameSilo and turn it off if it is on. Then choose Re-check now, or Resume reconciliation reads if the read limit is reached. Completion requires a fresh check confirming auto-renew is off.';
+            }
             $out['refund']=array_key_exists('refund',$f) ? 'Credit marker retained; review ledger'
                 : (RefundCandidates::matches($op,$f) || ($p['renewal_execution']['refundable_later']??false)===true
                     ? 'Customer credit review candidate; funding and unsent proof required'
@@ -70,7 +75,7 @@ final class RequestFacts
         $grants ??= Staff::requireView();
         $facts=self::for($op,$grants,$domain);
         return [...array_values(array_filter(array_map(fn($key)=>$facts[$key]??null,
-            ['cutoff','outcome','registrar_refund','refund','correction','cost','metadata','audit']),fn($line)=>$line!==null)),
+            ['cutoff','outcome','auto_renew','registrar_refund','refund','correction','cost','metadata','audit']),fn($line)=>$line!==null)),
             ...StaffReviewHistory::for($op,$grants,$detail)];
     }
     private static function count(mixed $items): string { return is_array($items) ? (string)count($items) : 'Unknown'; }

@@ -72,7 +72,7 @@ def refuse_unsafe_archives(root, current):
 
 
 def main(scenario):
-    if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'acquisition', 'enom-exchange'):
+    if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'acquisition', 'enom-exchange', 'namesilo-registration', 'namesilo-renewal'):
         raise ValueError('Unknown installed package scenario')
     began = time.monotonic()
     fixture = Path(os.environ['PAYMENTER_TEST_FIXTURE'])
@@ -156,6 +156,9 @@ def main(scenario):
             phase('exchange-contracts')
             phase('enom-exchange')
             evidence['bounded_enom_exchange'] = True
+        elif scenario.startswith('namesilo-'):
+            phase(scenario)
+            evidence['namesilo_frozen_nexus' if scenario.endswith('registration') else 'namesilo_renewal_readback'] = True
         elif scenario == 'acquisition':
             phase('acquisition')
             evidence['typed_acquisition_routing'] = True

@@ -2,7 +2,7 @@
 // Synthetic adaptations of Enom 444f31c request-gates/cart-funding/provider-disposition scenarios.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require_once dirname(__DIR__).'/native-app.php';
+if (!($installedFixture ?? false)) { require_once dirname(__DIR__).'/native-app.php'; }
 require __DIR__.'/commerce.php';
 require __DIR__.'/native-commerce.php';
 require_once __DIR__.'/native-financial-snapshot.php';
