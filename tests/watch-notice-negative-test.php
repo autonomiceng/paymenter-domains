@@ -28,6 +28,19 @@ $r=$delivery->deliver($n->id,$at);same(['mail'=>true,'app'=>false],$r,'Native ma
 same(['mail'=>false,'app'=>false],$delivery->deliver($n->id,$at),'Disabled template suppresses both channels');
 [$n,$at]=$new();$template->update(['enabled'=>true]);config(['settings.mail_disable'=>true]);
 same(['mail'=>false,'app'=>true],$delivery->deliver($n->id,$at),'Global mail pause leaves app independent');config(['settings.mail_disable'=>false]);
+// Staff can force mail on watch templates; app delivery must not consume its mail identity.
+[$n,$at]=$new();$template->update(['mail_enabled'=>'force']);config(['settings.mail_disable'=>true]);
+$queued=Mail::queued(NoticeMail::class)->count();$health=WatchAudit::where('event','notice_health')->count();
+same(['mail'=>false,'app'=>true],$delivery->deliver($n->id,$at),'Forced watch mail pause preserves independent app delivery');
+same(0,DB::table('domains_watch_deliveries')->where('notice_id',$n->id)->where('channel','mail')->count(),'Unavailable forced watch mail consumes no delivery identity');
+same($health+1,WatchAudit::where('event','notice_health')->count(),'Unavailable forced watch mail alerts staff');
+config(['settings.mail_disable'=>false]);$claim=$delivery->reserve($n->id,'mail',$at);expect($claim!==null,'Restored forced watch mail can reserve');
+config(['settings.mail_disable'=>true]);expect(!$delivery->handoff($claim,$at),'Forced watch mail paused after reservation waits');
+same('reserved',DB::table('domains_watch_deliveries')->find($claim)->state,'Mail pause preserves reserved forced watch claim');
+same($queued,Mail::queued(NoticeMail::class)->count(),'Paused forced watch mail queues nothing');
+config(['settings.mail_disable'=>false]);expect($delivery->handoff($claim,$at),'Restored forced watch channel sends reserved mail');
+same($queued+1,Mail::queued(NoticeMail::class)->count(),'Restored forced watch mail queues once');
+$template->update(['mail_enabled'=>'choice_on']);
 [$n,$at]=$new();$claim=$delivery->reserve($n->id,'mail',$at);$template->update(['subject'=>'Changed {{ $domain }} {{ $date }}']);
 // Handoff re-renders current staff templates before its final recheck.
 expect($delivery->handoff($claim,$at),'Current edited template rendered at handoff');

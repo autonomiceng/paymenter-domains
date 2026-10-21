@@ -18,7 +18,17 @@ foreach([0,1] as $i){
     $clock->instant=$now->modify('+23 days');expect($reminders->remind($d->id),'Final-week notice');
     same(false,$reminders->remind($d->id),'Final-week notice deduplicates');
     $clock->instant=$now->modify('+30 days');same(false,$reminders->remind($d->id),'No code request at cutoff');
-    $inputs->expireMissingCode($op->id);expect($reminders->remind($d->id),'Only actual account credit is notified');
+    $inputs->expireMissingCode($op->id);config(['settings.mail_disable'=>true]);
+    $queued=Mail::queued(DomainNotice::class)->count();$appCount=Notification::where('user_id',$d->user_id)->count();
+    same(false,$reminders->remind($d->id),'Forced credit mail cannot fall back to app-only acceptance');
+    same(0,DB::table('domains_reminder_deliveries')->where('domain_id',$d->id)->where('template','domains_domain_order_refunded')->count(),'Unavailable forced credit mail consumes no delivery identity');
+    expect(DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','template_failed')->whereNull('resolved_at')->exists(),'Unavailable forced credit mail alerts staff');
+    same($queued,Mail::queued(DomainNotice::class)->count(),'Unavailable credit mail queues nothing');
+    same($appCount,Notification::where('user_id',$d->user_id)->count(),'Credit app notice waits for mandatory mail');
+    config(['settings.mail_disable'=>false]);expect($reminders->remind($d->id),'Only actual account credit is notified');
+    same($queued+1,Mail::queued(DomainNotice::class)->count(),'Restored forced credit mail queues exactly once');
+    same('accepted',DB::table('domains_reminder_deliveries')->where('domain_id',$d->id)->where('template','domains_domain_order_refunded')->sole()->state,'Restored credit claim is accepted');
+    same(0,DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','template_failed')->whereNull('resolved_at')->count(),'Accepted credit resolves unavailable-mail alert');
     same(false,$reminders->remind($d->id),'Credit notice deduplicates');
     $last=Mail::queued(DomainNotice::class)->last();same('domains_domain_order_refunded',$last->emailTemplate->key,'Account credit wording');
     expect(!str_contains($last->render(),'registry did not accept'),'No invented registry rejection');
