@@ -145,7 +145,7 @@ def main():
         # Never relay child stdout/stderr: native errors can contain raw responses or credentials.
         result = subprocess.run(argv, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
         if args.self_test and with_native and result.returncode == 0:
-            for scenario, renewals in [('failed-readbacks', 1), ('interactive-route', 1), ('profile-read', 0), ('profile-read-contact', 0), ('profile-read-authority', 0), ('profile-read-claim', 0), ('profile-read-transport', 0), ('profile-read-status', 0), ('profile-read-malformed', 0), ('missing-premium', 0), ('premium-one', 0), ('malformed-registration', 0), ('unknown-registered', 1), ('unknown-absent', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
+            for scenario, renewals in [('failed-readbacks', 1), ('interactive-route', 1), ('profile-read', 0), ('profile-read-contact', 0), ('profile-read-duplicate', 0), ('profile-read-authority', 0), ('profile-read-claim', 0), ('profile-read-transport', 0), ('profile-read-status', 0), ('profile-read-malformed', 0), ('missing-premium', 0), ('premium-one', 0), ('malformed-registration', 0), ('unknown-registered', 1), ('unknown-absent', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
                 uncertain_output = output/scenario
                 uncertain_output.mkdir(mode=0o700)
                 uncertain_env = dict(env, OTE_OUTPUT=str(uncertain_output), OTE_SELF_TEST_SCENARIO=scenario)

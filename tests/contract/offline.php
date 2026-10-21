@@ -218,6 +218,7 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
                 $r['contact'] = [array_combine($fields, array_values($state->profile)) + ['contact_id' => '101', 'default_profile' => '0', 'nickname' => '', 'fax' => '']];
                 $scenario = getenv('OTE_SELF_TEST_SCENARIO');
                 if ($scenario === 'profile-read-contact') { $r['contact'][0]['email'] = 'other@example.com'; }
+                if ($scenario === 'profile-read-duplicate') { $r['contact'][] = ['contact_id' => '102'] + $r['contact'][0]; }
                 if ($scenario === 'profile-read-authority') { $op->fresh()->update(['policy' => $op->policy + ['diagnostic_drift' => true]]); }
                 if ($scenario === 'profile-read-status') { $r['code'] = 200; }
                 if ($scenario === 'profile-read-malformed') { unset($r['code']); }
@@ -285,7 +286,7 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
             same(true, $wire->receipt['requests'][0]['transport_failed'], 'Transport mismatch retained');
         } else {
             same($scenario !== 'profile-read-contact', $wire->receipt['profile_inventory']['rows'][0]['identity_match'], 'Frozen synthetic identity compared');
-            same($scenario !== 'profile-read-contact', $wire->receipt['checks']['profile_read_gate'], 'Read-only identity gate');
+            same(!in_array($scenario, ['profile-read-contact', 'profile-read-duplicate'], true), $wire->receipt['checks']['profile_read_gate'], 'Read-only identity gate needs exactly one match');
             same($scenario !== 'profile-read-authority', $wire->receipt['checks']['profile_authority_after'], 'Current authority checked after read');
             same(!in_array($scenario, ['profile-read-status', 'profile-read-malformed'], true), $wire->receipt['checks']['profile_contact_list_success'], 'Reply status independently diagnosed');
         }
