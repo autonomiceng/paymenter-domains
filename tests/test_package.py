@@ -4,6 +4,11 @@ from pathlib import Path
 import tempfile
 import unittest
 import hashlib
+import contextlib
+import io
+import json
+import sys
+from unittest import mock
 import shutil
 import stat
 import zipfile
@@ -140,16 +145,78 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='domains-runtime-refusal-') as temp:
             source = Path(temp)/'Domains'
             shutil.copytree(ROOT/'Domains', source)
-            for name in ['scripts/run.php', 'tests/probe.php', 'docs/note.php', '.github/ci.php', 'Services/convert-enom-05.php', 'Services/collect-conversion-evidence.php', 'Services/pin-source.php', 'Services/dev-tool.php', 'Services/conversion.php', 'Services/Runtime.PHP', 'Services/bad\udcff.php']:
+            for name in ['scripts/run.php', 'tests/probe.php', 'docs/note.php', '.github/ci.php', 'Services/convert-enom-05.php', 'Services/collect-conversion-evidence.php', 'Services/pin-source.php', 'Services/dev-tool.php', 'Services/conversion.php']:
                 with self.subTest(name=name):
-                    path = source/name; path.parent.mkdir(exist_ok=True)
-                    path.write_bytes(b'<?php')
-                    with self.assertRaises(ValueError): builder.runtime_members(source)
-                    path.unlink()
-                    if path.parent.name in ['scripts', 'tests', 'docs', '.github']: path.parent.rmdir()
+                    path = source/name
+                    self.assertFalse(path.exists(), 'Refusal fixture must not replace a runtime file')
+                    created_parent = not path.parent.exists(); path.parent.mkdir(exist_ok=True)
+                    try:
+                        with path.open('xb') as stream: stream.write(b'<?php')
+                        with self.assertRaises(ValueError): builder.runtime_members(source)
+                    finally:
+                        path.unlink()
+                        if created_parent: path.parent.rmdir()
             oversized = source/'Services/Oversized.php'
             oversized.write_bytes(b'x' * (builder.MAX_FILE_BYTES + 1))
             with self.assertRaisesRegex(ValueError, 'large'): builder.runtime_members(source)
+
+    def test_case_collision_when_filesystem_supports_distinct_names(self):
+        with tempfile.TemporaryDirectory(prefix='domains-case-collision-') as temp:
+            source = Path(temp)/'Domains'; shutil.copytree(ROOT/'Domains', source)
+            original = source/'Services/Runtime.php'; collision = source/'Services/Runtime.PHP'
+            if collision.exists():
+                self.skipTest('Filesystem cannot represent the case-colliding name')
+            before = original.read_bytes()
+            try:
+                with collision.open('xb') as stream: stream.write(b'<?php')
+                with self.assertRaisesRegex(ValueError, 'Case-colliding'): builder.runtime_members(source)
+            finally:
+                collision.unlink()
+            self.assertEqual(original.read_bytes(), before)
+
+    def test_non_utf8_member_without_filesystem_encoding_dependency(self):
+        _, members = builder.runtime_members(ROOT/'Domains')
+        members['Domains/Services/bad\udcff.php'] = b'<?php'
+        with self.assertRaisesRegex(ValueError, 'Non-UTF-8'): builder.validate_runtime(members)
+
+    def test_exact_serialized_archive_limit_before_creating_artifacts(self):
+        with tempfile.TemporaryDirectory(prefix='domains-size-preflight-') as temp:
+            root = Path(temp); source = root/'Domains'; source.mkdir()
+            (source/'Domains.php').write_text("<?php use Paymenter\\Extensions\\Servers\\Domains\\Services\\Probe; #[ExtensionMeta(version: '0.1.0')]")
+            (source/'LICENSE').write_bytes((ROOT/'LICENSE').read_bytes())
+            (source/'Services').mkdir()
+            for index in range(80):
+                (source/'Services'/('LongMemberName'+str(index)+'.php')).write_bytes(b'<?php')
+            receipt = builder.build(source, root/'baseline'); size = receipt['archive_bytes']
+            with mock.patch.object(builder, 'MAX_ARCHIVE_BYTES', size - 1):
+                with self.assertRaisesRegex(ValueError, 'oversized'): builder.build(source, root/'retry')
+            self.assertEqual(list((root/'retry').iterdir()), [], 'No partial ZIP or receipt after preflight refusal')
+            with mock.patch.object(builder, 'MAX_ARCHIVE_BYTES', size):
+                self.assertEqual(builder.build(source, root/'retry'), receipt)
+
+    def test_verify_archive_member_and_total_size_limits(self):
+        with tempfile.TemporaryDirectory(prefix='domains-verify-sizes-') as temp:
+            root = Path(temp); receipt = builder.build(ROOT/'Domains', root/'clean')
+            archive = root/'clean'/receipt['archive']
+            with mock.patch.object(builder, 'MAX_ARCHIVE_BYTES', archive.stat().st_size - 1):
+                with self.assertRaisesRegex(ValueError, 'oversized archive'): builder.verify(archive)
+            with zipfile.ZipFile(archive) as package:
+                sizes = [entry.file_size for entry in package.infolist()]
+            with mock.patch.object(builder, 'MAX_FILE_BYTES', max(sizes) - 1):
+                with self.assertRaisesRegex(ValueError, 'member is unexpectedly large'): builder.verify(archive)
+            with mock.patch.object(builder, 'MAX_TOTAL_BYTES', sum(sizes) - 1):
+                with self.assertRaisesRegex(ValueError, 'tree is unexpectedly large'): builder.verify(archive)
+
+    def test_verify_cli_requires_matching_adjacent_manifest(self):
+        with tempfile.TemporaryDirectory(prefix='domains-cli-verify-') as temp:
+            root = Path(temp); receipt = builder.build(ROOT/'Domains', root/'clean')
+            archive = root/'clean'/receipt['archive']; adjacent = archive.parent/'manifest.json'
+            with mock.patch.object(sys, 'argv', ['build.py', '--verify', str(archive)]), contextlib.redirect_stdout(io.StringIO()) as output:
+                builder.main()
+            self.assertTrue(json.loads(output.getvalue())['complete'])
+            adjacent.write_bytes(builder.json_bytes(dict(receipt, archive_sha256='0'*64)))
+            with mock.patch.object(sys, 'argv', ['build.py', '--verify', str(archive)]), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(ValueError, 'Release manifest does not match'): builder.main()
 
     def test_archive_tamper_and_unsafe_members_refused_before_install(self):
         with tempfile.TemporaryDirectory(prefix='domains-zip-refusal-') as temp:
