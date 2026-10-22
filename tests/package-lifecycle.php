@@ -77,6 +77,8 @@ if($phase==='server-delete'){
         same(1,DB::table('migrations')->where('migration',Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::MIGRATION)->count(),'Reinstall retains the TEST counter migration record');
         assertRetained($receipt);echo "Native reinstall retained all recorded data and the TEST counter schema.\n";
     }else{assertRetained($receipt);echo "Native upload retained all recorded data (".$phase.").\n";}
+}elseif($phase==='enom-live'){
+    require __DIR__.'/Support/enom-live.php';
 }elseif($phase==='enom-test-transfer'){
     require __DIR__.'/Support/enom-transfer-setup.php';
     require __DIR__.'/Support/enom-test-transfer.php';
@@ -180,6 +182,25 @@ if($phase==='server-delete'){
     same((int)getenv('PACKAGE_MIGRATIONS'),count(glob(base_path('extensions/Servers/Domains/database/migrations/*.php'))),'Installed additive migration count');
     foreach(glob(base_path('extensions/Servers/Domains/database/migrations/*.php')) as $migration){same(1,DB::table('migrations')->where('migration',basename($migration,'.php'))->count(),'Each installed migration ran once');}
     assertInstalledMigrationOrder();
+    if(class_exists(Paymenter\Extensions\Servers\Domains\Services\EnomLive::class)){
+        $oldLiveConfig=config('domains.enom_live');$oldIdentity=config('domains.enom_identity.environment');$oldUrl=config('app.url');
+        if(getenv('PACKAGE_STANDING_UPGRADE')){
+            $live=Account::where('environment','live')->sole();same('https://my.becotech.com',$live->live_site,'Baseline retained a bound live identity');
+            config(['domains.enom_identity.environment'=>'live','app.url'=>$live->live_site,'domains.enom_live.site'=>$live->live_site,
+                'domains.enom_live.accounts'=>[$live->stable_identity=>['fingerprint'=>$live->account_fingerprint,'daily_call_cap'=>1000,'daily_spend_limit_usd'=>'100.00']]]);
+        }
+        if(getenv('PACKAGE_STANDING_UPGRADE')){
+            $binding=Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($live);
+            same($live->account_fingerprint,Paymenter\Extensions\Servers\Domains\Services\EnomLive::account($binding)['fingerprint'],'Retained live prerequisites are valid independently of opt-ins');
+            same(0,App\Models\Server::findOrFail($live->server_id)->settings()->whereIn('key',['domains_enom_live_renewal','domains_enom_live_management',Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::KEY])->count(),'Upgrade copies no live action or catalogue acceptance');
+        }
+        same(false,Paymenter\Extensions\Servers\Domains\Services\EnomLive::requested(),'Upgrade keeps every live opt-in off');
+        same(0,DB::table(Paymenter\Extensions\Servers\Domains\Services\EnomLiveCallSchema::TABLE)->count(),'Upgrade creates no live call or spend authority');
+        foreach(Account::all() as $account){foreach(['catalogue','registration','renewal','management'] as $action){
+            expect(!Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled(Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account),$action),'Retained account gains no live action');
+        }}
+        config(['domains.enom_live'=>$oldLiveConfig,'domains.enom_identity.environment'=>$oldIdentity,'app.url'=>$oldUrl]);
+    }
     if(getenv('PACKAGE_STANDING_UPGRADE')){assertInstalledUpgradeAudit();assertInstalledUpgradePages();assertRetained($receipt);}
     // A second native command is solely an idempotency check, after proving upload.
     Artisan::call(App\Console\Commands\Extension\Upgrade::class,['type'=>'server','name'=>'Domains','oldVersion'=>'0.1.0']);

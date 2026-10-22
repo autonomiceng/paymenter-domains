@@ -63,8 +63,8 @@ $stopDomain=$op->domain()->firstOrFail();$stopReview=Paymenter\Extensions\Server
 $stopKey=$stopReview::ticket($staff->id,$stopDomain->id,'stop',$stopReview::stamp(Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($stopDomain,advisory:true)),$clock);
 (new $stopReview(app(NativeDomainGuard::class),$clock))->run($staff,$stopDomain->id,'stop',$stopKey,'Stop future cycles and retain the paid issued renewal');
 $before=$money();same($op->invoice_id,$billing->invoice($stopDomain->id,$user)->id,'Future stop retains issued paid debt');
-$offState=$op->fresh()->state;config(['domains.enom_writes.renewal'=>false]);(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same([],$GLOBALS['enomWire']['forms'],'Off sends no requests');
-same($offState,$op->fresh()->state,'Off preserves current disabled-renewal queue behavior');config(['domains.enom_writes.renewal'=>true]);
+config(['domains.enom_writes.renewal'=>false]);(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same([],$GLOBALS['enomWire']['forms'],'Off sends no requests');
+same(['queued','renewal_acceptance_required',[]],[$op->fresh()->state,$op->fresh()->safe_code,(array)$op->fresh()->attempt],'Read-only recovery keeps disabled renewal queued and unsealed');same($before,$money(),'Disabled renewal preserves paid money');config(['domains.enom_writes.renewal'=>true]);
 $write('test_renewal',['accept'=>false]);Cache::flush();(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same([],$GLOBALS['enomWire']['forms'],'Missing action acceptance refuses before preflight');
 $write('test_renewal',['accept'=>true,'verified'=>true]);
 $GLOBALS['enomWire']['during']=static function(array $p)use($op,$clock):void {if($p['Command']==='Extend'){(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);}};

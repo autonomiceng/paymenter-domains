@@ -16,9 +16,8 @@ final class RenewalExecution
     public function run(int $id, RenewalWriter $writer): Operation
     {
         $work=fn()=>EntryDeadline::run($this->clock, fn ($finishCap) => $this->runEntered($id, $writer, $finishCap));
-        if(config('domains.enom_writes.renewal')!==true){return $work();}
         $op=Operation::findOrFail($id);$a=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->first();
-        $b=$a?CatalogueAcceptances::binding($a):null;
+        try{$b=$a?CatalogueAcceptances::binding($a):null;}catch(\Throwable){$b=null;}
         return $b&&EnomTestRenewal::enabled($b)?EnomTestWriteReservation::run($b,'renewal',$id,$work):$work();
     }
     private function runEntered(int $id, RenewalWriter $writer, \DateTimeImmutable $finishCap): Operation
@@ -54,7 +53,7 @@ final class RenewalExecution
             $until = min($deadline, $first->validUntil, $ready->validUntil);
             $reservedContext=new RequestContext($binding,RequestOrigin::Background,$until,new RequestBudget(1),$this->clock,Runtime::limiter());
             return $reservedContext->withReservedWire(function()use($seed,$id,$binding,$name,$stamp,$ready,$until,$writer,$admissionClaim,$reservedContext,&$descriptor,&$context) {
-            EnomTestWriteReservation::reserve($binding,'renewal');
+            EnomTestWriteReservation::reserve($binding,'renewal',$ready->cost);
             [$descriptor, $context] = DB::transaction(function () use ($seed, $id, $binding, $name, $stamp, $ready, $until, $writer, $admissionClaim,$reservedContext) {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
                 if ($l['stamp'] !== $stamp || !$op || ($op->policy['renewal_admission']['key'] ?? null) !== $admissionClaim

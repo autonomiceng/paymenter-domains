@@ -58,6 +58,13 @@ class RegistrarSetup extends Page
                 try{$facts['TEST management acceptance']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::accepted(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a))?'Accepted':'Not accepted';}
                 catch(\Throwable){$facts['TEST management acceptance']='Unavailable';}
             }
+            if($a?->registrar_key==='enom'&&$a->environment==='live'){
+                try{$liveBinding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a);
+                $facts['Live account fingerprint']=$liveBinding->fingerprint;
+                $facts += \Paymenter\Extensions\Servers\Domains\Services\EnomLive::facts($liveBinding);
+                $facts['Live renewal acceptance']=!\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($liveBinding,'renewal')?'Inactive while deployment is off or unavailable':(\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::accepted($liveBinding)?'Accepted':'Not accepted');
+                $facts['Live management acceptance']=!\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($liveBinding,'management')?'Inactive while deployment is off or unavailable':(\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::accepted($liveBinding)?'Accepted':'Not accepted');}catch(\Throwable){$facts['Live actions']='Unavailable';}
+            }
             $facts += \Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::facts((int)$s->id);
             $facts += \Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for((int)$s->id);
             $facts += \Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule((int)$s->id);

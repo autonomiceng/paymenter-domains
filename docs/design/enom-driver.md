@@ -140,3 +140,40 @@ requires the same exact singleton successful closed Renew item, original order/t
 owned full-term expiry as ordinary renewal. An acknowledgement never supplies actual cost or
 expiry. Unknown mode/product/charge remains unresolved; real grace/order-vocabulary acceptance
 is still required before installed processing. Enom acceptance without an ID needs accepted history.
+
+## Live runtime composition
+
+The built-in live path reuses the TEST catalogue, admission, account locks, verified native funding,
+one-attempt writes and captured-order reconciliation. The endpoint is
+`https://reseller.enom.com/interface.asp`. Transfer remains unavailable. Independent deployment
+booleans under `domains.enom_live` enable catalogue, registration, ordinary annual renewal and
+the same supported management actions as TEST. All default off. TEST opt-ins never enable live.
+
+Each live account requires a deployment entry keyed by its lowercase UID, the exact account
+fingerprint, a canonical HTTPS site equal to the running app URL and the retained account site.
+An identity retained as TEST cannot supply live authority. Staff live catalogue, renewal and
+management acceptance remain separate from TEST, including their route and account fingerprint.
+Credential verification and acceptance do not enable processing or renewal billing.
+
+The retained `domains_enom_live_calls` table records daily UTC calls and reserved USD cost in
+integer millionths. A single conditional update checks both account limits before incrementing
+them. Registration and renewal reserve their admitted cost before the durable seal. The physical
+wire consumes that same request reservation once. Free management reserves a call with zero cost;
+paid privacy remains unavailable, as in TEST. Read calls use the same daily account counter.
+Failed, timed-out, uncertain and reserved-but-unsent requests retain usage. UTC rollover refuses
+an old reservation; it never creates a fresh send or frees an earlier reservation. Identity-only
+mode with every live action off retains its existing identity/balance read behavior.
+
+Upgrade adds only the retained counter schema. It creates no account, site binding, acceptance,
+opt-in or processing authority. Installed synthetic tests exercise funded live registration and
+renewal through the actual ZIP with fake cURL, original charge/full-term expiry completion,
+duplicate workers, separate acceptance and binding/call/spend refusals. They establish no provider
+or production acceptance. See the release settings table for deployment keys and defaults.
+
+Live renewal reserves its admitted cost before the final cost-cap and funding checks. A later
+refusal retains that reservation, even though no mutation was sent, matching the conservative
+call-counter policy.
+
+Catalogue authority can still compose read-only recovery for retained sealed attempts after every
+write opt-in is off. This applies to TEST and live. Renewal reconciliation requires the captured
+attempt, without requiring new-renewal authority. No unsent work gains permission to write.

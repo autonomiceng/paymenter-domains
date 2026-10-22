@@ -60,7 +60,7 @@ foreach([['uid'=>'CONTACT-SENTINEL'],['PW'=>'CONTACT-SENTINEL'],['command'=>'Pur
     $deny(fn()=>$exchange($wire,'registration')($origin,'Purchase',$bad,1000),'parameters');
 }
 foreach(['0','synthetic-keylog'] as $value){putenv('SSLKEYLOGFILE='.$value);$deny(fn()=>$exchange($wire,'registration')($origin,'Purchase',[],1000),'TLS keylog');putenv('SSLKEYLOGFILE');}
-foreach([Environment::Test,Environment::Live] as $environment){
+foreach([Environment::Test] as $environment){
     $b=new AccountBinding('enom',1,$environment,'synthetic-uid');$f=$make($b,$credentials);$w=(new ReflectionFunction($f))->getStaticVariables()['wire'];
     $url=$environment===Environment::Test?$origin:'https://reseller.enom.com/interface.asp';resetWire();
     same('xml',$exchange($w,'registration')($url,'Purchase',['SLD'=>'example','TLD'=>'com'],25000),'Complete body');
@@ -72,6 +72,9 @@ foreach([Environment::Test,Environment::Live] as $environment){
     $readOptions=$GLOBALS['enomWire']['options'];foreach([CURLOPT_POSTFIELDS,CURLOPT_WRITEFUNCTION] as $different){unset($options[$different],$readOptions[$different]);}
     same($readOptions,$options,'Read and protocol cURL safeguards remain identical');
 }
+$liveFactory=$make(new AccountBinding('enom',1,Environment::Live,'synthetic-uid'),$credentials);$liveWire=(new ReflectionFunction($liveFactory))->getStaticVariables()['wire'];resetWire();
+try{$exchange($liveWire,'registration')('https://reseller.enom.com/interface.asp','Purchase',[],25000);throw new LogicException('Live writes require an opted-in bound account');}catch(EnomTestCallLimit){}
+same([],$GLOBALS['enomWire']['forms'],'Default-off live wire sends nothing');
 foreach(['registration'=>['Purchase','ModifyNS','GetDNS'],'transfer'=>['TP_CreateOrder'],'renewal'=>['Extend','UpdateExpiredDomains'],
     'management'=>array_merge(array_map(fn($c)=>$c->value,Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::cases()),['GetDomainInfo','GetDNS','GetContacts','GetRegLock','GetWPPSInfo','GetRenew','GetHosts','GetDomainSRVHosts','GetDnsSec','CheckNSStatus','GetBalance','GetOrderDetail'])] as $role=>$commands){
     foreach($commands as $command){resetWire();same('xml',$exchange($wire,$role)($origin,$command,[],1200),'Reviewed protocol command');same(1200,$GLOBALS['enomWire']['options'][CURLOPT_CONNECTTIMEOUT_MS],'Shortened connect timeout');}

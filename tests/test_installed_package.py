@@ -72,7 +72,7 @@ def refuse_unsafe_archives(root, current):
 
 
 def main(scenario):
-    if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'acquisition', 'enom-exchange', 'enom-test-registration', 'enom-test-renewal', 'enom-test-management', 'enom-test-transfer', 'namesilo-registration', 'namesilo-renewal', 'namesilo-enrollment'):
+    if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'enom-live', 'acquisition', 'enom-exchange', 'enom-test-registration', 'enom-test-renewal', 'enom-test-management', 'enom-test-transfer', 'namesilo-registration', 'namesilo-renewal', 'namesilo-enrollment'):
         raise ValueError('Unknown installed package scenario')
     began = time.monotonic()
     fixture = Path(os.environ['PAYMENTER_TEST_FIXTURE'])
@@ -144,7 +144,7 @@ def main(scenario):
                 shutil.copyfile(original, upload)
                 build.verify(upload, receipt)
                 run_env['PACKAGE_ZIP'] = str(upload)
-            subprocess.run([str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')], cwd=ROOT, env=run_env, check=True, timeout=120 if name == 'enom-test-renewal' else 45)
+            subprocess.run([str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')], cwd=ROOT, env=run_env, check=True, timeout=120 if name in ['enom-test-renewal','enom-live'] else 45)
         phase('install', first)
         if scenario == 'held':
             phase('held')
@@ -154,6 +154,9 @@ def main(scenario):
             phase('catalogue-retained')
             evidence['test_catalogue_fresh_reinstall'] = True
             evidence['fresh_installed_registration_held'] = True
+        elif scenario == 'enom-live':
+            phase('enom-live')
+            evidence['live_registration_renewal_and_refusals_offline'] = True
         elif scenario == 'enom-test-transfer':
             phase(scenario)
             phase('enom-test-transfer-restart')

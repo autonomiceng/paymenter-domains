@@ -7,12 +7,12 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CatalogueFreshness, Environment, RequestBudget, RequestContext, RequestOrigin};
 
-/** TEST display/cart authority only. Checkout still requires the independent processing guard. */
+/** Built-in catalogue authority. Checkout retains its independent processing guard. */
 final class TestCatalogue
 {
     public static function enabled(AccountBinding $binding): bool
     {
-        return config('domains.enom_catalogue.enabled') === true && self::testDeployment($binding);
+        return EnomLive::enabled($binding,'catalogue') || (config('domains.enom_catalogue.enabled') === true && self::testDeployment($binding));
     }
 
     /** Identity-mode TEST accounts never enroll an automatic catalogue refresh, including opt-out. */
@@ -52,7 +52,7 @@ final class TestCatalogue
     /** Remove TEST cart lines affected by this staff withdrawal or reviewed re-import. */
     public static function withdrawCarts(AccountBinding $binding, ?string $ending = null, bool $invalidOnly = false): void
     {
-        if (!self::testDeployment($binding)) { return; }
+        if (!self::testDeployment($binding) && !EnomLive::deployment($binding)) { return; }
         DB::afterCommit(static function() use ($binding, $ending, $invalidOnly): void {
             $products = \App\Models\Product::where('server_id', $binding->serverId)
                 ->whereHas('settings', static fn($q) => $q->where('key', 'domains_catalogue')->where('value', '1'));

@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 use Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,CatalogueAcceptance,CatalogueFreshness,Capabilities,DriverResult,Environment,Query,ReconciliationResult,RequestContext};
-/** TEST runtime reader permits captured-attempt reconciliation while keeping ordinary domain polling closed. */
+/** Built-in reader permits captured-attempt reconciliation while ordinary domain polling stays closed. */
 final readonly class EnomTestReconciliationReader implements CatalogueReader
 {
     public function __construct(private CataloguePreview $preview,private Driver $reconciler) {}
@@ -18,11 +18,11 @@ final readonly class EnomTestReconciliationReader implements CatalogueReader
     public function renewalAssessment(Query $q,RequestContext $c):DriverResult{return \Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding())?$this->reconciler->renewalAssessment($q,$c):$this->preview->renewalAssessment($q,$c);}
     public function reconcile(AttemptEvidence $attempt,RequestContext $c):ReconciliationResult
     {
-        $renewal=$attempt->query->action===Action::Renew&&\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding());
+        $renewal=$attempt->query->action===Action::Renew&&\Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled($this->binding());
         $transfer=$attempt->query->action===Action::Transfer&&\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::enabled($this->binding())&&is_string($attempt->transferReference)&&preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->transferReference);
         $captured=is_string($attempt->providerReference)&&preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->providerReference)&&$attempt->executionFacts;
         $history=$renewal&&$attempt->historyAcceptance?->covers($attempt,$c->now());
-        if($attempt->binding->registrarKey!=='enom'||$attempt->binding->environment!==Environment::Test
+        if($attempt->binding->registrarKey!=='enom'||($attempt->binding->environment!==Environment::Test&&!\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($this->binding(),'catalogue'))
             ||!($attempt->query->action===Action::Register||$renewal||$transfer)||!($captured||$history||$transfer)){
             throw new \DomainException($renewal?'Captured TEST order or accepted renewal history is required.':'Captured TEST Purchase OrderID is required.');
         }

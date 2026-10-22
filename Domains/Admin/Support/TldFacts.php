@@ -91,6 +91,10 @@ final class TldFacts
                 // The unaccepted warning is actionable only where the deployment offers TEST registration acceptance.
                 if($accepted->registrationRoute===$protocol['route']&&$accepted->registrationIntervalSeconds===$protocol['interval_seconds']){$text.=config('domains.enom_writes.transfer')===true?' · Enom TEST route and request interval accepted':' · Enom TEST Purchase route and interval accepted';}
                 elseif(EnomTestRegistration::deploymentEnabled()||\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::deploymentEnabled()){$text.=config('domains.enom_writes.transfer')===true?' · Enom TEST route and request interval not accepted':' · Enom TEST Purchase route and interval not accepted';}}
+            if($a->registrar_key==='enom'&&$a->environment==='live'){
+                $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
+                $text.=($accepted->registrationRoute===$protocol['route']&&$accepted->registrationIntervalSeconds===$protocol['interval_seconds'])?' · Enom live Purchase route and interval accepted':' · Enom live Purchase route and interval not accepted';
+            }
             return $text;}
         catch(\Throwable){return 'Unavailable · new sales held';}
     }

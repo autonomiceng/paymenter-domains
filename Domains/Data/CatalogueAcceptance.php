@@ -12,10 +12,10 @@ final readonly class CatalogueAcceptance
     {
         if ($revision < 1 || count($endings) > 500) { throw new \InvalidArgumentException('Invalid catalogue acceptance.'); }
         if (($registrationRoute === null && $registrationIntervalSeconds !== 0)
-            || ($registrationRoute !== null && ($binding->registrarKey !== 'enom' || $binding->environment !== Environment::Test
-                || $registrationRoute !== 'https://resellertest.enom.com/interface.asp'
+            || ($registrationRoute !== null && ($binding->registrarKey !== 'enom'
+                || $registrationRoute !== ($binding->environment === Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp')
                 || $registrationIntervalSeconds < 25 || $registrationIntervalSeconds > 86400))) {
-            throw new \InvalidArgumentException('Invalid TEST registration acceptance.');
+            throw new \InvalidArgumentException('Invalid registration acceptance.');
         }
         $copy = [];
         foreach ($endings as $tld => $row) {

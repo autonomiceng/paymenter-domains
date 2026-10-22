@@ -3,14 +3,14 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
-/** Worker-local reservation for exactly one named TEST mutation, before the durable seal. */
+/** Worker-local reservation for exactly one named mutation, before the durable seal. */
 final class EnomTestWriteReservation
 {
     private static ?object $scope=null;
     public static function run(AccountBinding $b,string $action,int $id,\Closure $work): mixed
     {
         if(self::$scope!==null&&self::$scope->fingerprint===$b->fingerprint&&self::$scope->action===$action&&self::$scope->id===$id){return $work();}
-        if(self::$scope!==null||$b->registrarKey!=='enom'||$b->environment!==Environment::Test||$id<1||!in_array($action,['renewal','management'],true)){throw new EnomTestCallLimit;}
+        if(self::$scope!==null||$b->registrarKey!=='enom'||($b->environment!==Environment::Test&&!EnomLive::enabled($b,$action))||$id<1||!in_array($action,['renewal','management'],true)){throw new EnomTestCallLimit;}
         self::$scope=(object)['fingerprint'=>$b->fingerprint,'action'=>$action,'id'=>$id,'day'=>null,'consumed'=>false];
         try{return $work();}finally{self::$scope=null;}
     }
@@ -18,12 +18,12 @@ final class EnomTestWriteReservation
     { return self::$scope!==null&&self::$scope->fingerprint===$b->fingerprint&&self::$scope->action===$action; }
     public static function unconsumed(AccountBinding $b,string $action,int $id): bool
     { return self::active($b,$action)&&self::$scope->id===$id&&self::$scope->day!==null&&!self::$scope->consumed; }
-    public static function reserve(AccountBinding $b,string $action): void
+    public static function reserve(AccountBinding $b,string $action,?\Paymenter\Extensions\Servers\Domains\Data\Money $cost=null): void
     {
         if(self::$scope===null){return;}
         self::requireScope($b,$action);
         if(self::$scope->day!==null){throw new EnomTestCallLimit;}
-        self::$scope->day=EnomTestCalls::reserve($b->environment);
+        self::$scope->day=$b->environment===Environment::Live?EnomLiveCalls::reserve($b,$cost):EnomTestCalls::reserve($b->environment);
         EnomTestCalls::assertReservedDay(self::$scope->day);
     }
     private static function requireScope(AccountBinding $b,string $action): void

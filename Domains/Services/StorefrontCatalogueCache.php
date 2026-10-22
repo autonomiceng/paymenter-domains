@@ -57,7 +57,7 @@ final class StorefrontCatalogueCache
 
     private static function key(string $scope, string $revision): string
     {
-        return $scope.':'.$revision.':'.hash('sha256', json_encode([config('domains.enom_catalogue.enabled'), config('domains.enom_identity.environment')], JSON_THROW_ON_ERROR));
+        return $scope.':'.$revision.':'.hash('sha256', json_encode([config('domains.enom_catalogue.enabled'), config('domains.enom_identity.environment'),config('domains.enom_live')], JSON_THROW_ON_ERROR));
     }
 
     private static function scope(): string

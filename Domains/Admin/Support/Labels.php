@@ -46,6 +46,18 @@ final class Labels
             'ds_add'=>'Add DS','ds_delete'=>'Remove DS','glue_add'=>'Add child nameserver',
             'glue_update'=>'Change child nameserver','glue_delete'=>'Remove child nameserver'][$value] ?? 'Other request';
     }
+    public static function operationReason(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): string
+    {
+        $cache=app('request')->attributes;$key='domains.account.environment.'.$op->server_id;
+        if($op->registrar_key==='enom'&&!$cache->has($key)){$cache->set($key,\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->value('environment'));}
+        if($op->registrar_key==='enom'&&$cache->get($key)==='live'){
+            if(in_array($op->safe_code,['enom_test_call_cap','enom_test_renewal_call_cap','enom_test_management_call_cap'],true)){
+                return 'Live Enom request not sent. Check the account call and USD spend limits, canonical site and request deadline in Registrar setup. For registration or renewal, restore capacity and release the unsent hold. For management, retire this request before submitting a new change.';
+            }
+            return str_replace('TEST','live',self::reason($op->safe_code));
+        }
+        return self::reason($op->safe_code);
+    }
     public static function reason(?string $value): string
     {
         // Never echo provider messages, exception text or unrecognized stored codes.

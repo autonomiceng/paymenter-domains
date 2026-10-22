@@ -9,7 +9,7 @@ final class RequestFacts
     public static function for(Operation $op, ?StaffGrants $grants = null, ?Domain $domain = null): array
     {
         $grants ??= Staff::requireView();
-        $out = ['reason'=>$op->safe_code===null ? null : Labels::reason($op->safe_code), 'refund'=>'Customer credit: not assessed'];
+        $out = ['reason'=>$op->safe_code===null ? null : Labels::operationReason($op), 'refund'=>'Customer credit: not assessed'];
         try {
             $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
             if (array_key_exists('auto_pay',$f)) { $out['auto_pay']=Labels::autoPay($f['auto_pay_result']??$f['auto_pay'], \App\Models\Invoice::whereKey($op->invoice_id)->value('status')); }

@@ -26,8 +26,8 @@ final class StaffSettingsWrites
         }
         $now??=$clock->now();$r->input($data);
         if($r->action==='lifecycle'){LifecyclePolicies::save($r,$data,$now);return;}
-        if($r->action==='test_management'){EnomTestManagement::review($r,$data);return;}
-        if($r->action==='test_renewal'){EnomTestRenewal::review($r,$data);return;}
+        if(in_array($r->action,['test_management','live_management'],true)){EnomTestManagement::review($r,$data);return;}
+        if(in_array($r->action,['test_renewal','live_renewal'],true)){EnomTestRenewal::review($r,$data);return;}
         if($r->action==='renewal_billing'){RenewalBillingSettings::save($r,$data);return;}
         if($r->action==='enroll_sandbox'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Sandbox contract confirmation required.');}
@@ -152,12 +152,19 @@ final class StaffSettingsWrites
             try{$old=CatalogueAcceptances::load($binding,true);}catch(\DomainException){$old=null;}
             $ending=(string)($data['ending']??'');\Paymenter\Extensions\Servers\Domains\Data\CanonicalName::parse('example.'.$ending,[$ending]);$endings=$old?->endings??[];
             $registrationRoute=$old?->registrationRoute;$registrationInterval=$old?->registrationIntervalSeconds??0;
+            $liveRegistration=EnomLive::enabled($binding,'registration');
             $testRegistration=$binding->registrarKey==='enom'&&$binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Test
                 &&(EnomTestRegistration::deploymentEnabled()||EnomTestTransfer::deploymentEnabled());
             if(!$old&&Domain::where('server_id',$s->id)->whereNotNull('reservation_name')->orderBy('id')->lockForUpdate()->get()->isNotEmpty()){throw new \DomainException('Repair must preserve all holder renewal acceptance.');}
             if(($data['accept']??false)===true){
                 // Explicit independent exact-term evidence is required. Annual NameSilo prices prove no multiyear terms.
                 if(($data['verified']??false)!==true){throw new \DomainException('Independent term verification required.');}
+                if($liveRegistration){
+                    if(($data['live_registration_accepted']??false)!==true){throw new \DomainException('Review the live Enom Purchase route and request interval.');}
+                    $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
+                    if(!$protocol['batch_route']||$protocol['interval_seconds']<25){throw new \DomainException('Live Enom Purchase route acceptance is unavailable.');}
+                    $registrationRoute=$protocol['route'];$registrationInterval=$protocol['interval_seconds'];
+                }
                 if($testRegistration){
                     if(($data['test_registration_accepted']??false)!==true){throw new \DomainException(EnomTestTransfer::deploymentEnabled()?'Review the Enom TEST Purchase / TP_CreateOrder route and request interval before accepting acquisition terms.':'Review the Enom TEST Purchase route and request interval before accepting registration terms.');}
                     $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);

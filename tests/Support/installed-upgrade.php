@@ -22,6 +22,10 @@ function seedInstalledUpgrade(): void
     if(Schema::hasTable('domains_watch_deliveries')){
         require_once __DIR__.'/installed-watch.php';seedInstalledWatch();
     }
+    $server=App\Models\Server::create(['name'=>'Retained live identity','type'=>'server','extension'=>'Domains','enabled'=>true]);
+    $bindings=app(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class);$oldUrl=config('app.url');config(['app.url'=>'https://my.becotech.com']);
+    $bindings->configure($server->id,'enom',Paymenter\Extensions\Servers\Domains\Data\Environment::Live,['token'=>'retained-live-uid']);
+    $bindings->confirmLiveSite($server->id,'https://my.becotech.com');config(['app.url'=>$oldUrl]);
     $populated=[];
     foreach(Schema::getTableListing(null,false) as $table){if(str_starts_with($table,'domains_')){$populated[$table]=DB::table($table)->count();}}
     echo 'Baseline retained fixture rows: '.json_encode($populated)."\n";

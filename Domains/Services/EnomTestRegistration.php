@@ -6,19 +6,29 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Illuminate\Support\Facades\DB;
-/** Reviewed TEST-only deployment policy. Staff still owns catalogue acceptance and processing. */
+/** Built-in deployment policy. Staff owns catalogue acceptance and processing. */
 final class EnomTestRegistration
 {
     public static function enabled(AccountBinding $binding): bool
-    { return self::deploymentEnabled() && TestCatalogue::enabled($binding); }
+    { return EnomLive::enabled($binding,'registration') || (self::deploymentEnabled() && TestCatalogue::testDeployment($binding) && TestCatalogue::enabled($binding)); }
+    /** Catalogue authority can observe a retained sealed attempt after every write opt-in is removed. */
+    public static function recoveryEnabled(AccountBinding $binding): bool
+    {
+        if(!TestCatalogue::enabled($binding)){return false;}
+        foreach(Operation::where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->whereIn('state',['pending','uncertain','running'])->cursor() as $op){
+            try{if(($op->attempt['seal']??null)==='sealed'){return true;}}catch(\Throwable){continue;}
+        }
+        return false;
+    }
     public static function deploymentEnabled(): bool
-    { return config('domains.enom_writes.registration')===true && config('domains.enom_identity.environment')==='test' && config('domains.enom_catalogue.enabled')===true; }
+    { return config('domains.enom_writes.registration')===true && config('domains.enom_identity.environment')==='test' && config('domains.enom_catalogue.enabled')===true || config('domains.enom_identity.environment')==='live' && config('domains.enom_live.registration')===true; }
     public static function applies(Operation $operation): bool
     { return self::deploymentEnabled()&&$operation->action==='register'&&$operation->registrar_key==='enom'
         &&in_array($operation->state,['queued','awaiting_payment'],true); }
     /** Keep a previously accepted TEST account preview-only if its identity mode is later changed. */
     public static function checkoutPreviewOnly(AccountBinding $binding): bool
     {
+        if(EnomLive::deployment($binding)){return true;}
         if($binding->registrarKey!=='enom'||$binding->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Test){return false;}
         if(TestCatalogue::testDeployment($binding)){return true;}
         $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
@@ -45,12 +55,12 @@ final class EnomTestRegistration
         } catch(\Throwable){return 'write_acceptance_required';}
         return self::balanceEvidence($binding,false)?null:($op->action==='transfer'?'enom_test_transfer_usd_balance_required':'usd_balance_required');
     }
-    /** Pure: no credentials, queries, I/O, account mutation or feature inference from processing. */
+    /** Build account-bound ports without decrypting credentials or sending provider requests. */
     public static function factory(AccountBinding $binding): \Closure
     {
-        if (!self::enabled($binding) && !EnomTestRenewal::enabled($binding) && !EnomTestManagement::enabled($binding) && !EnomTestTransfer::enabled($binding)) { throw new \DomainException(self::reason()); }
+        if (!self::enabled($binding) && !EnomTestRenewal::enabled($binding) && !EnomTestManagement::enabled($binding) && !EnomTestTransfer::enabled($binding) && !self::recoveryEnabled($binding)) { throw new \DomainException(self::reason()); }
         // USD comes only from the existing audited manual/preflight balance reads, bound to this fingerprint.
-        // Route and spacing come from A6's actual TEST endpoint/command and worker request policy.
+        // Acceptance uses this environment's endpoint and the shared worker request interval.
         $protocolAcceptance=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
         if(!$protocolAcceptance['batch_route']||$protocolAcceptance['interval_seconds']<25){throw new \DomainException('TEST registration acceptance evidence is unavailable.');}
         $usdProbe=static fn(AccountBinding $current,bool $lock):bool=>$binding->matches($current)&&self::balanceEvidence($current,$lock);
@@ -61,7 +71,7 @@ final class EnomTestRegistration
     }
     private static function protocolEvidence(AccountBinding $binding,array $protocol,bool $lock): bool
     {
-        if($binding->registrarKey!=='enom'||$binding->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Test){return false;}
+        if($binding->registrarKey!=='enom'||$binding->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Test&&!EnomLive::enabled($binding,'catalogue')){return false;}
         try {
             $accepted=CatalogueAcceptances::load($binding,$lock);
             return $protocol['batch_route']===true&&$accepted->registrationRoute===$protocol['route']
@@ -70,7 +80,7 @@ final class EnomTestRegistration
     }
     private static function balanceEvidence(AccountBinding $binding,bool $lock): bool
     {
-        if($binding->registrarKey!=='enom'||$binding->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Test){return false;}
+        if($binding->registrarKey!=='enom'||$binding->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Test&&!EnomLive::enabled($binding,'catalogue')){return false;}
         try {
             $q=DB::table(BalanceSchema::TABLE)->where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint);
             if($lock){$q->lockForUpdate();}$row=$q->first();$now=app(Clock::class)->now()->getTimestamp();

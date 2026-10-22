@@ -113,7 +113,7 @@ final class DomainManagement
     {
         $work=fn()=>EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
             $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : EntryDeadline::INTERACTIVE_SECONDS);
-        if(!$this->testManagement||config('domains.enom_writes.management')!==true){return $work();}
+        if(!$this->testManagement){return $work();}
         $op=Operation::findOrFail($id);$b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
         return EnomTestManagement::enabled($b)?EnomTestWriteReservation::run($b,'management',$id,$work):$work();
     }

@@ -27,14 +27,14 @@ final class RuntimeFactory
             $wire->exchange('renewal'),new Management($binding,$wire->exchange('management')),$managementAccepted,testManagement:$testManagement);
     }
 
-    /** Reuse the reviewed TEST Purchase route and worker request interval as acceptance evidence. */
+    /** Bind Purchase acceptance to the environment endpoint and shared worker request interval. */
     public static function registrationAcceptance(AccountBinding $binding): array
     {
         $test=$binding->registrarKey==='enom'&&$binding->environment===Environment::Test;
-        $route=self::originFor(Environment::Test);
+        $route=self::originFor($binding->environment);
         return [
             'route'=>$route,
-            'batch_route'=>$test&&$route==='https://resellertest.enom.com/interface.asp'
+            'batch_route'=>($test||\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($binding,'catalogue'))
                 &&RegistrationCommand::Purchase->value==='Purchase',
             'interval_seconds'=>\Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::REQUEST_SECONDS,
         ];
@@ -51,6 +51,8 @@ final class RuntimeFactory
                     throw new \DomainException('Enom exchange refused.');
                 }
                 $named=$this->command($role,$command);
+                if($this->binding->environment===Environment::Live
+                    &&($role==='transfer'||!\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($this->binding,$named instanceof ReadCommand?'catalogue':$role))){throw new EnomTestCallLimit;}
                 self::parameters($parameters);
                 // Called only after the protocol's live grant / physical limiter / deadline checks.
                 $credentials=($this->credentials->getValue())(!($named instanceof ReadCommand));
@@ -61,8 +63,7 @@ final class RuntimeFactory
                 $this->binding->requireMatch(new AccountBinding('enom',$this->binding->serverId,$this->binding->environment,$uid));
                 $timeoutMs=intdiv($deadline-hrtime(true),1000000);
                 if ($timeoutMs<1) {
-                    if($this->binding->environment===Environment::Test){throw new EnomTestCallLimit;}
-                    throw new \RuntimeException('Enom exchange deadline reached.');
+                    throw new EnomTestCallLimit;
                 }
                 $body='';$handle=curl_init();
                 if ($handle===false) { throw new \RuntimeException('Enom exchange failed.'); }
@@ -83,11 +84,11 @@ final class RuntimeFactory
                 if(!curl_setopt_array($handle,$options)){throw new \RuntimeException('Enom exchange incomplete.');}
                 $purchase=$named===RegistrationCommand::Purchase||$this->testTransfer&&$named===RegistrationCommand::Transfer;
                 $reserved=($role==='renewal'||$role==='management'&&$named instanceof ManagementCommand)?\Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::prepare($this->binding,$role):null;
+                if($this->binding->environment===Environment::Live&&($role==='renewal'||$named instanceof ManagementCommand)&&$reserved===null){throw new EnomTestCallLimit;}
                 $day=$reserved??\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::prepareSend($this->binding,$purchase);
                 $timeoutMs=intdiv($deadline-hrtime(true),1000000);
                 if($timeoutMs<1){
-                    if($this->binding->environment===Environment::Test){throw new EnomTestCallLimit;}
-                    throw new \RuntimeException('Enom exchange deadline reached.');
+                    throw new EnomTestCallLimit;
                 }
                 $options[CURLOPT_CONNECTTIMEOUT_MS]=min(8000,$timeoutMs);$options[CURLOPT_TIMEOUT_MS]=$timeoutMs;
                 if(!curl_setopt_array($handle,$options)){throw new \RuntimeException('Enom exchange incomplete.');}

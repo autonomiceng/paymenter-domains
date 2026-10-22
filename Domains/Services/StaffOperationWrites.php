@@ -17,11 +17,11 @@ final class StaffOperationWrites
     {
         $testOnly=['enom_test_call_cap','enom_test_transfer_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required',
             'write_rate_limited','registry_details_unsupported','usd_balance_required','enom_test_transfer_usd_balance_required','enom_test_setup_required','enom_test_transfer_setup_required'];
-        $testRegistration=in_array($op->action,['register','transfer'],true)&&$op->registrar_key==='enom'&&($l['account']->environment??null)==='test'
+        $testRegistration=in_array($op->action,['register','transfer'],true)&&$op->registrar_key==='enom'&&in_array($l['account']->environment??null,['test','live'],true)
             &&($op->action==='transfer'?EnomTestTransfer::deploymentEnabled():EnomTestRegistration::deploymentEnabled());
         $ordinary=['staff_review_required','funding','processing','write_disabled','write_acceptance_required',
             'renewal_funding_or_authority','renewal_authority_invalid','transfer_setup_review_required'];
-        $renewalCap=$op->action==='renew'&&$op->registrar_key==='enom'&&($l['account']->environment??null)==='test'&&EnomTestRenewal::enabled(CatalogueAcceptances::binding($l['account']))&&$op->safe_code==='enom_test_renewal_call_cap'&&($op->attempt??[])===[];
+        $renewalCap=$op->action==='renew'&&$op->registrar_key==='enom'&&in_array($l['account']->environment??null,['test','live'],true)&&EnomTestRenewal::enabled(CatalogueAcceptances::binding($l['account']))&&$op->safe_code==='enom_test_renewal_call_cap'&&($op->attempt??[])===[];
         $testRetry=$testRegistration&&OperationClaims::testCallRefusalRetryable($op);
         $testVirgin=$testRegistration&&in_array($op->safe_code,$testOnly,true)&&($op->attempt??[])===[];
         if($op->state!=='held'||!in_array($op->action,['register','transfer','renew'],true)

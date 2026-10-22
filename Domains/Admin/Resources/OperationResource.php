@@ -37,7 +37,7 @@ class OperationResource extends Resource
             TextColumn::make('action')->label('Request type')->formatStateUsing(fn($state)=>Labels::action($state))->visibleFrom('xl'),
             TextColumn::make('state')->label('Status')->badge()->color(fn($state)=>Labels::color($state))
                 ->formatStateUsing(fn($state)=>Labels::state($state))->wrap()
-                ->description(fn($record)=>$record->safe_code===null?null:Labels::reason($record->safe_code)),
+                ->description(fn($record)=>$record->safe_code===null?null:Labels::operationReason($record)),
             TextColumn::make('review')->label('Review')->state(fn($record)=>array_values(array_unique(array_filter([PaidUncertainty::holdSummary($record,$grants)??PaidUncertainty::summary($record,$grants),...RequestFacts::review($record,$grants)]))))->listWithLineBreaks()->wrap()->placeholder('None')
                 ->extraAttributes(['style'=>'min-width:24rem;max-width:40rem;overflow-wrap:break-word;display:grid;row-gap:0.5rem']),
         ])->filters([

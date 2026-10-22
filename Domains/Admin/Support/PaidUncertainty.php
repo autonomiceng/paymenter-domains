@@ -28,7 +28,7 @@ final class PaidUncertainty
         $hours=$at ? max(0,(int)floor((time()-$at->getTimestamp())/3600)) : null;
         $age=match($hours){null=>'Age unknown',0=>'less than 1 hour',1=>'1 hour',default=>$hours.' hours'};
         return 'Request #'.$op->id.' · '.Labels::action($op->action).' · '.Labels::state($op->state)
-            .' · '.($op->safe_code===null?'Original outcome unresolved':Labels::reason($op->safe_code))
+            .' · '.($op->safe_code===null?'Original outcome unresolved':Labels::operationReason($op))
             .' · '.$age.($at?' · since '.$at->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC':'');
     }
     public static function for(Domain $d): array

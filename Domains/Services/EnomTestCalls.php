@@ -16,6 +16,7 @@ final class EnomTestCalls
     { return app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'); }
     /** Lets the registry restore a typed refusal across the verifier's deliberate error redaction. */
     public static function refusalGeneration(): int { return self::$refusalGeneration; }
+    public static function refuse(): never {++self::$refusalGeneration;throw new EnomTestCallLimit;}
     public static function refusedSince(int $generation): bool { return self::$refusalGeneration!==$generation; }
     public static function reserve(Environment $environment): string
     {
@@ -35,7 +36,7 @@ final class EnomTestCalls
     /** Open a single-request Purchase scope; its day-bound unit is reserved after preflight and before seal. */
     public static function withPurchase(AccountBinding $binding, \Closure $work, ?int $operationId=null): mixed
     {
-        if ($binding->registrarKey!=='enom' || $binding->environment!==Environment::Test || ($operationId!==null&&$operationId<1)) { throw new EnomTestCallLimit; }
+        if ($binding->registrarKey!=='enom' || ($binding->environment!==Environment::Test&&!EnomLive::enabled($binding,'registration')) || ($operationId!==null&&$operationId<1)) { throw new EnomTestCallLimit; }
         if (self::$purchase!==null) { throw new EnomTestCallLimit; }
         self::$purchase=(object)['fingerprint'=>$binding->fingerprint,'operationId'=>$operationId,'day'=>null,'reservedDay'=>null,'consumed'=>false];
         try { return $work(); } finally { self::$purchase=null; }
@@ -48,17 +49,17 @@ final class EnomTestCalls
     public static function purchaseUnconsumed(string $fingerprint, ?int $operationId=null): bool
     { return self::$purchase!==null&&self::$purchase->fingerprint===$fingerprint&&($operationId===null||self::$purchase->operationId===$operationId)&&self::$purchase->reservedDay!==null&&!self::$purchase->consumed; }
     /** Reserve the Purchase on its send day, immediately before sealing the paid operation. */
-    public static function reservePurchase(AccountBinding $binding): void
+    public static function reservePurchase(AccountBinding $binding,?\Paymenter\Extensions\Servers\Domains\Data\Money $cost=null): void
     {
         self::assertPurchaseCurrent($binding);
         if (self::$purchase->reservedDay!==null) { throw new EnomTestCallLimit; }
-        $day=self::reserve($binding->environment);
+        $day=$binding->environment===Environment::Live?EnomLiveCalls::reserve($binding,$cost??throw new EnomTestCallLimit):self::reserve($binding->environment);
         self::assertReservedDay($day);
         self::$purchase->day=$day;self::$purchase->reservedDay=$day;
     }
     public static function prepareSend(AccountBinding $binding, bool $purchase): string
     {
-        if ($binding->environment!==Environment::Test) { return ''; }
+        if ($binding->environment===Environment::Live&&!$purchase) { return EnomLiveCalls::reserve($binding); }
         if ($purchase) {
             if (self::$purchase===null || self::$purchase->fingerprint!==$binding->fingerprint || self::$purchase->consumed
                 || self::$purchase->reservedDay===null || self::$purchase->reservedDay!==self::day()) {
@@ -70,7 +71,6 @@ final class EnomTestCalls
     }
     public static function authorizeSend(AccountBinding $binding, bool $purchase, string $day): void
     {
-        if ($binding->environment!==Environment::Test) { return; }
         if ($binding->registrarKey!=='enom') { throw new EnomTestCallLimit; }
         self::assertReservedDay($day);
         if ($purchase) {

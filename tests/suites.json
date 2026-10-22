@@ -160,6 +160,7 @@
     "tests/test_installed_package_acquisition.py",
     "tests/test_installed_package_enom_exchange.py",
     "tests/test_installed_package_enom_test.py",
+    "tests/test_installed_package_enom_live.py",
     "tests/test_installed_package_enom_renewal.py",
     "tests/test_installed_package_enom_management.py",
     "tests/test_installed_package_enom_transfer.py",

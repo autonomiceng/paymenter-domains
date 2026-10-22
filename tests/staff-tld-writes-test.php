@@ -16,17 +16,17 @@ $review=static fn(string $action,?int $ending=null,?int $account=null,?string $s
     $key??Review::ticket($u->id,$account??$t->server_id,$ending,$action,$stamp??Review::stamp($account??$t->server_id,$ending)),$reason);
 $fixed=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'1.00','fixed_renew'=>'1.00','fixed_transfer'=>'1.00'];
 foreach(array_keys(Review::ACTIONS) as $action){
-    $page=Livewire::actingAs($u)->test(in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','renewal_billing'],true)?RegistrarSetup::class:ViewTld::class,
-        in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','renewal_billing'],true)?[]:['record'=>$t->id]);
-    $name=in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','renewal_billing'],true)?\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content'):$action;
-    if(in_array($action,['test_renewal','test_management'],true)){$page->assertActionDoesNotExist($name);continue;} // Deployment opt-in is off.
+    $page=Livewire::actingAs($u)->test(in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true)?RegistrarSetup::class:ViewTld::class,
+        in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true)?[]:['record'=>$t->id]);
+    $name=in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true)?\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content'):$action;
+    if(in_array($action,['test_renewal','test_management','live_renewal','live_management'],true)){$page->assertActionDoesNotExist($name);continue;} // Deployment opt-in is off.
     if($action==='enroll_sandbox'){$page->assertActionDisabled($name);continue;}
     $page->mountAction($name)->assertActionMounted($name)->setActionData(['reason'=>'x'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);
 }
 // Every settings action is hidden without its own permission, even with view/manage access.
 $u->role->update(['permissions'=>[Staff::VIEW,Staff::POLICY]]);
 foreach(array_keys(Review::ACTIONS) as $action){
-    $setup=in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','renewal_billing'],true);
+    $setup=in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true);
     $page=Livewire::actingAs($u)->test($setup?RegistrarSetup::class:ViewTld::class,$setup?[]:['record'=>$t->id]);
     if($setup){$page->assertActionDoesNotExist(\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content'));}else{$page->assertActionHidden($action);}
 }
@@ -34,7 +34,7 @@ $u->role->update(['permissions'=>$permissions]);
 $staleFirst=['processing','delivery_review','alert_review'];
 foreach([...$staleFirst,...array_values(array_diff(array_keys(Review::ACTIONS),$staleFirst))] as $action){
     if($action==='enroll_sandbox'){continue;} // Enrollment has its own fresh-server review regression.
-    $setup=in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','renewal_billing'],true);
+    $setup=in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true);
     $bad=$review($action,$setup?null:$t->id,null,str_repeat('0',64));
     tldRefusal(fn()=>$writer->run($bad,['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'account-enom'],'history_action'=>'register','confirmed'=>true,'enabled'=>false,'delivery_id'=>1,'alert_id'=>1], $now),'Settings changed. Reload this page.');
 }

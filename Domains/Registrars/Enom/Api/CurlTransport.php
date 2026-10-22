@@ -41,6 +41,7 @@ final class CurlTransport implements Transport
             ];
             if (!curl_setopt_array($handle, $options)) { throw new \RuntimeException('Registrar transport incomplete.'); }
             $day=\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::reserve($environment);
+            if($environment===Environment::Live){$day=\Paymenter\Extensions\Servers\Domains\Services\EnomLiveCalls::read($uid);}
             $remaining=intdiv($deadline-hrtime(true),1000000);
             if ($remaining<1) { throw new \RuntimeException('Registrar transport incomplete.'); }
             $options[CURLOPT_CONNECTTIMEOUT_MS]=min(8000,$remaining);$options[CURLOPT_TIMEOUT_MS]=$remaining;
