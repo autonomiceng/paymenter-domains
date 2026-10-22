@@ -62,7 +62,7 @@ final class ObservationWork
                 }
                 $job=$this->claim($queue); if (!$job) { $summary[$queue->server_id]='idle'; continue; }
                 try { $code=$this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint); }
-                catch (ReadDeferred) { $code='read_deferred'; }
+                catch (ReadDeferred|EnomTestCallLimit) { $code='read_deferred'; }
                 catch (\Throwable) { $code='read_unavailable'; }
                 $this->finish($job,$code); $summary[$queue->server_id]=$code;
             } catch (\Throwable $e) {

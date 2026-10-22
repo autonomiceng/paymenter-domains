@@ -67,6 +67,7 @@ abstract class ManagementProtocol
         $timeout = min(25000, ($remaining ?? $c->claimRead($this->binding)));
         try { $send=fn(int $available)=>($this->exchange->getValue())($this->origin($c),$command,$parameters,min($timeout,$available));
             $body=$remaining===null?$c->withinClaimedWire($this->binding,$send):$send($remaining); }
+        catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit; }
         catch (\Throwable) { throw new \RuntimeException('Management transport unavailable.'); }
         if (!is_string($body) || strlen($body) > 1048576) { throw new \RuntimeException('Management response unavailable.'); }
         return $body;
