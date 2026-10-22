@@ -34,7 +34,7 @@ $accepted=EnomTestRenewal::acceptance($b);$accepted->requireCurrent($b);$setting
 $setting->value=json_encode(['fingerprint'=>$b->fingerprint,...EnomTestRenewal::protocol(),'interval'=>26]);$setting->save();expect(!EnomTestRenewal::accepted($b),'Protocol drift invalidates review');
 $refuse=static function(Closure $f):void {try{$f();throw new LogicException('Reservation must refuse');}catch(EnomTestCallLimit){}};
 expect(!Reservation::active($b,'renewal'),'No active scope');same(null,Reservation::prepare($b,'renewal'),'No scope preserves explicit runtime wire behavior');
-$refuse(fn()=>Reservation::run($live,'renewal',1,fn()=>null));$refuse(fn()=>Reservation::run($b,'renewal',0,fn()=>null));$refuse(fn()=>Reservation::run($b,'management',1,fn()=>null));
+$refuse(fn()=>Reservation::run($live,'renewal',1,fn()=>null));$refuse(fn()=>Reservation::run($b,'renewal',0,fn()=>null));$refuse(fn()=>Reservation::run($b,'unsupported',1,fn()=>null));
 $clock->instant=new DateTimeImmutable('2028-01-01T23:59:59Z');
 Reservation::run($b,'renewal',1,function()use($b,$foreign,$clock,$refuse){
     expect(Reservation::active($b,'renewal'),'Exact scope active');expect(!Reservation::active($foreign,'renewal')&&!Reservation::active($b,'management'),'Active scope matches fingerprint and action');

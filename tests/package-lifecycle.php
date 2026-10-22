@@ -77,6 +77,11 @@ if($phase==='server-delete'){
         same(1,DB::table('migrations')->where('migration',Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::MIGRATION)->count(),'Reinstall retains the TEST counter migration record');
         assertRetained($receipt);echo "Native reinstall retained all recorded data and the TEST counter schema.\n";
     }else{assertRetained($receipt);echo "Native upload retained all recorded data (".$phase.").\n";}
+}elseif($phase==='enom-test-management'){
+    require __DIR__.'/Support/enom-test-registration.php';
+    require __DIR__.'/Support/enom-test-management.php';
+}elseif($phase==='enom-test-management-restart'){
+    require __DIR__.'/Support/enom-management-restart.php';
 }elseif($phase==='enom-test-renewal'){
     require __DIR__.'/Support/enom-test-registration.php';
     require __DIR__.'/Support/enom-test-renewal.php';

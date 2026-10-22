@@ -14,7 +14,7 @@ final class DomainManagement
     private ?array $receiptGrant = null;
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock,
         private readonly WriteFeatures $features = new WriteFeatures, private readonly bool $accepted = false,
-        private readonly int $intervalSeconds = 25) {}
+        private readonly int $intervalSeconds = 25, private readonly bool $testManagement = false) {}
     public static function capability(string $action): string
     {
         return match ($action) {
@@ -106,13 +106,16 @@ final class DomainManagement
             }
             $at=$this->clock->now();$terminal=$op->invoice_id?PrivacyRetirement::terminal($op,$l['domain'],(int)$actor->id,$at):['actor_id'=>(int)$actor->id,'at'=>$at->format(DATE_ATOM)];
             $op->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$at,
-                'attempt'=>[...($op->attempt??[]),'seal'=>'absent','send_state'=>'definitely_unsent','management_terminal'=>$terminal]]);return $op;
+                'attempt'=>[...($op->attempt??[]),'seal'=>$op->attempt['seal']??'absent','send_state'=>'definitely_unsent','management_terminal'=>$terminal]]);return $op;
         });
     }
     public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive): Operation
     {
-        return EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
+        $work=fn()=>EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
             $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : EntryDeadline::INTERACTIVE_SECONDS);
+        if(!$this->testManagement||config('domains.enom_writes.management')!==true){return $work();}
+        $op=Operation::findOrFail($id);$b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
+        return EnomTestManagement::enabled($b)?EnomTestWriteReservation::run($b,'management',$id,$work):$work();
     }
     private function runEntered(int $id, ManagementProtocol $driver, RequestOrigin $origin, \DateTimeImmutable $deadline): Operation
     {
@@ -124,7 +127,7 @@ final class DomainManagement
         }
         if (!in_array($op->state, ['queued', 'awaiting_payment'], true) || (($op->attempt ?? []) !== []&&!ManagementEvidence::retryable($op))) { return $op; }
         if ($op->funding_basis === 'paid_invoice' && \App\Models\Invoice::find($op->invoice_id)?->status !== 'paid') { return $op; }
-        $r = null; $claimed=false; $claim=$op->attempt['management_claim']??bin2hex(random_bytes(16));
+        $refusals=EnomTestCalls::refusalGeneration();$r = null; $claimed=false; $claim=$op->attempt['management_claim']??bin2hex(random_bytes(16));
         try {
             [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver,$claim): array {
                 $this->features->requireManagement();
@@ -155,9 +158,14 @@ final class DomainManagement
             finally { $this->grant = null; $this->receiptGrant = null; }
             return $this->finish($seed, $id, $driver, $result, null, true);
         } catch (\Throwable $error) {
-            return DB::transaction(function () use ($seed, $id, $claimed, $claim, $error): Operation {
+            return DB::transaction(function () use ($seed, $id, $claimed, $claim, $error, $refusals): Operation {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
                 if ($claimed && $op && ($op->attempt['management_claim']??null)===$claim && $op->state === 'running') {
+                    $b=CatalogueAcceptances::binding($l['account']);
+                    $cap=$this->testManagement&&(($op->attempt['seal']??null)==='absent'&&EnomTestCalls::refusedSince($refusals)
+                        ||$error instanceof EnomTestCallLimit&&EnomTestWriteReservation::unconsumed($b,'management',$id));
+                    if($cap){$op->update(['state'=>'held','safe_code'=>'enom_test_management_call_cap','lease_expires_at'=>null,
+                        'attempt'=>[...$op->attempt,'send_state'=>'definitely_unsent',...(($op->attempt['seal']??null)==='sealed'?['management_test_unsent'=>true]:[])]]);return $op;}
                     $history=$op->attempt['management_deferrals']??[];$defer=($op->attempt['seal']??null)==='absent'&&($error instanceof ReadDeferred||$error instanceof WriteHeld&&$error->reason==='write_rate_limited')&&count($history)<5;
                     $op->update(['state'=>($op->attempt['seal']??null)==='sealed'?'uncertain':($defer?'queued':'held'),'safe_code'=>$defer?'management_deferred':'management_unconfirmed','lease_expires_at'=>null,
                         'attempt'=>[...$op->attempt,...($defer?['management_deferrals'=>[...$history,$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)]]:[])]]);
@@ -170,11 +178,11 @@ final class DomainManagement
     {
         $g = $this->grant; $this->grant = null;
         if (!$g || $g[0] !== $r || $g[1] !== $ctx || $g[2] !== $driver) { throw new \DomainException('No live management grant.'); }
-        $this->locked($g[4], $g[5], $driver, function ($l, $op) use ($g, $ctx): void {
+        $this->locked($g[4], $g[5], $driver, function ($l, $op) use ($g, $ctx, $r): void {
             $this->features->requireManagement(); $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action);
             if (!$this->accepted || $l['stamp'] !== $g[3] || $ctx->deadline < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')
                 || $op->state !== 'running' || ($op->attempt['seal'] ?? null) !== 'absent') { throw new \DomainException('Management authority changed.'); }
-            $ctx->requireReservedCapacity();
+            $ctx->requireReservedCapacity();EnomTestWriteReservation::prepare($r->binding,'management');
             if($op->action==='auth_code_email'){foreach($l['operations'] as $peer){$at=$peer->attempt['dispatch_attempted_at']??null;if($peer->id!==$op->id&&$peer->action===$op->action&&is_string($at)&&new \DateTimeImmutable($at)>$this->clock->now()->modify('-10 minutes')){throw new \DomainException('Transfer code cooldown active.');}}}
             $this->noInflight($op); $funding=$op->funding_basis==='paid_invoice'?RefundPayment::requireCurrent($op,$l):[];
             if(!Cache::add('domains-write-slot:'.$op->account_fingerprint,true,$this->intervalSeconds)){throw new WriteHeld('write_rate_limited');}
@@ -253,6 +261,7 @@ final class DomainManagement
     private function authority(array $l, int $actor, string $action, ManagementProtocol $driver, bool $processing = true, ?string $correction = null, bool $advisory = false): void
     {
         $d = $l['domain']; $b = CatalogueAcceptances::binding($l['account']);
+        if($this->testManagement){EnomTestManagement::requireAction($b,$action);}
         if(in_array($action,['privacy_purchase','privacy_renew'],true)){
             if($actor!==(int)$d->user_id){throw new \DomainException('Privacy billing is owner-only.');}
             $this->features->requireManagement(); if(!$this->accepted||$this->intervalSeconds<25||$this->intervalSeconds>86400){throw new \DomainException('Management acceptance required.');}

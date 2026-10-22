@@ -53,6 +53,7 @@ abstract class ManagementProtocol
     {
         if ($this->active !== $r || $this->context !== $c || $this->sent || !$this->engine || $command!==$this->requestCommand($r)) { throw new \DomainException('No live management grant.'); }
         try{$c->claimRead($this->binding);return $c->withReservedWire(function()use($r,$c,$command,$parameters):string {
+            \Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::reserve($r->binding,'management');
             $this->engine->consume($r,$c,$this);return $c->withinClaimedWire($this->binding,function(int $remaining)use($r,$c,$command,$parameters):string{$this->sent=true;return $this->exchange($r,$c,$command,$parameters,$remaining);});
         });}catch(\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $e){if(!$this->sent){throw new \Paymenter\Extensions\Servers\Domains\Services\WriteHeld('write_rate_limited');}throw $e;}
     }

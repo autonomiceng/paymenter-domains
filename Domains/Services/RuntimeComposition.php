@@ -10,7 +10,7 @@ final class RuntimeComposition
     public static function make(AccountBinding $binding, AccountBindings $bindings, Clock $clock, WriteFeatures $features,
         WriteAcceptance $accepted, RenewalAcceptance $renewalAccepted, TransferPrecheck $precheck,
         RegistrationProtocol $registration, TransferProtocol $transfer, #[\SensitiveParameter] \Closure $renewalExchange,
-        ManagementProtocol $management, bool $managementAccepted=false, ?RegistrationProfiles $profiles=null): array
+        ManagementProtocol $management, bool $managementAccepted=false, ?RegistrationProfiles $profiles=null, bool $testManagement=false): array
     {
         if (!$management->bindsTo($binding)) { throw new \DomainException('Runtime management binding changed.'); }
         $acquisition=new AcquisitionPorts($binding,
@@ -21,6 +21,6 @@ final class RuntimeComposition
         return ['acquisition'=>$acquisition,'reconciliation'=>new OperationReconciliation(new OperationClaims($bindings,$clock),$bindings,$clock),
             'renewal'=>$renewal,'renewal_writer'=>new RenewalWriter($binding,$features,$renewalAccepted,static fn()=>$renewal,$renewalExchange),
             'renewal_completion'=>new RenewalCompletion($bindings,$clock),
-            'management'=>new DomainManagement($bindings,$clock,$features,$managementAccepted),'management_protocol'=>$management];
+            'management'=>new DomainManagement($bindings,$clock,$features,$managementAccepted,testManagement:$testManagement),'management_protocol'=>$management];
     }
 }

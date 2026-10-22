@@ -31,7 +31,7 @@ final class Runtime
             $a->make(ReadLimiter::class),$a->make(OwnerPorts::class),static function(array $l)use($a):bool {
                 try {
                     $a->make(AccountBindings::class)->requireProcessingLocked($l['server'],$l['account']);
-                    return $a->make(RuntimePorts::class)->accepted($l['account']);
+                    return $a->make(RuntimePorts::class)->recordDiscoveryAccepted($l['account']);
                 } catch (\Throwable) { return false; }
             }));
         $app->make(RuntimePorts::class)->registerInitialManagedRecordObservations(fn()=>$app->make(ObservationWork::class)->tick(1));

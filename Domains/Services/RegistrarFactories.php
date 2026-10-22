@@ -24,7 +24,7 @@ final class RegistrarFactories
                 $accepted = CatalogueAcceptances::load($binding);
                 $driver=new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), array_keys($accepted->endings));
                 $preview=new Enom\CataloguePreview($driver);
-                return (EnomTestRegistration::enabled($binding)||EnomTestRenewal::enabled($binding))?new Enom\EnomTestReconciliationReader($preview,$driver):$preview;
+                return (EnomTestRegistration::enabled($binding)||(EnomTestRenewal::enabled($binding)||EnomTestManagement::enabled($binding)))?new Enom\EnomTestReconciliationReader($preview,$driver):$preview;
             },
             static function(AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): Enom\Driver {
                 if ($binding->environment !== $environment) { throw new IdentityRefused('identity_environment_refused'); }

@@ -24,6 +24,9 @@ final class ManagementEvidence
     public static function idle(Operation $op): bool
     {
         $a=$op->attempt??[];if(!self::deferrals($a)){return false;}
+        if(($a['management_test_unsent']??false)===true){return isset($op->policy['management'])&&$op->funding_basis==='non_billable_management'
+            &&in_array($op->state,['held','rejected'],true)&&($a['seal']??null)==='sealed'&&($a['send_state']??null)==='definitely_unsent'
+            &&$op->provider_order_id===null&&!array_key_exists('management_reads',$a)&&!array_key_exists('management_ack',$a);}
         if(isset($a['management_claim'])&&(!is_string($a['management_claim'])||!preg_match('/^[a-f0-9]{32}$/D',$a['management_claim'])||$op->started_at===null)){return false;}
         return isset($op->policy['management'])&&in_array($op->state,['queued','awaiting_payment','held','rejected'],true)
             &&$op->provider_order_id===null&&$op->confirmed_expires_at===null&&!array_key_exists('seal',$op->funding??[])
@@ -37,6 +40,12 @@ final class ManagementEvidence
     public static function guard(Operation $op): void
     {
         $old=$op->getOriginal('attempt')??[];$new=$op->attempt??[];
+        if(array_key_exists('management_test_unsent',$old)&&($new['management_test_unsent']??null)!==$old['management_test_unsent']){throw new \DomainException('Unsent management proof frozen.');}
+        if(!array_key_exists('management_test_unsent',$old)&&array_key_exists('management_test_unsent',$new)){
+            $b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
+            if($new['management_test_unsent']!==true||$op->funding_basis!=='non_billable_management'||($old['seal']??null)!=='sealed'||($new['seal']??null)!=='sealed'||($new['send_state']??null)!=='definitely_unsent'||array_key_exists('management_reads',$new)||array_key_exists('management_ack',$new)||$op->provider_order_id!==null||$op->state!=='held'||$op->safe_code!=='enom_test_management_call_cap'
+                ||!EnomTestWriteReservation::unconsumed($b,'management',(int)$op->id)){throw new \DomainException('Unsent management reservation required.');}
+        }
         $x=$old['management_deferrals']??[];$y=$new['management_deferrals']??[];if(!self::deferrals($new)||count($y)<count($x)||array_slice($y,0,count($x))!==$x){throw new \DomainException('Management deferrals frozen.');}
         if(isset($old['management_refusal'])&&($new['management_refusal']??null)!==$old['management_refusal']){throw new \DomainException('Management refusal frozen.');}
         $before=$old['management_reads']??[];$after=$new['management_reads']??[];

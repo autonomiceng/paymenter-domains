@@ -47,6 +47,11 @@ class RegistrarSetup extends Page
                 try{$facts['TEST renewal acceptance']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::accepted(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a))?'Accepted':'Not accepted';}
                 catch(\Throwable){$facts['TEST renewal acceptance']='Unavailable';}
             }
+            if($a?->registrar_key==='enom'&&$a->environment==='test'&&config('domains.enom_writes.management')===true){
+                $facts['Enom TEST management']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::reason();
+                try{$facts['TEST management acceptance']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::accepted(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a))?'Accepted':'Not accepted';}
+                catch(\Throwable){$facts['TEST management acceptance']='Unavailable';}
+            }
             $facts += \Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for((int)$s->id);
             $facts += \Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule((int)$s->id);
             $entries=[];foreach($facts as $label=>$value){$entries[]=TextEntry::make('s'.$s->id.'_'.count($entries))->label($label)->state((string)$value)->badge($label==='Environment');}

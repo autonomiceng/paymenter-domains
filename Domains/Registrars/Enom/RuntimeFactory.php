@@ -18,13 +18,13 @@ final class RuntimeFactory
     /** Pure per-fingerprint factory: neither this call nor invoking its result decrypts or performs I/O. */
     public static function make(AccountBinding $binding, AccountBindings $bindings, Clock $clock, WriteFeatures $features,
         WriteAcceptance $accepted, RenewalAcceptance $renewalAccepted, TransferPrecheck $precheck,
-        #[\SensitiveParameter] \Closure $credentials, bool $managementAccepted=false): \Closure
+        #[\SensitiveParameter] \Closure $credentials, bool $managementAccepted=false, bool $testManagement=false): \Closure
     {
         if ($binding->registrarKey!=='enom') { throw new \InvalidArgumentException('Enom runtime binding required.'); }
         $wire=new self($binding,$credentials);
         return static fn()=>RuntimeComposition::make($binding,$bindings,$clock,$features,$accepted,$renewalAccepted,$precheck,
             new Registration($binding,$wire->exchange('registration')),new Transfer($binding,$wire->exchange('transfer')),
-            $wire->exchange('renewal'),new Management($binding,$wire->exchange('management')),$managementAccepted);
+            $wire->exchange('renewal'),new Management($binding,$wire->exchange('management')),$managementAccepted,testManagement:$testManagement);
     }
 
     /** Reuse the reviewed TEST Purchase route and worker request interval as acceptance evidence. */
@@ -82,7 +82,7 @@ final class RuntimeFactory
                 ];
                 if(!curl_setopt_array($handle,$options)){throw new \RuntimeException('Enom exchange incomplete.');}
                 $purchase=$named===RegistrationCommand::Purchase;
-                $reserved=$role==='renewal'?\Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::prepare($this->binding,$role):null;
+                $reserved=($role==='renewal'||$role==='management'&&$named instanceof ManagementCommand)?\Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::prepare($this->binding,$role):null;
                 $day=$reserved??\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::prepareSend($this->binding,$purchase);
                 $timeoutMs=intdiv($deadline-hrtime(true),1000000);
                 if($timeoutMs<1){
