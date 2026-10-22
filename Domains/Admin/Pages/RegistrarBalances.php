@@ -37,7 +37,7 @@ class RegistrarBalances extends Page
                         Action::make('refresh_'.$id)->label('Refresh now')->action(function()use($id):void {
                             Staff::requireView();$code=app(Balances::class)->refresh($id);
                             $body=match($code){'configuration_unavailable'=>'Open Registrar setup to check this account and use Read balance.',
-                                'test_call_refused'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::facts().' No provider request was made.',default=>null};
+                                'test_call_refused'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::refusedFacts().' No provider request was made.',default=>null};
                             \Filament\Notifications\Notification::make()->title(match($code){'refreshed'=>'Balance refreshed','rate_limited'=>'Wait before refreshing again',
                                 'test_call_refused'=>'Enom TEST request refused','configuration_unavailable'=>'Configuration unavailable',default=>'Balance read failed'})->body($body)->send();
                         }),

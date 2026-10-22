@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolicy,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,PriceCatalogue,PricingRule};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,EnomTestRegistration,PriceCatalogue,PricingRule};
 /** Saved facts only. No reader factory, credentials or provider calls. */
 final class TldFacts
 {
@@ -88,8 +88,9 @@ final class TldFacts
     {
         try{$binding=CatalogueAcceptances::binding($a);$accepted=CatalogueAcceptances::load($binding);$count=count($accepted->endings);$text='Revision '.$accepted->revision.' · '.$count.' '.($count===1?'ending':'endings');
             if($a->registrar_key==='enom'&&$a->environment==='test'){$protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
-                $text.=$accepted->registrationRoute===$protocol['route']&&$accepted->registrationIntervalSeconds===$protocol['interval_seconds']
-                    ?' · Enom TEST Purchase route and interval accepted':' · Enom TEST Purchase route and interval not accepted';}
+                // The unaccepted warning is actionable only where the deployment offers TEST registration acceptance.
+                if($accepted->registrationRoute===$protocol['route']&&$accepted->registrationIntervalSeconds===$protocol['interval_seconds']){$text.=' · Enom TEST Purchase route and interval accepted';}
+                elseif(EnomTestRegistration::deploymentEnabled()){$text.=' · Enom TEST Purchase route and interval not accepted';}}
             return $text;}
         catch(\Throwable){return 'Unavailable · new sales held';}
     }

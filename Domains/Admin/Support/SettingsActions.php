@@ -63,7 +63,7 @@ final class SettingsActions
                 $account=Account::where('server_id',$server)->first();
                 if($account?->registrar_key==='enom'&&$account->environment==='test'&&config('domains.enom_writes.registration')===true){
                     $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account));
-                    $fields[]=Checkbox::make('test_registration_accepted')->label('I reviewed Enom TEST Purchase at '.$protocol['route'].' and its '.$protocol['interval_seconds'].' second request interval');
+                    $fields[]=Checkbox::make('test_registration_accepted')->label('I reviewed Enom TEST Purchase at '.$protocol['route'].' and its '.$protocol['interval_seconds'].'-second request interval');
                 }
             }
             if($name==='history'){
@@ -100,31 +100,38 @@ final class SettingsActions
                         Notification::make()->success()->title($name==='processing'?($account->processing_enabled?'Processing enabled':'Processing paused').' for '.$target():'Change recorded')->body($name==='processing'?null:($name==='probe'?'Balance read saved. See Registrar balances.':'Reload this page before another change.'))->send();
                         if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl());}
                     }catch(\Throwable $error){
-                        $message=$error instanceof EnomTestCallLimit
-                            ?'Enom TEST request refused before sending. '.($name==='import'?'Earlier reads in this import may have been sent and counted. ':'')
-                                .EnomTestCalls::facts().(EnomTestCalls::callsRemain()?' Calls remain today, so a counter error or UTC day change refused it; you can retry now.':'')
-                            :match($error->getMessage()){'Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',
-                            'Settings changed. Reload this page.'=>'Settings changed. Reload this page.',
-                            'Current staff permissions required.'=>'Your permission changed. Reload this page.',
-                            'Runtime acceptance and shared workers are required.'=>'Provider acceptance and shared cache, sessions and queue workers are required before enabling processing.',
-                            'Pause processing on every legacy Enom server before installing or enabling Domains.'=>'Pause processing on every legacy Enom server first.',
-                            'TEST catalogue reads are unavailable.'=>'TEST catalogue import is available only for Enom TEST accounts on a deployment that enables it. No provider call was made.',
-                            'Catalogue ending is not accepted.'=>'Accept this TLD before importing. No provider call was made.',
-                            'Catalogue import unavailable.'=>'Import did not complete. No prices changed; Enom TEST reads may have been made. Reload and check acceptance and permissions.',
-                            'Connection checks are unavailable.'=>'Connection checks are unavailable. No provider call was made.',
-                            'identity_credentials_refused'=>'Enom refused the user ID or API token. Check both for the selected environment.',
-                            'identity_unavailable'=>'Enom did not confirm this account. Nothing was saved. Try again later.',
-                            'Connection not verified.'=>'Enom did not confirm the balance. The last saved balance was kept.',
-                            'identity_environment_refused'=>'This environment is not enabled for Enom account reads on this site. No provider call was made.',
-                            'identity_account_changed'=>'These credentials belong to a different account. The saved account was kept.',
-                            'namesilo_identity_unavailable'=>'NameSilo identity verification is unavailable. This account cannot be connected.',
-                            'Review key used.'=>'This confirmation was already used. Reload this page.',
-                            default=>'Reload and check current permissions, saved facts and acceptance.'};
+                        $message=self::refusal($error,$name);
                         if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains staff setting failed.',['action'=>$name,'exception_class'=>$error::class]);}
                         Notification::make()->danger()->title('Change refused')->body($message)->send();}
                     finally{$livewire->mountedActions=[];}
                 });
         }
         return $out;
+    }
+    /** Staff text for a refused settings change; never echoes unrecognized exception text. */
+    public static function refusal(\Throwable $error,string $name): string
+    {
+        return $error instanceof EnomTestCallLimit
+                ?'Enom TEST request refused before sending. '.($name==='import'?'Earlier reads in this import may have been sent and counted. ':'')
+                    .EnomTestCalls::refusedFacts()
+                :match($error->getMessage()){'Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',
+                'Settings changed. Reload this page.'=>'Settings changed. Reload this page.',
+                'Current staff permissions required.'=>'Your permission changed. Reload this page.',
+                'Runtime acceptance and shared workers are required.'=>'Provider acceptance and shared cache, sessions and queue workers are required before enabling processing.',
+                'Pause processing on every legacy Enom server before installing or enabling Domains.'=>'Pause processing on every legacy Enom server first.',
+                'TEST catalogue reads are unavailable.'=>'TEST catalogue import is available only for Enom TEST accounts on a deployment that enables it. No provider call was made.',
+                'Catalogue ending is not accepted.'=>'Accept this TLD before importing. No provider call was made.',
+                'Catalogue import unavailable.'=>'Import did not complete. No prices changed; Enom TEST reads may have been made. Reload and check acceptance and permissions.',
+                'Connection checks are unavailable.'=>'Connection checks are unavailable. No provider call was made.',
+                'identity_credentials_refused'=>'Enom refused the user ID or API token. Check both for the selected environment.',
+                'identity_unavailable'=>'Enom did not confirm this account. Nothing was saved. Try again later.',
+                'Connection not verified.'=>'Enom did not confirm the balance. The last saved balance was kept.',
+                'identity_environment_refused'=>'This environment is not enabled for Enom account reads on this site. No provider call was made.',
+                'identity_account_changed'=>'These credentials belong to a different account. The saved account was kept.',
+                'namesilo_identity_unavailable'=>'NameSilo identity verification is unavailable. This account cannot be connected.',
+                'Review key used.'=>'This confirmation was already used. Reload this page.',
+                'Review the Enom TEST Purchase route and request interval before accepting registration terms.'=>'Check the box confirming the Enom TEST Purchase route and request interval, then try again. Nothing was saved.',
+                'Enom TEST Purchase route acceptance is unavailable.'=>'Enom TEST Purchase acceptance is unavailable on this deployment; contact the deployment administrator. Nothing was saved.',
+                default=>'Reload and check current permissions, saved facts and acceptance.'};
     }
 }
