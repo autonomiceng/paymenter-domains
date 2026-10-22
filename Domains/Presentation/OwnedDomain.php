@@ -12,7 +12,8 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
  * or Paused during setup. This does not describe the registrar's auto-renew setting.
  * plannedRenewalDue: projected future due date for an adopted domain, separate from renewalDue.
  * renewNow: owner renewal request while manual renewals are on: url, terms and last request date
- * (order_by, Y-m-d), or only invoice for this cycle's issued pending invoice; otherwise empty.
+ * (order_by, Y-m-d), or only invoice for this cycle's issued pending invoice, or only status
+ * (cancelled, paid or review) when this cycle can be neither requested nor paid; otherwise empty.
  */
 final readonly class OwnedDomain
 {

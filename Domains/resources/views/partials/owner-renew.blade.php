@@ -1,4 +1,5 @@
-{{-- Owner renewal request. Shown only while manual renewals are on; billing still decides. --}}
+{{-- Owner renewal request. Shown only while manual renewals are on and no adopted renewal panel covers this cycle; billing still decides. --}}
+@unless ($domain->renewalInvoice)
 @if (isset($domain->renewNow['url']))
 <section class="domains-panel domains-section" id="renew" aria-labelledby="heading-renew"><h2 id="heading-renew" class="domains-h2">Renew now</h2>
 <p>Add years to this domain before it expires. We create an invoice now, and the renewal starts after it is paid.</p>
@@ -8,8 +9,15 @@
 <p class="domains-hint">You can renew online until @include('domains::partials.date', ['date' => $domain->renewNow['order_by']]). The invoice shows the total before you pay.</p>
 <button type="submit" class="domains-btn domains-btn--primary">Create renewal invoice</button></form>
 </section>
-@elseif (isset($domain->renewNow['invoice']) && !$domain->renewalInvoice)
+@elseif (isset($domain->renewNow['invoice']))
 <section class="domains-panel domains-section" id="renew" aria-labelledby="heading-renew"><h2 id="heading-renew" class="domains-h2">Renewal invoice issued</h2>
 <p>Pay this invoice to renew your domain.</p><a class="domains-btn domains-btn--primary" href="{{ $domain->renewNow['invoice'] }}">View renewal invoice</a>
 </section>
+@elseif (isset($domain->renewNow['status']))
+<section class="domains-panel domains-section" id="renew" aria-labelledby="heading-renew">
+@if ($domain->renewNow['status'] === 'cancelled')<h2 id="heading-renew" class="domains-h2">Renewal invoice cancelled</h2><p>{{ \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerRenewalController::CANCELLED }}</p>
+@elseif ($domain->renewNow['status'] === 'paid')<h2 id="heading-renew" class="domains-h2">Renewal payment received</h2><p>Renewal is awaiting confirmation. The confirmed expiry above will update when it completes.</p>
+@else<h2 id="heading-renew" class="domains-h2">Renewal under review</h2><p>Contact support if you need an update on this renewal.</p>@endif
+</section>
 @endif
+@endunless

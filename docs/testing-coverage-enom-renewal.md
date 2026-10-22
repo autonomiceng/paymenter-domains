@@ -131,3 +131,12 @@ or mismatched form keys and paused processing create nothing. A request redirect
 for the requested term; a duplicate returns the same invoice, a different term refuses, and the
 page then links the issued invoice. From the due date the form is hidden and requests refuse.
 Owner copy never shows internal reasons. No registrar job is queued.
+
+With auto-renew off (renewal stopped), billing refuses manual requests, so the page offers no
+form and a direct POST refuses with generic copy and creates nothing; turning it on restores
+the form. Once a cycle has an invoice that is neither payable nor replaceable, the page shows
+one status instead of the form: payment received, under review, or invoice cancelled (a direct
+POST then gets the cancelled copy). After staff retire the unpaid invoice, the form returns and
+a request issues a replacement invoice; payment history on the retired invoice keeps it in review.
+TLD minimum and maximum years are not applied to renewals: billing and the form both cap terms
+only by the ten-year registry horizon.

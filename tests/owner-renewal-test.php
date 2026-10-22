@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\{DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController, OwnerRenewalController};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, NativeDomainGuard, RuntimeIneligible, RuntimeReason};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, NativeDomainGuard, RenewalCycles, RuntimeIneligible, RuntimeReason};
 $guard=new NativeDomainGuard(new HolderPricing($prices),$clock);$guard->boot();
 $billing=new DomainBilling($bindings,$guard,$clock);Queue::fake();
 $controller=new OwnerRenewalController($owners,$billing);$session=app('request')->session();$other=commerceUser();
@@ -87,6 +87,14 @@ same([],$owners->present($d->fresh())->renewNow,'Off hides the issued-invoice li
 same(route('invoices.show',$invoice),$controller->renew($req($d,['years'=>'2']),$d->id)->getTargetUrl(),'Turning requests off still returns the issued invoice');
 same($issued,$ledger(),'Off duplicate creates nothing');$setting('domains_manual_renewals_enabled',true);
 
+// Auto-renew off: billing refuses manual requests for a stopped renewal, so the page offers none; turning it on restores the form.
+$policy=$late->fresh()->renewal_policy??[];$late->update(['renewal_policy'=>[...$policy,'renewals_stopped'=>true]]);$dto=$owners->present($late->fresh());
+same(['Off',[]],[$dto->renewal,$dto->renewNow],'Auto-renew off hides the request billing refuses');
+$html=$page($late);expect(!str_contains($html,'Renew now')&&!str_contains($html,route('domains.domains.renew',$late->id)),'Auto-renew off page shows no renewal form');
+$refused($late,['years'=>'1'],OwnerRenewalController::UNAVAILABLE);same($issued,$ledger(),'Auto-renew off request creates no invoice');
+$late->update(['renewal_policy'=>$policy]);$dto=$owners->present($late->fresh());
+same(['On',range(1,9)],[$dto->renewal,$dto->renewNow['terms']??null],'Auto-renew on offers the request again');
+
 // Outside the calendar: hidden from the due date and refused with plain copy.
 $clock->instant=new DateTimeImmutable('2027-10-10T23:00:00Z');expect($owners->present($late->fresh())->renewNow!==[],'Last request day still offers renewal');
 $clock->instant=new DateTimeImmutable('2027-10-11T00:00:00Z');same([],$owners->present($late->fresh())->renewNow,'Due date hides the request');
@@ -94,10 +102,33 @@ $refused($late,['years'=>'1'],'This domain is too close to its expiry date to re
 same($issued,$ledger(),'Outside calendar creates no invoice');
 same(1,Invoice::whereIn('id',Operation::where('action','renew')->pluck('invoice_id'))->count(),'Exactly one renewal invoice issued');
 
+// Cycle states: paid, review and cancelled invoices each show one status; a retired unpaid cycle offers a replacement request.
+$clock->instant=new DateTimeImmutable('2027-09-01T12:00:00Z');$cycle=static fn()=>$owners->present($d->fresh())->renewNow;
+$shows=static function(array $texts,string $label)use($page,$d):void {$html=$page($d);
+    foreach($texts as $text){expect(str_contains($html,$text),$label.' shows '.$text);}
+    expect(!str_contains($html,'Create renewal invoice')&&!str_contains($html,'View renewal invoice'),$label.' shows no form or link');};
+DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);same(['status'=>'paid'],$cycle(),'Paid cycle shows payment received');
+$shows(['Renewal payment received','Renewal is awaiting confirmation. The confirmed expiry above will update when it completes.'],'Paid page');
+DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'held']);
+same(['status'=>'review'],$cycle(),'Held cycle shows review');$shows(['Renewal under review','Contact support if you need an update on this renewal.'],'Review page');
+DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting_payment']);DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'cancelled']);$cancelled=$ledger();
+same(['status'=>'cancelled'],$cycle(),'Cancelled invoice shows its status');$shows(['Renewal invoice cancelled',OwnerRenewalController::CANCELLED],'Cancelled page');
+$refused($d,['years'=>'2'],OwnerRenewalController::CANCELLED);same($cancelled,$ledger(),'Cancelled cycle request creates no invoice');
+(new RenewalCycles($bindings,$clock))->retireUnpaid($op->id);
+DB::table('invoice_transactions')->insert(['invoice_id'=>$invoice->id,'amount'=>$op->amount,'fee'=>'0.00','status'=>'succeeded','created_at'=>now(),'updated_at'=>now()]);
+same(['status'=>'review'],$cycle(),'Retired cycle with payment history shows review');DB::table('invoice_transactions')->where('invoice_id',$invoice->id)->delete();
+same(range(1,9),$cycle()['terms']??null,'Retired unpaid cycle offers a replacement request');
+$html=$page($d);expect(str_contains($html,'Create renewal invoice')&&!str_contains($html,'Renewal invoice cancelled'),'Retired page shows the form, not the status');
+$response=$controller->renew($req($d,['years'=>'1']),$d->id);$replacement=Operation::where('domain_id',$d->id)->where('action','renew')->orderByDesc('id')->first();
+same([$op->operation_key.':replacement:1',1,route('invoices.show',$replacement->invoice_id)],[$replacement->operation_key,(int)$replacement->term,$response->getTargetUrl()],'Replacement request lands on its own invoice');
+same(['invoice'=>route('invoices.show',$replacement->invoice_id)],$cycle(),'Replacement cycle links its invoice');
+
 // Owner copy for every billing refusal hides reasons and internal messages.
 foreach([[new RuntimeIneligible(RuntimeReason::SpendingPaused),OwnerRenewalController::UNAVAILABLE],[new RuntimeIneligible(RuntimeReason::LifecycleNotReady),OwnerRenewalController::UNAVAILABLE],
     [new RuntimeIneligible(RuntimeReason::MissingAnchor),OwnerRenewalController::UNAVAILABLE],[new DomainException('Domain renewal is unavailable.'),OwnerRenewalController::UNAVAILABLE],
     [new DomainException('Renewal is off for this adopted registration.'),'Renewal is turned off for this domain. Contact support if you want to renew it.'],
     [new RuntimeException('Renewal term exceeds the registry horizon.'),OwnerRenewalController::UNAVAILABLE]] as [$error,$copy]){same($copy,OwnerRenewalController::refusal($error),'Owner copy for '.$error->getMessage());}
+foreach([[null,'This domain already has a renewal invoice for a different term. Pay that invoice, or contact support to change it.'],['cancelled',OwnerRenewalController::CANCELLED],
+    ['review','This renewal is under review. Contact support if you need an update on this renewal.']] as [$state,$copy]){same($copy,OwnerRenewalController::refusal(new DomainException('Existing renewal obligation requires review.'),$state),'Issued cycle copy for '.($state??'term'));}
 foreach([Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::class,App\Jobs\Server\CreateJob::class] as $job){Queue::assertNotPushed($job);}
-echo "Owner renewal off, terms, foreign, replay, success, duplicate, issued link and calendar refusals passed.\n";$nativeSuccessful=true;
+echo "Owner renewal off, terms, foreign, replay, success, duplicate, issued link, auto-renew off, cycle states and calendar refusals passed.\n";$nativeSuccessful=true;

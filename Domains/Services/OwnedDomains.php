@@ -187,17 +187,34 @@ final readonly class OwnedDomains
         try {
             $settings = \App\Models\Server::findOrFail($d->server_id)->settings;
             if (filter_var($settings->pluck('value', 'key')->get('domains_manual_renewals_enabled'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) !== true) { return []; }
-            $key = RenewalCycles::key($d);
-            $cycle = $d->operations()->where('action', 'renew')->where(fn ($q) => $q->where('operation_key', $key)->orWhere('operation_key', 'like', $key.':replacement:%'))->orderByDesc('id')->first();
-            if ($cycle) {
-                $invoice = $cycle->state === 'awaiting_payment' ? Invoice::whereKey($cycle->invoice_id)->where('user_id', $d->user_id)->where('status', 'pending')->first() : null;
-                return $invoice ? ['invoice' => route('invoices.show', $invoice)] : [];
-            }
+            if ($cycle = self::renewalCycle($d)) { return $cycle; }
             $expiry = $d->provider_expires_at->toDateTimeImmutable(); $timing = BillingCalendar::timing($settings);
             $due = BillingCalendar::dates($expiry, $timing['issue'], $timing['due'])['due'];
             $terms = DomainBilling::terms($expiry, $this->clock->now());
             if ($this->clock->now()->format('Y-m-d') >= $due || $terms === []) { return []; }
             return ['url' => route('domains.domains.renew', $d->id), 'terms' => $terms, 'order_by' => (new \DateTimeImmutable($due))->modify('-1 day')->format('Y-m-d')];
         } catch (\Throwable) { return []; }
+    }
+    /** This cycle as billing sees it: null while a new request is possible, else its pending invoice or an owner status. */
+    public static function renewalCycle(Domain $d): ?array
+    {
+        $key = RenewalCycles::key($d); $ops = $d->operations()->where('action', 'renew')->orderBy('id')->get();
+        $cycle = $ops->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
+        if (!$cycle) { return null; }
+        if ($cycle->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($cycle, $d)) {
+            $invoice = Invoice::whereKey($cycle->invoice_id)->where('user_id', $d->user_id)->first();
+            return match (true) {
+                $cycle->state === 'awaiting_payment' && $invoice?->status === 'pending' => ['invoice' => route('invoices.show', $invoice)],
+                $invoice?->status === 'cancelled' => ['status' => 'cancelled'],
+                $invoice?->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => ['status' => 'paid'],
+                default => ['status' => 'review'] };
+        }
+        // A retired or refunded debt permits a replacement only when billing's cycle proof holds.
+        $ids = $ops->pluck('invoice_id')->filter()->all();
+        $l = ['domain' => $d, 'service' => $d->service, 'operations' => $ops, 'invoices' => Invoice::whereIn('id', $ids)->get(),
+            'items' => \App\Models\InvoiceItem::whereIn('invoice_id', $ids)->get(), 'transactions' => \App\Models\InvoiceTransaction::whereIn('invoice_id', $ids)->get(),
+            'credit' => $d->service?->user?->credits()->where('currency_code', 'USD')->first()];
+        try { RenewalCycles::next($l); } catch (\Throwable) { return ['status' => 'review']; }
+        return null;
     }
 }

@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, OwnedDomains, 
 final readonly class OwnerRenewalController
 {
     public const UNAVAILABLE='We couldn’t create a renewal invoice right now. Try again later. If it keeps happening, contact support.';
+    public const CANCELLED='The renewal invoice for this term was cancelled. Contact support to renew this domain.';
     public function __construct(private OwnedDomains $owners, private DomainBilling $billing) {}
     public function renew(Request $request,int $domain)
     {
@@ -17,12 +18,13 @@ final readonly class OwnerRenewalController
         $years=$request->request->all()['years']??null;
         if (!is_string($years)||!preg_match('/^[1-9][0-9]?$/',$years)) { return $this->failed($domain,'Choose how many years to renew for.'); }
         try { $invoice=$this->billing->invoice((int)$d->id,$request->user(),(int)$years); }
-        catch (\Throwable $e) { return $this->failed($domain,self::refusal($e)); }
+        catch (\Throwable $e) { try { $status=OwnedDomains::renewalCycle($d)['status']??null; } catch (\Throwable) { $status=null; }
+            return $this->failed($domain,self::refusal($e,$status)); }
         if (!$invoice) { return $this->failed($domain,self::UNAVAILABLE); }
         return redirect()->route('invoices.show',$invoice);
     }
-    /** Owner copy for billing refusals; internal reasons and messages never reach the page. */
-    public static function refusal(\Throwable $e): string
+    /** Owner copy for billing refusals; status is this cycle's owner status. Internal reasons and messages never reach the page. */
+    public static function refusal(\Throwable $e,?string $status=null): string
     {
         if ($e instanceof RuntimeIneligible) { return match($e->reason) {
             RuntimeReason::BillingOff=>'Online renewal is not available right now. Contact support to renew this domain.',
@@ -31,7 +33,9 @@ final readonly class OwnerRenewalController
         return $e instanceof \DomainException ? match($e->getMessage()) {
             'Renewal is off for this adopted registration.'=>'Renewal is turned off for this domain. Contact support if you want to renew it.',
             'Renewal term exceeds the registry horizon.'=>'Domains can be registered for at most 10 years ahead. Choose a shorter term.',
-            'Existing renewal obligation requires review.'=>'This domain already has a renewal invoice for a different term. Pay that invoice, or contact support to change it.',
+            'Existing renewal obligation requires review.'=>match($status) { 'cancelled'=>self::CANCELLED,
+                'review'=>'This renewal is under review. Contact support if you need an update on this renewal.',
+                default=>'This domain already has a renewal invoice for a different term. Pay that invoice, or contact support to change it.'},
             default=>self::UNAVAILABLE} : self::UNAVAILABLE;
     }
     private function failed(int $domain,string $message)
