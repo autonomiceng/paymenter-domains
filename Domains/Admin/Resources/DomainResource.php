@@ -49,7 +49,8 @@ class DomainResource extends Resource
             TextColumn::make('provider_expires_at')->label('Expires')->state(fn(Domain $record)=>$record->provider_expires_at?->format('M j, Y') ?? 'Unconfirmed')
                 ->sortable(query: fn(Builder $query,string $direction)=>$query->orderBy('provider_expires_at',$direction)),
         ])->filters([
-            SelectFilter::make('status')->label('Status')->multiple()->options(Labels::statuses()),
+            SelectFilter::make('status')->label('Status')->multiple()->options([...Labels::statuses(),'held'=>Labels::state('held'),'uncertain'=>Labels::state('uncertain')])
+                ->query(fn(Builder $query,array $data)=>DomainQueries::status($query,$data['values']??[])),
             SelectFilter::make('server_id')->label('Registrar account')->options(function(): array {
                 if (!Staff::can()) { return []; }
                 $accounts=Account::orderBy('server_id')->get();
