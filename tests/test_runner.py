@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -106,6 +107,62 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual([row['exit'] for row in receipt['results']], [0, 1])
             self.assertEqual((output/'000.stdout.txt').read_bytes(), b'inflight finished')
             self.assertFalse((output/'002.stdout.txt').exists())
+
+    def test_installed_commands_drain_pool_and_release_it_after_each_cycle(self):
+        installed = ['tests/test_installed_package.py', 'tests/test_installed_package_enom_management.py',
+                     'tests/test_installed_namesilo_enrollment.py']
+        paths = ['before-0', 'before-1', *installed, 'between-0', 'between-1',
+                 *installed, 'after-0', 'after-1']
+        for jobs in [1, 2, 4]:
+            with self.subTest(jobs=jobs), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
+                active, lock, parallel = set(), threading.Lock(), threading.Event()
+                def execute(argv, **kwargs):
+                    path = argv[-1]
+                    with lock:
+                        if path in installed:
+                            self.assertFalse(active, 'Installed command overlapped earlier work')
+                        else:
+                            self.assertTrue(active.isdisjoint(installed), 'Work overlapped an installed command')
+                        active.add(path)
+                        if len(active) > 1:
+                            parallel.set()
+                    try:
+                        time.sleep(0.03)
+                        return b'ok', b'', 0, False
+                    finally:
+                        with lock:
+                            active.remove(path)
+                commands = [('native', [sys.executable, path]) for path in paths]
+                with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(runner.run(commands, {}, output, ['native'], {}, jobs=jobs), 0)
+                results = json.loads((output/'receipt.json').read_text())['results']
+                self.assertEqual([row['argv'][-1] for row in results], paths)
+                self.assertEqual(parallel.is_set(), jobs > 1)
+                for index, row in enumerate(results):
+                    self.assertLess(row['started_seconds'], row['finished_seconds'])
+                    if row['argv'][-1] in installed:
+                        for other in results[:index]:
+                            self.assertLessEqual(other['finished_seconds'], row['started_seconds'])
+                        for other in results[index+1:]:
+                            self.assertLessEqual(row['finished_seconds'], other['started_seconds'])
+
+    def test_failure_before_or_during_installed_command_stops_at_barrier(self):
+        commands = [('native', [path]) for path in ['before', 'tests/test_installed_package.py',
+                                                    'tests/test_installed_namesilo_enrollment.py', 'after']]
+        for failed in [0, 1]:
+            with self.subTest(failed=failed), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
+                def execute(argv, **kwargs):
+                    return b'output', b'', int(argv == commands[failed][1]), False
+                with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute) as called, \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(runner.run(commands, {}, output, ['native'], {}, jobs=4), 1)
+                receipt = json.loads((output/'receipt.json').read_text())
+                self.assertFalse(receipt['complete'])
+                self.assertEqual(called.call_count, failed+1)
+                self.assertEqual([row['argv'] for row in receipt['results']], [argv for _, argv in commands[:failed+1]])
 
     def test_parallel_runtime_mutation_is_a_failure(self):
         with tempfile.TemporaryDirectory() as temp:

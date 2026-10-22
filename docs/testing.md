@@ -625,6 +625,10 @@ Append new coverage notes to the matching area file; this file keeps setup and s
 Each worker owns its fixture, PHP runtime and temporary paths. Source and copied dependencies are checked before commands start and after the run.
 Console output prints each command's block as it completes; receipts keep manifest order and indexed output files.
 Receipts add `jobs` and command `seconds` for concurrency and timing.
+Installed-package commands (`test_installed_*.py`, including NameSilo enrollment) run alone.
+The pool drains before each one and resumes after its integrity check finishes.
+Command `started_seconds` and `finished_seconds` are monotonic offsets from run start;
+the finish includes the integrity check, so receipts can verify that commands did not overlap.
 The first failure stops new work; running commands finish. Runs that include MariaDB run serially.
 In parallel runs, writes to `Domains/`, even when restored, fail.
 

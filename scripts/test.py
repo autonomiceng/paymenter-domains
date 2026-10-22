@@ -106,7 +106,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         return stdout, stderr, {'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out,
                                'runtime_unchanged': unchanged, 'runtime_error': runtime_error,
                                'skipped': kind == 'mariadb' and code == 77, 'seconds': seconds,
-                               'guard_seconds': guard_seconds}
+                               'guard_seconds': guard_seconds, 'started_seconds': started - started_run,
+                               'finished_seconds': time.monotonic() - started_run}
 
     def record(index, value):
         stdout, stderr, result = value
@@ -114,7 +115,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         (output/f'{index:03d}.stderr.txt').write_bytes(stderr)
         completed[index] = result
         print(json.dumps({'timing': 'command', 'index': index, **{key: result[key] for key in
-                         ['kind', 'argv', 'exit', 'timed_out', 'seconds', 'guard_seconds']}}), flush=True)
+                         ['kind', 'argv', 'exit', 'timed_out', 'seconds', 'guard_seconds',
+                          'started_seconds', 'finished_seconds']}}), flush=True)
         if result['kind'] != 'lint' or result['exit']:
             print(stdout.decode(errors='replace').strip(), flush=True)
         if stderr:
@@ -129,13 +131,20 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         else:
             with ThreadPoolExecutor(max_workers=jobs) as pool:
                 pending, index, available = {}, 0, list(range(jobs))
+                exclusive_running = False
                 while pending or (index < len(commands) and not stopped.is_set()):
                     while available and index < len(commands):
+                        kind, argv = commands[index]
+                        exclusive = kind != 'lint' and Path(argv[-1]).name.startswith('test_installed_')
+                        # Installed fixtures need the whole pool, including integrity checks.
+                        if exclusive_running or (exclusive and pending):
+                            break
                         with scheduling:
                             if stopped.is_set():
                                 break
                             worker = available.pop()
                             pending[pool.submit(command, index, worker)] = (index, worker)
+                            exclusive_running = exclusive
                             index += 1
                     if not pending:
                         break
@@ -145,6 +154,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                         position, worker = pending.pop(future)
                         record(position, future.result())
                         available.append(worker)
+                    if not pending:
+                        exclusive_running = False
     results = [completed[index] for index in sorted(completed)]
     with timing('final_guards', timings):
         # A final guard catches changes after the last per-command check as well.
