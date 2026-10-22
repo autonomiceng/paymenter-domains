@@ -329,7 +329,7 @@ Render complete, unknown, partial, stale-generation and many-record owner pages 
 
 ### Native runtime registration
 
-`runtime-install-test.php`, `runtime-presenter-test.php` and `runtime-notices-test.php` and `runtime-worker-test.php` cover retained lifecycle verification, singleton hooks, activation refusal/audit, legacy exclusion, paired owner-scoped theme DTOs, mandatory notices with schedules off, encrypted audit rotation and no-resend notification review. They use pinned native SQLite fixtures and fakes only. `runtime-render.php` accepts an output directory and inert supplied-shell HTML as CLI arguments for installed native panel and customer captures. This is not provider, MariaDB or delivered-mail acceptance. See [runtime composition](runtime.md).
+`runtime-install-test.php`, `runtime-presenter-test.php`, `runtime-notices-test.php`, `runtime-worker-test.php`, `runtime-wire-registration-test.php`, `runtime-wire-renewal-test.php`, `runtime-wire-management-test.php` and `runtime-lifecycle-test.php` cover retained lifecycle verification, singleton hooks, activation refusal/audit, legacy exclusion, paired owner-scoped theme DTOs, mandatory notices with schedules off, encrypted audit rotation and no-resend notification review. They use pinned native SQLite fixtures and fakes only. `runtime-render.php` accepts an output directory and inert supplied-shell HTML as CLI arguments for installed native panel and customer captures. This is not provider, MariaDB or delivered-mail acceptance. See [runtime composition](runtime.md).
 
 ## Opt-in NameSilo OTE contract test
 
@@ -429,15 +429,15 @@ that original file and the remaining request budget. The closed observation is `
 `not_registered` (exact account absence, empty successful orders and available nonpremium name),
 or `ambiguous`. Matching account ownership requires a unique exact-name/term/amount order before
 sandbox sequence continuation. These observations never complete native financial operations or
-accept production history completeness/timezone. Ambiguity stops with exit 3 and never retries.
+accept production history completeness/timezone. Only `registered_in_account` continues the sequence.
+Both `not_registered` and `ambiguous` stop with exit 3 and never retry.
 A separately authorized diagnostic `--write --registration-context interactive --max-requests N`
 selects the existing interactive API route inside the runner only; background remains the default
-and renewal always uses `/apibatch`. An Unknown renewal stops immediately without rerouting.
+for registration and renewal. A separately authorized renewal continuation may use `/api` as described
+below. Unknown renewals reconcile read-only in the same invocation before the sequence can continue.
 `ote-purchase-evidence-test.php` uses synthetic transports only and is part of contracts.
 
 ### Purchase-only OTE diagnostic routes
-
-This section supersedes the preceding diagnostic renewal routing/stop description.
 
 Separately authorized `--registration-context interactive` now reroutes **registerDomain only**;
 RegistrationProfiles contactAdd/contactList and all other calls retain their production routes.
