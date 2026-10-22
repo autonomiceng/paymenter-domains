@@ -32,10 +32,12 @@ class RegistrarSetup extends Page
             $a=Account::where('server_id',$s->id)->first();
             $facts=['Environment'=>$a?->environment==='live'?'Live':($a?'TEST':'Not configured'),
                 'Processing'=>$a?->processing_enabled?(app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class)->configurationAvailable((int)$s->id)?'On':'On hold'):'Off',
-                'Account binding'=>$a?'Verified · immutable':'Not configured',
-                'Verified user ID'=>$a?->registrar_key==='enom'&&config('domains.enom_identity.environment')===$a->environment?$a->stable_identity:'Unavailable',
                 'Catalogue acceptance'=>$a?TldFacts::acceptance($a):'Unavailable · new sales held',
-                'Connection'=>app(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class)->connectionAvailable()?'Not tested this visit':'Unavailable','Retained domains'=>$a?\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count():0];
+                'Connection'=>app(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class)->connectionAvailable($a?->registrar_key)?'Not tested this visit':'Unavailable','Retained domains'=>$a?\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count():0];
+            $facts += $a?->registrar_key==='namesilo'
+                ?app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class)->sandboxFacts($a)
+                :['Account binding'=>$a?'Verified · immutable':'Not configured',
+                    'Verified user ID'=>$a?->registrar_key==='enom'&&config('domains.enom_identity.environment')===$a->environment?$a->stable_identity:'Unavailable'];
             if ($a?->registrar_key==='enom' && $a->environment==='test') { $facts['Enom TEST daily calls']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::facts(); }
             if ($a?->registrar_key==='enom' && $a->environment==='test' && config('domains.enom_writes.registration')===true) {
                 $facts['Enom TEST registration']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRegistration::reason();

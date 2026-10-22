@@ -13,13 +13,16 @@ final class ActivationFacts
         // Also explain supported registrars when no deployment registry has been installed yet.
         foreach(array_unique([...$registered,'enom','namesilo']) as $key){
             $facts=[];
-            if(!in_array($key,$registered,true)||!app(StaffSettingsWrites::class)->connectionAvailable()){
+            if(!in_array($key,$registered,true)||!app(StaffSettingsWrites::class)->connectionAvailable($key)){
                 $facts['No connection check available']=$key==='enom'
                     ?'Deployment: deliberately set domains.enom_identity.environment to test or live before extension boot to enable bounded identity and staff balance reads. This does not activate catalogue or processing.'
-                    :'NameSilo identity verification is unavailable. No accepted account identity check exists; this account cannot be connected.';
+                    :'Provider-confirmed NameSilo identity checks are unavailable. If OTE enrollment is enabled, use Registrar setup → Enroll NameSilo OTE key on a fresh Domains server. NameSilo does not confirm account ownership; live NameSilo cannot be connected.';
             }
+            if($key==='namesilo'){$facts['OTE enrollment']=NameSiloSandbox::enabled()
+                ?'Enabled on this site. Use Registrar setup → Enroll NameSilo OTE key on a fresh Domains server. NameSilo does not confirm account ownership. Live NameSilo cannot be connected.'
+                :'Off on this site. Ask the installation administrator whether OTE enrollment can be enabled. Live NameSilo cannot be connected.';}
             $accounts=Account::where('registrar_key',$key)->orderBy('server_id')->get();
-            if($accounts->isEmpty()){$facts['No verified account']='Registrar setup: configure an enabled native Domains server after connection checks are available. Keep retained account identities unchanged.';}
+            if($accounts->isEmpty()){$facts[$key==='namesilo'?'No enrolled account':'No verified account']=$key==='namesilo'?'No NameSilo OTE enrollment yet. See OTE enrollment above.':'Registrar setup: configure an enabled native Domains server after connection checks are available. Keep retained account identities unchanged.';}
             $out[$key]['Registrar checks']=$facts?:['Connection review required'=>'Connection checks are available locally; verify the original account in Registrar setup. This is not a successful provider check.'];
             foreach($accounts as $a){$out[$key]['Server #'.$a->server_id]=self::account($a);}
             $out[$key]['Deployment and request checks']=self::reviews();
@@ -33,7 +36,7 @@ final class ActivationFacts
             'server_disabled'=>'Native server off','server_unavailable'=>'Native server unavailable',
             'site_invalid'=>'Live site URL invalid','site_unbound'=>'Live site not accepted','site_mismatch'=>'Live site mismatch',
             'not_configured'=>'Account not configured',default=>'Account configuration unavailable'}]=
-                'Servers / Registrar setup: restore the enabled server and original verified credentials. Live accounts also require trusted site acceptance for the exact canonical HTTPS application URL; staff cannot provision that acceptance.';}
+                $a->registrar_key==='namesilo'?(NameSiloSandbox::enrolled($a)?'Servers / Registrar setup: re-enable this server if it is off. Restore its original OTE enrollment facts; OTE enrollment must stay enabled on this site (installation administrator). A new key requires a fresh Domains server. Account ownership is unconfirmed.':'No readable OTE enrollment for this NameSilo binding. Keep its retained facts unchanged; if it was enrolled, restore its original saved settings. A new key requires a fresh Domains server; this binding’s holdings, acceptances and operations do not carry over. Live NameSilo cannot be connected.'):'Servers / Registrar setup: restore the enabled server and original verified credentials. Live accounts also require trusted site acceptance for the exact canonical HTTPS application URL; staff cannot provision that acceptance.';}
         if(!$a->processing_enabled){$facts['Processing off']='Registrar setup → Processing: requires current staff review, complete account-bound runtime ports and shared workers. Enabling a native server alone does not enable processing.';}
         $s=Server::find($a->server_id);$settings=$s?->settings()->whereIn('key',['domains_billing_enabled','domains_manual_renewals_enabled'])->pluck('value','key');
         foreach(['domains_billing_enabled'=>'Billing off','domains_manual_renewals_enabled'=>'Manual renewal billing off'] as $setting=>$label){

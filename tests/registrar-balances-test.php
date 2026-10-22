@@ -142,7 +142,11 @@ $clock->instant=$clock->now()->modify('+60 seconds');$readState->fail=true;same(
 same('6.00',$row($a)->amount,'Daily value retained on refresh failure');$readState->fail=false;
 // Render actual Filament page; neither credentials, fingerprints nor provider error text reach HTML or Livewire state.
 $render=Livewire::actingAs($staff)->test(Page::class)->assertSee('Registrar balances')->assertSee('Add funds')->assertSee('Refresh now')->assertSee('Unknown');
-$html=$render->html();foreach(['https://cp.enom.com/','https://www.namesilo.com/cart/add-funds','noopener noreferrer','Server #'.$a->server_id] as $needle){expect(str_contains($html,$needle),'Rendered account structure and official external links');}
+$html=$render->html();foreach(['https://cp.enom.com/','noopener noreferrer','Server #'.$a->server_id] as $needle){expect(str_contains($html,$needle),'Rendered account structure and official external links');}
+expect(!str_contains($html,'https://www.namesilo.com/cart/add-funds'),'OTE accounts never link to live funding');
+$liveServer=App\Models\Server::create(['name'=>'Synthetic live balance','extension'=>'Domains','type'=>'server','enabled'=>true]);
+$manualBindings->configure($liveServer->id,'namesilo',Environment::Live,['token'=>'synthetic-live-balance-account']);
+Livewire::actingAs($staff)->test(Page::class)->assertSee('https://www.namesilo.com/cart/add-funds');
 foreach(['PRIVATE-PROVIDER-REPLY','account-enom','account-namesilo',$a->account_fingerprint,$foreign->fingerprint,'domains_credentials'] as $secret){expect(!str_contains($html,$secret),'HTML and state redact private evidence');}
 // A panel flag alone cannot make Paymenter's differently shaped native inbox compatible.
 expect(Schema::hasTable('notifications'),'Native notification storage exists');$panel->databaseNotifications();

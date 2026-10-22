@@ -15,7 +15,7 @@ class Account extends Model
     protected $guarded = [];
     protected $hidden = ['account_fingerprint', 'stable_identity', 'identity_fingerprint', 'live_site'];
     protected $casts = ['stable_identity' => 'encrypted', 'processing_enabled' => 'boolean'];
-    /** @internal AccountBindings only, after positive verification or explicit site/processing guards.
+    /** @internal AccountBindings only, after provider verification, explicit OTE enrollment or site/processing guards.
      * This narrow synchronous scope is not exposed through native forms or mass assignment.
      */
     public static function withVerifiedBindingWrite(#[\SensitiveParameter] \Closure $write): mixed
@@ -33,6 +33,8 @@ class Account extends Model
             if (!$server || $server->extension !== 'Domains' || !$server->enabled) {
                 throw new \DomainException('Account requires an enabled native Domains server.');
             }
+            if(\Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::enrolled($account)
+                &&($account->registrar_key!=='namesilo'||$account->environment!=='test')){throw new \DomainException('Sandbox enrollment cannot leave OTE.');}
             $account->stable_identity = \Paymenter\Extensions\Servers\Domains\Data\AccountBinding::canonicalIdentity($account->registrar_key, $account->stable_identity);
             $binding = new \Paymenter\Extensions\Servers\Domains\Data\AccountBinding($account->registrar_key,
                 (int) $account->server_id, \Paymenter\Extensions\Servers\Domains\Data\Environment::from($account->environment), $account->stable_identity);

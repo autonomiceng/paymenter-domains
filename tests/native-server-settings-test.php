@@ -111,10 +111,12 @@ foreach([$first,$second] as $server){
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);
     $disabled=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertActionDisabled($processingAction($server));
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
-    $health=RuntimeHealth::for($server->id);expect(str_contains($health['Registrar configuration'],'saved settings no longer match the verified account'),'Hold covers credential and digest settings');expect(str_contains($health['Registrar configuration'],'re-enter credentials for the original account'),'Local health gives actionable hold');
-    Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('On hold')->assertSee('re-enter credentials for the original account')->assertDontSee('PRIVATE-WRONG');
-    Livewire::actingAs($staff)->test(BalancesPage::class)->assertDontSee('PRIVATE-WRONG')
-        ->assertActionExists(TestAction::make('funds_'.$server->id)->schemaComponent('account_'.$server->id,'content'),fn($action)=>$action->getColor()==='gray'&&$action->isOutlined()&&$action->getIconPosition()===\Filament\Support\Enums\IconPosition::After);
+    $health=RuntimeHealth::for($server->id);$healthNeedle=$a->registrar_key==='namesilo'?'saved settings no longer match this NameSilo binding':'saved settings no longer match the verified account';$recoveryNeedle=$a->registrar_key==='namesilo'?'Restore the original saved settings':'re-enter credentials for the original account';expect(str_contains($health['Registrar configuration'],$healthNeedle),'Hold covers credential and digest settings');expect(str_contains($health['Registrar configuration'],$recoveryNeedle),'Local health gives actionable hold');
+    Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('On hold')->assertSee($recoveryNeedle)->assertDontSee('PRIVATE-WRONG');
+    $balancePage=Livewire::actingAs($staff)->test(BalancesPage::class)->assertDontSee('PRIVATE-WRONG');
+    $funds=TestAction::make('funds_'.$server->id)->schemaComponent('account_'.$server->id,'content');
+    if($a->registrar_key==='namesilo'){$balancePage->assertActionDoesNotExist($funds);}
+    else{$balancePage->assertActionExists($funds,fn($action)=>$action->getColor()==='gray'&&$action->isOutlined()&&$action->getIconPosition()===\Filament\Support\Enums\IconPosition::After);}
     // A positively verified different account still cannot repurpose the retained binding.
     serverSettingsReject(fn()=>$bindings->configure($server->id,$a->registrar_key,Environment::Test,$a->registrar_key==='enom'?['uid'=>'other-account','token'=>'PRIVATE-WRONG-ROTATION']:['api_key'=>'PRIVATE-WRONG-ROTATION']));
     same($binding->fingerprint,$a->fresh()->account_fingerprint,'Failed rotation retains B1 fingerprint key');

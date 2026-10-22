@@ -90,6 +90,10 @@ if($phase==='server-delete'){
 }elseif($phase==='held'){
     require __DIR__.'/Support/registration-held.php';
     require __DIR__.'/Support/runtime-activation.php';
+}elseif($phase==='namesilo-enrollment'){
+    require __DIR__.'/Support/namesilo-enrollment-wire.php';
+    require __DIR__.'/Support/namesilo-enrollment-staff.php';
+    expect(str_starts_with((new ReflectionClass(Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::class))->getFileName(),base_path('extensions/Servers/Domains/')),'Enrollment uses installed ZIP');
 }elseif($phase==='identity'){
     require __DIR__.'/Support/enom-identity.php';$GLOBALS['identityCalls']=[];
     require __DIR__.'/Support/enom-identity-staff.php';

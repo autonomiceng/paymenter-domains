@@ -14,8 +14,9 @@ final class RegistrarFactories
     /** Deployment opt-in. No default environment and no spending or scheduler port registration. */
     public static function bootstrap(RegistrarRegistry $registry): bool
     {
+        $sandbox=NameSiloSandbox::bootstrap($registry);
         $environment = \Paymenter\Extensions\Servers\Domains\Data\Environment::tryFrom((string)config('domains.enom_identity.environment', ''));
-        if (!$environment) { return false; }
+        if (!$environment) { return $sandbox; }
         $registry->register('enom', ['uid', 'token'], new Enom\AccountVerifier($environment),
             static function(AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): Enom\CataloguePreview|Enom\EnomTestReconciliationReader {
                 if ($binding->environment !== $environment) { throw new IdentityRefused('identity_environment_refused'); }
