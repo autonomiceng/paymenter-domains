@@ -42,8 +42,9 @@ $exchange = static function ($origin, $command, $parameters, $timeout) use ($reg
         $removed = in_array('removeAutoRenewal', $registration->calls, true);
         $reply += ['created' => '2026-10-18', 'expires' => '2027-10-18', 'status' => 'Active', 'locked' => 'Yes', 'private' => 'No',
             'auto_renew' => $registration->mode === 'stillon' || ($registration->mode === 'remove' && !$removed) ? 'Yes' : 'No',
-            'nameservers' => [['nameserver' => 'ns2.provider.net'], ['nameserver' => 'ns1.provider.net']],
+            'nameservers' => [['nameserver' => 'ns2.provider.example'], ['nameserver' => 'ns1.provider.example']],
             'contact_ids' => array_fill_keys(['billing', 'technical', 'registrant', 'administrative'], (string) $registration->id)];
+        if ($registration->mode === 'mismatch') { $reply['nameservers'][0]['nameserver'] = 'ns3.provider.example'; }
         if ($registration->mode === 'badns') { $reply['nameservers'] = ['nameserver' => 'invalid']; }
     } elseif ($command !== 'removeAutoRenewal') { throw new LogicException('Unexpected protocol command'); }
     return json_encode(['request' => ['operation' => $command], 'reply' => $reply], JSON_THROW_ON_ERROR);
