@@ -1,4 +1,4 @@
-{{-- Owner renewal request. Shown only while manual renewals are on and no adopted renewal panel covers this cycle; billing still decides. --}}
+{{-- Owner renewal request. The adopted panel covers retained cycles; eligible replacement requests use this form. --}}
 @unless ($domain->renewalInvoice)
 @if (isset($domain->renewNow['url']))
 <section class="domains-panel domains-section" id="renew" aria-labelledby="heading-renew"><h2 id="heading-renew" class="domains-h2">Renew now</h2>

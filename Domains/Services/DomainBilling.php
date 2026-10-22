@@ -37,19 +37,9 @@ final class DomainBilling
             $key = RenewalCycles::key($d);
             // Issued debt keeps its calendar, term and amount through later configuration changes.
             $existing = $l['operations']->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
-            if ($existing && $existing->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($existing,$d)) { return $this->existing($existing, $l, $years); }
+            if ($existing && $existing->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($existing,$d)) { return self::existingInvoice($existing, $l, $years); }
             $key = RenewalCycles::next($l);
-            self::requireAuthority($l,$this->bindings);
-            $settings = $l['settings']->pluck('value', 'key');
-            $calendar = self::calendarFor($l); $years ??= 1;
-            if (!self::enabled($settings->get($actor ? 'domains_manual_renewals_enabled' : 'domains_billing_enabled', false))) {
-                throw new RuntimeIneligible(RuntimeReason::BillingOff);
-            }
-            $today = $this->clock->now()->format('Y-m-d');
-            if ($today >= $calendar['due'] || (!$actor && $today < $calendar['issue'])) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
-            if (!in_array($years, self::terms($d->provider_expires_at->toDateTimeImmutable(), $this->clock->now()), true)) {
-                throw new \DomainException('Renewal term exceeds the registry horizon.');
-            }
+            $years ??= 1; $calendar = $this->requireRequest($l, $actor !== null, $years);
             // Holding retail is independent of current seller, sales/renew flags and provider cost.
             $price = $this->native->project($l);
             $amount = PricingRule::total($price['annual_gross'], $years);
@@ -99,11 +89,11 @@ final class DomainBilling
         return self::calendar($l['domain'], $timing['issue'], $timing['due']);
     }
 
-    /** Read-only eligibility shared with scheduled-invoice notices; caller holds HoldingLocks. */
+    /** Read-only eligibility shared by billing, owner previews and notices; writer callers hold HoldingLocks. */
     public static function requireAuthority(array $l,AccountBindings $bindings):void
     {
         $d=$l['domain'];$s=$l['service'];
-        $bindings->requireProcessingLocked($l['server'],$l['account']);
+        $bindings->requireProcessingLocked($l['server'],$l['account'], $l['advisory'] ?? false);
         if($d->renewal_policy['automatic_spend_paused']??false){throw new RuntimeIneligible(RuntimeReason::SpendingPaused);}
         if ($s->status !== 'active' || !in_array($d->status, ['active', 'expired', 'grace'], true)
             || RenewalStop::stopped($l) || $d->price_mode !== 'standard') { throw new RuntimeIneligible(RuntimeReason::LifecycleNotReady); }
@@ -114,10 +104,11 @@ final class DomainBilling
         }
     }
 
-    private function existing(Operation $op, array $l, ?int $years): Invoice
+    /** Validate retained debt without changing the invoice or operation. Writers pass their locked rows. */
+    public static function existingInvoice(Operation $op, array $l, ?int $years = null): Invoice
     {
         $invoice = $l['invoices']->firstWhere('id', $op->invoice_id); $item = $l['items']->firstWhere('id', $op->invoice_item_id); $d = $l['domain'];
-        if (!$invoice || !$item || $l['items']->where('invoice_id', $op->invoice_id)->count() !== 1 || $op->action !== 'renew' || $op->funding_basis !== 'paid_invoice' || ($years !== null && (int) $op->term !== $years)
+        if (!$invoice || !$item || !$invoice->due_at || !$op->base_expires_at || !$op->expected_expires_at || $l['items']->where('invoice_id', $op->invoice_id)->count() !== 1 || $op->action !== 'renew' || $op->funding_basis !== 'paid_invoice' || ($years !== null && (int) $op->term !== $years)
             || $op->service_id !== $d->service_id || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key
             || $op->account_fingerprint !== $d->account_fingerprint || $op->authority_generation !== $d->authority_generation
             || $invoice->status === Invoice::STATUS_CANCELLED || (int) $invoice->user_id !== (int) $d->user_id || $invoice->currency_code !== 'USD'
@@ -126,8 +117,41 @@ final class DomainBilling
             || PricingRule::minor($op->amount) <= 0 || $op->currency !== 'USD'
             || $op->base_expires_at?->format('Y-m-d') !== ($op->policy['calendar']['expiry'] ?? null)
             || $op->expected_expires_at?->format('Y-m-d') !== $op->base_expires_at?->addYearsNoOverflow((int) $op->term)->format('Y-m-d')
-            || $invoice->due_at->format('Y-m-d') !== ($op->policy['calendar']['due'] ?? null)) { throw new \DomainException('Existing renewal obligation requires review.'); }
+            || $invoice->due_at?->format('Y-m-d') !== ($op->policy['calendar']['due'] ?? null)) { throw new \DomainException('Existing renewal obligation requires review.'); }
         return $invoice;
+    }
+
+    /** Read-only owner request preview. The writer repeats every check under HoldingLocks. */
+    public function requestOptions(Domain $d): array
+    {
+        return DB::transaction(function () use ($d): array {
+            $l = HoldingLocks::take($d, advisory: true);
+            $l['settings'] = $l['server']->settings()->orderBy('id')->get();
+            // Replacement proof needs all invoice members, including unexpected retained items.
+            $l['items'] = \App\Models\InvoiceItem::whereIn('invoice_id', $l['invoices']->pluck('id'))->orderBy('id')->get();
+            RenewalCycles::next($l);
+            $calendar = $this->requireRequest($l, true);
+            $this->native->quote($l);
+            return ['terms' => self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now()),
+                'order_by' => (new \DateTimeImmutable($calendar['due']))->modify('-1 day')->format('Y-m-d')];
+        });
+    }
+
+    /** New-debt eligibility only. Existing invoices keep their own dates and terms. */
+    private function requireRequest(array $l, bool $manual, ?int $years = null): array
+    {
+        self::requireAuthority($l, $this->bindings);
+        $calendar = self::calendarFor($l); $settings = $l['settings']->pluck('value', 'key');
+        if (!self::enabled($settings->get($manual ? 'domains_manual_renewals_enabled' : 'domains_billing_enabled', false))) {
+            throw new RuntimeIneligible(RuntimeReason::BillingOff);
+        }
+        $today = $this->clock->now()->format('Y-m-d');
+        if ($today >= $calendar['due'] || (!$manual && $today < $calendar['issue'])) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
+        $terms = self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now());
+        if ($terms === [] || ($years !== null && !in_array($years, $terms, true))) {
+            throw new \DomainException('Renewal term exceeds the registry horizon.');
+        }
+        return $calendar;
     }
 
     private static function enabled(mixed $value): bool

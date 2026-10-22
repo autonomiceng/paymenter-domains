@@ -66,8 +66,34 @@ $wrong=$req($late,['years'=>'1']);$replay(fn()=>$controller->renew($wrong,$d->id
 same($before,$ledger(),'Foreign and mismatched intents create no invoice');
 
 // Processing off is an internal refusal: generic copy, no reason code.
-$bindings->setProcessing($server->id,false);$refused($d,['years'=>'2'],OwnerRenewalController::UNAVAILABLE);$bindings->setProcessing($server->id,true);
+$bindings->setProcessing($server->id,false);
+same([],$owners->present($d->fresh())->renewNow,'Processing off hides the request');
+expect(!str_contains($page($d),'Create renewal invoice'),'Processing off page has no request');$refused($d,['years'=>'2'],OwnerRenewalController::UNAVAILABLE);$bindings->setProcessing($server->id,true);
 same($before,$ledger(),'Paused processing creates no invoice');
+// Raw rows retain invalid authority that normal model guards would refuse.
+$policy=$d->fresh()->renewal_policy;
+foreach (['spending','anchor','prior','price','service','domain'] as $case) {
+    $rawDomain=$d->fresh()->getRawOriginal();$rawSource=$source->fresh()->getRawOriginal();$rawService=$d->service->fresh()->getRawOriginal();
+    if($case==='spending'){$d->update(['renewal_policy'=>[...$policy,'automatic_spend_paused'=>true]]);}
+    if($case==='anchor'){$d->update(['renewal_policy'=>[...$policy,'billing_anchor'=>[]]]);}
+    $prior=null;
+    if($case==='prior'){
+        $prior=Operation::create(['domain_id'=>$d->id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,
+            'registrar_key'=>$d->registrar_key,'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,
+            'operation_key'=>'owner-unresolved-nameservers','action'=>'nameservers','term'=>1,'state'=>'uncertain','currency'=>'USD','amount'=>'0.00',
+            'attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']]);
+        same($rawSource,$source->fresh()->getRawOriginal(),'Separate prior outcome keeps completed anchor valid');
+    }
+    if($case==='price'){DB::table('domains_domains')->where('id',$d->id)->update(['price_mode'=>'complimentary']);}
+    if($case==='service'){$d->service->fresh()->update(['status'=>'suspended']);}
+    if($case==='domain'){$d->update(['status'=>'needs_review']);}
+    $unchanged=$ledger();same([],$owners->present($d->fresh())->renewNow,'Ineligible request hidden: '.$case);
+    expect(!str_contains($page($d),'Create renewal invoice'),'Ineligible page has no request: '.$case);
+    $refused($d,['years'=>'1'],OwnerRenewalController::UNAVAILABLE);same($unchanged,$ledger(),'Ineligible page and POST preserve debt: '.$case);
+    DB::table('domains_domains')->where('id',$d->id)->update($rawDomain);
+    if($prior){DB::table('domains_operations')->where('id',$prior->id)->delete();}
+    DB::table('services')->where('id',$d->service_id)->update($rawService);
+}
 
 // Success sends the owner to the invoice; duplicates return the same invoice.
 $first=$req($d,['years'=>'2']);$stale=clone $first;$response=$controller->renew($first,$d->id);
@@ -83,9 +109,74 @@ same($issued,$ledger(),'Different term on an issued cycle creates no invoice');
 same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Issued cycle links its invoice instead of a form');
 $html=$page($d);expect(str_contains($html,'View renewal invoice')&&str_contains($html,'href="'.route('invoices.show',$invoice).'"')&&!str_contains($html,'Create renewal invoice'),'Issued page links the invoice');
 $setting('domains_manual_renewals_enabled',false);
-same([],$owners->present($d->fresh())->renewNow,'Off hides the issued-invoice link too');
+same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Off retains the issued-invoice link');
 same(route('invoices.show',$invoice),$controller->renew($req($d,['years'=>'2']),$d->id)->getTargetUrl(),'Turning requests off still returns the issued invoice');
 same($issued,$ledger(),'Off duplicate creates nothing');$setting('domains_manual_renewals_enabled',true);
+
+// Retained cycles remain visible under every gate that prevents creating a new invoice.
+$cycleStates=['pending'=>['state'=>'awaiting_payment','result'=>['invoice'=>route('invoices.show',$invoice)],'heading'=>'Renewal invoice issued'],
+    'paid'=>['state'=>'pending','result'=>['status'=>'paid'],'heading'=>'Renewal payment received'],
+    'cancelled'=>['state'=>'awaiting_payment','result'=>['status'=>'cancelled'],'heading'=>'Renewal invoice cancelled'],
+    'held'=>['state'=>'held','result'=>['status'=>'review'],'heading'=>'Renewal under review']];
+foreach(['manual','stop','service','domain','cutoff','calendar'] as $gate){
+    $rawDomain=$d->fresh()->getRawOriginal();$rawService=$d->service->fresh()->getRawOriginal();$savedTime=$clock->instant;
+    if($gate==='manual'){$setting('domains_manual_renewals_enabled',false);}
+    if($gate==='stop'){$d->update(['renewal_policy'=>[...$d->renewal_policy,'renewals_stopped'=>true]]);}
+    if($gate==='service'){$d->service->fresh()->update(['status'=>'suspended']);}
+    if($gate==='domain'){$d->update(['status'=>'needs_review']);}
+    if($gate==='cutoff'){$clock->instant=new DateTimeImmutable('2027-10-11T00:00:00Z');}
+    if($gate==='calendar'){$server->settings()->updateOrCreate(['key'=>'domains_due_days'],['value'=>'invalid','type'=>'string']);}
+    foreach($cycleStates as $state=>$expected){
+        DB::table('invoices')->where('id',$invoice->id)->update(['status'=>$state==='held'?'pending':$state]);
+        DB::table('domains_operations')->where('id',$op->id)->update(['state'=>$expected['state']]);$unchanged=$ledger();
+        same($expected['result'],$owners->present($d->fresh())->renewNow,'Retained '.$state.' survives '.$gate);
+        $html=$page($d);same(1,substr_count($html,'>'.$expected['heading'].'<'),'One retained heading: '.$state.' '.$gate);
+        expect(!str_contains($html,'Create renewal invoice'),'Retained cycle has no new request: '.$state.' '.$gate);
+        same($unchanged,$ledger(),'Retained presentation is read-only: '.$state.' '.$gate);
+    }
+    DB::table('domains_domains')->where('id',$d->id)->update($rawDomain);DB::table('services')->where('id',$d->service_id)->update($rawService);
+    $clock->instant=$savedTime;$setting('domains_manual_renewals_enabled',true);$server->settings()->where('key','domains_due_days')->delete();
+}
+DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting_payment']);
+
+// Raw retained rows model inconsistent stored data; guarded model edits remain forbidden.
+$rawInvoice=$invoice->fresh()->getRawOriginal();$rawItem=$invoice->items()->sole()->getRawOriginal();$rawOp=$op->fresh()->getRawOriginal();
+foreach(['missing_item','membership','currency','amount','due','missing_due','base','missing_base','expected','missing_expected','service','server','account','generation','owner'] as $case){
+    if($case==='missing_item'){DB::table('invoice_items')->where('id',$rawItem['id'])->delete();}
+    if($case==='membership'){DB::table('invoice_items')->insert([...$rawItem,'id'=>999999]);}
+    if($case==='currency'){DB::table('invoices')->where('id',$invoice->id)->update(['currency_code'=>'EUR']);}
+    if($case==='amount'){DB::table('invoice_items')->where('id',$rawItem['id'])->update(['price'=>'0.01']);}
+    if($case==='due'){DB::table('invoices')->where('id',$invoice->id)->update(['due_at'=>'2027-10-12']);}
+    if($case==='missing_due'){DB::table('invoices')->where('id',$invoice->id)->update(['due_at'=>null]);}
+    if($case==='missing_base'){DB::table('domains_operations')->where('id',$op->id)->update(['base_expires_at'=>null]);}
+    if($case==='missing_expected'){DB::table('domains_operations')->where('id',$op->id)->update(['expected_expires_at'=>null]);}
+    if($case==='base'){DB::table('domains_operations')->where('id',$op->id)->update(['base_expires_at'=>'2027-10-19']);}
+    if($case==='expected'){DB::table('domains_operations')->where('id',$op->id)->update(['expected_expires_at'=>'2030-10-18']);}
+    if(in_array($case,['service','server','account','generation'],true)){
+        $field=['service'=>'service_id','server'=>'server_id','account'=>'account_fingerprint','generation'=>'authority_generation'][$case];
+        DB::table('domains_operations')->where('id',$op->id)->update([$field=>$case==='account'?str_repeat('0',64):999999]);
+    }
+    if($case==='owner'){DB::table('invoices')->where('id',$invoice->id)->update(['user_id'=>$other->id]);}
+    $unchanged=$ledger();same(['status'=>'review'],$owners->present($d->fresh())->renewNow,'Invalid retained invoice shows review: '.$case);
+    $html=$page($d);expect(str_contains($html,'Renewal under review')&&!str_contains($html,'View renewal invoice')&&!str_contains($html,'Create renewal invoice'),'Invalid retained page offers no billing action: '.$case);
+    $refused($d,['years'=>'2'],'This renewal is under review. Contact support if you need an update on this renewal.');same($unchanged,$ledger(),'Invalid retained data creates no debt: '.$case);
+    DB::table('invoice_items')->where('id',999999)->delete();DB::table('invoice_items')->updateOrInsert(['id'=>$rawItem['id']],$rawItem);
+    DB::table('invoices')->where('id',$invoice->id)->update($rawInvoice);DB::table('domains_operations')->where('id',$op->id)->update($rawOp);
+}
+same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Restored retained invoice is payable');
+foreach(['processing','succeeded','failed'] as $paymentState){
+    $id=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$invoice->id,'amount'=>'1.00','fee'=>'0.00','status'=>$paymentState,'created_at'=>now(),'updated_at'=>now()]);
+    $unchanged=$ledger();same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Pending invoice remains payable with partial or unsettled payment: '.$paymentState);
+    same($unchanged,$ledger(),'Payment presentation preserves evidence: '.$paymentState);DB::table('invoice_transactions')->where('id',$id)->delete();
+}
+foreach(['queued','running','pending','uncertain'] as $operationState){
+    DB::table('domains_operations')->where('id',$op->id)->update(['state'=>$operationState]);
+    same(['status'=>'review'],$owners->present($d->fresh())->renewNow,'Pending debt without payment-wait state shows review: '.$operationState);
+}
+DB::table('domains_operations')->where('id',$op->id)->update($rawOp);
+$rawDomain=$d->fresh()->getRawOriginal();DB::table('domains_domains')->where('id',$d->id)->update(['provider_expires_at'=>null]);
+same(['status'=>'review'],$owners->present($d->fresh())->renewNow,'Retained cycle with missing expiry shows review');DB::table('domains_domains')->where('id',$d->id)->update($rawDomain);
+
 
 // Auto-renew off: billing refuses manual requests for a stopped renewal, so the page offers none; turning it on restores the form.
 $policy=$late->fresh()->renewal_policy??[];$late->update(['renewal_policy'=>[...$policy,'renewals_stopped'=>true]]);$dto=$owners->present($late->fresh());
@@ -117,6 +208,11 @@ $refused($d,['years'=>'2'],OwnerRenewalController::CANCELLED);same($cancelled,$l
 (new RenewalCycles($bindings,$clock))->retireUnpaid($op->id);
 DB::table('invoice_transactions')->insert(['invoice_id'=>$invoice->id,'amount'=>$op->amount,'fee'=>'0.00','status'=>'succeeded','created_at'=>now(),'updated_at'=>now()]);
 same(['status'=>'review'],$cycle(),'Retired cycle with payment history shows review');DB::table('invoice_transactions')->where('invoice_id',$invoice->id)->delete();
+$clock->instant=new DateTimeImmutable('2027-10-11T00:00:00Z');same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible after cutoff');
+$shows(['Renewal invoice cancelled'],'Retired cutoff page');
+$clock->instant=new DateTimeImmutable('2027-09-01T12:00:00Z');$setting('domains_manual_renewals_enabled',false);
+same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible with requests off');$setting('domains_manual_renewals_enabled',true);
+$server->settings()->updateOrCreate(['key'=>'domains_due_days'],['value'=>'invalid','type'=>'string']);same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible with invalid calendar');$server->settings()->where('key','domains_due_days')->delete();
 same(range(1,9),$cycle()['terms']??null,'Retired unpaid cycle offers a replacement request');
 $html=$page($d);expect(str_contains($html,'Create renewal invoice')&&!str_contains($html,'Renewal invoice cancelled'),'Retired page shows the form, not the status');
 $response=$controller->renew($req($d,['years'=>'1']),$d->id);$replacement=Operation::where('domain_id',$d->id)->where('action','renew')->orderByDesc('id')->first();
