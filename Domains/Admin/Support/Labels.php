@@ -13,7 +13,7 @@ final class Labels
             'declined' => ($evidence['notification'] ?? null) === 'requested'
                 ? 'Auto Pay: declined; customer notification requested' : 'Auto Pay: declined; notification unavailable',
             'skipped' => 'Auto Pay skipped: '.(['manual_renewal'=>'manual renewal', 'currency'=>'USD required',
-                'service_inactive'=>'service inactive', 'renewal_off'=>'renewal off', 'authority_changed'=>'authority changed',
+                'service_inactive'=>'service inactive', 'renewal_off'=>'renewal off', 'owner_auto_renew_off'=>'auto-renew off by owner', 'authority_changed'=>'authority changed',
                 'invoice_settled'=>'invoice settled', 'no_agreement'=>'no saved method', 'foreign_agreement'=>'saved method owner differs',
                 'gateway_missing'=>'gateway missing', 'gateway_disabled'=>'gateway disabled', 'agreement_changed'=>'saved method changed'][$evidence['reason'] ?? ''] ?? 'review required'),
             default => 'Auto Pay: outcome unconfirmed; no retry',

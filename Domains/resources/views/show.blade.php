@@ -7,7 +7,7 @@
 @isset($summary)<section class="domains-panel domains-section" aria-label="Registration and DNS">@include('domains::partials.summary',['summaryFinancials'=>false,'summaryOnManaged'=>true])</section>@endisset
 @include('domains::partials.notices', ['fieldKeys'=>['nameservers','contact','dns','srv','ds','glue']])
 @if ($domain->setupPending)<div class="domains-notice" role="status">Our team will confirm this domain’s registration. Renewals and changes are paused until then. If your domain expires soon or you need a change, contact support.</div>@endif
-@if ($domain->adopted && $domain->renewal === 'Off')<div class="domains-notice" role="status"><div><strong>Renewal off</strong><p>@if ($domain->originalDoNotRenew)No renewal invoices or renewal reminders are scheduled.@else Future renewal invoices are stopped. Existing renewal invoices keep their own payment and reminder rules. Contact support to review an existing invoice.@endif Registration is shown until @include('domains::partials.date', ['date' => $domain->expiry]).</p></div></div>@endif
+@include('domains::partials.owner-auto-renew')
 @if ($domain->changesUnavailable)<div class="domains-notice" role="status">You can’t change this domain’s settings right now. Try again later, or contact support if this continues.</div>@endif
 @if (isset($domain->actions['setup']))
 @if (($domain->transfer['phase'] ?? null) === 'cutoff' && $domain->setup['contacts'])

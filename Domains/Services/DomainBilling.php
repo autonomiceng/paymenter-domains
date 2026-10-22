@@ -90,13 +90,13 @@ final class DomainBilling
     }
 
     /** Read-only eligibility shared by billing, owner previews and notices; writer callers hold HoldingLocks. */
-    public static function requireAuthority(array $l,AccountBindings $bindings):void
+    public static function requireAuthority(array $l,AccountBindings $bindings,bool $manual=false):void
     {
         $d=$l['domain'];$s=$l['service'];
         $bindings->requireProcessingLocked($l['server'],$l['account'], $l['advisory'] ?? false);
         if($d->renewal_policy['automatic_spend_paused']??false){throw new RuntimeIneligible(RuntimeReason::SpendingPaused);}
         if ($s->status !== 'active' || !in_array($d->status, ['active', 'expired', 'grace'], true)
-            || RenewalStop::stopped($l) || $d->price_mode !== 'standard') { throw new RuntimeIneligible(RuntimeReason::LifecycleNotReady); }
+            || ($manual ? RenewalStop::blocked($l) : RenewalStop::stopped($l)) || $d->price_mode !== 'standard') { throw new RuntimeIneligible(RuntimeReason::LifecycleNotReady); }
         $anchor = HoldingAnchor::resolve($l); $prior = $anchor->operation;
         if ($prior) { RenewalAuthority::requireCostAnchor($prior); }
         if ($l['operations']->contains(fn ($op) => $op->id !== $prior?->id && !HoldingAnchor::resolved($op, $l))) {
@@ -140,7 +140,7 @@ final class DomainBilling
     /** New-debt eligibility only. Existing invoices keep their own dates and terms. */
     private function requireRequest(array $l, bool $manual, ?int $years = null): array
     {
-        self::requireAuthority($l, $this->bindings);
+        self::requireAuthority($l, $this->bindings, $manual);
         $calendar = self::calendarFor($l); $settings = $l['settings']->pluck('value', 'key');
         if (!self::enabled($settings->get($manual ? 'domains_manual_renewals_enabled' : 'domains_billing_enabled', false))) {
             throw new RuntimeIneligible(RuntimeReason::BillingOff);

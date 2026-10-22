@@ -99,6 +99,9 @@ $proven->update(['billing_managed'=>false]);$unproven=$make('balance-unproven.co
 $proof['attempt']['execution']['discrepancies']=['unknown'];$renew($unproven,'held',$proof);
 same(0,$forecast()['count'],'Unvalidated sealed refusal cannot borrow definitely-unsent proof');
 $unproven->update(['billing_managed'=>false]);
+$ownerOff=$make('balance-owner-off.com');$ownerOff->update(['renewal_policy'=>['owner_auto_renew'=>false]]);
+same(0,$forecast()['count'],'Owner Off excludes unissued renewals');$ownerDebt=$renew($ownerOff);
+same(1,$forecast()['count'],'Owner Off preserves issued unsent debt forecast');$ownerOff->update(['billing_managed'=>false]);
 $stopped=$make('balance-stopped.com');$stopped->update(['renewal_policy'=>['renewals_stopped'=>true]]);
 same(0,$forecast()['count'],'Stopped holding excludes unissued renewals');$issued=$renew($stopped,'held');
 same(1,$forecast()['count'],'Stopped holding counts its issued unsent obligation exactly once');same('8.000000',$forecast()['total'],'Issued obligation retains its expected spending');

@@ -68,7 +68,7 @@ $rows=array_map(fn($i)=>['name'=>'record'.$i,'type'=>'TXT','address'=>'<syntheti
 Cache::flush();$r=$post('dns',['records'=>$rows,'preimage_digest'=>ManagementPayload::digest($state->dns)]);$controller->manage($r,$d->id,'dns');
 $op=$d->operations()->orderByDesc('id')->firstOrFail();same('succeeded',$management->run($op->id,$driver)->state,'Maximum DNS records through native controller');
 $dto=$owners->present($d->fresh());$long=new \Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($dto),'name'=>str_repeat('a',63).'.com']);
-$html=view('domains::show',['domain'=>$long,'keys'=>array_fill_keys(\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS,str_repeat('a',64))])->render();$dom=storefrontDom($html);
+$html=view('domains::show',['domain'=>$long,'keys'=>array_fill_keys(['setup','recovery','code','renew','auto-renew',...\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS],str_repeat('a',64))])->render();$dom=storefrontDom($html);
 same(50,$dom->query('//section[@id="dns"]//tbody/tr')->length,'Maximum is bounded to 50 visible rows');expect(str_contains($html,str_repeat('a',63)),'Long label preserved');expect(!str_contains($html,'value="<synthetic>'),'Record values escaped');
 $ids=[];foreach($dom->query('//*[@id]')as$node){expect(!isset($ids[$node->getAttribute('id')]),'Unique field IDs');$ids[$node->getAttribute('id')]=true;}
 foreach($dom->query('//*[@aria-describedby]')as$node){foreach(explode(' ',$node->getAttribute('aria-describedby'))as$id){expect(isset($ids[$id]),'Every description exists');}}

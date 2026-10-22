@@ -58,9 +58,11 @@ final class DomainFacts
             RenewalStop::adopted($renewal)=>'Off: original adoption requested no renewal.',
             RenewalStop::blocksExisting($renewal)=>'Stopped: service cancellation pending review.',
             (bool)($d->renewal_policy['renewals_stopped']??false)=>'Stopped by staff. Issued invoices stay payable.',
-            RenewalStop::stopped($renewal)=>'Stops at end of current period (service cancellation).',default=>'On'};
+            $renewal['cancel']->contains('service_id',$d->service_id)=>'Stops at end of current period (service cancellation).',
+            RenewalStop::ownerOff($renewal)=>'Auto-renew off by owner. Issued invoices stay payable.',default=>'On'};
         $history=$d->renewal_policy['staff_holdings']??[];
         $result['Change history']=array_map(static fn($r)=>(isset($r['at'])?(new \DateTimeImmutable($r['at']))->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC':'Unknown time').' · Staff #'.($r['actor_id']??'?').' · '.(StaffHoldingReview::ACTIONS[$r['action']??'']??'Review').' · '.($r['reason']??''),array_slice($history,-5))?:['None'];}catch(\Throwable){$result['Future renewals']='Unavailable; review encryption access';$result['Change history']='Unavailable; review encryption access';}
+        try{$result['Owner auto-renew changes']=\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::where('subject_type','domain')->where('subject_id',$d->id)->where('event','owner_auto_renew')->orderByDesc('id')->limit(5)->get()->map(static fn($r)=>$r->created_at->utc()->format('M j, Y H:i').' UTC · Customer #'.$r->actor_id.' · Auto-renew '.(($r->data['enabled']??false)?'on':'off'))->all()?:['None'];}catch(\Throwable){$result['Owner auto-renew changes']='Unavailable; review encryption access';}
         $result += array_filter(\Paymenter\Extensions\Servers\Domains\Services\NativePaidHooks::notices(),static fn($notice)=>$notice!=='Available');
         $result += ReminderFacts::for($d);
         $result['Data retention']='Encrypted contact and operation evidence is retained. Erasure requires a separately reviewed policy.';

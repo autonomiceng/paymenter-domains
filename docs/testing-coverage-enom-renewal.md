@@ -161,3 +161,33 @@ and POST after unpaid retirement and after a paid, unsent renewal is refunded an
 replacement. Both offer the permitted request, return the replacement invoice and preserve the
 old evidence. Duplicate submits return the same invoice and show one current-cycle panel.
 These offline SQLite checks do not establish production locking or provider acceptance.
+
+## 2026-10-22 — Owner auto-renew preference
+
+Owners can turn local automatic renewal billing off and on. Missing
+`renewal_policy.owner_auto_renew` means On. Owner Off skips scheduled invoices and
+Auto Pay (`owner_auto_renew_off`), removes unissued renewals from the forecast, and
+sends expiry information without promising a scheduled invoice. Issued invoices,
+their payment links, reminders and registrar funding rules retain their authority.
+Manual renewal and payment leave the preference Off. Native cancellation, staff
+stops and original adopted do-not-renew still prevent new manual renewal requests.
+This supersedes the earlier statement that every renewal-off state blocks manual
+requests. Staff can apply a hard stop while the owner's preference is Off.
+
+`owner-auto-renew-test.php` covers legacy defaults, locked owner checks, intent keys,
+confirmation, replay refusal, idempotent writes, encrypted staff-visible audit,
+transaction rollback, corrupt audit rendering, manual payment and completion,
+and billing after another annual cycle. The Auto Pay, reminders, balance forecast
+and adopted customer tests cover the related stop decisions and reason precedence.
+All 31 guard mutation variants fail a focused test. The original files are restored.
+
+Turning On before the issue date waits for the saved billing window. Inside the
+window, the next eligible billing run issues one invoice. The existing cutoff is
+retained: from the due date onward no new scheduled or manual invoice is issued.
+Consequently Renew now is unavailable after that cutoff, including grace, unless
+there is already an eligible issued invoice. Offering new manual debt after the
+cutoff needs a separate calendar change. After the cutoff the owner notice asks the
+owner to contact support instead of offering Renew now; a test at the due date
+checks that wording. The owner switch changes no registrar
+setting. These offline SQLite tests do not establish shared-database concurrency,
+real gateway collection, registrar acceptance or delivered mail.
