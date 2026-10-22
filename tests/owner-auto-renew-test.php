@@ -44,8 +44,11 @@ $dto=$owners->present($d->fresh());same(['Off','owner',false],[$dto->renewal,$dt
 expect(isset($dto->renewNow['url']),'Owner Off still offers manual renewal');
 $html=$page($d);expect(str_contains($html,'Auto-renew is off. This domain expires on <time datetime="2027-10-18">Oct 18, 2027</time>. Renew it now or turn auto-renew back on.'),'Exact owner notice');
 expect(str_contains($html,'Turn on auto-renew'),'Off shows On switch');
-// Past the online request cutoff the notice must not promise a renewal the page cannot offer.
-$clock->instant=new DateTimeImmutable('2027-10-11T12:00:00Z');$late=$page($d);
+// The owner notice offers renewal through the day before expiry.
+$clock->instant=new DateTimeImmutable('2027-10-17T12:00:00Z');
+expect(isset($owners->present($d->fresh())->renewNow['url']),'Owner Off offers renewal one day before expiry');
+expect(str_contains($page($d),'Renew it now or turn auto-renew back on.'),'Late owner notice offers renewal');
+$clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');$late=$page($d);
 expect(!isset($owners->present($d->fresh())->renewNow['url']),'Cutoff hides manual renewal');
 expect(str_contains($late,'Auto-renew is off. This domain expires on <time datetime="2027-10-18">Oct 18, 2027</time>. Contact support if you want to keep it.'),'Owner notice after cutoff');
 expect(!str_contains($late,'Renew it now'),'No renewal promise after cutoff');
@@ -106,13 +109,14 @@ foreach(['status','service','expiry','managed','pending'] as $case){
     commerceReject(fn()=>$preference->set($user,$held->id,false));
 }
 DB::table('domains_domains')->where('id',$held->id)->update(['provenance'=>'purchased','billing_managed'=>true,'provider_expires_at'=>'2027-10-18']);$held->service->update(['status'=>'active']);
-// On before issue waits; On at due or later keeps the existing manual invoice cutoff.
-foreach(['2027-09-26','2027-09-27','2027-10-10','2027-10-11','2027-10-19'] as $day){
+// Scheduled billing keeps its due-date cutoff; manual requests remain available until expiry.
+foreach(['2027-09-26','2027-09-27','2027-10-10','2027-10-11','2027-10-17','2027-10-18','2027-10-19'] as $day){
     [$calendar]=$holder('owner-calendar-'.str_replace('-','',$day).'.com');$clock->instant=new DateTimeImmutable($day.'T12:00:00Z');
     $save($calendar,false);same(null,$billing->invoice($calendar->id),'Off skips at '.$day);$save($calendar,true);
     if($day>='2027-09-27'&&$day<'2027-10-11'){expect($billing->invoice($calendar->id)!==null,'On issues inside window '.$day);}
     else{try{$billing->invoice($calendar->id);expect(false,'Outside calendar refused');}catch(RuntimeIneligible $e){same(RuntimeReason::OutsideCalendar,$e->reason,'Exact calendar refusal '.$day);}}
-    if($day>='2027-10-11'){same([],$owners->present($calendar->fresh())->renewNow,'After cutoff no new manual request');}
+    if($day>='2027-10-18'){same([],$owners->present($calendar->fresh())->renewNow,'Expired holding has no new manual request');}
+    elseif($day>='2027-10-11'){same(range(1,9),$owners->present($calendar->fresh())->renewNow['terms']??null,'After due the same multi-year terms are offered');}
 }
 staffPanel();Auth::login(staffUser([Staff::VIEW]));$save($d,false);
 $facts=DomainFacts::for($d->fresh());same('Auto-renew off by owner. Issued invoices stay payable.',$facts['Future renewals'],'Staff distinguishes owner Off');

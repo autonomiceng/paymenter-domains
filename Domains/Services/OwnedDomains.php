@@ -181,8 +181,8 @@ final readonly class OwnedDomains
             return $d->operations()->where('action', 'renew')->where('authority_generation', $d->authority_generation)->limit(1)->exists() ? ['status' => 'review'] : [];
         }
         try {
-            if ($cycle = self::renewalCycle($d)) { return $cycle; }
-            $retained = self::renewalCycle($d, true) ?? [];
+            if ($cycle = self::renewalCycle($d, now: $this->clock->now())) { return $cycle; }
+            $retained = self::renewalCycle($d, true, $this->clock->now()) ?? [];
             if (!$forms) { return $retained; }
             try {
                 $options = ($this->billing ?? app(DomainBilling::class))->requestOptions($d);
@@ -191,7 +191,7 @@ final readonly class OwnedDomains
         } catch (\Throwable) { return ['status' => 'review']; }
     }
     /** This cycle as billing sees it: null while a new request is possible, else its pending invoice or an owner status. */
-    public static function renewalCycle(Domain $d, bool $retained = false): ?array
+    public static function renewalCycle(Domain $d, bool $retained = false, ?\DateTimeImmutable $now = null): ?array
     {
         $key = RenewalCycles::key($d);
         $cycle = $d->operations()->where('action', 'renew')
@@ -203,6 +203,7 @@ final readonly class OwnedDomains
             $invoice = $l['invoices']->firstWhere('id', $cycle->invoice_id);
             if ($invoice?->status === 'cancelled' && (int) $invoice->user_id === (int) $d->user_id) { return ['status' => 'cancelled']; }
             try { $invoice = DomainBilling::existingInvoice($cycle, $l); } catch (\Throwable) { return ['status' => 'review']; }
+            if ($invoice->status === 'pending' && DomainBilling::expired($d, $now ?? app(Clock::class)->now())) { return ['status' => 'cancelled']; }
             return match (true) {
                 $cycle->state === 'awaiting_payment' && $invoice->status === 'pending' => ['invoice' => route('invoices.show', $invoice)],
                 $invoice->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => ['status' => 'paid'],

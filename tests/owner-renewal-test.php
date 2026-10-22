@@ -53,10 +53,10 @@ same($before,$ledger(),'Off request creates no invoice');
 
 // On: form offers only terms inside the ten-year registry horizon.
 $setting('domains_manual_renewals_enabled',true);$dto=$owners->present($d->fresh());
-same(['url'=>route('domains.domains.renew',$d->id),'terms'=>range(1,9),'order_by'=>'2027-10-10'],$dto->renewNow,'Request offers horizon-bounded terms until the day before due');
+same(['url'=>route('domains.domains.renew',$d->id),'terms'=>range(1,9),'order_by'=>'2027-10-17'],$dto->renewNow,'Request offers horizon-bounded terms until the day before expiry');
 $html=$page($d);
 foreach(['Renew now','Add years to this domain before it expires. We create an invoice now, and the renewal starts after it is paid.','Renew for','<option value="9">9 years</option>','<option value="1">1 year</option>',
-    'You can renew online until <time datetime="2027-10-10">Oct 10, 2027</time>. The invoice shows the total before you pay.','Create renewal invoice','action="'.route('domains.domains.renew',$d->id).'"','name="_request_key"'] as $text){expect(str_contains($html,$text),'Owner form shows '.$text);}
+    'You can renew online until <time datetime="2027-10-17">Oct 17, 2027</time>. The invoice shows the total before you pay.','Create renewal invoice','action="'.route('domains.domains.renew',$d->id).'"','name="_request_key"'] as $text){expect(str_contains($html,$text),'Owner form shows '.$text);}
 expect(!str_contains($html,'<option value="10">'),'Term beyond the horizon is not offered');
 same(range(1,10),DomainBilling::terms(new DateTimeImmutable('2027-10-18'),new DateTimeImmutable('2027-10-18T00:00:00Z')),'Horizon admits ten years from expiry day');
 same([1,2],DomainBilling::terms(new DateTimeImmutable('2035-08-01'),new DateTimeImmutable('2027-09-01T12:00:00Z')),'Far expiry narrows the term list');
@@ -134,13 +134,14 @@ foreach(['manual','stop','service','domain','cutoff','calendar'] as $gate){
     if($gate==='stop'){$d->update(['renewal_policy'=>[...$d->renewal_policy,'renewals_stopped'=>true]]);}
     if($gate==='service'){$d->service->fresh()->update(['status'=>'suspended']);}
     if($gate==='domain'){$d->update(['status'=>'needs_review']);}
-    if($gate==='cutoff'){$clock->instant=new DateTimeImmutable('2027-10-11T00:00:00Z');}
+    if($gate==='cutoff'){$clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');}
     if($gate==='calendar'){$server->settings()->updateOrCreate(['key'=>'domains_due_days'],['value'=>'invalid','type'=>'string']);}
     foreach($cycleStates as $state=>$expected){
         DB::table('invoices')->where('id',$invoice->id)->update(['status'=>$state==='held'?'pending':$state]);
         DB::table('domains_operations')->where('id',$op->id)->update(['state'=>$expected['state']]);$unchanged=$ledger();
-        same($expected['result'],$owners->present($d->fresh())->renewNow,'Retained '.$state.' survives '.$gate);
-        $html=$page($d);same(1,substr_count($html,'>'.$expected['heading'].'<'),'One retained heading: '.$state.' '.$gate);
+        $expired=$gate==='cutoff'&&in_array($state,['pending','held'],true);
+        same($expired?['status'=>'cancelled']:$expected['result'],$owners->present($d->fresh())->renewNow,'Retained '.$state.' survives '.$gate);
+        $html=$page($d);same(1,substr_count($html,'>'.($expired?'Renewal invoice cancelled':$expected['heading']).'<'),'One retained heading: '.$state.' '.$gate);
         expect(!str_contains($html,'Create renewal invoice'),'Retained cycle has no new request: '.$state.' '.$gate);
         same($unchanged,$ledger(),'Retained presentation is read-only: '.$state.' '.$gate);
     }
@@ -198,9 +199,9 @@ $refused($late,['years'=>'1'],OwnerRenewalController::UNAVAILABLE);same($issued,
 $late->update(['renewal_policy'=>$policy]);$dto=$owners->present($late->fresh());
 same(['On',range(1,9)],[$dto->renewal,$dto->renewNow['terms']??null],'Auto-renew on offers the request again');
 
-// Outside the calendar: hidden from the due date and refused with plain copy.
-$clock->instant=new DateTimeImmutable('2027-10-10T23:00:00Z');expect($owners->present($late->fresh())->renewNow!==[],'Last request day still offers renewal');
-$clock->instant=new DateTimeImmutable('2027-10-11T00:00:00Z');same([],$owners->present($late->fresh())->renewNow,'Due date hides the request');
+// Outside the calendar: hidden on the expiry date and refused with plain copy.
+$clock->instant=new DateTimeImmutable('2027-10-17T23:00:00Z');expect($owners->present($late->fresh())->renewNow!==[],'Last request day still offers renewal');
+$clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');same([],$owners->present($late->fresh())->renewNow,'Expiry date hides the request');
 $refused($late,['years'=>'1'],'This domain is too close to its expiry date to renew online. Contact support to renew it.');
 same($issued,$ledger(),'Outside calendar creates no invoice');
 same(1,Invoice::whereIn('id',Operation::where('action','renew')->pluck('invoice_id'))->count(),'Exactly one renewal invoice issued');
@@ -220,7 +221,7 @@ $refused($d,['years'=>'2'],OwnerRenewalController::CANCELLED);same($cancelled,$l
 (new RenewalCycles($bindings,$clock))->retireUnpaid($op->id);
 DB::table('invoice_transactions')->insert(['invoice_id'=>$invoice->id,'amount'=>$op->amount,'fee'=>'0.00','status'=>'succeeded','created_at'=>now(),'updated_at'=>now()]);
 same(['status'=>'review'],$cycle(),'Retired cycle with payment history shows review');DB::table('invoice_transactions')->where('invoice_id',$invoice->id)->delete();
-$clock->instant=new DateTimeImmutable('2027-10-11T00:00:00Z');same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible after cutoff');
+$clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible after cutoff');
 $shows(['Renewal invoice cancelled'],'Retired cutoff page');
 $clock->instant=new DateTimeImmutable('2027-09-01T12:00:00Z');$setting('domains_manual_renewals_enabled',false);
 same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible with requests off');$setting('domains_manual_renewals_enabled',true);
@@ -273,6 +274,31 @@ same(['invoice'=>$replacementUrl],$bounded(fn()=>$cycle()),'Large unrelated hist
 $html=$page($d);expect(str_contains($html,'View renewal invoice'),'Large history page still links the current invoice');
 DB::table('domains_operations')->whereIn('id',$copies)->delete();
 DB::table('invoice_items')->whereIn('id',$copyItems)->delete();DB::table('invoices')->whereIn('id',$copyInvoices)->delete();
+
+// Late requests keep horizon-bounded terms and share the preview's expiry limit with the writer.
+foreach ([true,false] as $autoRenew) {
+    [$lateRegistration]=$prepare('owner-last-day-'.($autoRenew?'on':'off').'.com');
+    same('succeeded',$reconcile->run($lateRegistration->id)->state,'Late owner registration confirmed');
+    $lastDay=$lateRegistration->domain()->firstOrFail();
+    $lastDay->update(['renewal_policy'=>[...($lastDay->renewal_policy??[]),'owner_auto_renew'=>$autoRenew]]);
+    $clock->instant=new DateTimeImmutable('2027-10-17T23:59:59Z');
+    same(['terms'=>range(1,9),'order_by'=>'2027-10-17'],$billing->requestOptions($lastDay),'Last-day preview: '.($autoRenew?'On':'Off'));
+    $response=$controller->renew($req($lastDay,['years'=>'2']),$lastDay->id);
+    $lastOp=Operation::where('domain_id',$lastDay->id)->where('action','renew')->sole();$lastInvoice=Invoice::findOrFail($lastOp->invoice_id);
+    same(route('invoices.show',$lastInvoice),$response->getTargetUrl(),'Last-day POST accepts two-year request');
+    same('2027-10-17',$lastInvoice->due_at->format('Y-m-d'),'Late invoice is due today');
+    same($lastInvoice->id,$billing->invoice($lastDay->id,$user,2)->id,'Late duplicate reuses invoice');
+    if($autoRenew){same($lastInvoice->id,$billing->invoice($lastDay->id)->id,'Scheduled billing reuses late manual cycle');}
+    else{same(null,$billing->invoice($lastDay->id),'Owner Off still skips scheduled billing');}
+    same(1,Operation::where('domain_id',$lastDay->id)->where('action','renew')->count(),'One late cycle invoice');
+    $clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');$before=$ledger();
+    same(['status'=>'cancelled'],$owners->present($lastDay->fresh())->renewNow,'Expiry hides retained payment link before cancellation');
+    $html=$page($lastDay);expect(!str_contains($html,route('invoices.show',$lastInvoice))&&!str_contains($html,'View renewal invoice'),'Expiry page has no invoice link');
+    expect(str_contains($html,'Renewal invoice cancelled'),'Expiry page shows retained cancelled status');
+    same('pending',$lastInvoice->fresh()->status,'Owner page leaves pending debt unchanged');
+    $refused($lastDay,['years'=>'2'],'This domain is too close to its expiry date to renew online. Contact support to renew it.');
+    same($before,$ledger(),'Expired duplicate and page are read-only');
+}
 
 // Owner copy for every billing refusal hides reasons and internal messages.
 foreach([[new RuntimeIneligible(RuntimeReason::SpendingPaused),OwnerRenewalController::UNAVAILABLE],[new RuntimeIneligible(RuntimeReason::LifecycleNotReady),OwnerRenewalController::UNAVAILABLE],

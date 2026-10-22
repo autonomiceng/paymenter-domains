@@ -126,10 +126,10 @@ billing** now sets both switches and the issue/due calendar through an audited s
 `owner-renewal-test.php` covers **Renew now** on an active native domain page. With owner
 requests off there is no form and a direct POST refuses with plain copy and creates no debt.
 With them on, terms run from 1 year up to the ten-year registry horizon, and the form is offered
-until the day before the due date. Malformed and out-of-horizon terms, foreign owners, replayed
+until the day before the confirmed expiry date. Malformed and out-of-horizon terms, foreign owners, replayed
 or mismatched form keys and paused processing create nothing. A request redirects to the invoice
 for the requested term; a duplicate returns the same invoice, a different term refuses, and the
-page then links the issued invoice. From the due date the form is hidden and requests refuse.
+page then links the issued invoice. On the expiry date the form and payment link are hidden and requests refuse.
 Owner copy never shows internal reasons. No registrar job is queued.
 
 With auto-renew off (renewal stopped), billing refuses manual requests, so the page offers no
@@ -168,7 +168,7 @@ Owners can turn local automatic renewal billing off and on. Missing
 `renewal_policy.owner_auto_renew` means On. Owner Off skips scheduled invoices and
 Auto Pay (`owner_auto_renew_off`), removes unissued renewals from the forecast, and
 sends expiry information without promising a scheduled invoice. Issued invoices,
-their payment links, reminders and registrar funding rules retain their authority.
+their payment links and reminders remain available before expiry; registrar funding rules retain their authority.
 Manual renewal and payment leave the preference Off. Native cancellation, staff
 stops and original adopted do-not-renew still prevent new manual renewal requests.
 This supersedes the earlier statement that every renewal-off state blocks manual
@@ -182,12 +182,18 @@ and adopted customer tests cover the related stop decisions and reason precedenc
 All 31 guard mutation variants fail a focused test. The original files are restored.
 
 Turning On before the issue date waits for the saved billing window. Inside the
-window, the next eligible billing run issues one invoice. The existing cutoff is
-retained: from the due date onward no new scheduled or manual invoice is issued.
-Consequently Renew now is unavailable after that cutoff, including grace, unless
-there is already an eligible issued invoice. Offering new manual debt after the
-cutoff needs a separate calendar change. After the cutoff the owner notice asks the
-owner to contact support instead of offering Renew now; a test at the due date
-checks that wording. The owner switch changes no registrar
+window, the next eligible billing run issues one invoice.
+The owner switch changes no registrar
 setting. These offline SQLite tests do not establish shared-database concurrency,
 real gateway collection, registrar acceptance or delivered mail.
+
+
+| Calendar date | Scheduled billing | New manual request |
+| --- | --- | --- |
+| Before issue date | Wait | Existing horizon-bounded terms |
+| Issue date through due date minus one day | One invoice per cycle when On | Existing horizon-bounded terms |
+| Due date through expiry minus one day | No new scheduled invoice | Existing horizon-bounded terms; due today |
+| Expiry date or later | No new invoice | Refused; retained payment link hidden |
+
+The owner-Off notice offers Renew now until expiry minus one day, then asks the owner to contact support.
+The existing worker cancels provably unsent, unpaid renewal invoices at expiry, including manual invoices and owner-Off holdings; transactions or uncertain collection prevent cancellation.

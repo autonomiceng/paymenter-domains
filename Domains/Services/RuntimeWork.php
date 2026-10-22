@@ -41,6 +41,7 @@ final readonly class RuntimeWork
     }
     private function bill(Domain $d): void
     {
+        $this->attempt('renewal_expiry',fn()=>app(RenewalCycles::class)->expireUnpaid((int)$d->id),(int)$d->id);
         $this->attempt('billing',function()use($d):void {
             if($reason=RuntimeCandidates::billingReason($d)){throw new RuntimeIneligible($reason);}
             app(DomainBilling::class)->invoice((int)$d->id);
