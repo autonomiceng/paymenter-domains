@@ -64,7 +64,11 @@ final class RequestFacts
             if ($counts!==['0','0','0']) { $out['audit']='Contact readmissions: '.$counts[0].' · Read resumes: '.$counts[1].' · Financial adjustments: '.$counts[2]; }
             if ($grants->costs) {
                 $c=$op->cost??[];
-                $out['cost']='Estimated '.Labels::money(($c['currency']??null)==='USD' ? ($c['estimated']??null) : null)
+                // Renewals authorize a fresh registrar cost at the seal; checkout estimates remain separate evidence.
+                $quoted=$op->action==='renew'
+                    ? 'Authorized '.Labels::money(($a['authorized_cost']['currency']??null)==='USD' ? ($a['authorized_cost']['amount']??null) : null)
+                    : 'Estimated '.Labels::money(($c['currency']??null)==='USD' ? ($c['estimated']??null) : null);
+                $out['cost']=$quoted
                     .' · Actual '.Labels::money(($c['actual']['currency']??null)==='USD' ? ($c['actual']['amount']??null) : null);
             }
             if ($grants->metadata) {

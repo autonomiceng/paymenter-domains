@@ -69,3 +69,12 @@ Release clears the admission claim; normal queue dispatch and RunOperation repea
 retain an unfixed refusal, then perform both full read sets and exactly one send after correction,
 without another invoice/payment. The NameSilo execution suite covers unsent auto-renew release
 and its Review instruction while retaining distinct sent-attempt reconciliation guidance.
+
+## Renewal authorized cost
+
+`staff-domains-test.php` covers historic admitted renewals with actual cost but no estimate,
+the sealed USD authorization across completed and unresolved states, and unchanged retained
+attributes after rendering. An existing estimate or renewal cap never replaces missing or
+invalid authorization; zero and large exact amounts remain distinct from unknown. Registration
+and transfer keep their checkout estimate labels, and renewal authorization requires cost rights.
+These are synthetic native staff-fact checks, not installed panel or provider acceptance.
