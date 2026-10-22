@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{CorrectionProgress, ManagementEvidence};
+use Paymenter\Extensions\Servers\Domains\Services\{CorrectionProgress, ManagementEvidence, RenewalCycles, StaffOperationWrites};
 final class RequestFacts
 {
     public static function for(Operation $op, ?StaffGrants $grants = null, ?Domain $domain = null): array
@@ -18,11 +18,16 @@ final class RequestFacts
                     $out['cutoff']='Code deadline passed. Release is unavailable; review account credit with funding and unsent proof.';
                 } catch (\DomainException) { /* Sent or unknown outcomes retain their original evidence guidance. */ }
             }
-            if ($op->registrar_key==='namesilo' && $op->action==='renew'
+            $admissionHold=$op->state==='held'&&RenewalCycles::virgin($op)&&StaffOperationWrites::renewalAdmissionHold($op);
+            if($admissionHold){$out['admission']='After correcting the cause, choose Release unsent hold. The renewal engine repeats every admission check before any send and holds the renewal again if a check still fails.';}
+            if ($op->registrar_key==='namesilo' && $op->action==='renew' && ($admissionHold || $a!==[])
                 && (($p['renewal_execution']['reason']??null)==='provider_auto_renew_unconfirmed'
                     || $op->safe_code==='provider_auto_renew_unconfirmed')) {
-                $out['auto_renew']=(($p['renewal_polls']??0)>=5 ? Labels::reason('poll_limit_reached').'. ' : '').'Check auto-renew for this domain at NameSilo and turn it off if it is on. Then choose Re-check now, or Resume reconciliation reads if the read limit is reached. Completion requires a fresh check confirming auto-renew is off.';
+                $out['auto_renew']=$admissionHold
+                    ? 'Check auto-renew for this domain at NameSilo and turn it off if it is on. Then choose Release unsent hold; the renewal engine will check it again before sending.'
+                    : (($p['renewal_polls']??0)>=5 ? Labels::reason('poll_limit_reached').'. ' : '').'Check auto-renew for this domain at NameSilo and turn it off if it is on. Then choose Re-check now, or Resume reconciliation reads if the read limit is reached. Completion requires a fresh check confirming auto-renew is off.';
             }
+            if($admissionHold&&isset($out['auto_renew'])){unset($out['admission']);}
             $out['refund']=array_key_exists('refund',$f) ? 'Credit marker retained; review ledger'
                 : (RefundCandidates::matches($op,$f) || ($p['renewal_execution']['refundable_later']??false)===true
                     ? 'Customer credit review candidate; funding and unsent proof required'
@@ -76,7 +81,7 @@ final class RequestFacts
         $grants ??= Staff::requireView();
         $facts=self::for($op,$grants,$domain);
         return [...array_values(array_filter(array_map(fn($key)=>$facts[$key]??null,
-            ['cutoff','outcome','auto_renew','registrar_refund','refund','correction','cost','metadata','audit']),fn($line)=>$line!==null)),
+            ['cutoff','outcome','admission','auto_renew','registrar_refund','refund','correction','cost','metadata','audit']),fn($line)=>$line!==null)),
             ...StaffReviewHistory::for($op,$grants,$detail)];
     }
     private static function count(mixed $items): string { return is_array($items) ? (string)count($items) : 'Unknown'; }
