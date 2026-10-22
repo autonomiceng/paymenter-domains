@@ -268,7 +268,8 @@
     "tests/watch-transfer-test.php",
     "tests/runtime-health-test.php",
     "tests/staff-renewal-release-test.php",
-    "tests/user-deletion-test.php"
+    "tests/user-deletion-test.php",
+    "tests/lifecycle-policy-test.php"
   ],
   "ui": [],
   "runner": [

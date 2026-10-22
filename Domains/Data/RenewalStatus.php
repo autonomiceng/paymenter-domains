@@ -9,5 +9,6 @@ enum RenewalStatus: string
     case Ordinary = 'ordinary';
     case Grace = 'grace';
     case Redemption = 'redemption';
+    case ExtendedRedemption = 'extended_redemption';
     case Ineligible = 'ineligible';
 }

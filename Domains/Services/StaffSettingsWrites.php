@@ -25,6 +25,7 @@ final class StaffSettingsWrites
             };
         }
         $now??=$clock->now();$r->input($data);
+        if($r->action==='lifecycle'){LifecyclePolicies::save($r,$data,$now);return;}
         if($r->action==='test_management'){EnomTestManagement::review($r,$data);return;}
         if($r->action==='test_renewal'){EnomTestRenewal::review($r,$data);return;}
         if($r->action==='renewal_billing'){RenewalBillingSettings::save($r,$data);return;}

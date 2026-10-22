@@ -38,13 +38,19 @@ final readonly class RenewalAdmission
             $facts = $assessment->evidence(); $status = $facts->renewal;
             if ($assessment->disposition !== Disposition::Accepted && $assessment->sendState === SendState::PossiblySent) { throw new RenewalRefused(RenewalCode::Reads); }
             // Provider state alone never establishes local authority or a safe restoration path.
-            if ($status === RenewalStatus::Redemption) { throw new RenewalRefused(RenewalCode::Restore); }
+            if (in_array($status, [RenewalStatus::Redemption, RenewalStatus::ExtendedRedemption], true)) { throw new RenewalRefused(RenewalCode::Restore); }
             if ($status === RenewalStatus::Ineligible) { throw new RenewalRefused(RenewalCode::Term); }
             if ($assessment->disposition !== Disposition::Accepted || !in_array($status, [RenewalStatus::Ordinary, RenewalStatus::Grace], true)) {
                 throw new RenewalRefused(RenewalCode::State);
             }
             if ($status === RenewalStatus::Grace && (!$this->accepted->grace || $request->years !== 1)) {
                 throw new RenewalRefused($request->years !== 1 ? RenewalCode::Term : RenewalCode::Grace);
+            }
+            $lifecycleUntil = null;
+            if ($status === RenewalStatus::Grace) {
+                $ending = explode('.', $name, 2)[1];
+                $lifecycleUntil = LifecyclePolicies::until($binding, $ending, 'grace', $this->clock->now());
+                if ($lifecycleUntil === null) { throw new RenewalRefused(RenewalCode::Grace); }
             }
             $this->owned($facts->domain, $request, $binding, $name);
             if ($binding->registrarKey === 'namesilo' ? !$nonpremium : $facts->premium !== false) { throw new RenewalRefused(RenewalCode::Cost); }
@@ -64,6 +70,7 @@ final readonly class RenewalAdmission
             if ($status === RenewalStatus::Ordinary && $facts->domain->expiry->precision === ExpiryPrecision::Instant) {
                 $until = min($until, new \DateTimeImmutable($facts->domain->expiry->value));
             }
+            if ($lifecycleUntil !== null) { $until = min($until, $lifecycleUntil); }
             $this->authority->recheck($request, $stamp, $this->accepted, $until);
             return new RenewalDecision(RenewalCode::Admitted, $status, $cost, $until,
                 $retail !== null && WriteMoney::compare($cost->amount, $retail) > 0 ? 'below_cost' : null);

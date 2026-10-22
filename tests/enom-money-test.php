@@ -139,11 +139,16 @@ foreach ([str_replace('456', '457', $wire->data['Expired']), str_replace('Expire
     same(RenewalStatus::Unknown, $driver->renewalAssessment($annual, $context())->evidence()->renewal, 'Unknown/restorable/foreign listing never grace');
     $wire->data['Expired'] = $saved;
 }
-foreach (['Redemption', 'RedemptionPeriod', 'Restorable'] as $state) {
-    $saved = $wire->data['Expired']; $wire->data['Expired'] = str_replace('Expired', $state, $saved);
+expect(str_contains($wire->data['Expired'], '<Status>Expired</Status>'), 'Status replacement fixture must contain the real status field');
+foreach (['RGP', 'Redemption', 'RedemptionPeriod', 'Restorable'] as $state) {
+    $saved = $wire->data['Expired']; $wire->data['Expired'] = str_replace('<Status>Expired</Status>', '<Status>'.$state.'</Status>', $saved);
     same(RenewalStatus::Redemption, $driver->renewalAssessment($annual, $context())->evidence()->renewal, 'Exact restoration inventory is distinct from grace');
     $wire->data['Expired'] = $saved;
 }
+$saved = $wire->data['Expired'];
+$wire->data['Expired'] = str_replace('<Status>Expired</Status>', '<Status>Extended RGP</Status>', $saved);
+same(RenewalStatus::ExtendedRedemption, $driver->renewalAssessment($annual, $context())->evidence()->renewal, 'Documented Extended RGP requires separate support handling');
+$wire->data['Expired'] = $saved;
 $wire->data['RenewalInfo'] = str_replace('False', 'True', $extend);
 same(RenewalStatus::Grace, $driver->renewalAssessment($annual, $context())->evidence()->renewal, 'Expired grace can retain hold as in source admission');
 $wire->data['RenewalInfo'] = $extend;

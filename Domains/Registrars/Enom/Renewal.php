@@ -66,7 +66,8 @@ final class Renewal
         $row = $matches[0]; $state = is_string($row['status'] ?? null) ? strtolower($row['status']) : null;
         $date = Expiry::read(new ProtocolResult('success', data: ['expirationdate' => $row['expiration-date'] ?? null]));
         if (!$date || substr($date->value, 0, 10) !== substr($expiry->value, 0, 10)) { return RenewalStatus::Unknown; }
-        if (in_array($state, ['redemption', 'redemptionperiod', 'restorable'], true)) { return RenewalStatus::Redemption; }
+        if ($state === 'extended rgp') { return RenewalStatus::ExtendedRedemption; }
+        if (in_array($state, ['rgp', 'redemption', 'redemptionperiod', 'restorable'], true)) { return RenewalStatus::Redemption; }
         return $state === 'expired' && $date && substr($date->value, 0, 10) === substr($expiry->value, 0, 10)
             ? RenewalStatus::Grace : RenewalStatus::Unknown;
     }

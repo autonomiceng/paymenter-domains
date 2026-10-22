@@ -2,6 +2,7 @@
 // Enom 444f31c renewal-admission/observation-integration scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/reconciliation-fixture.php';
+require __DIR__.'/Support/lifecycle-facts.php';
 \Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RenewalCode, RenewalRequest, RenewalStatus};
@@ -112,18 +113,38 @@ $state->duringCommand = ReadCommand::Renewal;
 $state->during = static fn () => $clock->instant = new DateTimeImmutable('2027-10-18T12:00:01Z');
 same(RenewalCode::Changed, $check($request(3))->code, 'Multi-year ordinary read crossing expiry cannot bypass grace');
 $state->duringCommand = null;
-$clock->instant = new DateTimeImmutable('2027-10-18T12:00:00Z'); $decision = $check();
+$clock->instant = new DateTimeImmutable('2027-10-18T12:00:00Z');
+same(RenewalCode::Grace, $check()->code, 'Grace acceptance without lifecycle evidence refuses');
+storeLifecycleFixture($binding,lifecycleFixture($clock->now()));
+$decision = $check();
 same(RenewalCode::Admitted, $decision->code, 'Exact expiry boundary admits proven one-year grace'); same(RenewalStatus::Grace, $decision->status, 'Grace from provider inventory');
 same([ReadCommand::Info, ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Expired, ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Balance], $state->calls, 'Grace retains inventory and both fresh identities in seven reads');
 $state->hold = 'True'; same(RenewalCode::Admitted, $check()->code, 'Inventory-proven grace may retain registrar hold'); $state->hold = 'False';
 $graceOff = new RenewalAdmission($authority, $renewBindings, new RenewalAcceptance($binding, true, true, 25), $clock);
 Cache::flush(); same(RenewalCode::Grace, $graceOff->check($request())->code, 'Grace defaults closed');
 expect(!$check($request(3))->allowed(), 'Multi-year grace refused');
-foreach (['Redemption', 'RedemptionPeriod', 'Restorable', 'Unknown', 'PendingDelete'] as $status) {
+foreach (['RGP', 'Extended RGP', 'Redemption', 'RedemptionPeriod', 'Restorable', 'Unknown', 'PendingDelete'] as $status) {
     $state->expired = $status; $decision = $check(); expect(!$decision->allowed(), 'Restore/unknown expired state refuses');
-    if (in_array($status, ['Redemption', 'RedemptionPeriod', 'Restorable'], true)) { same(RenewalCode::Restore, $decision->code, 'Explicit restoration refusal'); }
+    if (in_array($status, ['RGP', 'Extended RGP', 'Redemption', 'RedemptionPeriod', 'Restorable'], true)) { same(RenewalCode::Restore, $decision->code, 'Explicit restoration refusal'); }
 }
 $state->expired = 'Expired';
+foreach([['conflicting'=>true],['auto_renew_only'=>true],['grace_supported'=>false],['grace_days'=>0],['grace_currency'=>'EUR'],
+    ['verified_at'=>$clock->now()->modify('-30 days')->format(DATE_ATOM)],['grace_verified_at'=>$clock->now()->modify('-30 days')->format(DATE_ATOM)]] as $change){
+    storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),...$change]);
+    same(RenewalCode::Grace,$check()->code,'Unusable lifecycle evidence refuses real admission');
+}
+storeLifecycleFixture($binding,lifecycleFixture($clock->now()));
+$state->duringCommand=ReadCommand::Balance;
+$state->during=static fn()=>storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),'conflicting'=>true]);
+same(RenewalCode::Changed,$check()->code,'Evidence changed during reads refuses under final locked stamp');
+storeLifecycleFixture($binding,lifecycleFixture($clock->now()));$state->duringCommand=null;
+storeLifecycleFixture($binding,lifecycleFixture($clock->now()->modify('-30 days +1 second')));
+same($clock->now()->modify('+1 second')->getTimestamp(),$check()->validUntil?->getTimestamp(),'Admission cannot outlive lifecycle evidence');
+$state->duringCommand=ReadCommand::Balance;
+$state->during=static fn()=>$clock->instant=$clock->now()->modify('+2 seconds');
+same(RenewalCode::Changed,$check()->code,'Lifecycle evidence expiring during reads refuses final admission');
+$clock->instant=$clock->now()->modify('-2 seconds');$state->duringCommand=null;
+storeLifecycleFixture($binding,lifecycleFixture($clock->now()));
 $state->price = '99.00'; same(RenewalCode::Admitted, $check()->code, 'Grace has no original-retail floor'); $state->price = '8.95';
 $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');
 // Every final authority check uses fresh locked rows after provider I/O.

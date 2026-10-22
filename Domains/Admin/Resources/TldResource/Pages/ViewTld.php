@@ -25,7 +25,8 @@ class ViewTld extends ViewRecord
             'Rule settings'=>$grants->policy?TldFacts::rule($t):'Ask staff with pricing permissions','Seller for new sales'=>TldFacts::seller($t),
             'Catalogue sales status'=>$prices['sales'],
             'Renewal holders'=>TldFacts::holders($t).' · existing domains keep their holding registrar',
-            'Cost refresh'=>TldFacts::refreshState((int)$t->server_id)];
+            'Cost refresh'=>TldFacts::refreshState((int)$t->server_id),
+            ...\Paymenter\Extensions\Servers\Domains\Services\LifecyclePolicies::facts($t,now()->toDateTimeImmutable(),$grants->costs)];
         $entries=[];foreach($facts as $label=>$value){$entries[]=TextEntry::make('fact_'.count($entries))->label($label)->state($value);}
         return $schema->components([
             Section::make('TLD')->columns(2)->schema($entries)->columnSpanFull(),

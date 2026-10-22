@@ -2,12 +2,14 @@
 // Enom d1392a8 grace and covered renewal observation; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
+require __DIR__.'/Support/lifecycle-facts.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Data\{RenewalCode, RenewalRequest};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\RenewalRefused;
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-grace-placeholder.com')); [$engine,$writer,$completion]=$compose($b);
 $clock->instant=new DateTimeImmutable('2027-10-18T12:00:01Z');
+storeLifecycleFixture($b,lifecycleFixture($clock->now()));
 same('pending',$engine->run($op->id,$writer)->state,'Accepted grace shape retains the original nested order');
 same(['UpdateExpiredDomains',['DomainName'=>$d->domain,'NumYears'=>1,'UseCreditCard'=>'no']],$state->lastWrite,'Explicit one-year grace account-balance command');
 same('9002',$op->fresh()->provider_order_id,'Grace original order retained without inventing completion');

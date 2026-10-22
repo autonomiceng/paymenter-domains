@@ -18,6 +18,7 @@ final class SettingsActions
     public static function description(string $name): string
     {
         return match($name){
+            'lifecycle'=>'Record independently verified post-expiry windows and registrar charges for this account and TLD. Use explicit verification times with UTC offsets and sources. Facts expire after 30 days. Missing, conflicting or stale facts disable the affected action. Auto-renew-only endings cannot use grace renewal. Charges use the regular renewal margin. This saves evidence only; owner checkout and restore execution stay disabled.',
             'test_management'=>'Record an independent check of '.implode(', ',\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::protocol()['commands']).' at '.\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::protocol()['route'].' and its '.\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::protocol()['interval'].'-second request interval. A change completes only after readback confirms it. If readback cannot confirm it, the change is not resent; only confirmation reads continue. DNS tools require a server setting set by the deployment and a complete, current read of existing records for whole-list editors. Clearing acceptance pauses changes not yet sent; they stay queued and send if acceptance is restored. Accepting also starts background domain and record reads for this account, which use Enom TEST daily calls shared with Purchase and Extend. Already sent changes keep read-only reconciliation while the deployment opt-in stays on.',
             'test_renewal'=>'Record that you checked Enom TEST Extend at '.\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol()['route'].', its '.\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol()['interval'].'-second request interval, and that this account’s balance is in USD. With the deployment opt-in, each paid annual renewal can send one Extend. This does not turn on renewal billing, owner renewal requests or processing. Clearing it stops new Extend requests; renewals already sent keep reconciling while the deployment opt-in stays on.',
             'alert_review'=>'Record an independent check of a notification failure. A continuing failure reopens the alert; this action sends no message.',
@@ -40,7 +41,7 @@ final class SettingsActions
     }
     public static function make(int $server,?int $tld,string $stamp,bool $setup=false): array
     {
-        $out=[];$names=$setup?['enroll_sandbox','configure','probe','acceptance','import','history','test_renewal','test_management','processing','renewal_billing','delivery_review','alert_review']:['default_rule','override','remove_override','tld_settings','seller','publish'];
+        $out=[];$names=$setup?['enroll_sandbox','configure','probe','acceptance','import','history','test_renewal','test_management','processing','renewal_billing','delivery_review','alert_review']:['default_rule','override','remove_override','tld_settings','lifecycle','seller','publish'];
         $target=fn()=>\App\Models\Server::find($server)?->name ?? 'Server #'.$server;
         foreach($names as $name){
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp))];
@@ -56,6 +57,24 @@ final class SettingsActions
                 foreach(['enabled'=>'Catalogue enabled','register'=>'Registrations enabled','transfer'=>'Transfers enabled','renew'=>'Annual renewal catalogue support'] as $key=>$label){$column=match($key){'enabled'=>'enabled',default=>$key.'_enabled'};$fields[]=Checkbox::make($key)->label($label)->default(fn()=>Tld::findOrFail($tld)->$column);}
                 $fields[]=\Filament\Schemas\Components\Text::make('Catalogue support gates new sales. It does not authorize registrar renewals.');
                 $fields[]=Checkbox::make('verified')->label('I verified widened terms or restored sales against current acceptance');
+            }
+            if($name==='lifecycle'){
+                $saved=static function()use($server,$tld){
+                    $a=Account::where('server_id',$server)->firstOrFail();$t=Tld::findOrFail($tld);
+                    return \Paymenter\Extensions\Servers\Domains\Services\LifecyclePolicies::read(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a),$t->tld)??[];
+                };
+                foreach(['grace_days'=>'Post-expiry grace days','restore_days'=>'Restore days'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->integer()->minValue(0)->maxValue(365)->required()->default(fn()=>$saved()[$key]??null);}
+                foreach(['grace_supported'=>'Grace renewal supported','restore_supported'=>'Restore supported','auto_renew_only'=>'Auto-renew only','conflicting'=>'Sources conflict'] as $key=>$label){$fields[]=Checkbox::make($key)->label($label)->default(fn()=>$saved()[$key]??false);}
+                foreach([''=>'Policy','grace_'=>'Extra grace charge','restore_'=>'Restore fee'] as $prefix=>$label){
+                    if($prefix!==''){
+                        $amount=$prefix==='grace_'?'grace_extra':'restore_fee';
+                        $fields[]=TextInput::make($amount)->label($label.' amount')->required()->maxLength(14)->default(fn()=>$saved()[$amount]??null)->helperText('Registrar charge only. Enter 0 for a verified absence of a charge. No service fee.');
+                        $fields[]=TextInput::make($prefix.'currency')->label($label.' currency')->required()->maxLength(3)->default(fn()=>$saved()[$prefix.'currency']??null);
+                    }
+                    $fields[]=TextInput::make($prefix.'verified_at')->label($label.' verified at')->required()->maxLength(25)->default(fn()=>$saved()[$prefix.'verified_at']??null)->helperText('Include UTC offset, for example 2026-10-22T12:00:00Z. Reopening this form never refreshes verification.');
+                    $fields[]=TextInput::make($prefix.'source')->label($label.' source')->required()->minLength(5)->maxLength(500)->default(fn()=>$saved()[$prefix.'source']??null)->helperText('Policy document or account cost evidence. Do not include credentials.');
+                }
+                $fields[]=Checkbox::make('verified')->label('I independently verified these windows, support flags and registrar charges')->accepted()->required();
             }
             if($name==='seller'){
                 $policy=static fn()=>\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',Tld::findOrFail($tld)->tld)->first();
@@ -122,7 +141,7 @@ final class SettingsActions
             $out[]=Action::make($name.($setup?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
                 ->disabled(fn(Action $action)=>$cannotEnable()||($name==='enroll_sandbox'&&(!\Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::enabled()||Account::where('server_id',$server)->exists()))||($name==='configure'&&($selected=(string)($action->getRawData()['registrar']??''))!=='namesilo'&&!app(StaffSettingsWrites::class)->connectionAvailable($selected!==''?$selected:null))||($name==='probe'&&!app(StaffSettingsWrites::class)->connectionAvailable((string)Account::where('server_id',$server)->value('registrar_key'))))
                 ->tooltip(fn()=>$cannotEnable()?(Account::where('server_id',$server)->value('registrar_key')==='namesilo'?'Unavailable: this server may be off, OTE enrollment may be off on this site, or saved enrollment settings may have changed. If the server is off, re-enable it in Servers. Ask the installation administrator to check the site setting. If this account was enrolled, ask them to restore the original saved enrollment settings; otherwise use a fresh Domains server for a new key.':'Configure and verify this account first.'):($name==='enroll_sandbox'?'Available only on a fresh Domains server when OTE enrollment is enabled on this site.':null))
-                ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission($name))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
+                ->visible(fn()=>($name!=='lifecycle'||Staff::can(Staff::COSTS))&&Staff::can(Staff::POLICY)&&Staff::can(Review::permission($name))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
                 ->requiresConfirmation()->modalHeading($name==='processing'?fn()=>($processing()?'Pause':'Enable').' processing for '.$target().'?':$label)
                 ->modalDescription($name==='processing'?fn()=>$processing()?'Stops new registrar work for this account. Domains, invoices and queued work are kept; requests already sent keep reconciling.':self::description($name):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'NameSilo identity verification is unavailable. This account cannot be connected.':self::description($name):self::description($name)))->modalSubmitActionLabel($name==='processing'?fn()=>$processing()?'Confirm pause':'Confirm enable':'Confirm')->schema($fields)
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($name,$server,$tld,$target){
@@ -190,6 +209,8 @@ final class SettingsActions
                 'Sandbox enrollment could not be saved.'=>self::SAVED_OUTCOME_UNKNOWN,
                 'namesilo_identity_unavailable'=>'NameSilo identity verification is unavailable. This account cannot be connected.',
                 'Review key used.'=>$name==='enroll_sandbox'?'This enrollment confirmation was already used, so this submission sent no new OTE key check. An earlier submission may still be finishing. Wait for it to finish, then reload Registrar setup. This page cannot show whether that submission is still running. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. If no Enrollment row appears and Account binding reads “Not configured” after the earlier submission finishes, nothing was enrolled. '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE:'This confirmation was already used. Reload this page.',
+                'Independent lifecycle verification required.'=>'Verify the lifecycle facts and check the confirmation box. Nothing was saved.',
+                'Lifecycle verification cannot be in the future.'=>'Enter verification times at or before now. Nothing was saved.',
                 'Explicit renewal billing confirmation required.'=>'Check the review box to continue. Nothing was saved.',
                 'Invalid renewal billing input.'=>'Reload this page and try again. Nothing was saved.',
                 'Invalid renewal timing.'=>'Enter whole numbers of days. Nothing was saved.',
