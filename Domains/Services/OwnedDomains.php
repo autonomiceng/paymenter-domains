@@ -51,11 +51,13 @@ final readonly class OwnedDomains
             && $op->started_at===null && $op->request_fingerprint===null && $op->completed_at===null
             && in_array($service?->status,['pending','active'],true) && !$service->cancellation
             && in_array($d->status,['registration_pending','transfer_pending'],true)) {
-            $setup['contacts']=$op->safe_code==='contact_details_required';
             $setup['nameservers']=$op->action==='register'||$d->registrar_key==='namesilo';
             $setup['privacy']=$caps?->privacy===PrivacyMode::Free;
             $setup['required']=!isset($op->policy['owner_setup']) && ($setup['nameservers'] || $setup['privacy']);
         }
+        if ($caps && $op?->state==='held' && $op->safe_code==='contact_details_required' && ContactRecovery::provenUnsent($op)
+            && in_array($service?->status,['pending','active'],true) && !$service->cancellation
+            && in_array($d->status,['registration_pending','transfer_pending'],true)) { $setup['contacts']=true; }
         if ($setup['required']||$setup['contacts']) { if($status==='Processing'){$status='Needs attention';} $actions['setup']=route('domains.domains.setup',$d->id); }
         $transfer=['open'=>false,'received'=>false,'paid'=>false,'deadline'=>null,'held'=>false,'unchecked'=>false,'phase'=>'held'];
         if ($op?->action==='transfer' && $d->status==='transfer_pending') {

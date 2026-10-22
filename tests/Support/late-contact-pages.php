@@ -14,6 +14,23 @@ foreach([0,1]as$i){
     Paymenter\Extensions\Servers\Domains\Services\ContactRecovery::hold($late->id);
     Paymenter\Extensions\Servers\Domains\Services\ContactRecovery::hold($missing->id);
     $user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);$user->unsetRelation('properties');
+    // Test uncertain evidence before restoring the explicit unsent attempt for recovery.
+    $unsent=['seal'=>'absent','send_state'=>'definitely_unsent'];$heldRaw=$late->fresh()->getRawOriginal();
+    foreach([['seal'=>'absent','send_state'=>'possibly_sent'],['seal'=>'sealed','send_state'=>'sent'],['execution'=>null]]as$attempt){
+        Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$late->id)->update($heldRaw);
+        $late->fresh()->update(['attempt'=>$attempt]);$heldBefore=$late->fresh()->getRawOriginal();
+        foreach(['show','code']as$page){
+            $html=$controller->$page($request($user),$late->domain_id)->render();
+            expect(!str_contains($html,'Use updated account details')&&!str_contains($html,'Update details for review'),'Unknown or sent attempt hides contact recovery');
+        }
+        $session->forget('errors');$r=$request($user);$r->setMethod('POST');
+        $r->request->set('_request_key',Paymenter\Extensions\Servers\Domains\Http\FormKeys::issue($r,'owner:'.$late->domain_id.':recovery'));
+        $actions->contacts($r,$late->domain_id);
+        expect($session->get('errors')?->getBag('default')->has('owner_action')===true,'Unknown or sent attempt refuses owner POST');
+        same($heldBefore,$late->fresh()->getRawOriginal(),'Refused recovery preserves unknown or sent attempt');
+    }
+    Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$late->id)->update($heldRaw);
+    $late->fresh()->update(['attempt'=>$unsent]);
     $clock->instant=$now->modify('+30 days');Carbon\Carbon::setTestNow($clock->instant);Carbon\CarbonImmutable::setTestNow($clock->instant);
     foreach(['show','setup','code']as$page){
         $html=$controller->$page($request($user),$late->domain_id)->render();
@@ -21,6 +38,14 @@ foreach([0,1]as$i){
         expect(str_contains($html,$page==='show'?'Update details for review':'Use updated account details'),'Late contact fix remains available');
         expect(!str_contains($html,'before we continue'),'Late overview makes no continuation promise');
     }
+    $r=$request($user);$r->setMethod('POST');$r->request->set('_request_key',Paymenter\Extensions\Servers\Domains\Http\FormKeys::issue($r,'owner:'.$late->domain_id.':recovery'));
+    $session->forget('errors');$actions->contacts($r,$late->domain_id);
+    same(null,$session->get('errors'),'Proven-unsent recovery POST succeeds');
+    same('transfer_setup_review_required',$late->fresh()->safe_code,'Proven-unsent recovery retains staff review');
+    same(1,count($late->fresh()->policy['contact_readmissions']),'Proven-unsent recovery records one audit');
+    same($unsent,$late->fresh()->attempt,'Recovery preserves explicit proven-unsent evidence');
+    // Restore the original no-attempt case for its existing cutoff and staff checks.
+    Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$late->id)->update($heldRaw);
     $html=$controller->code($request($user),$missing->domain_id)->render();
     expect(!str_contains($html,'Use updated account details'),'No late correction without saved code');
     expect(str_contains($html,'The time to enter or change this transfer code has passed.'),'Missing-code cutoff guidance');
