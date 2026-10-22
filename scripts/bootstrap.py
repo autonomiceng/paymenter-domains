@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare hash-verified PHP 8.4.26; network downloads require --download."""
+"""Prepare hash-verified PHP 8.4.27; network downloads require --download."""
 import argparse
 import hashlib
 import json
@@ -51,7 +51,7 @@ def prepare(download=False, native=False):
         extension = runtime / 'usr/lib/php/20240924/curl.so'
         env = dict(os.environ, PHP_INI_SCAN_DIR='', PHPRC='')
         version = subprocess.check_output([str(binary), '-n', '-r', 'echo PHP_VERSION;'], env=env, text=True)
-        if version != '8.4.26' or not extension.is_file():
+        if version != '8.4.27' or not extension.is_file():
             raise RuntimeError('Pinned PHP runtime verification failed.')
         return runtime, binary, extension
     except BaseException:
@@ -65,4 +65,4 @@ if __name__ == '__main__':
     parser.add_argument('--native', action='store_true')
     runtime, _, _ = prepare(**vars(parser.parse_args()))
     shutil.rmtree(runtime)
-    print('PHP 8.4.26 archives verified and cached; offline runner ready.')
+    print('PHP 8.4.27 archives verified and cached; offline runner ready.')

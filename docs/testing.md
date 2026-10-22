@@ -1,10 +1,10 @@
 # Verification
 
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
-PHP **8.4.26**, Debian `8.4.26-1~deb13u1`, Linux x86_64 is pinned by archive SHA-256.
-CLI/common/curl hashes were checked against the Debian security index on 2026-10-17.
-Optional native sqlite3/mbstring/intl/xml and ICU hashes are pinned from the existing local
-reference archives; their upstream index provenance has not been independently rechecked.
+PHP **8.4.27**, Debian `8.4.27-1~deb13u1`, Linux x86_64 is pinned by archive SHA-256.
+PHP archive SHA-256 hashes were computed from Debian security downloads on 2026-10-22.
+Native runs also load gd and bcmath. ICU remains pinned at `76.1-4` with its existing hash;
+its archive was downloaded again and verified without changing the pin.
 Every run verifies and re-extracts archives; missing/corrupt cache fails without downloading.
 `PHP_RUNTIME_ARCHIVE_CACHE` copies verified archives from another cache without changing it.
 Python 3, dpkg-deb and compatible system libraries are required; no system PHP or Composer runs.
@@ -74,7 +74,7 @@ See [API gates](design/parity.md). Provider/environment acceptance requires sepa
 Enom protocol tests (slice 10) require DOM in standalone/provider runs as well as native runs.
 The already pinned XML archive is now part of the base offline runtime; `php-test` loads DOM
 without loading the other native fixture extensions. Missing archives still fail without download.
-Its upstream hash provenance remains the locally pinned evidence described above.
+Its archive hash was computed from the Debian security download described above.
 
 Enom named read normalization is exercised by `tests/enom-read-test.php` with synthetic XML and
 a synthetic accepted-binding factory. Price absence differs from failed reads; ownership, expiry
@@ -476,7 +476,7 @@ Stopped scheduled-read coverage includes a domain-read failure while processing 
 ## Supported PHP
 
 Runtime source targets PHP 8.3 and 8.4, matching Paymenter 1.5.9. The existing offline
-runner retains its hash-pinned PHP 8.4.26 runtime. A separate CI job parses every shipped
+runner retains its hash-pinned PHP 8.4.27 runtime. A separate CI job parses every shipped
 PHP file on PHP 8.3 and runs `tests/php83-compatibility-test.php`.
 The token guard also runs with offline lint and the registered runner suite. It rejects
 40 PHP 8.4 global functions from PHP NEWS (including Intl, OPcache, PCNTL, PgSQL and

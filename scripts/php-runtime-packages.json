@@ -1,34 +1,34 @@
 [
   {
-    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-cli_8.4.26-1~deb13u1_amd64.deb",
-    "sha256": "e45c7234f6e3f04ec031d22584921484ee5a3cc374f52da1d2f12d9f50ee0912"
+    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-cli_8.4.27-1~deb13u1_amd64.deb",
+    "sha256": "111191e9eec53db65198f9a38a15dcbd498935be88e2fa83336ba142fd5ae152"
   },
   {
-    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-common_8.4.26-1~deb13u1_amd64.deb",
-    "sha256": "09b8338b4f895cd29b1b463b26aab7f8fc5b98e2f5a5615be07847ac4b7c0cd9"
+    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-common_8.4.27-1~deb13u1_amd64.deb",
+    "sha256": "9372e2b0028228180445829467773058dc6f13b64e066ca00d9f4107bbceef7a"
   },
   {
-    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-curl_8.4.26-1~deb13u1_amd64.deb",
-    "sha256": "91e3a3b31d54b4ed035e84d6f0a134fbbcb84f87d40755555436864d31e729f4"
+    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-curl_8.4.27-1~deb13u1_amd64.deb",
+    "sha256": "dcc5e19d3b55a9fe11b1ac5c1b0744fba5fa8b2becf6265b1580d6faf5821777"
   },
   {
-    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-sqlite3_8.4.26-1~deb13u1_amd64.deb",
-    "sha256": "231c475b20f45c1a42ce12be27ae09b8f168d63aef999e74eac74162f88daddf",
+    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-sqlite3_8.4.27-1~deb13u1_amd64.deb",
+    "sha256": "49cdcbd99e07588ff927afc94801045cb2793f7c7038586229ae1c4ee9d4d9fd",
     "native": true
   },
   {
-    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-mbstring_8.4.26-1~deb13u1_amd64.deb",
-    "sha256": "bd5a4a481ba1b746353edf25fb4a026fe37ace962483e57073e348954c0e6f4f",
+    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-mbstring_8.4.27-1~deb13u1_amd64.deb",
+    "sha256": "ebe36dbe6fece74c0adf3924a653d2b9da087c1af9380dfb5cd8309e7b405a4f",
     "native": true
   },
   {
-    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-intl_8.4.26-1~deb13u1_amd64.deb",
-    "sha256": "cd34c799d53ffd27dd35530c953222eaf6dc2db9d26bb5bea20a79ccbdd730bd",
+    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-intl_8.4.27-1~deb13u1_amd64.deb",
+    "sha256": "ed28a9e0b3e26a4fbb82975cc1201d63211b8433f9fa250cb5d613e805b8c9b2",
     "native": true
   },
   {
-    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-xml_8.4.26-1~deb13u1_amd64.deb",
-    "sha256": "1d43f586bb8fbbaa52c942a6dbf66b9e7562363bc68cfbd329b0d16a9203890d"
+    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-xml_8.4.27-1~deb13u1_amd64.deb",
+    "sha256": "30881dae5aa248d173dcde04dfdc95fdb18ae0735fbcc76e2baef459df21eac6"
   },
   {
     "url": "https://deb.debian.org/debian/pool/main/i/icu/libicu76_76.1-4_amd64.deb",
@@ -36,8 +36,18 @@
     "native": true
   },
   {
-    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-zip_8.4.26-1~deb13u1_amd64.deb",
-    "sha256": "eeba41dd5d6f3d04d7d2328a8dcbd18497df9f5a7b19e6a135bd5f75a96988ac",
+    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-zip_8.4.27-1~deb13u1_amd64.deb",
+    "sha256": "f27b6900e5cdee5a606eb8680c504ba7c5d0aa6ef1c446eb60367749a4f8fc6b",
+    "native": true
+  },
+  {
+    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-gd_8.4.27-1~deb13u1_amd64.deb",
+    "sha256": "b0af630fe398cdb4984579530d8399d5d8fa4602e296a92fdc13b28949d410cd",
+    "native": true
+  },
+  {
+    "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-bcmath_8.4.27-1~deb13u1_amd64.deb",
+    "sha256": "e58e534ffd438a5b2d5daf9fd515c37e8f26f1dfc27ae270d7964f31fd5de372",
     "native": true
   }
 ]

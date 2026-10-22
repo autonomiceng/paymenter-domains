@@ -164,7 +164,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
     receipt = {'timings': timings, 'only_tests': sorted(set(only or [])),
                'omitted_tests': [path for paths in suites.values() for path in paths if path not in planned],
-               'complete': complete, 'jobs': jobs, 'php_version': '8.4.26', 'results': results, 'runtime_sha256': before,
+               'complete': complete, 'jobs': jobs, 'php_version': '8.4.27', 'results': results, 'runtime_sha256': before,
                'selected_suites': selected, 'omitted_suites': [s for s in CATEGORIES if s not in selected],
                'unimplemented_suites': [s for s, paths in suites.items() if not paths],
                'dependency': {'commit': native.COMMIT, 'lock_sha256': native.LOCK_SHA256, 'source_sha256': dependency[1]} if dependency else None,
