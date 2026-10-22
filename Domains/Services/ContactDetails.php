@@ -3,12 +3,13 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use App\Models\User;
+use App\Models\{CustomProperty, User};
 
 /** Local validation only. Provider acceptance and contact readback remain separate gates. */
 final class ContactDetails
 {
     public const ROLES = ['registrant', 'admin', 'tech', 'auxbilling'];
+    public const REQUIRED_PROPERTIES = ['address', 'city', 'state', 'zip', 'country', 'phone'];
     private const FIELDS = ['first_name', 'last_name', 'organization_name', 'address1', 'address2', 'city',
         'state_province', 'postal_code', 'country', 'email_address', 'phone'];
     private const NS_LIMITS = [32, 32, 64, 128, 128, 64, 64, 16, 4, 128, 32];
@@ -18,12 +19,18 @@ final class ContactDetails
 
     public static function collect(User $owner): array
     {
-        $properties = $owner->properties()->whereIn('key', ['company_name', 'address', 'address2', 'city', 'state', 'zip', 'country', 'phone'])->pluck('value', 'key');
+        $properties = $owner->properties()->whereIn('key', [...self::REQUIRED_PROPERTIES, 'company_name', 'address2'])->pluck('value', 'key');
         $get = static fn (string $key): string => is_string($properties[$key] ?? null) ? $properties[$key] : '';
         $country = self::country($get('country')); $phone = $get('phone');
         $contact = array_combine(self::FIELDS, [(string) $owner->first_name, (string) $owner->last_name, $get('company_name'),
             $get('address'), $get('address2'), $get('city'), $get('state'), $get('zip'), $country, (string) $owner->email, $phone]);
         return array_fill_keys(self::ROLES, $contact);
+    }
+
+    public static function missingRequiredProperties(): array
+    {
+        $defined = CustomProperty::where('model', User::class)->whereIn('key', self::REQUIRED_PROPERTIES)->pluck('key')->all();
+        return array_values(array_diff(self::REQUIRED_PROPERTIES, $defined));
     }
 
     public static function validate(string $registrar, #[\SensitiveParameter] mixed $contacts): array

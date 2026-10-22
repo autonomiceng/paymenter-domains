@@ -94,3 +94,5 @@ renewal invoice is issued and checks the invoice, items, transactions and operat
 These are synthetic native checks, not installed panel acceptance.
 
 `staff-tld-writes-test.php` runs balance probes with explicit past and future timestamps while the container clock differs. `staff-domains-test.php` applies native status filters to pending provenance and the latest held or uncertain acquisition, including multiple selections.
+
+`contact-setup-test.php` renders Registrar setup with all, one or no required user contact property definitions, rejects definitions for other models, and checks repeated views and restored definitions without changing saved properties.

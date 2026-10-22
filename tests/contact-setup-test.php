@@ -5,8 +5,11 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
-use App\Models\{Invoice, InvoiceTransaction, Role, User};
+require __DIR__.'/Support/staff-tlds.php';
+use App\Models\{CustomProperty, Invoice, InvoiceTransaction, Role, User};
 use Illuminate\Support\Facades\DB;
+use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{ContactProfile, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, ContactDetails, ContactProfiles, ContactProfileSchema,
@@ -20,6 +23,39 @@ $clock = new FakeClock($now); $admission = new CartAdmission($native, $sellers, 
 $admission->boot(); (new InvoiceBinding($admission, $native, $prices, $clock))->boot();
 $user = commerceUser(); $user->update(['email' => 'contact@example.com']); $other = commerceUser();
 $staff = commerceUser(); $role = Role::create(['name' => 'Domain manager', 'permissions' => ['admin.domains.manage']]); $staff->update(['role_id' => $role->id]);
+tldPanel();
+DB::beginTransaction();
+$setupStaff = staffUser(['admin.domains.view']);
+CustomProperty::query()->delete();
+$define = static fn (string $key) => CustomProperty::create(['key' => $key, 'name' => $key, 'model' => User::class,
+    'type' => 'string', 'non_editable' => false, 'required' => true, 'show_on_invoice' => false]);
+$checkProperties = static function (array $missing) use ($setupStaff): void {
+    $before = DB::table('custom_properties')->orderBy('id')->get()->toJson();
+    for ($i = 0; $i < 2; $i++) {
+        same($missing, ContactDetails::missingRequiredProperties(), 'Exact missing user property definitions');
+        $page = Livewire::actingAs($setupStaff)->test(RegistrarSetup::class)->assertSuccessful();
+        if ($missing) {
+            $page->assertSee('Contact properties missing')->assertSee('Missing user contact properties: '.implode(', ', $missing).'.')
+                ->assertSee('Registrations and transfers are held until customers can enter them.')
+                ->assertSee('Configuration → Custom Properties');
+        } else {
+            $page->assertDontSee('Contact properties missing')->assertDontSee('Missing user contact properties:');
+        }
+        same($before, DB::table('custom_properties')->orderBy('id')->get()->toJson(), 'Setup check never changes definitions');
+        unset($page); gc_collect_cycles();
+    }
+};
+$checkProperties(['address', 'city', 'state', 'zip', 'country', 'phone']);
+foreach (['address', 'city', 'state', 'zip', 'country', 'phone'] as $key) { $define($key); }
+$checkProperties([]); // Optional company_name and address2 definitions are not required.
+CustomProperty::where('key', 'city')->update(['model' => App\Models\Service::class]);
+$checkProperties(['city']); // Another model's definition cannot satisfy a user contact key.
+CustomProperty::where('key', 'city')->update(['model' => User::class]);
+$checkProperties([]);
+CustomProperty::query()->update(['model' => App\Models\Service::class]);
+$checkProperties(['address', 'city', 'state', 'zip', 'country', 'phone']);
+DB::rollBack();
+Illuminate\Support\Facades\Auth::logout();
 function contactProperty(User $user, string $key, string $value): void
 {
     $user->properties()->updateOrCreate(['key' => $key], ['name' => $key, 'value' => $value]);

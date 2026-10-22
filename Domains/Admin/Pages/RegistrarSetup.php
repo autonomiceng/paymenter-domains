@@ -8,6 +8,7 @@ use Filament\Schemas\{Schema,Components\Section};
 use Filament\Infolists\Components\TextEntry;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts,SettingsActions};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
 class RegistrarSetup extends Page
 {
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-cog-6-tooth';
@@ -25,6 +26,8 @@ class RegistrarSetup extends Page
             'Adoption readiness'=>"Off. Deleting a customer during checkout can remove their new domain's Paymenter order and service, today as well. Affected domains appear under Missing Paymenter records on each account. Adoption stays off until a later release closes this gap. Before switching it on, let in-progress edits finish, then restart web and queue workers. Direct database edits bypass these checks.",
             'Credentials'=>'This page does not display saved credentials. Treat staff with server-edit permission as able to access them. Saving credentials pauses processing until you resume it.',
             ...\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::site()];
+        $missing=ContactDetails::missingRequiredProperties();
+        if($missing){$site['Contact properties missing']='Missing user contact properties: '.implode(', ',$missing).'. Registrations and transfers are held until customers can enter them. Configure these user properties in Paymenter under Configuration → Custom Properties.';}
         $entries=[];foreach($site as $label=>$value){$entries[]=TextEntry::make('site_'.count($entries))->label($label)->state($value);}
         $sections=[Section::make('All registrar accounts')->columns(2)->schema($entries)->columnSpanFull()];
         $servers=Server::where('extension','Domains')->orderBy('id')->get();
