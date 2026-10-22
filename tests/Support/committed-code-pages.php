@@ -22,6 +22,14 @@ staffPanel();$viewer=staffUser(array_keys(Staff::permissions()));
 foreach([0,1]as$i){
     $user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');
     $committed=$newTransfer('committed-private-page-placeholder-'.$i.'.com',$i,true,false);
+    $beforeEpp=$committed->fresh()->payload['epp']??null;$keyRequest=$req($committed->domain,'code');
+    $json=Request::create('/domains/'.$committed->domain_id.'/code','POST',[],[],[],['CONTENT_TYPE'=>'application/json'],
+        json_encode(['_request_key'=>$keyRequest->request->get('_request_key'),'transfer_code'=>"bad\nvalue"],JSON_THROW_ON_ERROR));
+    $json->setUserResolver(fn()=>$user);$json->setLaravelSession($session);$jsonResult=$action->code($json,$committed->domain_id);
+    same(302,$jsonResult->getStatusCode(),'Invalid JSON code returns the form');
+    expect(!$json->json()->has('transfer_code'),'Invalid JSON code is scrubbed from the JSON bag');
+    expect(!str_contains(json_encode($session->all(),JSON_THROW_ON_ERROR),"bad\nvalue"),'Invalid JSON code is absent from session');
+    same($beforeEpp,$committed->fresh()->payload['epp']??null,'Invalid JSON code leaves saved transfer payload unchanged');
     $sentinel=bin2hex(random_bytes(32));$r=$req($committed->domain,'code',['transfer_code'=>$sentinel]);
     $result=$action->code($r,$committed->domain_id);
     expect($result->getStatusCode()===302&&DB::transactionLevel()===0,'Real owner POST commits outside a test rollback');

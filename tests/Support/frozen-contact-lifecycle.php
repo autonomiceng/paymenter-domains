@@ -11,13 +11,14 @@ foreach([false,true]as$invalid){
     contactProperty($user,'phone',$invalid?'private-value':'(206) 555-0100');$user->unsetRelation('properties');
     $name=reservedFixtureName('lifecycle-frozen-'.(int)$invalid.'.test');
     $cart=commerceCart($user);commerceAdd($cart,$product,$name);commerceCheckout($user,$cart);
-    $row=Domain::where('domain',$name)->sole()->operations()->sole();$snapshot=$row->payload;
+    $row=Domain::where('domain',$name)->sole()->operations()->sole();$snapshot=$row->payload;$rawPayload=$row->getRawOriginal('payload');
     DB::table('invoices')->where('id',$row->invoice_id)->update(['status'=>'paid']);
     InvoiceTransaction::create(['invoice_id'=>$row->invoice_id,'amount'=>$row->amount,'status'=>'succeeded']);
     contactProperty($user,'phone',$invalid?'(206) 555-0100':'private-value');$user->unsetRelation('properties');
     $before=$row->fresh()->getRawOriginal();$money=serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('invoice_transactions')->get()]);
     ContactRecovery::hold($row->id);$after=$row->fresh();
     same($snapshot,$after->payload,'Real funded lifecycle uses the frozen snapshot after a native account edit');
+    if($invalid){same($rawPayload,$after->getRawOriginal('payload'),'Invalid frozen contact correction preserves encrypted payload bytes');}
     same($invalid?'held':'awaiting_payment',$after->state,'Lifecycle readiness follows frozen contacts');
     same($invalid?'contact_details_required':null,$after->safe_code,'Only invalid frozen contacts need readmission');
     if($invalid){
