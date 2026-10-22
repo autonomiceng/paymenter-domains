@@ -25,7 +25,7 @@ final class CartAdmission
             Event::listen($event, fn ($e) => $this->prepare($e->cartItem));
         }
         Event::listen(\App\Events\Order\Creating::class,function($e):void {
-            try{$this->admit($e->order);}catch(\DomainException|\InvalidArgumentException $error){throw new \App\Exceptions\DisplayException('Your domain offer changed or expired. Remove this line from your cart and search again for a current offer.');}
+            try{$this->admit($e->order);}catch(\DomainException|\InvalidArgumentException $error){throw new \App\Exceptions\DisplayException($error->getMessage()===NativeUserDeletion::PENDING?NativeUserDeletion::PENDING:'Your domain offer changed or expired. Remove this line from your cart and search again for a current offer.');}
         });
         foreach ([\Illuminate\Database\Events\TransactionCommitted::class, \Illuminate\Database\Events\TransactionRolledBack::class] as $event) {
             Event::listen($event, function ($e): void {
@@ -95,6 +95,8 @@ final class CartAdmission
                 'admitted_user_id' => (int) $order->user_id, 'check' => $item->checkout_config['domains_check'], 'identity' => $this->identity($item)];
         }
         if (!$lines) { return; }
+        // Native checkout already locked this user before coupons and products.
+        NativeUserDeletion::requireOwner((int)$order->user_id);
         // Exactly one call for the whole checkout. Any exception aborts the native outer transaction.
         $snapshots = $this->sellers->admit($selections, $this->clock->now());
         foreach ($lines as $index => &$line) {

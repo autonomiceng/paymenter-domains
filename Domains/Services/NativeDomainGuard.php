@@ -18,7 +18,7 @@ final class NativeDomainGuard
 
     public function boot(): void
     {
-        if ($this->booted) { return; } $this->booted = true; NativeExpiry::boot();
+        if ($this->booted) { return; } $this->booted = true; NativeExpiry::boot(); NativeUserDeletion::boot();
         Domain::updating(static function (Domain $d): void {
             if ($d->isDirty('price_mode') || (!$d->attachingAdoption() && $d->isDirty('billing_managed'))) { throw new \DomainException('Managed pricing authority requires a dedicated audited transition.'); }
         });
@@ -37,12 +37,6 @@ final class NativeDomainGuard
         Service::updating(fn (Service $s) => $this->saving($s));
         Service::deleting(static function (Service $s): void {
             if (Domain::whereIn('service_id', self::ids($s))->exists()) { NativeServiceRefusal::notify($s,'delete'); throw new \DomainException('Managed holding services are retained.'); }
-        });
-        User::deleting(static function (User $user): void {
-            if (Domain::whereIn('user_id', self::ids($user))->exists()
-                || Domain::whereIn('service_id', Service::whereIn('order_id', Order::whereIn('user_id', self::ids($user))->select('id'))->select('id'))->exists()) {
-                throw new \DomainException('Managed domain owners are retained.');
-            }
         });
         Order::updating(static function (Order $order): void {
             if ($order->isDirty(['id', 'user_id']) && Domain::whereIn('service_id', Service::whereIn('order_id', self::ids($order))->select('id'))->exists()) {

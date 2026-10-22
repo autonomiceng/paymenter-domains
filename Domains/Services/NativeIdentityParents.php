@@ -4,11 +4,12 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Category,ConfigOption,Coupon,CustomProperty,Extension,Product,Service,User};
 
-/** Retains currently routed children. User deletion racing new checkout remains an adoption blocker. */
+/** Retains currently routed children. User deletion records intent before native SQL. */
 final class NativeIdentityParents
 {
     public static function boot(): void
     {
+        NativeUserDeletion::boot();
         foreach([\App\Models\Server::class,Extension::class] as $class){foreach(['updating','deleting'] as $event){
             $class::$event(static function($s)use($event):void {
                 if($event==='updating'&&!NativeIdentity::dirty($s,['id','type','extension'])){return;}
@@ -18,12 +19,12 @@ final class NativeIdentityParents
                 }
             });
         }}
+        User::updating(static function(User $u):void {
+            if(!NativeIdentity::dirty($u,['id'])){return;}
+            $ids=array_filter([$u->getRawOriginal('id'),$u->id]);
+            self::services(Service::where(fn($q)=>$q->whereIn('user_id',$ids)->orWhereHas('order',fn($q)=>$q->whereIn('user_id',$ids)))->lazyById(100));
+        });
         foreach(['updating','deleting'] as $event){
-            User::$event(static function(User $u)use($event):void {
-                if($event==='updating'&&!NativeIdentity::dirty($u,['id'])){return;}
-                $ids=array_filter([$u->getRawOriginal('id'),$u->id]);
-                self::services(Service::where(fn($q)=>$q->whereIn('user_id',$ids)->orWhereHas('order',fn($q)=>$q->whereIn('user_id',$ids)))->lazyById(100));
-            });
             Category::$event(static function(Category $c)use($event):void {
                 if($event==='updating'&&!NativeIdentity::dirty($c,['id','slug'])){return;}
                 // Publication uses this reserved category before any product/service exists.

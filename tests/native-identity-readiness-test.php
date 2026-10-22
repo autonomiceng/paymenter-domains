@@ -14,7 +14,7 @@ Paymenter\Extensions\Servers\Domains\Services\NativeIdentityDiscrepancies::inspe
 $staff=staffUser(array_keys(Staff::permissions()));$panel=Filament::getCurrentPanel();
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $test=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful();
-$test->assertSee('Adoption readiness')->assertSee("Off. Deleting a customer during checkout can remove their new domain's Paymenter order and service, today as well. Affected domains appear under Missing Paymenter records on each account. Adoption stays off until a later release closes this gap. Before switching it on, let in-progress edits finish, then restart web and queue workers. Direct database edits bypass these checks.");
+$test->assertSee('Adoption readiness')->assertSee("Off. Customer deletion and domain checkout are protected. Adoption still needs site checks for simultaneous edits, registrar pricing and managed public DNS. Before switching it on, let in-progress edits finish, then restart web and queue workers. Direct database edits bypass these checks.");
 $test->assertSee('Missing Paymenter records')->assertSee('Customer, order or service missing')->assertSee('missing-native-placeholder.com')->assertSee('The domain and its name stay reserved until a later release adds a resolution step.')->assertSee('Do not restore deleted records manually.');
 // Every moved site fact has one entry, independent of the number of configured accounts.
 $site=\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::site();

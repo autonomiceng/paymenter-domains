@@ -35,6 +35,13 @@ $hostInvoice = Invoice::create(['user_id' => $owner->id, 'currency_code' => 'USD
 InvoiceItem::create(['invoice_id' => $hostInvoice->id, 'reference_type' => $hostService->getMorphClass(), 'reference_id' => $hostService->id, 'description' => 'Unrelated hosting', 'quantity' => 1, 'price' => '5.00']);
 $a = $preview(); $refuse(fn () => $confirm($a), 'Activation defaults OFF');
 config(['domains.adoption.enabled' => true]);
+// A valid preview cannot acquire a first holding for an owner with deletion requested.
+$intentTable=\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::TABLE;
+DB::table($intentTable)->insert(['user_id'=>$owner->id,'created_at'=>now()]);$before=scenarioMoney();$blocked=false;
+try{$confirm($a);}catch(DomainException $e){same(\Paymenter\Extensions\Servers\Domains\Services\NativeUserDeletion::PENDING,$e->getMessage(),'Exact adoption deletion refusal');$blocked=true;}
+finally{DB::table($intentTable)->where('user_id',$owner->id)->delete();}
+expect($blocked,'Marked owner cannot confirm valid adoption');same(0,Domain::count(),'Marked adoption creates no holding');same($before,scenarioMoney(),'Marked adoption preserves native money');
+
 $refuse(fn () => $confirm($a, $other), 'Another actor cannot use request key');
 $refuse(fn () => $confirm($a, digest: str_repeat('f', 64)), 'Digest change refused');
 $clock->time = $a->observed_at->toDateTimeImmutable()->modify('+120 seconds');

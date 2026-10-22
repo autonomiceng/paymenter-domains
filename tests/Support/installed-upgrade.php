@@ -32,6 +32,10 @@ function assertInstalledMigrationOrder(): void
     $expected=array_map(static fn($file)=>basename($file,'.php'),$files);
     $actual=DB::table('migrations')->whereIn('migration',$expected)->orderBy('id')->pluck('migration')->all();
     same($expected,$actual,'Installed migrations applied exactly once in filename order');
+    if(class_exists(\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::class)){
+        \Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::verify();
+        same(0,DB::table(\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::TABLE)->count(),'Upgrade creates deletion storage without backfill');
+    }
 }
 function assertInstalledUpgradeAudit(): void
 {

@@ -5,6 +5,8 @@ require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
+PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());
+
 use App\Models\{User,Service};
 use Illuminate\Support\Facades\{DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
@@ -19,8 +21,8 @@ $user=commerceUser();$cart=commerceCart($user);$product=$native->product($tlds[0
 commerceAdd($cart,$product,placeholderComFixtureName('parent-race-placeholder.com'));
 // Inspect the real admitted line before native checkout creates its canonical Property.
 $admittedPropertyCases=0;
-Service::created(static function(Service $s)use($user,$binder,&$admittedPropertyCases):void {
-    if((int)$s->user_id!==(int)$user->id){return;}
+Service::created(static function(Service $s)use($binder,&$admittedPropertyCases):void {
+    if($admittedPropertyCases!==0){return;}
     $make=static fn(array $changes=[])=> (new App\Models\Property)->forceFill(array_replace([
         'model_type'=>$s->getMorphClass(),'model_id'=>$s->id,'key'=>'domain','name'=>'Domain','value'=>'parent-race-placeholder.com'
     ],$changes));
@@ -41,21 +43,27 @@ Service::created(static function(Service $s)use($user,$binder,&$admittedProperty
     try{$reject([],'Duplicate admitted property');}finally{DB::table('properties')->where('id',$id)->delete();}
 });
 
-// Last installed deleting listener: both extension guards have already returned.
+// Last installed deleting listener: the deletion guard has already returned.
 User::deleting(static function(User $u)use($user):void {if($u->id===$user->id){Fiber::suspend('after-all-guards-before-delete');}});
 $delete=new Fiber(fn()=>$user->fresh()->delete());
-same('after-all-guards-before-delete',$delete->start(),'Paused after both parent guards');
+same('after-all-guards-before-delete',$delete->start(),'Paused after the deletion guard');
 same(0,DB::transactionLevel(),'Paused native delete has no outer transaction');
+commerceCheckout($user,$cart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>\Paymenter\Extensions\Servers\Domains\Services\NativeUserDeletion::PENDING,'type'=>'error']);
+same(0,Domain::count(),'Deletion-first checkout must not create a retained domain');
+$delete->resume();expect($delete->isTerminated(),'Native delete completed');
+expect(!User::whereKey($user->id)->exists(),'Deletion-first user deleted safely');
+// A healthy owner still checks out. Raw maintenance creates historical orphans only for diagnostics.
+$user=commerceUser();$cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('parent-race-placeholder.com'));
 commerceCheckout($user,$cart);
 same(4,$admittedPropertyCases,'Real checkout exercised every admission refusal');
 $holding=Domain::where('domain','parent-race-placeholder.com')->sole();$serviceId=$holding->service_id;
-expect(Service::whereKey($serviceId)->exists(),'Admitted checkout committed native service');
-same(0,DB::transactionLevel(),'Checkout committed before parent delete resumes');
+expect(Service::whereKey($serviceId)->exists(),'Healthy checkout committed native service');
 // Synthetic additional orphan candidates verify the deleted callback's bounded work.
 for($n=0;$n<25;$n++){$overflow=Domain::create(['user_id'=>$user->id,'service_id'=>987654+$n,'domain'=>placeholderComFixtureName('overflow-'.$n.'-placeholder.com'),'sld'=>'overflow-'.$n.'-placeholder','tld'=>'com',
     'server_id'=>$tlds[0]->server_id,'registrar_key'=>'enom','account_fingerprint'=>$tlds[0]->account_fingerprint,'status'=>'registration_pending']);}
-$delete->resume();expect($delete->isTerminated(),'Native delete completed');
-expect(!User::whereKey($user->id)->exists(),'Native user deleted');
+DB::table('users')->where('id',$user->id)->delete();
+Illuminate\Support\Facades\Event::dispatch('eloquent.deleted: '.User::class,[$user]);
+expect(!User::whereKey($user->id)->exists(),'Privileged maintenance deleted diagnostic owner');
 expect(!Service::whereKey($serviceId)->exists(),'Native FK cascade deleted routed service');
 expect(Domain::whereKey($holding->id)->exists(),'Retained ledger is orphaned');
 $alerts=fn()=>DB::table('domains_obligation_alerts')->where('domain_id',$holding->id)->where('code','native_identity_missing');
@@ -75,5 +83,5 @@ $freshCart=commerceCart($newOwner);commerceAdd($freshCart,$product,placeholderCo
 $fresh=Domain::where('domain','fresh-after-orphan-placeholder.com')->sole();
 same((int)$newOwner->id,(int)$fresh->user_id,'Healthy replacement-owner checkout succeeds');
 expect(Service::whereKey($fresh->service_id)->exists(),'Healthy fresh name retains its native service');
-echo "CONFIRMED: post-guard native User deletion cascades a later admitted checkout service; retained ledger survives orphaned, with durable staff discrepancy.\n";
+echo "Deletion-first native checkout refuses; historical maintenance orphans retain durable staff discrepancies.\n";
 $nativeSuccessful=true;

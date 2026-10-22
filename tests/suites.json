@@ -267,7 +267,8 @@
     "tests/staff-watch-summary-owners-test.php",
     "tests/watch-transfer-test.php",
     "tests/runtime-health-test.php",
-    "tests/staff-renewal-release-test.php"
+    "tests/staff-renewal-release-test.php",
+    "tests/user-deletion-test.php"
   ],
   "ui": [],
   "runner": [
@@ -284,6 +285,7 @@
   ],
   "mariadb": [
     "tests/test_conversion_mariadb.py",
-    "tests/test_schema_mariadb.py"
+    "tests/test_schema_mariadb.py",
+    "tests/test_user_deletion_mariadb.py"
   ]
 }

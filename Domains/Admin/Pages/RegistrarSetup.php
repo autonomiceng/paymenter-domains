@@ -23,7 +23,7 @@ class RegistrarSetup extends Page
     {
         Staff::requireView();
         $site=['Renewal safety'=>'Keep both registrar accounts serviced. Seller selection affects new sales only.',
-            'Adoption readiness'=>"Off. Deleting a customer during checkout can remove their new domain's Paymenter order and service, today as well. Affected domains appear under Missing Paymenter records on each account. Adoption stays off until a later release closes this gap. Before switching it on, let in-progress edits finish, then restart web and queue workers. Direct database edits bypass these checks.",
+            'Adoption readiness'=>"Off. Customer deletion and domain checkout are protected. Adoption still needs site checks for simultaneous edits, registrar pricing and managed public DNS. Before switching it on, let in-progress edits finish, then restart web and queue workers. Direct database edits bypass these checks.",
             'Credentials'=>'This page does not display saved credentials. Treat staff with server-edit permission as able to access them. Saving credentials pauses processing until you resume it.',
             ...\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::site()];
         $missing=ContactDetails::missingRequiredProperties();

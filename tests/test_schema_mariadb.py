@@ -31,7 +31,7 @@ def php_environment(app, socket, database, password, prefix):
         DB_URL='', PHPRC='', PHP_INI_SCAN_DIR='')
 
 
-def run():
+def run(*, exercise=None):
     os.umask(0o077)
     scratch_root = Path(os.environ.get('TMPDIR', ''))
     if not scratch_root.is_absolute() or not scratch_root.is_dir():
@@ -122,8 +122,11 @@ def run():
             php_args = ['unshare', '--user', '--map-root-user', '--net', php, '-d', 'allow_url_fopen=0',
                 '-d', 'zend.exception_ignore_args=1', '-d',
                 'disable_functions=curl_exec,curl_multi_exec,fsockopen,pfsockopen,stream_socket_client,stream_socket_server,socket_connect,socket_sendto,mail']
-            result = command('lifecycle-'+str(index), php_args+[str(ROOT/'tests/Support/mariadb-schema.php')], env=env, timeout=180)
-            proof = json.loads(result.stdout)
+            if exercise is None:
+                result = command('lifecycle-'+str(index), php_args+[str(ROOT/'tests/Support/mariadb-schema.php')], env=env, timeout=180)
+                proof = json.loads(result.stdout)
+            else:
+                proof = exercise(command, php_args, env, scratch)
             if not proof['complete'] or proof['prefix'] != prefix:
                 raise AssertionError('Lifecycle did not complete for the intended prefix.')
             receipt['runs'].append(proof)

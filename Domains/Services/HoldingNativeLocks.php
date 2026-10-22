@@ -15,6 +15,7 @@ final class HoldingNativeLocks
     {
         if (!$advisory && DB::transactionLevel() !== 1) { throw new \LogicException('Holding locks require the outer transaction.'); }
         $users = User::whereKey(array_filter([$ownerId, $staffId]))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        if (!$advisory) { NativeUserDeletion::requireOwner($ownerId); }
         $user = $users->firstWhere('id', $ownerId) ?? throw new \DomainException('Missing owner.');
         $staff = $staffId === null ? null : $users->firstWhere('id', $staffId);
         if ($staff) { $staff->setRelation('role', $staff->role()->when(!$advisory,fn($q)=>$q->lockForUpdate())->first()); }

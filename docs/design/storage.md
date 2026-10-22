@@ -260,7 +260,7 @@ item/reservation/operation writes commit together in that SAME transaction. Any 
 duplicate, deadlock or timeout escapes to the native rollback; never catch-and-continue or retry.
 The reservation must derive account identity from its admitted snapshot, never independent input.
 
-Global checkout lock prefix: native user, coupon, products; ALL Domains servers by numeric ID,
+Global checkout lock prefix: native user, coupon, products; deletion intent check under that already-held user; ALL Domains servers by numeric ID,
 then accounts by server ID (including their credential settings), policies by canonical TLD,
 TLD rows by ID, price rows by ID, domain rows then operations by ID. The full batch is locked
 before per-line validation. change uses target server/account then the SAME policy row then
@@ -697,7 +697,7 @@ retained-only evidence, acquisition recalc, native configs and binding/annual ma
 Lifecycle-only status saves proceed without current price evidence and preserve null native expiry.
 Ordinary price_mode/billing_managed edits cannot create complimentary authority; audited transitions
 and complimentary cycles/caps remain 25/35. Issued bound items and their invoice routing/calendar are
-immutable. Raw SQL, query-builder bulk writes, direct PDO, quiet/event-suppressed writes retain the privileged-maintenance exclusion (Reservation authority; Account binding authority); no safety beyond it is claimed. Concurrent native User deletion and checkout for that same user can orphan a retained domain; adoption stays off pending resolution. This also affects current admitted checkout with adoption off. Missing identity refuses engine authority; post-delete and durable cursor checks record staff discrepancies.
+immutable. Raw SQL, query-builder bulk writes, direct PDO, quiet/event-suppressed writes retain the privileged-maintenance exclusion (Reservation authority; Account binding authority); no safety beyond it is claimed. Concurrent event-enabled User deletion and admitted checkout now serialize on the native user row. Deletion current-reads retained domains, operations and routed children, then commits an owned deletion intent before native SQL. Domain checkout and adoption refuse that intent under their user lock. No transaction spans model events. Missing identity still refuses engine authority; post-delete and durable cursor checks diagnose privileged bypasses. See `native-intent-storage.md` for failed-deletion recovery and retained markers. Adoption stays off pending its remaining site qualification.
 
 Slice 25 must compose action-specific paid funding (renewal items intentionally have null references),
 expected-obligation-key admission, latest completed-renewal anchors, fixed terms/caps, stale/late paid

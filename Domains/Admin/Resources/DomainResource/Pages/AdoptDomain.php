@@ -137,7 +137,6 @@ class AdoptDomain extends Page
     {
         self::permission(); $sections = []; $enabled = config('domains.adoption.enabled', false) === true;
         $open = ['Run an end-to-end check on this site.',
-            'Close the gap where deleting a customer during checkout can remove their new order and service.',
             'Confirm the live registrar account and its standard renewal pricing.',
             'Approve managed public DNS for adopted names. It is recorded but stays inactive until then.',
             "Check simultaneous staff and customer edits against this site's database."];

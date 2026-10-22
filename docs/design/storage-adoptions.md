@@ -233,9 +233,9 @@ replay returns the original holding without repricing, generation change or new 
 Different digest/actor refuses. A new preview of an already adopted name refuses.
 
 This first confirmation boundary refuses history links and renewal-off intent until
-their atomic workflow is qualified. Activation remains off: the native user-deletion
-race, shared-database qualification, accepted provider contract and non-renewal
-consumer policies remain open. NameSilo adoption remains unsupported.
+their atomic workflow is qualified. Activation remains off: site qualification of simultaneous native edits, accepted
+provider contract and non-renewal consumer policies remain open. The User deletion/checkout
+gap is closed; see `native-intent-storage.md`. NameSilo adoption remains unsupported.
 
 The native holding page shows retained issue-window/cutoff and safe price review
 notes. It warns about ordinary invoice creation and credit application after adoption.
@@ -268,7 +268,8 @@ never terminates the service or releases the reservation. Non-renewal consumers 
 need separate acceptance. Existing management/privacy policy for an ordinary
 end-of-period stop is unchanged; this slice does not qualify adopted management,
 privacy purchases, staff resume/reprice or refunds. Raw SQL repair is privileged.
-Activation remains OFF with the native deletion race and provider/concurrency gates open.
+Activation remains OFF pending site qualification of simultaneous native edits, provider
+acceptance and non-renewal consumers. The User deletion/checkout gap is closed.
 
 
 Renewal-off staff review suppresses issue-window and cutoff invoice warnings, so

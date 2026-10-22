@@ -65,8 +65,15 @@ Keep credentials, contact data, transfer codes and raw provider replies out of t
 A green synthetic receipt establishes only the scope named in that receipt. Separate
 provider acceptance, concurrent database schedules, delivered-mail checks and installed
 shell/browser acceptance remain release gates. Adoption remains off until its native
-mutation, consumer and concurrency prerequisites are independently qualified. The known
-concurrent User-deletion/checkout gap is not closed by restarting workers.
+mutation, consumer and concurrency prerequisites are independently qualified. The concurrent User-deletion/checkout gap is closed by owner locks and retained deletion intent.
+Install migration 000036 before reopening domain checkout. It creates an empty owned table;
+no native schema change or backfill is required. Missing storage refuses domain acquisition
+and customer deletion. Drain old requests and restart web/queue workers to install the guard.
+If a customer deletion fails after the guard passes, retry and finish deletion. Domain
+checkout and adoption for that customer stay blocked until then. Do not clear or expire
+the marker: an original request may still resume its DELETE. Completed deletions retain
+the marker too; manual numeric user-ID reuse is privileged maintenance. A safe action to
+cancel abandoned deletion remains deferred.
 
 New Paymenter releases run full qualification, the pinned-source tripwire and the
 supplied-shell override diff. Re-review changed hook/template dependencies and update

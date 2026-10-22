@@ -121,14 +121,15 @@ explicitly demonstrate those bypasses. This guard makes no activation-safety cla
 Existing routed children are guarded at their event-enabled parent; core configuration
 builder deletes and form pivot syncs listed in the inventory remain outside model-event interception.
 
-Concurrent staff User deletion and admitted checkout for that same user remain an adoption
-activation blocker: deletion can pass with no routed children, then cascade a later committed
-service. This also affects current admitted checkout with adoption off. Adoption stays off.
-Native deletion remains available without an outer transaction;
-observers do not open a transaction spanning deleting/deleted. Drain/restart alone cannot close
-this current-worker race.
+Event-enabled User deletion and admitted checkout serialize through the native user lock and retained deletion intent.
+`native-identity-cascade-test.php` asserts the exact pending-deletion reason and no holding in the former orphan schedule.
+`user-deletion-test.php` covers retained rows, ownership routes, obligations, retries, rollback, missing schema and the real staff notification.
+Adoption refuses marked owners before creating a holding. SQLite proves scheduling and requested locks, not row-lock waits.
 
-`native-identity-cascade-test.php` reproduces that exact gap with actual admitted checkout.
+`test_user_deletion_mariadb.py` uses two native PHP processes against local, socket-only MariaDB, with plain and prefixed tables.
+It covers intent-first, checkout-first with an observed InnoDB user lock wait, and deletion from an older repeatable-read snapshot.
+This opt-in test makes no provider calls. Adoption stays off pending site checks of native edits, installed consumers, registrar acceptance and managed public DNS.
+
 Post-delete User/Service observers inspect at most 25 retained domains and save a staff discrepancy;
 the existing durable runtime domain cursor inspects at most 25 domains per account turn to recover
 missed/overflow checks while the saved account binding remains current. Registrar setup lists the saved alert under Missing Paymenter records and shows it even when native detail cannot open.
@@ -160,7 +161,7 @@ owned pricing even when the proposed amount equals current retail.
 The real native paid renewal handler still writes Active without a capability and its expiry
 is neutralized to null. Paused owned/native schedules preserve each other's unrelated writes.
 These are synthetic SQLite schedules and requested-lock checks, not paired MariaDB concurrency
-acceptance. A0's adoption-off deletion/checkout gap and privileged-maintenance exclusions remain.
+acceptance for those projections. User deletion/checkout has separate paired MariaDB coverage above. Privileged-maintenance exclusions remain.
 
 Owned completion/terminal proof checks gate the owned decision; native billing status remains
 independently writable. Price protection checks model dirtiness so a clean native instance loaded
@@ -331,7 +332,7 @@ Do not use that acquisition authority for an adopted holding.
 The [release runbook](release-runbook.md) coordinates installed ZIP, converter/profile/evidence,
 supplied-shell acceptance, native-expiry cleanup, rollback boundaries and held/unknown support.
 Provider acceptance, shared-database races and installed-shell checks remain separate release
-gates. This coverage does not close the documented User-deletion/checkout activation gap.
+gates. The User-deletion/checkout gap is closed; the separate adoption qualification gates still apply.
 
 `tests/operation-claim-lifecycle-test.php` covers initial lifecycle claim and seal refusals alongside `tests/operation-claims-test.php`. Each command boots a fresh in-memory native database.
 

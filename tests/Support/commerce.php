@@ -12,6 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com'): array
 {
     FoundationSchema::install(); SalesPolicySchema::install();
+    if (class_exists(\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::class)) { \Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::install(); }
     // Historical installed ZIPs predate this schema; current partial fixtures need it explicitly.
     if (class_exists(StaffAuditSchema::class)) { StaffAuditSchema::install(); }
     Currency::firstOrCreate(['code' => 'USD'], ['name' => 'US Dollar', 'format' => '1,000.00', 'prefix' => '$', 'suffix' => '']);
