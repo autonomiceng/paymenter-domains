@@ -131,7 +131,8 @@
     "tests/registration-nameservers-test.php",
     "tests/adoption-storage-test.php",
     "tests/holding-identity-lock-test.php",
-    "tests/holding-identity-writers-test.php"
+    "tests/holding-identity-writers-test.php",
+    "tests/native-identity-inventory-test.php"
   ],
   "ui": [],
   "runner": [

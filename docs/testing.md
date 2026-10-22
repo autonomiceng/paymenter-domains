@@ -677,3 +677,20 @@ after it; activation also needs the separately reviewed native mutation protocol
 
 A3 must abort the entire outer transaction on any database exception; catching a nested
 deadlock and continuing is unsupported. MariaDB transaction-status behavior is unverified.
+
+### A0 native write-path pinned-fixture tripwire
+
+`native-identity-inventory-test.php` pins Paymenter 1.5.9 files under `app`, `routes`,
+`database/migrations`, `config` and bundled `extensions`, plus dependency/bootstrap files
+and Filament persistence actions. The manifests record hashes and each audited identity
+write path's model-event or exclusion disposition. Changed, missing and added files in
+the runner's pinned fixture fail with names for re-review when the native pin changes.
+This does not detect deployed upgrades or newly installed extensions: later activation
+requires evidence of the deployed version and installed extensions. No core bulk UPDATE
+of Order ownership or Service owner/order/product/plan was found. Product settings,
+config and User-property bulk writes, pivot writes, FK cascades and destructive import
+are recorded separately. FK effects bypass child events; ordinary parent deletion events
+need an explicit refusal policy before activation. Raw SQL,
+query-builder bulk writes, direct PDO and deliberate event suppression retain the
+privileged-maintenance exclusion in storage's Reservation authority and Account binding
+authority sections. No activation safety is claimed beyond that boundary. Adoption stays off.

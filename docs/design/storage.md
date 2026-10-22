@@ -698,7 +698,7 @@ retained-only evidence, acquisition recalc, native configs and binding/annual ma
 Lifecycle-only status saves proceed without current price evidence and preserve null native expiry.
 Ordinary price_mode/billing_managed edits cannot create complimentary authority; audited transitions
 and complimentary cycles/caps remain25/35. Issued bound items and their invoice routing/calendar are
-immutable. Privileged SQL/quiet/bulk edits remain outside these model-event guards.
+immutable. Raw SQL, query-builder bulk writes, direct PDO, quiet/event-suppressed writes retain the privileged-maintenance exclusion (Reservation authority; Account binding authority); no safety beyond it is claimed.
 
 Slice25 must compose action-specific paid funding (renewal items intentionally have null references),
 expected-obligation-key admission, latest completed-renewal anchors, fixed terms/caps, stale/late paid
