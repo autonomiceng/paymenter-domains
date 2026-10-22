@@ -22,9 +22,11 @@ final class RenewalProbe
             || $expiry === null || $expiry->getTimestamp() <= $clock->now()->getTimestamp() + 172800) {
             $wire->check('renew_probe', 'blocked_without_active_owned_autorenew_off_readback'); return;
         }
-        $quote = $client->read(RegistrarRequest::prices(), $context);
-        if ($quote->outcome !== Outcome::Success) { throw new \RuntimeException('Renewal quote unavailable.'); }
-        $cost = new Money($quote->catalogueRows()['com']['renew'] ?? '', 'USD');
+        try {
+            $quote = $client->read(RegistrarRequest::prices(), $context);
+            if ($quote->outcome !== Outcome::Success) { throw new \RuntimeException('Renewal quote unavailable.'); }
+            $cost = new Money($quote->catalogueRows()['com']['renew'] ?? '', 'USD');
+        } catch (\Throwable) { $wire->check('renew_probe', 'blocked_without_renewal_quote'); return; }
         $wire->purchaseAuthorization(static fn () => $cost);
         $wire->renewalBefore($expiry->format('Y-m-d'));
         $origin = GuardedTransport::purchaseOrigin('renewDomain', 'https://ote.namesilo.com/apibatch');
@@ -48,6 +50,11 @@ final class RenewalProbe
         $wire->check('renew_added_one_year', $after->outcome === Outcome::Success
             && $after->value('expires') === $expiry->modify('+1 year')->format('Y-m-d'));
         $wire->check('renew_parameter_effect', 'request_acceptance_does_not_prove_parameter_honored');
+    }
+    public static function completed(GuardedTransport $wire): bool
+    {
+        $completed=$wire->attempted('renewDomain')&&!$wire->receipt['mismatches']&&!($wire->receipt['checks']['purchase_unresolved']??false);
+        $wire->check('completed',$completed);return $completed;
     }
     public static function reconcile(GuardedTransport $wire, Client $client, AccountBinding $binding, Clock $clock): string
     {

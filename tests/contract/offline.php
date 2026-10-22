@@ -71,9 +71,13 @@ $writer->raw('https://ote.namesilo.com/api', 'registerDomain', $p);
 $refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'registerDomain', $p), 'OTE purchase refused.');
 $refuse(fn () => $writer->raw('https://ote.namesilo.com/apibatch', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]), 'OTE durable registration required.');
 $writer->authorizeRenewal(true); $writer->renewalBefore('2027-01-01');
+$beforeCalls = $calls;
 $refuse(fn () => $writer->raw('https://ote.namesilo.com/api', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]), 'Renewal route requires claimed continuation.');
+same($beforeCalls, $calls, 'Interactive refusal precedes sender');
 $writer->raw('https://ote.namesilo.com/apibatch', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]);
+same($beforeCalls + 1, $calls, 'Batch renewal reaches sender exactly once');
 $refuse(fn () => $writer->raw('https://ote.namesilo.com/apibatch', 'renewDomain', ['domain' => $writer->domain, 'years' => 1, 'auto_renew' => 0]), 'OTE purchase refused.');
+same($beforeCalls + 1, $calls, 'Renewal replay refused before sender');
 $http = new GuardedTransport('offline-secret-token', true, $output,
     static fn () => new TransportResponse(500, json_encode(['request' => ['operation' => 'registerDomain'], 'reply' => ['code' => 300, 'detail' => 'synthetic', 'domain' => 'synthetic', 'order_amount' => '8.95']])), $clock);
 $http->purchaseAuthorization(static fn () => new \Paymenter\Extensions\Servers\Domains\Data\Money('8.95', 'USD'));
@@ -273,6 +277,7 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
         if ($scenario !== 'profile-read-transport') { throw $error; }
         same('OTE exchange unresolved.', $error->getMessage(), 'Transport failure remains a transport mismatch');
     }
+    $nativeSuccessful = false; // Require completion of the assertions below after the registration helper returns.
     if ($mode === '--profile-read') {
         same($scenario === 'profile-read-claim' ? 0 : 1, $wire->receipt['request_count'], 'Read-only probe has bounded reads');
         expect($op->fresh()->state !== 'running', 'Read-only probe always finishes its synthetic claim');
@@ -314,7 +319,11 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
         same(false, $wire->receipt['checks']['nameservers_readback'], 'Failed read cannot reuse pre-change nameservers');
     }
     elseif (getenv('OTE_SELF_TEST_SCENARIO') !== 'unknown-registered') { same([], $wire->receipt['mismatches'], 'Native fake matches all contract projections'); }
-    else { same('registered_in_account', $wire->receipt['reconciliation']['category'], 'Unknown reconciles before continuing same sequence'); }
+    else {
+        same('registered_in_account', $wire->receipt['reconciliation']['category'], 'Unknown reconciles before continuing same sequence');
+        expect($wire->receipt['mismatches'] !== [], 'Unknown purchase retains expected mismatches');
+        same([], array_values(array_filter($wire->receipt['mismatches'], static fn ($row) => $row['command'] !== 'registerDomain')), 'Reconciliation and renewal have no unrelated mismatches');
+    }
     }
     $nativeSuccessful = true; // All expected native refusals and their receipt assertions completed.
 }

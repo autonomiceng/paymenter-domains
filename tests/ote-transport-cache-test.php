@@ -10,6 +10,25 @@ $output = sys_get_temp_dir().'/ote-cache-'.bin2hex(random_bytes(6)); mkdir($outp
 $clock = static fn () => 21;
 $fixture = json_decode(file_get_contents(__DIR__.'/fixtures/synthetic-success.json'), true, 24, JSON_THROW_ON_ERROR)['getDomainInfo'];
 try {
+    $requests=[];
+    $optional=new GuardedTransport('offline-secret-token',false,$output,
+        static function($command,$parameters)use(&$requests):TransportResponse {
+            $requests[]=$parameters;
+            return new TransportResponse(200,json_encode(['request'=>['operation'=>$command],
+                'reply'=>['code'=>300,'detail'=>'synthetic','order'=>[]]]));
+        },$clock);
+    set_error_handler(static function(int $level,string $message):never { throw new ErrorException($message,0,$level); });
+    try {
+        foreach([[],['date_from'=>'2026-10-01'],['date_to'=>'2026-10-22']]as$filters){
+            $optional->raw('https://ote.namesilo.com/apibatch','listOrders',$filters);
+            $entry=$optional->receipt['requests'][array_key_last($optional->receipt['requests'])];
+            same('Success',$entry['read_outcome'],'Omitted dates parse without warnings');
+            expect(!($entry['transport_failed']??false),'Optional dates do not fail the exchange');
+        }
+        try { $optional->raw('https://ote.namesilo.com/apibatch','orderDetails',[]); throw new LogicException('Missing order accepted'); }
+        catch(RuntimeException $error){same('OTE order number required.',$error->getMessage(),'Missing order is refused by policy');}
+        same(3,count($requests),'Missing order refused before sender');
+    } finally { restore_error_handler(); }
     foreach (['throw', 'decode', 'http', 'budget', 'origin', 'environment', 'credential'] as $failureMode) {
         $attempts = 0;
         $cached = new GuardedTransport('offline-secret-token', false, $output,

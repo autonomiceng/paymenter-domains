@@ -38,7 +38,7 @@ try {
         if ($mode === '--renewal-only') {
             $wire->receipt['phase'] = 'renewal-continuation';
             \OteContract\RenewalProbe::run($wire, $client, $binding, $clock);
-            $wire->check('completed', true); $exit = 0;
+            $exit = \OteContract\RenewalProbe::completed($wire) ? 0 : 1;
         } elseif ($mode === '--reconcile') {
             require __DIR__.'/ReconciliationProbe.php';
             $prior = json_decode(file_get_contents((string) getenv('OTE_ATTEMPT_RECEIPT')), true, 24, JSON_THROW_ON_ERROR);

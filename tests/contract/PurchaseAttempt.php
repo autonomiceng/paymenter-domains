@@ -63,6 +63,10 @@ final class PurchaseAttempt
                 throw new \RuntimeException('Private attempt persistence failed.');
             }
         } finally { fclose($file); if (file_exists($temporary)) { unlink($temporary); } }
+        $parent=@fopen(dirname($path),'r');
+        if ($parent===false) { throw new \RuntimeException('Private evidence directory open failed.'); }
+        try { if (!fsync($parent)) { throw new \RuntimeException('Private evidence directory sync failed.'); } }
+        finally { fclose($parent); }
     }
 
     public static function retainDetail(string $directory, string $command, ?int $code, ?string $detail): void

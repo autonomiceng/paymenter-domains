@@ -45,6 +45,10 @@ final class RenewalContinuation
         try {
             if (!fwrite($file, "claimed\n") || !fflush($file) || !fsync($file)) { throw new \RuntimeException('Continuation claim failed.'); }
         } finally { fclose($file); }
+        $parent=@fopen($directory,'r');
+        if ($parent===false) { throw new \RuntimeException('Continuation directory open failed.'); }
+        try { if (!fsync($parent)) { throw new \RuntimeException('Continuation directory sync failed.'); } }
+        finally { fclose($parent); }
         return $name;
     }
 }
