@@ -6,7 +6,7 @@ use App\Models\{InvoiceTransaction, ServiceCancellation};
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Models\{Operation, Price};
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, RenewalFunding};
-[$op, $d, $b, $invoice] = $makeRenewal('renew-execute.com'); [$engine, $writer, $completion] = $compose($b);
+[$op, $d, $b, $invoice] = $makeRenewal(placeholderComFixtureName('renew-execute-placeholder.com')); [$engine, $writer, $completion] = $compose($b);
 // A paid status without succeeded native funds never permits dispatch.
 $tx = $invoice->transactions()->sole(); commerceReject(fn () => $tx->update(['amount' => '999.00'])); commerceReject(fn () => $tx->delete());
 $oldId = $tx->id; $tx->id += 999; commerceReject(fn () => $tx->delete()); $tx->id = $oldId;

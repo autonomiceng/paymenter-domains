@@ -25,7 +25,7 @@ $hints=$sweep->due($now);same(2,count($hints),'At most two kinds per owner');sam
 // A permanently broken native marker must not consume both owner hints forever.
 $marker=$product->settings()->where('key','domains_action')->sole();$savedMarker=$marker->getRawOriginal();
 DB::table('settings')->where('id',$marker->id)->delete();
-$second=(array)$d->fresh()->getRawOriginal();$second['id']=2000;$second['domain']='second.com';$second['reservation_name']='second.com';$second['sld']='second';$second['service_id']=2000;
+$second=(array)$d->fresh()->getRawOriginal();$second['id']=2000;$second['domain']='second-placeholder.com';$second['reservation_name']='second-placeholder.com';$second['sld']='second-placeholder';$second['service_id']=2000;
 DB::table('domains_domains')->insert($second);
 foreach(['delegation','points']as$kind) { $copy=(array)$work;unset($copy['id']);$copy['domain_id']=2000;$copy['kind']=$kind;DB::table(ManagedPublicWorkSchema::TABLE)->insert($copy); }
 foreach(['delegation','points']as$kind) { expect(!$signals->observe($id,$uid,$kind),'Broken marker safely yields dispatch turn'); }
@@ -58,7 +58,7 @@ foreach(['watch_dns','managed_dns']as$family) {
     $at=$now+200000;$due=$at+86400;$table=$family==='watch_dns'?'domains_watch_observations':'domains_managed_public_observations';
     $obs=['user_id'=>$uid,'source_digest'=>str_repeat('a',64),'check_kind'=>'points','started_at'=>$at,'completed_at'=>$at,'result'=>'complete','mixed'=>false,'partial'=>false,'facts'=>'{}','digest'=>str_repeat('b',64)];
     if($family==='watch_dns') {
-        DB::table('domains_watch_names')->insert(['id'=>9000,'user_id'=>$uid,'canonical_name'=>'healthy.com','psl_revision'=>str_repeat('a',64),'state'=>'active','notice_preferences'=>'{}']);
+        DB::table('domains_watch_names')->insert(['id'=>9000,'user_id'=>$uid,'canonical_name'=>'healthy-placeholder.com','psl_revision'=>str_repeat('a',64),'state'=>'active','notice_preferences'=>'{}']);
         foreach(['points','delegation']as$kind){DB::table('domains_watch_work')->insert(['watch_id'=>9000,'kind'=>$kind,'watch_revision'=>1,'due_at'=>$kind==='points'?$due:$at,'attempts'=>$kind==='points'?0:1]);}
         $obs+=['watch_id'=>9000,'watch_revision'=>1,'profile_id'=>$profile->id,'profile_revision'=>2,'psl_revision'=>str_repeat('a',64)];
     } else {

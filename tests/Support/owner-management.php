@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnerActionController
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Services\{OwnedDomains,OwnerPorts,OwnerSetup,TransferInputs,Refunds,DomainManagement};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-$free=isset($ms);[$d,$driver]=$holding($free?'owner-management':'owner-management.com');
+$free=isset($ms);[$d,$driver]=$holding($free?'owner-management':'owner-management-placeholder.com');
 storefrontViews();
 $ports=new OwnerPorts(fn($b)=>$driver);$owners=new OwnedDomains($clock,$ports,$management);
 // Future-only stops preserve settings management and accurately show renewal Off.

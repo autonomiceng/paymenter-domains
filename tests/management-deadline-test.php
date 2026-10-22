@@ -67,14 +67,14 @@ foreach ([225000000, 225000001] as $micros) {
     else { $noSend($result, $money); }
 }
 // A second physical preparation read cannot acquire a new window.
-[$d, $driver] = $holding('management-late-preflight.com'); $state->privacy = true;
+[$d, $driver] = $holding(placeholderComFixtureName('management-late-preflight-placeholder.com')); $state->privacy = true;
 $op = $submit($d, $driver, 'privacy_enable'); $money = $nativeMoney();
 $state->during = static fn () => $clock->instant = $clock->now()->modify('+271 seconds');
 $noSend($management->run($op->id, $driver, RequestOrigin::Background), $money);
 same(['GetDomainInfo'], array_column($state->calls, 0), 'Second preparation wire is stopped by shared cap');
 
 // Paid privacy retains a timely response ID even if its second physical readback is too late.
-[$d, $driver] = $holding('management-late-readback.com'); $state->privacy = false;
+[$d, $driver] = $holding(placeholderComFixtureName('management-late-readback-placeholder.com')); $state->privacy = false;
 $product->server->settings()->updateOrCreate(['key'=>'domains_privacy_price'], ['value'=>'5.00','type'=>'string']);
 $op = $submit($d, $driver, 'privacy_purchase');
 \App\Helpers\ExtensionHelper::addPayment(Invoice::findOrFail($op->invoice_id), null, $op->amount);
@@ -94,7 +94,7 @@ same($money, $nativeMoney(), 'Paid readback does not change native finance');
 $state->calls = []; $wait = 251; $waiting = true;
 same('uncertain', $management->reconcile($op->id, $driver)->state, 'Expired reconciliation remains unresolved'); $waiting = false;
 same([], $state->calls, 'Reconciliation capture wait exhausts explicit request budget');
-[$d, $driver] = $holding('management-billing-wait.com'); $state->privacy = false;
+[$d, $driver] = $holding(placeholderComFixtureName('management-billing-wait-placeholder.com')); $state->privacy = false;
 $money = $nativeMoney(); $waiting = true;
 try { $submit($d, $driver, 'privacy_purchase'); expect(false, 'Expired billing must refuse'); }
 catch (RuntimeException $error) { same('Registrar request deadline reached.', $error->getMessage(), 'Billing deadline refusal'); }

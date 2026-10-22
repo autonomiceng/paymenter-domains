@@ -3,7 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/Support/management.php';require __DIR__.'/Support/WireLimit.php';
 use Paymenter\Extensions\Servers\Domains\Services\Runtime;
-[$d,$driver]=$holding('capacity-management.com');expect(in_array('lock',$management->available($user,$d,$driver,['lock']),true),'Supported owner action available without a transaction');$op=$submit($d,$driver,'lock',['locked'=>false]);
+[$d,$driver]=$holding(placeholderComFixtureName('capacity-management-placeholder.com'));expect(in_array('lock',$management->available($user,$d,$driver,['lock']),true),'Supported owner action available without a transaction');$op=$submit($d,$driver,'lock',['locked'=>false]);
 app()->instance(Runtime::class,new Runtime);$limit=new WireLimit(0);app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,$limit);
 $result=$management->run($op->id,$driver);same([],$state->calls,'Preparation capacity refusal has no exchanges');same('queued',$result->state,'Preparation read defers');
 $limit->allowed=2;$result=$management->run($op->id,$driver);same(['GetDomainInfo'],array_column($state->calls,0),'Only preparation read; no management write');same('queued',$result->state,'Write capacity refusal defers');same('absent',$result->attempt['seal'],'No false management seal');

@@ -82,7 +82,7 @@ foreach([$user,$staff]as$actor){
 }}
 $setTime($now);
 $user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');
-$early=$new('late-prepayment-code-placeholder.com',false);$inputs->submitCode($post($user,'Saved before payment'),$early->id);
+$early=$new(placeholderComFixtureName('late-prepayment-code-placeholder.com'),false);$inputs->submitCode($post($user,'Saved before payment'),$early->id);
 App\Helpers\ExtensionHelper::addPayment($early->invoice_id,null,$early->amount);$inputs->paymentAccepted($early->id);ContactRecovery::hold($early->id);
 $user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);$user->unsetRelation('properties');
 $setTime($now->modify('+30 days'));

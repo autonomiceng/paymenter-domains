@@ -16,7 +16,7 @@ $refused=false;try{Product::create(['name'=>'Finite domain','slug'=>'finite-doma
 $p=$registration->fresh();$p->increment('stock',1);same(null,$p->fresh()->stock,'Native increment on NULL does not throw or replenish');$p->decrement('stock',1);same(null,$p->fresh()->stock,'NULL decrement remains null');
 $hosting->update(['stock'=>4]);$hosting->increment('stock',1);same(5,$hosting->fresh()->stock,'Hosting remains native');
 // Withdrawal removes acquisition prices, and locked owned eligibility rejects a stale cart.
-$cart=commerceCart($user);$item=commerceAdd($cart,$registration->fresh(),'unpaid-withdrawal.com');$before=App\Models\Order::count();
+$cart=commerceCart($user);$item=commerceAdd($cart,$registration->fresh(),placeholderComFixtureName('unpaid-withdrawal-placeholder.com'));$before=App\Models\Order::count();
 $tlds[0]->update(['register_enabled'=>false]);$native->publish($tlds[0]->id,$clock->now());same(null,$registration->fresh()->stock,'Withdrawn stock stays null');same(0,$registration->plans()->whereHas('prices')->count(),'Withdrawn acquisition projections removed');
 commerceCheckout($user,$cart);same($before,App\Models\Order::count(),'Withdrawn stale cart cannot admit');
 $tlds[0]->update(['register_enabled'=>true]);$native->publish($tlds[0]->id,$clock->now());same(null,$registration->fresh()->stock,'Republish stays null');expect($registration->plans()->whereHas('prices')->exists(),'Publication restores prices');

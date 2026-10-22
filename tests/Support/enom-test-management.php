@@ -6,7 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,EnomTestRegistration,EnomTestManagement as Policy,EnomTestCalls,EnomTestCallSchema,RuntimePorts,RuntimeWork,OwnedDomains,OwnerRecords,ObservationRecords,DomainObservation,Refunds};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ManagementInput;
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
-$nativeSuccessful=false;$d=Domain::where('domain','paid-test.com')->sole();$clock->at=new DateTimeImmutable('2026-10-22T01:00:00Z');
+$nativeSuccessful=false;$d=Domain::where('domain','paid-test-placeholder.com')->sole();$clock->at=new DateTimeImmutable('2026-10-22T01:00:00Z');
 config(['domains.enom_writes.registration'=>false,'domains.enom_test_daily_call_cap'=>1000]);
 $offPorts=new RuntimePorts;expect(!$offPorts->accepted($a),'Management off preserves absent composition');config(['domains.enom_writes.registration'=>true]);$offEngine=$offPorts->managementEngine($binding);$offDriver=$offPorts->management($binding);Auth::setUser($user);same([],app(OwnedDomains::class)->present($d)->management,'Registration alone offers no owner management');try{$offEngine->request($user,$d->id,'lock',['locked'=>false],hash('sha256','off'),$offDriver);throw new LogicException('Management off must refuse owner requests');}catch(DomainException){}config(['domains.enom_writes.registration'=>false]);
 foreach([false,'true',1,null] as $off){config(['domains.enom_writes.management'=>$off]);expect(!Policy::enabled($binding),'Management needs strict boolean true');}

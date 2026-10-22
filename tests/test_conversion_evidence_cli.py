@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix='conversion-evidence-cli-') as directory
             assert out.stat().st_mode & 0o777 == 0o600
             assert json.loads(result.stderr)['collected'] == 1
             calls = [json.loads(line) for line in wire.read_text().splitlines()]
-            assert calls == [[('https://reseller.enom.com/interface.asp' if database == 'live' else 'https://resellertest.enom.com/interface.asp'), 'GetDomainInfo', 'purchased']]
+            assert calls == [[('https://reseller.enom.com/interface.asp' if database == 'live' else 'https://resellertest.enom.com/interface.asp'), 'GetDomainInfo', 'purchased-placeholder']]
         else:
             assert message.encode() in result.stderr, (label, result.stderr)
             assert not out.exists() and not wire.exists(), label

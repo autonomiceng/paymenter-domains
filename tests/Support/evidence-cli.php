@@ -7,7 +7,7 @@ namespace DomainsConversion {
     function curl_exec($handle){
         $o=$GLOBALS['evidence_cli_options'];parse_str($o[CURLOPT_POSTFIELDS],$fields);
         file_put_contents(getenv('EVIDENCE_WIRE'),json_encode([$o[CURLOPT_URL],$fields['Command'],$fields['SLD']])."\n",FILE_APPEND);
-        $body='<interface-response><Command>GetDomainInfo</Command><Done>true</Done><ErrCount>0</ErrCount><GetDomainInfo><DomainName DomainNameID="121">purchased.com</DomainName><status><belongs-to>syntheticuid</belongs-to><expiration>2028-10-18</expiration></status></GetDomainInfo></interface-response>';
+        $body='<interface-response><Command>GetDomainInfo</Command><Done>true</Done><ErrCount>0</ErrCount><GetDomainInfo><DomainName DomainNameID="121">purchased-placeholder.com</DomainName><status><belongs-to>syntheticuid</belongs-to><expiration>2028-10-18</expiration></status></GetDomainInfo></interface-response>';
         return $o[CURLOPT_WRITEFUNCTION]($handle,$body)===strlen($body);
     }
     function curl_getinfo($handle,$option){return 200;}

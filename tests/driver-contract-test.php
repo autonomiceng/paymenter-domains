@@ -119,7 +119,7 @@ foreach (['enom' => PrivacyMode::Paid, 'namesilo' => PrivacyMode::Free] as $regi
     $frozenEvidence = new Evidence(candidates: [&$mutableOrder]);
     $frozenReject = new DriverResult($account, Disposition::Rejected, SendState::Sent, ResultReason::ProvenRejected,
         $frozenEvidence, rejectionBasis: RejectionBasis::ProviderProof);
-    $mutableOrder = new OrderEvidence($account, new Query('other.com', Action::Register, 1), new Money('10.00', 'USD'), 'other-order');
+    $mutableOrder = new OrderEvidence($account, new Query('example.net', Action::Register, 1), new Money('10.00', 'USD'), 'other-order');
     same(null, $frozenReject->evidence()->candidates[0]->charge, 'Referenced candidate bypassed rejection validation');
     same('example.com', $frozenEvidence->candidates[0]->query->name, 'Referenced candidate changed frozen query');
     $term = 1; $frozenCapability = new Capability(Support::Supported, [&$term]); $term = 10;
@@ -172,7 +172,7 @@ foreach (['enom' => PrivacyMode::Paid, 'namesilo' => PrivacyMode::Free] as $regi
         $now, $now, $expiry, seal: DispatchSeal::Sealed, providerReference: 'order-42', expectedExpiry: $expiry);
     refuses(fn () => (new FakeRegistrar($account, $capabilities, $unsent))->reconcile($sentAttempt, $makeContext()), 'Reconciliation relabelled sent attempt unsent');
     $wrongName = new DriverResult($account, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved,
-        new Evidence(domain: new DomainSnapshot($account, 'other.com')));
+        new Evidence(domain: new DomainSnapshot($account, 'example.net')));
     refuses(fn () => new ReconciliationResult($sentAttempt, $wrongName), 'Wrong-domain reconciliation accepted');
     $wrongTerm = new DriverResult($account, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved,
         new Evidence(candidates: [new OrderEvidence($account, new Query('example.com', Action::Renew, 1))]));

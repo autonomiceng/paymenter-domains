@@ -96,7 +96,7 @@ $readContext=new Paymenter\Extensions\Servers\Domains\Data\RequestContext($bindi
     $clock->now()->modify('+25 seconds'),new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(4),$clock,Paymenter\Extensions\Servers\Domains\Services\Runtime::limiter());
 expect($generalReader instanceof Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomTestReconciliationReader,'Opted-in general reads use the narrow reconciliation wrapper');
 $historyNow=$clock->now();$history=new HistoryAcceptance($binding,'America/Los_Angeles',0,86400,'enom_registration_v1');
-$historyAttempt=new AttemptEvidence($binding,new Query('history-only.com',Action::Register,1),'history-only',1,ExecutionRecord::RecordedNull,SendState::PossiblySent,
+$historyAttempt=new AttemptEvidence($binding,new Query('history-only-placeholder.com',Action::Register,1),'history-only',1,ExecutionRecord::RecordedNull,SendState::PossiblySent,
     $historyNow->modify('-60 seconds'),$historyNow->modify('-1 second'),seal:DispatchSeal::Sealed,historyAcceptance:$history);
 expect($history->covers($historyAttempt,$historyNow),'Regression fixture carries valid pre-existing Enom history acceptance');$beforeHistory=count($GLOBALS['enomWire']['forms']);
 $historyContext=new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(20),$clock,Paymenter\Extensions\Servers\Domains\Services\Runtime::limiter());
@@ -116,7 +116,7 @@ $beforeIdentity=count($GLOBALS['enomWire']['forms']);try{app(Paymenter\Extension
 same($rollUsed+1,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',$rollDay)->value('used'),'Rollover identity reservation remains charged to its original day');
 same($beforeIdentity,count($GLOBALS['enomWire']['forms']),'Identity UTC rollover stops before curl_exec');$clock->at=$savedClock;Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 
-$previewUser=commerceUser();$previewProduct=app(NativeCatalogue::class)->product($tld,'register');$previewCart=commerceCart($previewUser);commerceAdd($previewCart,$previewProduct,'preview-optout.com');
+$previewUser=commerceUser();$previewProduct=app(NativeCatalogue::class)->product($tld,'register');$previewCart=commerceCart($previewUser);commerceAdd($previewCart,$previewProduct,placeholderComFixtureName('preview-optout-placeholder.com'));
 config(['domains.enom_writes.registration'=>null]);expect(!$ports->accepted($a),'Missing deployment write key keeps A4 preview-only behavior');
 $beforeOrders=App\Models\Order::count();$beforeInvoices=App\Models\Invoice::count();$beforeTransactions=App\Models\InvoiceTransaction::count();$beforeCalls=count($GLOBALS['enomWire']['forms']);
 commerceCheckout($previewUser,$previewCart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'TEST domains are for preview. Checkout is unavailable; no order or payment was created. Remove TEST domain lines to check out other items.','type'=>'error']);
@@ -163,16 +163,16 @@ same($before+1,count($GLOBALS['enomWire']['forms']),'Staff Refresh now makes one
 same('GetBalance',$GLOBALS['enomWire']['forms'][array_key_last($GLOBALS['enomWire']['forms'])]['Command'],'Existing staff Refresh now reads the opted-in TEST balance');
 $manualBalance=DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->first();
 same(['manual','USD',null],[$manualBalance->source,$manualBalance->currency,$manualBalance->last_error_code],'Staff balance action records fresh USD evidence');
-same('available',$front->check('paid-test.com')['status'],'Explicit search');
+same('available',$front->check('paid-test-placeholder.com')['status'],'Explicit search');
 $worker=app(RuntimeWork::class);$unpaidUser=commerceUser();$unpaidUser->update(['email'=>'unpaid-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$unpaidUser->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
 $beforeOrders=App\Models\Order::count();$beforeServices=App\Models\Service::count();$beforeInvoices=App\Models\Invoice::count();
-$unpaidCart=commerceCart($unpaidUser);commerceAdd($unpaidCart,$product,'unpaid-test.com');$checkout=commerceCheckout($unpaidUser,$unpaidCart);$checkout->assertHasNoErrors();
+$unpaidCart=commerceCart($unpaidUser);commerceAdd($unpaidCart,$product,placeholderComFixtureName('unpaid-test-placeholder.com'));$checkout=commerceCheckout($unpaidUser,$unpaidCart);$checkout->assertHasNoErrors();
 same($beforeOrders+1,App\Models\Order::count(),'Opt-in native checkout creates its order');
 same($beforeServices+1,App\Models\Service::count(),'Opt-in native checkout creates its service');
 same($beforeInvoices+1,App\Models\Invoice::count(),'Opt-in native checkout creates its invoice');
-$unpaidDomain=Domain::where('domain','unpaid-test.com')->sole();$unpaidOp=$unpaidDomain->operations()->sole();
-same('unpaid-test.com',$unpaidDomain->reservation_name,'Native checkout creates the domain reservation');
+$unpaidDomain=Domain::where('domain','unpaid-test-placeholder.com')->sole();$unpaidOp=$unpaidDomain->operations()->sole();
+same('unpaid-test-placeholder.com',$unpaidDomain->reservation_name,'Native checkout creates the domain reservation');
 same('awaiting_payment',$unpaidOp->state,'Native checkout creates its awaiting-payment operation');
 $before=count($GLOBALS['enomWire']['forms']);$worker->operation($unpaidOp->id);
 same($before,count($GLOBALS['enomWire']['forms']),'Unpaid registration makes no Enom requests');expect(!isset($unpaidOp->fresh()->attempt['claim_key']),'Unpaid registration receives no worker claim');
@@ -196,7 +196,7 @@ $new=static function(string $name)use($user,$product,$clock):Operation {
     return $op->fresh();
 };
 // Default processing off holds a native paid order without opening a provider request.
-$paused=$new('processing-off.com');$before=count($GLOBALS['enomWire']['forms']);$pausedUsed=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');$worker->operation($paused->id);
+$paused=$new(placeholderComFixtureName('processing-off-placeholder.com'));$before=count($GLOBALS['enomWire']['forms']);$pausedUsed=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');$worker->operation($paused->id);
 same(['held','processing'],[$paused->fresh()->state,$paused->fresh()->safe_code],'Paid TEST order reports the staff processing hold');
 same($before,count($GLOBALS['enomWire']['forms']),'Processing-off queued registration sends no Enom request');same($pausedUsed,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'Processing-off does not reserve a TEST call');
 $write('processing',['enabled'=>true,'confirmed'=>true]);expect($a->fresh()->processing_enabled,'Staff deliberately enabled processing');
@@ -204,7 +204,7 @@ $pausedDomain=$paused->domain->fresh();$releaseTicket=Paymenter\Extensions\Serve
     Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($paused->fresh(),$pausedDomain),$clock);
 $before=count($GLOBALS['enomWire']['forms']);app(Paymenter\Extensions\Servers\Domains\Services\StaffOperations::class)->run($staff,(int)$pausedDomain->id,(int)$paused->id,'release',$releaseTicket,'Processing is enabled and the unsent registration can be reviewed again');
 same('queued',$paused->fresh()->state,'Paid TEST order held before claim can be released after processing is enabled');same($before,count($GLOBALS['enomWire']['forms']),'Staff release sends no TEST request');
-$routeHold=$new('route-evidence.com');$accepted=CatalogueAcceptances::load($binding);
+$routeHold=$new(placeholderComFixtureName('route-evidence-placeholder.com'));$accepted=CatalogueAcceptances::load($binding);
 DB::transaction(fn()=>CatalogueAcceptances::saveLocked(new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance($binding,$accepted->revision,$accepted->endings)));
 $before=count($GLOBALS['enomWire']['forms']);$worker->operation($routeHold->id);
 same(['held','write_acceptance_required'],[$routeHold->fresh()->state,$routeHold->fresh()->safe_code],'Missing accepted TEST Purchase route holds before claim');
@@ -215,7 +215,7 @@ $routeDomain=$routeHold->domain->fresh();$releaseTicket=Paymenter\Extensions\Ser
     Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($routeHold->fresh(),$routeDomain),$clock);
 app(Paymenter\Extensions\Servers\Domains\Services\StaffOperations::class)->run($staff,(int)$routeDomain->id,(int)$routeHold->id,'release',$releaseTicket,'Staff reaccepted the current TEST Purchase route and interval');
 same('queued',$routeHold->fresh()->state,'A fresh staff route acceptance allows release of the unclaimed hold');
-$usdHold=$new('usd-proof-required.com');DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->update(['source'=>'daily']);
+$usdHold=$new(placeholderComFixtureName('usd-proof-required-placeholder.com'));DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->update(['source'=>'daily']);
 $before=count($GLOBALS['enomWire']['forms']);$worker->operation($usdHold->id);
 same(['held','usd_balance_required'],[$usdHold->fresh()->state,$usdHold->fresh()->safe_code],'TEST write requires the existing staff USD balance probe');
 same('TEST registration not sent: the worker needs a successful USD balance read under an hour old. Use Read balance, then Release unsent hold promptly. If release is refused, use Close and credit account.',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('usd_balance_required'),'Missing balance evidence directs staff to the balance page');
@@ -225,7 +225,7 @@ $usdDomain=$usdHold->domain->fresh();$releaseTicket=Paymenter\Extensions\Servers
     Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($usdHold->fresh(),$usdDomain),$clock);
 $before=count($GLOBALS['enomWire']['forms']);app(Paymenter\Extensions\Servers\Domains\Services\StaffOperations::class)->run($staff,(int)$usdDomain->id,(int)$usdHold->id,'release',$releaseTicket,'The latest balance is now a successful USD read');
 same('queued',$usdHold->fresh()->state,'Fresh USD evidence allows the unclaimed hold to be released');same($before,count($GLOBALS['enomWire']['forms']),'USD hold release itself makes no Enom request');
-$op=$new('paid-test.com');$before=count($GLOBALS['enomWire']['forms']);$usedBeforePurchasePath=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');$GLOBALS['advanceDuringPreflight']=true;$worker->operation($op->id);
+$op=$new(placeholderComFixtureName('paid-test-placeholder.com'));$before=count($GLOBALS['enomWire']['forms']);$usedBeforePurchasePath=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');$GLOBALS['advanceDuringPreflight']=true;$worker->operation($op->id);
 $purchaseCommands=array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command');
 same(['Check','PE_GetProductPrice','GetBalance','Purchase'],$purchaseCommands,'Three preflights then one sealed Purchase: '.json_encode([$purchaseCommands,$op->fresh()->state,$op->fresh()->safe_code,DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->first()]));same('pending',$op->fresh()->state,'ACK remains Processing');
 same($usedBeforePurchasePath+4,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'Preflight plus Purchase reserve four call units');
@@ -259,8 +259,8 @@ Queue::assertNotPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::c
 same('rejected',$unpaidOp->fresh()->state,'Retired unpaid TEST operation remains terminal and is not requeued');
 same($before,count($GLOBALS['enomWire']['forms']),'Runtime tick sends no Enom reads');same($usedBeforePoll,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'Runtime tick reserves no Enom calls');
 // Missing frozen contacts must reach the existing contact-specific hold and correction path before any Enom read.
-$incompleteUser=commerceUser();$incompleteUser->update(['email'=>'contact-owner@example.com']);$incompleteCart=commerceCart($incompleteUser);commerceAdd($incompleteCart,$product,'contacts-recovery.com');
-commerceCheckout($incompleteUser,$incompleteCart)->assertHasNoErrors();$contactOp=Domain::where('domain','contacts-recovery.com')->sole()->operations()->sole();
+$incompleteUser=commerceUser();$incompleteUser->update(['email'=>'contact-owner@example.com']);$incompleteCart=commerceCart($incompleteUser);commerceAdd($incompleteCart,$product,placeholderComFixtureName('contacts-recovery-placeholder.com'));
+commerceCheckout($incompleteUser,$incompleteCart)->assertHasNoErrors();$contactOp=Domain::where('domain','contacts-recovery-placeholder.com')->sole()->operations()->sole();
 App\Helpers\ExtensionHelper::addPayment($contactOp->invoice_id,null,$contactOp->amount);
 same('paid',App\Models\Invoice::findOrFail($contactOp->invoice_id)->status,'Contact correction case receives native payment');
 expect($a->fresh()->processing_enabled,'Contact recovery fixture has processing enabled');expect($ports->accepted($a->fresh()),'Contact recovery fixture has accepted TEST runtime');
@@ -274,7 +274,7 @@ foreach(['address'=>'1 Corrected Street','city'=>'Seattle','state'=>'WA','zip'=>
 same('queued',$contactOp->fresh()->state,'Contact correction queues the unsent registration');$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$before=count($GLOBALS['enomWire']['forms']);$worker->operation($contactOp->id);
 same(['Check','PE_GetProductPrice','GetBalance','Purchase'],array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),'Corrected contact order resumes through one Purchase');
 // Exhaust after preflight, before seal: safe cap evidence remains staff-retryable.
-$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$capOp=$new('cap-held.com');
+$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$capOp=$new(placeholderComFixtureName('cap-held-placeholder.com'));
 expect(EnomTestRegistration::applies($capOp),'TEST deployment opts in only Enom registration operations');
 $otherRegistrar=clone $capOp;$otherRegistrar->registrar_key='namesilo';
 expect(!EnomTestRegistration::applies($otherRegistrar),'Enom TEST opt-in leaves NameSilo registration on its own path');
@@ -312,7 +312,7 @@ $worker->operation($capOp->id);
 same(['Check','PE_GetProductPrice','GetBalance','Purchase'],array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),'Released retry performs fresh admission and one Purchase: '.json_encode([array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),$capOp->fresh()->state,$capOp->fresh()->safe_code,$capOp->fresh()->attempt]));
 same('pending',$capOp->fresh()->state,'Recovered operation has one acknowledged Purchase');
 $clock->at=$clock->at->modify('+61 seconds');Cache::flush();
-config(['domains.enom_test_daily_call_cap'=>500]);$refundOp=$new('cap-refund.com');$used=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');config(['domains.enom_test_daily_call_cap'=>$used+3]);
+config(['domains.enom_test_daily_call_cap'=>500]);$refundOp=$new(placeholderComFixtureName('cap-refund-placeholder.com'));$used=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');config(['domains.enom_test_daily_call_cap'=>$used+3]);
 $worker->operation($refundOp->id);same(['held','enom_test_call_cap'],[$refundOp->fresh()->state,$refundOp->fresh()->safe_code],'Refund case starts from a proven-unsent cap hold');
 same(['amount'=>$refundOp->amount,'currency'=>'USD'],app(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class)->refundHeld($staff,$refundOp->id,'enom_test_call_cap'),'Cap-held operation can be refunded exactly once');
 expect(isset($refundOp->fresh()->funding['refund']),'Cap refusal history remains valid through account credit');
@@ -341,7 +341,7 @@ DB::listen(static function($query)use(&$counterFault):void{if($counterFault&&str
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarBalances::class)
     ->callAction(\Filament\Actions\Testing\TestAction::make('refresh_'.$server->id)->schemaComponent('account_'.$server->id,'content'))->assertNotified(\Filament\Notifications\Notification::make()->title('Enom TEST request refused')->body(EnomTestCalls::facts().' Calls remain today, so a counter error or UTC day change refused it; you can retry. No provider request was made.'));
 expect(!$counterFault,'Synthetic counter error reached the reservation');same($beforeUsed,(int)DB::table(EnomTestCallSchema::TABLE)->value('used'),'Counter error refusal does not increment');same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Staff Refresh now explains a refusal while calls remain, before transport');
-$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$reconcileCapOp=$new('reconcile-cap.com');$worker->operation($reconcileCapOp->id);same('pending',$reconcileCapOp->fresh()->state,'Second Purchase ACK remains Processing');
+$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$reconcileCapOp=$new(placeholderComFixtureName('reconcile-cap-placeholder.com'));$worker->operation($reconcileCapOp->id);same('pending',$reconcileCapOp->fresh()->state,'Second Purchase ACK remains Processing');
 $GLOBALS['testRegisteredName']=$reconcileCapOp->domain->domain;$used=(int)DB::table(EnomTestCallSchema::TABLE)->value('used');config(['domains.enom_test_daily_call_cap'=>$used+3]);
 $before=count($GLOBALS['enomWire']['forms']);(new RuntimeWork($clock,new RuntimePorts))->operation($reconcileCapOp->id);
 same(3,count($GLOBALS['enomWire']['forms'])-$before,'Mid-reconciliation cap permits only three reads');same('pending',$reconcileCapOp->fresh()->state,'Cap during reconciliation remains Processing');same('enom_test_reconciliation_call_cap',$reconcileCapOp->fresh()->safe_code,'Staff sees the reconciliation cap reason');same('enom_test_reconciliation_call_cap',$reconcileCapOp->fresh()->policy['reconciliation']['reason'],'Reconciliation retains the cap reason');
@@ -384,7 +384,7 @@ EnomTestCalls::withPurchase($binding,function()use($binding,$op):void{
     EnomTestCalls::send($binding,true);
 },(int)$op->id);
 same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Reservation guard checks never reach transport');
-$sealedRolloverOp=$new('sealed-rollover.com');
+$sealedRolloverOp=$new(placeholderComFixtureName('sealed-rollover-placeholder.com'));
 $clock->at=new DateTimeImmutable('2026-10-21T23:59:59Z');Cache::flush();$write('import',['ending'=>'com']);$write('probe');Cache::flush();$sealedRolloverDay=EnomTestCalls::day();
 $limiter=Runtime::limiter();expect($limiter instanceof Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter,'Installed TEST worker uses the shared account read limiter');
 $heldRead=$limiter->acquire($binding,RequestOrigin::Background);$before=count($GLOBALS['enomWire']['forms']);
@@ -462,23 +462,23 @@ same($deadlineUsed+1,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',Enom
 // Isolate the limiter after synthetic clock jumps, then enter the worker on the
 // last second to verify preflight rollover with the reviewed price still current.
 config(['domains.enom_test_daily_call_cap'=>500]);$clock->at=new DateTimeImmutable('2026-10-21T23:59:59Z');Cache::flush();
-DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();$midnightOp=$new('preflight-midnight.com');$oldDay=EnomTestCalls::day();$newDayUsed=(int)(DB::table(EnomTestCallSchema::TABLE)->where('day','2026-10-22')->value('used')??0);
+DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();$midnightOp=$new(placeholderComFixtureName('preflight-midnight-placeholder.com'));$oldDay=EnomTestCalls::day();$newDayUsed=(int)(DB::table(EnomTestCallSchema::TABLE)->where('day','2026-10-22')->value('used')??0);
 $oldUsed=(int)(DB::table(EnomTestCallSchema::TABLE)->where('day',$oldDay)->value('used')??0);$before=count($GLOBALS['enomWire']['forms']);
 $GLOBALS['advanceDuringPreflight']=true;$worker->operation($midnightOp->id);
 same(['Check','PE_GetProductPrice','GetBalance','Purchase'],array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),'Preflight may cross UTC midnight before reserving Purchase');
 same('pending',$midnightOp->fresh()->state,'Midnight during preflight does not create a false cap hold');
 same($oldUsed+1,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',$oldDay)->value('used'),'Check stays charged to its send day');
 same($newDayUsed+3,(int)DB::table(EnomTestCallSchema::TABLE)->where('day','2026-10-22')->value('used'),'Other preflights and Purchase reserve on their send day');
-expect($a->fresh()->processing_enabled,'Catalogue-off regression starts after staff enabled processing');$catalogueCart=commerceCart($user);commerceAdd($catalogueCart,$product,'catalogue-off-processing.com');config(['domains.enom_catalogue.enabled'=>false]);$counts=[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])];
+expect($a->fresh()->processing_enabled,'Catalogue-off regression starts after staff enabled processing');$catalogueCart=commerceCart($user);commerceAdd($catalogueCart,$product,placeholderComFixtureName('catalogue-off-processing-placeholder.com'));config(['domains.enom_catalogue.enabled'=>false]);$counts=[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])];
 commerceCheckout($user,$catalogueCart)->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');same($counts,[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])],'Catalogue key-off with processing enabled creates no order, invoice, payment, or Purchase');config(['domains.enom_catalogue.enabled'=>true]);
-config(['domains.enom_writes.registration'=>null]);expect($a->fresh()->processing_enabled,'Key-off regression starts after staff enabled processing');$closedCart=commerceCart($user);commerceAdd($closedCart,$product,'key-off-processing.com');$counts=[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])];
+config(['domains.enom_writes.registration'=>null]);expect($a->fresh()->processing_enabled,'Key-off regression starts after staff enabled processing');$closedCart=commerceCart($user);commerceAdd($closedCart,$product,placeholderComFixtureName('key-off-processing-placeholder.com'));$counts=[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])];
 commerceCheckout($user,$closedCart)->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');same($counts,[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])],'Key-off with processing enabled creates no order, invoice, payment, or Purchase');config(['domains.enom_writes.registration'=>true]);
 $write('acceptance',['ending'=>'com','accept'=>true,'terms'=>[1],'registry'=>true,'verified'=>true,'test_registration_accepted'=>true,'transfer'=>true]);$accepted=CatalogueAcceptances::load($binding);
 foreach(DB::table('domains_prices')->where(['server_id'=>$server->id,'tld'=>'com'])->get() as $row){$proof=json_decode($row->eligibility,true,512,JSON_THROW_ON_ERROR);$proof['catalogue_revision']=$accepted->revision;DB::table('domains_prices')->where('id',$row->id)->update(['eligibility'=>json_encode($proof,JSON_THROW_ON_ERROR)]);}
 $source=(array)DB::table('domains_prices')->where(['server_id'=>$server->id,'tld'=>'com','action'=>'register','term'=>1,'currency'=>'USD'])->first();expect($source!==[],'Registration cost provides the synthetic transfer row');
 $proof=json_decode($source['eligibility'],true,512,JSON_THROW_ON_ERROR);$proof['catalogue_revision']=$accepted->revision;$source['action']='transfer';$source['revision']=1;$source['eligibility']=json_encode($proof,JSON_THROW_ON_ERROR);unset($source['id'],$source['created_at'],$source['updated_at']);DB::table('domains_prices')->insert($source);
 DB::table('domains_tlds')->where('id',$tld->id)->update(['transfer_enabled'=>true]);DB::table('domains_sales_policies')->where('tld','com')->update(['transfer_enabled'=>true]);$server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);$write('publish',[],$tld->id);$transferProduct=app(NativeCatalogue::class)->product($tld,'transfer');
-$mixedCart=commerceCart($user);commerceAdd($mixedCart,$product,'mixed-register.com');$GLOBALS['testTransferQuery']=true;commerceAdd($mixedCart,$transferProduct,'mixed-transfer.com');unset($GLOBALS['testTransferQuery']);$mixedCounts=[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])];
+$mixedCart=commerceCart($user);commerceAdd($mixedCart,$product,placeholderComFixtureName('mixed-register-placeholder.com'));$GLOBALS['testTransferQuery']=true;commerceAdd($mixedCart,$transferProduct,placeholderComFixtureName('mixed-transfer-placeholder.com'));unset($GLOBALS['testTransferQuery']);$mixedCounts=[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])];
 commerceCheckout($user,$mixedCart)->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');same($mixedCounts,[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])],'Mixed TEST registration and transfer cart creates no order, invoice, payment, or Purchase');
 $selection=app(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->selection('com','transfer',1,$clock->now());DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);
 try{DB::transaction(fn()=>app(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$selection],$clock->now()));throw new LogicException('TEST registration does not exempt transfer from processing.');}catch(DomainException){}DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);

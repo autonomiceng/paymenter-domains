@@ -36,7 +36,7 @@ same('permission_denied', $reader->preview($target, new StaffContext($limited->i
 same($count, count($wire->calls), 'Permission refusal zero wire');
 foreach ([
     new Target('example.com', $service->id, $other->id, $tld->server_id, Environment::Test),
-    new Target('other.com', $service->id, $owner->id, $tld->server_id, Environment::Test),
+    new Target('other-placeholder.com', $service->id, $owner->id, $tld->server_id, Environment::Test),
     new Target('example.com', $service->id, $owner->id, $tld->server_id, Environment::Live),
     new Target('example.com', $service->id, $owner->id, $tld->server_id + 100, Environment::Test),
 ] as $bad) { $before = count($wire->calls); expect($reader->preview($bad, $context)->code !== 'ready', 'Wrong target refused'); same($before, count($wire->calls), 'Wrong local identity zero wire'); }
@@ -60,7 +60,7 @@ foreach (['owner', 'role', 'property', 'price', 'site'] as $change) {
         match ($change) {
             'owner' => DB::table('services')->where('id', $service->id)->update(['user_id' => $other->id]),
             'role' => DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode([Staff::VIEW])]),
-            'property' => DB::table('properties')->where('id', $property->id)->update(['value' => 'other.com']),
+            'property' => DB::table('properties')->where('id', $property->id)->update(['value' => 'other-placeholder.com']),
             'price' => DB::table('domains_prices')->where('id', $originalPrice['id'])->update(['revision' => $originalPrice['revision'] + 1]),
             'site' => config(['app.url' => 'http://changed.invalid']),
         };
@@ -81,7 +81,7 @@ same($pending->id, Adoption::findOrFail($unreserved->previewId)->domain_id, 'Pre
 same(null, $pending->fresh()->reservation_name, 'Preview never acquires a reservation');
 $peerService = Service::create(['user_id' => $owner->id, 'order_id' => $order->id, 'product_id' => $product->id, 'plan_id' => $plan->id,
     'quantity' => 1, 'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']);
-$collision = adoptionPendingFixture($peerService, $binding, ['domain' => 'other.com', 'sld' => 'other']);
+$collision = adoptionPendingFixture($peerService, $binding, ['domain' => 'other-placeholder.com', 'sld' => 'other-placeholder']);
 $count = count($wire->calls); same('competing_holding', $reader->preview($target, $context)->code, 'Another retained reservation still blocks'); same($count, count($wire->calls), 'Reservation collision zero wire');
 DB::table('domains_domains')->where('id', $collision->id)->delete();
 foreach (['service_id' => $peerService->id, 'user_id' => $other->id, 'account_fingerprint' => str_repeat('a', 64)] as $key => $bad) {

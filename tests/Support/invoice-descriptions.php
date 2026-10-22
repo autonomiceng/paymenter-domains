@@ -13,9 +13,9 @@ $invoiceLineExamples = [
     'renew-multi' => Lines::renewal('example.com', $issue, 3),
     'privacy-purchase' => Lines::privacy('example.com', null, $issue),
     'privacy-renew' => Lines::privacy('example.com', '2027-04-09', $issue),
-    'register-leap' => Lines::acquisition('leap.com', 'register', 1, $leap),
-    'renew-leap' => Lines::renewal('leap.com', $leap, 1),
-    'privacy-leap' => Lines::privacy('leap.com', '2028-02-29', $issue),
+    'register-leap' => Lines::acquisition('leap-placeholder.com', 'register', 1, $leap),
+    'renew-leap' => Lines::renewal('leap-placeholder.com', $leap, 1),
+    'privacy-leap' => Lines::privacy('leap-placeholder.com', '2028-02-29', $issue),
     'idn' => Lines::renewal('xn--bcher-kva.de', $issue, 1),
 ];
 same('Register example.com: 1 year (Oct 19, 2026 - Oct 19, 2027, from registration)', $invoiceLineExamples['register'], 'Engine issue day and singular registration wording');
@@ -26,10 +26,10 @@ same('Renew example.com: Oct 19, 2026 - Oct 19, 2027', $invoiceLineExamples['ren
 same('Renew example.com: Oct 19, 2026 - Oct 19, 2029', $invoiceLineExamples['renew-multi'], 'Multi-year renewal range');
 same('Domain privacy example.com: Oct 19, 2026 - Oct 19, 2027 (from purchase)', $invoiceLineExamples['privacy-purchase'], 'Independent privacy purchase year');
 same('Domain privacy example.com: Apr 09, 2027 - Apr 09, 2028', $invoiceLineExamples['privacy-renew'], 'Privacy expiry, not domain expiry or issue date');
-same('Register leap.com: 1 year (Feb 29, 2028 - Feb 28, 2029, from registration)', $invoiceLineExamples['register-leap'], 'Registration leap-day clamp');
-same('Renew leap.com: Feb 29, 2028 - Feb 28, 2029', $invoiceLineExamples['renew-leap'], 'Renewal leap-day clamp');
-same('Renew leap.com: Feb 29, 2028 - Feb 29, 2032', Lines::renewal('leap.com', $leap, 4), 'Multi-year leap anniversary');
-same('Domain privacy leap.com: Feb 29, 2028 - Feb 28, 2029', $invoiceLineExamples['privacy-leap'], 'Privacy leap-day clamp');
+same('Register leap-placeholder.com: 1 year (Feb 29, 2028 - Feb 28, 2029, from registration)', $invoiceLineExamples['register-leap'], 'Registration leap-day clamp');
+same('Renew leap-placeholder.com: Feb 29, 2028 - Feb 28, 2029', $invoiceLineExamples['renew-leap'], 'Renewal leap-day clamp');
+same('Renew leap-placeholder.com: Feb 29, 2028 - Feb 29, 2032', Lines::renewal('leap-placeholder.com', $leap, 4), 'Multi-year leap anniversary');
+same('Domain privacy leap-placeholder.com: Feb 29, 2028 - Feb 28, 2029', $invoiceLineExamples['privacy-leap'], 'Privacy leap-day clamp');
 same('Renew bücher.de: Oct 19, 2026 - Oct 19, 2027', $invoiceLineExamples['idn'], 'Retained IDN displays Unicode only');
 $longName = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 63).'.'.str_repeat('d', 61);
 same(253, strlen($longName), 'Maximum canonical DNS name fixture');

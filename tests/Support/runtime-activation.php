@@ -87,7 +87,7 @@ expect(!str_contains($test->html(),'No accepted catalogue'),'Accepted catalogue 
 DB::table('settings')->where('settingable_id',$server->id)->where('key',Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::KEY)->update(['value'=>'invalid-synthetic-acceptance']);
 $test->call('$refresh');$html=$test->html();
 foreach(['Activation status','NameSilo','Enom','No connection check available','Processing off','Billing off','Registration composition unavailable','domains_billing_enabled','Review renewal billing','Display fixtures cannot authorize billing','retry_after','No accepted catalogue'] as $word){expect(str_contains($html,$word),'Activation page explains '.$word);}
-foreach(['synthetic-held-account','synthetic-password','PRIVATE-','queued-held.com','held-package-operation','domains_credentials','account_fingerprint'] as $secret){expect(!str_contains($html,$secret),'Activation view excludes secrets and ledger payloads');}
+foreach(['synthetic-held-account','synthetic-password','PRIVATE-','queued-held-placeholder.com','held-package-operation','domains_credentials','account_fingerprint'] as $secret){expect(!str_contains($html,$secret),'Activation view excludes secrets and ledger payloads');}
 expect(!str_contains($html,'mountAction('),'Status page has no gate-opening actions');
 $plain=staffUser([]);Livewire\Livewire::actingAs($plain)->test(ActivationStatus::class)->assertForbidden();
 Livewire\Livewire::actingAs($staff)->test(ActivationStatus::class)->assertSuccessful();

@@ -17,7 +17,7 @@ $review=new StaffHoldingReview($guard,$clock);app()->instance(StaffHoldingReview
 $permissions=['admin.domains.view','admin.domains.manage','admin.domains.fund',...array_map(StaffHoldingReview::permission(...),array_keys(StaffHoldingReview::ACTIONS))];
 $staff=staffUser($permissions);Auth::login($staff);
 $ticket=static fn($d,$action,$actor=null)=>StaffHoldingReview::ticket((int)($actor??$staff)->id,(int)$d->id,$action,StaffHoldingReview::stamp(HoldingLocks::take($d->fresh(),advisory:true)),$clock);
-[$original]=$prepare('holding-review.com');same('succeeded',$reconcile->run($original->id)->state,'Holding has original proof');$d=$original->domain->fresh();$s=$d->service;
+[$original]=$prepare(placeholderComFixtureName('holding-review-placeholder.com'));same('succeeded',$reconcile->run($original->id)->state,'Holding has original proof');$d=$original->domain->fresh();$s=$d->service;
 DB::table('services')->where('id',$s->id)->update(['price'=>'9.00']);$money=$nativeMoney();$catalogue=serialize(DB::table('domains_prices')->get());
 $key=$ticket($d,'reprice');$review->run($staff,$d->id,'reprice',$key,'Apply published renewal retail');
 same('10.40',RetailLine::decimal($s->fresh()->price),'Owned action applies renewal retail');same(null,$s->fresh()->expires_at,'Owned projection keeps native expiry null');
@@ -53,11 +53,11 @@ $key=$ticket($d,'resume');$cancel=ServiceCancellation::create(['service_id'=>$s-
 commerceReject(fn()=>$review->run($staff,$d->id,'resume',$key,'Stale cancellation snapshot'));expect($cancel->fresh()!==null,'Stale review retains cancellation');
 $review->run($staff,$d->id,'resume',$ticket($d,'resume'),'Resume reviewed native cancellation');
 // A retained initial intent cannot be acknowledged away, even when no native row exists.
-$pending=$new('holding-intent.com',paid:false);ServiceCancellation::create(['service_id'=>$pending->service_id,'type'=>'end_of_period','reason'=>'Unpaid native cancellation']);
+$pending=$new(placeholderComFixtureName('holding-intent-placeholder.com'),paid:false);ServiceCancellation::create(['service_id'=>$pending->service_id,'type'=>'end_of_period','reason'=>'Unpaid native cancellation']);
 commerceReject(fn()=>$review->run($staff,$pending->domain_id,'resume',$ticket($pending->domain,'resume'),'Cannot erase retained intent'));
 same(1,DB::table('domains_native_intents')->where('service_id',$pending->service_id)->count(),'Initial intent remains retained');
 // Converter-sealed current anchors support both directions and owned repricing.
-[$historical]=$prepare('holding-converted.com');same('succeeded',$reconcile->run($historical->id)->state,'Historical holding completed');
+[$historical]=$prepare(placeholderComFixtureName('holding-converted-placeholder.com'));same('succeeded',$reconcile->run($historical->id)->state,'Historical holding completed');
 [$historical,$convertedDomain]=convertedHoldingFixture($historical);
 DB::table('domains_operations')->where('id',$historical->id)->update(['state'=>'pending']);
 $refused=false;try{ServiceCancellation::create(['service_id'=>$convertedDomain->service_id,'type'=>'end_of_period','reason'=>'Uncompleted converted anchor control']);}catch(Illuminate\Validation\ValidationException){$refused=true;}expect($refused,'Uncompleted converted anchor is refused');
@@ -68,20 +68,20 @@ same(false,$convertedDomain->fresh()->renewal_policy['renewals_stopped'],'Conver
 $immediate=ServiceCancellation::create(['service_id'=>$convertedDomain->service_id,'type'=>'immediate','reason'=>'Immediate cancellation control']);
 commerceReject(fn()=>$review->run($staff,$convertedDomain->id,'resume',$ticket($convertedDomain,'resume'),'Cannot resume immediate cancellation'));expect($immediate->fresh()!==null,'Immediate cancellation retained');
 // Once a converted holding renews normally, its new authenticated anchor permits native EOP.
-[$convertedRenew,$advancedConverted,$advancedBinding]=$makeRenewal('holding-converted-renewed.com',beforeBill:static function($holding):void {convertedHoldingFixture($holding->operations()->where('action','register')->sole());});
+[$convertedRenew,$advancedConverted,$advancedBinding]=$makeRenewal(placeholderComFixtureName('holding-converted-renewed-placeholder.com'),beforeBill:static function($holding):void {convertedHoldingFixture($holding->operations()->where('action','register')->sole());});
 [$advancedEngine,$advancedWriter,$advancedCompletion]=$compose($advancedBinding);same('pending',$advancedEngine->run($convertedRenew->id,$advancedWriter)->state,'Converted holding renewal sent');
 $state->expiry='2028-10-18';same('succeeded',$advancedCompletion->run($convertedRenew->id)->state,'Converted holding advances to ordinary renewal proof');
 ServiceCancellation::create(['service_id'=>$advancedConverted->service_id,'type'=>'end_of_period','reason'=>'Stop converted holding after renewal']);
 $review->run($staff,$advancedConverted->id,'resume',$ticket($advancedConverted,'resume'),'Resume converted holding after renewed anchor');
 // Stop preserves already issued complimentary spend authority, as the modal states explicitly.
-[$unpaidComp,$compDomain,$compBinding]=$makeRenewal('holding-issued-complimentary.com',paid:false);$cycles->retireUnpaid($unpaidComp->id);
+[$unpaidComp,$compDomain,$compBinding]=$makeRenewal(placeholderComFixtureName('holding-issued-complimentary-placeholder.com'),paid:false);$cycles->retireUnpaid($unpaidComp->id);
 $comp=$cycles->complimentary($compDomain->id,$staff,1,new Paymenter\Extensions\Servers\Domains\Data\Money('8.95','USD'),'reviewed_gift');
 $review->run($staff,$compDomain->id,'stop',$ticket($compDomain,'stop'),'Stop future cycles after issued gift');
 [$compEngine,$compWriter,$compCompletion]=$compose($compBinding);$compWrites=$state->writes;
 same('pending',$compEngine->run($comp->id,$compWriter)->state,'Previously issued complimentary renewal still spends under stop');same($compWrites+1,$state->writes,'Exactly one synthetic complimentary write');
 $state->expiry='2028-10-18';same('succeeded',$compCompletion->run($comp->id)->state,'Issued complimentary outcome completes under stop');
 // Issued unpaid debt and later paid execution survive owned stop and native end-period cancellation.
-[$renew,$debtDomain,$binding,$invoice]=$makeRenewal('holding-existing-debt.com',paid:false);
+[$renew,$debtDomain,$binding,$invoice]=$makeRenewal(placeholderComFixtureName('holding-existing-debt-placeholder.com'),paid:false);
 $issued=$nativeMoney();$review->run($staff,$debtDomain->id,'stop',$ticket($debtDomain,'stop'),'Stop only future obligations');
 ServiceCancellation::create(['service_id'=>$debtDomain->service_id,'type'=>'end_of_period','reason'=>'Native end-period stop']);
 // Owner requests end at the confirmed expiry, so make the manual request inside the request window.

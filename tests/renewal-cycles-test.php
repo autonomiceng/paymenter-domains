@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, PricingRule, RenewalFunding};
-[$op, $d, $b, $invoice] = $makeRenewal('renew-replacement.com', false);
+[$op, $d, $b, $invoice] = $makeRenewal(placeholderComFixtureName('renew-replacement-placeholder.com'), false);
 $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
 $invoice->update(['status' => 'cancelled']); commerceReject(fn () => $billing->invoice($d->id, $user));
 $cycles->retireUnpaid($op->id); $retired = $op->fresh()->getRawOriginal(); $debt = $invoice->fresh()->getRawOriginal();
@@ -94,21 +94,21 @@ foreach (['complete', 'revoked', 'unknown', 'over', 'exact', 'term', 'unauthoriz
 // Retained server rows are ignored: true cannot override global off, false cannot block global on/unset.
 $product->server->settings()->updateOrCreate(['key'=>'credits_auto_use'],['value'=>true,'type'=>'boolean']);
 config(['settings.credits_auto_use'=>false]);
-[$op, $d, $b, $offBill] = $makeRenewal('renew-credit-global-off.com',false, 1, true, static fn () => config(['settings.credits_auto_use'=>false]));
+[$op, $d, $b, $offBill] = $makeRenewal(placeholderComFixtureName('renew-credit-global-off-placeholder.com'),false, 1, true, static fn () => config(['settings.credits_auto_use'=>false]));
 same('pending',$offBill->status,'Native global credit opt-out respected'); same(0,$offBill->transactions()->count(),'No global opt-out settlement');
 same(10000,Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$user->credits()->where('currency_code','USD')->sole()->amount),'Global opt-out credit untouched');
 $product->server->settings()->where('key','credits_auto_use')->sole()->update(['value'=>false]);
 $creditBalance = static fn (): int => PricingRule::minor((string) $user->credits()->where('currency_code', 'USD')->sole()->amount);
 $creditBefore = $creditBalance();
 config(['settings.credits_auto_use'=>false]);
-[$op, $d, $b, $creditBill] = $makeRenewal('renew-credit.com', false, 1, false, static fn () => config(['settings.credits_auto_use'=>true]));
+[$op, $d, $b, $creditBill] = $makeRenewal(placeholderComFixtureName('renew-credit-placeholder.com'), false, 1, false, static fn () => config(['settings.credits_auto_use'=>true]));
 same('paid', $creditBill->status, 'Global opt-in pays renewal despite stale server opt-out');
 same(1, (int) $creditBill->transactions()->sole()->is_credit_transaction, 'Native credit settlement retained');
 same($creditBefore - PricingRule::minor((string) $creditBill->total), $creditBalance(), 'Full credit deducts exactly the invoice amount in minor units');
 same('pending', $runRenewal($op, $b)->state, 'Native credit is current paid funding');
 config(['settings.credits_auto_use'=>false]);
 $creditBefore = $creditBalance();
-[$op, $d, $b, $defaultBill] = $makeRenewal('renew-credit-default.com', false, 1, false, static function (): void {
+[$op, $d, $b, $defaultBill] = $makeRenewal(placeholderComFixtureName('renew-credit-default-placeholder.com'), false, 1, false, static function (): void {
     config(['settings'=>collect(config('settings'))->except('credits_auto_use')->all()]);
     expect(!config()->has('settings.credits_auto_use'), 'Global credit setting is absent');
 });
@@ -118,7 +118,7 @@ same(1, (int) $defaultBill->transactions()->sole()->is_credit_transaction, 'Defa
 same($creditBefore - PricingRule::minor($defaultBill->total), $creditBalance(), 'Default-on deducts exactly the invoice amount');
 same(false, $product->server->settings()->where('key','credits_auto_use')->sole()->value, 'Stale server row is retained unchanged');
 config(['settings.credits_auto_use'=>false]); $creditBefore = $creditBalance();
-[$op, $d, $b, $scheduledBill] = $makeRenewal('renew-credit-scheduled.com', false, 1, false, static function ($d) use ($billing, $product): void {
+[$op, $d, $b, $scheduledBill] = $makeRenewal(placeholderComFixtureName('renew-credit-scheduled-placeholder.com'), false, 1, false, static function ($d) use ($billing, $product): void {
     $product->server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'], ['value'=>true,'type'=>'boolean']);
     config(['settings.credits_auto_use'=>true]);
     same('paid', $billing->invoice($d->id)->status, 'Scheduled renewal follows global credit opt-in');

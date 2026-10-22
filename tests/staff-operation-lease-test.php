@@ -51,7 +51,7 @@ foreach(['before_seal','before_send'] as $phase){
 }
 same(0,$missed,'Every live-worker staff action is refused before writing');
 // A modal opened before claim must show the safe refusal when submitted after claim.
-$op=$new('staff-lease-open-modal.com');
+$op=$new(placeholderComFixtureName('staff-lease-open-modal-placeholder.com'));
 $oldKey=$ticket($op,'recheck');
 $action=collect(OperationActions::make($op,StaffOperationReview::stamp($op,$op->domain)))->first(fn($a)=>$a->getName()==='recheck');
 [$claimed]=$claims->claim($op->id);
@@ -75,7 +75,7 @@ foreach(['equal','past','missing'] as $expiry){
 }
 // Even a direct caller starting a worker during read I/O cannot mutate its frozen evidence
 // when the read-finished audit returns; the durable requested phase remains retained.
-$op=$new('staff-lease-finish-race.com');
+$op=$new(placeholderComFixtureName('staff-lease-finish-race-placeholder.com'));
 $review=new StaffOperationReview($staff->id,$op->domain_id,$op->id,'recheck',$ticket($op,'recheck'),'Read original attempt',$clock);
 $refused(fn()=>$review->read(function()use($claims,$op){expect($claims->claim($op->id)!==null,'Worker claims during unlocked read');}));
 same(1,count($op->fresh()->policy['staff_actions']),'Requested audit survives without changing the live claim');

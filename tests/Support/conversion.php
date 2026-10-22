@@ -35,7 +35,7 @@ DB::table('credits')->insert(['user_id'=>$user->id,'currency_code'=>'USD','amoun
 DB::table('notification_preferences')->insert(['user_id'=>$user->id,'notification_template_id'=>$template->id,'mail_enabled'=>false,'in_app_enabled'=>true]);
 DB::table('failed_jobs')->insert(['uuid'=>'synthetic-failed-job','connection'=>'database','queue'=>'default','payload'=>'retained payload','exception'=>'retained failure']);
 $services=[];$invoices=[];$sourcePayloads=[];
-foreach([21=>['purchased.com',true,'active'],22=>['imported.com',false,'active'],23=>['unknown.com',true,'active'],24=>['cancelled.com',false,'cancelled']]as$id=>[$name,$managed,$state]){
+foreach([21=>['purchased-placeholder.com',true,'active'],22=>['imported-placeholder.com',false,'active'],23=>['unknown-placeholder.com',true,'active'],24=>['cancelled-placeholder.com',false,'cancelled']]as$id=>[$name,$managed,$state]){
     $order=Order::withoutEvents(fn()=>Order::create(['user_id'=>$user->id,'currency_code'=>'USD']));
     $service=Service::withoutEvents(fn()=>Service::create(['order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$plan->id,'user_id'=>$user->id,'currency_code'=>'USD','quantity'=>1,'price'=>'12.00','status'=>$id===24?'cancelled':'active','expires_at'=>null]));$services[$id]=$service;$service->properties()->create(['key'=>'domain','name'=>'Domain','value'=>$name]);
     $invoice=Invoice::withoutEvents(fn()=>Invoice::create(['user_id'=>$user->id,'currency_code'=>'USD','status'=>'paid','due_at'=>'2026-10-18']));
@@ -54,10 +54,10 @@ foreach([21=>['purchased.com',true,'active'],22=>['imported.com',false,'active']
 }
 // Positive previously renewed holding: original purchase plus independently confirmed renewal/cost quote.
 $renewInvoice=Invoice::withoutEvents(fn()=>Invoice::create(['user_id'=>$user->id,'currency_code'=>'USD','status'=>'paid','due_at'=>'2027-10-11']));
-$renewItem=$renewInvoice->items()->create(['description'=>'Renew purchased.com','price'=>'12.00','quantity'=>1]);
+$renewItem=$renewInvoice->items()->create(['description'=>'Renew purchased-placeholder.com','price'=>'12.00','quantity'=>1]);
 InvoiceTransaction::withoutEvents(fn()=>InvoiceTransaction::create(['invoice_id'=>$renewInvoice->id,'amount'=>'12.00','fee'=>0,'status'=>'succeeded']));
 $renew=(array)DB::table('enom_operations')->where('id',121)->first();$renewCost=Inputs::decrypt($renew['cost']);$renewCost['actual']=array_replace($renewCost['actual'],['action'=>'renew','amount'=>'9.00','provider_order_id'=>'221']);$renewCost['execution']=['command'=>'Extend','status'=>'success','orderid'=>'221'];
-$renewCost['quote']=['state'=>'quoted','source'=>'Check+GetExtendInfo','command'=>'Extend','base_expires_at'=>'2027-10-18','complete'=>true,'amount'=>'9.00','currency'=>'USD','domain'=>'purchased.com','action'=>'renew','term'=>1,'server_id'=>$server->id,'account_fingerprint'=>$old,'authority_generation'=>0,'provider_domain_id'=>'121','confirmed_revision'=>1];
+$renewCost['quote']=['state'=>'quoted','source'=>'Check+GetExtendInfo','command'=>'Extend','base_expires_at'=>'2027-10-18','complete'=>true,'amount'=>'9.00','currency'=>'USD','domain'=>'purchased-placeholder.com','action'=>'renew','term'=>1,'server_id'=>$server->id,'account_fingerprint'=>$old,'authority_generation'=>0,'provider_domain_id'=>'121','confirmed_revision'=>1];
 DB::table('enom_operations')->insert(array_replace($renew,['id'=>221,'invoice_id'=>$renewInvoice->id,'invoice_item_id'=>$renewItem->id,'operation_key'=>'renew:21:2027-10-18','action'=>'renew','base_expires_at'=>'2027-10-18','expected_expires_at'=>'2028-10-18','confirmed_expires_at'=>'2028-10-18','provider_order_id'=>'221','cost'=>Inputs::encrypt($renewCost)]));
 DB::table('enom_domains')->where('id',21)->update(['provider_expires_at'=>'2028-10-18','confirmed_revision'=>2,'reminders'=>json_encode(['2027-10-18'=>[30],'2028-10-18'=>[30]])]);
 $evidence['domains']['21']['xml']=str_replace('2027-10-18','2028-10-18',$evidence['domains']['21']['xml']);

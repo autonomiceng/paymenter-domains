@@ -48,7 +48,7 @@ foreach ($permissions as $permission) {
     DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode($permissions)]);
 }
 foreach ([['orders', $order->id, 'user_id', $other->id], ['services', $service->id, 'user_id', $other->id],
-    ['services', $service->id, 'order_id', null], ['properties', $property->id, 'value', 'other.com'],
+    ['services', $service->id, 'order_id', null], ['properties', $property->id, 'value', 'other-placeholder.com'],
     ['services', $service->id, 'status', 'suspended'], ['services', $service->id, 'quantity', 2], ['services', $service->id, 'expires_at', '2027-10-20'],
     ['domains_prices', Price::where('server_id', $tld->server_id)->where('action', 'renew')->sole()->id, 'revision', 999]] as [$table, $id, $field, $value]) {
     $old = DB::table($table)->where('id', $id)->value($field); DB::table($table)->where('id', $id)->update([$field => $value]);
@@ -74,7 +74,7 @@ DB::listen(static function ($query) use (&$injectDebt, $lateInvoice, $service): 
 $refuse(fn () => $confirm($a), 'Related invoice coverage changing after invoice read aborts before service locks');
 same(false, $injectDebt, 'Serialized debt interleaving was exercised');
 DB::table('invoices')->where('id', $lateInvoice->id)->delete();
-$collision = adoptionPendingFixture($hostService, $binding, ['domain' => 'other.com', 'sld' => 'other', 'reservation_name' => 'other.com', 'provider_domain_id' => '123']);
+$collision = adoptionPendingFixture($hostService, $binding, ['domain' => 'other-placeholder.com', 'sld' => 'other-placeholder', 'reservation_name' => 'other-placeholder.com', 'provider_domain_id' => '123']);
 $refuse(fn () => $confirm($a), 'Provider identity collision added after preview refused');
 DB::table('domains_domains')->where('id', $collision->id)->delete();
 $payloads = $wire->payloads;

@@ -36,8 +36,8 @@ foreach($cases as $name=>[$key,$values]){
     file_put_contents($out.'/'.$name.'-text.html','<!doctype html><html><meta name="viewport" content="width=device-width"><title>Plain text part</title><body style="margin:24px"><pre style="font:16px/1.6 monospace;white-space:pre-wrap;overflow-wrap:anywhere">'.e($text).'</pre></body></html>');
     expect(!preg_match('/enom|namesilo|PRIVATE-/i',$html.$text),'Neutral customer parts');
 }
-[$d,$bill,$op]=$make('staff-held-renewal.com');$op->update(['state'=>'held']);$enable();$reminders->remind($d->id);
-[$unknown]=$make('staff-unknown-price.com');$rate=\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$unknown->server_id)->where('action','renew')->sole();$rate->update(['revision'=>$rate->revision+1,'retail'=>null]);$reminders->remind($unknown->id);
+[$d,$bill,$op]=$make(placeholderComFixtureName('staff-held-renewal-placeholder.com'));$op->update(['state'=>'held']);$enable();$reminders->remind($d->id);
+[$unknown]=$make(placeholderComFixtureName('staff-unknown-price-placeholder.com'));$rate=\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$unknown->server_id)->where('action','renew')->sole();$rate->update(['revision'=>$rate->revision+1,'retail'=>null]);$reminders->remind($unknown->id);
 tldPanel();Auth::setUser($staff);$panel=Filament::getCurrentPanel();$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 foreach(['staff-held'=>[ViewDomain::class,['record'=>$d->id]],'staff-unknown'=>[ViewDomain::class,['record'=>$unknown->id]],'staff-setup'=>[RegistrarSetup::class,[]]] as $name=>[$class,$params]){

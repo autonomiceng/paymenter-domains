@@ -15,13 +15,13 @@ $admission=new CartAdmission($native,$sellers,new CheckoutEligibility($bindings,
 $binder=new InvoiceBinding($admission,$native,$prices,$clock);app()->instance(InvoiceBinding::class,$binder);$binder->boot();
 (new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
 $user=commerceUser();$cart=commerceCart($user);$product=$native->product($tlds[0],'register');
-commerceAdd($cart,$product,'parent-race.com');
+commerceAdd($cart,$product,placeholderComFixtureName('parent-race-placeholder.com'));
 // Inspect the real admitted line before native checkout creates its canonical Property.
 $admittedPropertyCases=0;
 Service::created(static function(Service $s)use($user,$binder,&$admittedPropertyCases):void {
     if((int)$s->user_id!==(int)$user->id){return;}
     $make=static fn(array $changes=[])=> (new App\Models\Property)->forceFill(array_replace([
-        'model_type'=>$s->getMorphClass(),'model_id'=>$s->id,'key'=>'domain','name'=>'Domain','value'=>'parent-race.com'
+        'model_type'=>$s->getMorphClass(),'model_id'=>$s->id,'key'=>'domain','name'=>'Domain','value'=>'parent-race-placeholder.com'
     ],$changes));
     expect($binder->identityProperty($make()),'Exact admitted property is allowed');
     $reject=static function(array $changes,string $label)use($make,&$admittedPropertyCases):void {
@@ -32,7 +32,7 @@ Service::created(static function(Service $s)use($user,$binder,&$admittedProperty
         expect($refused,$label.' refused during admitted checkout');
         same($before,App\Models\Property::count(),$label.' did not persist');$admittedPropertyCases++;
     };
-    $reject(['value'=>'wrong-admitted.com'],'Wrong admitted name');
+    $reject(['value'=>'wrong-admitted-placeholder.com'],'Wrong admitted name');
     $reject(['custom_property_id'=>987654],'Custom definition on admitted property');
     $reject(['CUSTOM_PROPERTY_ID'=>987654],'Alternate custom definition on admitted property');
     // Fixture-only temporary row isolates the duplicate condition before normal checkout continues.
@@ -47,7 +47,7 @@ same('after-all-guards-before-delete',$delete->start(),'Paused after both parent
 same(0,DB::transactionLevel(),'Paused native delete has no outer transaction');
 commerceCheckout($user,$cart);
 same(4,$admittedPropertyCases,'Real checkout exercised every admission refusal');
-$holding=Domain::where('domain','parent-race.com')->sole();$serviceId=$holding->service_id;
+$holding=Domain::where('domain','parent-race-placeholder.com')->sole();$serviceId=$holding->service_id;
 expect(Service::whereKey($serviceId)->exists(),'Admitted checkout committed native service');
 same(0,DB::transactionLevel(),'Checkout committed before parent delete resumes');
 // Synthetic additional orphan candidates verify the deleted callback's bounded work.
@@ -67,11 +67,11 @@ same(1,$alerts()->count(),'Durable repeat inspection is idempotent');same($first
 $unrelated=commerceUser();$unrelated->delete();expect(!User::whereKey($unrelated->id)->exists(),'Native deletion remains available');
 $newOwner=commerceUser();$replacementCart=commerceCart($newOwner);
 $before=[App\Models\Order::count(),Service::count(),Domain::count(),App\Models\Invoice::count(),Paymenter\Extensions\Servers\Domains\Models\Operation::count()];
-try{commerceAdd($replacementCart,$product,'parent-race.com');commerceCheckout($newOwner,$replacementCart);}catch(DomainException){}
+try{commerceAdd($replacementCart,$product,placeholderComFixtureName('parent-race-placeholder.com'));commerceCheckout($newOwner,$replacementCart);}catch(DomainException){}
 same($before,[App\Models\Order::count(),Service::count(),Domain::count(),App\Models\Invoice::count(),Paymenter\Extensions\Servers\Domains\Models\Operation::count()],'Retained reservation forbids new checkout readmission');
 // The same replacement owner can still check out an unrelated fresh name.
-$freshCart=commerceCart($newOwner);commerceAdd($freshCart,$product,'fresh-after-orphan.com');commerceCheckout($newOwner,$freshCart);
-$fresh=Domain::where('domain','fresh-after-orphan.com')->sole();
+$freshCart=commerceCart($newOwner);commerceAdd($freshCart,$product,placeholderComFixtureName('fresh-after-orphan-placeholder.com'));commerceCheckout($newOwner,$freshCart);
+$fresh=Domain::where('domain','fresh-after-orphan-placeholder.com')->sole();
 same((int)$newOwner->id,(int)$fresh->user_id,'Healthy replacement-owner checkout succeeds');
 expect(Service::whereKey($fresh->service_id)->exists(),'Healthy fresh name retains its native service');
 echo "CONFIRMED: post-guard native User deletion cascades a later admitted checkout service; retained ledger survives orphaned, with durable staff discrepancy.\n";

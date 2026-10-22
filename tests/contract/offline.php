@@ -177,7 +177,7 @@ $rejected = $inventory; $rejected['request']['operation'] = 'getPrices';
 expect(Shapes::check('listDomains', $rejected) !== [], 'Wrong operation cannot establish empty inventory');
 $rejected = $inventory; unset($rejected['reply']['domains']);
 expect(Shapes::check('listDomains', $rejected) !== [], 'Missing inventory is unknown');
-$incomplete = ['request' => ['operation' => 'listDomains'], 'reply' => ['code' => 300, 'detail' => 'synthetic', 'domains' => [['domain' => 'synthetic.com']], 'pager' => ['page' => 1]]];
+$incomplete = ['request' => ['operation' => 'listDomains'], 'reply' => ['code' => 300, 'detail' => 'synthetic', 'domains' => [['domain' => 'synthetic-placeholder.com']], 'pager' => ['page' => 1]]];
 expect(in_array('reply.domains.[].created.missing', Shapes::check('listDomains', $incomplete), true), 'Nested missing date detected');
 expect(in_array('reply.pager.pageSize.missing', Shapes::check('listDomains', $incomplete), true), 'Missing pager size detected');
 $wrongCode = ['request' => ['operation' => 'changeNameServers'], 'reply' => ['code' => 251, 'detail' => 'synthetic']];
@@ -195,7 +195,7 @@ $parsed = (new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Res
     \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::register('example.com', 1, false, '101', ['ns1.namesilo.com', 'ns2.namesilo.com']), 'offline-secret-token');
 same(\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Unknown, $parsed->outcome, 'Malformed purchase stays unknown');
 same(false, GuardedTransport::durableRegistration([], $writer->domain), 'Unresolved purchase cannot continue');
-same(false, GuardedTransport::durableRegistration(['registration' => ['accepted' => true, 'query' => ['name' => 'other.com', 'years' => 1]]], $writer->domain), 'Wrong durable name cannot continue');
+same(false, GuardedTransport::durableRegistration(['registration' => ['accepted' => true, 'query' => ['name' => 'other-placeholder.com', 'years' => 1]]], $writer->domain), 'Wrong durable name cannot continue');
 if (getenv('OTE_SELF_TEST_NATIVE')) {
     foreach (glob($output.'/*attempt-private*.json') as $private) { unlink($private); }
     putenv('NAMESILO_SANDBOX_API_KEY=offline-secret-token');

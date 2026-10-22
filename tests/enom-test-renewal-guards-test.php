@@ -8,16 +8,16 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestRenewal,EnomTestCalls,EnomTestCallSchema,EnomTestWriteReservation as Reservation,EnomTestCallLimit};
 app()->instance(Clock::class,$clock);EnomTestCallSchema::install();
 // An explicitly supplied pre-existing runtime keeps its transient-cap behavior with opt-in off.
-[$op,$d,$b]=$makeRenewal('renew-off-cap.com');[$engine,$writer]=$compose($b);
+[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-off-cap-placeholder.com'));[$engine,$writer]=$compose($b);
 config(['domains.enom_writes.renewal'=>false,'domains.enom_test_daily_call_cap'=>0]);
 $state->during=static fn()=>EnomTestCalls::reserve(Environment::Test);
 same('queued',$engine->run($op->id,$writer)->state,'Off preserves retryable normalized reads');same('renewal_reads_unavailable',$op->fresh()->safe_code,'Off retains original reason');
 config(['domains.enom_test_daily_call_cap'=>1000]);Cache::flush();same('pending',$engine->run($op->id,$writer)->state,'Off runtime recovers without a new release predicate');
-[$wireOp,$wireDomain,$wireBinding]=$makeRenewal('renew-off-wire.com');[$wireEngine,$wireWriter]=$compose($wireBinding);
+[$wireOp,$wireDomain,$wireBinding]=$makeRenewal(placeholderComFixtureName('renew-off-wire-placeholder.com'));[$wireEngine,$wireWriter]=$compose($wireBinding);
 $state->afterWrite=static fn()=>throw new EnomTestCallLimit;
 same('uncertain',$wireEngine->run($wireOp->id,$wireWriter)->state,'Off preserves uncertainty at the old explicit-runtime wire boundary');
-[$onCapOp,$onCapDomain,$onCapBinding]=$makeRenewal('renew-on-wire-cap.com');[$onCapEngine,$onCapWriter]=$compose($onCapBinding);
-[$termOp,$termDomain,$termBinding]=$makeRenewal('renew-test-annual-only.com',true,2);[$termEngine,$termWriter]=$compose($termBinding);
+[$onCapOp,$onCapDomain,$onCapBinding]=$makeRenewal(placeholderComFixtureName('renew-on-wire-cap-placeholder.com'));[$onCapEngine,$onCapWriter]=$compose($onCapBinding);
+[$termOp,$termDomain,$termBinding]=$makeRenewal(placeholderComFixtureName('renew-test-annual-only-placeholder.com'),true,2);[$termEngine,$termWriter]=$compose($termBinding);
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true]);
 foreach([false,'true',1,null] as $off){config(['domains.enom_writes.renewal'=>$off]);expect(!EnomTestRenewal::enabled($b),'Strict boolean opt-in');}
 config(['domains.enom_writes.renewal'=>true]);expect(EnomTestRenewal::enabled($b),'TEST opt-in opens');

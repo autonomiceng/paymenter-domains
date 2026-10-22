@@ -101,17 +101,17 @@ foreach(['register','transfer','register'] as $i=>$action){
     Cache::flush();(new RuntimeWork($clock,$freshPorts))->operation($op->id);same(1,count($GLOBALS['enomWire']['forms']),'Reconstructed worker never replays');
     expect(DB::table('domains_read_budgets')->where('server_id',$binding->serverId)->value('used')>=1,'Physical send counted');
 }
-$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new('lost-after-send.com');resetWire(['timeout'=>true]);$worker->operation($op->id);
+$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new(placeholderComFixtureName('lost-after-send-placeholder.com'));resetWire(['timeout'=>true]);$worker->operation($op->id);
 same('uncertain',$op->fresh()->state,'Timeout after send remains uncertain');same(1,count($GLOBALS['enomWire']['forms']),'Timeout sends once');
 Cache::flush();$worker->operation($op->id);same(1,count($GLOBALS['enomWire']['forms']),'Timeout never replayed');
 expect(!str_contains(json_encode($op->fresh()->attempt),'SYNTHETIC-WIRE-TOKEN'),'No credentials retained in outcome');
 echo "Installed exchange acquisition routing passed.\n";
 // Before-send capacity refusal must not consume credentials or create a financial seal.
-$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new('capacity-held.com');resetWire(['reply'=>$reply]);
+$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new(placeholderComFixtureName('capacity-held-placeholder.com'));resetWire(['reply'=>$reply]);
 $token=$limiter->acquire($binding,RequestOrigin::Interactive);$worker->operation($op->id);same(0,count($GLOBALS['enomWire']['forms']),'Occupied read slot refuses write');
 same('absent',$op->fresh()->attempt['seal'],'Physical refusal precedes seal');$limiter->release($binding,RequestOrigin::Interactive,$token);
 // Processing paused before worker entry refuses before dispatch.
-$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new('rotation-before-wire.com');resetWire(['reply'=>$reply]);
+$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new(placeholderComFixtureName('rotation-before-wire-placeholder.com'));resetWire(['reply'=>$reply]);
 $state->query=OperationClaims::query($op,$op->domain);$auth->setProcessing($binding->serverId,false);$worker->operation($op->id);same(0,count($GLOBALS['enomWire']['forms']),'Processing off sends nothing');
 // Drift after the durable seal reaches the actual private credential seam. The clock shim
 // runs once at exchange entry, with real grants and the physical slot already consumed.

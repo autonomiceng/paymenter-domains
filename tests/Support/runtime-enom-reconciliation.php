@@ -26,7 +26,7 @@ require_once __DIR__.'/staff-panel.php';
                 ReadCommand::Renewal=>'<RenewName>0</RenewName>',ReadCommand::Lock=>'<Reg-Lock>1</Reg-Lock>',
                 ReadCommand::Privacy=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
                 ReadCommand::Orders=>'<OrderCount>'.($s->fault==='none'?'0':(in_array($s->fault,['duplicate','ambiguous'],true)?'2':'1')).'</OrderCount><OrderList>'.($s->fault==='none'?'':'<Order><OrderID>901</OrderID></Order>').(in_array($s->fault,['duplicate','ambiguous'],true)?'<Order><OrderID>902</OrderID></Order>':'').'</OrderList>',
-                ReadCommand::Order=>'<Order><OrderID>'.$p['OrderID'].'</OrderID><Result>true</Result><OrderBillAmount>$99.00</OrderBillAmount>'.($s->fault==='ambiguous'&&$p['OrderID']==='902'?'':'<BillDate>'.$s->bill.'</BillDate>').'<OrderDetail><Description>'.($s->fault==='unrelated'?'unrelated.com':$s->name).'</Description><ProductType>Register</ProductType><Quantity>1</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>99.00</AmountPaid><ExpiryDateTime>2027-10-18</ExpiryDateTime></OrderDetail></Order>',
+                ReadCommand::Order=>'<Order><OrderID>'.$p['OrderID'].'</OrderID><Result>true</Result><OrderBillAmount>$99.00</OrderBillAmount>'.($s->fault==='ambiguous'&&$p['OrderID']==='902'?'':'<BillDate>'.$s->bill.'</BillDate>').'<OrderDetail><Description>'.($s->fault==='unrelated'?'unrelated-placeholder.com':$s->name).'</Description><ProductType>Register</ProductType><Quantity>1</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>99.00</AmountPaid><ExpiryDateTime>2027-10-18</ExpiryDateTime></OrderDetail></Order>',
                 default=>throw new LogicException('Unexpected recovery command'),
             };
             if($command===ReadCommand::Order&&$s->drift){$drift=$s->drift;$s->drift=null;$drift();}
@@ -54,7 +54,7 @@ require_once __DIR__.'/staff-panel.php';
         expect(!isset($op->funding['refund']),$why.' grants no refund');expect(!$account->fresh()->processing_enabled,'Read recovery leaves processing paused');
         same(1,count($GLOBALS['enomWire']['forms']),$why.' never resends Purchase');
     };
-    $op=$prepare('history-uncertain.com');$before=$money();$rebuild()->run($op->id);
+    $op=$prepare(placeholderComFixtureName('history-uncertain-placeholder.com'));$before=$money();$rebuild()->run($op->id);
     same([],$s->calls,'Missing original OrderID without accepted history makes no provider reads');$unresolved($op,'Closed history gate');
     // Test-only acceptance of the synthetic profile, never a provider acceptance claim.
     HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,86400,'enom_registration_v1'));
@@ -93,11 +93,11 @@ require_once __DIR__.'/staff-panel.php';
     $calls=$s->calls;$rebuild()->run($op->id);same($calls,$s->calls,'Rebuilt reconciler does not repeat completed reads');
     // A captured original ID bypasses history, even with history acceptance revoked.
     DB::transaction(fn()=>HistoryAcceptances::revokeLocked($binding,Action::Register));
-    $captured=$prepare('captured-charge.com',true);$rebuild()->run($captured->id);$captured->refresh();
+    $captured=$prepare(placeholderComFixtureName('captured-charge-placeholder.com'),true);$rebuild()->run($captured->id);$captured->refresh();
     same('succeeded',$captured->state,'Captured order recovers with history closed');same('captured_order',$captured->attempt['reconciliation']['source'],'Captured proof provenance retained');
     same(7,count($s->calls),'Captured completion uses seven bounded reads');same(1,count(array_filter($s->calls,fn($c)=>$c==='GetOrderDetail')),'Captured original order read exactly once');expect(!in_array('GetOrderList',$s->calls,true),'Captured ID never searches account history');
     // Funding is checked both before provider reads and again before completion.
-    $drift=$prepare('funding-charge.com',true);$before=$money();DB::table('invoices')->where('id',$drift->invoice_id)->update(['status'=>'pending']);
+    $drift=$prepare(placeholderComFixtureName('funding-charge-placeholder.com'),true);$before=$money();DB::table('invoices')->where('id',$drift->invoice_id)->update(['status'=>'pending']);
     $rebuild()->run($drift->id);same([],$s->calls,'Funding lost before recovery refuses all reads');$unresolved($drift,'Unfunded recovery');
     DB::table('invoices')->where('id',$drift->invoice_id)->update(['status'=>'paid']);
     $s->drift=static fn()=>DB::table('invoices')->where('id',$drift->invoice_id)->update(['status'=>'pending']);Cache::flush();$rebuild()->run($drift->id);

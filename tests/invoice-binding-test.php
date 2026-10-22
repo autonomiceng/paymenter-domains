@@ -15,7 +15,7 @@ $admission = new CartAdmission($native, $sellers, new CheckoutEligibility($bindi
 $binder = new InvoiceBinding($admission, $native, $prices, $clock); $binder->boot(); $binder->boot();
 $user = commerceUser(); $cart = commerceCart($user); $product = $native->product($tlds[0], 'register');
 $originalPlan = $product->plans()->where('billing_period', 3)->sole()->id;
-commerceAdd($cart, $product, 'three.com', 3); commerceAdd($cart, $product, 'one.com');
+commerceAdd($cart, $product, placeholderComFixtureName('three-placeholder.com'), 3); commerceAdd($cart, $product, placeholderComFixtureName('one-placeholder.com'));
 $hosting = commerceHosting(); commerceAdd($cart, $hosting, 'hosting'); commerceCheckout($user, $cart);
 same(1, Order::count(), 'Native order and all bindings commit together'); same(1, Invoice::count(), 'One shared native invoice');
 same(2, Domain::count(), 'Two global holdings bound'); same(2, Operation::count(), 'Two synchronous operations');
@@ -26,11 +26,11 @@ same($originalPlan, $op->policy['checkout']['plan_id'], 'Original native plan fr
 same(1, (int) $service->plan->billing_period, 'Same product annual service plan'); same($product->id, $service->product_id, 'Permanent product retained');
 same('10.40', number_format((float) $service->price, 2, '.', ''), 'Annual renewal uses holder retail');
 same(null, $service->expires_at, 'No native expiry before confirmed provider expiry'); same(null, $service->coupon_id, 'Checkout coupons do not reprice renewals');
-same('three.com', $service->label, 'Native service label is the name'); same('Register three.com: 3 years (Oct 18, 2026 - Oct 18, 2029, from registration)', $item->description, 'Native invoice summary includes name and checkout term');
+same('three-placeholder.com', $service->label, 'Native service label is the name'); same('Register three-placeholder.com: 3 years (Oct 18, 2026 - Oct 18, 2029, from registration)', $item->description, 'Native invoice summary includes name and checkout term');
 same('18.0000', $op->cost['estimated'], 'Estimated wholesale remains separate from final retail');
 expect($op->payload['setup_required'] && count($op->payload['contacts']) === 4 && !array_key_exists('epp', $op->payload), 'Contact setup snapshot bound without EPP');
 expect(!$service->properties()->where('key', 'domains_check')->exists(), 'Temporary receipt removed from service');
-$raw = DB::table('domains_operations')->where('id', $op->id)->first(); expect(!str_contains($raw->cost, '18.0000') && !str_contains($raw->policy, 'three.com'), 'Snapshots encrypted at rest');
+$raw = DB::table('domains_operations')->where('id', $op->id)->first(); expect(!str_contains($raw->cost, '18.0000') && !str_contains($raw->policy, 'three-placeholder.com'), 'Snapshots encrypted at rest');
 expect(!array_key_exists('cost', $op->toArray()) && !array_key_exists('policy', $op->toArray()), 'Internal evidence hidden from serialization');
 $before = DB::table('domains_operations')->where('id', $op->id)->first();
 Event::dispatch(new App\Events\InvoiceItem\Created($item)); Event::dispatch(new App\Events\InvoiceItem\Created($item));
@@ -38,7 +38,7 @@ same(serialize($before), serialize(DB::table('domains_operations')->where('id', 
 same(2, Operation::count(), 'Duplicate event creates no operation');
 DB::table('domains_domains')->where('id', $domain->id)->update(['provider_expires_at' => '2031-01-01']);
 Event::dispatch(new App\Events\InvoiceItem\Created($item));
-same('Register three.com: 3 years (Oct 18, 2026 - Oct 18, 2029, from registration)', $item->fresh()->description, 'Provider expiry never rewrites registration dates');
+same('Register three-placeholder.com: 3 years (Oct 18, 2026 - Oct 18, 2029, from registration)', $item->fresh()->description, 'Provider expiry never rewrites registration dates');
 DB::table('domains_domains')->where('id', $domain->id)->update(['provider_expires_at' => null]);
 // Binding/checkout facts cannot be changed through ordinary model saves.
 foreach (['term' => 1, 'amount' => '1.00', 'currency' => 'EUR', 'invoice_item_id' => 999, 'operation_key' => 'forged'] as $key => $value) {
@@ -59,7 +59,7 @@ foreach (['policy' => ['checkout', 'price', 'seller_revision'], 'cost' => ['esti
 $snapshot = $domain->fresh()->snapshot;
 foreach (['change', 'remove'] as $mutation) {
     $changed = $snapshot;
-    if ($mutation === 'remove') { unset($changed['checkout']); } else { $changed['checkout'] = ['name' => 'changed.com']; }
+    if ($mutation === 'remove') { unset($changed['checkout']); } else { $changed['checkout'] = ['name' => 'changed-placeholder.com']; }
     commerceReject(static fn () => $domain->fresh()->fill(['snapshot' => $changed])->save());
     same($snapshot, $domain->fresh()->snapshot, 'Refused domain checkout evidence stays unchanged');
 }
@@ -68,38 +68,38 @@ expect($op->fresh()->update(['policy' => $policy]), 'A new non-frozen policy key
 same($policy, $op->fresh()->policy, 'New policy evidence persists alongside frozen checkout facts');
 // A new holder after a seller change stays on its own account. Existing ownership never moves.
 $sellers->change('com', 2, $tlds[1]->server_id, true, true, $now); $nsProduct = $native->product($tlds[1], 'register');
-$cart = commerceCart($user); commerceAdd($cart, $nsProduct, 'new-account.com'); commerceAdd($cart, $nsProduct, 'same-plan.com'); commerceCheckout($user, $cart);
+$cart = commerceCart($user); commerceAdd($cart, $nsProduct, placeholderComFixtureName('new-account-placeholder.com')); commerceAdd($cart, $nsProduct, placeholderComFixtureName('same-plan-placeholder.com')); commerceCheckout($user, $cart);
 same(2, Order::count(), 'New selected account can bind new names');
-same((int) $tlds[1]->server_id, (int) Domain::where('domain', 'new-account.com')->sole()->server_id, 'Selected new account frozen');
+same((int) $tlds[1]->server_id, (int) Domain::where('domain', 'new-account-placeholder.com')->sole()->server_id, 'Selected new account frozen');
 same((int) $tlds[0]->server_id, (int) $domain->fresh()->server_id, 'Existing holding keeps original account');
-foreach (['new-account.com', 'same-plan.com'] as $name) {
+foreach (['new-account-placeholder.com', 'same-plan-placeholder.com'] as $name) {
     $bound = Domain::where('domain', $name)->sole();
     same($name, $bound->service->properties()->where('key', 'domain')->sole()->value, 'Same-plan service property belongs to its exact reservation');
     same($name, $bound->operations()->sole()->policy['checkout']['name'], 'Same-plan operation freezes its own name');
 }
-$other = commerceUser(); $cart = commerceCart($other); commerceAdd($cart, $nsProduct, 'three.com'); commerceAdd($cart, $hosting, 'hosting');
+$other = commerceUser(); $cart = commerceCart($other); commerceAdd($cart, $nsProduct, placeholderComFixtureName('three-placeholder.com')); commerceAdd($cart, $hosting, 'hosting');
 $counts = [Order::count(), Invoice::count(), Service::count(), Domain::count(), Operation::count()]; $stock = $hosting->fresh()->stock;
 commerceCheckout($other, $cart); same($counts, [Order::count(), Invoice::count(), Service::count(), Domain::count(), Operation::count()], 'Global reservation rolls back cross-account checkout'); same($stock, $hosting->fresh()->stock, 'Conflict rolls back hosting stock');
 // Failure after the first line already bound must roll back EVERY native and ledger row.
 $fail = false; Event::listen(App\Events\InvoiceItem\Created::class, static function ($e) use (&$fail): void {
-    if ($fail && str_contains($e->invoiceItem->description, 'fail-second.com')) { throw new DomainException('Synthetic second-line refusal'); }
+    if ($fail && str_contains($e->invoiceItem->description, 'fail-second-placeholder.com')) { throw new DomainException('Synthetic second-line refusal'); }
 });
-$cart = commerceCart($user); commerceAdd($cart, $nsProduct, 'rolled-first.com'); commerceAdd($cart, $nsProduct, 'fail-second.com'); commerceAdd($cart, $hosting, 'hosting');
+$cart = commerceCart($user); commerceAdd($cart, $nsProduct, placeholderComFixtureName('rolled-first-placeholder.com')); commerceAdd($cart, $nsProduct, placeholderComFixtureName('fail-second-placeholder.com')); commerceAdd($cart, $hosting, 'hosting');
 $fail = true; commerceCheckout($user, $cart); $fail = false;
 same($counts, [Order::count(), Invoice::count(), Service::count(), Domain::count(), Operation::count()], 'Late binding exception rolls back entire multi-line checkout');
-expect(!Domain::where('domain', 'rolled-first.com')->exists(), 'First reservation rolls back with second failure');
+expect(!Domain::where('domain', 'rolled-first-placeholder.com')->exists(), 'First reservation rolls back with second failure');
 // Discounted acquisition freezes its positive net; holder renewal remains independently priced.
-$cart = commerceCart($user); commerceAdd($cart, $nsProduct, 'coupon-binding.com');
+$cart = commerceCart($user); commerceAdd($cart, $nsProduct, placeholderComFixtureName('coupon-binding-placeholder.com'));
 $coupon = Coupon::create(['code' => 'BINDHALF', 'type' => 'percentage', 'value' => 50, 'applies_to' => 'price', 'recurring' => 0, 'max_uses_per_user' => 1, 'max_uses' => 2]);
 $cart->update(['coupon_id' => $coupon->id]); commerceCheckout($user, $cart);
-$discounted = Domain::where('domain', 'coupon-binding.com')->sole();
+$discounted = Domain::where('domain', 'coupon-binding-placeholder.com')->sole();
 same('3.90', $discounted->operations()->sole()->amount, 'Positive below-cost coupon amount frozen once');
 same('10.40', number_format((float) $discounted->service->price, 2, '.', ''), 'Lifetime acquisition coupon never changes annual holder retail');
 same($coupon->id, $discounted->service->coupon_id, 'Coupon association retained for native usage accounting');
 same(1, $coupon->services()->count(), 'Domain acquisition consumes a native coupon use');
 try { App\Classes\Cart::validateCoupon($coupon->code); expect(false, 'Per-user limited coupon must refuse reuse'); }
 catch (App\Exceptions\DisplayException $e) { expect(str_contains($e->getMessage(), 'maximum number'), 'Native per-user coupon limit explains refusal'); }
-same('Register one.com: 1 year (Oct 18, 2026 - Oct 18, 2027, from registration)', InvoiceItem::findOrFail(Domain::where('domain', 'one.com')->sole()->operations()->sole()->invoice_item_id)->description, 'Singular invoice wording');
+same('Register one-placeholder.com: 1 year (Oct 18, 2026 - Oct 18, 2027, from registration)', InvoiceItem::findOrFail(Domain::where('domain', 'one-placeholder.com')->sole()->operations()->sole()->invoice_item_id)->description, 'Singular invoice wording');
 // Funding locks the complete native invoice prefix BEFORE domain then operation rows.
 $funded = static function () use ($op): array {
     return DB::transaction(static function () use ($op): array {

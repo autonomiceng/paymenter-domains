@@ -14,7 +14,7 @@ same(SingletonOutcome::Success, $accepted->outcome, 'Singleton wrapper accepted'
 same([['domain' => 'example.com', 'price' => '8.95', 'premium' => false, 'duration' => '1']], $accepted->value('available'), 'Singleton preserves validated evidence');
 $upper = $singleton($wrap(array_replace($singletonRow, ['domain' => 'EXAMPLE.COM'])));
 same('example.com', $upper->value('available')[0]['domain'] ?? null, 'Singleton case-normalized exact identity');
-same(SingletonOutcome::Unknown, $singleton($wrap(array_replace($singletonRow, ['domain' => 'other.com'])))->outcome, 'Singleton wrong name unknown');
+same(SingletonOutcome::Unknown, $singleton($wrap(array_replace($singletonRow, ['domain' => 'other-placeholder.com'])))->outcome, 'Singleton wrong name unknown');
 // Covering the other name separately must not make a multi-name nested wrapper acceptable.
 same(SingletonOutcome::Unknown, $singleton($wrap($singletonRow) + ['unavailable' => [['domain' => 'example.net']]],
     ['example.com', 'example.net'])->outcome, 'Singleton wrapper with two requested names unknown');

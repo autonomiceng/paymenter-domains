@@ -22,8 +22,8 @@ app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clo
 $out=$argv[1];$shell=file_get_contents($argv[2]);$controller=new OwnedDomainController($owners);
 $actions=new OwnerActionController($owners,new OwnerSetup($clock,$ports),$inputs,new DomainManagement($bindings,$clock),$ports);
 $user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');
-$late=$newTransfer('contact-fix-placeholder.com');
-$missing=$newTransfer('no-saved-code-placeholder.com',0,true,false);
+$late=$newTransfer(placeholderComFixtureName('contact-fix-placeholder.com'));
+$missing=$newTransfer(placeholderComFixtureName('no-saved-code-placeholder.com'),0,true,false);
 ContactRecovery::hold($late->id);ContactRecovery::hold($missing->id);
 $session=app('session')->driver();$session->start();
 $request=static function()use($user,$session){$r=Illuminate\Http\Request::create('/domains','GET');$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);return $r;};

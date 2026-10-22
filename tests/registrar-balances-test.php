@@ -40,7 +40,7 @@ $renew=static function(Domain $d,string $state='awaiting_payment',array $extra=[
         'invoice_id'=>$invoice->id,'funding_basis'=>'paid_invoice','state'=>$state,'base_expires_at'=>$d->provider_expires_at,
         'payload'=>[],'policy'=>[],'attempt'=>[],'funding'=>[],...$extra]);
 };
-$d=$make('balance-window.com');
+$d=$make(placeholderComFixtureName('balance-window-placeholder.com'));
 same('8.000000',$forecast()['total'],'Paymenter due in 26 days counts despite expiry in 33');
 same(1,$forecast()['count'],'One forecast holding');
 foreach ([['2026-11-15','2026-12-15',true],['2026-12-15','2026-11-15',true],
@@ -74,20 +74,20 @@ $rate=Price::where('server_id',$a->server_id)->where('action','renew')->sole();$
 $rate->update(['wholesale'=>null,'revision'=>$rate->revision+1]);same(1,$forecast()['unknown'],'Unknown cost is counted');
 expect(str_contains(RegistrarBalances::facts($a,$clock->now())['status'],'Upcoming renewals unknown'),'Status includes unknown cost');$rate->update(['wholesale'=>$saved,'revision'=>$rate->revision+1]);
 $d->update(['billing_managed'=>false]);
-$overdue=$make('balance-overdue.com','2026-10-20');
+$overdue=$make(placeholderComFixtureName('balance-overdue-placeholder.com'),'2026-10-20');
 same('8.000000',$forecast()['total'],'Past Paymenter due date and future expiry without open invoice counts as due now');
 $overdue->update(['billing_managed'=>false]);
-$undated=$make('balance-undated.com',null);same(1,$forecast()['unknown'],'Neither date is unknown, not zero');$dueOnly=$renew($undated);same(0,$forecast()['unknown'],'An open obligation with only its invoice due date is known');
+$undated=$make(placeholderComFixtureName('balance-undated-placeholder.com'),null);same(1,$forecast()['unknown'],'Neither date is unknown, not zero');$dueOnly=$renew($undated);same(0,$forecast()['unknown'],'An open obligation with only its invoice due date is known');
 DB::table('invoices')->where('id',$dueOnly->invoice_id)->update(['due_at'=>null]);same(1,$forecast()['unknown'],'An open obligation with neither date is unknown');
 $undated->update(['billing_managed'=>false]);
 $server=App\Models\Server::find($a->server_id);$server->settings()->create(['key'=>'domains_due_days','value'=>'invalid']);
 $d->update(['billing_managed'=>true,'provider_expires_at'=>'2026-11-15']);same('8.000000',$forecast()['total'],'Only confirmed expiry remains known with invalid calendar');
 $server->settings()->where('key','domains_due_days')->delete();$d->update(['billing_managed'=>false]);
-$far=$make('balance-open.com','2027-06-01');$op=$renew($far,'held',['attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent']]);
+$far=$make(placeholderComFixtureName('balance-open-placeholder.com'),'2027-06-01');$op=$renew($far,'held',['attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent']]);
 same('8.000000',$forecast()['total'],'Open unsent obligation outside horizon counts');
 $op->update(['attempt'=>['seal'=>'sealed','dispatch_attempted_at'=>$clock->now()->format(DATE_ATOM)]]);
 same(0,$forecast()['count'],'Sent obligation excluded');
-$far->update(['billing_managed'=>false]);$proven=$make('balance-prewire.com','2027-06-01');
+$far->update(['billing_managed'=>false]);$proven=$make(placeholderComFixtureName('balance-prewire-placeholder.com'),'2027-06-01');
 $proof=['safe_code'=>'renewal_definitely_unsent','lease_expires_at'=>null,'started_at'=>$clock->now(),'request_fingerprint'=>str_repeat('a',64),
     'attempt'=>['claim_key'=>str_repeat('b',32),'seal'=>'sealed','dispatch_attempted_at'=>$clock->now()->format(DATE_ATOM),
         'send_state'=>'possibly_sent','authorized_cost'=>'8.00','renewal_mode'=>'ordinary',
@@ -95,14 +95,14 @@ $proof=['safe_code'=>'renewal_definitely_unsent','lease_expires_at'=>null,'start
     'funding'=>['claim'=>['amount'=>'10.00'],'seal'=>['amount'=>'10.00']],'cost'=>['estimated'=>'8.00','currency'=>'USD','unit'=>'term_total']];
 $renew($proven,'held',$proof);
 same('8.000000',$forecast()['total'],'Validated sealed prewire refusal remains open outside horizon');
-$proven->update(['billing_managed'=>false]);$unproven=$make('balance-unproven.com','2027-06-01');
+$proven->update(['billing_managed'=>false]);$unproven=$make(placeholderComFixtureName('balance-unproven-placeholder.com'),'2027-06-01');
 $proof['attempt']['execution']['discrepancies']=['unknown'];$renew($unproven,'held',$proof);
 same(0,$forecast()['count'],'Unvalidated sealed refusal cannot borrow definitely-unsent proof');
 $unproven->update(['billing_managed'=>false]);
-$ownerOff=$make('balance-owner-off.com');$ownerOff->update(['renewal_policy'=>['owner_auto_renew'=>false]]);
+$ownerOff=$make(placeholderComFixtureName('balance-owner-off-placeholder.com'));$ownerOff->update(['renewal_policy'=>['owner_auto_renew'=>false]]);
 same(0,$forecast()['count'],'Owner Off excludes unissued renewals');$ownerDebt=$renew($ownerOff);
 same(1,$forecast()['count'],'Owner Off preserves issued unsent debt forecast');$ownerOff->update(['billing_managed'=>false]);
-$stopped=$make('balance-stopped.com');$stopped->update(['renewal_policy'=>['renewals_stopped'=>true]]);
+$stopped=$make(placeholderComFixtureName('balance-stopped-placeholder.com'));$stopped->update(['renewal_policy'=>['renewals_stopped'=>true]]);
 same(0,$forecast()['count'],'Stopped holding excludes unissued renewals');$issued=$renew($stopped,'held');
 same(1,$forecast()['count'],'Stopped holding counts its issued unsent obligation exactly once');same('8.000000',$forecast()['total'],'Issued obligation retains its expected spending');
 DB::table('invoices')->where('id',$issued->invoice_id)->update(['status'=>'cancelled']);
@@ -112,12 +112,12 @@ $stopped->update(['renewal_policy'=>['renewals_stopped'=>true]]);
 $issued->update(['state'=>'succeeded']);$stopped->update(['provider_expires_at'=>'2027-11-20']);
 same(0,BalanceForecast::for($a,$clock->now()->modify('+1 year'))['count'],'Next cycle within its next-year window is not forecast on stopped holding');$stopped->update(['billing_managed'=>false]);
 foreach(['pending','uncertain','succeeded','rejected'] as $state){$h=$make('balance-'.$state.'.com','2026-11-01');$renew($h,$state);same(0,$forecast()['count'],'Sent/completed/retired cycle excluded');$h->update(['billing_managed'=>false]);}
-$off=$make('balance-off.com');$renew($off);$cancel=ServiceCancellation::create(['service_id'=>$off->service_id,'type'=>'end_of_period','reason'=>'Synthetic']);
+$off=$make(placeholderComFixtureName('balance-off-placeholder.com'));$renew($off);$cancel=ServiceCancellation::create(['service_id'=>$off->service_id,'type'=>'end_of_period','reason'=>'Synthetic']);
 same(1,$forecast()['count'],'Native end-of-period stop preserves issued obligation');
 $cancel->update(['type'=>'immediate']);same(0,$forecast()['count'],'Immediate cancellation excludes unsendable issued obligation');$cancel->delete();
 $off->update(['status'=>'retired']);same(0,$forecast()['count'],'Retired holding excluded');
 $off->update(['status'=>'active']);$off->service->update(['status'=>'cancelled']);same(0,$forecast()['count'],'Cancelled service excluded');
-$otherDomain=$make('balance-other.com','2026-11-01',$b);same(0,$forecast()['count'],'Forecast respects second server');$otherDomain->update(['billing_managed'=>false]);
+$otherDomain=$make(placeholderComFixtureName('balance-other-placeholder.com'),'2026-11-01',$b);same(0,$forecast()['count'],'Forecast respects second server');$otherDomain->update(['billing_managed'=>false]);
 // Daily and manual reads use the same provider-login limiter, without requiring write activation.
 $readState=(object)['calls'=>0,'fail'=>false];$registry=new RegistrarRegistry;
 $verify=new class implements AccountVerifier {public function verify(Environment $e,array $c):string{return $c['token'];}};

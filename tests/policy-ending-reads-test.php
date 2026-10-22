@@ -42,13 +42,13 @@ $postWatch = static function (bool $confirm = false) use ($request, $watchContro
 };
 // A page with distinct endings plus an owned native service exercises the shared batch projection.
 $watchIds = [$id];
-foreach (['second.co.uk', 'third.net'] as $name) {
+foreach (['second.co.uk', 'third-placeholder.net'] as $name) {
     $row = (array) DB::table('domains_watch_names')->where('id', $id)->first(); unset($row['id']);
     $watchIds[] = DB::table('domains_watch_names')->insertGetId([...$row, 'canonical_name' => $name]);
 }
 $managed = DB::table('domains_domains')->insertGetId(['service_id' => $service->id, 'user_id' => $owner->id,
     'server_id' => $tlds[0]->server_id, 'registrar_key' => 'enom', 'account_fingerprint' => $tlds[0]->account_fingerprint,
-    'domain' => 'managed.com', 'reservation_name' => 'managed.com', 'sld' => 'managed', 'tld' => 'com', 'status' => 'active']);
+    'domain' => 'managed-placeholder.com', 'reservation_name' => 'managed-placeholder.com', 'sld' => 'managed-placeholder', 'tld' => 'com', 'status' => 'active']);
 foreach (['uk' => true, 'co.uk' => false, 'net' => false] as $ending => $enabled) {
     DB::table('domains_sales_policies')->insert(['tld' => $ending, 'transfer_enabled' => $enabled]);
 }
@@ -83,12 +83,12 @@ $fill = static function (int $size): void {
 $paths = [
     'check' => static function () use ($controller, $request) {
         $r = $request(); $key = FormKeys::issue($r, 'search');
-        $response = $controller->check($request(['domain' => 'check.com', '_request_key' => $key]));
+        $response = $controller->check($request(['domain' => 'check-placeholder.com', '_request_key' => $key]));
         same('available', $response->getData(true)['status'], 'Actual check POST succeeds');
     },
     'order' => static function () use ($controller, $request) {
-        $r = $request(); $key = FormKeys::issue($r, 'order:order.com');
-        $response = $controller->order($request(['domain' => 'order.com', 'action' => 'register', 'term' => '1', '_request_key' => $key]));
+        $r = $request(); $key = FormKeys::issue($r, 'order:order-placeholder.com');
+        $response = $controller->order($request(['domain' => 'order-placeholder.com', 'action' => 'register', 'term' => '1', '_request_key' => $key]));
         same(route('cart'), $response->getTargetUrl(), 'Actual order POST reaches native cart');
     },
     'watch-get' => static function () use ($watchController, $request, $id) {
@@ -133,7 +133,7 @@ foreach (['name.unknown', 'sub.name.co.uk', 'sub.name.uk', 'sub.name.unknown', '
         $message(fn () => PolicyEndings::parse($input)), 'Unknown/subdomain/syntax refusal parity');
 }
 same(['uk'], PolicyEndings::transferEnabled(['second.co.uk']), 'Summary keeps any enabled suffix even when the longer policy is disabled');
-same([], PolicyEndings::transferEnabled(['third.net']), 'Disabled transfer ending omitted');
+same([], PolicyEndings::transferEnabled(['third-placeholder.net']), 'Disabled transfer ending omitted');
 // Warm display never becomes money authority, including raw changes without cache invalidation.
 $store->endings(); DB::table('domains_sales_policies')->where('tld', 'com')->update(['transfer_enabled' => false]);
 same(null, $transfers->current($owner, $id, $at + 2)['offer'], 'Disabled current transfer policy refuses a warm offer');
@@ -141,7 +141,7 @@ same(null, $summaries->one($owner, 'watch', $id, $at + 2)->urls['compareTransfer
 DB::table('domains_sales_policies')->where('tld', 'com')->update(['transfer_enabled' => true]);
 $product = $native->product($tlds[0], 'register');
 $product->plans()->where('billing_period', 1)->sole()->prices()->where('currency_code', 'USD')->update(['price' => '99.00']);
-$r = $request(); $key = FormKeys::issue($r, 'order:changed.com');
-$response = $controller->order($request(['domain' => 'changed.com', 'action' => 'register', 'term' => '1', '_request_key' => $key]));
-same(route('domains.domains.search', ['name' => 'changed.com']), $response->getTargetUrl(), 'Order refuses a changed authoritative price inside display TTL');
+$r = $request(); $key = FormKeys::issue($r, 'order:changed-placeholder.com');
+$response = $controller->order($request(['domain' => 'changed-placeholder.com', 'action' => 'register', 'term' => '1', '_request_key' => $key]));
+same(route('domains.domains.search', ['name' => 'changed-placeholder.com']), $response->getTargetUrl(), 'Order refuses a changed authoritative price inside display TTL');
 $nativeSuccessful = true; echo "Bounded policy rows, indexed suffix parity, batch links and uncached money decisions passed.\n";

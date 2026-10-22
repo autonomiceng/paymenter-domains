@@ -3,15 +3,15 @@
 declare(strict_types=1);
 require __DIR__.'/Support/owner-records.php';
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-[$d,$driver]=$holding('record-errors.com');storefrontViews();
+[$d,$driver]=$holding(placeholderComFixtureName('record-errors-placeholder.com'));storefrontViews();
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 \Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $observer=new \Paymenter\Extensions\Servers\Domains\Services\DomainObservation($readBindings,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),$ports);
 $observer->run($d->id);
 foreach(['dns'=>['records'=>[['name'=>'@','type'=>'A','address'=>'8.8.8.8']],'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest([])],
     'srv'=>['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>0,'weight'=>0,'port'=>443,'target'=>'sip.example.com.']],'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest([],'srv')],
-    'glue_add'=>['host'=>'ns1.record-errors.com','ip'=>'8.8.8.8']]as$action=>$payload){Illuminate\Support\Facades\Cache::flush();same('succeeded',$management->run($submit($d,$driver,$action,$payload)->id,$driver)->state,'Proven editable state');}
-Illuminate\Support\Facades\Cache::flush();same('succeeded',$management->run($submit($d,$driver,'glue_add',['host'=>'ns2.record-errors.com','ip'=>'1.1.1.1'])->id,$driver)->state,'Second known host');
+    'glue_add'=>['host'=>'ns1.record-errors-placeholder.com','ip'=>'8.8.8.8']]as$action=>$payload){Illuminate\Support\Facades\Cache::flush();same('succeeded',$management->run($submit($d,$driver,$action,$payload)->id,$driver)->state,'Proven editable state');}
+Illuminate\Support\Facades\Cache::flush();same('succeeded',$management->run($submit($d,$driver,'glue_add',['host'=>'ns2.record-errors-placeholder.com','ip'=>'1.1.1.1'])->id,$driver)->state,'Second known host');
 \Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $observer=new \Paymenter\Extensions\Servers\Domains\Services\DomainObservation($readBindings,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),$ports);
 $observer->run($d->id);
@@ -19,7 +19,7 @@ foreach(['dns'=>['records'=>[['name'=>'bad host','type'=>'A','address'=>'secret-
     'srv'=>['records'=>[['service'=>'_sip','protocol'=>'wrong','priority'=>'999999','weight'=>'-1','port'=>'bad','target'=>'no-dot']],'preimage_digest'=>str_repeat('a',64)],
     'ds_add'=>['ds'=>['key_tag'=>'65536','algorithm'=>'99','digest_type'=>'9','digest'=>'secret-invalid-value']],
     'ds_delete'=>['ds'=>[]], 'glue_add'=>['host'=>'foreign.example.com','ip'=>'127.0.0.1'],
-    'glue_update'=>['host'=>'ns1.record-errors.com','ip'=>'::ffff:8.8.8.8'], 'glue_delete'=>['host'=>'foreign.example.com'],
+    'glue_update'=>['host'=>'ns1.record-errors-placeholder.com','ip'=>'::ffff:8.8.8.8'], 'glue_delete'=>['host'=>'foreign.example.com'],
     'nameservers'=>['nameservers'=>implode("\n",array_map(fn($i)=>'ns'.$i.'.example.com',range(1,13)))]]as$action=>$payload){
     $payload+=['transfer_code'=>'private-extra-not-for-html','contact'=>['first_name'=>'private-extra-not-for-html'],'profile_id'=>'private-extra-not-for-html'];
     $before=Operation::count();$r=$post($action,$payload);$nonce=$r->request->get('_request_key');$response=$controller->manage($r,$d->id,$action);same($before,Operation::count(),'Invalid '.$action.' queues nothing');

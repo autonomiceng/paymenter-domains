@@ -43,7 +43,7 @@ $attacker = new class extends RegistrationTransport {
     public function attack($target, $op, $ctx): DriverResult { return $target->sendRegistration($op, $ctx, [], 'https://ote.namesilo.com/apibatch', 25000); }
     protected function sendRegistration(AdmittedOperation $o, RequestContext $c, array $p, string $s, int $t): DriverResult { throw new LogicException; }
 };
-$forged = new AdmittedOperation($binding, new Query('forged.com', Action::Register, 1), 'forged', 'claim', 1, 'funding', str_repeat('a', 64), new Money('1.00', 'USD'));
+$forged = new AdmittedOperation($binding, new Query('forged-placeholder.com', Action::Register, 1), 'forged', 'claim', 1, 'funding', str_repeat('a', 64), new Money('1.00', 'USD'));
 $ctx = new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+25 seconds'), new RequestBudget(10), $clock);
 $before = $registration->calls; commerceReject(fn () => $attacker->attack($protocol, $forged, $ctx)); same($before, $registration->calls, 'NameSilo sibling guard makes zero calls');
 foreach (['different', 'missing', 'closure', 'account', 'registrar'] as $mode) {
@@ -60,7 +60,7 @@ foreach (['different', 'missing', 'closure', 'account', 'registrar'] as $mode) {
     commerceReject(fn () => $engine->execute($op->id)); same(null, $op->fresh()->attempt, 'Profile composition refused before claim');
     same($before, $registration->calls, 'Mismatched profile composition makes zero calls');
 }
-$makeEngine($binding, $exchange); $op = $nsNew('missing-servers.com'); $before = $registration->calls;
+$makeEngine($binding, $exchange); $op = $nsNew(placeholderComFixtureName('missing-servers-placeholder.com')); $before = $registration->calls;
 $result = $engine->execute($op->id); same($op->state, $result->state, 'Missing desired setup remains editable before claim');
 same(null, $result->attempt, 'Missing desired servers consume no acquisition attempt');
 same($op->safe_code, $result->safe_code, 'No unrecoverable hold is invented before owner setup');

@@ -32,7 +32,7 @@ foreach ($wire->calls as $call) { same(25000, $call[3], 'Wire timeout capped'); 
 foreach ([
     ['GetDomainInfo', 'synthetic-uid', 'other-uid', 'identity_unconfirmed'],
     ['GetDomainInfo', 'DomainNameID="123"', '', 'identity_unconfirmed'],
-    ['GetDomainInfo', 'example.com', 'other.com', 'identity_unconfirmed'],
+    ['GetDomainInfo', 'example.com', 'other-placeholder.com', 'identity_unconfirmed'],
     ['GetDomainExp', '10/19/2027', '10/20/2027', 'expiry_disagrees'],
     ['GetExtendInfo', '10/19/2027', '10/20/2027', 'expiry_disagrees'],
     ['GetDomainExp', '10/19/2027 11:14:00 PM', '10/19/2027', 'expiry_disagrees'],

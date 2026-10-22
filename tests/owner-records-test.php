@@ -5,7 +5,7 @@ require __DIR__.'/Support/owner-records.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\ManagementPayload;
-[$d,$driver]=$holding('record-owner.com');storefrontViews();
+[$d,$driver]=$holding(placeholderComFixtureName('record-owner-placeholder.com'));storefrontViews();
 $server=App\Models\Server::findOrFail($d->server_id);$server->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $dto=$owners->present($d->fresh());same(null,$dto->management['dns']['records'],'Unknown DNS is held, never an empty authoritative list');
 expect(!$dto->changesUnavailable,'Available DS/child-host additions suppress the settings-unavailable notice');
@@ -21,9 +21,9 @@ $cases=[
     'dns'=>['records'=>[['name'=>'@','type'=>'TXT','address'=>' exact + % é雪  text ','mx_pref'=>''],[]],'preimage_digest'=>ManagementPayload::digest([])],
     'srv'=>['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'0','weight'=>'5','port'=>'443','target'=>'sip.example.com.']],'preimage_digest'=>ManagementPayload::digest([],'srv')],
     'ds_add'=>['ds'=>$ds], 'ds_delete'=>['ds'=>$ds],
-    'glue_add'=>['host'=>'ns1.record-owner.com','ip'=>'2606:4700:4700::1111'],
-    'glue_update'=>['host'=>'ns1.record-owner.com','ip'=>'8.8.8.8','old_ip'=>'127.0.0.1'],
-    'glue_delete'=>['host'=>'ns1.record-owner.com'],
+    'glue_add'=>['host'=>'ns1.record-owner-placeholder.com','ip'=>'2606:4700:4700::1111'],
+    'glue_update'=>['host'=>'ns1.record-owner-placeholder.com','ip'=>'8.8.8.8','old_ip'=>'127.0.0.1'],
+    'glue_delete'=>['host'=>'ns1.record-owner-placeholder.com'],
 ];
 foreach($cases as$action=>$payload){
     Cache::flush();$before=Operation::count();$io=count($state->calls);$r=$post($action,$payload);$stale=clone $r;

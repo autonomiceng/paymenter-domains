@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CostUnit, Disposition, DriverResult, Environment, Evidence, Money, Query, QuoteEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, DomainOperations, OperationClaims, RegistrarFactories, RegistrarRegistry, RegistrationPreflight, WriteAcceptance, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
-$op = $new('fresh-preflight.com'); $query = OperationClaims::query($op, $op->domain);
+$op = $new(placeholderComFixtureName('fresh-preflight-placeholder.com')); $query = OperationClaims::query($op, $op->domain);
 $state = (object) ['calls' => 0, 'change' => '', 'revoke' => false];
 $verifier = new class implements AccountVerifier {
     public function verify(Environment $e, #[SensitiveParameter] array $credentials): string { return 'verified-stable-id'; }

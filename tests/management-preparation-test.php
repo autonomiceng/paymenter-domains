@@ -6,7 +6,7 @@ use App\Models\InvoiceTransaction;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\ManagementPreparation;
-[$d,$driver]=$holding('manage-dispatch-day.com'); $state->privacy=false;
+[$d,$driver]=$holding(placeholderComFixtureName('manage-dispatch-day-placeholder.com')); $state->privacy=false;
 $product->server->settings()->create(['key'=>'domains_privacy_price','value'=>'5.00','type'=>'string']);
 $op=$submit($d,$driver,'privacy_purchase'); $requestDay=$clock->now();
 DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);

@@ -56,7 +56,7 @@ foreach (['flags', 'registry', 'contacts', 'schema'] as $bad) {
 }
 expect($holdLevels !== [] && array_unique($holdLevels) === [1], 'Contact hold owns a fresh transaction after refused claim commits');
 // Valid frozen contacts are revalidated at final seal even after a privileged out-of-band change.
-$op = $new('contacts-changed-before-seal.com');
+$op = $new(placeholderComFixtureName('contacts-changed-before-seal-placeholder.com'));
 $preflight->during = static function ($claimed) use ($inject): void {
     $payload = $claimed->payload; $payload['contacts']['tech']['phone'] = 'invalid';
     $inject($claimed, ['payload' => $payload]);
@@ -66,7 +66,7 @@ same('seal_authority_invalid', $result->safe_code, 'Invalid postclaim contacts r
 same('absent', $result->attempt['seal'], 'Refused final seal never opens a grant');
 // Real claimed and sealed rows cannot be readmitted even if somebody relabels them contact-held.
 foreach ([false, true] as $seal) {
-    $op = $new($seal ? 'contacts-sealed-recovery.com' : 'contacts-claimed-recovery.com');
+    $op = $new($seal ? 'contacts-sealed-recovery-placeholder.com' : 'contacts-claimed-recovery-placeholder.com');
     [$claimed, $domain, $binding] = $claims->claim($op->id);
     if ($seal) {
         $context = new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,
@@ -80,8 +80,8 @@ foreach ([false, true] as $seal) {
 }
 $role = Role::create(['name' => 'Synthetic contact manager', 'permissions' => ['admin.domains.manage']]);
 $staff = commerceUser(); $staff->update(['role_id' => $role->id]);
-$base = $new('contact-evidence-matrix.com');
-$manageBase = $new('contact-close-evidence-matrix.com');
+$base = $new(placeholderComFixtureName('contact-evidence-matrix-placeholder.com'));
+$manageBase = $new(placeholderComFixtureName('contact-close-evidence-matrix-placeholder.com'));
 $management = Operation::create(['domain_id' => $manageBase->domain_id, 'service_id' => $manageBase->service_id, 'server_id' => $manageBase->server_id,
     'registrar_key' => $manageBase->registrar_key, 'account_fingerprint' => $manageBase->account_fingerprint, 'authority_generation' => 1,
     'operation_key' => 'contact-finance-close', 'action' => 'contacts', 'term' => 1, 'currency' => 'USD', 'amount' => '0.00',

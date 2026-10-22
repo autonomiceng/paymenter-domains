@@ -126,7 +126,7 @@ $new=static function(string $name,string $action)use($user,$native,$tlds,$clock,
     $state->query=OperationClaims::query($op,$op->domain);return $op->fresh();
 };
 // Corruption must be refused by the selector before an engine can claim or read.
-$op=$new('route-guards.com','register');$attempt=$op->attempt;$readCount=$state->reads;
+$op=$new(placeholderComFixtureName('route-guards-placeholder.com'),'register');$attempt=$op->attempt;$readCount=$state->reads;
 $refused(fn()=>$transferPort->execute($op->id),'Acquisition operation binding changed.');
 foreach(['account_fingerprint'=>str_repeat('f',64),'server_id'=>$other->serverId,'registrar_key'=>'namesilo'] as $field=>$value){
     $original=$op->getRawOriginal($field);DB::table('domains_operations')->where('id',$op->id)->update([$field=>$value]);

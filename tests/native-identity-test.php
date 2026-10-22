@@ -16,7 +16,7 @@ $make=function(Product $product,string $name,?int $planId=null)use($owner):Servi
         'plan_id'=>$planId??$product->plans()->where('billing_period',1)->firstOrFail()->id,'quantity'=>1,'price'=>'10.00','currency_code'=>'USD','status'=>'pending']);
     $s->properties()->create(['key'=>'domain','name'=>'Domain','value'=>$name]);return $s;
 };
-$s=$make($p,'before-ledger.com');$host=$make($hosting,'hosting.example');
+$s=$make($p,'before-ledger-placeholder.com');$host=$make($hosting,'hosting.example');
 $property=$s->properties()->where('key','domain')->sole();$order=$s->order;
 $coupon=App\Models\Coupon::create(['code'=>'identity','type'=>'fixed','value'=>1]);$s->coupon_id=$coupon->id;$s->save();
 $parent=DB::table('config_options')->insertGetId(['name'=>'parent']);
@@ -70,18 +70,18 @@ $clean=static function(string $model,int $id,string $field,mixed $value) {
 $rejects=[
     'clean service owner'=>fn()=>$clean(Service::class,$s->id,'user_id',$other->id)->increment('id',0,['user_id'=>$other->id]),
     'clean order owner'=>fn()=>$clean(Order::class,$order->id,'user_id',$other->id)->decrement('id',0,['user_id'=>$other->id]),
-    'clean canonical property'=>fn()=>$clean(Property::class,$property->id,'value','clean-escape.com')->increment('id',0,['value'=>'clean-escape.com']),
+    'clean canonical property'=>fn()=>$clean(Property::class,$property->id,'value','clean-escape-placeholder.com')->increment('id',0,['value'=>'clean-escape-placeholder.com']),
     'json-selector property'=>fn()=>$property->fresh()->increment('id',0,['value->alias'=>'escape']),
     'case service owner'=>fn()=>$s->fresh()->increment('id',0,['USER_ID'=>$other->id]),
     'case order owner'=>fn()=>$order->fresh()->decrement('id',0,['USER_ID'=>$other->id]),
-    'case property value'=>fn()=>$property->fresh()->increment('id',0,['VALUE'=>'case-escape.com']),
+    'case property value'=>fn()=>$property->fresh()->increment('id',0,['VALUE'=>'case-escape-placeholder.com']),
     'case property morph'=>fn()=>$property->fresh()->decrement('id',0,['MODEL_ID'=>$host->id]),
     'case configuration morph'=>fn()=>ServiceConfig::findOrFail($config)->increment('id',0,['CONFIGURABLE_ID'=>$host->id]),
     'case marker morph'=>fn()=>$p->settings()->firstOrFail()->decrement('id',0,['SETTINGABLE_ID'=>$hosting->id]),
     'case proposed route'=>fn()=>$host->fresh()->increment('id',0,['PRODUCT_ID'=>$p->id]),
     'case expiry'=>fn()=>$s->fresh()->increment('id',0,['EXPIRES_AT'=>'2028-01-01']),
     'case property key onto route'=>fn()=>$host->properties()->where('key','domain')->sole()->increment('id',0,['MODEL_ID'=>$s->id]),
-    'numeric property value'=>fn()=>$property->fresh()->increment('id',0,['value'=>'numeric-escape.com']),
+    'numeric property value'=>fn()=>$property->fresh()->increment('id',0,['value'=>'numeric-escape-placeholder.com']),
     'numeric property morph'=>fn()=>$property->fresh()->decrement('id',0,['model_id'=>$host->id]),
     'numeric configuration'=>fn()=>ServiceConfig::findOrFail($config)->increment('id',0,['config_value_id'=>$option]),
     'numeric configuration morph'=>fn()=>ServiceConfig::findOrFail($config)->decrement('id',0,['configurable_id'=>$host->id]),
@@ -95,7 +95,7 @@ $rejects=[
     'partial empty server identity'=>fn()=>App\Models\Server::select('id')->findOrFail($emptyServer->id)->update(['extension'=>'Other']),
     'partial service owner'=>fn()=>Service::select('id')->findOrFail($s->id)->update(['user_id'=>$other->id]),
     'partial service delete'=>fn()=>Service::select('id')->findOrFail($s->id)->delete(),
-    'partial canonical property'=>fn()=>Property::select('id','value')->findOrFail($property->id)->update(['value'=>'partial-escape.com']),
+    'partial canonical property'=>fn()=>Property::select('id','value')->findOrFail($property->id)->update(['value'=>'partial-escape-placeholder.com']),
     'partial property delete'=>fn()=>Property::select('id')->findOrFail($property->id)->delete(),
     'partial config'=>fn()=>ServiceConfig::select('id')->findOrFail($config)->update(['config_value_id'=>$option]),
     'partial product'=>fn()=>Product::select('id')->findOrFail($p->id)->delete(),
@@ -136,13 +136,13 @@ $rejects=[
     'property key'=>fn()=>$property->fresh()->update(['key'=>'label']),
     'property type'=>fn()=>$property->fresh()->update(['model_type'=>$other->getMorphClass()]),
     'property move onto route'=>fn()=>$host->properties()->where('key','domain')->sole()->update(['model_id'=>$s->id]),
-    'property duplicate'=>fn()=>$s->properties()->create(['key'=>'domain','value'=>'duplicate.com']),
+    'property duplicate'=>fn()=>$s->properties()->create(['key'=>'domain','value'=>'duplicate-placeholder.com']),
     'property definition cascade'=>fn()=>$definition->delete(),
     'route category cascade'=>fn()=>$p->category->delete(),
     'service model'=>fn()=>$s->fresh()->update(['user_id'=>$other->id]),
     'service product'=>fn()=>$s->fresh()->update(['product_id'=>$hosting->id]),
     'service proposed route'=>fn()=>$host->fresh()->update(['product_id'=>$p->id]),
-    'property model'=>fn()=>$property->fresh()->update(['value'=>'changed.com']),
+    'property model'=>fn()=>$property->fresh()->update(['value'=>'changed-placeholder.com']),
     'property move off route'=>fn()=>$property->fresh()->update(['model_id'=>$host->id]),
     'product escape'=>fn()=>$p->fresh()->update(['server_id'=>null]),
     'marker strip'=>fn()=>$p->settings()->firstOrFail()->delete(),
@@ -157,7 +157,7 @@ $rejects=[
 foreach($rejects as $label=>$attempt){identityReject($attempt,$label);
     same($owner->id,(int)$s->fresh()->user_id,$label.' retains service owner');
     same($owner->id,(int)$order->fresh()->user_id,$label.' retains order owner');
-    same('before-ledger.com',$property->fresh()->value,$label.' retains name');
+    same('before-ledger-placeholder.com',$property->fresh()->value,$label.' retains name');
     same(0,DB::transactionLevel(),$label.' does not leak transactions');
 }
 // Original and proposed config morphs are checked separately, including a hosting config moved onto the route.

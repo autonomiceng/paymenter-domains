@@ -18,9 +18,9 @@ $writes = 0; $loseResponse = false;
 $writer = new RenewalWriter($binding, $features, $accepted, fn () => $engine, static function ($origin, $command, $params, $timeout) use (&$writes, &$loseResponse) {
     same(0, DB::transactionLevel(), 'Renewal send outside locks'); expect($timeout > 0 && $timeout <= 25000, 'Bounded send');
     same('https://ote.namesilo.com/apibatch', $origin, 'Original NameSilo route'); same('renewDomain', $command, 'Only holder renewal');
-    same(['domain' => 'native-history.com', 'years' => 1, 'auto_renew' => 0], $params, 'Fixed annual term with explicit auto-renew off'); $writes++;
+    same(['domain' => 'native-history-placeholder.com', 'years' => 1, 'auto_renew' => 0], $params, 'Fixed annual term with explicit auto-renew off'); $writes++;
     if ($loseResponse) { throw new RuntimeException('Synthetic response loss'); }
-    return json_encode(['request' => ['operation' => $command], 'reply' => ['code' => 300, 'detail' => 'synthetic', 'domain' => 'native-history.com', 'order_amount' => '8.95']]);
+    return json_encode(['request' => ['operation' => $command], 'reply' => ['code' => 300, 'detail' => 'synthetic', 'domain' => 'native-history-placeholder.com', 'order_amount' => '8.95']]);
 });
 $completion = new RenewalCompletion($renewBindings, $clock);
 $holding->service->product->server->settings()->updateOrCreate(['key' => 'domains_manual_renewals_enabled'], ['value' => true, 'type' => 'boolean']);

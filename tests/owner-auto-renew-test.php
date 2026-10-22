@@ -19,7 +19,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,OwnerAutoRene
 $preference=new OwnerAutoRenew($clock);$controller=new OwnerAutoRenewController($owners,$preference);
 $session=app('request')->session();$other=commerceUser();
 $holder=static function(string $name)use($prepare,$reconcile){[$op,$binding]=$prepare($name);same('succeeded',$reconcile->run($op->id)->state,'Confirmed registration');return [$op->domain()->firstOrFail(),$binding];};
-[$d,$binding]=$holder('owner-switch.com');$server=$product->server;
+[$d,$binding]=$holder('owner-switch-placeholder.com');$server=$product->server;
 foreach(['domains_manual_renewals_enabled','domains_billing_enabled'] as $key){$server->settings()->updateOrCreate(['key'=>$key],['value'=>true,'type'=>'boolean']);}
 $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
 $req=static function($domain,array $data,$actor=null,string $intent='auto-renew')use($session,$user):Request {
@@ -59,7 +59,7 @@ $before=Invoice::count();same(null,$billing->invoice($d->id),'Off skips schedule
 try{$controller->save($req($d,['enabled'=>'1'],$other),$d->id);expect(false,'Foreign HTTP owner refused');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}
 commerceReject(fn()=>$preference->set($other,$d->id,true));same(false,$d->fresh()->renewal_policy['owner_auto_renew'],'Foreign actor changes nothing');
 try{$controller->save($req($d,['enabled'=>'1'],null,'renew'),$d->id);expect(false,'Wrong intent refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Intent bound to action');}
-[$second]=$holder('owner-other-key.com');
+[$second]=$holder('owner-other-key-placeholder.com');
 try{$controller->save($req($second,['enabled'=>'1']),$d->id);expect(false,'Other domain key refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Intent bound to domain');}
 foreach([[],['enabled'=>'false'],['enabled'=>['1']],['enabled'=>'0'],['enabled'=>'0','confirmed'=>'0']] as $bad){
     $session->forget('errors');$controller->save($req($d,$bad),$d->id);expect($session->get('errors')?->has('auto-renew')===true,'Invalid preference or missing confirmation refused');
@@ -101,7 +101,7 @@ foreach(['staff','cancellation'] as $stop){
     $cancel?->delete();
 }
 // All switch lifecycle refusals are checked at the write, independently of presentation.
-[$held]=$holder('owner-lifecycle.com');$policy=$held->renewal_policy;
+[$held]=$holder('owner-lifecycle-placeholder.com');$policy=$held->renewal_policy;
 foreach(['status','service','expiry','managed','pending'] as $case){
     DB::table('domains_domains')->where('id',$held->id)->update(['provenance'=>$case==='pending'?'adoption_pending':'purchased','status'=>$case==='status'?'redemption':'active','provider_expires_at'=>$case==='expiry'?null:'2027-10-18','billing_managed'=>$case!=='managed']);
     $held->service->update(['status'=>$case==='service'?'cancelled':'active']);
@@ -137,7 +137,7 @@ $ticket=\Paymenter\Extensions\Servers\Domains\Services\StaffHoldingReview::ticke
 (new \Paymenter\Extensions\Servers\Domains\Services\StaffHoldingReview($guard,$clock))->run($staffActor,$second->id,'resume',$ticket,'Resume after ownership review');
 same('owner',$owners->present($second->fresh())->renewalOff,'Staff resume retains owner Off');
 // A rejected domain save never creates a false audit entry.
-[$saveDomain]=$holder('owner-save-failure.com');$saveVeto=true;
+[$saveDomain]=$holder('owner-save-failure-placeholder.com');$saveVeto=true;
 \Paymenter\Extensions\Servers\Domains\Models\Domain::updating(static function($row)use(&$saveVeto,$saveDomain){if($row->id===$saveDomain->id&&$saveVeto){return false;}});
 $beforeAudit=WatchAudit::where('event','owner_auto_renew')->count();
 commerceReject(fn()=>$preference->set($user,$saveDomain->id,false));
@@ -145,7 +145,7 @@ same(null,$saveDomain->fresh()->renewal_policy['owner_auto_renew']??null,'Domain
 same($beforeAudit,WatchAudit::where('event','owner_auto_renew')->count(),'Rejected save creates no audit');$saveVeto=false;
 $preference->set($user,$saveDomain->id,false);
 // Audit failure rolls back the preference. Repeated attempts need no permanent marker.
-[$auditDomain]=$holder('owner-audit-failure.com');$veto=true;$auditThrows=false;
+[$auditDomain]=$holder('owner-audit-failure-placeholder.com');$veto=true;$auditThrows=false;
 WatchAudit::creating(static function($row)use(&$veto,&$auditThrows){if($row->event==='owner_auto_renew'){if($auditThrows){throw new RuntimeException('Synthetic audit storage unavailable');}if($veto){return false;}}});
 commerceReject(fn()=>$preference->set($user,$auditDomain->id,false));
 same(null,$auditDomain->fresh()->renewal_policy['owner_auto_renew']??null,'Audit veto rolls back preference');$veto=false;

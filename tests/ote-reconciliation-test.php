@@ -39,7 +39,7 @@ foreach (['2026-10-19 00:37:59', '2026-10-19 00:40:00', '2026-02-30 00:38:49', '
 foreach (['total' => '8.96', 'order_number' => '902', 'order_date' => '2026-10-19 00:39:00'] as $field => $value) {
     same(false, ReconciliationProbe::consistent($header, array_replace($detail, [$field => $value]), $from, $to), 'Header and detail must agree');
 }
-foreach ([['description' => 'unrelated.com - registration'], ['description' => 'contract-ote-123456789abc.com - renewal'],
+foreach ([['description' => 'unrelated-placeholder.com - registration'], ['description' => 'contract-ote-123456789abc.com - renewal'],
     ['description' => 'contract-ote-123456789abc.org - registration'], ['years_qty' => '2'], ['status' => 'Credited'],
     ['price' => '8.96'], ['subtotal' => '8.96'], ['subtotal' => '0.00'], ['subtotal' => false], ['subtotal' => '8.950'],
     ['credited_amount' => null], ['credited_date' => null]] as $bad) {
@@ -89,7 +89,7 @@ $probe = static function (array $headers, array $details, int $cap = 15, bool $f
         }
         $wire->receipt['reconciliation'] = $facts; $wire->save();
         $stored = file_get_contents($output.'/receipt.json');
-        foreach (['contract-ote-123456789abc.com', 'unrelated.com', '8.95', 'offline-secret-token', '901'] as $value) {
+        foreach (['contract-ote-123456789abc.com', 'unrelated-placeholder.com', '8.95', 'offline-secret-token', '901'] as $value) {
             expect(!str_contains($stored, $value), 'Scalar account/financial values omitted');
         }
         return [$facts, $commands];

@@ -13,8 +13,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing,
 $guard=new NativeDomainGuard(new HolderPricing($prices),$clock);$guard->boot();
 $billing=new DomainBilling($bindings,$guard,$clock);Queue::fake();
 $controller=new OwnerRenewalController($owners,$billing);$session=app('request')->session();$other=commerceUser();
-[$source]=$prepare('owner-renew.com');same('succeeded',$reconcile->run($source->id)->state,'Owner registration confirmed');
-[$lateSource]=$prepare('owner-renew-late.com');same('succeeded',$reconcile->run($lateSource->id)->state,'Late registration confirmed');
+[$source]=$prepare(placeholderComFixtureName('owner-renew-placeholder.com'));same('succeeded',$reconcile->run($source->id)->state,'Owner registration confirmed');
+[$lateSource]=$prepare(placeholderComFixtureName('owner-renew-late-placeholder.com'));same('succeeded',$reconcile->run($lateSource->id)->state,'Late registration confirmed');
 $d=$source->domain()->firstOrFail();$late=$lateSource->domain()->firstOrFail();$server=$product->server;Queue::fake();storefrontViews();
 $setting=static fn(string $key,bool $value)=>$server->settings()->updateOrCreate(['key'=>$key],['value'=>$value,'type'=>'boolean']);
 $req=static function($domain,array $data,$actor=null,?string $intent=null)use($user,$session):Request {
@@ -110,7 +110,7 @@ $first=$req($d,['years'=>'2']);$stale=clone $first;$response=$controller->renew(
 $op=Operation::where('domain_id',$d->id)->where('action','renew')->sole();$invoice=Invoice::findOrFail($op->invoice_id);
 same(route('invoices.show',$invoice),$response->getTargetUrl(),'Owner lands on the renewal invoice');
 same([2,'awaiting_payment','2027-10-11',(int)$user->id],[(int)$op->term,$op->state,$invoice->due_at->format('Y-m-d'),(int)$invoice->user_id],'Requested term, due date and owner recorded');
-same('Renew owner-renew.com: Oct 18, 2027 - Oct 18, 2029',$invoice->items->sole()->description,'Invoice names the requested term');
+same('Renew owner-renew-placeholder.com: Oct 18, 2027 - Oct 18, 2029',$invoice->items->sole()->description,'Invoice names the requested term');
 $replay(fn()=>$controller->renew($stale,$d->id));$issued=$ledger();
 same(route('invoices.show',$invoice),$controller->renew($req($d,['years'=>'2']),$d->id)->getTargetUrl(),'Fresh duplicate returns the same invoice');
 same($issued,$ledger(),'Duplicate submit creates no second invoice');

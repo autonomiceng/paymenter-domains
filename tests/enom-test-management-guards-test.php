@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestManagement as Policy,EnomTestCallSchema,EnomTestWriteReservation as Reservation,EnomTestCallLimit,ManagementEvidence,DomainManagement,WriteFeatures};
 app()->instance(Clock::class,$clock);EnomTestCallSchema::install();
-[$d,$driver]=$holding('management-test-policy.com');$b=$driver->capabilities()->binding;
+[$d,$driver]=$holding(placeholderComFixtureName('management-test-policy-placeholder.com'));$b=$driver->capabilities()->binding;
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.management'=>true,'domains.enom_test_daily_call_cap'=>1000]);
 $setting=$product->server->settings()->firstOrNew(['key'=>Policy::KEY]);$setting->encrypted=true;$setting->type='string';$setting->value=json_encode(['fingerprint'=>$b->fingerprint,...Policy::protocol()]);$setting->save();
 foreach([false,'true',1,null] as $off){config(['domains.enom_writes.management'=>$off]);expect(!Policy::enabled($b),'Strict boolean opt-in');}config(['domains.enom_writes.management'=>true]);

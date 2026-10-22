@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, DateEv
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 $admissionReads = [ReadCommand::Info, ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Balance];
 $confirmationReads = [ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Info, ReadCommand::Expiry, ReadCommand::Order];
-[$op, $d, $b] = $makeRenewal('renew-eighteen.com'); [$engine, $writer, $completion] = $compose($b); $writes = $state->writes;
+[$op, $d, $b] = $makeRenewal(placeholderComFixtureName('renew-eighteen-placeholder.com')); [$engine, $writer, $completion] = $compose($b); $writes = $state->writes;
 same('pending', $engine->run($op->id, $writer)->state, 'Ordinary renewal acknowledges once');
 same([...$admissionReads, ...$admissionReads], $state->calls, 'Two independent six-read admissions preserve exact order');
 same($writes + 1, $state->writes, 'Exactly one Extend between admission and confirmation');
@@ -60,7 +60,7 @@ foreach (['unpaid', 'reversed', 'cancelled', 'cost', 'unknown', 'disabled', 'aut
     if (in_array($case, ['cost', 'second_cost'], true)) { same(true, $d->fresh()->renewal_policy['automatic_spend_paused'], 'Overrun pauses spending'); }
     $state->duringCommand = null;
 }
-[$op, $d, $b] = $makeRenewal('safety-forged.com'); [$engine, $writer] = $compose($b);
+[$op, $d, $b] = $makeRenewal(placeholderComFixtureName('safety-forged-placeholder.com')); [$engine, $writer] = $compose($b);
 $descriptor = new AdmittedOperation($b, new Query($d->domain, Action::Renew, 1), $op->operation_key, 'fake', 1, 'fake', str_repeat('a',64), new Money('8.00','USD'), new DateEvidence('2027-10-18',ExpiryPrecision::Date,'synthetic'));
 $ctx = new RequestContext($b, RequestOrigin::Background, $clock->now()->modify('+120 seconds'), new RequestBudget(1), $clock);
 commerceReject(fn () => $writer->renew($descriptor, $ctx)); commerceReject(fn () => $writer->renew(clone $descriptor, $ctx));

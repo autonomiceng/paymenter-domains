@@ -70,7 +70,7 @@ verify(lookup($candidate, new DateTimeImmutable('2024-02-29T00:00:00Z'))['allowe
 $candidate['events'][1]['eventDate'] = '2033-03-01T00:00:00Z';
 verify(!lookup($candidate, new DateTimeImmutable('2024-02-29T00:00:00Z'))['allowed'], 'Leap-day cap overflow accepted.');
 $unknowns = [];
-$candidate = $body; $candidate['ldhName'] = 'other.com'; $unknowns[] = $candidate;
+$candidate = $body; $candidate['ldhName'] = 'other-placeholder.com'; $unknowns[] = $candidate;
 $candidate = $body; unset($candidate['status']); $unknowns[] = $candidate;
 $candidate = $body; unset($candidate['events']); $unknowns[] = $candidate;
 $candidate = $body; $candidate['events'][0]['eventDate'] = '2027-01-01T00:00:00Z'; $unknowns[] = $candidate;

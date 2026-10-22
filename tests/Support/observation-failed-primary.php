@@ -6,7 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementPayload,ObservationRecords,ObservationWork,OwnerRecords};
 // Ordinary, current, complete nonempty inventory: no history overflow or existing hold.
-foreach (['nameservers'=>['nameservers'=>$state->ns], 'glue_add'=>['host'=>'ns1.discovery.com','ip'=>'8.8.8.8']] as $action=>$payload) {
+foreach (['nameservers'=>['nameservers'=>$state->ns], 'glue_add'=>['host'=>'ns1.discovery-placeholder.com','ip'=>'8.8.8.8']] as $action=>$payload) {
     Cache::flush();$op=$submit($d,$driver,$action,$payload);
     same('succeeded',$management->run($op->id,$driver)->state,'Seed confirmed '.$action);
 }
@@ -22,7 +22,7 @@ foreach (['malformed','transport'] as $failure) {
         same('complete',$prior['records']['families'][$kind]['state'],'Complete saved '.$kind);
         expect(count($prior['records']['families'][$kind]['records'])>0,'Nonempty saved '.$kind);
     }
-    same(['ns1.discovery.com'=>'8.8.8.8'],$prior['records']['families']['glue']['records'],'Known saved child host');
+    same(['ns1.discovery-placeholder.com'=>'8.8.8.8'],$prior['records']['families']['glue']['records'],'Known saved child host');
     same($state->ns,$prior['sections']['nameservers']['facts']['nameservers'],'Saved nameservers');
     $synced=$saved->last_synced_at->format(DATE_ATOM);$operations=$saved->operations->map->getAttributes()->all();
     $stale=[];foreach (['dns','srv'] as $kind) {
@@ -73,7 +73,7 @@ foreach (['malformed','transport'] as $failure) {
     $clock->instant=$clock->now()->modify('+1 day');
 }
 // Leave the later independent child-host discovery scenarios an empty local history.
-Cache::flush();$op=$submit($d,$driver,'glue_delete',['host'=>'ns1.discovery.com']);
+Cache::flush();$op=$submit($d,$driver,'glue_delete',['host'=>'ns1.discovery-placeholder.com']);
 same('succeeded',$management->run($op->id,$driver)->state,'Remove seeded child host after retention cases');
 // Reset this fixture's turn before the independent two-account fairness scenario below.
 DB::table('domains_observation_queues')->where('server_id',$d->server_id)->update(['turn'=>0]);

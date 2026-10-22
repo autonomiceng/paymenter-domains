@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/transfer-dispatch-fixture.php';
 $assertTransferDispatch(0);
 $state->mode='';
-$op=$newTransfer('rdap-unchecked.com'); $makeTransfer(); $state->rdapUnknown=true; $r=$engine->execute($op->id);
+$op=$newTransfer(placeholderComFixtureName('rdap-unchecked-placeholder.com')); $makeTransfer(); $state->rdapUnknown=true; $r=$engine->execute($op->id);
 same(true,$r->attempt['transfer_admission']['rdap_unchecked'],'Explicit unchecked provenance'); same(null,$r->attempt['transfer_admission']['base_expiry'],'Missing baseline never inferred');
 // Enom TP_CreateOrder: the documented nested ID and an agreeing top-level ID are retained; disagreeing IDs retain none.
 foreach (['nested'=>'7001','top'=>'7001','agree'=>'7001','conflict'=>null] as $shape=>$expected) {

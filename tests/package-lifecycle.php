@@ -156,7 +156,7 @@ if($phase==='server-delete'){
     app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
     foreach([AccountBindings::class=>$bindings,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$instance){app()->instance($type,$instance);}
     $entry->boot();$entry->boot();
-    $user=commerceUser();$cart=commerceCart($user);commerceAdd($cart,$native->product($tlds[0],'register'),'retained-package.com');
+    $user=commerceUser();$cart=commerceCart($user);commerceAdd($cart,$native->product($tlds[0],'register'),'retained-package-placeholder.com');
     commerceCheckout($user,$cart)->assertHasNoErrors();
     $op=Operation::sole();$op->update(['state'=>'uncertain','attempt'=>['execution'=>null],'safe_code'=>'staff_review_required']);
     App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$op->amount,'fee'=>'0.00','status'=>'succeeded','transaction_id'=>'package-payment']);

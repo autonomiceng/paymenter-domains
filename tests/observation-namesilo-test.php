@@ -26,7 +26,7 @@ $observe->status='Transfer Completed';$clock->instant=$clock->now()->modify('+1 
 same($before,$original->fresh()->getAttributes(),'Even terminal/owned facts cannot complete transfer financially');same(null,$d->fresh()->renewal_policy['billing_anchor']??null,'No financial anchor from observer');
 // Separate candidate cursors are fair, persist across calls and grant no financial mutation.
 same([$enom],array_keys(ObservationCandidates::next('refund',1)),'First candidate account');same([$ns],array_keys(ObservationCandidates::next('refund',1)),'Candidate fairness independent of observation backlog');
-$clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);$missing=$newTransfer('missing-observation-code.com',1,true,false);$work->tick(2);
+$clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);$missing=$newTransfer(placeholderComFixtureName('missing-observation-code-placeholder.com'),1,true,false);$work->tick(2);
 $bindings->setProcessing($ns,false);$selected=ObservationCandidates::next('timeout',2);expect(in_array($missing->id,$selected[$ns],true),'Missing-code candidate selected even without processing');
 same('awaiting_code',$missing->fresh()->state,'Selection does not timeout or credit');
 $bindings->setProcessing($ns, true, syntheticActivation());[$active,$unused,$acquired]=$holding('followup');same('pending',$active->observation['followup']['state'],'Transfer completion seeds durable follow-up');

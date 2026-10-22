@@ -78,14 +78,14 @@ same('$20.00', $store->endings()[0]['register'], 'Warm valid price');
 $nativePrice->update(['price' => '19.00']);
 $clock->instant = $now->modify('+29 seconds'); same('$20.00', $store->endings()[0]['register'], 'Native edit may lag for less than thirty seconds');
 commerceReject(fn () => $store->offer('com', 'register', 1));
-same(3, $store->check('current.com')['term'], 'Interactive availability excludes the edited annual price within the TTL');
+same(3, $store->check('current-placeholder.com')['term'], 'Interactive availability excludes the edited annual price within the TTL');
 $clock->instant = $now->modify('+30 seconds'); same(null, $store->endings()[0]['register'], 'Exact TTL boundary reflects native price edit');
 $nativePrice->update(['price' => '20.00']); $clock->instant = $now->modify('+60 seconds');
 same('$20.00', $store->endings()[0]['register'], 'Restored native price appears after the TTL');
 
 // Native cart admission and checkout independently refuse stale or withdrawn prices while display stays warm.
 $adapter = new CartAdmission($native, $sellers, $eligibility, $clock); $adapter->boot();
-$user = commerceUser(); $cart = commerceCart($user); commerceAdd($cart, $product, 'cached-checkout.com');
+$user = commerceUser(); $cart = commerceCart($user); commerceAdd($cart, $product, placeholderComFixtureName('cached-checkout-placeholder.com'));
 $nativePrice->update(['price' => '19.00']);
 same('$20.00', $store->endings()[0]['register'], 'Admission refusal is exercised against a warm stale display');
 commerceReject(fn () => $store->offer('com', 'register', 1));
@@ -93,17 +93,17 @@ commerceCheckout($user, $cart);
 same(0, Order::count(), 'Stale-price checkout rolls back native order');
 same(0, Invoice::count(), 'Stale-price checkout creates no invoice'); same(0, Service::count(), 'Stale-price checkout creates no service');
 $nativePrice->update(['price' => '20.00']);
-$cart = commerceCart($user); commerceAdd($cart, $product, 'expired-checkout.com');
+$cart = commerceCart($user); commerceAdd($cart, $product, placeholderComFixtureName('expired-checkout-placeholder.com'));
 DB::table('domains_prices')->where('server_id', $tld->server_id)->whereIn('action', ['register', 'transfer'])->update(['fresh_until' => $now->modify('+59 seconds')]);
 same('$20.00', $store->endings()[0]['register'], 'Expired evidence still has a warm display');
-commerceReject(fn () => commerceAdd(commerceCart($user), $product, 'expired-admission.com'));
+commerceReject(fn () => commerceAdd(commerceCart($user), $product, placeholderComFixtureName('expired-admission-placeholder.com')));
 commerceCheckout($user, $cart); same(0, Order::count(), 'Expired-price checkout cannot trust cached display rows');
 DB::table('domains_prices')->where('server_id', $tld->server_id)->update(['fresh_until' => $now->modify('+1 day')]);
-$cart = commerceCart($user); commerceAdd($cart, $product, 'withdrawn-checkout.com');
+$cart = commerceCart($user); commerceAdd($cart, $product, placeholderComFixtureName('withdrawn-checkout-placeholder.com'));
 DB::table('domains_prices')->where('server_id', $tld->server_id)->whereIn('action', ['register', 'transfer'])->update(['hold_reason' => 'below_cost']);
 same('$20.00', $store->endings()[0]['register'], 'Raw maintenance withdrawal may lag only in display');
-same('held', $store->check('withdrawn.com')['status'], 'Interactive check refuses withdrawn prices within TTL');
-commerceReject(fn () => commerceAdd(commerceCart($user), $product, 'withdrawn-admission.com'));
+same('held', $store->check('withdrawn-placeholder.com')['status'], 'Interactive check refuses withdrawn prices within TTL');
+commerceReject(fn () => commerceAdd(commerceCart($user), $product, placeholderComFixtureName('withdrawn-admission-placeholder.com')));
 commerceCheckout($user, $cart); same(0, Order::count(), 'Withdrawn checkout cannot trust cached display rows');
 
 // Price model saves invalidate too; transaction-local renders must never escape rollback.

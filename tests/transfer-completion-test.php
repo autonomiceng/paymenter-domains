@@ -41,7 +41,7 @@ $prepare=static function($name)use($newTransfer,$makeTransfer,&$engine,&$binding
     $observe->name=$name; $observe->fault=''; $observe->calls=[]; $clock->instant=$now->modify('+6 minutes'); return $r;
 };
 require __DIR__.'/Support/transfer-watch.php';
-$predecessor=transferWatchFixture('full-transfer.com',(int)$user->id);$op=$prepare('full-transfer.com');$r=$reconcile->run($op->id);
+$predecessor=transferWatchFixture('full-transfer-placeholder.com',(int)$user->id);$op=$prepare(placeholderComFixtureName('full-transfer-placeholder.com'));$r=$reconcile->run($op->id);
 same('succeeded',$r->state,'Status, exact unique original charge, expiry and ownership complete'); same('9001',$r->provider_order_id,'Independent billing order ID');
 same('8.95',$r->cost['actual']['amount'],'Exact charged USD amount'); same('2028-01-01',$r->confirmed_expires_at->format('Y-m-d'),'Full year added to original expiry');
 same('active',$r->domain->status,'Active only after proof'); same('2028-01-01',$r->domain->renewal_policy['billing_anchor']['expiry'],'Transfer billing anchor');
@@ -57,17 +57,17 @@ foreach (['pending','status','charge','duplicate','short','owner','expiry','late
     same(null,$r->attempt['transfer_terminal']??null,'Contradictory facts never become terminal');
     if (str_starts_with($fault,'reject')) { same('transfer_rejection_contradiction',$r->policy['reconciliation']['reason'],'Rejection contradiction retained'); }
 }
-$op=$prepare('sent-rejected-transfer.com'); $observe->fault='reject'; $r=$reconcile->run($op->id);
+$op=$prepare(placeholderComFixtureName('sent-rejected-transfer-placeholder.com')); $observe->fault='reject'; $r=$reconcile->run($op->id);
 same('rejected',$r->state,'Bound terminal refusal retained'); same('transfer_rejected',$r->domain->status,'Terminal transfer observation');
 commerceReject(fn()=>$refunds->creditRejected($r->id)); commerceReject(fn()=>Paymenter\Extensions\Servers\Domains\Services\DomainReservations::releaseTerminal($r->domain->domain));
 same(null,$r->fresh()->funding['refund']??null,'Sent rejection never credited'); same($r->domain->domain,$r->domain->fresh()->reservation_name,'Sent rejection retains reservation');
 // A rejection without complete charge history stays open: no candidates were looked for, so none were ruled out.
-$op=$prepare('unreconciled-rejected-transfer.com'); $observe->fault='reject';
+$op=$prepare(placeholderComFixtureName('unreconciled-rejected-transfer-placeholder.com')); $observe->fault='reject';
 App\Models\Server::find($op->server_id)->settings()->where('key',HistoryAcceptances::KEY.'_transfer')->delete(); $r=$reconcile->run($op->id);
 same('uncertain',$r->state,'Unreconciled rejection is not terminal'); same(null,$r->attempt['transfer_terminal']??null,'No terminal evidence without charge history');
 same('transfer_rejection_unreconciled',$r->policy['reconciliation']['reason'],'Staff see why it stays open'); expect($r->domain->status!=='transfer_rejected','Domain not marked rejected yet');
 // Unknown baseline is advisory for sending, never a made-up full-term anchor.
-$clock->instant=$now; $op=$newTransfer('missing-transfer-baseline.com'); $makeTransfer(); $state->rdapUnknown=true; $r=$engine->execute($op->id);
+$clock->instant=$now; $op=$newTransfer(placeholderComFixtureName('missing-transfer-baseline-placeholder.com')); $makeTransfer(); $state->rdapUnknown=true; $r=$engine->execute($op->id);
 $observe->name=$op->domain->domain; $observe->fault=''; $clock->instant=$now->modify('+6 minutes');
 same('uncertain',$reconcile->run($op->id)->state,'Missing original expiry cannot establish added year');
 // Slice25 renewal authority accepts the exact completed transfer anchor.

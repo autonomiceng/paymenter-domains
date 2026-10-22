@@ -48,7 +48,7 @@ $before = [$nativeCalls, $dohCalls]; $reader->read($q, $c); same($before, [$nati
 $reader->read($q, new DnsContext); same($before[1] + 1, $dohCalls, 'New job resets breaker');
 $mode = 'normal';
 foreach ([['Status' => '0'], ['Status' => -1], ['Status' => 4096], ['Status' => 0, 'TC' => true], ['Status' => 0, 'TC' => null], ['Status' => 0, 'Answer' => 'bad'],
-    ['Status' => 0, 'Question' => [['name' => 'unrelated.com', 'type' => 1]]],
+    ['Status' => 0, 'Question' => [['name' => 'unrelated-placeholder.com', 'type' => 1]]],
     ['Status' => 0, 'Answer' => [['name' => 'example.com', 'type' => '1', 'TTL' => 1, 'data' => '192.0.2.1']]],
     ['Status' => 0, 'Question' => null]] as $bad) {
     $response = $bad; same('transport_malformed', $doh->read($q, new DnsContext)->code, 'Malformed body is transport failure');
@@ -73,7 +73,7 @@ same('deadline', $bounded->read($q, $c)->code, 'Discard over-deadline result'); 
 same('deadline', $reader->read($q, $c)->code, 'Expired job starts no exchange');
 $response = ['Status' => 0, 'Answer' => array_fill(0, 101, ['name' => 'example.com', 'type' => 1, 'TTL' => 1, 'data' => '192.0.2.1'])];
 $before = $nativeCalls; same('invalid_answer', $reader->read($q, new DnsContext)->code, 'Large zone RRset stays unknown'); same($before, $nativeCalls, 'Large zone never causes fallback');
-$response = ['Status' => 0, 'Answer' => [['name' => 'unrelated.com', 'type' => 1, 'TTL' => 1, 'data' => '192.0.2.1']]];
+$response = ['Status' => 0, 'Answer' => [['name' => 'unrelated-placeholder.com', 'type' => 1, 'TTL' => 1, 'data' => '192.0.2.1']]];
 $before = $nativeCalls; same('invalid_answer', $reader->read($q, new DnsContext)->code, 'Unrelated semantic data stays DoH unknown'); same($before, $nativeCalls, 'Zone content never causes fallback');
 foreach (['*.example.com', '_service.example.com', '.'] as $owner) {
     $response = ['Status' => 0, 'Answer' => [['name' => $owner, 'type' => 1, 'TTL' => 1, 'data' => '192.0.2.1']]];
@@ -104,8 +104,8 @@ try { $c->fallback(fn() => (new NativeDnsReader(fn() => []))->read($q, $c)); exp
 foreach ([['http://resolver.example.org/dns-query', '1.1.1.1'], ['https://127.0.0.1/dns-query', '1.1.1.1'],
     ['https://127.1/dns-query', '1.1.1.1'], ['https://0177.0.0.1/dns-query', '1.1.1.1'], ['https://0x7f.0.0.1/dns-query', '1.1.1.1'],
     ['https://resolver.local/dns-query', '1.1.1.1'], ['https://x..org/dns-query', '1.1.1.1'],
-    ['https://user@resolver.org/dns-query', '1.1.1.1'], ['https://resolver.org/dns-query?x=1', '1.1.1.1'],
-    ['https://resolver.org:444/dns-query', '1.1.1.1'], [DohEndpoint::URL, '127.0.0.1'], [DohEndpoint::URL, '192.168.1.1'],
+    ['https://user@resolver-placeholder.org/dns-query', '1.1.1.1'], ['https://resolver-placeholder.org/dns-query?x=1', '1.1.1.1'],
+    ['https://resolver-placeholder.org:444/dns-query', '1.1.1.1'], [DohEndpoint::URL, '127.0.0.1'], [DohEndpoint::URL, '192.168.1.1'],
     [DohEndpoint::URL, '169.254.169.254'], [DohEndpoint::URL, '::1'], [DohEndpoint::URL, 'fd00::1']] as [$url, $ip]) {
     try { new DohEndpoint($url, $ip); expect(false, 'Unsafe endpoint refused'); } catch (InvalidArgumentException) {}
 }

@@ -51,7 +51,7 @@ $peer = Service::create(['user_id' => $other->id, 'order_id' => $order->id, 'pro
     'plan_id' => $plan->id, 'quantity' => 1, 'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']);
 $peerProperty = $peer->properties()->create(['key' => 'domain', 'value' => 'EXAMPLE.COM']);
 same('competing_holding', $run()->code, 'Other service canonical name collision refused');
-$peerProperty->update(['value' => 'other.com']);
+$peerProperty->update(['value' => 'other-placeholder.com']);
 $cancel = ServiceCancellation::create(['service_id' => $service->id, 'type' => 'immediate', 'reason' => 'Synthetic']);
 same('mapping_unconfirmed', $run()->code, 'Conflicting immediate cancellation refused');
 DB::table('service_cancellations')->where('id', $cancel->id)->delete();

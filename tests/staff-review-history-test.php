@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Relation
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{RequestFacts,Staff,StaffReviewHistory};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
 use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
-$op=$new('staff-history.com');$domain=$op->domain;
+$op=$new(placeholderComFixtureName('staff-history-placeholder.com'));$domain=$op->domain;
 $activity=static fn()=>Livewire::actingAs($staff)->test(RequestsRelationManager::class,['ownerRecord'=>$domain,'pageClass'=>ViewDomain::class]);
 $reason='<script>alert("review")</script> Hold for evidence';
 $review=static function($action,$reason)use($service,$staff,$op,$ticket){$service->run($staff,$op->domain_id,$op->id,$action,$ticket($op->fresh(),$action),$reason);};

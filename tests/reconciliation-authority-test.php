@@ -17,7 +17,7 @@ foreach (['generation', 'cancelled', 'reversal', 'changed', 'paused'] as $race) 
     if ($race !== 'paused') { same(null, $result->domain->provider_expires_at, 'No resurrection or anchoring after authority change'); }
     if ($race === 'paused') { $readBindings->setProcessing($binding->serverId, true, syntheticActivation()); }
 }
-[$op] = $prepare('bounded-poll.com'); $observation->fault = 'term';
+[$op] = $prepare(placeholderComFixtureName('bounded-poll-placeholder.com')); $observation->fault = 'term';
 for ($i = 0; $i < 7; $i++) { $reconcile->run($op->id); }
 same(5, $op->fresh()->policy['reconciliation']['polls'], 'Unresolved cost poll capped at five');
 same(35, count($observation->calls), 'Bounded covered polls; never a registrar write');
@@ -31,13 +31,13 @@ foreach (['info_missing', 'expiry_missing'] as $missing) {
     same(0, $op->fresh()->policy['reconciliation']['polls'], 'Failed required ownership/expiry reads never consume covered polls');
     $observation->fault = ''; same('succeeded', $reconcile->run($op->id)->state, 'Recovered required read completes without manual resume');
 }
-[$op] = $prepare('active-lease.com', 'absent');
+[$op] = $prepare(placeholderComFixtureName('active-lease-placeholder.com'), 'absent');
 $reconcile->run($op->id); same([], $observation->calls, 'Live sealed worker cannot race reconciliation');
-[$op, $binding] = $prepare('before-dispatch.com', 'preseal');
+[$op, $binding] = $prepare(placeholderComFixtureName('before-dispatch-placeholder.com'), 'preseal');
 $clock->instant = new DateTimeImmutable('2026-10-18T12:06:01Z');
 \Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances::save(new \Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance($binding, 'America/Los_Angeles', 0, 86400, 'enom_registration_v1'));
 same('uncertain', $reconcile->run($op->id)->state, 'Charge before sealed dispatch cannot belong to original attempt');
-[$op] = $prepare('atomic-completion.com'); $failOnce = true;
+[$op] = $prepare(placeholderComFixtureName('atomic-completion-placeholder.com')); $failOnce = true;
 App\Models\Service::updated(static function ($service) use ($op, &$failOnce): void {
     if ($failOnce && $service->id === $op->service_id && $service->status === 'active') { $failOnce = false; throw new RuntimeException('Synthetic completion persistence failure'); }
 });

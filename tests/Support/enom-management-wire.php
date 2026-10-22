@@ -10,7 +10,7 @@ $manageReply=static function(array $p)use($s,$reply):string {
     if($c==='SetDomainSRVHosts'){$s->srv=[];for($i=1;isset($p['Service'.$i]);$i++){$s->srv[]=['service'=>$p['Service'.$i],'protocol'=>strtolower($p['Protocol'.$i]),'target'=>$p['Target'.$i],'priority'=>$p['Priority'.$i],'weight'=>$p['Weight'.$i],'port'=>$p['Port'.$i]];}}
     if($c==='AddDnsSec'){$s->ds[]=['algorithm'=>$p['Alg'],'digest'=>$p['Digest'],'digest_type'=>$p['DigestType'],'key_tag'=>$p['KeyTag']];}if($c==='DeleteDnsSec'){$s->ds=[];}
     $body=match($c){
-        'GetDomainInfo'=>'<GetDomainInfo><DomainName DomainNameID="'.$s->id.'">paid-test.com</DomainName><Status><Belongs-To>'.$s->owner.'</Belongs-To><Expiration>2027-10-21</Expiration></Status></GetDomainInfo>',
+        'GetDomainInfo'=>'<GetDomainInfo><DomainName DomainNameID="'.$s->id.'">paid-test-placeholder.com</DomainName><Status><Belongs-To>'.$s->owner.'</Belongs-To><Expiration>2027-10-21</Expiration></Status></GetDomainInfo>',
         'GetDNS'=>implode('',array_map(static fn($n)=>'<dns>'.$n.'</dns>',$s->ns)),
         'GetRegLock'=>'<Reg-Lock>'.(int)$s->locked.'</Reg-Lock>',
         'GetHosts'=>'<DomainServices><HostRecords>true</HostRecords></DomainServices>'.implode('',array_map(static fn($v)=>'<host><name>'.$v['name'].'</name><type>'.$v['type'].'</type><address>'.htmlspecialchars($v['address'],ENT_XML1).'</address><mxpref>'.$v['mx_pref'].'</mxpref></host>',$s->dns)),

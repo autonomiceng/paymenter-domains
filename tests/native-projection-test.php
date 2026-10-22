@@ -9,7 +9,7 @@ Queue::fake();
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot();
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class, $invoiceBinding);
 NativeIdentity::boot();
-$initial = $new('projection-initial.com', term: 3);
+$initial = $new(placeholderComFixtureName('projection-initial-placeholder.com'), term: 3);
 $s = $initial->domain->service;
 same(1, (int) $s->plan->billing_period, 'Admitted checkout projects the annual plan');
 same('year', $s->plan->billing_unit, 'Initial annual plan remains native');
@@ -18,7 +18,7 @@ same(null, $s->expires_at, 'Initial projection keeps native expiry null');
 expect(!NativeDomainGuard::identityProjection($s), 'Initial grant removed after save');
 
 // A real funded original-attempt reconciliation exercises the owned completion capability.
-[$original] = $prepare('projection-completed.com');
+[$original] = $prepare(placeholderComFixtureName('projection-completed-placeholder.com'));
 same('succeeded', $reconcile->run($original->id)->state, 'Completion preserves full original-attempt proof');
 $d = $original->domain; $s = $d->service;
 same('active', $s->status, 'Owned initial completion projects native paid status');
@@ -141,7 +141,7 @@ Service::updating(static function (Service $row) use (&$rollover): void {
         Carbon\CarbonImmutable::setTestNow(Carbon\Carbon::getTestNow());
     }
 });
-$roll = $new('projection-rollover.com'); $rollover = false;
+$roll = $new(placeholderComFixtureName('projection-rollover-placeholder.com')); $rollover = false;
 same('10.40', RetailLine::decimal($roll->domain->service->price), 'Clock rollover cannot reject admitted checkout');
 expect($roll->domain->service->timestamps, 'Timestamp mode remains native after success');
 Carbon\Carbon::setTestNow($clock->now()); Carbon\CarbonImmutable::setTestNow($clock->now());
@@ -155,7 +155,7 @@ same('10.40', RetailLine::decimal($s->fresh()->price), 'Stale native paid loop p
 same(null, $s->fresh()->expires_at, 'Stale native paid loop still normalizes expiry');
 
 // Owned refund decisions retain exact funded definitely-unsent evidence; native status remains writable.
-$held = $new('projection-refund.com'); $held->update(['state' => 'held', 'safe_code' => 'staff_review']);
+$held = $new(placeholderComFixtureName('projection-refund-placeholder.com')); $held->update(['state' => 'held', 'safe_code' => 'staff_review']);
 $role = Role::create(['name' => 'Projection reviewer', 'permissions' => ['admin.domains.manage', 'admin.invoices.update']]);
 $staff = commerceUser(); $staff->update(['role_id' => $role->id]);
 $refunds = new Refunds($clock);
@@ -166,7 +166,7 @@ same(null, $refunds->creditRejected($held->id), 'Refund capability cannot cause 
 expect(!NativeDomainGuard::identityProjection($held->domain->service), 'Refund grant removed');
 
 // No completion capability can be minted from paid status without current full funding.
-$unpaid = $new('projection-unfunded.com', false);
+$unpaid = $new(placeholderComFixtureName('projection-unfunded-placeholder.com'), false);
 DB::table('invoices')->where('id', $unpaid->invoice_id)->update(['status' => 'paid']);
 commerceReject(static fn () => DB::transaction(function () use ($unpaid): void {
     $funding = Paymenter\Extensions\Servers\Domains\Services\InvoiceFunding::lock($unpaid->invoice_id);

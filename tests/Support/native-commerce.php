@@ -2,6 +2,7 @@
 // Native checkout helpers adapted from Enom 444f31c tests/enom-cart-order.php.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/reserved-fixtures.php';
 use App\Models\{Cart, Product, User};
 use Illuminate\Support\Facades\Auth;
 Qirolab\Theme\Theme::set('default', 'default');

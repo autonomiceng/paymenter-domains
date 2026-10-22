@@ -17,7 +17,7 @@ $release=static function($op)use($staff,$clock):void {
     $ticket=StaffOperationReview::ticket($staff->id,$domain->id,$op->id,'release',StaffOperationReview::stamp($op,$domain),$clock);
     (new StaffOperations($clock))->run($staff,$domain->id,$op->id,'release',$ticket,'Corrected admission reader and reviewed unsent renewal');
 };
-[$op,$d,$b,$invoice]=$makeRenewal('release-admission.com');[$engine,$writer,$completion]=$compose($b);
+[$op,$d,$b,$invoice]=$makeRenewal(placeholderComFixtureName('release-admission-placeholder.com'));[$engine,$writer,$completion]=$compose($b);
 $state->hold='unknown';same('held',$engine->run($op->id,$writer)->state,'Unconfirmed provider state holds before dispatch');
 same('renewal_state_unconfirmed',$op->fresh()->safe_code,'Exact admission refusal');same([],($op->fresh()->attempt??[]),'No original attempt');
 Auth::login($staff);

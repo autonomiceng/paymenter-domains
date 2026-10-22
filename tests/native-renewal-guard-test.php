@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Price};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, HoldingLocks, NativeDomainGuard, RetailLine};
 
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot(); Queue::fake();
-[$original] = $prepare('native-guard.com'); same('succeeded', $reconcile->run($original->id)->state, 'Real completed holding');
+[$original] = $prepare(placeholderComFixtureName('native-guard-placeholder.com')); same('succeeded', $reconcile->run($original->id)->state, 'Real completed holding');
 $d = $original->domain; $service = $d->service; $before = DB::table('invoice_items')->where('id', $original->invoice_item_id)->first();
 // Execute the actual native admin form's Recalculate Price action and EditRecord persistence method.
 $page = new App\Admin\Resources\ServiceResource\Pages\EditService;

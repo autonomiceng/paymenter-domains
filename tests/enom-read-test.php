@@ -163,7 +163,7 @@ $wire->payloads['Check'] = str_replace('</Domain>', '<MinRegYear>5</MinRegYear><
 same(true, $driver->availability(new Query('example.com', Action::Register, 3), $context())->evidence()->available, 'Unrelated top-level fields do not replace nested restrictions');
 $wire->payloads['Check'] = str_replace('<IsEAP>0', '<IsEAP>1', $check); same(true, $driver->availability(new Query('example.com', Action::Register, 1), $context())->evidence()->premium, 'EAP is premium');
 $wire->payloads['Check'] = str_replace('<IsEAP>0</IsEAP>', '', $check); same(null, $driver->availability(new Query('example.com', Action::Register, 1), $context())->evidence()->premium, 'Absent exclusion is unknown');
-foreach ([str_replace('example.com', 'other.com', $check), str_replace('210', '999', $check), str_replace('</Domains>', substr($check, 9, -10).'</Domains>', $check)] as $bad) {
+foreach ([str_replace('example.com', 'other-placeholder.com', $check), str_replace('210', '999', $check), str_replace('</Domains>', substr($check, 9, -10).'</Domains>', $check)] as $bad) {
     $wire->payloads['Check'] = $bad; same(Disposition::Unknown, $driver->availability(new Query('example.com', Action::Register, 1), $context())->disposition, 'Bad Check cardinality/domain/status');
 }
 $info = '<GetDomainInfo><DomainName DomainNameID="123" SLD="example" TLD="com">example.com</DomainName><Status><Belongs-To>SyNtHeTiC-uId</Belongs-To><Expiration>2027-04-03</Expiration></Status></GetDomainInfo>';
@@ -179,7 +179,7 @@ $domain = $driver->readDomain('example.com', $context())->evidence()->domain; sa
 $before = count($wire->calls); $partial = $driver->readDomain('example.com', $context(1)); $domain = $partial->evidence()->domain;
 same(Disposition::Unknown,$partial->disposition,'Incomplete flags never grant admission'); same(SendState::PossiblySent,$partial->sendState,'Budget failure provenance retained');
 same(true, $domain?->owned, 'Partial read preserves proven owner'); same(null, $domain?->locked, 'Budget exhaustion leaves flag unknown'); same($before + 1, count($wire->calls), 'Each extra read checks shared budget');
-foreach ([str_replace('example.com', 'other.com', $info), str_replace('SLD="example"', 'SLD="other"', $info), str_replace('DomainNameID="123"', 'DomainNameID="0"', $info), str_replace('</GetDomainInfo>', '<DomainNameID>456</DomainNameID></GetDomainInfo>', $info), str_replace('<Belongs-To>SyNtHeTiC-uId</Belongs-To>', '', $info)] as $bad) {
+foreach ([str_replace('example.com', 'other-placeholder.com', $info), str_replace('SLD="example"', 'SLD="other"', $info), str_replace('DomainNameID="123"', 'DomainNameID="0"', $info), str_replace('</GetDomainInfo>', '<DomainNameID>456</DomainNameID></GetDomainInfo>', $info), str_replace('<Belongs-To>SyNtHeTiC-uId</Belongs-To>', '', $info)] as $bad) {
     $wire->payloads['Info'] = $bad; same(Disposition::Unknown, $driver->readDomain('example.com', $context())->disposition, 'Unproven ownership never positive');
 }
 $wire->payloads['Info'] = str_replace('SyNtHeTiC-uId', 'other-owner', $info); $before = count($wire->calls);
@@ -267,7 +267,7 @@ foreach (['<ResponseCount>1</ResponseCount>', '<ResponseCount>bad</ResponseCount
 }
 
 foreach (['expiry' => ReadCommand::Expiry, 'renewalInfo' => ReadCommand::RenewalInfo, 'contacts' => ReadCommand::Contacts] as $method => $command) {
-    foreach ([str_replace('SyNtHeTiC-uId', 'retail-subaccount', $info), str_replace('example.com', 'other.com', $info),
+    foreach ([str_replace('SyNtHeTiC-uId', 'retail-subaccount', $info), str_replace('example.com', 'other-placeholder.com', $info),
         str_replace('DomainNameID="123"', 'DomainNameID="0"', $info), str_replace('<Belongs-To>SyNtHeTiC-uId</Belongs-To>', '', $info)] as $unowned) {
         $wire->payloads['Info'] = $unowned; $before = count($wire->calls);
         same('unknown', $driver->$method('example.com', $context())->status, 'Private read refuses unproven ownership');

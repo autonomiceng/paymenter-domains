@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 foreach([AccountBindings::class=>$readBindings,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$value){app()->instance($type,$value);}
 installedPanel();
-[$d,$driver,$original]=$holding('record-runtime.com');
+[$d,$driver,$original]=$holding(placeholderComFixtureName('record-runtime-placeholder.com'));
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $a=Account::where('server_id',$d->server_id)->sole();$b=CatalogueAcceptances::binding($a);
 $nativePage=$page;$page=static function()use($nativePage):string { storefrontViews();app('view')->getFinder()->flush();return $nativePage(); };

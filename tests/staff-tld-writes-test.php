@@ -71,7 +71,7 @@ tldRefusal(fn()=>$writer->run($review('publish',$t->id,null,$stale),[],$now),'Se
 $r=$review('default_rule',$t->id);$u->role->update(['permissions'=>[Staff::VIEW,Staff::POLICY]]);commerceReject(fn()=>$writer->run($r,$fixed,$now));$u->role->update(['permissions'=>$permissions]);
 $writer->run($review('default_rule',$t->id),['mode'=>'markup_percent','markup'=>'30','round_up'=>'none'],$now);$writer->run($review('publish',$t->id),[],$now);
 $holding=Domain::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,
-    'user_id'=>900,'service_id'=>900,'domain'=>'holder.com','sld'=>'holder','tld'=>'com','status'=>'active']);$generation=$holding->authority_generation;
+    'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);$generation=$holding->authority_generation;
 $writer->run($review('seller',$t->id),['seller'=>$tlds[1]->server_id,'register'=>true,'transfer'=>true],$now);
 same($tlds[1]->server_id,SalesPolicy::where('tld','com')->sole()->server_id,'New seller selected');same($t->server_id,$holding->fresh()->server_id,'Holder retains account');same($generation,$holding->fresh()->authority_generation,'Holder generation immutable');
 $writer->run($review('acceptance',null),['ending'=>'com','accept'=>false],$now);$a=Account::where('server_id',$t->server_id)->sole();$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding($a));

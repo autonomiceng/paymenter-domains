@@ -184,12 +184,12 @@ $current = $sellers->selection('com', 'register', 1, $now);
 try {
     $admit($current, static function ($price) use ($accounts): void {
         App\Models\User::create(['email' => 'rollback@example.invalid', 'password' => bcrypt('synthetic')]);
-        DomainReservations::reserve([...$accounts[1], 'service_id' => 12, 'user_id' => 22, 'domain' => 'rollback.com', 'status' => 'pending'], ['com']);
+        DomainReservations::reserve([...$accounts[1], 'service_id' => 12, 'user_id' => 22, 'domain' => 'rollback-placeholder.com', 'status' => 'pending'], ['com']);
         throw new RuntimeException('checkout rollback');
     });
 } catch (RuntimeException $e) { same('checkout rollback', $e->getMessage(), 'Complete checkout abort'); }
 same(0, App\Models\User::count(), 'Native checkout rolled back');
-same(null, Domain::where('domain', 'rollback.com')->first(), 'Reservation write rolled back');
+same(null, Domain::where('domain', 'rollback-placeholder.com')->first(), 'Reservation write rolled back');
 $p = $sellers->change('com', 4, null, false, false, $now);
 same(5, $p->revision, 'Disabling seller advances policy');
 $reject(static fn () => $sellers->selection('com', 'register', 1, $now));

@@ -17,7 +17,7 @@ function lifecycleReject(callable $call,string $message=NativeCancellation::MESS
     $caught=false;try{$call();}catch(Illuminate\Validation\ValidationException $e){same($message,$e->errors()['reason'][0],'Safe customer and staff refusal');$caught=true;}
     expect($caught,'Expected scoped lifecycle refusal');
 }
-$paid=$new('lifecycle-paid.com');$s=$paid->domain->service;
+$paid=$new(placeholderComFixtureName('lifecycle-paid-placeholder.com'));$s=$paid->domain->service;
 foreach(['immediate','end_of_period']as$type){
     $before=ServiceCancellation::count();lifecycleReject(fn()=>ServiceCancellation::create(['service_id'=>$s->id,'type'=>$type,'reason'=>'Synthetic request']));
     same($before,ServiceCancellation::count(),'Refused before native created/listener side effects');
@@ -49,21 +49,21 @@ $s->fresh()->update(['expires_at'=>'2030-01-01','label'=>'Staff save']);same(nul
 same('active',$s->fresh()->status,'Vanilla paid Active write succeeds with paid in-flight acquisition');
 same(null,$s->fresh()->expires_at,'Vanilla paid loop date discarded');
 // Unpaid native cancellation and cron-style status remain allowed, with durable intent.
-$unpaid=$new('lifecycle-unpaid.com',paid:false);
+$unpaid=$new(placeholderComFixtureName('lifecycle-unpaid-placeholder.com'),paid:false);
 $c=ServiceCancellation::create(['service_id'=>$unpaid->service_id,'type'=>'immediate','reason'=>'Unpaid request']);
 (new App\Listeners\CancellationCreatedListener)->handle(new App\Events\ServiceCancellation\Created($c));
 same('cancelled',$unpaid->domain->service->fresh()->status,'Unpaid native listener succeeds');
-$cron=$new('lifecycle-cron.com',paid:false);
+$cron=$new(placeholderComFixtureName('lifecycle-cron-placeholder.com'),paid:false);
 DB::transaction(fn()=>$cron->domain->service->update(['status'=>'cancelled']));
 same('cancelled',$cron->domain->service->fresh()->status,'Unpaid status inside native outer transaction succeeds');
 // A terminal label alone is insufficient, while original funded reconciliation proof is enough.
-$fake=$new('lifecycle-fake-terminal.com');DB::table('domains_operations')->where('id',$fake->id)->update(['state'=>'succeeded']);
+$fake=$new(placeholderComFixtureName('lifecycle-fake-terminal-placeholder.com'));DB::table('domains_operations')->where('id',$fake->id)->update(['state'=>'succeeded']);
 lifecycleReject(fn()=>ServiceCancellation::create(['service_id'=>$fake->service_id,'type'=>'end_of_period','reason'=>'Forged terminal label']));
-[$complete]=$prepare('lifecycle-completed.com');same('succeeded',$reconcile->run($complete->id)->state,'Original completion proof established');
+[$complete]=$prepare(placeholderComFixtureName('lifecycle-completed-placeholder.com'));same('succeeded',$reconcile->run($complete->id)->state,'Original completion proof established');
 ServiceCancellation::create(['service_id'=>$complete->service_id,'type'=>'end_of_period','reason'=>'Stop future renewal']);
 same('active',$complete->domain->service->fresh()->status,'Terminal end-of-period cancellation does not delete or cancel registrar/native holding');
 require_once __DIR__.'/Support/converted-holding.php';
-[$converted]=$prepare('lifecycle-converted.com');same('succeeded',$reconcile->run($converted->id)->state,'Historical source completed');
+[$converted]=$prepare(placeholderComFixtureName('lifecycle-converted-placeholder.com'));same('succeeded',$reconcile->run($converted->id)->state,'Historical source completed');
 [$converted,$convertedDomain,$convertedBinding]=convertedHoldingFixture($converted);
 expect(RenewalAuthority::completed($converted,$convertedDomain,$convertedBinding),'Converted renewal has full sealed terminal proof');
 ServiceCancellation::create(['service_id'=>$converted->service_id,'type'=>'end_of_period','reason'=>'Converted holding future stop']);
@@ -73,7 +73,7 @@ DB::table('domains_operations')->where('id',$converted->id)->update(['attempt'=>
 lifecycleReject(fn()=>ServiceCancellation::create(['service_id'=>$converted->service_id,'type'=>'end_of_period','reason'=>'Forged converted proof']));
 // Pause after creating guard, before SQL. Payment and real engine execution see the committed
 // owned intent even though no native cancellation row exists yet. Transport is synthetic only.
-$race=$new('lifecycle-race.com',paid:false);$armed=true;$calls=$writer->calls;
+$race=$new(placeholderComFixtureName('lifecycle-race-placeholder.com'),paid:false);$armed=true;$calls=$writer->calls;
 ServiceCancellation::creating(static function(ServiceCancellation $row)use($race,&$armed,$engine,$writer,$calls):void {
     if(!$armed||(int)$row->service_id!==(int)$race->service_id){return;}$armed=false;
     same(0,DB::transactionLevel(),'No observer-owned transaction spans creating/created');
@@ -85,7 +85,7 @@ ServiceCancellation::creating(static function(ServiceCancellation $row)use($race
 });
 ServiceCancellation::create(['service_id'=>$race->service_id,'type'=>'end_of_period','reason'=>'Race control']);
 // Failed native INSERT retains intent. No timeout or staff acknowledgement can erase it.
-$failed=$new('lifecycle-failed-insert.com',paid:false);$fail=true;
+$failed=$new(placeholderComFixtureName('lifecycle-failed-insert-placeholder.com'),paid:false);$fail=true;
 ServiceCancellation::creating(static function(ServiceCancellation $row)use($failed,&$fail):void {
     if($fail&&(int)$row->service_id===(int)$failed->service_id){$fail=false;throw new RuntimeException('Synthetic later callback failure');}
 });

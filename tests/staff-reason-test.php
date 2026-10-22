@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffRea
 use Illuminate\Support\Facades\{DB,Event};
 use Illuminate\Log\Events\MessageLogged;
 $logs=[];Event::listen(MessageLogged::class,static function($e)use(&$logs):void{$logs[]=['level'=>$e->level,'message'=>$e->message,'context'=>$e->context];});
-$op=$held('staff-unicode-reason.com');
+$op=$held('staff-unicode-reason-placeholder.com');
 $write=fn(string $reason)=>$service->run($staff,$op->domain_id,$op->id,'release',$ticket($op->fresh(),'release'),$reason);
 foreach([str_repeat('é',4),str_repeat('é',501),"abcde\xff","line\nbreak"] as $bad){
     $before=$op->fresh()->getRawOriginal();commerceReject(fn()=>$write($bad));same($before,$op->fresh()->getRawOriginal(),'Invalid Unicode reason changes nothing');
@@ -20,7 +20,7 @@ $reason=str_repeat('🦦',500);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('release',['reason'=>$reason])->assertHasNoActionErrors()->assertNotified('Review recorded');
 same($reason,$op->fresh()->policy['staff_actions'][0]['reason'],'500 Unicode characters retained');
 // Server refusal text is safe and meaningful, even when called without form validation.
-$op=$held('staff-unicode-server.com');
+$op=$held('staff-unicode-server-placeholder.com');
 try{$write('éééé');throw new RuntimeException('Expected character-length refusal.');}
 catch(DomainException $e){same('Enter a one-line reason between 5 and 500 characters.',$e->getMessage(),'Character unit in safe refusal');}
 \Illuminate\Support\Facades\Auth::setUser($staff);
@@ -37,11 +37,11 @@ $refuse=static function($op,string $name,string $code,string $message)use(&$logs
     same([['level'=>'warning','message'=>'Domains staff operation refused.','context'=>['reason'=>$code,'action'=>$name,'operation_id'=>(int)$op->id]]],$logs,'Exactly one warning with only safe diagnostic fields');
     return $key;
 };
-$evidence=$held('staff-provider-evidence.com');$evidence->domain->update(['provider_domain_id'=>'synthetic-private-id']);
+$evidence=$held('staff-provider-evidence-placeholder.com');$evidence->domain->update(['provider_domain_id'=>'synthetic-private-id']);
 $refuse($evidence,'refund','acquisition_provider_evidence','This domain has registrar evidence or its status has changed, so this request cannot be treated as unsent. A credit decision may be retained; check the ledger before retrying.');
-$line=$held('staff-no-paid-line.com');DB::table('domains_operations')->where('id',$line->id)->update(['funding_basis'=>'offline_demo']);$line->refresh();
+$line=$held('staff-no-paid-line-placeholder.com');DB::table('domains_operations')->where('id',$line->id)->update(['funding_basis'=>'offline_demo']);$line->refresh();
 $refuse($line,'release','no_eligible_paid_line','This request has no eligible paid invoice line.');
-$missing=$held('staff-missing-invoice.com');DB::table('domains_operations')->where('id',$missing->id)->update(['invoice_id'=>999999]);$missing->refresh();
+$missing=$held('staff-missing-invoice-placeholder.com');DB::table('domains_operations')->where('id',$missing->id)->update(['invoice_id'=>999999]);$missing->refresh();
 $before=[$missing->attempt,$missing->funding,$missing->domain->fresh()->getRawOriginal(),$credit(),count($observation->calls),$state->writes];
 $key=$refuse($missing,'recheck','original_invoice_missing','The original invoice for this request could not be found.');
 $history=$missing->fresh()->policy['staff_actions'];
@@ -62,7 +62,7 @@ foreach([new DomainException('PRIVATE-PROVIDER-SENTINEL'),new RuntimeException('
     expect(!str_contains(json_encode(session()->get('filament.notifications',[])),'PRIVATE-'),'Raw exception text never shown');
 }
 app()->instance(StaffOperations::class,$service);
-$unknown=$held('staff-read-unknown.com');$error=new RuntimeException('PRIVATE-READ-SENTINEL');
+$unknown=$held('staff-read-unknown-placeholder.com');$error=new RuntimeException('PRIVATE-READ-SENTINEL');
 $review=new StaffOperationReview($staff->id,$unknown->domain_id,$unknown->id,'recheck',$ticket($unknown,'recheck'),'Reviewed original evidence',$clock);
 try{$review->read(fn()=>throw $error);expect(false,'Unknown read must propagate');}
 catch(RuntimeException $caught){same($error,$caught,'Read propagates the original throwable');}

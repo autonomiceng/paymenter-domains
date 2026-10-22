@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{HoldingAdoptionSchema, Holdin
 $f = adoptionHoldingFixture(); $d = $f['domain']; $a = $f['adoption'];
 $guard = new \Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new \Paymenter\Extensions\Servers\Domains\Services\HolderPricing($f['prices']), $f['clock']); $guard->boot();
 foreach (['ADOPTION_ID' => $a->id, 'SNAPSHOT' => encrypt(json_encode(['holding' => ['version' => 1]]), false)] as $key => $value) {
-    holdingRefused(fn () => \Paymenter\Extensions\Servers\Domains\Models\Domain::create(['domain' => 'uppercase.com', 'sld' => 'uppercase', 'tld' => 'com',
+    holdingRefused(fn () => \Paymenter\Extensions\Servers\Domains\Models\Domain::create(['domain' => 'uppercase-placeholder.com', 'sld' => 'uppercase-placeholder', 'tld' => 'com',
         'server_id' => $d->server_id, 'registrar_key' => $d->registrar_key, 'account_fingerprint' => $d->account_fingerprint,
         'user_id' => $d->user_id, 'service_id' => $d->service_id, $key => $value]), 'Alternate-case proof attribute refused: '.$key);
 }
@@ -18,9 +18,9 @@ $lateCreate = true;
 \Paymenter\Extensions\Servers\Domains\Models\Domain::creating(static function ($row) use (&$lateCreate, $a): void {
     if ($lateCreate) { $lateCreate = false; $row->adoption_id = $a->id; $row->snapshot = [...($row->snapshot ?? []), 'holding' => ['version' => 1]]; }
 });
-holdingRefused(fn () => \Paymenter\Extensions\Servers\Domains\Models\Domain::create(['domain' => 'late-create.com', 'sld' => 'late-create', 'tld' => 'com',
+holdingRefused(fn () => \Paymenter\Extensions\Servers\Domains\Models\Domain::create(['domain' => 'late-create-placeholder.com', 'sld' => 'late-create-placeholder', 'tld' => 'com',
     'server_id' => $d->server_id, 'registrar_key' => $d->registrar_key, 'account_fingerprint' => $d->account_fingerprint,
-    'user_id' => $d->user_id, 'service_id' => $newService->id, 'status' => 'registration_pending', 'snapshot' => ['checkout' => ['name' => 'late-create.com']]]), 'Late creation callback cannot insert adoption proof');
+    'user_id' => $d->user_id, 'service_id' => $newService->id, 'status' => 'registration_pending', 'snapshot' => ['checkout' => ['name' => 'late-create-placeholder.com']]]), 'Late creation callback cannot insert adoption proof');
 same(0, \Paymenter\Extensions\Servers\Domains\Models\Domain::where('service_id', $newService->id)->count(), 'Caught insert refusal rolls back the entire row');
 $lock = DB::transaction(fn () => HoldingIdentityLock::lockForAdoption($f['order']->id, $f['service']->id));
 holdingRefused(fn () => DB::transaction(fn () => $d->attachAdoption($lock, $a->id)), 'Expired identity lock refuses attachment');

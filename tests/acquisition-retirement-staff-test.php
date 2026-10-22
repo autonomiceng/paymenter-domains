@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,DomainReservations,HoldingLocks,NativeCancellation,NativeIdentity,NativeIntentSchema,ReminderSchema,StaffHoldingReview,UnpaidAcquisitionProof};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionActions;
 // Staff action, fresh identity/permission/reason snapshot and retained audit.
-$staffOp=$new('unpaid-staff.com',paid:false);$key=$ticket($staffOp);
+$staffOp=$new(placeholderComFixtureName('unpaid-staff-placeholder.com'),paid:false);$key=$ticket($staffOp);
 foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>$retirement->retire($staffOp->domain_id,$staff,$ticket($staffOp),$bad));}
 commerceReject(fn()=>$retirement->retire($staffOp->domain_id,$staff,$key,"Bad\nreason"));
 $staffOp->domain->service->forceFill(['label'=>'Changed after review'])->save();commerceReject(fn()=>$retirement->retire($staffOp->domain_id,$staff,$key,'Stale review refuses'));
@@ -30,11 +30,11 @@ AcquisitionRetirement::boot();
 // Real staff modal success and refusal use the same locked authority.
 Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();staffPanel();Auth::login($staff);
 $pageClass=Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class;
-$modalOp=$new('unpaid-modal.com',paid:false);Auth::login($staff);
+$modalOp=$new(placeholderComFixtureName('unpaid-modal-placeholder.com'),paid:false);Auth::login($staff);
 $page=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$modalOp->domain_id])->mountAction('retire_unpaid')->assertActionMounted('retire_unpaid');
 $page->setActionData(['reason'=>'Retire from real staff modal'])->callMountedAction()->assertNotified('Unpaid order retired')->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$modalOp->domain_id]));
 Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$modalOp->domain_id])->assertActionDoesNotExist('retire_unpaid');same(null,$modalOp->domain->fresh()->reservation_name,'Real modal invokes retirement');
-$paid=$new('unpaid-refusal.com');Auth::login($staff);
+$paid=$new(placeholderComFixtureName('unpaid-refusal-placeholder.com'));Auth::login($staff);
 $refusal=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$paid->domain_id])->mountAction('retire_unpaid');
 $refusal->setActionData(['reason'=>'Paid modal must refuse'])->callMountedAction()->assertNotified('Order retirement refused');
 same($paid->domain->domain,$paid->domain->fresh()->reservation_name,'Paid modal retains name');

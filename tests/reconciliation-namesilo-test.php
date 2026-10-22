@@ -9,8 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client, Driver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as WireEnvironment, RegistrarRequest, RequestContext as WireContext, TransportResponse};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, HistoryAcceptances, OperationReconciliation, RegistrarRegistry};
 $sellers->change('com', 2, $tlds[1]->server_id, true, true, $clock->now());
-$cart = commerceCart($user); commerceAdd($cart, $native->product($tlds[1], 'register'), 'native-history.com'); commerceCheckout($user, $cart);
-$op = Domain::where('domain', 'native-history.com')->sole()->operations()->sole();
+$cart = commerceCart($user); commerceAdd($cart, $native->product($tlds[1], 'register'), 'native-history-placeholder.com'); commerceCheckout($user, $cart);
+$op = Domain::where('domain', 'native-history-placeholder.com')->sole()->operations()->sole();
 Illuminate\Support\Facades\DB::table('invoices')->where('id', $op->invoice_id)->update(['status' => 'paid']);
 App\Models\InvoiceTransaction::create(['invoice_id' => $op->invoice_id, 'amount' => $op->amount, 'fee' => '0.00', 'status' => 'succeeded']);
 [$claimed, $domain, $binding] = $claims->claim($op->id);
@@ -28,12 +28,12 @@ $wire = new class implements DeadlineTransport {
     public function sendWithin(WireEnvironment $e, WireContext $c, RegistrarRequest $r, string $key, int $ms): TransportResponse {
         same(0, Illuminate\Support\Facades\DB::transactionLevel(), 'No-ID reads outside locks'); $this->calls++; $this->commands[] = $r->command;
         expect($ms > 0 && $ms <= 25000, 'NameSilo deadline bounded');
-        if ($r->command === 'getDomainInfo') { same(['domain' => 'native-history.com'], $r->parameters(), 'Exact account-scoped name read'); }
+        if ($r->command === 'getDomainInfo') { same(['domain' => 'native-history-placeholder.com'], $r->parameters(), 'Exact account-scoped name read'); }
         if ($this->during) { $hook = $this->during; $this->during = null; $hook($r->command); }
         $reply = match ($r->command) {
             'listOrders' => ['order' => [['order_number' => $this->historyId]]],
             'orderDetails' => ['order_number' => $this->historyId, 'order_date' => $this->historyDate, 'total' => '8.95',
-                'order_details' => [['description' => 'native-history.com - '.$this->historyAction, 'years_qty' => '1', 'status' => 'Processed', 'subtotal' => '8.95']]],
+                'order_details' => [['description' => 'native-history-placeholder.com - '.$this->historyAction, 'years_qty' => '1', 'status' => 'Processed', 'subtotal' => '8.95']]],
             'getDomainInfo' => ['created' => '2026-10-18', 'expires' => $this->expiry, 'status' => $this->status, 'locked' => 'Yes', 'private' => 'No', 'auto_renew' => $this->auto],
             'getPrices' => [$this->quote ? 'com' : 'net' => ['registration' => '8.95', 'renew' => $this->price, 'transfer' => '8.95']],
             'getAccountBalance' => ['balance' => $this->balance],

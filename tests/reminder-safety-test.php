@@ -15,17 +15,17 @@ $enable(0,'','0');$facts=\Paymenter\Extensions\Servers\Domains\Admin\Support\Rem
 same('None',$facts['Days before expiry'],'Empty before schedule displays None');
 same('0',$facts['Days after expiry'],'Expiry-day after schedule displays zero');
 Auth::logout();$enable();
-[$d,$invoice,$op]=$make('changed-invoice.com');DB::table('invoice_items')->where('id',$invoice->items()->sole()->id)->update(['price'=>'99.00']);
+[$d,$invoice,$op]=$make(placeholderComFixtureName('changed-invoice-placeholder.com'));DB::table('invoice_items')->where('id',$invoice->items()->sole()->id)->update(['price'=>'99.00']);
 same(false,$reminders->remind($d->id),'Changed invoice is never a payment instruction');
 expect(DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','invalid_invoice')->exists(),'Invalid invoice staff alert');
-[$d,$invoice,$op]=$make('paid-renewal.com');$op->update(['state'=>'queued']);
+[$d,$invoice,$op]=$make(placeholderComFixtureName('paid-renewal-placeholder.com'));$op->update(['state'=>'queued']);
 same(false,$reminders->remind($d->id),'Paid queued renewal needs no reminder');
-[$d]=$make('planned-invoice.com',false);$clock->instant=new DateTimeImmutable('2027-09-18T12:00:00Z');
+[$d]=$make(placeholderComFixtureName('planned-invoice-placeholder.com'),false);$clock->instant=new DateTimeImmutable('2027-09-18T12:00:00Z');
 \Paymenter\Extensions\Servers\Domains\Models\Price::where('action','renew')->update(['observed_at'=>$clock->now()->format('Y-m-d H:i:s')]);
 $d->service->product->server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'],['value'=>true,'type'=>'boolean']);
 expect($reminders->remind($d->id),'Source month-out scheduled invoice reminder');
 same('September 27, 2027',Mail::queued(DomainNotice::class)->last()->data['invoice_on'],'Known saved issue date');
-[$d]=$make('renewal-off.com',false);ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Synthetic request']);
+[$d]=$make(placeholderComFixtureName('renewal-off-placeholder.com'),false);ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Synthetic request']);
 $cancelCounts=[App\Models\Invoice::count(),Paymenter\Extensions\Servers\Domains\Models\Operation::count()];
 same(null,$billing->invoice($d->id),'Scheduled billing quietly skips a native cancellation before the notice');
 same($cancelCounts,[App\Models\Invoice::count(),Paymenter\Extensions\Servers\Domains\Models\Operation::count()],'Cancellation notice flow creates no renewal debt');
@@ -41,17 +41,17 @@ expect(!DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where
 $offNotice=App\Models\Notification::where('user_id',$d->user_id)->latest('id')->firstOrFail();
 expect(str_contains($offNotice->title,$d->domain)&&str_contains($offNotice->body,'Renewal is turned off. To keep this domain, contact support before it expires.'),'Actual native in-app reminder says renewal is off for the cancelled domain');
 
-[$d]=$make('expired-off.com',false);ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Synthetic request']);
+[$d]=$make(placeholderComFixtureName('expired-off-placeholder.com'),false);ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Synthetic request']);
 $d->update(['status'=>'expired']);$clock->instant=new DateTimeImmutable('2027-10-21T12:00:00Z');
 expect($reminders->remind($d->id),'Expired notice at configured three-day window');
 // Native user preferences suppress a whole window without repeated attempts.
-[$d]=$make('preference-off.com');$template=NotificationTemplate::where('key','domains_domain_expiring')->sole();
+[$d]=$make(placeholderComFixtureName('preference-off-placeholder.com'));$template=NotificationTemplate::where('key','domains_domain_expiring')->sole();
 $d->service->user->notificationsPreferences()->create(['notification_template_id'=>$template->id,'mail_enabled'=>false,'in_app_enabled'=>false]);
 $before=Mail::queued(DomainNotice::class)->count();same(false,$reminders->remind($d->id),'Native opt-out respected');
 same($before,Mail::queued(DomainNotice::class)->count(),'Opt-out queues no mail');
 same('suppressed',DB::table('domains_reminder_deliveries')->where('domain_id',$d->id)->sole()->state,'Preference outcome retained');
 // Mail-disable is email-only; native in-app preferences still apply.
-$d->service->user->notificationsPreferences()->delete();[$appOnly]=$make('in-app-only.com');
+$d->service->user->notificationsPreferences()->delete();[$appOnly]=$make(placeholderComFixtureName('in-app-only-placeholder.com'));
 config(['settings.mail_disable'=>true]);$count=\App\Models\Notification::where('user_id',$appOnly->user_id)->count();
 expect($reminders->remind($appOnly->id),'Mail-disable preserves in-app notice');
 same($count+1,\App\Models\Notification::where('user_id',$appOnly->user_id)->count(),'Native app channel delivered');
@@ -67,7 +67,7 @@ $next=ReminderSchedules::next($clock->now()->getTimestamp(),2);expect(!array_int
 $again=ReminderSchedules::next($clock->now()->getTimestamp());same([],$again,'Cadence prevents fixed-time repeat work');
 commerceReject(fn()=>ReminderSchedules::next($clock->now()->getTimestamp(),26));
 // Real scheduled selection must expose failures without leaking the exception message.
-[$broken]=$make('throwing-reminder.com');[$healthy]=$make('following-reminder.com');
+[$broken]=$make(placeholderComFixtureName('throwing-reminder-placeholder.com'));[$healthy]=$make(placeholderComFixtureName('following-reminder-placeholder.com'));
 $throwOnRead=[];
 \Paymenter\Extensions\Servers\Domains\Models\Domain::retrieved(static function($domain)use(&$throwOnRead):void {
     if(isset($throwOnRead[$domain->id])&&$domain->getRawOriginal('domain')!==null){unset($throwOnRead[$domain->id]);throw new RuntimeException('private-reminder-provider-contact-credential');}
@@ -94,7 +94,7 @@ try {
 same(array_fill(0,2,['level'=>\Monolog\Level::Warning,'message'=>'Domains reminder check failed.',
     'context'=>['domain_id'=>$broken->id,'exception_class'=>RuntimeException::class]]),$handler->warnings,'Warnings contain only class and domain ID, never private exception text or objects');
 expect(DB::table('domains_reminder_deliveries')->where('domain_id',$healthy->id)->where('state','accepted')->exists(),'Later holding still receives its notice');
-[$unmanaged]=$make('unmanaged-reminder.com');
+[$unmanaged]=$make(placeholderComFixtureName('unmanaged-reminder-placeholder.com'));
 DB::table('domains_domains')->where('id',$unmanaged->id)->update(['billing_managed'=>false]);
 same(false,$reminders->remind($unmanaged->id),'Unmanaged holding quietly skips before managed authority locks');
 expect(!DB::table('domains_reminder_deliveries')->where('domain_id',$unmanaged->id)->exists(),'Unmanaged holding sends no notice');

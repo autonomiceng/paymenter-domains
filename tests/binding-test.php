@@ -128,7 +128,7 @@ foreach (['id' => 999, 'server_id' => 2, 'registrar_key' => 'namesilo', 'environ
 $reject(static fn () => $account->delete());
 $reject(static fn () => $account->update(['processing_enabled' => true])); $account->refresh();
 $reject(static fn () => Account::create(['server_id' => 2, 'registrar_key' => 'enom', 'environment' => 'test', 'stable_identity' => 'unverified-label']));
-$domain = DomainReservations::reserve(['domain' => 'x.com', 'service_id' => 1, 'user_id' => 1, 'status' => 'pending',
+$domain = DomainReservations::reserve(['domain' => 'example.com', 'service_id' => 1, 'user_id' => 1, 'status' => 'pending',
     'server_id' => 1, 'registrar_key' => 'enom', 'account_fingerprint' => $b->fingerprint], ['com']);
 $reject(static fn () => $domain->update(['server_id' => 2])); $domain->refresh();
 $reject(static fn () => $domain->update(['user_id' => 2])); $domain->refresh();

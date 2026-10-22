@@ -19,7 +19,7 @@ app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::cl
 if($guardFirst){$guard->boot();NativeIdentity::boot();}else{NativeIdentity::boot();$guard->boot();}
 staffPanel();
 $staff=staffUser(['admin.domains.view','admin.services.viewAny','admin.services.view','admin.services.update','admin.services.delete']);
-$op=$new('native-service-refusal.com');$service=$op->domain->service;
+$op=$new(placeholderComFixtureName('native-service-refusal-placeholder.com'));$service=$op->domain->service;
 $before=static function(): array {
     $rows=[];foreach(['services','orders','properties','domains_domains','domains_operations','domains_accounts','settings','invoices','invoice_items','invoice_transactions','jobs','audits'] as $table){$rows[$table]=DB::table($table)->orderBy('id')->get()->toJson();}return $rows;
 };

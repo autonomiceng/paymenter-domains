@@ -19,7 +19,7 @@ $g = Gateway::create(['name'=>'Synthetic', 'extension'=>'RenewalAdmissionDouble'
 $a = BillingAgreement::create(['user_id'=>$user->id, 'gateway_id'=>$g->id, 'name'=>'Synthetic', 'external_reference'=>'synthetic']);
 $results = [];
 foreach ([false, true] as $auto) {
-    [$original, $binding] = $prepare($auto?'funded-auto.com':'funded-manual.com');
+    [$original, $binding] = $prepare($auto?'funded-auto-placeholder.com':'funded-manual-placeholder.com');
     same('succeeded', $reconcile->run($original->id)->state, 'Real holding anchor');
     $d = $original->domain()->firstOrFail(); $d->service->update(['billing_agreement_id'=>$a->id]);
     $product->server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'], ['value'=>true,'type'=>'boolean']);

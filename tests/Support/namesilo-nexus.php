@@ -11,7 +11,7 @@ expect(!RegistryInputs::supported('enom','us',[]),'Enom .us remains unsupported'
 commerceReject(fn()=>RegistryInputs::validate('enom','us',[],['usnc'=>'C11','usap'=>'P1']));
 // Seed a synthetic frozen paid setup without opening catalogue admission for .us.
 // This models a future accepted collection seam, not a customer sale or provider proof.
-$nexusOp=$nsNew('nexus-preparation.com');$name='nexus-preparation.us';
+$nexusOp=$nsNew(placeholderComFixtureName('nexus-preparation-placeholder.com'));$name='nexus-preparation-placeholder.us';
 CatalogueAcceptances::save($binding,$accepted->revision,$accepted->endings+['us'=>$accepted->endings['com']]);
 $policy=$nexusOp->policy;$policy['checkout']['name']=$name;
 $snapshot=$nexusOp->domain->snapshot;$snapshot['checkout']=$policy['checkout'];

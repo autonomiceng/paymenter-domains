@@ -16,7 +16,7 @@ $f=commerceFixture();extract($f);tldPanel();ObservationSchema::install();Carbon\
 $t=$tlds[0];$server=App\Models\Server::findOrFail($t->server_id);
 $server->settings()->create(['key'=>'private-sentinel','type'=>'string','encrypted'=>true,'value'=>'PRIVATE-CREDENTIAL']);
 $d=Domain::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,
-    'user_id'=>900,'service_id'=>900,'domain'=>'holder.com','sld'=>'holder','tld'=>'com','status'=>'active']);
+    'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);
 DB::table('domains_observation_queues')->insert(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint,'catalogue_hold'=>'read_unavailable']);
 foreach([[],[Staff::COSTS],[Staff::VIEW],[Staff::VIEW,Staff::COSTS]] as $permissions){
     $u=staffUser($permissions);Auth::setUser($u);$can=in_array(Staff::VIEW,$permissions,true);$cost=$can&&in_array(Staff::COSTS,$permissions,true);

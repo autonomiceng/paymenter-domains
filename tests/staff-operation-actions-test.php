@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations};
-$op=$held('staff-actions.com'); $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSuccessful();
+$op=$held('staff-actions-placeholder.com'); $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSuccessful();
 // Every action has an independent default-deny permission; a general manager has none of them.
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){
     $staff->role->update(['permissions'=>array_values(array_diff($all,[StaffOperationReview::permission($action)]))]);
@@ -41,7 +41,7 @@ same('account_credit',$op->fresh()->funding['refund']['to'],'Engine once marker'
 Paymenter\Extensions\Servers\Domains\Services\DomainReservations::releaseTerminal($op->domain->domain);
 same(null,$op->domain->fresh()->reservation_name,'Proven unsent registration releases only after committed credit');
 // A failed native credit keeps the audited rejection; the separately permitted UI retry succeeds once.
-$retry=$held('staff-credit-retry.com'); $before=$credit();
+$retry=$held('staff-credit-retry-placeholder.com'); $before=$credit();
 DB::unprepared("CREATE TRIGGER staff_credit_fail BEFORE UPDATE ON credits BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END");
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled unsent order'])->assertHasNoActionErrors()->assertNotified(Notification::make()->danger()->title('Review refused')->body('Reload this page and review current permissions, funding and retained evidence. Reference: refund/'.$retry->id.'/database_failure. A credit decision may be retained; check the ledger before retrying.'));
 echo "Failed credit retained.\n";
@@ -52,10 +52,10 @@ $after=$credit();commerceReject(fn()=>$run($retry->fresh(),'credit'));same($afte
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->callAction('disposition',['reason'=>'Reviewed retained terminal proof'])->assertNotified('Review recorded');
 echo "Native disposition passed.\n";
 // Open page and old tickets cannot act after state changes, expiration, domain spoofing or role revocation.
-$stale=$held('staff-stale.com');$open=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$stale->id]);$key=$ticket($stale,'release');
+$stale=$held('staff-stale-placeholder.com');$open=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$stale->id]);$key=$ticket($stale,'release');
 $stale->update(['safe_code'=>'funding']);$open->callAction('release',['reason'=>'Stale review cannot resume'])->assertNotified(Notification::make()->danger()->title('Review refused')->body('This request changed. Reload this page.'));
 commerceReject(fn()=>$run($stale,'release',$key));
-$foreign=$held('staff-foreign.com');$key=$ticket($stale->fresh(),'refund');
+$foreign=$held('staff-foreign-placeholder.com');$key=$ticket($stale->fresh(),'refund');
 commerceReject(fn()=>$service->run($staff,$foreign->domain_id,$foreign->id,'refund',$key,'Cross domain review refused'));
 $key=$ticket($foreign,'refund');$clock->instant=$clock->now()->modify('+901 seconds');commerceReject(fn()=>$run($foreign,'refund',$key));
 $key=$ticket($foreign,'refund');$staff->role->update(['permissions'=>[Staff::VIEW]]);commerceReject(fn()=>$run($foreign,'refund',$key));$staff->role->update(['permissions'=>$all]);
@@ -68,7 +68,7 @@ foreach(['uncertain','pending','held','rejected'] as $stateName){
     same($before,[$sent->fresh()->attempt,$sent->fresh()->funding,$sent->domain->fresh()->reservation_name,$credit()],'No UI action releases, credits or erases unknown/sent evidence');
 }
 // Read actions leave ten audit entries available for financial/disposition recovery.
-$headroom=$held('staff-audit-headroom.com');$history=array_fill(0,90,['key'=>'synthetic-prior']);$headroom->update(['policy'=>[...$headroom->policy,'staff_actions'=>$history]]);
+$headroom=$held('staff-audit-headroom-placeholder.com');$history=array_fill(0,90,['key'=>'synthetic-prior']);$headroom->update(['policy'=>[...$headroom->policy,'staff_actions'=>$history]]);
 commerceReject(fn()=>$run($headroom->fresh(),'recheck'));$run($headroom->fresh(),'release');same(91,count($headroom->fresh()->policy['staff_actions']),'Read cap preserves local recovery headroom');
 echo "Native financial review and refusal boundaries passed.\n";
 $nativeSuccessful=true;

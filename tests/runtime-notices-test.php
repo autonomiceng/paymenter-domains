@@ -25,7 +25,7 @@ same(1,count(decrypt($q->sole()->audit)),'Active audit starts next retained segm
 $archive=DB::table(AuditArchives::TABLE)->where('server_id',$t->server_id)->where('family','reminders')->sole();expect(!str_contains($archive->payload,'prior_review'),'Schedule history encrypted');same(100,count(json_decode(AuditArchives::latest($t->server_id,'reminders'),true)['rows']),'All100 prior rows retained');
 expect(!App\Models\Server::find($t->server_id)->settings()->where('key','like','domains_reminder_audit.%')->exists(),'Archives stay outside native settings loads');
 // A manual disposition records staff review without any resend or release of the claim.
-$op=$newTransfer('manual-outcome.com',0,true,false);$id=DB::table('domains_reminder_deliveries')->insertGetId(['domain_id'=>$op->domain_id,'delivery_key'=>hash('sha256','manual-review'),'template'=>'domains_transfer_code_paid','state'=>'uncertain','created_at'=>$now->getTimestamp()]);
+$op=$newTransfer(placeholderComFixtureName('manual-outcome-placeholder.com'),0,true,false);$id=DB::table('domains_reminder_deliveries')->insertGetId(['domain_id'=>$op->domain_id,'delivery_key'=>hash('sha256','manual-review'),'template'=>'domains_transfer_code_paid','state'=>'uncertain','created_at'=>$now->getTimestamp()]);
 $writer=new StaffSettingsWrites($native,$sellers,$bindings);
 $reviewFor=static function(string $action,int $serverId)use($staff):Review{$stamp=Review::stamp($serverId,null);return new Review($staff->id,$serverId,null,$action,Review::ticket($staff->id,$serverId,null,$action,$stamp),'Reject invalid notification review');};
 $rejectUnchanged=static function(Review $review,array $data,string $table,int $id,string $message)use($writer,$now):void{

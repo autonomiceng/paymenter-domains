@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{NativeCancellation,NativeIden
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class,$invoiceBinding);
 NativeIntentSchema::install();NativeIdentity::boot();NativeCancellation::boot();
 $actor=staffUser(['admin.domains.view']);Auth::login($actor);
-[$op]=$prepare('native-cancel-audit.com');same('succeeded',$reconcile->run($op->id)->state,'Completed managed holding');
+[$op]=$prepare(placeholderComFixtureName('native-cancel-audit-placeholder.com'));same('succeeded',$reconcile->run($op->id)->state,'Completed managed holding');
 Auth::login($actor);
 $row=ServiceCancellation::create(['service_id'=>$op->service_id,'type'=>'end_of_period','reason'=>'Native stop future renewal']);
 $row->update(['reason'=>'Native audited reason edit']);

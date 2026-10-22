@@ -41,7 +41,7 @@ foreach([['state'=>'unknown'],['environment'=>'staging'],['origin'=>'purchase'],
     adoptionRefused(fn()=>Adoption::create([...$data,'request_key'=>'invalid',...$bad]),'Malformed adoption record refused');
 }
 foreach(['request_key'=>'changed','request_digest'=>str_repeat('d',64),'service_id'=>4,'domain_id'=>11,'user_id'=>3,'server_id'=>2,
-    'account_fingerprint'=>str_repeat('d',64),'registrar_key'=>'namesilo','environment'=>'live','evidence'=>[...$evidence,'canonical_name'=>'other.com'],
+    'account_fingerprint'=>str_repeat('d',64),'registrar_key'=>'namesilo','environment'=>'live','evidence'=>[...$evidence,'canonical_name'=>'other-placeholder.com'],
     'actor_id'=>10,'reason'=>'Changed intent','do_not_renew'=>true,'cancellation_id'=>99,'observed_at'=>'2026-10-19 12:00:01','valid_until'=>'2026-10-19 12:03:00'] as $key=>$value){
     adoptionRefused(fn()=>$preview->fill([$key=>$value,'state'=>'refused'])->save(),'Requested identities and intent are frozen');$preview->refresh();
 }

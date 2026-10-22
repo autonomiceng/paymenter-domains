@@ -19,7 +19,7 @@ $writer->run(new Review($u->id,$t->server_id,$t->id,'default_rule',$key,'Review 
 $key=Review::ticket($u->id,$t->server_id,$t->id,'publish',Review::stamp($t->server_id,$t->id));
 $writer->run(new Review($u->id,$t->server_id,$t->id,'publish',$key,'Publish reviewed annual retail revision'),[],$now);
 \Paymenter\Extensions\Servers\Domains\Models\Domain::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,
-    'user_id'=>900,'service_id'=>900,'domain'=>'holder.com','sld'=>'holder','tld'=>'com','status'=>'active']);
+    'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);
 $panel=Filament::getCurrentPanel();$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $render=static function($test,string $name)use($out,$css){

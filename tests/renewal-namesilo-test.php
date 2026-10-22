@@ -92,7 +92,7 @@ $wire->balance = '8.95';
 same(RenewalCode::Admitted, $check()->code, 'Exact NameSilo balance admits');
 // Privileged fixture edits exercise absence and contradictions; ordinary evidence edits are refused above.
 $originalAttempt = $result->fresh()->attempt;
-foreach ([null, ['premium' => true], ['premium' => null], ['name' => 'another.com'], ['years' => 2], ['cost' => ['amount' => '1.00', 'currency' => 'USD']]] as $change) {
+foreach ([null, ['premium' => true], ['premium' => null], ['name' => 'another-placeholder.com'], ['years' => 2], ['cost' => ['amount' => '1.00', 'currency' => 'USD']]] as $change) {
     $attempt = $result->fresh()->attempt;
     if ($change === null) { unset($attempt['registration_admission']); }
     else { $attempt['registration_admission'] = array_replace($attempt['registration_admission'], $change); }

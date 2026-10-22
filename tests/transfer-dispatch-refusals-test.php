@@ -3,8 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/Support/transfer-dispatch-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Services\OperationTerminalProof;
-$state->mode=''; $state->calls=[]; $op=$newTransfer('no-paid.com',0,false); $makeTransfer(); $engine->execute($op->id); same([],$state->calls,'Unpaid transfer never writes');
-$op=$newTransfer('no-code.com',0,true,false); $makeTransfer(); same('awaiting_code',$engine->execute($op->id)->state,'Missing code retains editable input state'); same([],$state->calls,'Missing code never writes');
+$state->mode=''; $state->calls=[]; $op=$newTransfer(placeholderComFixtureName('no-paid-placeholder.com'),0,false); $makeTransfer(); $engine->execute($op->id); same([],$state->calls,'Unpaid transfer never writes');
+$op=$newTransfer(placeholderComFixtureName('no-code-placeholder.com'),0,true,false); $makeTransfer(); same('awaiting_code',$engine->execute($op->id)->state,'Missing code retains editable input state'); same([],$state->calls,'Missing code never writes');
 $slot='domains-write-slot:'.$binding->fingerprint; same(null,Illuminate\Support\Facades\Cache::get($slot),'Missing code reserves no slot');
 foreach ([true,false] as $enabled) {
     $makeTransfer(0,new Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(transfer:$enabled)); Illuminate\Support\Facades\Cache::put($slot,'other-dispatch',25);
@@ -14,7 +14,7 @@ foreach ([true,false] as $enabled) {
 }
 $request=Illuminate\Http\Request::create('/internal-transfer-input','POST'); $request->request->set('transfer_code',str_repeat('x',12)); $request->setUserResolver(fn()=>$user); $inputs->submitCode($request,$op->id);
 expect(Paymenter\Extensions\Servers\Domains\Services\TransferInputs::validCode($op->fresh()->payload['epp']??null),'Later owner input remains editable');
-$op=$newTransfer('disabled-transfer.com'); $makeTransfer(0,new Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(registration:true));
+$op=$newTransfer(placeholderComFixtureName('disabled-transfer-placeholder.com')); $makeTransfer(0,new Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(registration:true));
 same('held',$engine->execute($op->id)->state,'Default off transfer gate'); same([],$state->calls,'Registration permission grants no transfer permission');
 foreach (['premium','unknown','funds','changed','reverse','rules','profile','rdap404'] as $fault) {
     $i=$fault==='profile'?1:0; $op=$newTransfer('refuse-'.$fault.'.com',$i); $makeTransfer($i); $state->calls=[]; $state->reads=0;

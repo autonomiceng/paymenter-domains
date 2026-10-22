@@ -54,7 +54,7 @@ foreach ([fn() => $cachedCheck(), fn() => $cachedSave(['url' => DohEndpoint::URL
     try { $callback(); expect(false, 'Revoked action denied'); } catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(403, $e->getStatusCode(), 'Fresh permission check'); }
 }
 same(0, $calls, 'Revocation starts no query'); $setRights($rights);
-Livewire::actingAs($staff)->test(Page::class)->mountAction('configure')->setActionData(['url' => 'http://resolver.org', 'ip' => '127.0.0.1'])->callMountedAction()->assertHasActionErrors(['url', 'ip']);
+Livewire::actingAs($staff)->test(Page::class)->mountAction('configure')->setActionData(['url' => 'http://resolver-placeholder.org', 'ip' => '127.0.0.1'])->callMountedAction()->assertHasActionErrors(['url', 'ip']);
 Livewire::actingAs($staff)->test(Page::class)->mountAction('configure')->setActionData(['url' => DohEndpoint::URL, 'ip' => DohEndpoint::IP])->callMountedAction()->assertHasNoActionErrors()->assertNotified('DNS resolver settings saved');
 $nativeBefore = $nativeCalls;
 $page = Livewire::actingAs($staff)->test(Page::class)->callAction('check')->assertSee('DNS-over-HTTPS working (cloudflare-dns.com,');

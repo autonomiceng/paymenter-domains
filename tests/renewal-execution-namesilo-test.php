@@ -14,8 +14,8 @@ $engine = new RenewalExecution($renewBindings,$authority,new RenewalAdmission($a
 $writes = 0;
 $writer = new RenewalWriter($binding,$features,$accepted,fn ()=>$engine,static function ($origin,$command,$params,$ms) use (&$writes) {
     same(0,Illuminate\Support\Facades\DB::transactionLevel(),'NameSilo wire outside locks'); same('https://ote.namesilo.com/apibatch',$origin,'Fixed background test route');
-    same('renewDomain',$command,'Named renewal only'); same(['domain'=>'native-history.com','years'=>1,'auto_renew'=>0],$params,'Explicit annual renewal and auto-renew off, no card/restore overrides');
-    $writes++; return json_encode(['request'=>['operation'=>'renewDomain'],'reply'=>['code'=>300,'detail'=>'synthetic','domain'=>'native-history.com','order_amount'=>'8.95']]);
+    same('renewDomain',$command,'Named renewal only'); same(['domain'=>'native-history-placeholder.com','years'=>1,'auto_renew'=>0],$params,'Explicit annual renewal and auto-renew off, no card/restore overrides');
+    $writes++; return json_encode(['request'=>['operation'=>'renewDomain'],'reply'=>['code'=>300,'detail'=>'synthetic','domain'=>'native-history-placeholder.com','order_amount'=>'8.95']]);
 });
 $completion = new RenewalCompletion($renewBindings,$clock);
 $server = $holding->service->product->server;

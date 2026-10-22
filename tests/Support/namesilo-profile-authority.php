@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Exact authority diagnostics, with offline failures.
 declare(strict_types=1);
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget, RequestContext, RequestOrigin};
-$probeOp = $nsNew('profile-diagnostic-errors.com'); [$claimed] = $claims->claim($probeOp->id);
+$probeOp = $nsNew(placeholderComFixtureName('profile-diagnostic-errors-placeholder.com')); [$claimed] = $claims->claim($probeOp->id);
 $tables = ['domains_operations', 'domains_domains', 'domains_accounts', 'invoices']; $rows = [];
 foreach ($tables as $table) { $rows[$table] = Illuminate\Support\Facades\DB::table($table)->get()->map(fn ($row) => (array) $row)->all(); }
 foreach (['claim', 'evidence', 'binding', 'contacts', 'acquisition', 'funding', 'malformed-binding', 'infrastructure'] as $case) {

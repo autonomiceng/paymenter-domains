@@ -9,13 +9,13 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 $entry=new Paymenter\Extensions\Servers\Domains\Domains;$entry->installed();extract(commerceFixture(true,static fn()=>null));$entry->boot();tldPanel();
-$orphan=Paymenter\Extensions\Servers\Domains\Models\Domain::create(['user_id'=>987654,'service_id'=>987654,'domain'=>'missing-native.com','sld'=>'missing-native','tld'=>'com','server_id'=>$tlds[0]->server_id,'registrar_key'=>'enom','account_fingerprint'=>$tlds[0]->account_fingerprint,'status'=>'registration_pending']);
+$orphan=Paymenter\Extensions\Servers\Domains\Models\Domain::create(['user_id'=>987654,'service_id'=>987654,'domain'=>'missing-native-placeholder.com','sld'=>'missing-native-placeholder','tld'=>'com','server_id'=>$tlds[0]->server_id,'registrar_key'=>'enom','account_fingerprint'=>$tlds[0]->account_fingerprint,'status'=>'registration_pending']);
 Paymenter\Extensions\Servers\Domains\Services\NativeIdentityDiscrepancies::inspect($orphan,now()->getTimestamp());
 $staff=staffUser(array_keys(Staff::permissions()));$panel=Filament::getCurrentPanel();
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $test=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful();
 $test->assertSee('Adoption readiness')->assertSee("Off. Deleting a customer during checkout can remove their new domain's Paymenter order and service, today as well. Affected domains appear under Missing Paymenter records on each account. Adoption stays off until a later release closes this gap. Before switching it on, let in-progress edits finish, then restart web and queue workers. Direct database edits bypass these checks.");
-$test->assertSee('Missing Paymenter records')->assertSee('Customer, order or service missing')->assertSee('missing-native.com')->assertSee('The domain and its name stay reserved until a later release adds a resolution step.')->assertSee('Do not restore deleted records manually.');
+$test->assertSee('Missing Paymenter records')->assertSee('Customer, order or service missing')->assertSee('missing-native-placeholder.com')->assertSee('The domain and its name stay reserved until a later release adds a resolution step.')->assertSee('Do not restore deleted records manually.');
 // Every moved site fact has one entry, independent of the number of configured accounts.
 $site=\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::site();
 $flat=$test->instance()->content(\Filament\Schemas\Schema::make($test->instance()))->getFlatComponents();

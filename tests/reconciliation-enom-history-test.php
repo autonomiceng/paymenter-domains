@@ -25,7 +25,7 @@ $wire = new class implements Transport {
             if ($this->fault === 'unknown') { $data .= '<UnknownCompleteness>1</UnknownCompleteness>'; }
         } else {
             $date = ($p['OrderID'] === '902' && $this->fault === 'undated') ? '' : ($this->fault === 'date' && $p['OrderID'] === '902' ? '<BillDate>10/18/2026</BillDate>' : '<BillDate>10/18/2026 5:00:01 AM</BillDate>');
-            $name = $p['OrderID'] === '902' && $this->fault === 'foreign' ? 'unrelated.com' : ($p['OrderID'] === '902' && $this->fault === 'case' ? 'Example.com' : 'example.com');
+            $name = $p['OrderID'] === '902' && $this->fault === 'foreign' ? 'unrelated-placeholder.com' : ($p['OrderID'] === '902' && $this->fault === 'case' ? 'Example.com' : 'example.com');
             $data = '<Order><OrderID>'.$p['OrderID'].'</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount>'.$date.'<OrderDetail><Description>'.$name.'</Description><ProductType>Register</ProductType><Quantity>3</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>8.95</AmountPaid><ExpiryDatetime>2029-10-18</ExpiryDatetime></OrderDetail></Order>';
         }
         if ($command === ReadCommand::Order) {

@@ -15,7 +15,7 @@ $second = Order::create(['user_id' => $owner->id, 'currency_code' => 'USD']);
 $service = Service::create(['user_id' => $owner->id, 'order_id' => $order->id, 'product_id' => $product->id,
     'plan_id' => $product->plans()->where('billing_period', 1)->sole()->id, 'quantity' => 1,
     'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']);
-$service->properties()->create(['key' => 'domain', 'value' => 'identity-lock.com']);
+$service->properties()->create(['key' => 'domain', 'value' => 'identity-lock-placeholder.com']);
 same(0, Domain::count(), 'Lock API must work before a ledger row');
 $lock = fn () => HoldingIdentityLock::lockForAdoption($order->id, $service->id);
 commerceReject($lock);

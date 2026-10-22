@@ -148,7 +148,7 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     ];
     foreach ($tones as $tone => $keys) {
         foreach ($keys as $key) {
-            $summary = new \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary('tone-example.com', null, 'managed',
+            $summary = new \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary('tone-example-placeholder.com', null, 'managed',
                 $key, [], null, null, [], [...\Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings::all(), $key => 'Tone fixture'], null, null, null, [], null, null,
                 [['id' => 1, 'label' => 'Related hosting', 'url' => '/services/1']], [], ['detail' => '/domains/1']);
             same($tone, $summary->tone($key), 'D3 summary key mapping: '.$key);

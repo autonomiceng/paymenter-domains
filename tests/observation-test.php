@@ -5,7 +5,7 @@ require __DIR__.'/Support/management.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationSchema,ObservationWork};
 ObservationSchema::install(); $budget=new AccountReadBudget($clock); $observer=new DomainObservation($readBindings,$clock,$budget);
-[$d,$driver,$original]=$holding('observed-old-holder.com');
+[$d,$driver,$original]=$holding(placeholderComFixtureName('observed-old-holder-placeholder.com'));
 $original=$original->fresh(); $before=$original->getAttributes(); $anchor=$d->renewal_policy; $expiry=$d->provider_expires_at; $revision=$d->confirmed_revision;
 same('pending',$d->observation['followup']['state'],'Acquisition atomically seeds durable follow-up');
 $sellers->change('com',2,$tlds[1]->server_id,true,true,$clock->now()); $bindings->setProcessing($d->server_id,false);
@@ -72,7 +72,7 @@ DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$
 $state->during=function()use($work,$d,$job,$priorTries){same('read_deferred',$work->tick(1)[$d->server_id],'Observation yields during management preparation');same($priorTries,DB::table('domains_observation_work')->where('id',$job->id)->value('tries'),'Busy authority spends no observation try');};
 same('succeeded',$management->run($race->id,$driver)->state,'Live management claim consumes and sends after deferred observation');
 // Exhausted pre-acquisition history cannot suppress a new completed-acquisition phase.
-$bindings->setProcessing($d->server_id, true, syntheticActivation());$clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);$sellers->change('com',3,$d->server_id,true,true,$now);[$pending]=$prepare('followup-after-exhaustion.com');$pendingDomain=$pending->domain()->firstOrFail();$work->tick(1);
+$bindings->setProcessing($d->server_id, true, syntheticActivation());$clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);$sellers->change('com',3,$d->server_id,true,true,$now);[$pending]=$prepare(placeholderComFixtureName('followup-after-exhaustion-placeholder.com'));$pendingDomain=$pending->domain()->firstOrFail();$work->tick(1);
 $pendingJob=DB::table('domains_observation_work')->where('domain_id',$pendingDomain->id)->sole();DB::table('domains_observation_work')->where('id',$pendingJob->id)->update(['safe_code'=>'budget_exhausted','tries'=>5]);
 same('succeeded',$reconcile->run($pending->id)->state,'Actual completion after pending work exhausted');
 for($i=0;$i<3;$i++){$clock->instant=$clock->now()->modify('+301 seconds');(new ObservationWork($observer,$clock,$budget))->tick(1);}

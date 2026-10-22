@@ -52,7 +52,7 @@ foreach([0,1]as$i){
     $r=$req($d,'code',['transfer_code'=>'late']);$action->code($r,$d->id);same('replacement',$op->fresh()->payload['epp'],'POST enforces same exact cutoff');$clock->instant=$now;
 }
 // JSON reaches the same owned boundary with the same form key and secret scrubbing.
-$jsonOp=$newTransfer('owner-json-code-placeholder.com',0,true,false);$exactJson='  + % é雪  ';
+$jsonOp=$newTransfer(placeholderComFixtureName('owner-json-code-placeholder.com'),0,true,false);$exactJson='  + % é雪  ';
 $base=$req($jsonOp->domain,'code');$data=['transfer_code'=>$exactJson,'_request_key'=>$base->input('_request_key')];
 $r=Request::create('/domains/'.$jsonOp->domain_id.'/transfer-code','POST',[],[],[],['CONTENT_TYPE'=>'application/json'],json_encode($data,JSON_THROW_ON_ERROR));
 $r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
@@ -71,7 +71,7 @@ foreach([0,1]as$i){
             same(['nameservers'=>implode("\n",$invalid),'privacy'=>'1'],$session->get('_old_input'),'Setup retains only submitted nonsecret fields');
             expect(!isset($registration->fresh()->policy['owner_setup']),'Invalid settings never freeze');
         }
-        $us=clone $registration->domain;$us->domain='synthetic.us';$us->tld='us';
+        $us=clone $registration->domain;$us->domain='synthetic-placeholder.us';$us->tld='us';
         try{Paymenter\Extensions\Servers\Domains\Services\AcquisitionSetup::validate($us,$registration,['ns1.example.com','ns2.example.com'],true);expect(false,'Restricted privacy refused');}
         catch(Paymenter\Extensions\Servers\Domains\Services\SetupValidation $e){same(['privacy'],$e->fields,'Restricted privacy has a safe field error');}
         storefrontViews();app('view')->share('errors',$session->get('errors'));
@@ -86,14 +86,14 @@ foreach([0,1]as$i){
     same($i===1,$registration->fresh()->payload['privacy'],'Only declared free privacy captured without a purchase');
     same('awaiting_payment',$registration->fresh()->state,'Setup creates no financial or processing authority');
 }
-$incomplete=$newTransfer('owner-before-setup-placeholder.com',1,true,true);$incomplete->update(['payload'=>[...$incomplete->payload,'nameservers'=>[]]]);$makeTransfer(1);
+$incomplete=$newTransfer(placeholderComFixtureName('owner-before-setup-placeholder.com'),1,true,true);$incomplete->update(['payload'=>[...$incomplete->payload,'nameservers'=>[]]]);$makeTransfer(1);
 $priorCalls=count($state->calls);$engine->execute($incomplete->id);same([],$incomplete->fresh()->attempt??[],'Incomplete setup consumes no acquisition attempt');same($priorCalls,count($state->calls),'Incomplete setup performs no transport');
 $setup->save($user,$incomplete->domain_id,['nameservers'=>['ns1.example.com','ns2.example.com'],'privacy'=>false]);
 expect($claims->claim($incomplete->id)!==null,'Valid owner setup permits a virgin funded claim');
-$op=$newTransfer('owner-unverified-paid-placeholder.com',0,false,false);DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);
+$op=$newTransfer(placeholderComFixtureName('owner-unverified-paid-placeholder.com'),0,false,false);DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);
 expect(!$owners->present($op->domain)->transfer['open'],'Paid status alone cannot offer an unverified deadline');
 $r=$req($op->domain,'setup',['confirmed'=>'1']);$action->setup($r,$op->domain_id);expect(!isset($op->fresh()->policy['owner_setup']),'Unfunded setup refused');
-$cutoff=$newTransfer('owner-cutoff-setup-placeholder.com',1,true,false);$clock->instant=$now->modify('+30 days');
+$cutoff=$newTransfer(placeholderComFixtureName('owner-cutoff-setup-placeholder.com'),1,true,false);$clock->instant=$now->modify('+30 days');
 expect(!isset($owners->present($cutoff->domain)->actions['setup']),'Virgin setup is absent at the exact paid cutoff');$clock->instant=$now;
 // Exercise the real global trimming middleware, including native whitespace conversion.
 $r=Request::create('/','POST',['transfer_code'=>'  keep  ','other'=>'  trim  ']);

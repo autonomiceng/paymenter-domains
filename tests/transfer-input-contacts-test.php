@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, ContactRecovery, ContactSetup, InvoiceBinding, NativeDomainGuard, HolderPricing, PricingRule, Rdap, Refunds, TransferInputs, TransferPrecheck};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 // Contact correction preserves independent transfer inputs and remains held.
-$contacts=$new('transfer-contacts.com'); $inputs->paymentAccepted($contacts->id); $inputs->submitCode($post($user,'preserve'),$contacts->id);
+$contacts=$new(placeholderComFixtureName('transfer-contacts-placeholder.com')); $inputs->paymentAccepted($contacts->id); $inputs->submitCode($post($user,'preserve'),$contacts->id);
 $contacts->refresh()->update(['payload'=>[...$contacts->payload,'nameservers'=>['ns1.example.com','ns2.example.com']]]);
 ContactRecovery::hold($contacts->id); $before=$contacts->fresh();
 $user->update(['email'=>'transfer-owner@example.com']);

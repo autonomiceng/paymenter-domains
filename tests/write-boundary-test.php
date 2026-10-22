@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, WriteAcceptance};
 $ops = [];
 foreach (['funding', 'owner', 'generation', 'reservation', 'pause', 'peer', 'acceptance', 'lease', 'context', 'budget', 'reference', 'charge', 'candidates', 'refund', 'cost', 'policy'] as $change) { $ops[$change] = $new('boundary-'.$change.'.com'); }
-$rate = $new('rate-held.com'); $preseal = [];
+$rate = $new(placeholderComFixtureName('rate-held-placeholder.com')); $preseal = [];
 foreach (['charge', 'order_candidates', 'refund'] as $key) { $preseal[$key] = $new('preseal-'.str_replace('_', '-', $key).'.com'); }
 foreach ($ops as $change => $op) {
     $build($enomBinding);

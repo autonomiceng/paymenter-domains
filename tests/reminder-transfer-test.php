@@ -47,7 +47,7 @@ try {
     $currency->update(['format' => '1.000,00', 'prefix' => 'US$', 'suffix' => 'USD']);
     $tld->update(['use_default_rule' => false, 'pricing_mode' => 'fixed', 'fixed_register' => '20.00', 'fixed_renew' => '20.00', 'fixed_transfer' => '1234.56']);
     $prices->republish($tld->fresh()); $native->publish($tld->id, $now);
-    $clock->instant = $now; $op = $newTransfer('custom-native-money-placeholder.com', 0, true, false);
+    $clock->instant = $now; $op = $newTransfer(placeholderComFixtureName('custom-native-money-placeholder.com'), 0, true, false);
     expect($reminders->remind($op->domain_id), 'M1 custom-format paid transfer queues its real notice');
     $mail = Mail::queued(DomainNotice::class)->last();
     same(['domains_transfer_code_paid', true], [$mail->emailTemplate->key,
@@ -59,22 +59,22 @@ try {
     $currency->update($currencyFormat); $tld->update($rule);
     $prices->republish($tld->fresh()); $native->publish($tld->id, $now);
 }
-$clock->instant=$now;$op=$newTransfer('unknown-payment-time-placeholder.com',0,true,false);
+$clock->instant=$now;$op=$newTransfer(placeholderComFixtureName('unknown-payment-time-placeholder.com'),0,true,false);
 $p=$op->policy;unset($p['paid_at']);DB::table('domains_operations')->where('id',$op->id)->update(['policy'=>encrypt(json_encode($p),false)]);
 same(false,$reminders->remind($op->domain_id),'Unknown payment timestamp never guesses deadline');
 expect(DB::table('domains_obligation_alerts')->where('domain_id',$op->domain_id)->where('code','unknown_payment_time')->exists(),'Payment time staff alert');
-$op=$newTransfer('already-has-code-placeholder.com',0,true,true);same(false,$reminders->remind($op->domain_id),'No missing-code email after valid code');
+$op=$newTransfer(placeholderComFixtureName('already-has-code-placeholder.com'),0,true,true);same(false,$reminders->remind($op->domain_id),'No missing-code email after valid code');
 // Temporary mail unavailability never consumes a mandatory notice.
-$op=$newTransfer('mail-unavailable-placeholder.com',0,true,false);config(['settings.mail_disable'=>true]);
+$op=$newTransfer(placeholderComFixtureName('mail-unavailable-placeholder.com'),0,true,false);config(['settings.mail_disable'=>true]);
 same(false,$reminders->remind($op->domain_id),'Unavailable forced channel alerts without a claim');
 same(0,DB::table('domains_reminder_deliveries')->where('domain_id',$op->domain_id)->count(),'Temporary unavailability is retryable');
 config(['settings.mail_disable'=>false]);expect($reminders->remind($op->domain_id),'Restored forced channel can send');
-$op=$newTransfer('historical-credit-placeholder.com',0,true,false);$clock->instant=$now->modify('+30 days');$inputs->expireMissingCode($op->id);
+$op=$newTransfer(placeholderComFixtureName('historical-credit-placeholder.com'),0,true,false);$clock->instant=$now->modify('+30 days');$inputs->expireMissingCode($op->id);
 $clock->instant=$now->modify('+33 days');same(false,$reminders->remind($op->domain_id),'Old credit cannot backfill customer mail');
 expect(DB::table('domains_obligation_alerts')->where('domain_id',$op->domain_id)->where('code','credit_notice_overdue')->exists(),'Overdue credit is staff-visible');
 $clock->instant=$now;
 // Uncertain handoff is durable and cannot replay, even after a process restart.
-$op=$newTransfer('uncertain-mail-placeholder.com',0,true,false);$before=Mail::queued(DomainNotice::class)->count();
+$op=$newTransfer(placeholderComFixtureName('uncertain-mail-placeholder.com'),0,true,false);$before=Mail::queued(DomainNotice::class)->count();
 EmailLog::creating(static function(){throw new RuntimeException('Synthetic queue boundary failure');});
 same(false,$reminders->remind($op->domain_id),'Handoff failure returns safely');
 same(false,(new Reminders($clock,$bindings))->remind($op->domain_id),'Restart never resends uncertain handoff');

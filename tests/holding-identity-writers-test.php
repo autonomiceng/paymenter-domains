@@ -6,7 +6,7 @@ use App\Models\Role;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, HoldingLocks, InvoiceFunding};
-$op = $new('identity-writer.com'); $domain = $op->domain; $service = $domain->service;
+$op = $new(placeholderComFixtureName('identity-writer-placeholder.com')); $domain = $op->domain; $service = $domain->service;
 $other = commerceUser(); $orderId = $service->order_id;
 $role = Role::create(['name' => 'Identity manager', 'permissions' => ['admin.domains.manage']]);
 $staff = commerceUser(); $staff->update(['role_id' => $role->id]);

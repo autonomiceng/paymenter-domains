@@ -13,7 +13,7 @@ $emit = static function (string $name, bool $check = false, ?string $modal = nul
     if ($check) { $test->callAction('check'); }
     if ($modal !== null) {
         $test->mountAction('configure');
-        if ($modal === 'invalid') { $test->setActionData(['url' => 'http://resolver.org', 'ip' => '127.0.0.1'])->callMountedAction()->assertHasActionErrors(['url', 'ip']); }
+        if ($modal === 'invalid') { $test->setActionData(['url' => 'http://resolver-placeholder.org', 'ip' => '127.0.0.1'])->callMountedAction()->assertHasActionErrors(['url', 'ip']); }
         $test->call('$refresh');
     }
     $html = Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>', ['page' => $test->instance(), 'body' => $test->html().($test->effects['partials']['action-modals.0'] ?? '')]);

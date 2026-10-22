@@ -31,7 +31,7 @@ $body['events'][0]['eventDate']='2027-01-01T01:00:00+01:00';$r=$reader->read('ex
 $good=$body;
 foreach (['wrong_name','missing','duplicate','redacted','invalid_date','update_only','invalid_offset'] as $case) {
     $body=$good;
-    switch($case){case 'wrong_name':$body['ldhName']='other.com';break;case 'missing':unset($body['events']);break;
+    switch($case){case 'wrong_name':$body['ldhName']='other-placeholder.com';break;case 'missing':unset($body['events']);break;
         case 'duplicate':$body['events'][]=$body['events'][0];break;case 'redacted':unset($body['events'][0]['eventDate']);break;
         case 'invalid_date':$body['events'][0]['eventDate']='2027-02-30';break;case 'update_only':$body['events'][0]['eventAction']='last changed';break;
         case 'invalid_offset':$body['events'][0]['eventDate']='2027-01-01T00:00:00+24:00';}

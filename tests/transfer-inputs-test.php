@@ -8,8 +8,8 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, ContactRecovery, ContactSetup, InvoiceBinding, NativeDomainGuard, HolderPricing, PricingRule, Rdap, Refunds, TransferInputs, TransferPrecheck};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
-$op=$new('transfer-input.com'); $inputs->paymentAccepted($op->id);
-same('Transfer transfer-input.com: adds 1 year to the current expiry', App\Models\InvoiceItem::findOrFail($op->invoice_item_id)->description, 'Transfer promises an added year without guessing an unknown expiry');
+$op=$new(placeholderComFixtureName('transfer-input-placeholder.com')); $inputs->paymentAccepted($op->id);
+same('Transfer transfer-input-placeholder.com: adds 1 year to the current expiry', App\Models\InvoiceItem::findOrFail($op->invoice_item_id)->description, 'Transfer promises an added year without guessing an unknown expiry');
 $paid=$op->fresh()->policy['paid_at']; same('awaiting_code',$op->fresh()->state,'Paid code missing');
 $nativeBeforeReplay=nativeFinancialSnapshot($op);$operationBeforeReplay=$op->fresh()->getRawOriginal();
 $inputs->paymentAccepted($op->id); same($paid,$op->fresh()->policy['paid_at'],'Payment replay preserves cutoff');
@@ -37,9 +37,9 @@ expect(TransferInputs::validCode(str_repeat('x',512)),'512-byte upper boundary')
 $inputs->submitCode($post($user,'replacement'),$op->id);
 commerceReject(fn()=>$op->fresh()->update(['payload'=>[...$op->fresh()->payload,'epp'=>'ordinary-edit']]));
 commerceReject(fn()=>$op->fresh()->update(['policy'=>[...$op->fresh()->policy,'paid_at'=>$now->modify('+1 day')->format(DATE_ATOM)]]));
-$unpaid=$new('transfer-unpaid.com',false); $inputs->submitCode($post($user,'prepaid'),$unpaid->id);
+$unpaid=$new(placeholderComFixtureName('transfer-unpaid-placeholder.com'),false); $inputs->submitCode($post($user,'prepaid'),$unpaid->id);
 expect(!isset($unpaid->fresh()->policy['paid_at']),'Unpaid code never starts clock');
-$timeout=$new('transfer-timeout.com'); $inputs->paymentAccepted($timeout->id);
+$timeout=$new(placeholderComFixtureName('transfer-timeout-placeholder.com')); $inputs->paymentAccepted($timeout->id);
 $clock->instant=$now->modify('+30 days -1 second'); same(null,$inputs->expireMissingCode($timeout->id),'No early timeout');
 $inputs->submitCode($post($user,'last-second'),$op->id);
 $clock->instant=$now->modify('+30 days');
@@ -58,7 +58,7 @@ same(null,$inputs->expireMissingCode($timeout->id),'No repeated credit');
 commerceReject(fn()=>$inputs->submitCode($post($user,'after-refund'),$timeout->id));
 $clock->instant=$now;
 // Credit failure keeps action-specific rejection; the existing bounded26 retry completes once.
-$retry=$new('transfer-credit-retry.com'); $inputs->paymentAccepted($retry->id); $clock->instant=$now->modify('+30 days');
+$retry=$new(placeholderComFixtureName('transfer-credit-retry-placeholder.com')); $inputs->paymentAccepted($retry->id); $clock->instant=$now->modify('+30 days');
 DB::unprepared("CREATE TRIGGER fail_transfer_credit BEFORE UPDATE ON credits BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END");
 try{$inputs->expireMissingCode($retry->id);expect(false,'Credit fails');}catch(Illuminate\Database\QueryException){}
 DB::unprepared('DROP TRIGGER fail_transfer_credit');
