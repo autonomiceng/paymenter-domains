@@ -45,8 +45,8 @@ final class EnomAdoptionReader
             if (new \DateTimeImmutable($expiry->value) > $start->modify('+10 years')) { return $failure('state_unconfirmed'); }
             $limits = Renewal::limits($extend);
             if ($limits === null || $limits['hold'] !== false) { return $failure('state_unconfirmed'); }
-            foreach (['getdomaininfo.status.redemption', 'getdomaininfo.status.onhold', 'getextendinfo.redemption'] as $path) {
-                $flag = ($path === 'getextendinfo.redemption' ? $extend : $info)->value($path);
+            foreach (['getdomaininfo.status.redemption', 'getdomaininfo.status.onhold', 'redemption'] as $path) {
+                $flag = ($path === 'redemption' ? $extend : $info)->value($path);
                 if ($flag !== null && Driver::flag($flag) !== false) { return $failure('state_unconfirmed'); }
             }
             if ($this->clock->now() >= $context->deadline) { return $failure('read_failed'); }

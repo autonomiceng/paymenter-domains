@@ -61,3 +61,11 @@ All responses are socket-free synthetic XML through the reviewed protocol object
 They establish installed composition, not real provider renewal acceptance,
 production database locking or live authority. The overlapping workers use SQLite. Real TEST Extend and confirmation still
 need an explicitly authorized funded provider run. No provider call was made here.
+
+Offline shape regressions use synthetic values with captured flat GetExtendInfo fields
+and Check v2 envelope/empty-currency facts. The money and native admission suites
+require an ordinary one-year USD 8.95 renewal; wrapped replies stay unknown.
+Expiry reconciliation accepts the primary flat expiration only with matching authenticated
+local-day evidence and continues refusing secondary expiry aliases. Hold, maximum,
+price and currency failures retain their refusal/unknown behavior. Mutation checks cover
+wrapper reads, primary-expiration refusal and empty Check currency acceptance.

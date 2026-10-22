@@ -7,7 +7,7 @@ $renewReply=static function(array $p)use($s):string {
     same('https://resellertest.enom.com/interface.asp',$GLOBALS['enomWire']['options'][CURLOPT_URL],'TEST only');
     $body=match($p['Command']){
         'GetDomainInfo'=>'<GetDomainInfo><DomainName DomainNameID="456">'.$s->name.'</DomainName><Status><Belongs-To>test-uid</Belongs-To><Expiration>'.($s->after?$s->confirmed:$s->expiry).'</Expiration></Status></GetDomainInfo>',
-        'GetExtendInfo'=>'<GetExtendInfo><Expiration>'.$s->day.'</Expiration><Price>'.$s->price.'</Price><RegistrarHold>False</RegistrarHold><MaxExtension>8</MaxExtension></GetExtendInfo>',
+        'GetExtendInfo'=>'<Expiration>'.$s->day.'</Expiration><Price>'.$s->price.'</Price><RegistrarHold>False</RegistrarHold><MaxExtension>8</MaxExtension>',
         'Check'=>'<Domains><Domain><Name>'.$s->name.'</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Prices><Currency/><Renewal>'.$s->price.'</Renewal></Prices></Domain></Domains>',
         'GetRenew'=>'<RenewName>'.$s->auto.'</RenewName>','GetRegLock'=>'<Reg-Lock>1</Reg-Lock>',
         'GetWPPSInfo'=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',

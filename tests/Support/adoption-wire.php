@@ -23,7 +23,7 @@ final class AdoptionWire implements Transport
             'GetDomainInfo' => '<GetDomainInfo><DomainName DomainNameID="123" SLD="example" TLD="com">example.com</DomainName><Status><belongs-to>synthetic-uid</belongs-to><expiration>10/19/2027 11:14:00 PM</expiration></Status></GetDomainInfo>',
             'GetDomainExp' => '<ExpirationDate>10/19/2027 11:14:00 PM</ExpirationDate>',
             'GetRenew' => '<auto-renew>false</auto-renew>',
-            'GetExtendInfo' => '<GetExtendInfo><Expiration>10/19/2027</Expiration><RegistrarHold>false</RegistrarHold><MaxExtension>9</MaxExtension></GetExtendInfo>',
+            'GetExtendInfo' => '<Expiration>10/19/2027</Expiration><RegistrarHold>false</RegistrarHold><MaxExtension>9</MaxExtension>',
         ];
     }
     public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,

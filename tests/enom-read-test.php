@@ -218,7 +218,7 @@ echo "Enom reads: catalogue, exact lexical price, ownership, expiry, nullable fl
 $wire->payloads['Expiry'] = '<RegistryExpDate>2027-04-03</RegistryExpDate>';
 same('2027-04-03', $driver->expiry('example.com', $context())->facts()['expiry']->value, 'Named GetDomainExp strict date read');
 $wire->payloads['Expiry'] = '<RegistryExpDate>bad</RegistryExpDate>'; same('unknown', $driver->expiry('example.com', $context())->status, 'Invalid GetDomainExp not acknowledged');
-$wire->payloads['RenewalInfo'] = '<GetExtendInfo><Expiration>2027-04-03</Expiration><RegistrarHold>false</RegistrarHold><MaxExtension>9</MaxExtension></GetExtendInfo>';
+$wire->payloads['RenewalInfo'] = '<Expiration>2027-04-03</Expiration><RegistrarHold>false</RegistrarHold><MaxExtension>9</MaxExtension>';
 $facts = $driver->renewalInfo('example.com', $context())->facts(); same(9, $facts['max_extension'], 'Bounded renewal maximum'); same(false, $facts['registrar_hold'], 'Known false hold'); same(null, $facts['grace_eligible'], 'Restorable/expiry never infer ordinary grace');
 $wire->payloads['Info'] = str_replace(['example.com', 'TLD="com"'], ['example.co.uk', 'TLD="co.uk"'], $info);
 $before = count($wire->calls); $driver->contacts('example.co.uk', $context());

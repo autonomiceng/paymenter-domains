@@ -13,9 +13,9 @@ final class Renewal
         ?ProtocolResult $expired, \DateTimeImmutable $now, \DateTimeImmutable $freshUntil): Evidence
     {
         $unknown = new Evidence(domain: $domain);
-        $info = $extend->value('getextendinfo'); $row = $check->value('domains.domain');
+        $row = $check->value('domains.domain');
         if (is_array($row) && array_is_list($row)) { $row = count($row) === 1 ? $row[0] : null; }
-        if ($extend->status !== 'success' || $check->status !== 'success' || !is_array($info) || !is_array($row)
+        if ($extend->status !== 'success' || $check->status !== 'success' || !is_array($row)
             || !is_string($row['name'] ?? null) || strtolower($row['name']) !== $query->name || ($row['rrpcode'] ?? null) !== '211') { return $unknown; }
         $premium = array_map(Driver::flag(...), [$row['ispremium'] ?? null, $row['isplatinum'] ?? null, $row['iseap'] ?? null]);
         $ordinary = !in_array(null, $premium, true) && !in_array(true, $premium, true);
@@ -33,10 +33,10 @@ final class Renewal
             if ($status !== RenewalStatus::Grace) { return new Evidence(domain: $domain, renewal: $status); }
             if ($query->years !== 1) { return new Evidence(domain: $domain, renewal: RenewalStatus::Ineligible); }
         } elseif ($hold) { return new Evidence(domain: $domain, renewal: RenewalStatus::Ineligible); }
-        $price = Pricing::cents($info['price'] ?? null); $prices = $row['prices'] ?? null;
-        $quote = null;
+        $price = Pricing::cents($extend->value('price')); $prices = $row['prices'] ?? null;
+        $quote = null; $currency = $extend->value('currency', 'USD');
         if ($price !== null && Pricing::annual($price) !== null && Pricing::checkUsd($prices) && Pricing::cents($prices['renewal'] ?? null) === $price
-            && (!array_key_exists('currency', $info) || (is_string($info['currency']) && strtoupper($info['currency']) === 'USD'))) {
+            && (is_string($currency) && strtoupper($currency) === 'USD')) {
             $quote = new QuoteEvidence($query, Pricing::total($price, $query->years), CostUnit::TermTotal,
                 $past ? 'enom_check_extend_expired' : 'enom_check_extend', $now, $freshUntil);
         }
@@ -45,8 +45,8 @@ final class Renewal
     public static function limits(ProtocolResult $extend): ?array
     {
         if ($extend->status !== 'success') { return null; }
-        $hold = Driver::flag($extend->value('getextendinfo.registrarhold'));
-        $maximum = $extend->value('getextendinfo.maxextension');
+        $hold = Driver::flag($extend->value('registrarhold'));
+        $maximum = $extend->value('maxextension');
         return $hold !== null && is_string($maximum) && preg_match('/^(?:[1-9]|10)$/D', $maximum)
             ? ['hold' => $hold, 'maximum' => (int) $maximum] : null;
     }

@@ -15,7 +15,7 @@ $domain = $original->domain()->firstOrFail();
 $request = static fn (int $years = 1) => new RenewalRequest($domain->id, 1, 1, '2027-10-18', '456', $years);
 $state = (object) ['name' => $domain->domain, 'expiry' => '10/18/2027 5:00:00 AM', 'day' => '10/18/2027',
     'price' => '8.95', 'balance' => '100.00', 'owner' => 'account-enom', 'id' => '456', 'auto' => '0',
-    'premium' => '0', 'hold' => 'False', 'maximum' => '8', 'expired' => 'Expired', 'during' => null, 'duringCommand' => null, 'calls' => [], 'fail' => null];
+    'captured' => false, 'premium' => '0', 'hold' => 'False', 'maximum' => '8', 'expired' => 'Expired', 'during' => null, 'duringCommand' => null, 'calls' => [], 'fail' => null];
 $transport = new class($state) implements Transport {
     public function __construct(private $s) {}
     public function send(Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
@@ -24,9 +24,13 @@ $transport = new class($state) implements Transport {
         $s = $this->s; $s->calls[] = $command;
         if ($s->during && ($s->duringCommand === null || $s->duringCommand === $command)) { $hook = $s->during; $s->during = null; $hook(); }
         if ($s->fail === $command) { throw new RuntimeException('synthetic-private-token'); }
+        $captured = require __DIR__.'/Support/enom-captured-renewal.php';
+        if ($s->captured && isset($captured[$command->name])) {
+            return str_replace(['example.com', '10/22/2027', '8.95'], [$s->name, $s->day, $s->price], $captured[$command->name]);
+        }
         $data = match ($command) {
             ReadCommand::Info => '<GetDomainInfo><DomainName DomainNameID="'.$s->id.'">'.$s->name.'</DomainName><Status><Belongs-To>'.$s->owner.'</Belongs-To><Expiration>'.$s->expiry.'</Expiration></Status></GetDomainInfo>',
-            ReadCommand::RenewalInfo => '<GetExtendInfo><Expiration>'.$s->day.'</Expiration><Price>'.$s->price.'</Price><RegistrarHold>'.$s->hold.'</RegistrarHold><MaxExtension>'.$s->maximum.'</MaxExtension></GetExtendInfo>',
+            ReadCommand::RenewalInfo => '<Expiration>'.$s->day.'</Expiration><Price>'.$s->price.'</Price><RegistrarHold>'.$s->hold.'</RegistrarHold><MaxExtension>'.$s->maximum.'</MaxExtension>',
             ReadCommand::Check => '<Domains><Domain><Name>'.$s->name.'</Name><RRPCode>211</RRPCode><IsPremium>'.$s->premium.'</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Prices><Currency/><Renewal>'.$s->price.'</Renewal></Prices></Domain></Domains>',
             ReadCommand::Renewal => '<RenewName>'.$s->auto.'</RenewName>',
             ReadCommand::Lock => '<Reg-Lock>1</Reg-Lock>',
@@ -51,6 +55,12 @@ $check = static function (?RenewalRequest $r = null) use ($service, $request, $s
 $decision = $check(); same(RenewalCode::Admitted, $decision->code, 'Ordinary known-cost renewal admitted');
 same(RenewalStatus::Ordinary, $decision->status, 'Ordinary state retained'); same('8.9500', $decision->cost->amount, 'Exact cost retained');
 same(8, count($state->calls), 'Bounded actual read sequence');
+$state->captured = true;
+$capturedDecision = $check();
+same(RenewalCode::Admitted, $capturedDecision->code, 'Captured flat GetExtendInfo and Check v2 pass full admission');
+same(RenewalStatus::Ordinary, $capturedDecision->status, 'Captured pair retains ordinary status through authority rechecks');
+same('8.9500', $capturedDecision->cost?->amount, 'Captured empty currency gives exact one-year USD admission cost');
+$state->captured = false;
 same('26.8500', $check($request(3))->cost?->amount, 'Exact supported three-year renewal total');
 $state->price = '99.00'; $decision = $check(); same(RenewalCode::Admitted, $decision->code, 'Below-cost renewals remain admitted');
 same('below_cost', $decision->staffAlert, 'Below-cost renewal alerts staff'); $state->price = '8.95';

@@ -24,7 +24,7 @@ $transport = new class($state) implements Transport {
         if ($s->fail === $command) { throw new RuntimeException('synthetic-private-token'); }
         $data = match ($command) {
             ReadCommand::Info => '<GetDomainInfo><DomainName DomainNameID="'.$s->id.'">'.$s->name.'</DomainName><Status><Belongs-To>'.$s->owner.'</Belongs-To><Expiration>'.$s->expiry.'</Expiration></Status></GetDomainInfo>',
-            ReadCommand::RenewalInfo => '<GetExtendInfo><Expiration>'.$s->day.'</Expiration><Price>'.$s->price.'</Price><RegistrarHold>'.$s->hold.'</RegistrarHold><MaxExtension>'.$s->maximum.'</MaxExtension></GetExtendInfo>',
+            ReadCommand::RenewalInfo => '<Expiration>'.$s->day.'</Expiration><Price>'.$s->price.'</Price><RegistrarHold>'.$s->hold.'</RegistrarHold><MaxExtension>'.$s->maximum.'</MaxExtension>',
             ReadCommand::Check => '<Domains><Domain><Name>'.$s->name.'</Name><RRPCode>211</RRPCode><IsPremium>'.$s->premium.'</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Prices><Currency/><Renewal>'.$s->price.'</Renewal></Prices></Domain></Domains>',
             ReadCommand::Renewal => '<RenewName>'.$s->auto.'</RenewName>',
             ReadCommand::Lock => '<Reg-Lock>1</Reg-Lock>',
