@@ -3,7 +3,6 @@
     "tests/api-test.php",
     "tests/curl-transport-test.php",
     "tests/enom-protocol-test.php",
-    "tests/enom-curl-test.php",
     "tests/enom-money-test.php",
     "tests/enom-read-test.php",
     "tests/namesilo-read-test.php",
@@ -30,6 +29,7 @@
     "tests/watch-notice-plan-test.php"
   ],
   "native": [
+    "tests/enom-curl-test.php",
     "tests/enom-exchange-test.php",
     "tests/native-fixture-test.php",
     "tests/paymenter-upgrade-tripwire-test.php",
