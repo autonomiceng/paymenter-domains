@@ -27,20 +27,20 @@ price, auto-renew off and sufficient USD balance. Unlike registration's cached
 balance prerequisite, renewal's USD attestation is followed by both fresh balance
 reads inside admission. Grace and redemption remain unavailable.
 
-One ordinary renewal performs two complete eight-read assessments:
-GetDomainInfo, GetExtendInfo, Check, GetDomainInfo, GetRenew, GetRegLock,
-GetWPPSInfo, GetBalance. Then one Extend spends TEST account funds. It uses one
+One ordinary renewal performs two complete six-read assessments:
+GetDomainInfo, GetExtendInfo, Check, GetDomainInfo, GetRenew,
+GetBalance. Then one Extend spends TEST account funds. It uses one
 year and UseCreditCard=no. A daily call unit is reserved before sealing, bound to
 account, operation and UTC day, consumed once before transport and never refunded.
 A refusal before the seal holds the unattempted paid obligation with
 `enom_test_renewal_call_cap`; an audited Release unsent hold restores eligibility
 for a fresh assessment. Partial read-cap refusal takes the same safe path.
 
-Captured-order confirmation takes seven reads: GetDomainInfo, GetRenew,
-GetRegLock, GetWPPSInfo, GetDomainInfo, GetDomainExp, GetOrderDetail. Completion
+Captured-order confirmation takes five reads: GetDomainInfo, GetRenew,
+GetDomainInfo, GetDomainExp, GetOrderDetail. Completion
 requires unique actual charge and owned expiry advanced by the full year.
 A lost reply stays uncertain. Only explicitly accepted covering renewal history
-allows recovery: the six domain/expiry reads, GetOrderList and one GetOrderDetail per
+allows recovery: the four domain/expiry reads, GetOrderList and one GetOrderDetail per
 bounded candidate. Zero or competing charges stay unresolved. These reads spend
 call units, never renewal funds. Page views, acceptance, invoice creation, payment,
 staff release/credit/replacement and duplicate completed worker turns make zero

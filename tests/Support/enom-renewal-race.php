@@ -36,7 +36,7 @@ if($phase==='enom-test-renewal-race-issue'){
 }else{
     same(file_get_contents($receipt.'.issue-1'),file_get_contents($receipt.'.issue-2'),'Overlapping issuance workers return the same debt');
     $commands=[...json_decode(file_get_contents($receipt.'.admit-1'),true),...json_decode(file_get_contents($receipt.'.admit-2'),true)];
-    same(17,count($commands),'One competing admission performs two assessments and the write');same(1,count(array_filter($commands,static fn($c)=>$c==='Extend')),'Overlapping admission sends one Extend');
+    same(13,count($commands),'One competing admission performs two assessments and the write');same(1,count(array_filter($commands,static fn($c)=>$c==='Extend')),'Overlapping admission sends one Extend');
     same('pending',Operation::findOrFail($data['race_operation'])->state,'One sealed outcome retained');
     same(1,Operation::where('domain_id',$data['issuance_domain'])->where('action','renew')->count(),'One retained issued cycle');
     echo "Installed overlapping issuance/admission workers retain one obligation and one Extend.\n";

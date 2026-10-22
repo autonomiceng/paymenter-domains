@@ -169,17 +169,27 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         [$reply, $parts, $domain] = $this->identity($name, $context);
         if ($domain?->owned !== true) { return $this->neutral($reply, new Evidence(domain: $domain)); }
         $renew = $this->read(ReadCommand::Renewal, $parts, $context);
+        if ($renew->status !== 'success') { return $this->neutral($renew, new Evidence(domain: $domain)); }
         $lock = $this->read(ReadCommand::Lock, $parts, $context);
+        if ($lock->status !== 'success') { return $this->neutral($lock, new Evidence(domain: $domain)); }
         $privacy = $this->read(ReadCommand::Privacy, $parts, $context);
-        foreach ([$renew, $lock, $privacy] as $required) {
-            if ($required->status !== 'success') { return $this->neutral($required, new Evidence(domain: $domain)); }
-        }
+        if ($privacy->status !== 'success') { return $this->neutral($privacy, new Evidence(domain: $domain)); }
         $auto = self::autoRenew($renew);
         $privacyFlag = self::flag($privacy->value('getwppsinfo.wppsenabled'));
         $allowed = self::flag($privacy->value('getwppsinfo.wppsallowed')); $exists = self::flag($privacy->value('getwppsinfo.wppsexists'));
         if ($allowed === null || $exists === null || ($privacyFlag === true && (!$allowed || !$exists))) { $privacyFlag = null; }
         $snapshot = new DomainSnapshot($this->binding(), $name, true, $domain->expiry, $auto,
             $privacyFlag, self::flag($lock->value('reg-lock')), $domain->providerReference);
+        return $this->neutral($reply, new Evidence(domain: $snapshot));
+    }
+    public function readRenewalDomain(string $name, #[\SensitiveParameter] RequestContext $context): DriverResult
+    {
+        [$reply, $parts, $domain] = $this->identity($name, $context);
+        if ($domain?->owned !== true) { return $this->neutral($reply, new Evidence(domain: $domain)); }
+        $renew = $this->read(ReadCommand::Renewal, $parts, $context);
+        if ($renew->status !== 'success') { return $this->neutral($renew, new Evidence(domain: $domain)); }
+        $snapshot = new DomainSnapshot($this->binding(), $name, true, $domain->expiry, self::autoRenew($renew),
+            providerReference: $domain->providerReference);
         return $this->neutral($reply, new Evidence(domain: $snapshot));
     }
     public function expiry(string $name, #[\SensitiveParameter] RequestContext $context): ReadResult
@@ -250,14 +260,14 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         [$reply, $parts, $domain] = $this->identity($query->name, $context);
         if ($domain?->owned !== true) { return $this->neutral($reply, new Evidence(domain: $domain)); }
         $extend = $this->read(ReadCommand::RenewalInfo, $parts, $context);
+        if ($extend->status !== 'success') { return $this->neutral($extend); }
         $check = $this->read(ReadCommand::Check, $parts + ['Version' => 2, 'IncludePrice' => 1, 'IncludeProperties' => 1, 'IncludeEAP' => 1], $context);
+        if ($check->status !== 'success') { return $this->neutral($check); }
         $now = $context->now(); $expired = null;
         if ($domain->expiry?->precision === ExpiryPrecision::Instant && new \DateTimeImmutable($domain->expiry->value) <= $now) {
             $expired = $this->read(ReadCommand::Expired, [], $context);
         }
-        foreach ([$extend, $check, $expired] as $required) {
-            if ($required !== null && $required->status !== 'success') { return $this->neutral($required); }
-        }
+        if ($expired !== null && $expired->status !== 'success') { return $this->neutral($expired); }
         return new DriverResult($this->binding(), Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
             Renewal::assess($query, $domain, $reply, $extend, $check, $expired, $now, $now->modify('+'.$this->priceMaxAgeSeconds.' seconds')));
     }
@@ -280,7 +290,9 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     public function reconcile(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
     {
         $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);
-        $domain = $this->readDomain($attempt->query->name, $context)->evidence()->domain;
+        $domain = ($attempt->query->action === Action::Renew
+            ? $this->readRenewalDomain($attempt->query->name, $context)
+            : $this->readDomain($attempt->query->name, $context))->evidence()->domain;
         if ($domain?->owned === true) {
             $expiry = $this->expiry($attempt->query->name, $context)->facts();
             $domain = new DomainSnapshot($this->binding(), $attempt->query->name, true,

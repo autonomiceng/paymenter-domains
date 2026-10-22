@@ -50,7 +50,7 @@ final readonly class RenewalAdmission
             if ($binding->registrarKey === 'namesilo' ? !$nonpremium : $facts->premium !== false) { throw new RenewalRefused(RenewalCode::Cost); }
             $cost = WriteMoney::cost($facts->quote, $query, $started, $this->clock->now());
             if (!$cost) { throw new RenewalRefused(RenewalCode::Cost); }
-            $flags = $reader->readDomain($name, $context); $binding->requireMatch($flags->binding);
+            $flags = $reader->readRenewalDomain($name, $context); $binding->requireMatch($flags->binding);
             if ($flags->disposition !== Disposition::Accepted) { throw new RenewalRefused($flags->sendState === SendState::PossiblySent ? RenewalCode::Reads : RenewalCode::Owner); }
             $this->owned($flags->evidence()->domain, $request, $binding, $name);
             if ($binding->registrarKey === 'namesilo' && $flags->evidence()->domain->active !== true) { throw new RenewalRefused(RenewalCode::State); }

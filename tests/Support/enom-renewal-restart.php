@@ -13,8 +13,8 @@ $s=(object)['name'=>$op->domain->domain,'after'=>true,'auto'=>'0','expiry'=>'10/
     'bill'=>(new DateTimeImmutable($op->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A')];
 require __DIR__.'/enom-renewal-wire.php';Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire(['reply'=>$renewReply]);Cache::flush();
 $worker=new RuntimeWork($clock,new RuntimePorts);$worker->operation($op->id);same('succeeded',$op->fresh()->state,'New process proves retained charge and year expiry');
-same(7,count($GLOBALS['enomWire']['forms']),'Process continuation reads exactly seven times');expect(!in_array('Extend',array_column($GLOBALS['enomWire']['forms'],'Command'),true),'Process restart never resends');
-same($data['used']+7,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'Call reservations survive actual process restart');
+same(5,count($GLOBALS['enomWire']['forms']),'Process continuation reads exactly five times');expect(!in_array('Extend',array_column($GLOBALS['enomWire']['forms'],'Command'),true),'Process restart never resends');
+same($data['used']+5,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'Call reservations survive actual process restart');
 $money=array_map(static fn($table)=>DB::table($table)->orderBy('id')->get()->map(static fn($row)=>(array)$row)->all(),['invoices','invoice_items','invoice_transactions','credits']);same($data['money'],$money,'Restart keeps native money unchanged');
-$worker->operation($op->id);same(7,count($GLOBALS['enomWire']['forms']),'Repeated completed continuation makes no call');
+$worker->operation($op->id);same(5,count($GLOBALS['enomWire']['forms']),'Repeated completed continuation makes no call');
 echo "Installed TEST renewal continuation passed in a separate PHP process.\n";

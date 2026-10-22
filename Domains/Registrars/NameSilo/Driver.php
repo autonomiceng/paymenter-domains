@@ -140,6 +140,8 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         return new DomainSnapshot($this->binding(), $name, true, $expiry,
             $reply->value('auto_renew') === 'Yes', $reply->value('private') === 'Yes', $reply->value('locked') === 'Yes', active: $reply->value('status') === 'Active');
     }
+    public function readRenewalDomain(string $name, #[\SensitiveParameter] RequestContext $context): DriverResult
+    { return $this->readDomain($name, $context); }
     public function renewalAssessment(Query $query, #[\SensitiveParameter] RequestContext $context): DriverResult
     {
         $this->binding()->requireMatch($context->binding);

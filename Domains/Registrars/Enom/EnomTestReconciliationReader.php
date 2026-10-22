@@ -14,6 +14,7 @@ final readonly class EnomTestReconciliationReader implements CatalogueReader
     public function quote(Query $q,RequestContext $c):DriverResult{return $this->preview->quote($q,$c);}
     public function availability(Query $q,RequestContext $c):DriverResult{return $this->preview->availability($q,$c);}
     public function readDomain(string $name,RequestContext $c):DriverResult{return \Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding())||\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::accepted($this->binding())?$this->reconciler->readDomain($name,$c):$this->preview->readDomain($name,$c);}
+    public function readRenewalDomain(string $name,RequestContext $c):DriverResult{return \Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding())?$this->reconciler->readRenewalDomain($name,$c):$this->preview->readRenewalDomain($name,$c);}
     public function renewalAssessment(Query $q,RequestContext $c):DriverResult{return \Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding())?$this->reconciler->renewalAssessment($q,$c):$this->preview->renewalAssessment($q,$c);}
     public function reconcile(AttemptEvidence $attempt,RequestContext $c):ReconciliationResult
     {

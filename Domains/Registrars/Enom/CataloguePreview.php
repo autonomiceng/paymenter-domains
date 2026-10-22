@@ -19,6 +19,7 @@ final readonly class CataloguePreview implements CatalogueReader
     public function balance(RequestContext $context): DriverResult { throw new \DomainException('Use the separate account balance reader.'); }
     public function quote(Query $query, RequestContext $context): DriverResult { throw new \DomainException('Preview quotes require saved catalogue prices.'); }
     public function readDomain(string $name, RequestContext $context): DriverResult { throw new \DomainException('Domain reads require separate deployment composition.'); }
+    public function readRenewalDomain(string $name, RequestContext $context): DriverResult { throw new \DomainException('Renewal reads require separate deployment composition.'); }
     public function renewalAssessment(Query $query, RequestContext $context): DriverResult { throw new \DomainException('Renewal reads require separate deployment composition.'); }
     public function reconcile(AttemptEvidence $attempt, RequestContext $context): ReconciliationResult { throw new \DomainException('Reconciliation reads require separate deployment composition.'); }
 }

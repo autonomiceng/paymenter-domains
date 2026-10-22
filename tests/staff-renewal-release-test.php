@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\{Auth,Cache,DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{Rdap,RenewalAcceptance,RuntimeComposition,RuntimeDispatch,RuntimePorts,RuntimeSchema,RuntimeWork,StaffOperationReview,StaffOperations,TransferPrecheck,WriteAcceptance,WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 app()->instance(Clock::class,$clock);
@@ -72,7 +73,8 @@ same('held',$op->fresh()->state,'Unfixed reader still refuses normal runtime adm
 $state->hold='False';$release($op);Cache::flush();$state->calls=[];
 $money=[DB::table('invoices')->count(),DB::table('invoice_transactions')->count(),$op->fresh()->invoice_id];
 (new RunOperation($op->id))->handle($work);same('pending',$op->fresh()->state,'Fixed reader freshly admits through normal runtime');
-same(16,count($state->calls),'Both complete admission read sets repeated before send');same(1,$state->writes,'Exactly one admitted send');
+$admissionReads=[ReadCommand::Info,ReadCommand::RenewalInfo,ReadCommand::Check,ReadCommand::Info,ReadCommand::Renewal,ReadCommand::Balance];
+same([...$admissionReads,...$admissionReads],$state->calls,'Both complete admission read sets repeated before send');same(1,$state->writes,'Exactly one admitted send');
 (new RunOperation($op->id))->handle($work);same(1,$state->writes,'Duplicate runtime delivery cannot send again');
 same($money,[DB::table('invoices')->count(),DB::table('invoice_transactions')->count(),$op->fresh()->invoice_id],'No new invoice or payment required');
 echo "Unsent renewal admission release and runtime readmission passed\n";$nativeSuccessful=true;
