@@ -444,6 +444,7 @@ names through it. The three commerce suites publish a synthetic `example.com` co
 ending so distinct subdomains retain normal checkout, funding and reconciliation paths.
 The timestamp-boundary case retains its model/query-builder clock assertions.
 Other synthetic fixtures remain outside this bounded policy check.
+The targeted operation, registration, transfer, late-contact, billing, holding and installed-hold fixtures now validate reserved names or guarded `.com` placeholders for single-label products.
 
 The PHP 8.3 scanner and planted-call matrix cover the same 40 PHP 8.4 global functions,
 including optional Intl, OPcache, PCNTL, PgSQL and Sodium functions. Every name is tested
