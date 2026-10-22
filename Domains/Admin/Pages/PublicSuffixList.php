@@ -47,7 +47,10 @@ class PublicSuffixList extends Page
                     self::requireManage(); abort_unless(PslTransport::validUrl($data['url']), 422);
                     DB::transaction(function () use ($data): void {
                         // Serialize extension-wide settings with fetch admission; saving never starts a download.
-                        DB::table('domains_psl_status')->where('id', 1)->lockForUpdate()->firstOrFail(); self::requireManage();
+                        $status = DB::table('domains_psl_status')->where('id', 1)->lockForUpdate()->firstOrFail(); self::requireManage();
+                        if (app(Lists::class)->source() !== $data['url']) {
+                            DB::table('domains_psl_status')->where('id', 1)->update(['attempt_token' => null, ...($status->last_result === 'checking' ? ['last_result' => 'superseded'] : [])]);
+                        }
                         Setting::updateOrCreate(['settingable_type' => null, 'settingable_id' => null, 'key' => Lists::SETTING], ['type' => 'string', 'value' => $data['url']]);
                     });
                     unset($this->cachedSchemas['content']); $this->reviewPreview = false; Notification::make()->title('Public suffix list source saved')->send();

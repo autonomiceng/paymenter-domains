@@ -14,6 +14,7 @@ final class PslFacts
             'stored_rules_rejected' => 'The current parser rejected saved rules. New discovery is paused. Staff with manage permission can review a valid replacement.',
             null => 'No update attempted yet.', 'checking' => 'An update started. If it was interrupted, try again after the 24-hour limit.',
             'updated' => 'A validated list was saved.', 'identical' => 'The downloaded list is unchanged.', 'not_modified' => 'The source reports no change.',
+            'superseded' => 'The source changed. The previous update was cancelled; the 24-hour limit still applies.',
             'rate_limited' => 'The 24-hour update limit has been reached.',
             'source_invalid' => 'The source URL must use HTTPS with no credentials, query or fragment.',
             'redirect_refused' => 'The source redirected the request. Redirects are refused.', 'timeout' => 'The update timed out.',

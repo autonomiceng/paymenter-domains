@@ -80,6 +80,5 @@ final readonly class RuntimeWork
         foreach(ObservationCandidates::next('timeout') as $ids){foreach($ids as $id){$this->attempt('timeout',fn()=>app(TransferInputs::class)->expireMissingCode((int)$id),(int)$id);}}
         $this->attempt('reminders',fn()=>app(Reminders::class)->sweep());
         $this->attempt('watch_public_checks',fn()=>app(WatchWork::class)->tick());
-        $this->attempt('public_suffix_list',fn()=>app(PublicSuffixList::class)->tick());
     }
 }
