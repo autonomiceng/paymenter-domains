@@ -129,6 +129,20 @@ final class SettingsActions
     /** Staff text for a refused settings change; never echoes unrecognized exception text. */
     public static function refusal(\Throwable $error,string $name,array $data=[],int $server=0): string
     {
+        if ($name==='seller' && $error instanceof \Paymenter\Extensions\Servers\Domains\Services\ExpiredCostEvidence) {
+            $action=match($error->action){'register'=>'registration','renew'=>'renewal','transfer'=>'transfer',default=>'saved'};
+            $term=$error->term.' '.($error->term===1?'year':'years');
+            $expiry=$error->freshUntil->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i').' UTC';
+            $account=Account::where('server_id',$error->serverId)->first();
+            $binding=$account ? \Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account) : null;
+            $registrar=TldFacts::registrar((string)$account?->registrar_key);
+            $imports=$binding && \Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled($binding);
+            $test=$binding && \Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::testDeployment($binding);
+            $remedy=$imports ? "In Registrar setup for account #{$error->serverId}, use Import accepted ending for {$error->tld} to refresh costs, then try again."
+                : ($test ? 'Import accepted ending is unavailable for this account; ask the installation administrator to restore TEST catalogue import and refresh costs before trying again.'
+                    : "Check Cost refresh on .{$error->tld} for account #{$error->serverId}; wait for fresh costs from its scheduled catalogue read, or ask the installation administrator to restore reads if refresh failed or was interrupted.");
+            return "Cannot select {$registrar} account #{$error->serverId} for .{$error->tld}: its {$action} cost for {$term} expired at {$expiry}. ".$remedy;
+        }
         return $error instanceof EnomTestCallLimit
                 ?'Enom TEST request refused before sending. '.($name==='import'?'Earlier reads in this import may have been sent and counted. ':'')
                     .EnomTestCalls::refusedFacts()

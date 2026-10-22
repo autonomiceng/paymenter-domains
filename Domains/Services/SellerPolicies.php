@@ -43,12 +43,13 @@ final class SellerPolicies
                     if (!$enabled) { continue; }
                     if (!$catalogue->{$action.'_enabled'}) { throw new \DomainException('Seller action is unsupported.'); }
                     $terms = $action === 'transfer' ? [1] : array_filter(range(1, 10), static fn (int $term): bool => $term >= $catalogue->min_years && $term <= $catalogue->max_years);
-                    $available = false;
+                    $available = false; $expired = null;
                     foreach ($terms as $term) {
                         try { PublicationEligibility::require($catalogue, $action, $term, true); $this->prices->current($serverId, $account->account_fingerprint, $tld, $action, $term, 'USD', $now, true, $catalogue); $available = true; }
+                        catch (ExpiredCostEvidence $error) { $expired ??= $error; }
                         catch (\DomainException) { /* Another supported registration term may still be available. */ }
                     }
-                    if (!$available) { throw new \DomainException('Seller has no eligible action price.'); }
+                    if (!$available) { throw $expired ?? new \DomainException('Seller has no eligible action price.'); }
                 }
             }
             $previous = $policy->server_id === null ? null : Account::where('server_id', $policy->server_id)->first();

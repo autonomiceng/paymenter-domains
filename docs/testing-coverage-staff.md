@@ -41,3 +41,20 @@ holds; after resume it disappears again and the completed request has no menu. T
 also includes a completed sealed request. Removing success precedence, the locked terminal
 guard, the stopped-work gate or menu visibility must fail these assertions. These are
 offline native checks, not installed browser or provider acceptance.
+
+
+## Expired seller cost refusals
+
+`seller-policy-test.php` expires the selected account's registration or required annual
+renewal cost and asserts typed account, ending, action, term and saved expiry context.
+The prior seller and revision remain unchanged; a different fresh eligible registration
+term still permits selection. `staff-tld-actions-test.php` submits the native Livewire
+seller action and checks the exact UTC notification and Registrar setup refresh label,
+unchanged policy and no provider reads. Enom TEST with import enabled gets the existing
+Import accepted ending path; NameSilo gets the Cost refresh row on its own ending page; disabled TEST imports
+get an explicit administrator recovery explanation rather than an unusable remedy. A selected-account
+catalogue hold remains unchanged and the notification explains administrator recovery for
+failed or interrupted reads alongside the healthy scheduled-read path. Replacing the typed notification with the generic
+fallback or accepting expired evidence must fail these checks. Structurally invalid
+evidence or a changed pricing rule keeps its existing refusal before expiry context. These native fixtures do
+not establish an installed panel or deployed provider refresh workflow.
