@@ -1,6 +1,7 @@
 <?php
 // Real claim/staff/seal/send interleavings; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/staff-operation-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Filament\Notifications\Notification;
@@ -20,7 +21,7 @@ $refused=static function(Closure $action)use($message):void {
 $missed=0;
 foreach(['before_seal','before_send'] as $phase){
     foreach(['recheck','resume_reads','resume_observation'] as $action){
-        $op=$new('staff-lease-'.str_replace('_','-',$phase).'-'.str_replace('_','-',$action).'.com');
+        $op=$new(placeholderComFixtureName('staff-lease-'.str_replace('_','-',$phase).'-'.str_replace('_','-',$action).'-placeholder.com'));
         [$claimed,$domain,$binding]=$claims->claim($op->id);
         DB::table('domains_observation_work')->insert(['server_id'=>$op->server_id,'account_fingerprint'=>$op->account_fingerprint,
             'domain_id'=>$op->domain_id,'generation'=>$op->authority_generation,'due_at'=>0,'tries'=>5,'safe_code'=>'read_unavailable']);
@@ -63,7 +64,7 @@ Notification::assertNotified(Notification::make()->danger()->title('Review refus
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){same(false,OperationActions::relevant($action,$op->fresh()),'Live lease hides '.$action);}
 // Equal-to-now and absent leases have the same expired semantics as OperationClaims.
 foreach(['equal','past','missing'] as $expiry){
-    [$stale]=$prepare('staff-lease-expired-'.$expiry.'.com','absent');
+    [$stale]=$prepare(placeholderComFixtureName('staff-lease-expired-'.$expiry.'-placeholder.com'),'absent');
     $lease=$stale->lease_expires_at;
     if($expiry==='missing'){$stale->update(['lease_expires_at'=>null]);}else{$clock->instant=$lease->modify($expiry==='past'?'+1 second':'+0 seconds');}
     \Illuminate\Support\Facades\Auth::setUser($staff);

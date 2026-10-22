@@ -1,6 +1,7 @@
 <?php
 // Socket-free installed renewal composition; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/reserved-fixtures.php';
 use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,DomainBilling,EnomTestRenewal,EnomTestCalls,EnomTestCallSchema,NativeDomainGuard,Refunds,RuntimePorts,RuntimeWork,StaffOperationReview,StaffOperations};
@@ -15,7 +16,7 @@ $write('acceptance',['ending'=>'com','accept'=>true,'terms'=>[1],'registry'=>tru
 $write('probe');$write('import',['ending'=>'com']);$write('publish',[],$tld->id);
 $holders=[];
 foreach(['success','cap','overrun','uncertain','auto','grace','partial','anchor','replacement','calendar','race','issuance'] as $case){
-    $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$original=$new('renewal-'.$case.'.com');$GLOBALS['testRegisteredName']=$original->domain->domain;
+    $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$original=$new(placeholderComFixtureName('renewal-'.$case.'-placeholder.com'));$GLOBALS['testRegisteredName']=$original->domain->domain;
     $worker->operation($original->id);Cache::flush();$worker->operation($original->id);
     same('succeeded',$original->fresh()->state,'Renewal starts with proven original holding');$holders[$case]=$original->domain()->firstOrFail();unset($GLOBALS['testRegisteredName']);
 }

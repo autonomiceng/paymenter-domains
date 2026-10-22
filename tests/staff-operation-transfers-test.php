@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/transfer-fixture.php';
 require __DIR__.'/Support/staff-panel.php';
 use Livewire\Livewire;
@@ -22,7 +23,7 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->call
 same('account_credit',$op->fresh()->funding['refund']['to'],'Exact saved-code credit');same('definitely_unsent',$op->fresh()->attempt['send_state'],'Only virgin evidence creates local negative proof');
 $clock->instant=$now;
 foreach(['transfer_not_registered','staff_review_required']as$reason){
-    $unpaid=$reason==='staff_review_required';$row=$newTransfer('staff-transfer-'.($unpaid?'unpaid':'404').'.com',0,!$unpaid);
+    $unpaid=$reason==='staff_review_required';$row=$newTransfer(placeholderComFixtureName('staff-transfer-'.($unpaid?'unpaid':'404').'-placeholder.com'),0,!$unpaid);
     $row->update(['state'=>'held','safe_code'=>$reason]);$before=[$row->fresh()->state,$row->fresh()->attempt,$row->fresh()->funding,$row->domain->fresh()->reservation_name];
     foreach(['release','refund','credit','disposition']as$action){commerceReject(fn()=>$run($row,$action));}
     same($before,[$row->fresh()->state,$row->fresh()->attempt,$row->fresh()->funding,$row->domain->fresh()->reservation_name],'404 without fresh proof and never-paid holds retained');

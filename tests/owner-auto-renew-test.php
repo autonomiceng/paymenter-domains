@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Native fixtures and synthetic registrar only.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/renewal-execution.php';
 require __DIR__.'/Support/owner-pages.php';
 require __DIR__.'/Support/staff-panel.php';
@@ -84,7 +85,7 @@ $save($d,true);$next=$billing->invoice($d->id);expect($next->id!==$invoice->id,'
 same($next->id,$billing->invoice($d->id)->id,'Scheduled retry reuses next debt');
 // Hard stops retain their current authority and hide the switch, including when owner Off is also set.
 foreach(['staff','cancellation'] as $stop){
-    [$held]=$holder('owner-hard-'.$stop.'.com');$policy=$held->renewal_policy;
+    [$held]=$holder(placeholderComFixtureName('owner-hard-'.$stop.'-placeholder.com'));$policy=$held->renewal_policy;
     $held->update(['renewal_policy'=>[...$policy,'owner_auto_renew'=>false,...($stop==='staff'?['renewals_stopped'=>true]:[])]]);
     $cancel=$stop==='cancellation'?ServiceCancellation::create(['service_id'=>$held->service_id,'type'=>'end_of_period','reason'=>'Synthetic']):null;
     $held=$held->fresh();$l=RenewalStop::read($held);
@@ -111,7 +112,7 @@ foreach(['status','service','expiry','managed','pending'] as $case){
 DB::table('domains_domains')->where('id',$held->id)->update(['provenance'=>'purchased','billing_managed'=>true,'provider_expires_at'=>'2027-10-18']);$held->service->update(['status'=>'active']);
 // Scheduled billing keeps its due-date cutoff; manual requests remain available until expiry.
 foreach(['2027-09-26','2027-09-27','2027-10-10','2027-10-11','2027-10-17','2027-10-18','2027-10-19'] as $day){
-    [$calendar]=$holder('owner-calendar-'.str_replace('-','',$day).'.com');$clock->instant=new DateTimeImmutable($day.'T12:00:00Z');
+    [$calendar]=$holder(placeholderComFixtureName('owner-calendar-'.str_replace('-','',$day).'-placeholder.com'));$clock->instant=new DateTimeImmutable($day.'T12:00:00Z');
     $save($calendar,false);same(null,$billing->invoice($calendar->id),'Off skips at '.$day);$save($calendar,true);
     if($day>='2027-09-27'&&$day<'2027-10-11'){expect($billing->invoice($calendar->id)!==null,'On issues inside window '.$day);}
     else{try{$billing->invoice($calendar->id);expect(false,'Outside calendar refused');}catch(RuntimeIneligible $e){same(RuntimeReason::OutsideCalendar,$e->reason,'Exact calendar refusal '.$day);}}

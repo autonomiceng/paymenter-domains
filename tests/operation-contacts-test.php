@@ -1,6 +1,7 @@
 <?php
 // Synthetic slice18/19 integration; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/operation-fixture.php';
 use App\Models\Role;
 use Illuminate\Support\Facades\{Crypt, DB};
@@ -19,7 +20,7 @@ Operation::updating(static function ($op) use (&$holdLevels): void {
     if ($op->isDirty('safe_code') && $op->safe_code === 'contact_details_required') { $holdLevels[] = DB::transactionLevel(); }
 });
 foreach (['flags', 'registry', 'contacts', 'schema'] as $bad) {
-    $op = $new('unready-'.$bad.'.com'); $payload = $op->payload;
+    $op = $new(placeholderComFixtureName('unready-'.$bad.'-placeholder.com')); $payload = $op->payload;
     match ($bad) {
         'flags' => $payload['setup_required'] = true,
         'registry' => $payload['registry_supported'] = false,

@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/renewal-execution.php';
 require __DIR__.'/Support/staff-panel.php';
 require_once __DIR__.'/Support/converted-holding.php';
@@ -92,7 +93,7 @@ $state->expiry='2028-10-18';same('succeeded',$completion->run($renew->id)->state
 $review->run($staff,$debtDomain->id,'resume',$ticket($debtDomain,'resume'),'Resume after completed renewal');same(false,$debtDomain->fresh()->renewal_policy['renewals_stopped'],'Historical acquisition proof remains usable after anchor advances');
 // Original sent renewal reconciliation survives native immediate cancellation and suspension.
 foreach(['immediate','suspended']as$mutation){
-    [$sent,$sentDomain,$sentBinding]=$makeRenewal('holding-sent-'.$mutation.'.com');[$sentEngine,$sentWriter,$sentCompletion]=$compose($sentBinding);
+    [$sent,$sentDomain,$sentBinding]=$makeRenewal(placeholderComFixtureName('holding-sent-'.$mutation.'-placeholder.com'));[$sentEngine,$sentWriter,$sentCompletion]=$compose($sentBinding);
     same('pending',$sentEngine->run($sent->id,$sentWriter)->state,'Original renewal sent once before native lifecycle change');$sentWrites=$state->writes;$state->expiry='2028-10-18';
     if($mutation==='immediate'){$row=ServiceCancellation::create(['service_id'=>$sentDomain->service_id,'type'=>'immediate','reason'=>'Native cancellation after send']);(new App\Listeners\CancellationCreatedListener)->handle(new App\Events\ServiceCancellation\Created($row));}
     else{$sentDomain->service->update(['status'=>'suspended']);}

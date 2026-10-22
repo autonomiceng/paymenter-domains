@@ -1,6 +1,7 @@
 <?php
 // Synthetic entry-budget regressions; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/management.php';
 use App\Models\Invoice;
 use Illuminate\Support\Facades\DB;
@@ -40,7 +41,7 @@ $noSend = static function ($op, array $money) use ($nativeMoney, $state): void {
     same($money, $nativeMoney(), 'Native finance unchanged on refusal');
 };
 foreach ([245, 246] as $elapsed) {
-    [$d, $driver] = $holding('management-boundary-'.$elapsed.'.com');
+    [$d, $driver] = $holding(placeholderComFixtureName('management-boundary-'.$elapsed.'-placeholder.com'));
     $op = $submit($d, $driver, 'lock', ['locked'=>false]); $money = $nativeMoney();
     $state->during = static fn () => $clock->instant = $clock->now()->modify('+'.$elapsed.' seconds');
     $result = $management->run($op->id, $driver, RequestOrigin::Background);
@@ -48,7 +49,7 @@ foreach ([245, 246] as $elapsed) {
     else { $noSend($result, $money); }
 }
 foreach ([44, 46] as $wait) {
-    [$d, $driver] = $holding('management-wait-'.$wait.'.com');
+    [$d, $driver] = $holding(placeholderComFixtureName('management-wait-'.$wait.'-placeholder.com'));
     $op = $submit($d, $driver, 'lock', ['locked'=>false]); $entry = $clock->now(); $money = $nativeMoney();
     $waiting = true;
     $state->during = static fn () => $clock->instant = $clock->now()->modify('+200 seconds');
@@ -59,7 +60,7 @@ foreach ([44, 46] as $wait) {
 }
 // Interactive dispatch has an explicit 250-second entry budget, including subsecond headroom.
 foreach ([225000000, 225000001] as $micros) {
-    [$d, $driver] = $holding('management-interactive-'.$micros.'.com');
+    [$d, $driver] = $holding(placeholderComFixtureName('management-interactive-'.$micros.'-placeholder.com'));
     $op = $submit($d, $driver, 'lock', ['locked'=>false]); $money = $nativeMoney();
     $state->during = static fn () => $clock->instant = $clock->now()->modify('+'.$micros.' microseconds');
     $result = $management->run($op->id, $driver);

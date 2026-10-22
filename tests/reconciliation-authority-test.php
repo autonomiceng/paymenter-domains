@@ -1,10 +1,11 @@
 <?php
 // Enom 444f31c uncertain disposition/automatic-refresh; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/reconciliation-fixture.php';
 use Illuminate\Support\Facades\DB;
 foreach (['generation', 'cancelled', 'reversal', 'changed', 'paused'] as $race) {
-    [$op, $binding] = $prepare('authority-'.$race.'.com');
+    [$op, $binding] = $prepare(placeholderComFixtureName('authority-'.$race.'-placeholder.com'));
     $observation->during = static function () use ($op, $race, $readBindings, $binding): void {
         if ($race === 'generation') { DB::table('domains_domains')->where('id', $op->domain_id)->update(['authority_generation' => 2]); }
         if ($race === 'cancelled') { DB::table('services')->where('id', $op->service_id)->update(['status' => 'cancelled']); }
@@ -26,7 +27,7 @@ $reconcile->resume($op->id, 'provider_facts_updated'); $observation->fault = '';
 same('succeeded', $reconcile->run($op->id)->state, 'Audited resume permits later decisive observation without replay');
 commerceReject(fn () => $op->fresh()->update(['policy' => [...$op->fresh()->policy, 'reconciliation_resumptions' => []]]));
 foreach (['info_missing', 'expiry_missing'] as $missing) {
-    [$op] = $prepare('retry-'.str_replace('_', '-', $missing).'.com'); $observation->fault = $missing;
+    [$op] = $prepare(placeholderComFixtureName('retry-'.str_replace('_', '-', $missing).'-placeholder.com')); $observation->fault = $missing;
     for ($i = 0; $i < 6; $i++) { $reconcile->run($op->id); }
     same(0, $op->fresh()->policy['reconciliation']['polls'], 'Failed required ownership/expiry reads never consume covered polls');
     $observation->fault = ''; same('succeeded', $reconcile->run($op->id)->state, 'Recovered required read completes without manual resume');

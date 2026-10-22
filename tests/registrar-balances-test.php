@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic native app, no network.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
@@ -111,7 +112,7 @@ $stopped->update(['renewal_policy'=>[]]);same(0,$forecast()['count'],'Cancelled 
 $stopped->update(['renewal_policy'=>['renewals_stopped'=>true]]);
 $issued->update(['state'=>'succeeded']);$stopped->update(['provider_expires_at'=>'2027-11-20']);
 same(0,BalanceForecast::for($a,$clock->now()->modify('+1 year'))['count'],'Next cycle within its next-year window is not forecast on stopped holding');$stopped->update(['billing_managed'=>false]);
-foreach(['pending','uncertain','succeeded','rejected'] as $state){$h=$make('balance-'.$state.'.com','2026-11-01');$renew($h,$state);same(0,$forecast()['count'],'Sent/completed/retired cycle excluded');$h->update(['billing_managed'=>false]);}
+foreach(['pending','uncertain','succeeded','rejected'] as $state){$h=$make(placeholderComFixtureName('balance-'.$state.'-placeholder.com'),'2026-11-01');$renew($h,$state);same(0,$forecast()['count'],'Sent/completed/retired cycle excluded');$h->update(['billing_managed'=>false]);}
 $off=$make(placeholderComFixtureName('balance-off-placeholder.com'));$renew($off);$cancel=ServiceCancellation::create(['service_id'=>$off->service_id,'type'=>'end_of_period','reason'=>'Synthetic']);
 same(1,$forecast()['count'],'Native end-of-period stop preserves issued obligation');
 $cancel->update(['type'=>'immediate']);same(0,$forecast()['count'],'Immediate cancellation excludes unsendable issued obligation');$cancel->delete();

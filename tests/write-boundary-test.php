@@ -1,14 +1,15 @@
 <?php
 // Synthetic post-seal guard regressions; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/write-fixture.php';
 use App\Models\InvoiceTransaction;
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, WriteAcceptance};
 $ops = [];
-foreach (['funding', 'owner', 'generation', 'reservation', 'pause', 'peer', 'acceptance', 'lease', 'context', 'budget', 'reference', 'charge', 'candidates', 'refund', 'cost', 'policy'] as $change) { $ops[$change] = $new('boundary-'.$change.'.com'); }
+foreach (['funding', 'owner', 'generation', 'reservation', 'pause', 'peer', 'acceptance', 'lease', 'context', 'budget', 'reference', 'charge', 'candidates', 'refund', 'cost', 'policy'] as $change) { $ops[$change] = $new(placeholderComFixtureName('boundary-'.$change.'-placeholder.com')); }
 $rate = $new(placeholderComFixtureName('rate-held-placeholder.com')); $preseal = [];
-foreach (['charge', 'order_candidates', 'refund'] as $key) { $preseal[$key] = $new('preseal-'.str_replace('_', '-', $key).'.com'); }
+foreach (['charge', 'order_candidates', 'refund'] as $key) { $preseal[$key] = $new(placeholderComFixtureName('preseal-'.str_replace('_', '-', $key).'-placeholder.com')); }
 foreach ($ops as $change => $op) {
     $build($enomBinding);
     $proxy->before = static function ($admitted, $context) use ($change, $op, $bindings, $enomBinding, $clock) {

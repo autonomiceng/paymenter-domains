@@ -1,11 +1,12 @@
 <?php
 // Required renewal subread recovery; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 foreach(['assessment','flags','renewal','extend','quote','expired','balance'] as $phase){
-    [$op,$d,$b]=$makeRenewal('renew-read-'.$phase.'.com'); [$engine,$writer]=$compose($b); $writes=$state->writes;
+    [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-read-'.$phase.'-placeholder.com')); [$engine,$writer]=$compose($b); $writes=$state->writes;
     if($phase==='assessment'){ $state->fail=ReadCommand::Info; }
     elseif($phase==='flags'){ $state->duringCommand=ReadCommand::Check; $state->during=static fn()=>$state->fail=ReadCommand::Info; }
     else{ $state->fail=match($phase){ 'renewal'=>ReadCommand::Renewal,'extend'=>ReadCommand::RenewalInfo,'quote'=>ReadCommand::Check,'expired'=>ReadCommand::Expired,'balance'=>ReadCommand::Balance }; }
@@ -18,7 +19,7 @@ foreach(['assessment','flags','renewal','extend','quote','expired','balance'] as
 }
 $admissionReads = [ReadCommand::Info, ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Balance];
 foreach ([ReadCommand::Lock, ReadCommand::Privacy] as $unused) {
-    [$op,$d,$b]=$makeRenewal('renew-unused-'.strtolower($unused->name).'.com'); [$engine,$writer,$completion]=$compose($b); $writes=$state->writes;
+    [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-unused-'.strtolower($unused->name).'-placeholder.com')); [$engine,$writer,$completion]=$compose($b); $writes=$state->writes;
     $state->fail=$unused;
     same('pending',$engine->run($op->id,$writer)->state,'Unused lock/privacy failure cannot block renewal admission');
     same([...$admissionReads,...$admissionReads],$state->calls,'Both admissions omit unused flag reads even when unavailable');
@@ -28,7 +29,7 @@ foreach ([ReadCommand::Lock, ReadCommand::Privacy] as $unused) {
     same($writes+1,$state->writes,'Unused reads create no retry or extra write');$state->fail=null;
 }
 foreach ([1,2] as $pass) {
-    [$op,$d,$b]=$makeRenewal('renew-pause-'.$pass.'.com'); [$engine,$writer]=$compose($b); $writes=$state->writes;
+    [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-pause-'.$pass.'-placeholder.com')); [$engine,$writer]=$compose($b); $writes=$state->writes;
     $hook=static function () use (&$hook,$state,$pass,$renewBindings,$b) {
         if (count(array_filter($state->calls,static fn($c)=>$c===ReadCommand::Balance))===$pass) { $renewBindings->setProcessing($b->serverId,false); }
         else { $state->during=$hook; }

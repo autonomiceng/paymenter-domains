@@ -1,6 +1,7 @@
 <?php
 // Enom 444f31c request-gates/provider-disposition/transfer-codes; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/transfer-dispatch-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Services\OperationTerminalProof;
 $state->mode=''; $state->calls=[]; $op=$newTransfer(placeholderComFixtureName('no-paid-placeholder.com'),0,false); $makeTransfer(); $engine->execute($op->id); same([],$state->calls,'Unpaid transfer never writes');
@@ -17,7 +18,7 @@ expect(Paymenter\Extensions\Servers\Domains\Services\TransferInputs::validCode($
 $op=$newTransfer(placeholderComFixtureName('disabled-transfer-placeholder.com')); $makeTransfer(0,new Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(registration:true));
 same('held',$engine->execute($op->id)->state,'Default off transfer gate'); same([],$state->calls,'Registration permission grants no transfer permission');
 foreach (['premium','unknown','funds','changed','reverse','rules','profile','rdap404'] as $fault) {
-    $i=$fault==='profile'?1:0; $op=$newTransfer('refuse-'.$fault.'.com',$i); $makeTransfer($i); $state->calls=[]; $state->reads=0;
+    $i=$fault==='profile'?1:0; $op=$newTransfer(placeholderComFixtureName('refuse-'.$fault.'-placeholder.com'),$i); $makeTransfer($i); $state->calls=[]; $state->reads=0;
     $state->premium=$fault==='premium'?true:($fault==='unknown'?null:false); $state->funds=$fault==='funds'?'1.00':'100.00'; $state->mode=$fault==='profile'?'default':'';
     $state->rdap404=$fault==='rdap404';
     $state->during=static function($read)use($fault,$op,$state){

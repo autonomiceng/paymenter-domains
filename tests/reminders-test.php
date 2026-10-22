@@ -1,6 +1,7 @@
 <?php
 // Enom444f31c reminders scenarios plus neutral/fair safety regressions. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/reminders.php';
 use App\Models\{NotificationTemplate,ServiceCancellation};
 use Illuminate\Support\Facades\{DB,Mail};
@@ -27,7 +28,7 @@ $unicodeRow=DB::table('domains_reminder_schedules')->where('server_id',$d->serve
 commerceReject(fn()=>ReminderSchedules::offsets('bogus,7'));ReminderSchema::install();ReminderSchema::verify();
 // Unknowns and missing/held obligations create staff alerts without a customer guess.
 foreach(['expiry','cost','price','held','missing'] as $case){
-    [$x,$bill,$renew]=$make('unknown-'.$case.'.com',$case!=='missing');
+    [$x,$bill,$renew]=$make(placeholderComFixtureName('unknown-'.$case.'-placeholder.com'),$case!=='missing');
     if($case==='expiry'){$x->update(['provider_expires_at'=>null]);}
     if($case==='held'){$renew->update(['state'=>'held']);}
     $rate=Price::where('server_id',$x->server_id)->where('action','renew')->sole();$original=$rate->getAttributes();
@@ -53,7 +54,7 @@ expect(DB::table('domains_obligation_alerts')->where('domain_id',$x->id)->where(
 $template->update(['body'=>ReminderTemplates::definitions()['domains_domain_expiring']['body']]);
 expect($reminders->remind((int)$x->id),'Corrected template retries before queue handoff');
 // Two-day catch-up, never three; closest window wins without backfilling older offsets.
-foreach([1=>true,2=>true,3=>false] as $late=>$expected){[$x]=$make('catchup-'.$late.'.com');$clock->instant=$clock->now()->modify('+'.$late.' days');same($expected,$reminders->remind((int)$x->id),'Bounded catch-up day '.$late);}
+foreach([1=>true,2=>true,3=>false] as $late=>$expected){[$x]=$make(placeholderComFixtureName('catchup-'.$late.'-placeholder.com'));$clock->instant=$clock->now()->modify('+'.$late.' days');same($expected,$reminders->remind((int)$x->id),'Bounded catch-up day '.$late);}
 // Retained per-obligation margin alert survives replacement of the latest health projection.
 [$x,$bill,$renew]=$make(placeholderComFixtureName('retained-margin-placeholder.com'));
 $x->update(['observation'=>[]]);DB::table('domains_operations')->where('id',$renew->id)->update(['policy'=>encrypt(json_encode([...$renew->policy,'price'=>[...$renew->policy['price'],'staff_alert'=>'below_cost','retained'=>false]]),false)]);

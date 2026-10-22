@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
@@ -51,7 +52,7 @@ $holding=Domain::where('domain','parent-race-placeholder.com')->sole();$serviceI
 expect(Service::whereKey($serviceId)->exists(),'Admitted checkout committed native service');
 same(0,DB::transactionLevel(),'Checkout committed before parent delete resumes');
 // Synthetic additional orphan candidates verify the deleted callback's bounded work.
-for($n=0;$n<25;$n++){$overflow=Domain::create(['user_id'=>$user->id,'service_id'=>987654+$n,'domain'=>'overflow-'.$n.'.com','sld'=>'overflow-'.$n,'tld'=>'com',
+for($n=0;$n<25;$n++){$overflow=Domain::create(['user_id'=>$user->id,'service_id'=>987654+$n,'domain'=>placeholderComFixtureName('overflow-'.$n.'-placeholder.com'),'sld'=>'overflow-'.$n.'-placeholder','tld'=>'com',
     'server_id'=>$tlds[0]->server_id,'registrar_key'=>'enom','account_fingerprint'=>$tlds[0]->account_fingerprint,'status'=>'registration_pending']);}
 $delete->resume();expect($delete->isTerminated(),'Native delete completed');
 expect(!User::whereKey($user->id)->exists(),'Native user deleted');

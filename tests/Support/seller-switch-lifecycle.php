@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/reserved-fixtures.php';
 require __DIR__.'/paired-driver.php';
 use App\Models\{Invoice, Order, Service};
 use Illuminate\Support\Facades\{DB, Event};
@@ -11,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainReservations, RefundPro
 $sellerLifecycle = static function (int $i, string $action) use ($sellers, $clock, $tlds, $user, $native,
     $scenarioNew, $scenarioCompose, $state, $scenarioSends, $inputs, &$engine): void {
     scenarioSwitch($sellers, $clock, $tlds[$i]->server_id);
-    $cart = commerceCart($user); commerceAdd($cart, $native->product($tlds[$i], $action), 'stale-'.$i.'-'.$action.'.com');
+    $cart = commerceCart($user); commerceAdd($cart, $native->product($tlds[$i], $action), placeholderComFixtureName('stale-'.$i.'-'.$action.'-placeholder.com'));
     $money = scenarioMoney(); $orders = Order::count(); $services = Service::count();
     foreach ([1 - $i, $i] as $seller) {
         scenarioSwitch($sellers, $clock, $tlds[$seller]->server_id);
@@ -20,7 +21,7 @@ $sellerLifecycle = static function (int $i, string $action) use ($sellers, $cloc
         same($orders, Order::count(), 'Stale checkout creates no order'); same($services, Service::count(), 'Stale checkout creates no service');
     }
     // Two valid carts exist together before either action reserves the canonical name.
-    $name = 'contended-'.$i.'-'.$action.'.com';
+    $name = placeholderComFixtureName('contended-'.$i.'-'.$action.'-placeholder.com');
     $winner = commerceCart($user); commerceAdd($winner, $native->product($tlds[$i], $action), strtoupper($name).'.');
     $loser = commerceCart($user); commerceAdd($loser, $native->product($tlds[$i], $action === 'register' ? 'transfer' : 'register'), $name);
     commerceCheckout($user, $winner); $money = scenarioMoney(); $orders = Order::count(); $services = Service::count();
@@ -28,7 +29,7 @@ $sellerLifecycle = static function (int $i, string $action) use ($sellers, $cloc
     same(1, Domain::where('reservation_name', $name)->count(), 'Register/transfer carts have one canonical winner');
     same($money, scenarioMoney(), 'Losing cart creates no debt, credit or payment'); same($orders, Order::count(), 'No losing order'); same($services, Service::count(), 'No losing service');
 
-    $op = $scenarioNew($i, $action, 'unpaid-switch-'.$i.'-'.$action.'.com', false);
+    $op = $scenarioNew($i, $action, placeholderComFixtureName('unpaid-switch-'.$i.'-'.$action.'-placeholder.com'), false);
     $scenarioCompose($i, $action); $state->calls = [];
     $debt = Invoice::findOrFail($op->invoice_id)->getRawOriginal();
     scenarioRetained($op->domain, static fn () => scenarioSwitch($sellers, $clock, $tlds[1 - $i]->server_id));
@@ -44,7 +45,7 @@ $sellerLifecycle = static function (int $i, string $action) use ($sellers, $cloc
     same($tlds[$i]->server_id, $result->server_id, 'Payment does not rebind old seller'); same(1, count($scenarioSends()), 'One monetary send after funding');
 
     foreach (['first-read', $action === 'register' ? 'before-send' : 'second-read', 'sealed-unknown'] as $phase) {
-        $op = $scenarioNew($i, $action, $phase.'-'.$i.'-'.$action.'.com');
+        $op = $scenarioNew($i, $action, placeholderComFixtureName($phase.'-'.$i.'-'.$action.'-placeholder.com'));
         $scenarioCompose($i, $action); $state->calls = []; $state->reads = 0; $switched = 0;
         $switch = static function () use ($sellers, $clock, $tlds, $i, &$switched): void {
             same(0, DB::transactionLevel(), 'Competing seller schedule runs outside financial locks');

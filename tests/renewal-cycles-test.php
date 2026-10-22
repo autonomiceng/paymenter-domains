@@ -1,6 +1,7 @@
 <?php
 // Enom d1392a8 complimentary/cancelled-unpaid cycles; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{InvoiceTransaction, Role};
 use Illuminate\Support\Facades\DB;
@@ -21,7 +22,7 @@ $clock->instant = new DateTimeImmutable('2027-10-18T11:59:00Z');
 same('pending', $runRenewal($replacement, $b)->state, 'Replacement paid obligation executes once');
 // Expiry cleanup uses the staff proof, regardless of owner preference or billing switches.
 foreach (['manual_on','manual_off','scheduled_on','scheduled_off','transaction','sent','collecting','pending','uncertain'] as $case) {
-    [$unpaid,$expiredDomain,,$unpaidInvoice]=$makeRenewal('expiry-cancel-'.str_replace('_','-',$case).'.com',false,1,false,static function($domain)use($case,$product,$billing):void {
+    [$unpaid,$expiredDomain,,$unpaidInvoice]=$makeRenewal(placeholderComFixtureName('expiry-cancel-'.str_replace('_','-',$case).'-placeholder.com'),false,1,false,static function($domain)use($case,$product,$billing):void {
         if(str_starts_with($case,'scheduled_')){
             $product->server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'],['value'=>true,'type'=>'boolean']);
             $billing->invoice($domain->id);
@@ -60,7 +61,7 @@ foreach (['manual_on','manual_off','scheduled_on','scheduled_off','transaction',
 }
 $staff = commerceUser(); $role = Role::create(['name'=>'Renewal funding','permissions'=>['admin.domains.manage','admin.domains.fund']]); $staff->update(['role_id'=>$role->id]);
 foreach (['complete', 'revoked', 'unknown', 'over', 'exact', 'term', 'unauthorized'] as $case) {
-    [$unpaid, $d, $b] = $makeRenewal('complimentary-'.$case.'.com', false);
+    [$unpaid, $d, $b] = $makeRenewal(placeholderComFixtureName('complimentary-'.$case.'-placeholder.com'), false);
     $cycles->retireUnpaid($unpaid->id); $years = $case === 'term' ? 3 : 1;
     commerceReject(fn () => $cycles->complimentary($d->id, $user, $years, new Money('8.00','USD'), 'staff_reviewed'));
     $nativePrice = $d->service->fresh()->price; $nativeMode = $d->fresh()->price_mode;
@@ -128,7 +129,7 @@ same($creditBefore - PricingRule::minor($scheduledBill->total), $creditBalance()
 foreach (['insufficient' => -1, 'exact' => 0] as $case => $delta) {
     config(['settings.credits_auto_use' => false]); // Acquisition stays outside the renewal credit scenario.
     $balanceBefore = null;
-    [$op, $d, $b, $bill] = $makeRenewal('renew-credit-'.$case.'.com', false, 1, false,
+    [$op, $d, $b, $bill] = $makeRenewal(placeholderComFixtureName('renew-credit-'.$case.'-placeholder.com'), false, 1, false,
         static function ($domain) use ($user, $delta, &$balanceBefore): void {
             $balanceBefore = PricingRule::minor((string) $domain->service->fresh()->price) + $delta;
             $user->credits()->where('currency_code', 'USD')->sole()->update(['amount' => PricingRule::decimal($balanceBefore)]);
@@ -149,7 +150,7 @@ Operation::created(static function ($operation) use (&$prepaidRemaining): void {
 });
 foreach (['partial' => 100, 'settled' => 0, 'overpaid' => -1] as $case => $remaining) {
     config(['settings.credits_auto_use'=>false]); $prepaidRemaining = null;
-    [$op, $d, $b, $bill] = $makeRenewal('renew-credit-'.$case.'.com', false, 1, false, static function () use ($user, $remaining, &$prepaidRemaining): void {
+    [$op, $d, $b, $bill] = $makeRenewal(placeholderComFixtureName('renew-credit-'.$case.'-placeholder.com'), false, 1, false, static function () use ($user, $remaining, &$prepaidRemaining): void {
         $user->credits()->where('currency_code','USD')->sole()->update(['amount'=>'100.00']);
         $prepaidRemaining = $remaining; config(['settings.credits_auto_use'=>true]);
     });

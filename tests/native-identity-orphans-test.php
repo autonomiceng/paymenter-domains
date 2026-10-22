@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/operation-fixture.php';
 use App\Models\{Order,Service,User};
 use Illuminate\Support\Facades\DB;
@@ -8,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery,ContactSetup,HoldingIdentityLock,HoldingLocks};
 // A live paid request proves each fixture would otherwise be admissible.
 foreach(['services','orders','users'] as $table){foreach(['before_claim','during_preflight'] as $phase){
-    $op=$new('missing-'.$table.'-'.str_replace('_','-',$phase).'.com');
+    $op=$new(placeholderComFixtureName('missing-'.$table.'-'.str_replace('_','-',$phase).'-placeholder.com'));
     $nativeControls=static function()use($op,$user):void {
         $s=Service::findOrFail($op->service_id);
         $rows=DB::transaction(fn()=>HoldingLocks::take($op->domain));

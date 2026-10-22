@@ -1,6 +1,7 @@
 <?php
 // Fresh ZIP composition and native paid work; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/reserved-fixtures.php';
 require __DIR__.'/commerce.php';require __DIR__.'/native-commerce.php';
 use Illuminate\Support\Facades\{Cache,DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,Clock};
@@ -141,7 +142,7 @@ same([], $state->writes,'Renewal never reaches acquisition spies');
 // Genuine paid native work alternates on one account with the same registered factory.
 $worker=new RuntimeWork($clock,$ports);$expected=[];
 foreach(['register','transfer','register','transfer'] as $i=>$action){
-    $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new('alternating-'.$i.'.com',$action);
+    $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new(placeholderComFixtureName('alternating-'.$i.'-placeholder.com'),$action);
     $beforeReads=$state->reads;$beforeRdap=$state->rdap;
     $worker->invoice($op->invoice_id);Queue::assertPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,fn($job)=>$job->operationId===$op->id);
     $worker->operation($op->id);$expected[]=[$action,$op->domain->domain];
@@ -153,7 +154,7 @@ foreach(['register','transfer','register','transfer'] as $i=>$action){
     $composition['acquisition']->execute($op->id);same($expected,$state->writes,'Duplicate delivery never replays a monetary command');
 }
 foreach(['register','transfer'] as $action){
-    $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new('failed-preflight-'.$action.'.com',$action);$state->premium=true;
+    $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new(placeholderComFixtureName('failed-preflight-'.$action.'-placeholder.com'),$action);$state->premium=true;
     $ports->operation($op);$state->premium=false;
     same('held',$op->fresh()->state,'Failed fresh preflight holds '.$action);same('absent',$op->fresh()->attempt['seal'],'Preflight refusal precedes sealing');
     same($expected,$state->writes,'Failed preflight sends neither action');

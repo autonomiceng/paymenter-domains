@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/managed-public.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{ManagedPublicObservation,WatchName};
@@ -42,7 +43,7 @@ expect(DB::table(ManagedPublicWorkSchema::TABLE)->whereNull('retired_at')->doesn
 $owners=[];for($i=0;$i<7;$i++) {
     $u=staffUser([]);$owners[]=(int)$u->id;$key=1000+$i;
     DB::table('domains_domains')->insert(['id'=>$key,'service_id'=>$key,'user_id'=>$u->id,'server_id'=>$d->server_id,'registrar_key'=>'enom',
-        'account_fingerprint'=>$d->account_fingerprint,'domain'=>'fair'.$i.'.com','reservation_name'=>'fair'.$i.'.com','sld'=>'fair'.$i,'tld'=>'com','status'=>'active','authority_generation'=>1]);
+        'account_fingerprint'=>$d->account_fingerprint,'domain'=>placeholderComFixtureName('fair'.$i.'-placeholder.com'),'reservation_name'=>placeholderComFixtureName('fair'.$i.'-placeholder.com'),'sld'=>'fair'.$i.'-placeholder','tld'=>'com','status'=>'active','authority_generation'=>1]);
     foreach(['delegation','points']as$kind){DB::table(ManagedPublicWorkSchema::TABLE)->insert(['domain_id'=>$key,'user_id'=>$u->id,'generation'=>1,
         'account_fingerprint'=>$d->account_fingerprint,'kind'=>$kind,'due_at'=>$now,'target_stamp'=>str_repeat('a',64),'safe_code'=>'ready']);}
 }

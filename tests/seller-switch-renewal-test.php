@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/renewal-execution.php';
 require __DIR__.'/Support/lifecycle-scenarios.php';
 use App\Models\Role;
@@ -14,7 +15,7 @@ $refreshPrices = static function () use ($clock): void {
 $staff = commerceUser(); $role = Role::create(['name' => 'Cycle funding', 'permissions' => ['admin.domains.manage', 'admin.domains.fund']]); $staff->update(['role_id' => $role->id]);
 foreach (['paid', 'cap-over', 'cap-exact'] as $case) {
     $clock->instant = $now; $refreshPrices(); scenarioSwitch($sellers, $clock, $tlds[0]->server_id);
-    [$op, $d, $binding, $bill] = $makeRenewal('non-selling-'.$case.'.com', $case === 'paid', 1, false,
+    [$op, $d, $binding, $bill] = $makeRenewal(placeholderComFixtureName('non-selling-'.$case.'-placeholder.com'), $case === 'paid', 1, false,
         static function ($domain) use ($refreshPrices, $sellers, $clock, $tlds): void {
             $refreshPrices(); scenarioRetained($domain, static fn () => scenarioSwitch($sellers, $clock, $tlds[1]->server_id));
         });

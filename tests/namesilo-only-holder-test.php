@@ -1,11 +1,12 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/paired-driver.php';
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\HolderPricing;
 foreach (['register', 'transfer'] as $action) {
-    $op = $scenarioNew(1, $action, 'only-namesilo-'.$action.'.com');
+    $op = $scenarioNew(1, $action, placeholderComFixtureName('only-namesilo-'.$action.'-placeholder.com'));
     $scenarioCompose(1, $action); $state->calls = [];
     scenarioRetained($op->domain, static fn () => scenarioSwitch($sellers, $clock, $tlds[0]->server_id));
     $money = scenarioMoney(); $result = $engine->execute($op->id);

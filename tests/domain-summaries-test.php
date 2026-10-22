@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/watch-notices.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,DomainSummaryContext};
@@ -31,7 +32,7 @@ foreach(['not_registered','no_coverage'] as $n=>$reason){$at=$now+100+$n*50;DB::
 // Query count stays constant as target count grows; no per-row Eloquent reads.
 $clone=function(string $table,int $id,array $changes=[]):int{$row=(array)DB::table($table)->where('id',$id)->first();unset($row['id']);return (int)DB::table($table)->insertGetId([...$row,...$changes]);};
 $ids=[$id];for($i=0;$i<12;$i++){
-    $name='extra'.$i.'.com';$wid=$clone('domains_watch_names',$id,['canonical_name'=>$name]);$ids[]=$wid;
+    $name=placeholderComFixtureName('extra'.$i.'-placeholder.com');$wid=$clone('domains_watch_names',$id,['canonical_name'=>$name]);$ids[]=$wid;
     $sid=$clone('services',$service->id,['order_id'=>$clone('orders',$order->id)]);
     $clone('properties',$property->id,['model_id'=>$sid,'value'=>'www.'.$name]);
     $sourceId=(int)DB::table('domains_watch_sources')->where('watch_id',$id)->value('id');

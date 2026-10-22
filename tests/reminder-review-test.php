@@ -1,6 +1,7 @@
 <?php
 // Saved-evidence and alert regressions. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/reminders.php';
 use App\Models\{NotificationTemplate,ServiceCancellation};
 use Illuminate\Support\Facades\DB;
@@ -40,7 +41,7 @@ expect($reminders->remind($d->id),'Issued debt reminder continues under end-of-p
 same(true,\Illuminate\Support\Facades\Mail::queued(\Paymenter\Extensions\Servers\Domains\Mail\DomainNotice::class)->last()->data['invoice'],'Stopped holding reminder still links retained debt');
 // An existing invoice must not promise a renewal that current authority refuses.
 foreach(['cancelled','paused','anchor','revision'] as $case){
-    [$d]=$make('invoice-authority-'.$case.'.com');
+    [$d]=$make(placeholderComFixtureName('invoice-authority-'.$case.'-placeholder.com'));
     if($case==='cancelled'){ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'immediate','reason'=>'Synthetic request']);}
     if($case==='paused'){$d->update(['renewal_policy'=>[...$d->renewal_policy,'automatic_spend_paused'=>true]]);}
     if($case==='anchor'){$p=$d->renewal_policy;unset($p['billing_anchor']);$d->update(['renewal_policy'=>$p]);}

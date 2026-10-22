@@ -1,6 +1,7 @@
 <?php
 // Synthetic Enom 444f31c claim/seal regressions; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/operation-fixture.php';
 use Illuminate\Support\Facades\DB;
 
@@ -9,7 +10,7 @@ foreach (['register', 'transfer'] as $action) {
     foreach (['cancelled', 'suspended'] as $status) {
         foreach (['before_claim', 'during_preflight'] as $phase) {
             $scenario = $action.'-'.$status.'-'.$phase;
-            $op = $new('lifecycle-'.str_replace('_', '-', $scenario).'.com', action: $action);
+            $op = $new(placeholderComFixtureName('lifecycle-'.str_replace('_', '-', $scenario).'-placeholder.com'), action: $action);
             $changeStatus = static fn () => DB::table('services')->where('id', $op->service_id)->update(['status' => $status]);
             if ($phase === 'before_claim') { $changeStatus(); }
             else { $preflight->during = $changeStatus; }

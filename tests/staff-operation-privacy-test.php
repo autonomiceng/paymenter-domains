@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/management.php';
 require __DIR__.'/Support/staff-panel.php';
 use App\Models\InvoiceTransaction;
@@ -14,7 +15,7 @@ staffPanel();app()->instance(Clock::class,$clock);app()->instance(Refunds::class
 $permissions=[Staff::VIEW,'admin.domains.manage','admin.invoices.update',StaffOperationReview::permission('hold'),StaffOperationReview::permission('refund')];
 $staff=staffUser($permissions);
 foreach(['privacy_purchase','privacy_renew']as$action){
-    [$d,$driver]=$holding('staff-'.str_replace('_','-',$action).'.com');$state->privacy=$action==='privacy_renew';$state->enabled=$state->privacy;$state->expiry='2027-10-18';$state->cost='unknown';
+    [$d,$driver]=$holding(placeholderComFixtureName('staff-'.str_replace('_','-',$action).'-placeholder.com'));$state->privacy=$action==='privacy_renew';$state->enabled=$state->privacy;$state->expiry='2027-10-18';$state->cost='unknown';
     $product->server->settings()->updateOrCreate(['key'=>'domains_privacy_price'],['value'=>'5.00','type'=>'string']);
     $op=$submit($d,$driver,$action);DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);
     InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$op->amount,'fee'=>'0.00','status'=>'succeeded']);

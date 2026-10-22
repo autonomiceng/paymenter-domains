@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/acquisition-retirement.php';
 use App\Models\{Service,ServiceCancellation};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
@@ -9,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,DomainR
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionActions;
 // No event, raw cancelled fixtures model missed wake-ups and privileged bulk changes.
 foreach(['partial','processing','failed','reversed','sent','null_execution','claim','provider','sibling']as$case){
-    $op=$new('unpaid-'.str_replace('_','-',$case).'.com',paid:false);
+    $op=$new(placeholderComFixtureName('unpaid-'.str_replace('_','-',$case).'-placeholder.com'),paid:false);
     if(in_array($case,['partial','processing','failed','reversed'],true)){
         App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$case==='reversed'?'-1.00':'1.00','fee'=>'0.00','status'=>$case==='processing'?'processing':($case==='failed'?'failed':'succeeded')]);
     }elseif($case==='sent'){$op->update(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']]);}

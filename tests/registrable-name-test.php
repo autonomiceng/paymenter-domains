@@ -1,15 +1,16 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/native-app.php'; require __DIR__.'/Support/psl.php';
 use Paymenter\Extensions\Servers\Domains\Data\{PslSnapshot, Registrable, Held};
 use Paymenter\Extensions\Servers\Domains\Services\{PslValidator, RegistrableNameResolver};
 $v = new PslValidator(128, 5, 1); $snapshot = new PslSnapshot(pslFixture(), $v); $resolver = new RegistrableNameResolver;
 $good = ['example.com'=>'example.com', 'a.co.uk'=>'a.co.uk', 'WWW.Example.COM.'=>'example.com',
     'shop.api.example.com'=>'example.com', 'x.y.ck'=>'x.y.ck', 'www.ck'=>'www.ck', 'a.www.ck'=>'www.ck',
-    'xn--bcher-kva.com'=>'xn--bcher-kva.com', 'a.xn--55qx5d.cn'=>'a.xn--55qx5d.cn', str_repeat('a',63).'.com'=>str_repeat('a',63).'.com'];
-$maxHostname=str_repeat('a',63).'.'.str_repeat('b',63).'.'.str_repeat('c',63).'.'.str_repeat('d',57).'.com';
-$good[$maxHostname]=str_repeat('d',57).'.com';
+    'xn--bcher-kva.com'=>'xn--bcher-kva.com', 'a.xn--55qx5d.cn'=>'a.xn--55qx5d.cn', placeholderComFixtureName(str_pad('placeholder',63,'a').'.com')=>placeholderComFixtureName(str_pad('placeholder',63,'a').'.com')];
+$maxHostname=str_repeat('a',63).'.'.str_repeat('b',63).'.'.str_repeat('c',63).'.'.placeholderComFixtureName(str_pad('placeholder',57,'d').'.com');
+$good[$maxHostname]=placeholderComFixtureName(str_pad('placeholder',57,'d').'.com');
 foreach ($good as $host=>$expected) {
     $r=$resolver->resolve($host,$snapshot); expect($r instanceof Registrable,'Registrable '.$host); same($expected,$r->name,'Exact derivation '.$host);
     same(strtolower(rtrim($host,'.')),$r->hostname,'Primary hostname retained');same($snapshot->revision,$r->psl_revision,'Revision bound');

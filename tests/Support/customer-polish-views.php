@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Real Blade customer presentation cases.
 declare(strict_types=1);
+require_once __DIR__.'/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainSummary,DomainSummaryBadges};
 use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
@@ -37,7 +38,7 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     foreach ([[true, true], [true, false], [false, false], []] as $flags) {
         $dtos = [];
         foreach ($flags as $i => $flag) {
-            $dtos[] = new \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary('example-'.$i.'.com', null, 'managed',
+            $dtos[] = new \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(reservedFixtureName('example-'.$i.'.example.com'), null, 'managed',
                 'domain.registration.platform', ['domain.dns.unknown'], null, null, ['domain.active'],
                 \Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings::all(), null, null, null, [], null, null, [], [],
                 ['detail' => '/domains/'.$i], testEnvironment: $flag);

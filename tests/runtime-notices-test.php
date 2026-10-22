@@ -2,6 +2,7 @@
 // Mandatory transaction notices with optional schedules off, and retained audit rotation.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/transfer-fixture.php';require __DIR__.'/Support/staff-panel.php';require __DIR__.'/Support/reminder-mail.php';
 use Illuminate\Support\Facades\{DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
@@ -10,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 $staff=staffUser([...array_keys(Staff::permissions())]);$reminders=new Reminders($clock,$bindings);
 foreach($tlds as $t){ReminderSchedules::enroll($t->server_id);}
 foreach($tlds as $i=>$t){
-    $clock->instant=$now;$op=$newTransfer('mandatory-'.$i.'.com',$i,true,false);
+    $clock->instant=$now;$op=$newTransfer(placeholderComFixtureName('mandatory-'.$i.'-placeholder.com'),$i,true,false);
     expect($reminders->remind($op->domain_id),'Paid notice sends with customer schedules off');
     same(false,$reminders->remind($op->domain_id),'Mandatory notices deduplicate');
     $clock->instant=$now->modify('+23 days');same(false,$reminders->remind($op->domain_id),'Optional final-week reminder remains off');

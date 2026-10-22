@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic customer DTOs only.
 declare(strict_types=1);
+require_once __DIR__.'/reserved-fixtures.php';
 function storefrontViews(): void
 {
     app('router')->getRoutes()->refreshNameLookups();
@@ -19,12 +20,12 @@ function storefrontData(): array
     $endings[1]['terms'] = range(1, 10); $endings[2]['terms'] = [1];
     $results = [];
     foreach (['available', 'transferable', 'taken', 'premium', 'held', 'error', 'idle'] as $i => $state) {
-        $label = $i === 0 ? str_repeat('a', 63) : 'yourbusiness';
-        $results[] = ['domain' => $label.'.com', 'sld' => $label, 'tld' => 'com', 'status' => $state,
+        $label = $i === 0 ? str_pad('placeholder', 63, 'a') : 'yourbusiness-placeholder';
+        $results[] = ['domain' => placeholderComFixtureName($label.'.com'), 'sld' => $label, 'tld' => 'com', 'status' => $state,
             'price' => '$12.00', 'renew' => '$14.00', 'term' => 1, 'terms' => [1 => '$12.00', 3 => '$30.00', 10 => '$1,234.00'], 'key' => str_repeat('a', 64)];
     }
     $results[0]['term'] = 10; $results[0]['price'] = '$1,234.00';
-    return ['endings' => $endings, 'name' => str_repeat('a', 63), 'preferred' => 'com', 'sld' => str_repeat('a', 63),
+    return ['endings' => $endings, 'name' => str_pad('placeholder', 63, 'a'), 'preferred' => 'com', 'sld' => str_pad('placeholder', 63, 'a'),
         'error' => null, 'notice' => null, 'results' => $results, 'years' => null, 'guest' => true,
         'testEnvironment' => false, 'checkKey' => str_repeat('b', 64)];
 }

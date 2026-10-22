@@ -1,11 +1,12 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic real-Blade record states.
+require_once __DIR__.'/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
 use Paymenter\Extensions\Servers\Domains\Services\ManagementPayload;
 $records=['dns'=>[['name'=>'@','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10],['name'=>'mail','type'=>'MX','address'=>str_repeat('m',63).'.example.com.','mx_pref'=>10],['name'=>'verify','type'=>'TXT','address'=>str_repeat('synthetic-text ',12),'mx_pref'=>10]],
     'srv'=>[['service'=>'sip','protocol'=>'tcp','target'=>'sip.example.com.','priority'=>0,'weight'=>5,'port'=>443]],
     'ds'=>[['key_tag'=>27578,'algorithm'=>13,'digest_type'=>2,'digest'=>str_repeat('A',64)]],
-    'glue'=>[['host'=>'ns1.'.str_repeat('a',63).'.com','ip'=>'2606:4700:4700::1111']]];
+    'glue'=>[['host'=>'ns1.'.placeholderComFixtureName(str_pad('placeholder',63,'a').'.com'),'ip'=>'2606:4700:4700::1111']]];
 $section=static function(string $kind,?array $rows)use($records):array {
     $s=['label'=>['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Child nameservers'][$kind],'records'=>$rows,'actions'=>[]];
     $actions=match($kind){'ds'=>['ds_add','ds_delete'],'glue'=>['glue_add','glue_update','glue_delete'],default=>[$kind]};

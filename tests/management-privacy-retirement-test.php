@@ -1,6 +1,7 @@
 <?php
 // Synthetic retired privacy money paths; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/management.php';
 use App\Models\{Credit,Invoice,InvoiceItem,InvoiceTransaction,Role};
 use Illuminate\Support\Facades\{Auth,Cache,DB};
@@ -18,7 +19,7 @@ $staffCredit=static function($op,?string $ticket=null)use($staff,$staffOps,$cloc
 $balance=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)(Credit::where('user_id',$user->id)->value('amount')??'0.00'));
 $payment=static fn($op,$amount=null,$status='succeeded')=>InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$amount??$op->amount,'fee'=>'0.00','status'=>$status]);
 $seq=0;$issue=static function($action,$claim='')use(&$seq,$holding,$state,$submit,$clock){
-    [$d,$driver]=$holding('privacy-retired-'.++$seq.'.com');$state->privacy=$action==='privacy_renew';$state->enabled=$state->privacy;$state->expiry='2027-10-18';$state->cost='8.00';
+    [$d,$driver]=$holding(placeholderComFixtureName('privacy-retired-'.++$seq.'-placeholder.com'));$state->privacy=$action==='privacy_renew';$state->enabled=$state->privacy;$state->expiry='2027-10-18';$state->cost='8.00';
     $op=$submit($d,$driver,$action);
     if($claim!==''){$a=['seal'=>'absent','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32)];
         if($claim==='deferral'){$a['management_deferrals']=[$clock->now()->format(DATE_ATOM),$clock->now()->format(DATE_ATOM)];}

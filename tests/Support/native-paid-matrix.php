@@ -81,7 +81,7 @@ $activeOnly=$new(placeholderComFixtureName('paid-active-only-placeholder.com'));
 $activeOnly->domain->service->update(['status'=>'active']);same(1,$alerts($activeOnly)->count(),'Native Active without new money triggers retained discrepancy');
 // Completed holdings and rejected-but-not-refunded orders are not closed acquisitions.
 foreach(['succeeded','rejected']as$state){
-    $quiet=$new('paid-quiet-'.$state.'.com');
+    $quiet=$new(placeholderComFixtureName('paid-quiet-'.$state.'-placeholder.com'));
     DB::table('domains_operations')->where('id',$quiet->id)->update(['state'=>$state]);
     DB::table('domains_domains')->where('id',$quiet->domain_id)->update(['status'=>$state==='succeeded'?'active':'registration_rejected']);
     DB::table('services')->where('id',$quiet->service_id)->update(['status'=>$state==='succeeded'?'cancelled':'active']);

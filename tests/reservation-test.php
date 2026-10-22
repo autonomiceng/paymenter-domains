@@ -23,7 +23,7 @@ $reject = static function (callable $call): void {
     try { $call(); expect(false, 'Reservation safety refusal escaped'); }
     catch (DomainException|InvalidArgumentException|Illuminate\Database\QueryException) { /* expected */ }
 };
-foreach ([' X.COM. ' => 'x.com', 'A.CO.UK' => 'a.co.uk', str_repeat('a', 63).'.com' => str_repeat('a', 63).'.com'] as $input => $name) {
+foreach ([' X.COM. ' => 'x.com', 'A.CO.UK' => 'a.co.uk', placeholderComFixtureName(str_pad('placeholder',63,'a').'.com') => placeholderComFixtureName(str_pad('placeholder',63,'a').'.com')] as $input => $name) {
     same($name, CanonicalName::normalize($input), 'Canonical normalization');
     same($name, DomainName::parse($input, ['com', 'co.uk'])['domain'], 'Provider shares canonical parser');
     Query::requireName($name);

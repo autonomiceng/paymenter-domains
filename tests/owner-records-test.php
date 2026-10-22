@@ -1,6 +1,7 @@
 <?php
 // Enom 444f31c glue-records and single-DS regression scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/owner-records.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -67,9 +68,9 @@ $writes=array_values(array_filter($state->calls,fn($c)=>$c[0]==='SetDomainSRVHos
 $rows=array_map(fn($i)=>['name'=>'record'.$i,'type'=>'TXT','address'=>'<synthetic> & text','mx_pref'=>10],range(1,50));
 Cache::flush();$r=$post('dns',['records'=>$rows,'preimage_digest'=>ManagementPayload::digest($state->dns)]);$controller->manage($r,$d->id,'dns');
 $op=$d->operations()->orderByDesc('id')->firstOrFail();same('succeeded',$management->run($op->id,$driver)->state,'Maximum DNS records through native controller');
-$dto=$owners->present($d->fresh());$long=new \Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($dto),'name'=>str_repeat('a',63).'.com']);
+$dto=$owners->present($d->fresh());$long=new \Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($dto),'name'=>placeholderComFixtureName(str_pad('placeholder',63,'a').'.com')]);
 $html=view('domains::show',['domain'=>$long,'keys'=>array_fill_keys(['setup','recovery','code','renew','auto-renew',...\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS],str_repeat('a',64))])->render();$dom=storefrontDom($html);
-same(50,$dom->query('//section[@id="dns"]//tbody/tr')->length,'Maximum is bounded to 50 visible rows');expect(str_contains($html,str_repeat('a',63)),'Long label preserved');expect(!str_contains($html,'value="<synthetic>'),'Record values escaped');
+same(50,$dom->query('//section[@id="dns"]//tbody/tr')->length,'Maximum is bounded to 50 visible rows');expect(str_contains($html,str_pad('placeholder',63,'a')),'Long label preserved');expect(!str_contains($html,'value="<synthetic>'),'Record values escaped');
 $ids=[];foreach($dom->query('//*[@id]')as$node){expect(!isset($ids[$node->getAttribute('id')]),'Unique field IDs');$ids[$node->getAttribute('id')]=true;}
 foreach($dom->query('//*[@aria-describedby]')as$node){foreach(explode(' ',$node->getAttribute('aria-describedby'))as$id){expect(isset($ids[$id]),'Every description exists');}}
 $forms=$dom->query('//form[@method="POST"]')->length;

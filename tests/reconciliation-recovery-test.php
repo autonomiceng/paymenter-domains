@@ -1,6 +1,7 @@
 <?php
 // Slice21 double-persistence residual; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/reconciliation-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -20,7 +21,7 @@ $acceptedWriter = new class($writer) implements \Paymenter\Extensions\Servers\Do
 $crashEngine = new \Paymenter\Extensions\Servers\Domains\Services\DomainOperations($claims, $preflight, $acceptedWriter, $clock); $writer->engine = $crashEngine;
 foreach (['unique', 'zero', 'multiple'] as $case) {
     $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');
-    $op = $new('lost-completion-'.$case.'.com'); $failures = 0;
+    $op = $new(placeholderComFixtureName('lost-completion-'.$case.'-placeholder.com')); $failures = 0;
     Operation::updating(static function ($row) use ($op, &$failures): void {
         if ($row->id === $op->id && array_key_exists('execution', $row->attempt ?? [])) {
             $failures++; throw new RuntimeException('Synthetic returned-result persistence failure');

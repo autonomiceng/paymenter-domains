@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/registration-fixture.php';
 use App\Models\{Credit, Role};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Labels;
@@ -23,7 +24,7 @@ foreach (['enom', 'namesilo'] as $index => $registrar) {
         'valid' => ['ns1.provider-placeholder.net', 'ns2.provider-placeholder.net']];
     if ($registrar === 'enom') { $cases['privacy-first'] = $cases['bad-ldh']; }
     foreach ($cases as $case => $servers) {
-        $name = $registrar.'-nameservers-'.$case.'.com';
+        $name = placeholderComFixtureName($registrar.'-nameservers-'.$case.'-placeholder.com');
         $cart = commerceCart($user); commerceAdd($cart, $native->product($tlds[$index], 'register'), $name); commerceCheckout($user, $cart);
         $op = Domain::where('domain', $name)->sole()->operations()->sole();
         Illuminate\Support\Facades\DB::table('invoices')->where('id', $op->invoice_id)->update(['status' => 'paid']);

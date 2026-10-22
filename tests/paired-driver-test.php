@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/paired-driver.php';
 use App\Models\{Invoice, Order, Service};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
@@ -9,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainReservations, HolderPri
 $holdings = [];
 foreach ([0, 1] as $i) {
     foreach (['register', 'transfer'] as $action) {
-        $op = $scenarioNew($i, $action, 'paired-'.$i.'-'.$action.'.com');
+        $op = $scenarioNew($i, $action, placeholderComFixtureName('paired-'.$i.'-'.$action.'-placeholder.com'));
         $scenarioCompose($i, $action); $state->calls = [];
         scenarioRetained($op->domain, static function () use ($sellers, $clock, $tlds, $i): void {
             scenarioSwitch($sellers, $clock, $tlds[1 - $i]->server_id);
@@ -54,7 +55,7 @@ same(4, Operation::count(), 'No fallback operation'); same(4, Service::count(), 
 // The public cart also refuses duplicate canonical register/transfer lines before checkout.
 foreach ([0, 1] as $i) {
     scenarioSwitch($sellers, $clock, $tlds[$i]->server_id);
-    $cart = commerceCart($user); $name = 'same-action-'.$i.'.com';
+    $cart = commerceCart($user); $name = placeholderComFixtureName('same-action-'.$i.'-placeholder.com');
     commerceAdd($cart, $native->product($tlds[$i], 'register'), strtoupper($name).'.');
     $money = scenarioMoney();
     commerceReject(fn () => commerceAdd($cart, $native->product($tlds[$i], 'transfer'), $name));

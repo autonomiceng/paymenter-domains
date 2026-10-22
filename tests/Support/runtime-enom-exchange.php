@@ -1,6 +1,7 @@
 <?php
 // Fresh ZIP authenticated exchange; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/reserved-fixtures.php';
 require __DIR__.'/enom-wire.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,ReadLimiter};
@@ -75,7 +76,7 @@ foreach(['register','transfer','register'] as $i=>$action){
             $binding,$acceptedCatalogue->revision,$acceptedCatalogue->endings)));
         config(['domains.enom_identity.environment'=>'live','domains.enom_catalogue.enabled'=>false]);
     }
-    $op=$new('authenticated-'.$i.'.com',$action);
+    $op=$new(placeholderComFixtureName('authenticated-'.$i.'-placeholder.com'),$action);
     if($action==='transfer'){
         DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance(
             $binding,$acceptedCatalogue->revision,$acceptedCatalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
@@ -117,7 +118,7 @@ $state->query=OperationClaims::query($op,$op->domain);$auth->setProcessing($bind
 // runs once at exchange entry, with real grants and the physical slot already consumed.
 echo "Installed exchange capacity and pre-entry pause passed.\n";
 foreach(['processing','server','binding'] as $drift){
-    $auth->setProcessing($binding->serverId,true,static fn()=>null);$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new('sealed-drift-'.$drift.'.com');
+    $auth->setProcessing($binding->serverId,true,static fn()=>null);$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new(placeholderComFixtureName('sealed-drift-'.$drift.'-placeholder.com'));
     resetWire(['reply'=>$reply,'before'=>static function()use($op,$drift,$binding,$account,$otherIdentityBytes){
         same('sealed',$op->fresh()->attempt['seal'],'Drift occurs after real seal');same(0,DB::transactionLevel(),'Drift outside financial locks');
         if($drift==='processing'){DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);}

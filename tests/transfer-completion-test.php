@@ -1,6 +1,7 @@
 <?php
 // Enom 444f31c/f7175ff transfer reconciliation, stricter unique charge; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require_once __DIR__.'/bootstrap.php';
 $transferEnvironment=Paymenter\Extensions\Servers\Domains\Data\Environment::Live; // All transports remain synthetic.
 require __DIR__.'/Support/transfer-fixture.php';
@@ -49,7 +50,7 @@ same(null,App\Models\Service::find($r->service_id)->expires_at,'Native expiry di
 $completed=$r; $calls=$observe->calls; $reconcile->run($r->id); same($calls,$observe->calls,'Completion refresh sends nothing');
 $copy=clone $r; $copy->attempt=[...$copy->attempt,'reconciliation'=>[...$copy->attempt['reconciliation'],'transfer_status'=>'pending']]; expect(!RenewalAuthority::completed($copy,$copy->domain,$binding),'Succeeded label lacks status proof');
 foreach (['pending','status','charge','duplicate','short','owner','expiry','late','nohistory','reversed','race','reject_owned','reject_charge'] as $fault) {
-    $op=$prepare('unresolved-transfer-'.str_replace('_','-',$fault).'.com'); $observe->fault=$fault;
+    $op=$prepare(placeholderComFixtureName('unresolved-transfer-'.str_replace('_','-',$fault).'-placeholder.com')); $observe->fault=$fault;
     if ($fault==='nohistory') { App\Models\Server::find($op->server_id)->settings()->where('key',HistoryAcceptances::KEY.'_transfer')->delete(); }
     if ($fault==='reversed') { App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'-0.01','fee'=>'0.00','status'=>'succeeded']); }
     if ($fault==='race') { $observe->during=fn()=>App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'-0.01','fee'=>'0.00','status'=>'succeeded']); }

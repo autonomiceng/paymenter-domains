@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
@@ -257,7 +258,7 @@ foreach(['order-owner'=>Order::class,'service-owner'=>Service::class,'service-or
     DB::transaction(function()use($race,$raceOrder,$owner,$p,$tlds,$edit):void {
         $owners=\Paymenter\Extensions\Servers\Domains\Services\HoldingIdentityLock::lockForAdoption($raceOrder->id,$race->id)->owners($owner->id);
         same($owner->id,$owners['service_user_id'],'Adoption rechecked native owner');
-        Domain::create(['service_id'=>$race->id,'user_id'=>$owner->id,'domain'=>'race-'.$edit.'.com','sld'=>'race-'.$edit,'tld'=>'com',
+        Domain::create(['service_id'=>$race->id,'user_id'=>$owner->id,'domain'=>placeholderComFixtureName('race-'.$edit.'-placeholder.com'),'sld'=>'race-'.$edit.'-placeholder','tld'=>'com',
             'server_id'=>$p->server_id,'registrar_key'=>'enom','account_fingerprint'=>$tlds[0]->account_fingerprint,'status'=>'registration_pending']);
     });
     $competitor->resume();expect($competitor->isTerminated(),$edit.' refused after adoption commits');

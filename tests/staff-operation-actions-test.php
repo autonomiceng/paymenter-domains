@@ -1,6 +1,7 @@
 <?php
 // Native staff workflow boundaries; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/staff-operation-fixture.php';
 use App\Models\{Credit,InvoiceTransaction};
 use Illuminate\Support\Facades\{Auth,DB};
@@ -61,7 +62,7 @@ $key=$ticket($foreign,'refund');$clock->instant=$clock->now()->modify('+901 seco
 $key=$ticket($foreign,'refund');$staff->role->update(['permissions'=>[Staff::VIEW]]);commerceReject(fn()=>$run($foreign,'refund',$key));$staff->role->update(['permissions'=>$all]);
 // Every UI entry point preserves sent/null/unknown financial evidence, reservation and customer credit.
 foreach(['uncertain','pending','held','rejected'] as $stateName){
-    [$sent]=$prepare('staff-sent-'.$stateName.'.com','null');$sent->update(['state'=>$stateName,'safe_code'=>$stateName==='held'?'transfer_needs_action':'transfer_provider_rejected']);
+    [$sent]=$prepare(placeholderComFixtureName('staff-sent-'.$stateName.'-placeholder.com'),'null');$sent->update(['state'=>$stateName,'safe_code'=>$stateName==='held'?'transfer_needs_action':'transfer_provider_rejected']);
     $before=[$sent->fresh()->attempt,$sent->fresh()->funding,$sent->domain->fresh()->reservation_name,$credit()];
     $view=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$sent->id]);
     foreach(['hold','release','refund','credit','disposition','replacement'] as $action){$view->assertActionHidden($action);commerceReject(fn()=>$run($sent->fresh(),$action));}

@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/watch-dns.php';
 require __DIR__.'/Support/FakeDnsReader.php';
 use Illuminate\Support\Facades\DB;
@@ -18,7 +19,7 @@ $now+=300;$bad=new WatchWork($fake,new WatchDiscoveryWork(static fn()=>throw new
 DB::table('domains_watch_discovery')->update(['cursor'=>0,'due_at'=>$now,'hint'=>true]);$before=count($sent);$bad->tick();expect(count($sent)>$before,'Discovery exception does not prevent public dispatch');same($now,(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('progress_at'),'Progress recorded after dispatch');same('current',$bad->status()['reason'],'Recovery tick does not alert for old missed turn');$failure=json_decode(DB::table('domains_watch_schedule')->where('scope','dispatch')->value('data'),true)['local_failures']['discovery'];DB::table('domains_watch_discovery')->update(['due_at'=>$now+86400,'hint'=>false]);$now+=300;$bad->tick();same($failure,json_decode(DB::table('domains_watch_schedule')->where('scope','dispatch')->value('data'),true)['local_failures']['discovery'],'Idle discovery turn retains unresolved producer failure');$now+=600;same('dispatch_overdue',$bad->status()['reason'],'Read-only staff status sees dead worker without a tick');
 // Seven owners, both target families, one shared persistent turn cursor.
 DB::table('domains_watch_work')->delete();$owners=[];
-for($i=0;$i<7;$i++){$u=staffUser([]);$owners[]=(int)$u->id;DB::table('domains_watch_names')->insert(['id'=>100+$i,'user_id'=>$u->id,'canonical_name'=>'fair'.$i.'.com','psl_revision'=>str_repeat('a',64),'state'=>'active','notice_preferences'=>'{}']);foreach(['expiry','delegation','points']as$kind){DB::table('domains_watch_work')->insert(['watch_id'=>100+$i,'kind'=>$kind,'watch_revision'=>1,'due_at'=>$now]);}}
+for($i=0;$i<7;$i++){$u=staffUser([]);$owners[]=(int)$u->id;DB::table('domains_watch_names')->insert(['id'=>100+$i,'user_id'=>$u->id,'canonical_name'=>placeholderComFixtureName('fair'.$i.'-placeholder.com'),'psl_revision'=>str_repeat('a',64),'state'=>'active','notice_preferences'=>'{}']);foreach(['expiry','delegation','points']as$kind){DB::table('domains_watch_work')->insert(['watch_id'=>100+$i,'kind'=>$kind,'watch_revision'=>1,'due_at'=>$now]);}}
 DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['dispatch_cursor'=>0]);$scheduler=new ManagedPublicReconciliation(new ManagedPublicSignals($fake,false));$a=$scheduler->due($now,true);$b=$scheduler->due($now,true);same(10,count($a),'At most ten due jobs');same(4,count($b),'Owner cursor rotates backlog');same($owners,array_values(array_unique(array_column([...$a,...$b],'user_id'))),'No owner starved');foreach(array_count_values(array_column($a,'user_id'))as$count){same(2,$count,'At most two per owner');}
 same([], $scheduler->due($now),'Default managed seam does not activate watches');same(0,DB::table('domains_operations')->count(),'Never registrar operations');
 $nativeSuccessful=true;echo "Default-off queue gate, five-minute cadence, shared owner turns and public-only job contract passed.\n";

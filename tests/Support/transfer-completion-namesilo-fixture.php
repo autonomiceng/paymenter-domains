@@ -1,6 +1,7 @@
 <?php
 // Synthetic vendor facts and retained slice28 financial gates; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/reserved-fixtures.php';
 require __DIR__.'/transfer-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{HistoryAcceptance};
@@ -36,7 +37,7 @@ $wire=new class($observe) implements DeadlineTransport {
 $registry=new RegistrarRegistry; $registry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Driver(new Client($b,$c['token'],$wire),['renew'],$clock));
 $readBindings=new AccountBindings($registry); $reconcile=new OperationReconciliation($claims,$readBindings,$clock);
 $prepare=static function($label)use($newTransfer,$makeTransfer,&$engine,&$binding,$clock,$now,$state,$observe){
-    $clock->instant=$now; $state->rdapUnknown=false; $state->mode=''; $op=$newTransfer('ns-transfer-'.$label.'.com',1);
+    $clock->instant=$now; $state->rdapUnknown=false; $state->mode=''; $op=$newTransfer(placeholderComFixtureName('ns-transfer-'.$label.'-placeholder.com'),1);
     $payload=$op->payload; unset($payload['privacy']); $op->update(['payload'=>$payload]); // Actual checkout defaults privacy off at dispatch.
     $makeTransfer(1); $op=$engine->execute($op->id); same(false,$op->attempt['transfer_admission']['privacy'],'Dispatch default frozen at seal');
     HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,86400,'namesilo_transfer_v1'));

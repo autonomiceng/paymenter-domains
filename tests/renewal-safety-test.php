@@ -1,6 +1,7 @@
 <?php
 // Enom d1392a8 stale/overrun/ambiguous renewal scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{InvoiceTransaction, ServiceCancellation};
 use Illuminate\Support\Facades\{Cache, DB};
@@ -20,7 +21,7 @@ same(18, count($state->calls) + $state->writes - $writes, 'Ordinary success uses
 $completion->run($op->id); $engine->run($op->id, $writer);
 same(18, count($state->calls) + $state->writes - $writes, 'Completed workers remain silent');
 foreach (['unpaid', 'reversed', 'cancelled', 'cost', 'unknown', 'disabled', 'authority', 'boundary', 'rate', 'second_flags', 'second_cost', 'balance', 'balance_unknown', 'second_balance', 'second_balance_unknown', 'quote_deadline', 'seal_reversal'] as $case) {
-    [$op, $d, $b, $invoice] = $makeRenewal('safety-'.str_replace('_','-',$case).'.com', $case !== 'unpaid');
+    [$op, $d, $b, $invoice] = $makeRenewal(placeholderComFixtureName('safety-'.str_replace('_','-',$case).'-placeholder.com'), $case !== 'unpaid');
     [$engine, $writer] = $compose($b, $case !== 'disabled'); $writes = $state->writes;
     if ($case === 'reversed') { InvoiceTransaction::create(['invoice_id' => $invoice->id, 'amount' => '-0.01', 'fee' => '0.00', 'status' => 'succeeded']); }
     if ($case === 'cancelled') { ServiceCancellation::create(['service_id' => $d->service_id, 'type' => 'immediate', 'reason' => 'Synthetic']); }
@@ -70,7 +71,7 @@ $engine->run($op->id, $writer); same($writes + 1, $state->writes, 'Lost response
 same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
 $state->lost = false;
 foreach (['term', 'wrong_term', 'order_expiry', 'charge', 'owner', 'id', 'second_owner', 'second_id', 'drift', 'auto_drift', 'expiry_race'] as $case) {
-    [$op, $d, $b] = $makeRenewal('completion-'.str_replace('_','-',$case).'.com'); [$engine, $writer, $completion] = $compose($b);
+    [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('completion-'.str_replace('_','-',$case).'-placeholder.com')); [$engine, $writer, $completion] = $compose($b);
     same('pending', $engine->run($op->id, $writer)->state, 'Original acknowledged'); $state->expiry = '2028-10-18';
     if ($case === 'term') { $state->after = '2027-10-18'; }
     if ($case === 'charge') { $state->charge = '?'; }

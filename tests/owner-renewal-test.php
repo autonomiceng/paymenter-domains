@@ -1,6 +1,7 @@
 <?php
 // Native owner renewal request; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/reconciliation-fixture.php';
 require __DIR__.'/Support/owner-pages.php';
 use App\Models\Invoice;
@@ -277,7 +278,7 @@ DB::table('invoice_items')->whereIn('id',$copyItems)->delete();DB::table('invoic
 
 // Late requests keep horizon-bounded terms and share the preview's expiry limit with the writer.
 foreach ([true,false] as $autoRenew) {
-    [$lateRegistration]=$prepare('owner-last-day-'.($autoRenew?'on':'off').'.com');
+    [$lateRegistration]=$prepare(placeholderComFixtureName('owner-last-day-'.($autoRenew?'on':'off').'-placeholder.com'));
     same('succeeded',$reconcile->run($lateRegistration->id)->state,'Late owner registration confirmed');
     $lastDay=$lateRegistration->domain()->firstOrFail();
     $lastDay->update(['renewal_policy'=>[...($lastDay->renewal_policy??[]),'owner_auto_renew'=>$autoRenew]]);

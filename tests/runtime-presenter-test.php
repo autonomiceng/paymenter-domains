@@ -1,6 +1,7 @@
 <?php
 // Installed customer DTO ownership and binding acceptance. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/native-app.php';require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';require __DIR__.'/Support/installed.php';require_once __DIR__.'/Support/staff-panel.php';
 use App\Models\{Invoice,Service};
 use Illuminate\Support\Facades\DB;
@@ -15,10 +16,10 @@ $entry->boot();installedPanel();
 $owners=app(OwnedDomains::class);$presenter=app(NativePresenter::class);$user=commerceUser();$user->update(['email'=>'native-owner@example.com']);$foreign=commerceUser();foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}$pairs=[];$checkoutLines=[];$cartEdits=[];
 foreach($tlds as $i=>$t){
     if($i){$p=DB::table('domains_sales_policies')->where('tld','com')->sole();$sellers->change('com',$p->revision,$t->server_id,true,true,$now);}
-    $cart=commerceCart($user);$item=commerceAdd($cart,$native->product($t,'register'),str_repeat('a',60).$i.'.com');
+    $cart=commerceCart($user);$item=commerceAdd($cart,$native->product($t,'register'),placeholderComFixtureName(str_pad('placeholder',60,'a').$i.'.com'));
     $clock->instant=$now->modify('+6 minutes');$expired=commerceCheckout($user,$cart);same($i,\App\Models\Order::count(),'Expired receipt rejects whole native checkout');expect(str_contains(json_encode($expired->effects),'Remove this line'),'Expiry supplies correctable native checkout feedback');$clock->instant=$now;
-    $request=\Illuminate\Http\Request::create('/domains/cart/'.$item->id.'/edit','POST',['domain'=>str_repeat('a',59).'x'.$i.'.com','term'=>'1'],['cart'=>$cart->ulid]);$request->setUserResolver(fn()=>$user);$request->setLaravelSession(app('session.store'));app()->instance('request',$request);\Illuminate\Support\Once::flush();
-    $editController=app(\Paymenter\Extensions\Servers\Domains\Http\Controllers\CartEditController::class);$editView=$editController->edit($request,(int)$item->id);$cartEdits[]=$editView;$request->request->set('_request_key',$editView->getData()['key']);$editController->update($request,(int)$item->id);same(1,$cart->items()->count(),'Neutral edit updates existing native line');$item->refresh();same(str_repeat('a',59).'x'.$i.'.com',$item->checkout_config['domain'],'Native edit applies fresh admission');
+    $request=\Illuminate\Http\Request::create('/domains/cart/'.$item->id.'/edit','POST',['domain'=>placeholderComFixtureName(str_pad('placeholder',59,'a').'x'.$i.'.com'),'term'=>'1'],['cart'=>$cart->ulid]);$request->setUserResolver(fn()=>$user);$request->setLaravelSession(app('session.store'));app()->instance('request',$request);\Illuminate\Support\Once::flush();
+    $editController=app(\Paymenter\Extensions\Servers\Domains\Http\Controllers\CartEditController::class);$editView=$editController->edit($request,(int)$item->id);$cartEdits[]=$editView;$request->request->set('_request_key',$editView->getData()['key']);$editController->update($request,(int)$item->id);same(1,$cart->items()->count(),'Neutral edit updates existing native line');$item->refresh();same(placeholderComFixtureName(str_pad('placeholder',59,'a').'x'.$i.'.com'),$item->checkout_config['domain'],'Native edit applies fresh admission');
     $request->setUserResolver(fn()=>$foreign);try{$editController->edit($request,(int)$item->id);expect(false,'Foreign cart edit refused');}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){same(404,$e->getStatusCode(),'Foreign edit private');}$request->setUserResolver(fn()=>$user);
     $line=$presenter->checkout($user,$item);$checkoutLines[]=$line;same('$10.40',$line['renewalPrice'],'Checkout renewal quote from holding retail');
     expect(!str_contains($line['editUrl'],'enom')&&!str_contains($line['editUrl'],'namesilo'),'Neutral checkout edit URL');same(null,$presenter->checkout($foreign,$item),'Foreign cart denied');

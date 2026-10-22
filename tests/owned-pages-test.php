@@ -68,8 +68,8 @@ try{$owners->owned($user,$d->id);expect(false,'Native ownership drift refused');
 $store=new Paymenter\Extensions\Servers\Domains\Services\Storefront($sellers,$prices,$native,$bindings,
     new Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility($bindings,$clock,new Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck($rdap)),$clock);
 $entry=new Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController($store);
-$r=$request($user);$r->query->set('name',$maxSld.'.com');$before=count($state->calls);$data=$entry->show($r)->getData();
-same($maxSld.'.com',$data['results'][0]['domain'],'Dedicated transfer entry preserves the exact canonical name');
+$r=$request($user);$r->query->set('name',placeholderComFixtureName($maxSld.'.com'));$before=count($state->calls);$data=$entry->show($r)->getData();
+same(placeholderComFixtureName($maxSld.'.com'),$data['results'][0]['domain'],'Dedicated transfer entry preserves the exact canonical name');
 $html=$entry->show($r)->render();expect(str_contains($html,'Before you start')&&str_contains($html,'data-domains-results'),'Transfer entry uses approved source guidance and existing checked result flow');
 same($before,count($state->calls),'Transfer entry GET has no provider I/O');expect(!str_contains($html,'name="action"'),'Unchecked transfer entry has no order form');
 $r->query->set('name','sub.example.com');expect($entry->show($r)->getData()['error']!==null,'Transfer entry rejects unoffered/subdomain endings');

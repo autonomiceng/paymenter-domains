@@ -1,6 +1,7 @@
 <?php
 // Adapted from Enom 444f31c transfer-codes; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/transfer-input-fixture.php';
 use App\Models\{Credit, InvoiceTransaction, Service};
 use Illuminate\Http\Request;
@@ -12,7 +13,7 @@ $baseline=$new(placeholderComFixtureName('transfer-paid-baseline-placeholder.com
 $paid=$baseline->fresh()->policy['paid_at'];
 foreach([['attempt'=>['execution'=>null]],['attempt'=>['seal'=>'sealed']],['attempt'=>['fallback'=>null]],['cost'=>['execution'=>null]],
     ['started_at'=>$now],['state'=>'uncertain'],['provider_order_id'=>'synthetic'],['funding'=>['claim'=>null]]] as $i=>$changes){
-    $candidate=$new('transfer-refuse-'.$i.'.com');$inputs->paymentAccepted($candidate->id);if(isset($changes['cost'])){$changes['cost']=[...$candidate->cost,...$changes['cost']];}$candidate->update($changes);$clock->instant=$now->modify('+30 days');
+    $candidate=$new(placeholderComFixtureName('transfer-refuse-'.$i.'-placeholder.com'));$inputs->paymentAccepted($candidate->id);if(isset($changes['cost'])){$changes['cost']=[...$candidate->cost,...$changes['cost']];}$candidate->update($changes);$clock->instant=$now->modify('+30 days');
     commerceReject(fn()=>$inputs->expireMissingCode($candidate->id));commerceReject(fn()=>$inputs->submitCode($post($user,'replacement'),$candidate->id));$clock->instant=$now;
 }
 // Changed transaction times cannot invent paid_at; native audit can recover the original transition.
@@ -28,7 +29,7 @@ commerceReject(fn()=>$inputs->paymentAccepted($selfCancel->id));$clock->instant=
 // Native datetime objects retain their offsets; raw audits use the configured database timezone.
 $timezone=date_default_timezone_get();
 foreach(['America/Los_Angeles','Asia/Kolkata']as$i=>$zone){
-    $local=$new('transfer-zone-'.$i.'.com');$audit=$new('transfer-audit-zone-'.$i.'.com');
+    $local=$new(placeholderComFixtureName('transfer-zone-'.$i.'-placeholder.com'));$audit=$new(placeholderComFixtureName('transfer-audit-zone-'.$i.'-placeholder.com'));
     date_default_timezone_set($zone);$stamp=$now->setTimezone(new DateTimeZone($zone))->format('Y-m-d H:i:s');
     // Represent these native timestamps as stored by this timezone, without reinterpreting the UTC catalogue fixture.
     DB::table('domains_operations')->whereIn('id',[$local->id,$audit->id])->update(['created_at'=>$stamp]);

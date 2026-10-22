@@ -1,6 +1,7 @@
 <?php
 // Enom 444f31c refunds refusal scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{Credit, Role};
 use Illuminate\Support\Facades\DB;
@@ -57,7 +58,7 @@ $invalid->refresh()->update(['safe_code'=>'seal_authority_invalid']);
 expect($refunds->refundHeld($staff,$invalid->id,'authority_changed')!==null,'Held seal-authority-invalid positive credit');
 // All sent/unknown/fallback evidence remains disqualifying regardless of held/candidate labels.
 foreach(['accepted','null','absent'] as $mode){
-    [$sent]=$prepare('refund-sent-'.$mode.'.com',$mode); $sent->update(['state'=>'held','safe_code'=>'staff_review',
+    [$sent]=$prepare(placeholderComFixtureName('refund-sent-'.$mode.'-placeholder.com'),$mode); $sent->update(['state'=>'held','safe_code'=>'staff_review',
         'policy'=>[...$sent->policy,'renewal_execution'=>['refundable_later'=>true]]]);
     commerceReject(fn()=>$refunds->refundHeld($staff,$sent->id,'customer_cancelled'));
 }

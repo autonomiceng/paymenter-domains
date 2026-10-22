@@ -1,13 +1,14 @@
 <?php
 // Synthetic acceptance/profile/correction contract; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/namesilo-registration-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrationTransport;
 use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, DriverResult, Money, Query, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 foreach (['300', '301', '302', 'amount', 'badns', 'mismatch', 'remove', 'stillon', 'lost', 'unknown', 'default', 'wrongcontact', 'authoritydrift', 'hyphenphone', 'wrongphone', 'missingphone'] as $mode) {
     $registration->mode = $mode; $registration->calls = []; $registration->diagnostics = []; $makeEngine($binding, $exchange);
-    $result = $runRegistration($nsNew('ns-'.$mode.'.com'));
+    $result = $runRegistration($nsNew(placeholderComFixtureName('ns-'.$mode.'-placeholder.com')));
     if (in_array($mode, ['default', 'wrongcontact', 'authoritydrift', 'wrongphone', 'missingphone'], true)) {
         if ($mode === 'authoritydrift') {
             same(['authority_before' => true, 'authority_after' => false], $registration->diagnostics, 'Actual original claim snapshot detects policy drift');
@@ -56,7 +57,7 @@ foreach (['different', 'missing', 'closure', 'account', 'registrar'] as $mode) {
     $fresh = new \Paymenter\Extensions\Servers\Domains\Services\RegistrationPreflight($freshBindings, $features, $acceptance, $mode === 'missing' ? null : $profiles);
     $bridge = new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Writer($binding, $features, $acceptance, static function () use (&$engine) { return $engine; }, $protocol);
     $engine = new \Paymenter\Extensions\Servers\Domains\Services\DomainOperations($claims, $fresh, $bridge, $clock);
-    $op = $nsNew('profile-composition-'.$mode.'.com'); $before = $registration->calls;
+    $op = $nsNew(placeholderComFixtureName('profile-composition-'.$mode.'-placeholder.com')); $before = $registration->calls;
     commerceReject(fn () => $engine->execute($op->id)); same(null, $op->fresh()->attempt, 'Profile composition refused before claim');
     same($before, $registration->calls, 'Mismatched profile composition makes zero calls');
 }
