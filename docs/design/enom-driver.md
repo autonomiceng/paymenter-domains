@@ -88,7 +88,8 @@ Adapted from the same frozen revision's `Services/Catalogue.php::productCost`,
 using source USD semantics. `quote` exposes exact term totals, advisory for acquisition:
 ordinary/premium/availability acceptance remains separate. A failed neutral quote never means
 no-price. Only successful explicit `ProductEnabled=false/0` supplies null
-catalogue rates; unsupported decimal precision/currency fails instead. Live prices retain the source four-decimal limit; extra precision fails the read
+catalogue rates, whatever the precision or currency fields say; for other successful replies,
+unsupported decimal precision/currency fails instead. Live prices retain the source four-decimal limit; extra precision fails the read
 instead of withdrawing a prior price. Only database padding is trimmed when excess digits
 are zero (the neutral pricing lane owns that mapping). No floats or rounding are used.
 `Pricing::catalogue` checks binding/query/currency/future observation/expiry and divides totals
