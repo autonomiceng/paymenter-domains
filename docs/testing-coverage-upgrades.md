@@ -40,3 +40,5 @@ unpatched standing baseline and is not evidence for that historical index upgrad
 The opt-in MariaDB category currently exercises native schema fresh/reinstall/
 upgrade, not installed ZIP upgrades. This SQLite scenario adds no MariaDB claim,
 provider calls, concurrent locking or production deployment acceptance.
+
+`conversion-test.php` checks the gate before journal creation, refuses incomplete conversion, then verifies that repeated completed checks make no database queries.
