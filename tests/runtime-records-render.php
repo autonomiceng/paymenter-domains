@@ -31,7 +31,8 @@ $staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 Filament::getCurrentPanel()->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $staffPage=static function(string $name)use($staff,$out,$css,&$d):void {
-$test=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSee('Record checks need review');
+$test=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSee($name==='staff-scheduled-stop'?'Scheduled reads stopped':'Record checks paused');
+if ($name==='staff-scheduled-stop') { $test->assertSee('1 check'); }
 $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$test->instance(),'body'=>$test->html()]);
 $html=preg_replace('~<script\b[^>]*>.*?</script>~si','',$html);$html=preg_replace('~<link\b[^>]*>~si','',$html);
 $html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);
@@ -41,7 +42,9 @@ file_put_contents($out.'/'.$name.'.html',$html);
 };
 $staffPage('staff-record-hold');
 $p=$d->fresh()->observation;unset($p['record_hold']);$d->fresh()->update(['observation'=>$p]);
-Illuminate\Support\Facades\DB::table('domains_observation_work')->where('domain_id',$d->id)->update(['safe_code'=>'read_unavailable']);
+$bindings->setProcessing($d->server_id,false);$observation->fault='info_missing';$dueRecords();$runtimePorts->initialManagedRecordObservations();
+$bindings->setProcessing($d->server_id,true,static fn()=>null);
+same(1,(int)Illuminate\Support\Facades\DB::table('domains_observation_work')->where('domain_id',$d->id)->value('tries'),'Stopped fixture retains one actual attempted check');
 $emit('stopped');$staffPage('staff-scheduled-stop');
 $strings=[];foreach(glob($out.'/*.html')as$file){$strings[basename($file)]=trim(preg_replace('/\s+/u',' ',strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',file_get_contents($file)))));}
 file_put_contents($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));

@@ -82,9 +82,10 @@ final class Mapper
             foreach($permissions as$permission){if(str_starts_with($permission,'admin.enom.')){$suffix=substr($permission,11);if(in_array($suffix,$allowed,true)){$new[]='admin.domains.'.$suffix;}}}
             if($new!==$permissions){$p->changes['roles'][$r->id]=['permissions'=>json_encode(array_values(array_unique($new)),JSON_THROW_ON_ERROR)];}}
     }
-    public static function jobs(Planner $p): void
+    public static function jobs(Planner $p,bool $allowSync=false): void
     {
         $name=config('queue.default');$queue=config('queue.connections.'.$name);$connection=DB::getDefaultConnection();
+        if($allowSync&&is_array($queue)&&($queue['driver']??null)==='sync'){return;}
         if(!is_array($queue)||($queue['driver']??null)!=='database'||($queue['connection']??$connection)!==$connection||($queue['table']??null)!=='jobs'||!\Illuminate\Support\Facades\Schema::hasTable('jobs')){throw new \DomainException('Only native default database jobs queue is supported.');}
         $prefix='Paymenter\\Extensions\\Servers\\Enom\\Jobs\\';$known=['BillDomain'=>['domainId','domains_domains'],'ExecuteOperation'=>['operationId','domains_operations'],
             'ObserveDomain'=>['domainId','domains_domains'],'ReconcileOperation'=>['operationId','domains_operations'],'RefreshDomain'=>['domainId','domains_domains']];

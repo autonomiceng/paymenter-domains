@@ -27,7 +27,10 @@ final class ContactRecovery
                 throw new \DomainException('Contact hold unavailable.');
             }
             try {
-                ContactSetup::validate($op);
+                // Unsupported frozen registry inputs cannot be repaired by replacing contacts.
+                RegistryInputs::validate($op->registrar_key, $domain->tld,
+                    $op->payload['registry_schema'] ?? null, $op->payload['registry'] ?? null);
+                ContactDetails::validate($op->registrar_key, $op->payload['contacts'] ?? null);
                 if (($op->payload['setup_required'] ?? null) === false && ($op->payload['registry_supported'] ?? null) === true) { return $op; }
                 $code = 'contact_details_required';
             }

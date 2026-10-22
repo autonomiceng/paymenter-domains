@@ -2,7 +2,7 @@
 <h2 class="domains-h2">Update your details</h2>
 <p>The registry needs a full address and phone number for the domain owner.</p>
 <p>Add them to your account, then come back here and choose <strong>Use updated account details</strong>.</p>
-<div class="domains-row"><a class="domains-btn domains-btn--secondary" href="{{ route('account') }}">Update your details</a>
+<div class="domains-row"><a class="domains-btn domains-btn--secondary" href="{{ route('account') }}">Edit account details</a>
 <form method="POST" action="{{ $domain->actions['contactsSave'] }}">@include('domains::partials.form-key', ['action' => 'recovery'])<button type="submit" class="domains-btn domains-btn--primary">Use updated account details</button></form></div>
 @elseif ($domain->setup['required'])
 <h2 class="domains-h2">{{ $domain->setup['defaults'] ? 'Choose your nameservers' : 'Complete your domain setup' }}</h2><p>{{ $domain->setup['defaults'] ? 'Optional. If you don’t choose before registration starts, we use the default nameservers. You can change them later.' : 'Confirm the details for your domain before we continue.' }}</p>

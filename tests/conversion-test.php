@@ -13,7 +13,11 @@ $converter=new Converter($evidence,$maintenance);$source=Planner::sourceDigest()
 same(true,$dry['dry_run'],'Default is dry run');same(false,Schema::hasTable('domains_conversion_runs'),'Dry run creates no journal');same(0,Domain::count(),'Dry run creates no holdings');
 same([22,23,24],$dry['adoption_pending'],'No purchase or unmanaged rows held');same([['id'=>123,'state'=>'uncertain','action'=>'register']],$dry['unknown_operations'],'Unknown inventory retains unresolved state');
 conversionRefuses(fn()=>$converter->run(true),'Missing backup marker','Apply requires a prior backup marker');same(0,Domain::count(),'Missing backup writes nothing');
-$marker=$backup();Journal::install();
+$marker=$backup();$markerBody=json_decode(file_get_contents($marker),true);
+same(Inputs::selectedRevision(),$markerBody['revision'],'Backup binds selected revision');
+$wrong=$markerBody;$wrong['revision']=array_values(array_filter(array_column(Inputs::pins(),'revision'),fn($r)=>$r!==Inputs::selectedRevision()))[0];file_put_contents($temporary.'/wrong-revision.json',json_encode($wrong));
+conversionRefuses(fn()=>Inputs::backup($temporary.'/wrong-revision.json',$source),'Backup revision refuses','Backup does not match this source/key');
+Journal::install();
 DB::table('domains_conversion_runs')->insert(['id'=>2,'source_digest'=>str_repeat('0',64),'plan_digest'=>str_repeat('0',64),'state'=>'staging','summary'=>'{}','audit'=>Inputs::encrypt([])]);conversionRefuses(fn()=>$converter->run(),'Foreign journal row refuses','Invalid conversion journal ownership');DB::table('domains_conversion_runs')->delete();
 DB::table('domains_conversion_map')->insert(['target_table'=>'domains_domains','source_id'=>21,'target_id'=>21,'body'=>Inputs::encrypt([]),'digest'=>str_repeat('0',64)]);conversionRefuses(fn()=>$converter->run(),'Orphan map refuses','Invalid conversion journal ownership');DB::table('domains_conversion_map')->delete();Schema::drop('domains_conversion_map');
 conversionRefuses(fn()=>$converter->run(),'Partial journal DDL refuses dry run','Partial conversion journal DDL');

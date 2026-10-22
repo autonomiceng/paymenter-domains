@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 final readonly class StaffOperations
 {
@@ -23,8 +23,8 @@ final readonly class StaffOperations
                 if($op->action==='renew'){app(RenewalCompletion::class)->resume($operation,$r);}
                 else{app(OperationReconciliation::class)->resume($operation,'staff_review',$r);}break;
             case 'resume_observation':
-                $id=DB::table('domains_observation_work')->where('domain_id',$domain)->orderByDesc('id')->value('id');
-                if(!$id){throw new \DomainException('No saved observation work.');}
+                $id=ObservationWork::currentId(Domain::findOrFail($domain));
+                if(!$id){throw new \DomainException('No scheduled read work matches the current domain account, generation and phase.');}
                 app(ObservationWork::class)->resume((int)$id,'staff_review',$r);break;
             case 'recheck': $r->read(function()use($operation){$op=\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($operation);
                 if($op->action==='renew'){app(RenewalCompletion::class)->run($operation);}

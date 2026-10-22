@@ -20,7 +20,8 @@
     "tests/driver-contract-test.php",
     "tests/pricing-test.php",
     "tests/ote-purchase-evidence-test.php",
-    "tests/ote-renewal-probe-test.php"
+    "tests/ote-renewal-probe-test.php",
+    "tests/conversion-app-policy-test.php"
   ],
   "native": [
     "tests/native-fixture-test.php",
@@ -122,14 +123,17 @@
     "tests/watch-storage-test.php",
     "tests/test_installed_package.py",
     "tests/operation-clock-test.php",
-    "tests/operation-rate-test.php"
+    "tests/operation-rate-test.php",
+    "tests/conversion-new-pin-test.php",
+    "tests/conversion-app-native-test.php"
   ],
   "ui": [],
   "runner": [
     "tests/runner-test.php",
     "tests/php83-compatibility-test.php",
     "tests/test_runner.py",
-    "tests/test_native.py"
+    "tests/test_native.py",
+    "tests/test_conversion_inventory.py"
   ],
   "package": [
     "tests/test_package.py"

@@ -7,7 +7,7 @@ use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,OperationResource};
-use Paymenter\Extensions\Servers\Domains\Services\{ObservationWork,StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Services\ObservationWork;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,DomainQueries,Staff};
 class ViewDomain extends ViewRecord
 {
@@ -28,12 +28,18 @@ class ViewDomain extends ViewRecord
         $sections=[];$hold=DomainFacts::recordHold($this->getRecord());
         if ($hold!==null) {
             $d=$this->getRecord();$request=DomainQueries::operations($d)->orderByDesc('id')->value('id');
-            $description=ObservationWork::stopped($d)?'Scheduled reads are paused for this domain.':'Record checks are paused. Domain facts still refresh.';
-            $description.=$request===null?' No current registrar request is available. Ask an administrator to review scheduled reads.':
-                ' After reviewing the reason, open the registrar request and choose '.StaffOperationReview::ACTIONS['resume_observation'].'. Staff read-resume permission is required.';
-            $review=[TextEntry::make('record_hold_reason')->label('Reason')->state($hold)];
-            if ($request!==null) { $review[]=TextEntry::make('record_recovery')->label('Recovery')->state('Open registrar request')->url(OperationResource::getUrl('view',['record'=>$request])); }
-            $sections[]=Section::make('Record checks need review')->icon('heroicon-o-exclamation-triangle')->iconColor('warning')
+            $stopped=ObservationWork::stopped($d);
+            $description=$stopped?'No scheduled reads run for this domain until staff resume them.':'Domain facts still refresh. Record checks stay paused until staff resume them.';
+            $review=[TextEntry::make('record_hold_reason')->label('Reason')->state($hold),
+                TextEntry::make('record_next_step')->label('Next step')->state($request===null?
+                    'There is no current registrar request for this domain. Ask an administrator to review scheduled reads.':
+                    'Review the reason, then open the registrar request and choose Resume scheduled reads.')];
+            if ($request!==null) {
+                $review[]=TextEntry::make('record_permission')->label('Permission')->state('Requires the Resume scheduled reads permission.');
+                $link='<a href="'.e(OperationResource::getUrl('view',['record'=>$request])).'" class="fi-link" style="text-decoration:underline;text-underline-offset:3px;--tw-outline-style:solid;display:inline-block;padding:2px;outline-offset:-2px">Open registrar request</a>';
+                $review[]=TextEntry::make('record_recovery')->label('Recovery')->state(new \Illuminate\Support\HtmlString($link));
+            }
+            $sections[]=Section::make($stopped?'Scheduled reads stopped':'Record checks paused')->icon('heroicon-o-exclamation-triangle')->iconColor('warning')
                 ->description($description)->columnSpanFull()->schema($review);
         }
         return $schema->components([...$sections,Section::make('Domain')->description('Saved facts. Viewing this page makes no registrar requests.')

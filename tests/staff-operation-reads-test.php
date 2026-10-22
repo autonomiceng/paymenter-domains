@@ -23,6 +23,28 @@ $job=DB::table('domains_observation_work')->insertGetId(['server_id'=>$resume->s
     'generation'=>$resume->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$resume->id])->callAction('resume_observation',['reason'=>'Resume retained read work'])->assertNotified('Review recorded');
 same(1,(int)DB::table('domains_observation_work')->where('id',$job)->value('resumes'),'Scheduled read resume counted');
+// Selection shares the same binding/generation/phase scope as stopped-state detection.
+$current=DB::table('domains_observation_work')->where('id',$job)->sole();
+foreach (['server_id'=>$current->server_id+100,'account_fingerprint'=>str_repeat('a',64),'generation'=>$current->generation+1,'phase'=>'old-phase'] as $field=>$value) {
+    DB::table('domains_observation_work')->where('id',$job)->update([$field=>$value]);
+    same(null,ObservationWork::currentId($resume->domain->fresh()),'Foreign work cannot be selected for the current holding');
+    commerceReject(fn()=>$run($resume->fresh(),'resume_observation'));
+    DB::table('domains_observation_work')->where('id',$job)->update([$field=>$current->$field]);
+}
+// A newer historical phase or generation must not hide current resumable work.
+$foreign=[];
+foreach (['generation'=>$current->generation+1,'phase'=>'old-phase'] as $field=>$value) {
+    $row=(array)$current;unset($row['id']);$row[$field]=$value;
+    $id=DB::table('domains_observation_work')->insertGetId($row);$foreign[]=$id;
+    $before=DB::table('domains_observation_work')->where('id',$job)->value('resumes');
+    $run($resume->fresh(),'resume_observation');
+    same($before+1,DB::table('domains_observation_work')->where('id',$job)->value('resumes'),'Staff resumes the current job despite newer historical work');
+    same(1,DB::table('domains_observation_work')->where('id',$id)->value('resumes'),'Historical saved work stays unchanged');
+}
+DB::table('domains_observation_work')->where('id',$job)->update(['phase'=>'missing-current-phase']);
+commerceReject(fn()=>$run($resume->fresh(),'resume_observation'));
+foreach ($foreign as $id) { same(1,DB::table('domains_observation_work')->where('id',$id)->value('resumes'),'No current job never falls back to historical work'); }
+DB::table('domains_observation_work')->where('id',$job)->update(['phase'=>$current->phase]);
 DB::table('domains_observation_work')->where('id',$job)->update(['resumes'=>20]);commerceReject(fn()=>$run($resume->fresh(),'resume_observation'));
 // A temporarily unfunded virgin renewal can re-release only after exact funding restoration.
 [$renew,$domain,$binding]=$makeRenewal('staff-renewal.com');$renew->update(['state'=>'held','safe_code'=>'renewal_funding_or_authority']);

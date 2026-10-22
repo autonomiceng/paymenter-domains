@@ -113,6 +113,7 @@ contactReject(static fn () => ContactRecovery::hold($held->id)); // native paid 
 InvoiceTransaction::create(['invoice_id' => $held->invoice_id, 'amount' => $held->amount, 'fee' => 0, 'status' => 'succeeded']);
 $beforeMoney = serialize([DB::table('invoices')->get(), DB::table('invoice_items')->get(), DB::table('invoice_transactions')->get()]);
 ContactRecovery::hold($held->id); $rawHeld = $held->fresh()->getAttributes(); ContactRecovery::hold($held->id);
+same('contact_details_required', $held->fresh()->safe_code, 'Supported registry with invalid contacts remains a contact hold');
 same($rawHeld, $held->fresh()->getAttributes(), 'Repeated hold is read-only'); same($heldPayload, $held->fresh()->payload, 'Hold freezes invalid original contacts');
 contactReject(static fn () => ContactSetup::requireReady($held->fresh()));
 DB::table('domains_operations')->where('id', $held->id)->update(['safe_code' => 'funding_review']);
@@ -137,6 +138,22 @@ ContactSetup::recoveryWrite(static fn () => $held->fresh()->update(['payload' =>
     ['contacts' => $enom, 'registry_schema' => [['name' => 'unaccepted']], 'registry_supported' => false])]));
 ContactRecovery::hold($held->id); same('registry_details_unsupported', $held->fresh()->safe_code, 'Unsupported registry stays held');
 contactReject(static fn () => ContactRecovery::replace($staff, $held->id, 'Cannot invent registry support'));
+DB::table('domains_operations')->where('id', $held->id)->update($rawHeld);
+// Positive setup flags never bypass invalid frozen contacts.
+ContactSetup::recoveryWrite(static fn () => $held->fresh()->update(['state' => 'queued', 'safe_code' => null,
+    'payload' => array_replace($heldPayload, ['setup_required' => false, 'registry_supported' => true])]));
+ContactRecovery::hold($held->id); same('contact_details_required', $held->fresh()->safe_code, 'Invalid frozen contacts override positive setup flags');
+DB::table('domains_operations')->where('id', $held->id)->update($rawHeld);
+// Both defects must classify as unsupported registry, even from an existing contact hold.
+$bothPayload = array_replace($heldPayload, ['registry_schema' => [['name' => 'unaccepted']], 'registry_supported' => false]);
+ContactSetup::recoveryWrite(static fn () => $held->fresh()->update(['payload' => $bothPayload]));
+ContactRecovery::hold($held->id);
+same('registry_details_unsupported', $held->fresh()->safe_code, 'Unsupported registry takes precedence over invalid frozen contacts');
+same($bothPayload, $held->fresh()->payload, 'Registry classification preserves both frozen defects');
+$bothHeld = $held->fresh()->getAttributes(); ContactRecovery::hold($held->id);
+same($bothHeld, $held->fresh()->getAttributes(), 'Repeated unsupported registry hold is read-only');
+contactReject(static fn () => ContactRecovery::replace($staff, $held->id, 'Contacts cannot repair unsupported registry'));
+same($bothHeld, $held->fresh()->getAttributes(), 'Refused contact recovery preserves the registry hold');
 DB::table('domains_operations')->where('id', $held->id)->update($rawHeld);
 $peer = Operation::create(['domain_id' => $held->domain_id, 'service_id' => $held->service_id, 'server_id' => $held->server_id,
     'registrar_key' => $held->registrar_key, 'account_fingerprint' => $held->account_fingerprint, 'authority_generation' => 1,

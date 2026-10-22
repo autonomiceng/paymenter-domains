@@ -54,24 +54,25 @@ foreach (['history_limit'=>'Record history has reached its safety limit.','owner
     'records_unavailable'=>'Current records could not be confirmed.','PRIVATE-UNKNOWN'=>'The record check needs review.'] as $reason=>$label) {
     $recordService::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-18T12:00:00Z'));
     $alert=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id]);
-    $alert->assertSee('Record checks need review')->assertSee($label)->assertSee('choose '.\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS['resume_observation'])->assertSee('Open registrar request')->assertSeeHtml('href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$active->operations()->sole()->id])).'"')->assertDontSee('PRIVATE-UNKNOWN')->assertSet('data',[]);
+    $alert->assertSee('Record checks paused')->assertSee($label)->assertSee('choose '.\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS['resume_observation'])->assertSee('Open registrar request')->assertSeeHtml('href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$active->operations()->sole()->id])).'"')->assertDontSee('PRIVATE-UNKNOWN')->assertSet('data',[]);
     $markup=new DOMDocument;@$markup->loadHTML($alert->html());$links=(new DOMXPath($markup))->query('//a[normalize-space(.)="Open registrar request"]');
     same(1,$links->length,'Record alert has its own recovery link');
+    expect(str_contains($links->item(0)->getAttribute('style'),'text-decoration:underline') && str_contains($links->item(0)->getAttribute('style'),'--tw-outline-style:solid') && str_contains($links->item(0)->getAttribute('style'),'outline-offset:-2px') && str_contains($links->item(0)->getAttribute('style'),'padding:2px'),'Recovery link has visible underline and native focus outline');
     same(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$active->operations()->sole()->id]),$links->item(0)->getAttribute('href'),'Recovery link targets current bound request');
     expect(!str_contains(json_encode($alert->snapshot),'record_hold'),'Encrypted hold is absent from public state');
 }
 $op=$active->operations()->sole();DB::table('domains_operations')->where('id',$op->id)->update(['authority_generation'=>$active->authority_generation+1]);
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('No current registrar request is available')->assertDontSee('Open registrar request');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('There is no current registrar request for this domain')->assertDontSee('Open registrar request');
 DB::table('domains_operations')->where('id',$op->id)->update(['authority_generation'=>$active->authority_generation]);
 $copy=$active->fresh();$p=$copy->observation;$p['record_hold']['identity']['generation']=0;$copy->update(['observation'=>$p]);
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Record checks need review');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Record checks paused');
 $p=$copy->fresh()->observation;unset($p['record_hold']);$copy->update(['observation'=>$p]);
 same(null,DomainFacts::recordHold($copy->fresh()),'An ordinary domain has no record alert');
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$held->server_id,'account_fingerprint'=>$held->account_fingerprint,
     'domain_id'=>$held->id,'generation'=>$held->authority_generation,'due_at'=>0]);
 foreach (['read_unavailable','budget_exhausted','superseded']as$code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code]);
-    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Record checks need review')->assertSee('Scheduled reads need staff review')->assertDontSee('Domain facts still refresh.');
+    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Scheduled reads stopped')->assertSee('Scheduled reads need staff review')->assertDontSee('Domain facts still refresh.');
     foreach(['generation'=>$held->authority_generation+1,'server_id'=>$held->server_id+100,'account_fingerprint'=>str_repeat('a',64),'phase'=>'foreign']as$field=>$value){
         $old=DB::table('domains_observation_work')->where('id',$work)->value($field);DB::table('domains_observation_work')->where('id',$work)->update([$field=>$value]);
         expect(!$recordService::stopped($held->fresh()),'Foreign scheduled work never stops this holding');DB::table('domains_observation_work')->where('id',$work)->update([$field=>$old]);

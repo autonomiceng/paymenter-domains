@@ -106,8 +106,9 @@ final readonly class OwnedDomains
             if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'domain’s administrative contact':'domain owner'; }
         }
         $records=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?OwnerRecords::forDomain($d):[];
+        $recordCheckHeld=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?ObservationRecords::stopped($d):false;
         foreach (['dns','srv','ds','glue'] as $kind) {
-            if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['recordCheckHeld']=ObservationRecords::stopped($d); }
+            if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['recordCheckHeld']=$recordCheckHeld; }
             if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
         }
         $renewal=$d->status==='active'?($service?->cancellation?'Off':'On'):'—'; $price=null;
