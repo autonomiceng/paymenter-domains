@@ -44,6 +44,9 @@ $service = new RenewalAdmission($authority, $renewBindings, new RenewalAcceptanc
 $check = static function (?RenewalRequest $r = null) use ($service, $request, $state) {
     Cache::flush(); $state->calls = []; return $service->check($r ?? $request());
 };
+(require __DIR__.'/Support/renewal-acceptance.php')($binding, $check,
+    static fn () => $service->refresh($request()), static fn () => $state->calls,
+    static function (Closure $hook) use ($state) { $state->during = $hook; });
 $decision = $check(); same(RenewalCode::Admitted, $decision->code, 'Ordinary known-cost renewal admitted');
 same(RenewalStatus::Ordinary, $decision->status, 'Ordinary state retained'); same('8.9500', $decision->cost->amount, 'Exact cost retained');
 same(8, count($state->calls), 'Bounded actual read sequence');

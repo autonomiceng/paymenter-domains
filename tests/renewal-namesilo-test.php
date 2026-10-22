@@ -17,6 +17,9 @@ $request = static fn (?string $id = null) => new RenewalRequest($holding->id,
 $check = static function () use ($wire, $admission, $request) {
     Cache::flush(); $wire->commands = []; return $admission->check($request());
 };
+(require __DIR__.'/Support/renewal-acceptance.php')($binding, $check,
+    static fn () => $admission->refresh($request()), static fn () => $wire->commands,
+    static function (Closure $hook) use ($wire) { $wire->during = $hook; });
 $decision = $check();
 same(RenewalCode::Admitted, $decision->code, 'Completed nonpremium NameSilo holder admits ordinary renewal');
 same(RenewalStatus::Ordinary, $decision->status, 'Only ordinary NameSilo state admitted');

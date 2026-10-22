@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{Money, RenewalCode, RenewalRequest};
+use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, Money, RenewalCode, RenewalRequest};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Owns the renewal-specific ordered prefix. No general callback or write-authority scope is exposed. */
 final readonly class RenewalAuthority
@@ -23,7 +23,15 @@ final readonly class RenewalAuthority
             return DB::transaction(function () use ($seed, $request, $stamp, $accepted, $until): array {
                 $l = HoldingLocks::take($seed); $domain = $l['domain'];
                 $binding = CatalogueAcceptances::binding($l['account']);
-                try { $this->bindings->requireProcessingLocked($l['server'], $l['account']); $accepted?->requireCurrent($binding); }
+                try {
+                    $this->bindings->requireProcessingLocked($l['server'], $l['account']); $accepted?->requireCurrent($binding);
+                    // HoldingLocks already locked all server settings before catalogue/domain rows.
+                    $catalogue = CatalogueAcceptances::load($binding, true);
+                    $parts = CanonicalName::parse($domain->domain, array_keys($catalogue->endings));
+                    $row = $catalogue->endings[$parts['tld']];
+                    if (($row['renewal_safe'] ?? null) !== true
+                        || !in_array(1, $row['renew'] ?? [], true)) { throw new RenewalRefused(RenewalCode::Acceptance); }
+                }
                 catch (\Throwable) { throw new RenewalRefused(RenewalCode::Acceptance); }
                 if (!in_array($domain->status, ['active', 'expired', 'grace'], true) || $l['service']->status !== 'active'
                     || $l['cancel']->contains('service_id', $domain->service_id)) { throw new RenewalRefused(RenewalCode::Authority); }

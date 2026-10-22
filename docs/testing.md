@@ -652,3 +652,28 @@ billing and paid privacy tests check issued text stays frozen when registrar exp
 `invoice-lines-render.php` exports synthetic formatter examples for wording review, not installed
 invoice/theme acceptance. Privacy purchase dates are expected from invoice day; privacy renewal
 uses its own frozen subscription expiry, independently of the domain's term.
+
+`adoption-storage-test.php` verifies retained adoption requests and append-only invoice-history links,
+request/committed-generation/link uniqueness, encrypted hidden evidence, frozen intent, stale-preview
+refusal, skipped-migration schema verification and uninstall/reinstall/down retention. Storage fixtures
+create no holdings, operations or invoices; adoption authority and native history validation stay deferred.
+
+Renewal admission tests for both registrars run the shared `Support/renewal-acceptance.php` matrix:
+accepted and sales-withdrawn endings, renewal-safe/annual-term revocation, missing endings, revocation between
+check and refresh and during provider reads. Refused entry and refresh make zero additional wire calls.
+All exchanges remain synthetic; SQLite does not establish concurrent MariaDB acceptance.
+
+### A0 native adoption lock prerequisite
+
+`holding-identity-lock-test.php` covers the outer-transaction-only identity API, sorted current
+Order locks before Service locks after the existing owner/invoice prefix, owner/relation
+mismatches, stale preview ownership and context expiry, including connection loss. Paused
+competitors commit before adoption: once before the existing ledger guard, and once after
+the guard but before SQL. The API then refuses stale identity. SQLite checks requested row locks and ordering, not
+database-level concurrent row-lock behavior. `holding-identity-writers-test.php` checks
+Order-owner drift refusals and the same lock order in holding, funding and contact recovery.
+Adoption stays off. The lock API alone does not prevent an unlocked identity edit committing
+after it; activation also needs the separately reviewed native mutation protocol and worker drain.
+
+A3 must abort the entire outer transaction on any database exception; catching a nested
+deadlock and continuing is unsupported. MariaDB transaction-status behavior is unverified.
