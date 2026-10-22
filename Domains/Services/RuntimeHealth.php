@@ -14,7 +14,7 @@ final class RuntimeHealth
             'Domain editor notice'=>($missing=\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::missing())===null?'Available':'Paused · missing '.$missing,
             ...(NativeServiceRefusal::missing()===null?[]:['Service refusal notice'=>'Unavailable · missing '.NativeServiceRefusal::missing().'. Unsafe changes are still refused.']),
             'Native server settings'=>'Encrypted at rest. Treat staff with server-edit permission as able to access saved credentials.',
-            'Worker cadence'=>'Up to 8 accounts per minute, 25 requests and 25 domains per account turn. Check rotation lag against account count.',
+            'Worker cadence'=>'Up to 8 accounts per minute, 25 operations, 25 domains and 25 TLDs per account turn. Registrar requests share a separate limiter. Check rotation lag against account count.',
             'Worker recovery'=>'An interrupted turn resumes after its due time. Review failed queue jobs before retrying; unresolved registrar outcomes remain reserved.',
             'Binding recovery'=>'Do not rebind retained accounts. Restore the original account binding; OTE enrollments cannot be rebound. Processing requires a fresh staff confirmation.'];
     }

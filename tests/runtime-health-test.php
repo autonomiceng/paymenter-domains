@@ -9,6 +9,9 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBu
 
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();extract(commerceFixture(false,static fn()=>null));
 app()->instance(AccountBindings::class,$bindings);
+$cadence=RuntimeHealth::site()['Worker cadence'];
+expect(str_contains($cadence,'25 operations, 25 domains and 25 TLDs per account turn'),'Worker selection counts operations, domains and TLDs');
+expect(str_contains($cadence,'Registrar requests share a separate limiter'),'Request limits have a separate unit');
 $server=$tlds[0]->server_id;
 $binding=CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server)->sole());
 $clock=new class implements Clock {
