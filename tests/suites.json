@@ -251,7 +251,8 @@
     "tests/staff-reason-test.php",
     "tests/staff-watch-findings-test.php",
     "tests/staff-watch-summary-owners-test.php",
-    "tests/watch-transfer-test.php"
+    "tests/watch-transfer-test.php",
+    "tests/runtime-health-test.php"
   ],
   "ui": [],
   "runner": [

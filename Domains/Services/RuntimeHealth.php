@@ -42,7 +42,7 @@ final class RuntimeHealth
                 default=>'On hold · saved settings no longer match the verified account. In Registrar setup, re-enter credentials for the original account before resuming processing.'},
             'Runtime account'=>$row?($row->account_fingerprint===$binding?'Current binding':'On hold · restore the original account binding'):'Waiting for the first scheduled run',
             'Last worker turn'=>$row&&$row->finished_at?gmdate('M j, Y H:i \U\T\C',(int)$row->finished_at):'Not completed',
-            'Read capacity'=>$budget?((int)$budget->used.' registrar requests in the last recorded minute (limit 48 background, 60 total)'):'No registrar requests recorded',
+            'Read capacity'=>($budget?((int)$budget->used.' registrar requests in the last recorded minute (limit 48 background, 60 total)'):'No registrar requests recorded').'. Shared by interactive and background reads and changes; identity verification and the Enom TEST daily limit are separate.',
             'Notification claims to review'=>$claims->map(fn($r)=>'#'.$r->id.' · '.$r->domain.' · '.($r->state==='handoff'?'Handoff not confirmed':'Outcome unconfirmed'))->implode('; ')?:'None recorded',
             'Notification checks to review'=>$failures->map(fn($r)=>'#'.$r->id.' · '.$r->domain.' · '.ObligationAlerts::LABELS[$r->code])->implode('; ')?:'None recorded'];
     }
