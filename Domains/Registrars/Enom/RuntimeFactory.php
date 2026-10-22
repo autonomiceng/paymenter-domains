@@ -82,7 +82,8 @@ final class RuntimeFactory
                 ];
                 if(!curl_setopt_array($handle,$options)){throw new \RuntimeException('Enom exchange incomplete.');}
                 $purchase=$named===RegistrationCommand::Purchase;
-                $day=\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::prepareSend($this->binding,$purchase);
+                $reserved=$role==='renewal'?\Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::prepare($this->binding,$role):null;
+                $day=$reserved??\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::prepareSend($this->binding,$purchase);
                 $timeoutMs=intdiv($deadline-hrtime(true),1000000);
                 if($timeoutMs<1){
                     if($this->binding->environment===Environment::Test){throw new EnomTestCallLimit;}
@@ -90,7 +91,8 @@ final class RuntimeFactory
                 }
                 $options[CURLOPT_CONNECTTIMEOUT_MS]=min(8000,$timeoutMs);$options[CURLOPT_TIMEOUT_MS]=$timeoutMs;
                 if(!curl_setopt_array($handle,$options)){throw new \RuntimeException('Enom exchange incomplete.');}
-                \Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::authorizeSend($this->binding,$purchase,$day);
+                if($reserved!==null){\Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::consume($this->binding,$role,$day);}
+                else{\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::authorizeSend($this->binding,$purchase,$day);}
                 if (curl_exec($handle)===false||curl_getinfo($handle,CURLINFO_RESPONSE_CODE)!==200) {
                     throw new \RuntimeException('Enom exchange incomplete.');
                 }

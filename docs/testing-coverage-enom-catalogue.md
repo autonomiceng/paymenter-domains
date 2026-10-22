@@ -66,3 +66,8 @@ entries, 22 of them IDN (`xn--`) or numeric endings the catalogue cannot sell. O
 such entry used to void the whole list, so import refused with com present.
 `tests/enom-protocol-test.php` now feeds that shape with mixed unsupported entries and
 asserts they are skipped; a list with no supported ending still stays unavailable.
+
+Opted-in TEST writes have separate readers and guards. Registration composition permits
+captured Purchase confirmation; renewal composition also permits renewal assessment and
+sealed Extend confirmation, including explicitly accepted renewal history. See
+[TEST renewal coverage](testing-coverage-enom-renewal.md). General adoption polling stays off.

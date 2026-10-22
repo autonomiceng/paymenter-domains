@@ -59,6 +59,7 @@ final class RenewalWriter implements AdmittedRegistrarDriver
     {
         $started=false;
         try{return $ctx->withinClaimedWire($op->binding,function(int $remaining)use(&$started,$origin,$command,$parameters,$timeout){$started=true;return ($this->exchange->getValue())($origin,$command,$parameters,min($timeout,$remaining));});}
+        catch(EnomTestCallLimit $e){if(!EnomTestWriteReservation::active($op->binding,'renewal')){throw $e;}throw new RenewalUnsent('TEST call reservation refused before the wire.');}
         catch(ReadDeferred $e){if(!$started){throw new RenewalUnsent('Wire capacity unavailable.');}throw new \RuntimeException('Renewal outcome unresolved.');}
     }
     private static function unsent(AdmittedOperation $op): DriverResult

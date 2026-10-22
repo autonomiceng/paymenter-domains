@@ -72,7 +72,7 @@ def refuse_unsafe_archives(root, current):
 
 
 def main(scenario):
-    if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'acquisition', 'enom-exchange', 'enom-test-registration', 'namesilo-registration', 'namesilo-renewal', 'namesilo-enrollment'):
+    if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'acquisition', 'enom-exchange', 'enom-test-registration', 'enom-test-renewal', 'namesilo-registration', 'namesilo-renewal', 'namesilo-enrollment'):
         raise ValueError('Unknown installed package scenario')
     began = time.monotonic()
     fixture = Path(os.environ['PAYMENTER_TEST_FIXTURE'])
@@ -132,8 +132,10 @@ def main(scenario):
         env = dict(os.environ, PAYMENTER_TEST_FIXTURE=str(app), PACKAGE_DATABASE=str(database),
                    PACKAGE_RETAINED=str(retained), PACKAGE_MIGRATION_RECEIPT=str(migrations), PACKAGE_MIGRATIONS=str(count),
                    PACKAGE_STANDING_UPGRADE='1' if scenario == 'previous' else '')
-        def phase(name, package=None):
+        def phase(name, package=None, worker=None):
             run_env = dict(env, PACKAGE_PHASE=name)
+            if worker is not None:
+                run_env['PACKAGE_RACE_WORKER'] = str(worker)
             if package:
                 receipt = current if package == 'current' else previous
                 original = root/package/receipt['archive']
@@ -142,7 +144,7 @@ def main(scenario):
                 shutil.copyfile(original, upload)
                 build.verify(upload, receipt)
                 run_env['PACKAGE_ZIP'] = str(upload)
-            subprocess.run([str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')], cwd=ROOT, env=run_env, check=True, timeout=45)
+            subprocess.run([str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')], cwd=ROOT, env=run_env, check=True, timeout=120 if name == 'enom-test-renewal' else 45)
         phase('install', first)
         if scenario == 'held':
             phase('held')
@@ -152,6 +154,16 @@ def main(scenario):
             phase('catalogue-retained')
             evidence['test_catalogue_fresh_reinstall'] = True
             evidence['fresh_installed_registration_held'] = True
+        elif scenario == 'enom-test-renewal':
+            phase(scenario)
+            phase('enom-test-renewal-restart')
+            from concurrent.futures import ThreadPoolExecutor
+            for race in ('issue', 'admit'):
+                with ThreadPoolExecutor(max_workers=2) as workers:
+                    list(workers.map(lambda worker: phase('enom-test-renewal-race-'+race, worker=worker), (1, 2)))
+            phase('enom-test-renewal-race-verify')
+            evidence['overlapping_issuance_and_admission_workers'] = True
+            evidence['test_renewal_native_payment_charge_expiry'] = True
         elif scenario == 'enom-test-registration':
             phase('enom-test-registration')
             from concurrent.futures import ThreadPoolExecutor

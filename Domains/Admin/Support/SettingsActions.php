@@ -18,6 +18,7 @@ final class SettingsActions
     public static function description(string $name): string
     {
         return match($name){
+            'test_renewal'=>'Record that you checked Enom TEST Extend at '.\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol()['route'].', its '.\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol()['interval'].'-second request interval, and that this account’s balance is in USD. With the deployment opt-in, each paid annual renewal can send one Extend. This does not turn on renewal billing, owner renewal requests or processing. Clearing it stops new Extend requests; renewals already sent keep reconciling while the deployment opt-in stays on.',
             'alert_review'=>'Record an independent check of a notification failure. A continuing failure reopens the alert; this action sends no message.',
             'delivery_review'=>'Record an independently checked notification outcome. This retains the original handoff claim and never sends the notification again.',
             'processing'=>'Registrar purchases and renewals can start for this account. Enable only after reviewing its accepted provider features and worker configuration.',
@@ -37,7 +38,7 @@ final class SettingsActions
     }
     public static function make(int $server,?int $tld,string $stamp,bool $setup=false): array
     {
-        $out=[];$names=$setup?['enroll_sandbox','configure','probe','acceptance','import','history','processing','delivery_review','alert_review']:['default_rule','override','remove_override','tld_settings','seller','publish'];
+        $out=[];$names=$setup?['enroll_sandbox','configure','probe','acceptance','import','history','test_renewal','processing','delivery_review','alert_review']:['default_rule','override','remove_override','tld_settings','seller','publish'];
         $target=fn()=>\App\Models\Server::find($server)?->name ?? 'Server #'.$server;
         foreach($names as $name){
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp))];
@@ -72,6 +73,10 @@ final class SettingsActions
                     $fields[]=Checkbox::make('test_registration_accepted')->label('I reviewed Enom TEST Purchase at '.$protocol['route'].' and its '.$protocol['interval_seconds'].'-second request interval');
                 }
             }
+            if($name==='test_renewal'){
+                $fields[]=Checkbox::make('accept')->label('Accept TEST annual renewal, excluding grace and redemption (clear to revoke)');
+                $fields[]=Checkbox::make('verified')->label('I checked Enom TEST Extend, its request interval shown above, and this account’s USD balance');
+            }
             if($name==='history'){
                 $fields[]=Select::make('history_action')->label('History action')->options(['register'=>'Registration','renew'=>'Renewal','transfer'=>'Transfer'])->required();
                 $fields[]=Checkbox::make('accept')->label('Accept contract (clear to revoke)');
@@ -103,7 +108,7 @@ final class SettingsActions
             $out[]=Action::make($name.($setup?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
                 ->disabled(fn(Action $action)=>$cannotEnable()||($name==='enroll_sandbox'&&(!\Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::enabled()||Account::where('server_id',$server)->exists()))||($name==='configure'&&($selected=(string)($action->getRawData()['registrar']??''))!=='namesilo'&&!app(StaffSettingsWrites::class)->connectionAvailable($selected!==''?$selected:null))||($name==='probe'&&!app(StaffSettingsWrites::class)->connectionAvailable((string)Account::where('server_id',$server)->value('registrar_key'))))
                 ->tooltip(fn()=>$cannotEnable()?(Account::where('server_id',$server)->value('registrar_key')==='namesilo'?'Unavailable: this server may be off, OTE enrollment may be off on this site, or saved enrollment settings may have changed. If the server is off, re-enable it in Servers. Ask the installation administrator to check the site setting. If this account was enrolled, ask them to restore the original saved enrollment settings; otherwise use a fresh Domains server for a new key.':'Configure and verify this account first.'):($name==='enroll_sandbox'?'Available only on a fresh Domains server when OTE enrollment is enabled on this site.':null))
-                ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission($name)))
+                ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission($name))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
                 ->requiresConfirmation()->modalHeading($name==='processing'?fn()=>($processing()?'Pause':'Enable').' processing for '.$target().'?':$label)
                 ->modalDescription($name==='processing'?fn()=>$processing()?'Stops new registrar work for this account. Domains, invoices and queued work are kept; requests already sent keep reconciling.':self::description($name):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'NameSilo identity verification is unavailable. This account cannot be connected.':self::description($name):self::description($name)))->modalSubmitActionLabel($name==='processing'?fn()=>$processing()?'Confirm pause':'Confirm enable':'Confirm')->schema($fields)
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($name,$server,$tld,$target){
@@ -157,6 +162,8 @@ final class SettingsActions
                 'Sandbox enrollment could not be saved.'=>self::SAVED_OUTCOME_UNKNOWN,
                 'namesilo_identity_unavailable'=>'NameSilo identity verification is unavailable. This account cannot be connected.',
                 'Review key used.'=>$name==='enroll_sandbox'?'This enrollment confirmation was already used, so this submission sent no new OTE key check. An earlier submission may still be finishing. Wait for it to finish, then reload Registrar setup. This page cannot show whether that submission is still running. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. If no Enrollment row appears and Account binding reads “Not configured” after the earlier submission finishes, nothing was enrolled. '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE:'This confirmation was already used. Reload this page.',
+                'Independent TEST renewal review required.'=>'Check the box confirming the TEST Extend route, request interval and USD balance. Nothing was saved.',
+                'TEST renewal deployment is unavailable.'=>'TEST renewal is unavailable for this account or deployment. Reload Registrar setup and check the TEST renewal row. Nothing was saved.',
                 'Review the Enom TEST Purchase route and request interval before accepting registration terms.'=>'Check the box confirming the Enom TEST Purchase route and request interval, then try again. Nothing was saved.',
                 'Enom TEST Purchase route acceptance is unavailable.'=>'Enom TEST Purchase acceptance is unavailable on this deployment; contact the deployment administrator. Nothing was saved.',
                 default=>$name==='enroll_sandbox'?self::GENERIC_OUTCOME_UNKNOWN:'Reload and check current permissions, saved facts and acceptance.'};
