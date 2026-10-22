@@ -39,7 +39,8 @@ function storefrontCorruptionChecks(array $fixture, Storefront $store): void
     $brokenPrices = $broken->plans()->with('prices')->get()->flatMap(static fn ($plan) => $plan->prices)->pluck('id');
     // Valid registration survives an independently corrupt transfer price on the same ending.
     $onlyTransfer = $native->product($catalogueTlds['xyz'], 'transfer')->plans()->sole()->prices()->sole();
-    DB::table('prices')->where('id', $onlyTransfer->id)->update(['price' => 'malformed']);
+    $transferPrice = $onlyTransfer->getRawOriginal('price');
+    DB::table('prices')->where('id', $onlyTransfer->id)->update(['price' => $transferPrice]);
     foreach (['old' => ['fresh_until' => $now], 'belowcost' => ['hold_reason' => 'below_cost'], 'unknown' => ['wholesale' => null]] as $ending => $changes) {
         DB::table('domains_prices')->where('server_id', $server->id)->where('tld', $ending)->whereIn('action', ['register', 'transfer'])->update($changes);
     }
@@ -78,6 +79,9 @@ function storefrontCorruptionChecks(array $fixture, Storefront $store): void
         same([1, 3], $repaired['org']['terms'], 'Repaired '.$corruption.' is visible in a fresh projection');
         same('available', $store->check('example.org')['status'], 'Repaired '.$corruption.' checks normally');
     }
+    DB::table('prices')->where('id', $onlyTransfer->id)->update(['price' => 'malformed']);
+    Cache::flush(); $repaired = array_column($store->endings(), null, 'tld');
+    same('$22.00', $repaired['xyz']['transfer'], 'Restored xyz transfer price is visible');
     foreach (array_keys($catalogueTlds) as $ending) { $sellers->change($ending, 2, null, false, false, $now); }
     Cache::flush();
 }

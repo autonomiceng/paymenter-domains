@@ -71,3 +71,4 @@ Opted-in TEST writes have separate readers and guards. Registration composition 
 captured Purchase confirmation; renewal composition also permits renewal assessment and
 sealed Extend confirmation, including explicitly accepted renewal history. See
 [TEST renewal coverage](testing-coverage-enom-renewal.md). General adoption polling stays off.
+Catalogue refresh coverage also checks that a later priced term restores registration.

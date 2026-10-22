@@ -119,7 +119,7 @@ foreach (['<Price>10.00</Price>', '<ProductEnabled><Value>true</Value></ProductE
 }
 $enom->pricePayload = null;
 // Registration requires any eligible exact term, independently of a valid annual renewal.
-$enom->disabledRegisterTerms = [1];
+$enom->disabledRegisterTerms = [];
 same(1, $sync->refresh(1, $context(1))['synced'], 'Refresh with only the later registration term priced');
 same(true, Tld::where('server_id', 1)->firstOrFail()->register_enabled, 'An eligible later term enables registration');
 $enom->disabledRegisterTerms = [1, 3];
@@ -128,6 +128,7 @@ same(false, Tld::where('server_id', 1)->firstOrFail()->register_enabled, 'No eli
 same(true, Tld::where('server_id', 1)->firstOrFail()->renew_enabled, 'Registration refusal leaves annual renewal supported');
 $enom->disabledRegisterTerms = [];
 same(1, $sync->refresh(1, $context(1))['synced'], 'Restore priced registration terms');
+same(true, Tld::where('server_id', 1)->firstOrFail()->register_enabled, 'Final refresh restores registration');
 foreach (Tld::all() as $tld) { same(false, $tld->enabled, 'Import never selects or enables a seller'); $tld->update(['enabled' => true]); }
 $sellers = new SellerPolicies($prices, $bindings); $sellers->initialize('com');
 $sellers->change('com', 1, 1, true, true, $clock->now()); $old = $sellers->selection('com', 'register', 3, $clock->now());
