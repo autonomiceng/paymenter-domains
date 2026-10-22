@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
 use Filament\Facades\Filament;
-use Illuminate\Support\Facades\{Auth,Blade};
+use Illuminate\Support\Facades\{Auth,Blade,DB};
 use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\{ListOperations,ViewOperation};
@@ -32,10 +32,17 @@ $render=static function($test,string $name)use($out,$css){
 $render(Livewire::actingAs($user)->test(ListOperations::class)->assertSuccessful(),'queue');
 $render(Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$op->id])->assertSuccessful(),'operation');
 $render(Livewire::actingAs($user)->test(ViewDomain::class,['record'=>$long->id])->assertSuccessful(),'domain-long');
+$completed=$active->operations()->sole();$completed->update(['attempt'=>['seal'=>'sealed','execution'=>['outcome'=>'pending']]]);
+$render(Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$completed->id])->assertDontSee('Review actions')
+    ->assertSee('Registrar completion confirmed. Original send evidence is retained for history.'),'operation-completed');
 $rows=[];
 foreach(StaffOperationReview::ACTIONS as $action=>$label){
     $copy=$op->replicate();$copy->safe_code='staff_review_required';$copy->operation_key='synthetic-modal-'.$action;$copy->state=match($action){'hold'=>'queued','credit','disposition','replacement'=>'rejected',default=>'held'};
     if($action==='replacement'){$copy->action='renew';}$copy->save();
+    if($action==='resume_observation'){
+        DB::table('domains_observation_work')->insert(['server_id'=>$held->server_id,'account_fingerprint'=>$held->account_fingerprint,
+            'domain_id'=>$held->id,'generation'=>$held->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_unavailable']);
+    }
     $page=Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$copy->id])->mountAction($action)->assertActionMounted($action);
     $page->call('$refresh');$render($page,'modal-'.$action);$rows[$action]=['label'=>$label,'description'=>OperationActions::description($action)];
     if($action==='release'){

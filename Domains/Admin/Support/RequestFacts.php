@@ -37,8 +37,9 @@ final class RequestFacts
             }
             if (isset($out['cutoff']) && $out['refund']==='Customer credit: not assessed') { $out['refund']='Customer credit: not yet assessed'; }
             $out['outcome']=match(true) {
-                array_key_exists('execution',$a) && $a['execution']===null=>$op->state==='succeeded'
-                    ? 'Original send response was unknown; completion later confirmed' : 'Original send response unknown; never resend',
+                $op->state==='succeeded'=>$a===[] ? null : (array_key_exists('execution',$a) && $a['execution']===null
+                    ? 'Original send response was unknown; completion later confirmed' : 'Registrar completion confirmed. Original send evidence is retained for history.'),
+                array_key_exists('execution',$a) && $a['execution']===null=>'Original send response unknown; never resend',
                 ($a['seal']??null)==='sealed'=>'Original attempt possibly sent; never resend or credit automatically',
                 $op->state==='uncertain'=>'Unconfirmed. Do not resend or refund until the registrar result is known.',
                 default=>null,

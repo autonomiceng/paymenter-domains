@@ -29,3 +29,15 @@ maintenance tests checked only outage markers, notice tests only audit deduplica
 balance test expected zero rows from the native inbox. Native persistence assertions close
 that gap; restoring a Filament send at any of these paths must fail. Offline queue fakes do
 not establish installed push or worker delivery.
+
+
+## Completed request actions
+
+`staff-operations-test.php` and `staff-operation-reads-test.php` give confirmed completion
+precedence over retained send seals and responses. Native Livewire checks hide the action
+menu and direct service calls refuse every operation action without changing saved domain
+or operation data. The domain page exposes domain-scoped recovery for current stopped scheduled work or record
+holds; after resume it disappears again and the completed request has no menu. The static operations render fixture
+also includes a completed sealed request. Removing success precedence, the locked terminal
+guard, the stopped-work gate or menu visibility must fail these assertions. These are
+offline native checks, not installed browser or provider acceptance.

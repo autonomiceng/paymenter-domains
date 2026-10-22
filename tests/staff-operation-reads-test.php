@@ -6,15 +6,42 @@ use App\Models\{Credit,InvoiceTransaction};
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations};
 // Native re-check calls the existing read-only reconciliation engine; actual proof alone can complete.
 [$check]=$prepare('staff-recheck.com');$calls=count($observation->calls);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->callAction('recheck',['reason'=>'Read original registrar outcome'])->assertNotified('Review recorded');
 same('succeeded',$check->fresh()->state,'Reconciliation engine verifies actual charge and expiry');expect(count($observation->calls)>$calls,'Only explicit action reads');
 $history=$check->fresh()->policy['staff_actions'];same('read_finished',end($history)['phase'],'Read result audited');
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->callAction('disposition',['reason'=>'Reviewed authoritative completed purchase'])->assertNotified('Review recorded');
+// Proven completion with retained execution/seal closes every operation-scoped action.
+expect(($check->fresh()->attempt['execution']??null)!==null,'Completed fixture retains a known send response');
+$closed=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('Review actions')
+    ->assertSee('Registrar completion confirmed. Original send evidence is retained for history.')->assertDontSee('Original attempt possibly sent');
+$before=[$check->fresh()->getRawOriginal(),$check->domain->fresh()->getRawOriginal()];
+foreach(array_keys(StaffOperationReview::ACTIONS) as $action){
+    $closed->assertActionHidden($action);
+    commerceReject(fn()=>$run($check->fresh(),$action));
+    same($before,[$check->fresh()->getRawOriginal(),$check->domain->fresh()->getRawOriginal()],'Direct completed action leaves operation and domain unchanged');
+}
+// Domain recovery appears for stopped scheduled work, never on the completed request.
+$stopped=DB::table('domains_observation_work')->insertGetId(['server_id'=>$check->server_id,'account_fingerprint'=>$check->account_fingerprint,'domain_id'=>$check->domain_id,
+    'generation'=>$check->authority_generation,'phase'=>hash('sha256',$check->operation_key),'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+$stoppedPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionVisible('resume_observation');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('Review actions');
+foreach(array_keys(StaffOperationReview::ACTIONS) as $action){if($action!=='resume_observation'){commerceReject(fn()=>$run($check->fresh(),$action));}}
+$stoppedPage->callAction('resume_observation',['reason'=>'Resume stopped domain observations'])->assertNotified('Review recorded');
+same(1,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Stopped domain work remains resumable after purchase completion');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('Review actions');
+commerceReject(fn()=>$run($check->fresh(),'resume_observation'));
+// Record-only holds also recover when the current scheduler job is healthy.
+ObservationRecords::hold($check->domain->fresh(),'records_unavailable',$clock->now());
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionVisible('resume_observation')
+    ->callAction('resume_observation',['reason'=>'Retry paused record discovery'])->assertNotified('Review recorded');
+expect(!ObservationRecords::held($check->domain->fresh()),'Domain recovery clears the record hold');
+same(2,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Record hold resumes current healthy job');
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation');
 // Read resume retains original attempt/funding; limits and current generation remain engine-owned.
 [$resume]=$prepare('staff-resume.com');$p=$resume->policy;$p['reconciliation']=['polls'=>5];$resume->update(['policy'=>$p]);$original=$resume->fresh()->attempt;
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$resume->id])->callAction('resume_reads',['reason'=>'Registrar history is now available'])->assertNotified('Review recorded');
@@ -83,7 +110,7 @@ same(0,$readRenew->fresh()->policy['renewal_polls'],'Renewal read budget explici
 same($before,[$readRenew->fresh()->attempt,$readRenew->fresh()->funding,$readRenew->domain->fresh()->reservation_name],'Renewal resume preserves financial/send evidence');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$readRenew->id])->callAction('recheck',['reason'=>'Read original sealed renewal evidence'])->assertNotified('Review recorded');
 same('succeeded',$readRenew->fresh()->state,'Renewal readback completes original attempt');
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$readRenew->id])->callAction('disposition',['reason'=>'Review verified completed renewal'])->assertNotified('Review recorded');
+commerceReject(fn()=>$run($readRenew->fresh(),'disposition'));
 [$limitRenew,,$binding]=$makeRenewal('staff-renewal-resume-limit.com');$runRenewal($limitRenew,$binding);$limitRenew->refresh();
 $policy=$limitRenew->policy;$policy['renewal_resumptions']=array_fill(0,20,['prior_polls'=>5,'at'=>$clock->now()->format(DATE_ATOM)]);$limitRenew->update(['policy'=>$policy]);
 commerceReject(fn()=>$run($limitRenew,'resume_reads'));

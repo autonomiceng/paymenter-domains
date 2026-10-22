@@ -36,6 +36,10 @@ final class StaffOperationReview
             || ($this->action==='release'&&$op?->funding_basis==='complimentary'&&!$staff->hasPermission('admin.domains.fund'))) {
             throw new StaffReviewRefused('Current staff permissions are required. Reload this page.');
         }
+        if($op?->state==='succeeded' && ($this->action!=='resume_observation' || !ObservationRecords::stopped($d))){
+            throw new StaffReviewRefused($this->action==='resume_observation' ? 'Scheduled reads are no longer stopped. Reload this page.'
+                : 'Completion confirmed. This request is closed to staff actions.');
+        }
         StaffReason::require($this->reason);
         if($op){$this->requireIdle($op);}
         $t=$this->decode();

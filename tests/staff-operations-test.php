@@ -32,6 +32,8 @@ Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->asse
 expect(str_contains(implode(' ',PaidUncertainty::for($held)),' · since '),'Account-wide hold includes age');
 same(null,RequestFacts::for($ops[1])['reason'],'Absent reason remains absent');
 $completed=clone $ops[0];$completed->state='succeeded';same('Original send response was unknown; completion later confirmed',RequestFacts::review($completed)[0],'Completed readback explains original response uncertainty');
+$completed->attempt=['seal'=>'sealed','execution'=>['provider_reference'=>'SYNTHETIC-ORDER']];
+same('Registrar completion confirmed. Original send evidence is retained for history.',RequestFacts::for($completed)['outcome'],'Confirmed completion takes precedence over sealed send history');
 // Engine and staff share all-generation spending holds; paid terminal review is a separate fact.
 same(null,PaidUncertainty::holdSummary($ops[2]),'Sent rejection is paid outcome review, not an in-flight spending hold');
 $nonCurrent=$ops[0]->replicate();$nonCurrent->operation_key='non-current-generation-complimentary';$nonCurrent->funding_basis='complimentary';$nonCurrent->save();DB::table('domains_operations')->where('id',$nonCurrent->id)->update(['authority_generation'=>2]);$nonCurrent->refresh();
