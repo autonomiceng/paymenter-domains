@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Helpers\{ExtensionHelper, NotificationHelper};
 use App\Models\{BillingAgreement, Gateway, Invoice};
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{DB, Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 
@@ -25,6 +25,15 @@ final readonly class RenewalAutoPay
             'status'=>$reason === null ? 'uncertain' : 'skipped', 'reason'=>$reason];
         $op->update(['funding'=>[...($op->funding ?? []), 'auto_pay'=>$marker]]);
         if ($reason === null) { DB::afterCommit(fn () => $this->charge($op->id, $marker)); }
+    }
+
+    /** Only definite non-collection permits unpaid retirement or replacement. */
+    public static function unattempted(Operation $op): bool
+    {
+        $f = $op->funding ?? [];
+        if (!array_key_exists('auto_pay', $f)) { return !array_key_exists('auto_pay_result', $f); }
+        $result = $f['auto_pay_result'] ?? $f['auto_pay'];
+        return is_array($result) && in_array($result['status'] ?? null, ['skipped', 'declined'], true);
     }
 
     private function eligibility(Operation $op, Invoice $invoice, array $l, bool $scheduled): array
@@ -70,15 +79,20 @@ final readonly class RenewalAutoPay
         if ($ready === null) { return; }
         [$invoice, $agreement, $gateway] = $ready;
         try {
-            if (!ExtensionHelper::charge($gateway, $invoice, $agreement)) { throw new \RuntimeException('Charge refused.'); }
+            $submitted = ExtensionHelper::charge($gateway, $invoice, $agreement);
         } catch (\Throwable) {
+            $this->result($id, ['status'=>'unknown']);
+            Log::warning('Domains renewal Auto Pay outcome unknown; staff review required.');
+            return;
+        }
+        if (!$submitted) {
             $notification = 'requested';
             try { NotificationHelper::invoicePaymentFailedNotification($invoice->user, $invoice); }
             catch (\Throwable) { $notification = 'failed'; }
-            $this->result($id, ['status'=>'failed', 'notification'=>$notification]); return;
+            $this->result($id, ['status'=>'declined', 'notification'=>$notification]); return;
         }
         // Persistence failure here leaves the original uncertain marker. It must never repeat the charge.
-        $this->result($id, ['status'=>'charged']);
+        $this->result($id, ['status'=>'submitted']);
     }
 
     private function result(int $id, array $result): void

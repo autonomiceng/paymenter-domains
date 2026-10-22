@@ -12,14 +12,14 @@ final class RequestFacts
         $out = ['reason'=>$op->safe_code===null ? null : Labels::reason($op->safe_code), 'refund'=>'Customer credit: not assessed'];
         try {
             $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
-            if (array_key_exists('auto_pay',$f)) { $out['auto_pay']=Labels::autoPay($f['auto_pay_result']??$f['auto_pay']); }
+            if (array_key_exists('auto_pay',$f)) { $out['auto_pay']=Labels::autoPay($f['auto_pay_result']??$f['auto_pay'], \App\Models\Invoice::whereKey($op->invoice_id)->value('status')); }
             if ($op->state==='held' && $op->safe_code==='transfer_setup_review_required' && ($op->attempt??[])===[] && OperationActions::transferCutoff($op)) {
                 try {
                     \Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($op,$op->domain);
                     $out['cutoff']='Code deadline passed. Release is unavailable; review account credit with funding and unsent proof.';
                 } catch (\DomainException) { /* Sent or unknown outcomes retain their original evidence guidance. */ }
             }
-            $admissionHold=$op->state==='held'&&RenewalCycles::virgin($op)&&StaffOperationWrites::renewalAdmissionHold($op);
+            $admissionHold=$op->state==='held'&&RenewalCycles::registrarVirgin($op)&&StaffOperationWrites::renewalAdmissionHold($op);
             if($admissionHold){$out['admission']='After correcting the cause, choose Release unsent hold. The renewal engine repeats every admission check before any send and holds the renewal again if a check still fails.';}
             if ($op->registrar_key==='namesilo' && $op->action==='renew' && ($admissionHold || $a!==[])
                 && (($p['renewal_execution']['reason']??null)==='provider_auto_renew_unconfirmed'

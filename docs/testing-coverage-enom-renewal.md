@@ -95,3 +95,23 @@ Collection evidence is not a registrar attempt or payment grant. An uncertain ch
 is never retried automatically; native invoice transactions remain the funding proof.
 These offline SQLite fixtures establish sequential/interleaved behavior, not real
 gateway delivery, SMTP delivery or paired shared-database concurrency.
+
+## 2026-10-22 — Auto Pay collection outcomes
+
+The renewal Auto Pay tests now separate a definite gateway decline from an unknown
+response. A false return requests the native payment-failed notification. An exception
+records an unknown result, logs a warning without customer data, and sends no
+payment-failed notification. Neither outcome retries automatically.
+
+Uncertain, unknown and submitted collection block unpaid retirement and replacement.
+The tests retain cancelled debt from the earlier implementation and refuse a new
+invoice while collection is unresolved. A definite decline permits retirement and a
+manual replacement. Late payment still funds the original invoice. Registrar admission
+checks native paid funding separately from the saved-method collection result.
+
+Gateway acceptance records a write-once submission. Staff facts combine that result
+with the current invoice status through processing, failed payment, cancellation and
+late success. Tests also switch to a second valid same-owner agreement before collection,
+exercise repeated settlement, and complete a renewal before billing the next cycle.
+These tests use synthetic gateways and offline SQLite; live delivery and shared-database
+concurrency remain unverified.

@@ -4,19 +4,20 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 final class Labels
 {
-    public static function autoPay(mixed $evidence): string
+    public static function autoPay(mixed $evidence, ?string $invoiceStatus = null): string
     {
         if (!is_array($evidence)) { return 'Auto Pay: outcome unconfirmed; no retry'; }
-        return match ($evidence['status'] ?? null) {
-            'charged' => 'Auto Pay: charged',
-            'failed' => ($evidence['notification'] ?? null) === 'requested'
-                ? 'Auto Pay: failed; customer notification requested' : 'Auto Pay: failed; notification unavailable',
+        $invoice = match ($invoiceStatus) { 'paid'=>'paid', 'pending'=>'pending', 'cancelled'=>'cancelled', default=>'unavailable' };
+        return (match ($evidence['status'] ?? null) {
+            'submitted', 'charged' => 'Auto Pay: submitted',
+            'declined' => ($evidence['notification'] ?? null) === 'requested'
+                ? 'Auto Pay: declined; customer notification requested' : 'Auto Pay: declined; notification unavailable',
             'skipped' => 'Auto Pay skipped: '.(['manual_renewal'=>'manual renewal', 'currency'=>'USD required',
                 'service_inactive'=>'service inactive', 'renewal_off'=>'renewal off', 'authority_changed'=>'authority changed',
                 'invoice_settled'=>'invoice settled', 'no_agreement'=>'no saved method', 'foreign_agreement'=>'saved method owner differs',
                 'gateway_missing'=>'gateway missing', 'gateway_disabled'=>'gateway disabled', 'agreement_changed'=>'saved method changed'][$evidence['reason'] ?? ''] ?? 'review required'),
             default => 'Auto Pay: outcome unconfirmed; no retry',
-        };
+        }).'; invoice '.$invoice;
     }
     public static function statuses(): array
     {

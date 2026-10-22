@@ -18,7 +18,8 @@ final readonly class RenewalCycles
             && $op->authority_generation === $l['domain']->authority_generation && $op->base_expires_at == $l['domain']->provider_expires_at);
         foreach ($cycle as $op) {
             if (RenewalReplacements::reviewed($op,$l['domain'])) { RenewalReplacements::requireSettled($op,$l); continue; }
-            if (!OperationTerminalProof::safe($op, $l['domain']) || $op->safe_code !== 'renewal_cancelled_unpaid'
+            if ((!RenewalAutoPay::unattempted($op) && !RefundPayment::retiredSettled($op, $l))
+                || !OperationTerminalProof::safe($op, $l['domain']) || $op->safe_code !== 'renewal_cancelled_unpaid'
                 || (($l['invoices']->firstWhere('id', $op->invoice_id)?->status !== 'cancelled'
                     || $l['transactions']->contains('invoice_id', $op->invoice_id)) && !RefundPayment::retiredSettled($op, $l))) {
                 throw new \DomainException('A renewal obligation already owns this cycle.');
@@ -85,7 +86,12 @@ final readonly class RenewalCycles
     }
     public static function virgin(Operation $op): bool
     {
-        return ($op->attempt ?? []) === [] && ($op->cost ?? []) === [] && FinancialAdjustments::unattemptedFunding($op)
+        return FinancialAdjustments::unattemptedFunding($op) && self::registrarVirgin($op);
+    }
+    /** No registrar attempt. Native funding must still be checked before admission. */
+    public static function registrarVirgin(Operation $op): bool
+    {
+        return ($op->attempt ?? []) === [] && ($op->cost ?? []) === [] && FinancialAdjustments::registrarUnattemptedFunding($op)
             && $op->provider_order_id === null && $op->confirmed_expires_at === null && $op->started_at === null && $op->request_fingerprint === null
             && !array_key_exists('dispatch_attempted_at', $op->policy ?? []);
     }

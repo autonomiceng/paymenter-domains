@@ -33,7 +33,17 @@ foreach ([false, true] as $auto) {
     Illuminate\Support\Facades\Cache::flush();
     $result = $runRenewal($op, $binding); $results[] = [$result->state, $result->funding_basis, $result->funding['seal']['basis']??null];
     same('pending', $result->state, 'Same ordinary renewal admission and synthetic registrar acknowledgment');
-    same($auto?'charged':'skipped', ($result->funding['auto_pay_result']??$result->funding['auto_pay'])['status'], 'Collection audit survives registrar funding seal');
+    same($auto?'submitted':'skipped', ($result->funding['auto_pay_result']??$result->funding['auto_pay'])['status'], 'Collection audit survives registrar funding seal');
+    [$engine, $writer, $completion] = $compose($binding);
+    $state->charge = '8.00';
+    same('succeeded', $completion->run($op->id)->state, 'Paid renewal completes through existing reconciliation');
+    $clock->instant = new DateTimeImmutable('2028-09-27T12:00:00Z');
+    $next = $billing->invoice($d->id);
+    expect($next->id !== $invoice->id, 'Later expiry creates its own renewal debt');
+    same('paid', $next->fresh()->status, 'Earlier collection marker does not block the next cycle');
+    $nextOp = Operation::where('invoice_id', $next->id)->sole();
+    same('submitted', $nextOp->funding['auto_pay_result']['status'], 'Next cycle has its own collection result');
+    same($next->id, $billing->invoice($d->id)->id, 'Later cycle also reuses issued debt');
 }
 same($results[0], $results[1], 'Automatic and interactive payment share funding and admission states');
 echo "Automatic and interactive renewal payment share native funding and registrar admission.\n";

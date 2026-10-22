@@ -59,8 +59,8 @@ final class StaffOperationWrites
     private static function virgin(Operation $op,array $l): void
     {
         if(($op->attempt??[])!==[]||$op->started_at!==null||$op->request_fingerprint!==null||$op->completed_at!==null
-            ||$op->lease_expires_at!==null||!FinancialAdjustments::unattemptedFunding($op)
-            ||($op->action==='renew'&&!RenewalCycles::virgin($op))) { throw new \DomainException('An original attempt cannot be readmitted.'); }
+            ||$op->lease_expires_at!==null||!FinancialAdjustments::registrarUnattemptedFunding($op)
+            ||($op->action==='renew'&&!RenewalCycles::registrarVirgin($op))) { throw new \DomainException('An original attempt cannot be readmitted.'); }
         RefundProof::requireUnsent($op,$l['domain']);
     }
 }
