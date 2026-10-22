@@ -39,8 +39,21 @@ foreach(Domain::orderBy('id')->get() as $i=>$d){
     $ports->operation($op);same('awaiting_payment',$op->fresh()->state,'Unpaid job cannot permanently hold acquisition');
     $settingWriter=new StaffSettingsWrites($native,$sellers,$bindings);$bindings->setProcessing($a->server_id,false);
     config(['cache.default'=>'database','session.driver'=>'database','queue.default'=>'database','queue.connections.database.retry_after'=>900]);
+    $processingReview=static function()use($staff,$a):Review{$stamp=Review::stamp($a->server_id,null);return new Review($staff->id,$a->server_id,null,'processing',Review::ticket($staff->id,$a->server_id,null,'processing',$stamp),'Reject unsupported runtime settings');};
+    foreach([
+        ['cache.default'=>'array'],['session.driver'=>'array'],['queue.default'=>'sync'],['queue.connections.database.retry_after'=>899],
+    ] as $unsupported){
+        config($unsupported);$badReview=$processingReview();
+        try{$settingWriter->run($badReview,['enabled'=>true,'confirmed'=>true]);expect(false,'Unsupported runtime acceptance must refuse');}
+        catch(DomainException $error){same('Runtime acceptance and shared workers are required.',$error->getMessage(),'Unsupported runtime refusal reaches its intended guard');}
+        same(false,$a->fresh()->processing_enabled,'Unsupported shared worker setting keeps processing off');
+        config(['cache.default'=>'database','session.driver'=>'database','queue.default'=>'database','queue.connections.database.retry_after'=>900]);
+    }
     $review=new Review($staff->id,$a->server_id,null,'processing',Review::ticket($staff->id,$a->server_id,null,'processing',Review::stamp($a->server_id,null)),'Review synthetic runtime acceptance');
-    $settingWriter->run($review,['enabled'=>true,'confirmed'=>true]);$sameState=new Review($staff->id,$a->server_id,null,'processing',Review::ticket($staff->id,$a->server_id,null,'processing',Review::stamp($a->server_id,null)),'Reject duplicate processing change');commerceReject(fn()=>$settingWriter->run($sameState,['enabled'=>true,'confirmed'=>true]));expect($a->fresh()->processing_enabled,'Confirmed accepted activation succeeds');config(['cache.default'=>'array','session.driver'=>'array','queue.default'=>'sync']);
+    $settingWriter->run($review,['enabled'=>true,'confirmed'=>true]);$sameState=new Review($staff->id,$a->server_id,null,'processing',Review::ticket($staff->id,$a->server_id,null,'processing',Review::stamp($a->server_id,null)),'Reject duplicate processing change');
+    try{$settingWriter->run($sameState,['enabled'=>true,'confirmed'=>true]);expect(false,'Unchanged processing state must refuse');}
+    catch(DomainException $error){same('Processing state unchanged.',$error->getMessage(),'Duplicate processing request reaches the state check');}
+    expect($a->fresh()->processing_enabled,'Confirmed accepted activation succeeds');config(['cache.default'=>'array','session.driver'=>'array','queue.default'=>'sync']);
     DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$op->amount,'fee'=>'0.00','status'=>'succeeded']);
     $bindings->setProcessing($a->server_id,false);app(RuntimeWork::class)->operation($op->id);same('awaiting_payment',$op->fresh()->state,'Paused processing never executes paid queued acquisition');$bindings->setProcessing($a->server_id,true,static fn()=>null);
     $claimResult=$claims->claim($op->id);expect($claimResult!==null,'Installed claim available: '.$op->fresh()->state.' / '.$op->fresh()->safe_code);[$claimed,$domain]=$claimResult;$ctx=new RequestContext($b,RequestOrigin::Background,$now->modify('+300 seconds'),new RequestBudget(10),$clock);

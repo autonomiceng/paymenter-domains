@@ -26,11 +26,36 @@ $archive=DB::table(AuditArchives::TABLE)->where('server_id',$t->server_id)->wher
 expect(!App\Models\Server::find($t->server_id)->settings()->where('key','like','domains_reminder_audit.%')->exists(),'Archives stay outside native settings loads');
 // A manual disposition records staff review without any resend or release of the claim.
 $op=$newTransfer('manual-outcome.com',0,true,false);$id=DB::table('domains_reminder_deliveries')->insertGetId(['domain_id'=>$op->domain_id,'delivery_key'=>hash('sha256','manual-review'),'template'=>'domains_transfer_code_paid','state'=>'uncertain','created_at'=>$now->getTimestamp()]);
+$writer=new StaffSettingsWrites($native,$sellers,$bindings);
+$reviewFor=static function(string $action,int $serverId)use($staff):Review{$stamp=Review::stamp($serverId,null);return new Review($staff->id,$serverId,null,$action,Review::ticket($staff->id,$serverId,null,$action,$stamp),'Reject invalid notification review');};
+$rejectUnchanged=static function(Review $review,array $data,string $table,int $id,string $message)use($writer,$now):void{
+    $before=(array)DB::table($table)->find($id);
+    try{$writer->run($review,$data,$now);expect(false,'Expected notification review refusal: '.$message);}
+    catch(DomainException $error){same($message,$error->getMessage(),'Notification review refusal reaches its intended guard');}
+    same($before,(array)DB::table($table)->find($id),'Rejected '.$review->action.' leaves its row unchanged');
+};
+$rejectUnchanged($reviewFor('delivery_review',$t->server_id),['delivery_id'=>$id],'domains_reminder_deliveries',$id,'Explicit notification confirmation required.');
+$rejectUnchanged($reviewFor('delivery_review',$tlds[1]->server_id),['delivery_id'=>$id,'confirmed'=>true],'domains_reminder_deliveries',$id,'Current notification claim required.');
+$savedFingerprint=$op->domain->account_fingerprint;DB::table('domains_domains')->where('id',$op->domain_id)->update(['account_fingerprint'=>'mismatched-review-fingerprint']);
+try{$rejectUnchanged($reviewFor('delivery_review',$t->server_id),['delivery_id'=>$id,'confirmed'=>true],'domains_reminder_deliveries',$id,'Current notification claim required.');}
+finally{DB::table('domains_domains')->where('id',$op->domain_id)->update(['account_fingerprint'=>$savedFingerprint]);}
 $r=new Review($staff->id,$t->server_id,null,'delivery_review',Review::ticket($staff->id,$t->server_id,null,'delivery_review',Review::stamp($t->server_id,null)),'Independently checked notification outcome');
-$before=Mail::queued(DomainNotice::class)->count();(new StaffSettingsWrites($native,$sellers,$bindings))->run($r,['delivery_id'=>$id,'confirmed'=>true]);
+$before=Mail::queued(DomainNotice::class)->count();$writer->run($r,['delivery_id'=>$id,'confirmed'=>true]);
 same('reviewed',DB::table('domains_reminder_deliveries')->find($id)->state,'Original claim retained as reviewed');same($before,Mail::queued(DomainNotice::class)->count(),'Manual review does not resend');
+$rejectUnchanged($reviewFor('delivery_review',$t->server_id),['delivery_id'=>$id,'confirmed'=>true],'domains_reminder_deliveries',$id,'Current notification claim required.');
+$rejectUnchanged($r,['delivery_id'=>$id,'confirmed'=>true],'domains_reminder_deliveries',$id,'Review key used.');
 $key=\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($op->domain,'reminder_failed',$now->getTimestamp());$alert=DB::table('domains_obligation_alerts')->where('alert_key',$key)->sole();
+$alertId=(int)$alert->id;
+$rejectUnchanged($reviewFor('alert_review',$t->server_id),['alert_id'=>$alertId],'domains_obligation_alerts',$alertId,'Explicit notification check confirmation required.');
+$otherKey=\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($op->domain,'unknown_expiry',$now->getTimestamp());$otherAlert=DB::table('domains_obligation_alerts')->where('alert_key',$otherKey)->sole();
+$rejectUnchanged($reviewFor('alert_review',$t->server_id),['alert_id'=>$otherAlert->id,'confirmed'=>true],'domains_obligation_alerts',(int)$otherAlert->id,'Current notification check alert required.');
+$rejectUnchanged($reviewFor('alert_review',$tlds[1]->server_id),['alert_id'=>$alertId,'confirmed'=>true],'domains_obligation_alerts',$alertId,'Current notification check alert required.');
+$savedFingerprint=$op->domain->account_fingerprint;DB::table('domains_domains')->where('id',$op->domain_id)->update(['account_fingerprint'=>'mismatched-review-fingerprint']);
+try{$rejectUnchanged($reviewFor('alert_review',$t->server_id),['alert_id'=>$alertId,'confirmed'=>true],'domains_obligation_alerts',$alertId,'Current notification check alert required.');}
+finally{DB::table('domains_domains')->where('id',$op->domain_id)->update(['account_fingerprint'=>$savedFingerprint]);}
 $r=new Review($staff->id,$t->server_id,null,'alert_review',Review::ticket($staff->id,$t->server_id,null,'alert_review',Review::stamp($t->server_id,null)),'Independently inspected notification check');
-(new StaffSettingsWrites($native,$sellers,$bindings))->run($r,['alert_id'=>$alert->id,'confirmed'=>true],$now);expect(DB::table('domains_obligation_alerts')->find($alert->id)->resolved_at!==null,'Manual check disposition retained');
+$writer->run($r,['alert_id'=>$alertId,'confirmed'=>true],$now);expect(DB::table('domains_obligation_alerts')->find($alertId)->resolved_at!==null,'Manual check disposition retained');
+$rejectUnchanged($reviewFor('alert_review',$t->server_id),['alert_id'=>$alertId,'confirmed'=>true],'domains_obligation_alerts',$alertId,'Current notification check alert required.');
+$rejectUnchanged($r,['alert_id'=>$alertId,'confirmed'=>true],'domains_obligation_alerts',$alertId,'Review key used.');
 same(['Review notification outcome','Review notification check'],array_column(Review::historyRows(App\Models\Server::findOrFail($t->server_id)),'action'),'Both independent notification reviews retain audit rows');
 echo "Paired mandatory notices, optional reminder suppression,100-edit audit rotation and no-resend disposition passed.\n";$nativeSuccessful=true;

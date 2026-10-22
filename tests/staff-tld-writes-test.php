@@ -31,11 +31,12 @@ foreach(array_keys(Review::ACTIONS) as $action){
     if($setup){$page->assertActionDoesNotExist(\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content'));}else{$page->assertActionHidden($action);}
 }
 $u->role->update(['permissions'=>$permissions]);
-foreach(array_keys(Review::ACTIONS) as $action){
+$staleFirst=['processing','delivery_review','alert_review'];
+foreach([...$staleFirst,...array_values(array_diff(array_keys(Review::ACTIONS),$staleFirst))] as $action){
     if($action==='enroll_sandbox'){continue;} // Enrollment has its own fresh-server review regression.
     $setup=in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','renewal_billing'],true);
     $bad=$review($action,$setup?null:$t->id,null,str_repeat('0',64));
-    tldRefusal(fn()=>$writer->run($bad,['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'account-enom'],'history_action'=>'register','confirmed'=>true], $now),'Settings changed. Reload this page.');
+    tldRefusal(fn()=>$writer->run($bad,['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'account-enom'],'history_action'=>'register','confirmed'=>true,'enabled'=>false,'delivery_id'=>1,'alert_id'=>1], $now),'Settings changed. Reload this page.');
 }
 foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>$writer->run($review('default_rule',$t->id,reason:$bad),$fixed,$now));}
 $r=$review('default_rule',$t->id,reason:str_repeat('🦦',500));$writer->run($r,$fixed,$now);same('fixed',(new PricingRules)->defaultRule($t->server_id)['mode'],'Default saved');

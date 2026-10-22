@@ -13,3 +13,4 @@ leaves no mail identity, preserves a prior reservation and records existing noti
 evidence, while app delivery remains independent. Restoring the faulty schedule fallback
 and forced-mail guards must fail these assertions. These are synthetic offline checks,
 not SMTP delivery evidence.
+Notification review checks missing confirmation, state, code, server and account binding refusals without changing their rows.
