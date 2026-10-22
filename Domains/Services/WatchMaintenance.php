@@ -9,16 +9,8 @@ final class WatchMaintenance
     private function alert(array $health): void
     {
         Log::warning('Public domain checks need staff review.',['code'=>$health['reason']]);
-        // Reuse the native staff inbox when available; no email or customer notice.
-        if (!method_exists(\Filament\Notifications\Notification::class,'sendToDatabase') || !\Illuminate\Support\Facades\Schema::hasTable('notifications')) { return; }
-        try { if (!\Filament\Facades\Filament::getPanel('admin')->hasDatabaseNotifications()) { return; } } catch (\Throwable) { return; }
-        foreach(\App\Models\User::whereHas('role')->with('role')->lazyById(100)as$staff) {
-            if (\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::allows($staff,'admin.domains.watch.view')) {
-                \Filament\Notifications\Notification::make()->title('Public domain checks need attention')
-                    ->body(self::message($health))
-                    ->warning()->sendToDatabase($staff);
-            }
-        }
+        \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send(
+            'Public domain checks need attention',self::message($health),'filament.admin.pages.dns-resolver','admin.domains.watch.view');
     }
     private function families(int $now): array
     {

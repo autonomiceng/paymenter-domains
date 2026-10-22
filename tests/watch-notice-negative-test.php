@@ -2,21 +2,29 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/watch-notices.php';
+require __DIR__.'/Support/staff-alerts.php';
 use App\Models\{NotificationTemplate,NotificationPreference};
 use Illuminate\Support\Facades\{DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Services\{WatchNoticePreferences as Pref,WatchNoticeDelivery,WatchNotices};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchNotice,WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Mail\WatchNotice as NoticeMail;
-$f=noticeFixture();extract($f);$step=0;
+$f=noticeFixture();extract($f);staffAlertFixture();
+$panel=\Filament\Facades\Filament::getPanel('admin');
+\Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::registerRoutes($panel));
+app('router')->getRoutes()->refreshNameLookups();$step=0;
 $new=function()use($f,$planner,&$step,$now,$id,$uid):array {
     $at=$now+(++$step)*86400;noticeRegistry($f,$at);$ids=$planner->plan('watch',$id,$uid,$at+2);
     return [WatchNotice::findOrFail(end($ids)),$at+3];
 };
 [$n,$at]=$new();$template=NotificationTemplate::where('key','domains_watch_expiring')->sole();
+// Isolate the render-failure episode from the earlier missing-DNS planning signal.
+$staff=[staffUser(['admin.domains.view','admin.domains.watch.view']),staffUser(['admin.domains.view','admin.domains.watch.view'])];
+staffUser(['admin.domains.view']);staffUser(['admin.domains.watch.view']);
 $template->update(['body'=>'@php throw new \\RuntimeException("Synthetic render failure"); @endphp']);
 $before=DB::table('domains_watch_deliveries')->count();$health=WatchAudit::where('event','notice_health')->count();
 expect($delivery->reserve($n->id,'mail',$at)===null,'Render failure does not claim');expect($delivery->reserve($n->id,'mail',$at)===null,'Repeated render failure safe');
 same($before,DB::table('domains_watch_deliveries')->count(),'No delivery identity on render error');same($health+1,WatchAudit::where('event','notice_health')->count(),'Render health deduplicated');
+staffAlerts('Domain checks need attention','A public domain check or notice could not be completed. Review domain watch history.',route('filament.admin.resources.domain-watch.index'),$staff);
 $template->update(['body'=>'{{ $domain }} {{ $date }} <a href="{{ $domain_url }}">View domain checks</a>']);
 $claim=$delivery->reserve($n->id,'mail',$at);expect($claim!==null,'Fixed template can claim');
 $nativePref=NotificationPreference::create(['user_id'=>$uid,'notification_template_id'=>$template->id,'mail_enabled'=>false,'in_app_enabled'=>true]);

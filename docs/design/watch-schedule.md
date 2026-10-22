@@ -51,7 +51,7 @@ no successful progress for 24 hours. Each proven successful daily job gets its e
 before that family can alert, including registry expiry’s 0–60 minute jitter. Failed or abandoned
 claims cannot extend this grace. Managed health shares dispatch eligibility. Family-specific
 advice separates registry and DNS failures; a new failing family starts a new alert episode. Alerts are deduplicated, with optional native staff inbox delivery when
-that inbox is enabled. Failed local discovery/enrollment cannot block independent dispatch.
+that native storage is available. Failed local discovery/enrollment cannot block independent dispatch.
 Retention prunes at most 100 old observations per family per turn after 90 days, preserving
 last successful per-kind/axis facts and pinned notice evidence under observation-row locks.
 Activation, the accepted discovery binding and installed queue/resolver acceptance remain
