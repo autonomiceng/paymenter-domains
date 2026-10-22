@@ -54,6 +54,7 @@ refresh its verification time. Facts expire after 30 days; the policy and releva
 charge must both be current. Non-USD facts are retained but cannot enable the
 current USD billing path. Conflicts, missing facts and zero/unsupported windows
 close the affected capability. Auto-renew-only endings never allow grace renewal.
+Grace admission starts at the provider expiry instant, ends strictly before the earlier provider or saved UTC expiry plus the verified whole grace days, and cannot remain valid beyond that deadline; unknown expiry instants refuse admission.
 Do not use Enom's GetTLDDetails cancellation/refund GracePeriod as a post-expiry
 window. Resolve account and registry policy conflicts before clearing the flag.
 

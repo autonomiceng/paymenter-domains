@@ -49,8 +49,19 @@ final readonly class RenewalAdmission
             $lifecycleUntil = null;
             if ($status === RenewalStatus::Grace) {
                 $ending = explode('.', $name, 2)[1];
-                $lifecycleUntil = LifecyclePolicies::until($binding, $ending, 'grace', $this->clock->now());
+                $now = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
+                $policy = LifecyclePolicies::read($binding, $ending);
+                $lifecycleUntil = $policy === null ? null : LifecycleFacts::until($policy, 'grace', $now);
                 if ($lifecycleUntil === null) { throw new RenewalRefused(RenewalCode::Grace); }
+                $expiry = $facts->domain?->expiry;
+                if ($expiry?->precision !== ExpiryPrecision::Instant) { throw new RenewalRefused(RenewalCode::Grace); }
+                // DateEvidence validates the instant; the request date matches the locked local anchor.
+                $providerExpiry = (new \DateTimeImmutable($expiry->value))->setTimezone(new \DateTimeZone('UTC'));
+                $localExpiry = new \DateTimeImmutable($request->expiry, new \DateTimeZone('UTC'));
+                $graceDeadline = min($providerExpiry, $localExpiry)->modify('+'.$policy['grace_days'].' days');
+                if ($now < $providerExpiry) { throw new RenewalRefused(RenewalCode::Grace); }
+                if ($now >= $graceDeadline) { throw new RenewalRefused(RenewalCode::Grace); }
+                $lifecycleUntil = min($lifecycleUntil, $graceDeadline);
             }
             $this->owned($facts->domain, $request, $binding, $name);
             if ($binding->registrarKey === 'namesilo' ? !$nonpremium : $facts->premium !== false) { throw new RenewalRefused(RenewalCode::Cost); }
