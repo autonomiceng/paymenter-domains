@@ -52,6 +52,27 @@ foreach(Domain::orderBy('id')->get() as $i=>$d){
     $d->service->product->server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'],['type'=>'boolean','value'=>true]);
     $invoice=app(DomainBilling::class)->invoice($d->id,$i===0?$user:null);$expiryDebts[]=[$d,$invoice];$renew=Operation::where('invoice_id',$invoice->id)->sole();
     $dto=$presenter->service($user,$d->service_id);same('2027-10-11',$dto->renewalDue,'Renewal payment date separate from expiry');same('2027-10-18',$dto->expiry,'Confirmed expiry unchanged');expect(isset($presenter->invoice($user,$invoice->id)[$renew->invoice_item_id]),'Retained renewal line uses invoice binding');
+    $invoiceLine=static fn($debt,$itemId)=>$presenter->invoice($user,$debt->id)[$itemId]??throw new RuntimeException('Expected bound invoice line');
+    same('2027-10-11',$invoiceLine($invoice,$renew->invoice_item_id)->renewalDue,'Pending current renewal line shows its due date');
+    $registrationInvoice=App\Models\Invoice::findOrFail($op->invoice_id);
+    same(null,$invoiceLine($registrationInvoice,$op->invoice_item_id)->renewalDue,'Paid registration line hides a later renewal debt');
+    $registrationHtml=view('domains::invoice-line',['domain'=>$invoiceLine($registrationInvoice,$op->invoice_item_id)])->render();
+    expect(!str_contains($registrationHtml,'Renewal payment due'),'Registration invoice never renders the renewal payment label');
+    foreach(['paid','cancelled']as$status){
+        DB::table('invoices')->where('id',$invoice->id)->update(['status'=>$status]);
+        same(null,$invoiceLine($invoice,$renew->invoice_item_id)->renewalDue,'Nonpending renewal line hides payment due: '.$status);
+    }
+    DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);
+    $oldInvoice=$invoice->getRawOriginal();unset($oldInvoice['id']);$oldInvoice['number']=null;
+    $oldInvoiceId=DB::table('invoices')->insertGetId($oldInvoice);
+    $oldItem=(array)DB::table('invoice_items')->where('id',$renew->invoice_item_id)->sole();unset($oldItem['id']);$oldItem['invoice_id']=$oldInvoiceId;
+    $oldItemId=DB::table('invoice_items')->insertGetId($oldItem);
+    $oldDebt=$renew->getRawOriginal();unset($oldDebt['id']);$oldDebt['invoice_id']=$oldInvoiceId;$oldDebt['invoice_item_id']=$oldItemId;$oldDebt['operation_key']='retained-other-cycle-'.$i;
+    $oldDebtId=DB::table('domains_operations')->insertGetId($oldDebt);
+    $old=App\Models\Invoice::findOrFail($oldInvoiceId);
+    same(null,$invoiceLine($old,$oldItemId)->renewalDue,'Another pending invoice with the same due date is not the current cycle');
+    same('2027-10-11',$invoiceLine($invoice,$renew->invoice_item_id)->renewalDue,'Other retained debt does not hide the current pending line');
+    DB::table('domains_operations')->where('id',$oldDebtId)->delete();DB::table('invoice_items')->where('id',$oldItemId)->delete();DB::table('invoices')->where('id',$oldInvoiceId)->delete();
     $clock->instant=new DateTimeImmutable('2027-10-11T12:00:00Z');expect(app(Reminders::class)->remind($d->id),'Installed issued-invoice notice sends');$mail=Mail::queued(\Paymenter\Extensions\Servers\Domains\Mail\DomainNotice::class)->last();$mailPairs[$i][]=str_replace([$d->domain,route('invoices.show',$invoice),url('/domains/'.$d->id)],['example.com','INVOICE_URL','DOMAIN_URL'],$mail->render());
     $clock->instant=new DateTimeImmutable('2027-10-21T12:00:00Z');expect(app(Reminders::class)->remind($d->id),'Installed expired notice sends');$mail=Mail::queued(\Paymenter\Extensions\Servers\Domains\Mail\DomainNotice::class)->last();$mailPairs[$i][]=str_replace([$d->domain,url('/domains/'.$d->id)],['example.com','DOMAIN_URL'],$mail->render());
 }

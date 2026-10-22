@@ -197,3 +197,5 @@ real gateway collection, registrar acceptance or delivered mail.
 
 The owner-Off notice offers Renew now until expiry minus one day, then asks the owner to contact support.
 The existing worker cancels provably unsent, unpaid renewal invoices at expiry, including manual invoices and owner-Off holdings; transactions or uncertain collection prevent cancellation.
+
+`runtime-worker-test.php` checks both registrars: only the current pending renewal invoice line shows its payment due date. Paid registration, paid or cancelled renewal, and another pending cycle with the same due date hide it.
