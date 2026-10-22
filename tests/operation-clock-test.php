@@ -1,14 +1,20 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureEnding = 'example.com';
 require __DIR__.'/Support/operation-fixture.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
+$createOperation = $new;
+$new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1) use ($createOperation) {
+    return $createOperation(reservedFixtureName($name), $paid, $setup, $action, $term);
+};
 // Fall-back duration arithmetic must not gain an hour while native timestamps stay local.
 $siteTimezone = date_default_timezone_get(); $ordinaryInstant = $clock->instant;
 try {
     foreach ([245, 246, 275] as $elapsed) {
         $entry = new DateTimeImmutable('2026-11-01T01:58:00-07:00');
         date_default_timezone_set($siteTimezone);
-        $clock->instant = $ordinaryInstant; $op = $new('fall-back-'.$elapsed.'.com'); $before = $writer->calls;
+        $clock->instant = $ordinaryInstant; $op = $new('fall-back-'.$elapsed.'.example.com'); $before = $writer->calls;
         date_default_timezone_set('America/Los_Angeles');
         $clock->instant = $entry->setTimezone(new DateTimeZone('America/Los_Angeles'));
         $preflight->during = static fn () => $clock->instant = $entry->setTimezone(new DateTimeZone('UTC'))
@@ -28,7 +34,7 @@ try {
 // Native datetime persistence drops offsets, so the monotonic clock must return site-local objects.
 $siteTimezone = date_default_timezone_get();
 foreach (['America/Los_Angeles', 'Asia/Kolkata'] as $timezone) {
-    $roundTrip = $new('clock-roundtrip-'.($timezone === 'Asia/Kolkata' ? 'east' : 'west').'.com');
+    $roundTrip = $new('clock-roundtrip-'.($timezone === 'Asia/Kolkata' ? 'east' : 'west').'.example.com');
     try {
         date_default_timezone_set($timezone);
         $systemClock = new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;

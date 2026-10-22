@@ -2,6 +2,11 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Actual owner controller and committed late readmission.
 declare(strict_types=1);
 require_once __DIR__.'/staff-panel.php';
+require_once __DIR__.'/reserved-fixtures.php';
+$createTransfer = $newTransfer;
+$newTransfer = static function (string $name, int $i = 0, bool $paid = true, bool $code = true) use ($createTransfer) {
+    return $createTransfer(placeholderComFixtureName($name), $i, $paid, $code);
+};
 $lateViewer=staffUser([Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]);
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 $actions=new Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController($owners,
@@ -10,7 +15,7 @@ $actions=new Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionCo
 foreach([0,1]as$i){
     $clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);
     $user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');
-    $late=$newTransfer('late-page-'.$i.'.com',$i);$missing=$newTransfer('late-missing-'.$i.'.com',$i,true,false);
+    $late=$newTransfer('late-page-placeholder-'.$i.'.com',$i);$missing=$newTransfer('late-missing-placeholder-'.$i.'.com',$i,true,false);
     Paymenter\Extensions\Servers\Domains\Services\ContactRecovery::hold($late->id);
     Paymenter\Extensions\Servers\Domains\Services\ContactRecovery::hold($missing->id);
     $user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);$user->unsetRelation('properties');

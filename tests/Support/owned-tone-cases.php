@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Customer label/tone unit matrix.
 declare(strict_types=1);
 (function () use ($newTransfer, $owners, $clock): void {
-    $op = $newTransfer('tone-matrix.com', 0, false, false);
+    $op = $newTransfer('tone-matrix-placeholder.com', 0, false, false);
     $base = $op->domain;
     $quiet = new \Paymenter\Extensions\Servers\Domains\Services\OwnedDomains($clock, new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts);
     // Persist only synthetic operation inputs. Domain variants stay in memory so no lifecycle runs.

@@ -22,7 +22,7 @@ $rdap = new Rdap(static function ($url) use ($state): array {
     if ($state->rdapUnknown) { throw new RuntimeException('Synthetic offline failure'); }
     if ($state->rdap404 && !str_contains($url,'dns.json')) { return ['status'=>404,'body'=>'']; }
     return ['status'=>200, 'body'=>json_encode(str_contains($url,'dns.json') ? ['services'=>[[['com'],['https://rdap.example.com/']]]]
-        : ['objectClassName'=>'domain','ldhName'=>$state->query?->name ?? 'x.com','status'=>['active'],'events'=>[
+        : ['objectClassName'=>'domain','ldhName'=>$state->query?->name ?? 'example.com','status'=>['active'],'events'=>[
             ['eventAction'=>'registration','eventDate'=>'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>'2027-01-01T00:00:00Z']]])];
 });
 $admission = new CartAdmission($native,$sellers,new CheckoutEligibility($bindings,$clock,new TransferPrecheck(new Rdap(fn()=>throw new RuntimeException('Synthetic checkout lookup')))),$clock);
@@ -37,7 +37,7 @@ $newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=tru
     $op = Domain::where('domain',$name)->sole()->operations()->sole();
     if ($paid) { App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount); $inputs->paymentAccepted($op->id); }
     if ($code) { $r = Illuminate\Http\Request::create('/internal-transfer-input','POST',['transfer_code'=>'SyntheticOnly']); $r->setUserResolver(fn()=>$user); $inputs->submitCode($r,$op->id); }
-    if ($i === 1) { $op->refresh()->update(['payload'=>[...$op->payload,'nameservers'=>['ns1.provider.net','ns2.provider.net'],'privacy'=>false]]); }
+    if ($i === 1) { $op->refresh()->update(['payload'=>[...$op->payload,'nameservers'=>['ns1.provider.example','ns2.provider.example'],'privacy'=>false]]); }
     $state->query = OperationClaims::query($op,$op->domain); return $op->fresh();
 };
 $registry = new RegistrarRegistry;

@@ -3,12 +3,13 @@
 declare(strict_types=1);
 require __DIR__.'/Support/reminders.php';
 require __DIR__.'/Support/owner-pages.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
 use Illuminate\Support\Facades\{DB,Schema,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingProvenanceSchema,Installation,RuntimeDispatch,DomainObservation,RenewalAuthority,RenewalReminders,DomainReservations};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts;
 HoldingProvenanceSchema::install();$enable();
-[$d,$invoice,$debt]=$make('pending-conversion.com');
+[$d,$invoice,$debt]=$make(reservedFixtureName('example.com'));
 $original=$d->getRawOriginal();$nativeBefore=$nativeMoney();
 // An existing purchase remains untouched by the additive migration and reinstall.
 same(null,$d->provenance,'No purchase provenance fabricated for preexisting rows');

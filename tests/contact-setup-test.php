@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
 use App\Models\{Invoice, InvoiceTransaction, Role, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
@@ -11,7 +12,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{ContactProfile, Domain, Operati
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, ContactDetails, ContactProfiles, ContactProfileSchema,
     ContactRecovery, ContactSetup, ContactValidation, InvoiceBinding, PublicationEligibility, RegistryInputs};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
-extract(commerceFixture(true)); ContactProfileSchema::install(); ContactProfileSchema::verify();
+$fixtureEnding = 'test';
+extract(commerceFixture(true, ending: $fixtureEnding)); ContactProfileSchema::install(); ContactProfileSchema::verify();
 $migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000003_create_domains_contact_profiles.php';
 $migration->down(); ContactProfileSchema::verify();
 $clock = new FakeClock($now); $admission = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock), $clock);
@@ -92,8 +94,9 @@ DB::transaction(static function () use ($tlds): void {
     $tld->registry_fields = []; $tld->save();
 });
 // Native checkout binds the real snapshot, no customer contact/EPP/profile IDs enter the cart.
-$product = $native->product($tlds[0], 'register'); $cart = commerceCart($user); commerceAdd($cart, $product, 'frozen-contact.com'); commerceCheckout($user, $cart);
-$op = Domain::where('domain', 'frozen-contact.com')->sole()->operations()->sole();
+$frozenName = reservedFixtureName('frozen-contact.test');
+$product = $native->product($tlds[0], 'register'); $cart = commerceCart($user); commerceAdd($cart, $product, $frozenName); commerceCheckout($user, $cart);
+$op = Domain::where('domain', $frozenName)->sole()->operations()->sole();
 expect(!$op->payload['setup_required'], 'Valid contact setup captured at binding'); ContactSetup::validate($op);
 ContactSetup::requireReady($op);
 foreach ([['setup_required' => true], ['registry_supported' => false], ['contacts' => []]] as $change) {
@@ -110,8 +113,9 @@ expect(!$op->domain->service->properties()->where('key', 'contacts')->exists(), 
 require __DIR__.'/Support/frozen-contact-lifecycle.php';
 // Invalid paid setup is held; invalid unpaid setup cannot gain a paid hold.
 contactProperty($user, 'phone', 'private-value');
-$cart = commerceCart($user); commerceAdd($cart, $product, 'held-contact.com'); commerceCheckout($user, $cart);
-$held = Domain::where('domain', 'held-contact.com')->sole()->operations()->sole(); $heldPayload = $held->payload;
+$heldName = reservedFixtureName('held-contact.test');
+$cart = commerceCart($user); commerceAdd($cart, $product, $heldName); commerceCheckout($user, $cart);
+$held = Domain::where('domain', $heldName)->sole()->operations()->sole(); $heldPayload = $held->payload;
 contactReject(static fn () => ContactRecovery::hold($held->id)); same('awaiting_payment', $held->fresh()->state, 'Unpaid cannot recover');
 DB::table('invoices')->where('id', $held->invoice_id)->update(['status' => 'paid']);
 contactReject(static fn () => ContactRecovery::hold($held->id)); // native paid flag alone is insufficient
@@ -259,12 +263,13 @@ $closed = ContactRecovery::closeUnsent($staff, $manage->id, 'Abandon the unsent 
 same('rejected', $closed->state, 'Terminal disposition retained'); same('non_refundable', $closed->policy['contact_disposition']['financial'], 'Contacts never create credit');
 same('definitely_unsent', $closed->attempt['rejection_basis'], 'Explicit terminal proof');
 contactReject(static fn () => ContactRecovery::closeUnsent($staff, $manage->id, 'Duplicate disposition'));
-same('frozen-contact.com', $op->domain->fresh()->reservation_name, 'Management disposition never releases holding');
+same($frozenName, $op->domain->fresh()->reservation_name, 'Management disposition never releases holding');
 // Synthetic 301/302 remain purchases with discrepancy; even recorded-null execution blocks recovery.
 $parser = new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\ResponseParser;
-$request = Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::register('fallback.com', 1, false, '123', ['ns1.example.net', 'ns2.example.net']);
+$fallbackName = reservedFixtureName('example.com');
+$request = Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::register($fallbackName, 1, false, '123', ['ns1.example.net', 'ns2.example.net']);
 foreach ([301, 302] as $code) {
-    $body = json_encode(['request' => ['operation' => 'registerDomain'], 'reply' => ['code' => $code, 'detail' => 'private-value', 'domain' => 'fallback.com', 'order_amount' => '9.25']]);
+    $body = json_encode(['request' => ['operation' => 'registerDomain'], 'reply' => ['code' => $code, 'detail' => 'private-value', 'domain' => $fallbackName, 'order_amount' => '9.25']]);
     $reply = $parser->parse($body, $request, 'secret');
     same(Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Fallback, $reply->outcome, 'Fallback is a purchased discrepancy');
     $sent = $management(); $sent->update(['attempt' => ['execution' => ['code' => $code]]]);

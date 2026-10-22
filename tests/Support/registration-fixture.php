@@ -37,7 +37,7 @@ $makeEngine = static function ($binding, $exchange, ?WriteFeatures $features = n
     Cache::forget('domains-write-slot:'.$binding->fingerprint);
 };
 $runRegistration = static function (Operation $op) use (&$engine, $registration) {
-    $op->update(['payload' => $op->payload + ['nameservers' => ['ns1.provider.net', 'ns2.provider.net'], 'privacy' => false]]);
+    $op->update(['payload' => $op->payload + ['nameservers' => ['ns1.provider.example', 'ns2.provider.example'], 'privacy' => false]]);
     $registration->query = OperationClaims::query($op, $op->domain); return $engine->execute($op->id);
 };
 $assertRetained = static function ($result, array $corrections): void {

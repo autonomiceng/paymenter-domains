@@ -2,14 +2,17 @@
 // Enom 444f31c owner view parity; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/owned.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 $controller=new OwnedDomainController($owners); $session=app('request')->session();
+$maxSld=str_pad('placeholder',63,'a');
 $request=static function($actor)use($session){$r=Request::create('/domains','GET');$r->setUserResolver(fn()=>$actor);$r->setLaravelSession($session);return $r;};
 $other=commerceUser(); $snapshots=[];
 foreach ([0,1] as $i) {
-    $op=$newTransfer(($i?'other':str_repeat('a',63)).'.com',$i,false,false);$d=$op->domain; storefrontViews();
+    $name=$i?'other-placeholder.com':$maxSld.'.com';
+    $op=$newTransfer(placeholderComFixtureName($name),$i,false,false);$d=$op->domain; storefrontViews();
     $dto=$owners->present($d);$snapshots[]=$dto;
     $unavailable=(new Paymenter\Extensions\Servers\Domains\Services\OwnedDomains($clock,new Paymenter\Extensions\Servers\Domains\Services\OwnerPorts))->present($d);
     same([],$unavailable->management,'Unavailable capability port grants no management form');expect(!isset($unavailable->actions['setup']),'Unavailable capability port offers no setup form');
@@ -65,13 +68,13 @@ try{$owners->owned($user,$d->id);expect(false,'Native ownership drift refused');
 $store=new Paymenter\Extensions\Servers\Domains\Services\Storefront($sellers,$prices,$native,$bindings,
     new Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility($bindings,$clock,new Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck($rdap)),$clock);
 $entry=new Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController($store);
-$r=$request($user);$r->query->set('name',str_repeat('a',63).'.com');$before=count($state->calls);$data=$entry->show($r)->getData();
-same(str_repeat('a',63).'.com',$data['results'][0]['domain'],'Dedicated transfer entry preserves the exact canonical name');
+$r=$request($user);$r->query->set('name',$maxSld.'.com');$before=count($state->calls);$data=$entry->show($r)->getData();
+same($maxSld.'.com',$data['results'][0]['domain'],'Dedicated transfer entry preserves the exact canonical name');
 $html=$entry->show($r)->render();expect(str_contains($html,'Before you start')&&str_contains($html,'data-domains-results'),'Transfer entry uses approved source guidance and existing checked result flow');
 same($before,count($state->calls),'Transfer entry GET has no provider I/O');expect(!str_contains($html,'name="action"'),'Unchecked transfer entry has no order form');
 $r->query->set('name','sub.example.com');expect($entry->show($r)->getData()['error']!==null,'Transfer entry rejects unoffered/subdomain endings');
 $r->query->set('name',['bad']);same([],$entry->show($r)->getData()['results'],'Malformed transfer name creates no intent');
-$unchecked=$newTransfer('owner-unchecked.com');$makeTransfer();$state->rdapUnknown=true;$sealed=$engine->execute($unchecked->id);$state->rdapUnknown=false;
+$unchecked=$newTransfer(placeholderComFixtureName('owner-unchecked-placeholder.com'));$makeTransfer();$state->rdapUnknown=true;$sealed=$engine->execute($unchecked->id);$state->rdapUnknown=false;
 same(true,$sealed->attempt['transfer_admission']['rdap_unchecked'],'Real sealed attempt retains unchecked provenance');
 $dto=$owners->present($sealed->domain);expect($dto->transfer['unchecked']&&!$dto->transfer['open'],'Sealed provenance survives the closed editor');
 storefrontViews();$calls=$state->calls;$html=$controller->code($request($user),$sealed->domain_id)->render();

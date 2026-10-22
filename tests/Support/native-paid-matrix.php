@@ -2,6 +2,7 @@
 // Native paid processing executes without an extension binding. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-paid-fixture.php';
+require_once __DIR__.'/reserved-fixtures.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Service};
 use Illuminate\Support\Facades\{DB,Event,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
@@ -44,7 +45,7 @@ same('active',$host->fresh()->status,'Hosting continues when domain wake fails')
 same('awaiting_payment',$wakeFailure->fresh()->state,'Failed wake remains recoverable');
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class,$dispatch);
 // Missing contacts can arrive after payment; native callbacks never readmit a hold.
-$late=$new('paid-late-contact.com',paid:false,setup:false);$before=$writer->calls;$paid($late);
+$late=$new(placeholderComFixtureName('paid-late-contact-placeholder.com'),paid:false,setup:false);$before=$writer->calls;$paid($late);
 same($before,$writer->calls,'Incomplete contacts never send');same('held',$late->fresh()->state,'Contact setup holds');
 $nativeBeforeReplay=nativeFinancialSnapshot($late);$heldBeforeReplay=$late->fresh()->getRawOriginal();
 $manual($late);event(new App\Events\Invoice\Paid(Invoice::find($late->invoice_id)));same('held',$late->fresh()->state,'Native wake never readmits contact hold');

@@ -4,6 +4,11 @@ declare(strict_types=1);
 require __DIR__.'/Support/owned.php';
 require __DIR__.'/Support/installed.php';
 require __DIR__.'/Support/staff-panel.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
+$createTransfer = $newTransfer;
+$newTransfer = static function (string $name, int $i = 0, bool $paid = true, bool $code = true) use ($createTransfer) {
+    return $createTransfer(placeholderComFixtureName($name), $i, $paid, $code);
+};
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,Blade};
 use Illuminate\Support\HtmlString;
@@ -17,8 +22,8 @@ app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clo
 $out=$argv[1];$shell=file_get_contents($argv[2]);$controller=new OwnedDomainController($owners);
 $actions=new OwnerActionController($owners,new OwnerSetup($clock,$ports),$inputs,new DomainManagement($bindings,$clock),$ports);
 $user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');
-$late=$newTransfer('contact-fix.com');
-$missing=$newTransfer('no-saved-code.com',0,true,false);
+$late=$newTransfer('contact-fix-placeholder.com');
+$missing=$newTransfer('no-saved-code-placeholder.com',0,true,false);
 ContactRecovery::hold($late->id);ContactRecovery::hold($missing->id);
 $session=app('session')->driver();$session->start();
 $request=static function()use($user,$session){$r=Illuminate\Http\Request::create('/domains','GET');$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);return $r;};

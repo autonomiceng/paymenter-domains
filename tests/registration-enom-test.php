@@ -1,7 +1,13 @@
 <?php
 // Adapted from Enom 444f31c dispatch, NS correction and unknown-outcome scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureEnding = 'example.com';
 require __DIR__.'/Support/registration-fixture.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
+$createOperation = $new;
+$new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1) use ($createOperation) {
+    return $createOperation(reservedFixtureName($name), $paid, $setup, $action, $term);
+};
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrationTransport;
 use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, DriverResult, Money, Query, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations, WriteAcceptance, WriteFeatures};
@@ -35,13 +41,13 @@ $exchange = static function ($origin, $command, $parameters, $timeout) use ($reg
         if ($registration->mode === 'missingexpiry') { $data = '<OrderID>1234</OrderID>'; }
         if ($registration->mode === 'invalidexpiry') { $data = '<OrderID>1234</OrderID><ExpirationDate>2027-02-30</ExpirationDate>'; }
     }
-    if ($command === 'GetDNS') { $data = '<dns>ns1.provider.net</dns><dns>'.($registration->mode === 'mismatch' ? 'ns3.provider.net' : 'ns2.provider.net').'</dns>'; }
+    if ($command === 'GetDNS') { $data = '<dns>ns1.provider.example</dns><dns>'.($registration->mode === 'mismatch' ? 'ns3.provider.example' : 'ns2.provider.example').'</dns>'; }
     $code = $registration->mode === '1300' ? '1300' : '200';
     return '<interface-response><Command>'.$command.'</Command><ErrCount>0</ErrCount><Done>true</Done><RRPCode>'.$code.'</RRPCode>'.$data.'</interface-response>';
 };
 foreach (['clean', 'lost', 'mismatch', 'unknown', 'authority', 'finishfailure', 'pending', 'processing', 'queued', '1300', 'missingid', 'invalidid', 'missingexpiry', 'invalidexpiry'] as $mode) {
     $registration->mode = $mode; $registration->calls = []; $makeEngine($binding, $exchange);
-    $result = $runRegistration($new('enom-'.$mode.'.com'));
+    $result = $runRegistration($new('enom-'.$mode.'.example.com'));
     if (in_array($mode, ['unknown', 'pending', 'processing', 'queued', '1300', 'missingid', 'invalidid', 'missingexpiry', 'invalidexpiry'], true)) {
         same('uncertain', $result->state, 'Incomplete purchase stays unresolved'); same(['Purchase'], $registration->calls, 'No follow-ups on pending/unknown');
         same(in_array($mode, ['pending', 'processing', 'queued', '1300'], true) ? 'pending' : 'unknown', $result->attempt['execution']['disposition'], 'Source Purchase classification');
@@ -60,18 +66,18 @@ foreach (['clean', 'lost', 'mismatch', 'unknown', 'authority', 'finishfailure', 
     same($nativeBeforeReplay, nativeFinancialSnapshot($result), 'Replay preserves native/financial state');
 }
 expect($completionFailures >= 2, 'Transient completion retried with original acceptance and correction evidence');
-same(['NS1' => 'ns1.child.com', 'NS2' => 'ns2.child.com'], \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers(['NS1.Child.com.', 'ns2.child.com']), 'Enom source accepts normalized child hosts');
-commerceReject(fn () => \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers(['ns1.provider.net', 'NS1.provider.net.']));
+same(['NS1' => 'ns1.child.example', 'NS2' => 'ns2.child.example'], \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers(['NS1.Child.example.', 'ns2.child.example']), 'Enom source accepts normalized child hosts');
+commerceReject(fn () => \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers(['ns1.provider.example', 'NS1.provider.example.']));
 // Protected scope is shared by sibling subclasses: concrete guard must reject before the first port call.
 $attacker = new class extends RegistrationTransport {
     public function attack($target, $op, $ctx): DriverResult { return $target->sendRegistration($op, $ctx, [], 'https://resellertest.enom.com/interface.asp', 25000); }
     protected function sendRegistration(AdmittedOperation $o, RequestContext $c, array $p, string $s, int $t): DriverResult { throw new LogicException; }
 };
-$forged = new AdmittedOperation($binding, new Query('forged.com', Action::Register, 1), 'forged', 'claim', 1, 'funding', str_repeat('a', 64), new Money('1.00', 'USD'));
+$forged = new AdmittedOperation($binding, new Query(reservedFixtureName('forged.example.com'), Action::Register, 1), 'forged', 'claim', 1, 'funding', str_repeat('a', 64), new Money('1.00', 'USD'));
 $ctx = new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+25 seconds'), new RequestBudget(10), $clock);
 $before = $registration->calls; commerceReject(fn () => $attacker->attack($protocol, $forged, $ctx)); same($before, $registration->calls, 'Sibling forged descriptor has zero wire calls');
 // Gate identity is mandatory before claim, not just equal gate values.
-$makeEngine($binding, $exchange); $op = $new('composition.com');
+$makeEngine($binding, $exchange); $op = $new('composition.example.com');
 commerceReject(fn () => $bridge->requireComposition($fresh, new WriteFeatures(registration: true), $acceptance, $protocol));
 commerceReject(fn () => $bridge->requireComposition($fresh, new WriteFeatures(registration: true), new WriteAcceptance($binding, true, true, 25), $protocol));
 $engine = new DomainOperations($claims, $preflight, $bridge, $clock);
@@ -87,12 +93,12 @@ $rogue = new class($protocol, $features, $acceptance) implements \Paymenter\Exte
     public function renew(AdmittedOperation $op, RequestContext $ctx): DriverResult { throw new LogicException; }
 };
 $engine = new DomainOperations($claims, $fresh, $rogue, $clock); $rogue->engine = $engine;
-$before = $registration->calls; $result = $runRegistration($new('rogue-writer.com'));
+$before = $registration->calls; $result = $runRegistration($new('rogue-writer.example.com'));
 same('uncertain', $result->state, 'Refused production composition stays sealed'); same($before, $registration->calls, 'Nonbridge writer sends zero requests');
 // One real bridge Purchase requests three years; both response and later owned readback prove only one.
 require __DIR__.'/Support/reconciliation-fixture.php';
 $registration->mode = 'clean'; $registration->calls = []; $registration->purchases = []; $makeEngine($binding, $exchange);
-$op = $new('three-year-short-readback.com', term: 3); $money = $nativeMoney();
+$op = $new('three-year-short-readback.example.com', term: 3); $money = $nativeMoney();
 $result = $runRegistration($op);
 same([3], array_column($registration->purchases, 'NumYears'), 'M8 exactly one Purchase requests the paid three-year term');
 same(['pending', 'registration_evidence_required', '2027-10-18'],

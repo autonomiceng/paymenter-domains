@@ -14,4 +14,12 @@ foreach (['rate-queued.com', 'other.com', 'example-sealed.com', 'timestamp-bound
     try { reservedFixtureName($name); } catch (InvalidArgumentException) { $rejected = true; }
     expect($rejected, 'Fixture policy must reject '.$name);
 }
+foreach (['transfer-placeholder.com', 'late-page-placeholder-2.com'] as $name) {
+    same($name, placeholderComFixtureName($name), 'Single-label .com placeholder is preserved');
+}
+foreach (['ordinary.com', 'example.com', 'two.labels-placeholder.com', 'not-placeholder.test'] as $name) {
+    $rejected = false;
+    try { placeholderComFixtureName($name); } catch (InvalidArgumentException) { $rejected = true; }
+    expect($rejected, 'Placeholder .com fixture policy must reject '.$name);
+}
 echo "Explicit synthetic fixture policy passed; no domain availability lookup.\n";
