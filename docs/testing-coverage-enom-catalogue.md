@@ -60,3 +60,9 @@ reinstalls, then verifies retained raw data and the TEST offer in a new process.
 `tests/test_installed_package_previous.py` retains the previous-commit database
 upgrade check. Offline fixtures establish neither actual provider behaviour nor
 shared-database concurrency or permission to place credentials and run real reads.
+
+A real Enom TEST GetTLDList (2026-10-22) listed 620 nested `<tld><tld>x</tld></tld>`
+entries, 22 of them IDN (`xn--`) or numeric endings the catalogue cannot sell. One
+such entry used to void the whole list, so import refused with com present.
+`tests/enom-protocol-test.php` now feeds that shape with mixed unsupported entries and
+asserts they are skipped; a list with no supported ending still stays unavailable.
