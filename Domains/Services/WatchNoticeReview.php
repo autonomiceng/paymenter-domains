@@ -37,7 +37,7 @@ final class WatchNoticeReview
                 WatchAudit::create(['after_revision'=>hash('sha256',(string)$now),'subject_type'=>'notice_delivery','subject_id'=>$id,'user_id'=>$d->user_id,'actor_id'=>$actor->id,'event'=>'notice_resend','reason'=>trim($reason),
                     'data'=>['key'=>$key,'channel'=>$d->channel,'native_id'=>$nativeId,'prior_state'=>$d->state],'created_at'=>gmdate('Y-m-d H:i:s',$now)]);
             }
-            return ['notice'=>$n->id,'channel'=>$d->channel,'id'=>$id,'actor'=>(int)$actor->id,'reason'=>trim($reason),'key'=>$key];
+            return ['notice'=>$n->id,'channel'=>$d->channel,'id'=>$id,'actor'=>(int)$actor->id,'key'=>$key];
         });
         return $delivery->reserve($r['notice'],$r['channel'],$now,$r);
     }

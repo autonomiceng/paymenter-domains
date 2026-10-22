@@ -73,7 +73,7 @@ final class WatchNoticeDelivery
             }
             return DB::table('domains_watch_deliveries')->insertGetId(['notice_id'=>$n->id,'user_id'=>$n->user_id,'channel'=>$channel,'delivery_key'=>$key,
                 'template_key'=>'domains_watch_'.$n->kind,'state'=>$on?'reserved':'suppressed','reserved_at'=>$now,'safe_code'=>$on?null:'preference_off',
-                'resend_of'=>$resend['id']??null,'actor_id'=>$resend['actor']??null,'reason'=>$resend['reason']??null]);
+                'resend_of'=>$resend['id']??null,'actor_id'=>$resend['actor']??null]);
         });
     }
     public function handoff(int $id,int $now): bool
