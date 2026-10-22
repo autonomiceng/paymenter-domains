@@ -42,3 +42,4 @@ upgrade, not installed ZIP upgrades. This SQLite scenario adds no MariaDB claim,
 provider calls, concurrent locking or production deployment acceptance.
 
 `conversion-test.php` checks the gate before journal creation, refuses incomplete conversion, then verifies that repeated completed checks make no database queries.
+Conversion checks compile the journal definition with the offline MySQL grammar, retain a summary over 64 KB across repeated installs, read bare systemd template definitions with `cat`, and require concrete stopped instances before state inspection. SQLite cannot distinguish MySQL TEXT from LONGTEXT.

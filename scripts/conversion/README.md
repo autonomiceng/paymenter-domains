@@ -14,10 +14,13 @@ if the neutral migrations have not run. Schema DDL is not transactional: verify 
 and migration records before proceeding; restore/review a partial foundation installation.
 All native tables changed by cutover must be InnoDB on MySQL/MariaDB; SQLite fixture transactions are supported. Foreign journal runs or orphan maps refuse.
 The converter's own journal DDL and row staging explicitly support interruption/resume.
+The journal summary requires LONGTEXT on MySQL/MariaDB. An existing TEXT summary refuses
+schema verification; retained journal tables are never altered automatically. Restore/review
+the staged installation before continuing.
 
 For the default dedicated profile, `--units` has exactly these ordered keys: `checkout`, `schedulers`, `workers`, `dispatch`.
 Each value is a nonempty list of the actual dedicated service/timer/socket/path names for that role.
-Every listed unit must be masked and inactive. Include all user@ manager templates/instances and all PHP/web services plus activating sockets/paths and timer links. User systemd managers must be inactive and masked; any active user manager refuses. Maintenance mode must be active, cron absent,
+Every listed unit must be masked and inactive. List concrete instances such as `user@1000.service`, never bare templates such as `user@.service`. Include all user manager instances and all PHP/web services plus activating sockets/paths and timer links. User systemd managers must be inactive and masked; any active user manager refuses. Maintenance mode must be active, cron absent,
 and all application/web processes stopped. Cron/anacron/run-parts activation units must also be inactive and masked. All standard system and all-user cron spools
 and periodic hourly/daily/weekly/monthly directories must be readable and empty; effective systemd definitions (including drop-ins, instances, aliases and trigger links) are inspected; inaccessible inventories refuse. Include every entry point in the host inventory;
 shared PHP pools, external schedulers or inaccessible inventories are unsupported. Registrar

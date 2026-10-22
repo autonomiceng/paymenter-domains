@@ -10,7 +10,7 @@ final class Journal
 {
     private static function definitions(): array
     {
-        return ['domains_conversion_runs'=>static function(Blueprint $t):void {$t->id();$t->string('source_digest',64);$t->string('plan_digest',64);$t->string('state',24);$t->text('summary');$t->longText('audit');$t->string('result_digest',64)->nullable();},
+        return ['domains_conversion_runs'=>static function(Blueprint $t):void {$t->id();$t->string('source_digest',64);$t->string('plan_digest',64);$t->string('state',24);$t->longText('summary');$t->longText('audit');$t->string('result_digest',64)->nullable();},
             'domains_conversion_map'=>static function(Blueprint $t):void {$t->id();$t->string('target_table',64);$t->unsignedBigInteger('source_id');$t->unsignedBigInteger('target_id');$t->longText('body');$t->string('digest',64);$t->unique(['target_table','source_id']);}];
     }
     public static function install(): void
