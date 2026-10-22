@@ -12,6 +12,7 @@ final class RequestFacts
         $out = ['reason'=>$op->safe_code===null ? null : Labels::reason($op->safe_code), 'refund'=>'Customer credit: not assessed'];
         try {
             $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
+            if (array_key_exists('auto_pay',$f)) { $out['auto_pay']=Labels::autoPay($f['auto_pay_result']??$f['auto_pay']); }
             if ($op->state==='held' && $op->safe_code==='transfer_setup_review_required' && ($op->attempt??[])===[] && OperationActions::transferCutoff($op)) {
                 try {
                     \Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($op,$op->domain);
@@ -85,7 +86,7 @@ final class RequestFacts
         $grants ??= Staff::requireView();
         $facts=self::for($op,$grants,$domain);
         return [...array_values(array_filter(array_map(fn($key)=>$facts[$key]??null,
-            ['cutoff','outcome','admission','auto_renew','registrar_refund','refund','correction','cost','metadata','audit']),fn($line)=>$line!==null)),
+            ['cutoff','outcome','admission','auto_pay','auto_renew','registrar_refund','refund','correction','cost','metadata','audit']),fn($line)=>$line!==null)),
             ...StaffReviewHistory::for($op,$grants,$detail)];
     }
     private static function count(mixed $items): string { return is_array($items) ? (string)count($items) : 'Unknown'; }

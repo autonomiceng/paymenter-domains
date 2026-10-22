@@ -150,6 +150,12 @@ class Operation extends Model
                     throw new \DomainException('Claim funding evidence is frozen.');
                 }
             }
+            foreach (['auto_pay', 'auto_pay_result'] as $key) {
+                $before = $operation->getOriginal('funding') ?? []; $after = $operation->funding ?? [];
+                if (array_key_exists($key, $before) && (!array_key_exists($key, $after) || $after[$key] !== $before[$key])) {
+                    throw new \DomainException('Auto Pay evidence is write-once.');
+                }
+            }
             $history = $operation->getOriginal('funding')['financial_adjustments'] ?? [];
             $next = $operation->funding['financial_adjustments'] ?? [];
             if (!is_array($history) || !array_is_list($history) || !is_array($next) || !array_is_list($next)

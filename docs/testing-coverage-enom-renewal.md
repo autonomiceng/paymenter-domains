@@ -75,3 +75,23 @@ all captured read commands, pinning ownership, contact roles, nullable flags,
 expiry, grouped available balance, catalogue capabilities, Check v2 and DNS shapes.
 The captured WPPS dollar price is normalized only in the privacy reader; malformed
 amounts stay unknown. Empty expired inventory never proves subject eligibility.
+
+## 2026-10-22 — Scheduled renewal Auto Pay
+
+`renewal-autopay-test.php` uses a synthetic saved-method gateway through native
+`ExtensionHelper::charge`: committed once-only attempts, scheduler/existing-invoice
+re-fetches, manual-invoice exclusion, full-credit settlement, insufficient-credit
+retention, current partial-payment remainder, thrown charges/customer notification,
+interrupted outcome persistence, immutable audit evidence and staff result facts.
+It refuses missing/foreign agreements, missing/disabled gateways, changed methods,
+cancelled services, pending cancellation, Renewal Off, currency drift and settled debt.
+`renewal-autopay-admission-test.php` proves automatic and interactive native payment
+reach the same paid-invoice funding and synthetic registrar admission state.
+`renewal-autopay-adopted-test.php` retains a committed adopted Renewal Off intent
+with a saved method and proves no new debt or charge. Existing renewal/refund/staff
+release suites cover retained collection audit through those paths.
+
+Collection evidence is not a registrar attempt or payment grant. An uncertain charge
+is never retried automatically; native invoice transactions remain the funding proof.
+These offline SQLite fixtures establish sequential/interleaved behavior, not real
+gateway delivery, SMTP delivery or paired shared-database concurrency.
