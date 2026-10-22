@@ -55,7 +55,7 @@ final class DomainBilling
             $invoice = new Invoice(['user_id' => $d->user_id, 'currency_code' => 'USD', 'status' => Invoice::STATUS_PENDING, 'due_at' => $calendar['due']]);
             $invoice->send_create_email = false; $invoice->save();
             $item = $invoice->items()->create(['reference_type' => null, 'reference_id' => null, 'quantity' => 1, 'price' => $amount,
-                'description' => 'Renew '.$d->domain.' ('.$years.' '.($years === 1 ? 'year' : 'years').')']);
+                'description' => InvoiceDescription::renewal($d->domain, $d->provider_expires_at, $years)]);
             $rate = $l['prices']->where('term', 1)->where('currency', 'USD')->where('account_fingerprint', $d->account_fingerprint)->first();
             $cap = $rate?->wholesale !== null ? ['amount' => PricingRule::decimal(PricingRule::units(PriceCatalogue::cost($rate->wholesale)) * $years, 4), 'currency' => 'USD'] : null;
             Operation::create(['domain_id' => $d->id, 'service_id' => $s->id, 'server_id' => $d->server_id,

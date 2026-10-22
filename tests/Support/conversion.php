@@ -1,7 +1,7 @@
 <?php
 // Exact source declarations and synthetic native rows only. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require dirname(__DIR__).'/native-app.php';
+require defined('CONVERSION_NATIVE_BOOTSTRAP')?CONVERSION_NATIVE_BOOTSTRAP:dirname(__DIR__).'/native-app.php';
 require __DIR__.'/commerce.php';
 require __DIR__.'/staff-panel.php';
 $loader->addPsr4('Paymenter\\Extensions\\Servers\\Domains\\',dirname(__DIR__,2).'/Domains/',true);
@@ -11,7 +11,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{Installation,ReminderTemplate
 use DomainsConversion\{Inputs,SourceSchema,Planner,Mapper,Journal,Converter,Host};
 foreach(['Inputs','SourceSchema','Planner','Mapper','Journal','Host','Converter']as$class){require dirname(__DIR__,2).'/scripts/conversion/'.$class.'.php';}
 Inputs::revision(defined('CONVERSION_SOURCE_REVISION')?CONVERSION_SOURCE_REVISION:Inputs::REVISION);
-Converter::stageSchema();SourceSchema::verify(true);SourceSchema::verify();
+if(!defined('CONVERSION_DEFER_STAGE')){Converter::stageSchema();}
+if(!defined('CONVERSION_SOURCE_MIGRATED')){SourceSchema::verify(true);}SourceSchema::verify();
 config(['queue.default'=>'database','queue.connections.database'=>['driver'=>'database','connection'=>DB::getDefaultConnection(),'table'=>'jobs']]);
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
 $category=Category::create(['name'=>'Domains','slug'=>'domains']);

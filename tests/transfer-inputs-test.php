@@ -34,6 +34,7 @@ $post = static function ($actor, mixed $code, string $method='POST', bool $query
 $unrelated=$new('transfer-unrelated.com',false);
 App\Models\ServiceCancellation::create(['service_id'=>$unrelated->service_id,'type'=>'end_of_period','reason'=>'Unrelated service']);
 $op=$new('transfer-input.com'); $inputs->paymentAccepted($op->id);
+same('Transfer transfer-input.com: adds 1 year to the current expiry', App\Models\InvoiceItem::findOrFail($op->invoice_item_id)->description, 'Transfer promises an added year without guessing an unknown expiry');
 $paid=$op->fresh()->policy['paid_at']; same('awaiting_code',$op->fresh()->state,'Paid code missing');
 $inputs->paymentAccepted($op->id); same($paid,$op->fresh()->policy['paid_at'],'Payment replay preserves cutoff');
 foreach(['',str_repeat('x',513),"bad\nvalue",[1],"bad\x7fvalue"] as $invalid){commerceReject(fn()=>$inputs->submitCode($post($user,$invalid),$op->id));}

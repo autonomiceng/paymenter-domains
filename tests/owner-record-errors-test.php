@@ -40,7 +40,8 @@ foreach(['dns'=>['records'=>[['name'=>'bad host','type'=>'A','address'=>'secret-
 
 }
 foreach ([['records'=>[]],['records'=>[null]],['records'=>[['name'=>'@','type'=>'A','address'=>'8.8.8.8']],'preimage_digest'=>'bad']] as $index=>$payload) {
-    $r=$post('dns',$payload+['preimage_digest'=>str_repeat('a',64)]);$response=$controller->manage($r,$d->id,'dns');same(422,$response->getStatusCode(),'List error is a direct retry');
+    // JSON represents null rows and empty arrays that form encoding cannot express.
+    $r=$post('dns',$payload+['preimage_digest'=>str_repeat('a',64)],true);$response=$controller->manage($r,$d->id,'dns');same(422,$response->getStatusCode(),'List error is a direct retry');
     expect(str_contains($response->getContent(),['Keep between 1 and 50 records.','Check record 1. These values don’t work together.','We couldn’t save this change. Reload the page and try again.'][$index]),'Cause-specific list error is visible');
 }
 foreach (['dns'=>['name'=>'@','type'=>'A','address'=>'8.8.8.8'],'srv'=>['service'=>'sip','protocol'=>'tcp','priority'=>0,'weight'=>0,'port'=>443,'target'=>'sip.example.com.']] as $action=>$row) {

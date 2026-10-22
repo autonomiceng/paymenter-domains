@@ -2,6 +2,7 @@
 // Synthetic native owner intent regressions; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/owned.php';
+require_once __DIR__.'/Support/raw-input.php';
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{DB, Cache};
 use Paymenter\Extensions\Servers\Domains\Http\{FormKeys};
@@ -12,12 +13,13 @@ $setup=new OwnerSetup($clock,$ports); $management=new DomainManagement($bindings
 $action=new OwnerActionController($owners,$setup,$inputs,$management,$ports);
 $session=app('request')->session();$other=commerceUser();
 $req=static function($d,string $intent,array $data=[], $actor=null)use($user,$session):Request {
-    $r=Request::create('/domains/'.$d->id,'POST',$data);$r->setUserResolver(fn()=>$actor??$user);$r->setLaravelSession($session);
+    $r=Request::create('/domains/'.$d->id,'POST',$data,[],[],['CONTENT_TYPE'=>'application/x-www-form-urlencoded'],http_build_query($data,'','&',PHP_QUERY_RFC1738));
+    if($intent==='code'){nativeNormalizeInput($r);}$r->setUserResolver(fn()=>$actor??$user);$r->setLaravelSession($session);
     $r->request->set('_request_key',FormKeys::issue($r,'owner:'.$d->id.':'.$intent));return $r;
 };
 $replay=static function($call):void {try{$call();expect(false,'Replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Replay needs a fresh intent');}};
 foreach([0,1]as$i){
-    $op=$newTransfer('owner-code-'.$i.'.com',$i,true,false);$d=$op->domain;$exact='  Synthetic:Case-Sensitive  ';
+    $op=$newTransfer('owner-code-'.$i.'.com',$i,true,false);$d=$op->domain;$exact='  Synthetic:Case-Sensitive + % é雪  ';
     foreach(['',"bad\nvalue",str_repeat('x',513),['private']]as$bad){
         $r=$req($d,'code',['transfer_code'=>$bad]);$action->code($r,$d->id);
         expect(!$r->request->has('transfer_code'),'Even malformed code is scrubbed');expect(!$session->has('_old_input.transfer_code'),'Code is never flashed');
@@ -42,6 +44,14 @@ foreach([0,1]as$i){
     $clock->instant=$now->modify('+30 days');$dto=$owners->present($d->fresh());expect(!$dto->transfer['open'],'Exact UTC cutoff closes entry');
     $r=$req($d,'code',['transfer_code'=>'late']);$action->code($r,$d->id);same('replacement',$op->fresh()->payload['epp'],'POST enforces same exact cutoff');$clock->instant=$now;
 }
+// JSON reaches the same owned boundary with the same form key and secret scrubbing.
+$jsonOp=$newTransfer('owner-json-code.com',0,true,false);$exactJson='  + % é雪  ';
+$base=$req($jsonOp->domain,'code');$data=['transfer_code'=>$exactJson,'_request_key'=>$base->input('_request_key')];
+$r=Request::create('/domains/'.$jsonOp->domain_id.'/transfer-code','POST',[],[],[],['CONTENT_TYPE'=>'application/json'],json_encode($data,JSON_THROW_ON_ERROR));
+$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
+nativeNormalizeInput($r);
+$action->code($r,$jsonOp->domain_id);same($exactJson,$jsonOp->fresh()->payload['epp'],'JSON code persists exact decoded bytes');
+expect(!$r->json()->has('transfer_code')&&!$r->request->has('transfer_code'),'JSON and form input bags are scrubbed');
 foreach([0,1]as$i){
     $newTransfer('owner-register-route-'.$i.'.com',$i,false,false); // choose the account through native seller policy
     $cart=commerceCart($user);commerceAdd($cart,$native->product($tlds[$i],'register'),'owner-register-'.$i.'.com');commerceCheckout($user,$cart);
@@ -76,11 +86,9 @@ $cutoff=$newTransfer('owner-cutoff-setup.com',1,true,false);$clock->instant=$now
 expect(!isset($owners->present($cutoff->domain)->actions['setup']),'Virgin setup is absent at the exact paid cutoff');$clock->instant=$now;
 // Exercise the real global trimming middleware, including native whitespace conversion.
 $r=Request::create('/','POST',['transfer_code'=>'  keep  ','other'=>'  trim  ']);
-(new Illuminate\Foundation\Http\Middleware\TrimStrings)->handle($r,fn($v)=>response('ok'));
-same('  keep  ',$r->request->get('transfer_code'),'Dormant route definition excludes EPP trimming');
-$trim=new class extends Illuminate\Foundation\Http\Middleware\TrimStrings { public function one($key,$value){return $this->transform($key,$value);} };
-same('  keep  ',$trim->one('transfer_code','  keep  '),'Native trim exclusion applies to exact code bytes');
-same('trim',$trim->one('other','  trim  '),'Other native input transformations unchanged');
+nativeNormalizeInput($r);
+same('keep',$r->request->get('transfer_code'),'Unrelated core route transfer_code is trimmed again');
+same('trim',$r->request->get('other'),'Other native input transformations unchanged');
 foreach(['setup-save','contacts-save','code-save','manage']as$name){$route=Illuminate\Support\Facades\Route::getRoutes()->getByName('domains.domains.'.$name);
     expect(in_array('web',$route->gatherMiddleware(),true),'Native CSRF group retained');expect((bool)array_filter($route->gatherMiddleware(),fn($m)=>str_starts_with($m,'throttle:')),'POST throttled');}
 require __DIR__.'/Support/committed-code-pages.php';

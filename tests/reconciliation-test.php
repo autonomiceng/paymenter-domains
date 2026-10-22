@@ -2,7 +2,8 @@
 // Enom 444f31c reconciliation-registration/provider-disposition/automatic-refresh; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/reconciliation-fixture.php';
-use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
+use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, Disposition, DriverResult, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, ResultReason, SendState};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances, ReconciliationEvidence};
 // A sealed unknown attempt is otherwise eligible; current native funding must refuse before any read.
 foreach (['pending', 'paid'] as $invoiceStatus) {
@@ -63,6 +64,26 @@ foreach (['late', 'absent', 'null'] as $mode) {
             'M10 reconcile retains the recovered key, charge, expiry, anchor and native finance');
     }
 }
+// Captured acceptance can retain execution facts without an order reference; history must still run.
+[$op, $binding] = $prepare('example-history.com', 'absent');
+$op = $claims->finish($op, new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
+    new Evidence(registration: new RegistrationEvidence(\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op, $op->domain),
+        null, new DateEvidence('2027-10-18', ExpiryPrecision::Date, 'synthetic_purchase'), null, []))));
+HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 0, 86400, 'enom_registration_v1'));
+$clock->instant = new DateTimeImmutable('2026-10-18T12:06:01Z');
+$attempt = ReconciliationEvidence::attempt($op, $op->domain, $binding);
+expect($attempt->executionFacts !== null, 'Null-reference acceptance retains execution facts');
+same(null, $attempt->providerReference, 'Null-reference acceptance has no captured order ID');
+same(null, $op->attempt['evidence']['registration']['orderReference'], 'Registration evidence retained the null reference');
+expect($attempt->historyAcceptance?->covers($attempt, $clock->now()), 'Saved history acceptance covers null-reference execution');
+$money = $nativeMoney(); $writes = $writer->calls;
+$result = $reconcile->run($op->id);
+same('succeeded', $result->state, 'History completes accepted execution without a captured order reference');
+expect(in_array(ReadCommand::Orders, $observation->calls, true), 'Null-reference execution reads Enom history');
+same('accepted_history', $result->attempt['reconciliation']['source'], 'Completion uses accepted history rather than captured order');
+same('9001', $result->provider_order_id, 'Unique history supplies the missing order reference');
+same($writes, $writer->calls, 'Null-reference history recovery never replays a write');
+same($money, $nativeMoney(), 'Null-reference history recovery preserves native finance');
 [$op] = $prepare('timestamp-boundary.com');
 $beforeUpdate = Illuminate\Support\Carbon::parse($op->getRawOriginal('updated_at'));
 // Eloquent samples time for the model, then again for the UPDATE when the first

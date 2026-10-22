@@ -23,7 +23,8 @@ final readonly class RegistrationPreflight implements SealPreflight
         if (!is_bool($privacy)) { throw new WriteHeld('write_acceptance_required'); }
         if ($context->binding->registrarKey === 'enom') {
             if ($privacy) { throw new WriteHeld('write_acceptance_required'); }
-            \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers($servers);
+            try { \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers($servers); }
+            catch (\InvalidArgumentException) { throw new WriteHeld('nameservers_required'); }
         } else {
             try { \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::register($query->name, $query->years, $privacy, '1', $servers); }
             catch (\InvalidArgumentException) { throw new WriteHeld('nameservers_required'); }

@@ -562,3 +562,93 @@ recovery in `Support/late-contact-matrix.php` commits and explicitly retains the
 without adding queued jobs. Synthetic clocks and SQLite do not establish production lock latency.
 
 Operation clock regressions cover elapsed fall-back boundaries and native datetime round trips. Operation rate regressions cover unchanged preclaim states, the durable 60-second retry, one eventual send and staff release of disabled writes.
+
+
+## Opt-in MariaDB conversion rehearsal
+
+The required suites always omit `mariadb`. Run it explicitly through the local suite limiter:
+set `TMPDIR` to a private scratch root, `PAYMENTER_TEST_APP` to the pristine pinned 1.5.9
+checkout, `CONVERSION_ENOM_CHECKOUT` to a local checkout containing both accepted Git
+revisions, and `CONVERSION_MARIADB_PHP` to a supported host PHP with `pdo_mysql`; then run
+`python3 scripts/test.py --suite mariadb`. No installed application or provider is used.
+Docker or the existing `mariadb:11.4.5` image being absent produces a clear skip receipt;
+there is no image pull. A skip exits 77, records incomplete acceptance in both receipts,
+and is never MariaDB evidence. Docker context/environment variables are forwarded only for
+this explicit suite. Acceptance requires two completed pin runs and no skipped status. A pre-existing dedicated container name refuses rather than being
+reused or stopped. The harness owns only `dom-c41r-mariadb`, with no network, published ports
+or persistent volumes, and stops it after success or failure.
+
+Each exact source revision runs actual native and source migrations, purchased/pending,
+payable/history refusals and queue audit scenarios, actual app-profile schema/dry/apply
+commands with real quiet windows, financial/encrypted/reminder readback and database/files
+restore. Its private receipt records command elapsed times, full re-inspections, image ID,
+source revisions, SQL invariants and unchanged pristine dependency. This proves sequential
+conversion on the pinned MariaDB image; it grants no production cutover, concurrent-lock,
+provider or distributed scheduling acceptance. Linux user, mount, PID and network namespaces
+plus a native inspectable crontab command are required. The fixture mounts an empty private
+cron spool inside its own mount namespace and inventories its own isolated processes; no host
+cron spool is changed. This proves the disposable CLI only, not shared-host process/cron readiness. The converter runbook contains host prerequisites.
+
+After an ungraceful crash, use the private `container.json` Docker endpoint and inspect only
+`dom-c41r-mariadb`; stop its immutable ID only when its `domains-conversion-rehearsal` label
+matches that file, otherwise leave it alone. Never clean up by name alone.
+`registration-nameservers-test.php` exercises both registrars through the real registration
+preflight and native claim/finish path with a synthetic writer, independently of the bridge's
+earlier owner-setup guard. Empty hosts, excessive counts and invalid hostname labels hold
+unsealed as `nameservers_required`, with zero reads/writes and a specific staff label. Enom
+privacy refusal keeps precedence; valid inputs still seal and reach the synthetic writer.
+The existing registration protocol suites cover valid purchases and follow-up readback.
+Claimed nameserver holds also retain definitely-unsent rejection and exact once-only account credit;
+unknown execution evidence still blocks both recovery proofs. Both registrars exercise staff
+refund and terminal-rejection recovery paths.
+
+Registration reconciliation covers captured execution with a null order reference: a saved,
+covering history acceptance permits Enom history reads and unique completion without replay.
+Terminal-proof checks assert held/sealed/expired lifecycle reasons before exercising refusal
+and re-read persisted reservations afterwards. Their example placeholders use the operation
+fixture's sole published suffix, `.com` (`Support/commerce.php`).
+
+## Paymenter upgrade re-review
+
+`tests/data/paymenter-upgrade-hashes.json` records exact approved core/vendor bytes by
+Paymenter version and names each dependent Domains contract. The native suite runs
+`tests/paymenter-upgrade-tripwire-test.php`; optional checkout and version arguments
+inspect a copied candidate directly, before the pristine fixture guard accepts it.
+Changed/missing dependencies and added PHP writers under native ServerResource,
+ServiceResource and invoice services fail with a named dependent-file/re-review list.
+The two explicit `config/app.php` hashes cover upstream's development marker and the
+fixture's exact 1.5.9 release substitution; no other normalization is performed.
+
+For a candidate, retain the old version's manifest, inspect upstream diffs for every
+reported path and newly added writer, and document the decision for each affected
+contract. Re-run native behavior, install/retention, secrecy, mixed invoice/funding,
+renewal and raw-input tests against that candidate. Only then add a separately reviewed
+version entry and its immutable hashes: **never bulk-refresh hashes to turn CI green**.
+Matching hashes are containment evidence, not permission for global infrastructure
+replacement or proof of provider, production database, theme or deployment acceptance.
+
+These fingerprints and the checker are test-only; the extension never loads them.
+They fail suite/CI qualification against the installed Paymenter tree, and impose no
+runtime version check, enablement refusal, dispatch refusal or staff banner.
+
+
+Owned transfer-code and DNS/SRV handlers decode the raw POST body with `Http/RawPost`.
+The shipping Blade forms (`resources/views/partials/transfer-code.blade.php` and
+`resources/views/partials/owner-{dns,srv}.blade.php`) use ordinary POST forms with
+no enctype override or JavaScript submission: browsers send form-urlencoded bodies.
+JSON object bodies are also decoded explicitly; JSON form keys use Laravel's normal
+input API. Neither parser takes byte-sensitive fields from query parameters or falls
+back to transformed input bags. Multipart bodies, malformed JSON, oversized bodies and
+form input that would exceed PHP's field limit are refused. No global TrimStrings
+exceptions remain. Native tests run trimming and empty-string conversion before the
+owned handler, check exact encrypted transfer/TXT bytes and safe SRV rejection, and
+prove an unrelated core route's `transfer_code` is trimmed. Routes retain web CSRF,
+authentication, verified-email, throttle and session-blocking boundaries.
+
+Invoice description cases in `Support/invoice-descriptions.php` run through `invoice-binding-test.php`.
+They cover all four charges, multi-year and leap-day ranges, Unicode display and middle truncation
+at the native 255-character limit; dates and qualifiers always survive. Native binding, renewal
+billing and paid privacy tests check issued text stays frozen when registrar expiry changes.
+`invoice-lines-render.php` exports synthetic formatter examples for wording review, not installed
+invoice/theme acceptance. Privacy purchase dates are expected from invoice day; privacy renewal
+uses its own frozen subscription expiry, independently of the domain's term.

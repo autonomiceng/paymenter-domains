@@ -1,0 +1,248 @@
+{
+  "1.5.9": {
+    "upstream_commit": "ee729f7d99ac18942625b79f3f93d8d8b21255e8",
+    "contracts": {
+      "checkout": {
+        "consumers": [
+          "Domains/Services/CartAdmission.php",
+          "Domains/Services/InvoiceBinding.php"
+        ],
+        "review": "Re-review outer transaction, ordered locks, event payloads, prices and atomic mixed-cart rollback.",
+        "files": {
+          "app/Classes/Cart.php": "b6ee7562fd6e8bd79c6521356e04af92204cd682fd9627a502205e6de10529d8",
+          "app/Events/CartItem/Created.php": "8630b3b609a74bd7087a0c40f603894abeba944adfb4a312af94fa7ca151da06",
+          "app/Events/CartItem/Creating.php": "a52e93b736798e5af56264cd4952b0b7df8ac7efa7340b3537282a6784ede772",
+          "app/Events/CartItem/Deleted.php": "a4f85f32eed434000e658d16902841d2fdf00aa72205c990c0c3ca12b16d595c",
+          "app/Events/CartItem/Deleting.php": "d13e7218f3bc46d8fc945bacd69cd7938d0653edc4b8d06855b132206130086c",
+          "app/Events/CartItem/Updated.php": "9b062655d57a37091fde48424d466986735bbfcc1934c9f1e8c8edcf6bd51601",
+          "app/Events/CartItem/Updating.php": "9803fc172128d04d7c3970e0142195683d06d1bcc9220ec241b1557f6f1c2790",
+          "app/Events/Order/Created.php": "347e81364c7e7047c1fe0037ba349aa4909ecae635380c96ae747b28a5e80f7d",
+          "app/Events/Order/Creating.php": "cee8a4ca42dbf83a5408728e75ac3deb3eb320b3997d87bb5e8eba4a6b7860b8",
+          "app/Events/Order/Deleted.php": "d6304786d4965c8d6840c84c9b3862bb07b90675bbf953182fea804bd4b100a6",
+          "app/Events/Order/Finalized.php": "e3fe0a3568ca58218dd4aaa3555768495b018a24b8ada4908963a6534379d6f9",
+          "app/Events/Order/Updated.php": "526eafd66170b32bc5b47ec0ee7fe65b842bebc147ba265fbed993525f73faab",
+          "app/Events/Order/Updating.php": "c5545e09b076400472910472ad20138c3474166bbddd80f9ba5496a36aafd4a8",
+          "app/Livewire/Cart.php": "6be675f74f0a346ef7c912e3b80e98f69b676c1d6ff0325433ea311f7704636d",
+          "app/Livewire/Products/Checkout.php": "d9aedc220f8c6077ce7f334a886fe00ca89bc655027d43fcb1daa62413d98561",
+          "app/Models/Cart.php": "c0744d25a229e36a4af9a94bd861afeec7f08812fb5e98fc82759ce0e8ff8c36",
+          "app/Models/CartItem.php": "5257be08fdd7ebddf581ea36c9239a6fbd5689a423a2ed12042a2a966aa803f1",
+          "app/Models/Coupon.php": "860ed93bd6a3739ba3954959d96f638ed0f9a80aa252372ec5b9827c87ed5c0e",
+          "app/Models/CouponProduct.php": "9d3e8b603ac2b802ddd658dce4747b09b2e900b98a55c722afb33308896d5e73",
+          "app/Models/Order.php": "bf84e020f4ec611cf8c2a4645297e9ba8ddc145546f6fe9149c6a593253fcc33",
+          "app/Observers/CartItemObserver.php": "80c4bb31c6fc702da35f18571e5fd11724934d2e71d247e809c008b8894a776d",
+          "app/Observers/CartObserver.php": "3f6a715f6e087d443cd9d90b6002766f3d30ca4ebe9c39e3536925f1bd1ab6bc",
+          "app/Observers/OrderObserver.php": "bd94fee32d8e031140e00a661d81d89611ca9fca975356525160de083177fe7a"
+        }
+      },
+      "funding-renewal": {
+        "consumers": [
+          "Domains/Services/NativeDomainGuard.php",
+          "Domains/Services/ManagedPaidInvoice.php",
+          "Domains/Services/InvoiceFunding.php",
+          "Domains/Services/HoldingLocks.php",
+          "Domains/Services/DomainBilling.php",
+          "Domains/Services/Refunds.php"
+        ],
+        "review": "Re-review paid-after-commit timing, signed full-invoice funding, native renewal bypass, credit/refund once and null expiry.",
+        "files": {
+          "app/Classes/Price.php": "54daeefa22976856f27f715993124d50ea001645e09530ce99788b5f890e1528",
+          "app/Classes/Settings.php": "a16805568210ed23663565c5d3a80b3ddeb69c0b4a3e2e64f22106249e095119",
+          "app/Enums/InvoiceTransactionStatus.php": "693afc50a46515c261535833a167640c10342fa353eafd1d5b19be28fcdafad8",
+          "app/Events/Invoice/Created.php": "101bd935f5d4a553b8940484b2165576d399f9050b0d4f090f527021d99141b2",
+          "app/Events/Invoice/Creating.php": "2fecf3643ca7c523f0ee01626e22c06f6d6869986cdc5d9b57ce77bd236cf8f1",
+          "app/Events/Invoice/Deleted.php": "3b687cddf86878340171373c486ec5d2693622d1a00671343804b2d56e57d242",
+          "app/Events/Invoice/Finalized.php": "8a0c3c9e9bf31df7efabcffc7ab874f15abf50c59f62ea98b3b8e386845c832e",
+          "app/Events/Invoice/GeneratePdf.php": "2fdfdf7f5762f435bbd367461abdd3bc02be932831ab1facda77378ef8d97307",
+          "app/Events/Invoice/Paid.php": "72a22528a1af5a3367df815ebefbc0b7d184372bc10d387f2e1a5467e93e3644",
+          "app/Events/Invoice/Updated.php": "35d582f240d61f744aee6276cc0555230c7428eb12682e42e2a383b0dada837f",
+          "app/Events/Invoice/Updating.php": "671b5dbc490cfd765d09af3f808001da5ac298711271abea272170955048a897",
+          "app/Events/InvoiceItem/Created.php": "ff595b4aad7b5199face60e01a1b0713d4de9e59d2f203ee6ed3c01ddda2cc9e",
+          "app/Events/InvoiceItem/Creating.php": "1662ae6ef30003e11b7581eecce320fc4e1a879d9c724a25a10dbca0a9e59a10",
+          "app/Events/InvoiceItem/Deleted.php": "ec7a85d97d5995d38e41d7cea43680ae4d5b94d040ed608c7afc44c7d1ac917b",
+          "app/Events/InvoiceItem/Updated.php": "66dfe5f4fcc2e127364641bebfc8be6f10f6c01ce14d6c6842aae590efb6f12c",
+          "app/Events/InvoiceItem/Updating.php": "76ac011233a4be0561addeceb4de14ade39fc6ad548cd06014eb5d769fbe08ab",
+          "app/Events/InvoiceTransaction/Created.php": "2c28a407e70bfa36719571caaaf67f1b00f533d6b0b251d1e3a15a54474869e3",
+          "app/Events/InvoiceTransaction/Creating.php": "0988694353f49556e758deaa27e5d9074a85c45dae323fe02841236eeeaaa699",
+          "app/Events/InvoiceTransaction/Deleted.php": "2fc9dc58175adc7fb60c91b83e76c6b018c8f4934295099ccffdec3b9cbaf818",
+          "app/Events/InvoiceTransaction/Updated.php": "e79472fba5847f11eba6c253037c47efd2c33a766a3df3830bd0761e9b221369",
+          "app/Events/InvoiceTransaction/Updating.php": "768a8f1f708734c929ae787f55c7ff95fbecb026172b4a8c71d445f24df76c28",
+          "app/Events/Service/Created.php": "6ca4b32941c1eef34a2ab2c2dbf09a8e7d1882e8bf1f99d4a0cf76aec6893614",
+          "app/Events/Service/Deleted.php": "76889500ccaceee10a95441a9bc144cba9af80d8ab378deaec37caa6551ea834",
+          "app/Events/Service/Updated.php": "5062c1f223bd2b427afb695ccee95994b51d6a814635a9ed80363deaadf6b6e5",
+          "app/Models/Builders/CacheableBuilder.php": "4dbe627310903e3b820e45a2ea3364d79fe9d493157a172dd92038b1c4f15c13",
+          "app/Models/Credit.php": "4b7b9ab0d2bd08f6724d7197d0ae8450abc5d5d98d26cbfb21da8e7a1847f436",
+          "app/Models/Currency.php": "dfbb75ee5f2532e1d283db2e505d0546ace8b9acd95c5e397884924d23862b9c",
+          "app/Models/Invoice.php": "1b0b89b387c2f9bbf244c0e21a1f24563d07c14c361a98b9ba1696bb75a6dce8",
+          "app/Models/InvoiceItem.php": "d0439226e2a11363de9b3e1a805b61644628480886474cc6b14267c988c8b9e6",
+          "app/Models/InvoiceSnapshot.php": "ab0250ab4b857e1aab4251a1b6b6f76f8b68993a105e967fe7f0b94f66f56cfc",
+          "app/Models/InvoiceTransaction.php": "678121d0d7ff7a897c1156534a5c0b04962cc748a995f268d0a84a67e2f29e39",
+          "app/Models/Model.php": "d2d1c3dc1b26740ebca23b01748bee91fa933df941dd7cb42ac119e10027b28b",
+          "app/Models/Plan.php": "e43a7541c657027fc0bc041d7cf0a7c575ef077c7dac64bee4f4ff8fe1af54e1",
+          "app/Models/Price.php": "7c720679338d6f00d8a4ad86c718e69638b311506332f3368cab9d11e0cbb286",
+          "app/Models/Product.php": "ec0684f739b859536e24283fa4ed7f8e06d9085565123f07082c1047d1082ad0",
+          "app/Models/ProductUpgrade.php": "2a57b7f8a2f1efd0996f2bfda5216d00f5aae5b3c927201568b55cf9004ed0a8",
+          "app/Models/Service.php": "4841f017fcddb3a79c83ca36249b510485a7323b3108c5fd50269c232e286e3e",
+          "app/Models/ServiceCancellation.php": "38b60cf9f786129d4c03e63534d6443d3cf5ddb65b7c0cb02a5c3afeb428de49",
+          "app/Models/ServiceConfig.php": "2f6f9e1d536a2fae15ce3e05f31efa4d3b8da5382c3e020126c3001cc66e8e26",
+          "app/Models/ServiceUpgrade.php": "45fa2e1cce8c4bf72859688dfd7a497e81752b5ab302531b0ec12d0c91756c2e",
+          "app/Models/TaxRate.php": "30a9f035f9cefbdf59b4074bef964c81948b23360f05c1318ebba4dfc7848172",
+          "app/Models/Traits/Auditable.php": "89aa4f176335e7d6586e32e4209521b82c271465ec3d3a6347b2592523ce2ced",
+          "app/Models/Traits/HasPlans.php": "6b841d695c200947b545725d7383980c12aaf407ceeca4105745fcd3cda65cf3",
+          "app/Models/Traits/HasProperties.php": "c9e0daf63e5b606587eed89fb2f6dbb3aad441adb44c6db1154fcc10f2753648",
+          "app/Models/Traits/Settingable.php": "c1d502c901d584f801c782dd1823bce4ec360f5e2a737461ee89c2e75649a9b3",
+          "app/Models/User.php": "692f63eb6590812814b0d78e49c04c7b65175a1621a596fb87bcda0bfdbea223",
+          "app/Observers/InvoiceItemObserver.php": "f4bca98d0cfab82e04a1acac22a059f5750115fe6ab8450e83ada9ff367ba9b6",
+          "app/Observers/InvoiceObserver.php": "4b4fe7651d8af3038248849a1555b0e8516d15889e902cef541d9a98f558ff64",
+          "app/Observers/InvoiceTransactionObserver.php": "3f4b9c2d0f42fa8d36b126bb10fb65b7dd332d20502b968662a8d3f5129b222e",
+          "app/Observers/ServiceCancellationObserver.php": "abb269a032901b848ce1d7bd89a67179eb2e13f33bcc3b413592baf0d86830df",
+          "app/Observers/ServiceObserver.php": "fcc3746865b635bed108b147dfd6fb95e025b930f7da4d2787076333167299b7",
+          "app/Observers/ServiceUpgradeObserver.php": "5cb399d2f06704650e33cc1c37bab0293f59f21b0ca6fbaf1320aecf58ee2799",
+          "app/Services/Invoice/ProcessPaidInvoiceService.php": "e98b4a6c3aba5612d0c448c138034926fa2030cabd2ccb81cfcb1d9511f171e3",
+          "app/Services/Service/RenewServiceService.php": "9cfa9654cbc2fcb19f18464bb8f2b95f35acd3324c82086903fce72db9f6b5f5"
+        }
+      },
+      "identity-install": {
+        "consumers": [
+          "Domains/Services/AccountBindings.php",
+          "Domains/Services/NativeCatalogue.php",
+          "Domains/Services/Installation.php",
+          "Domains/Domains.php"
+        ],
+        "review": "Re-review encrypted settings, immutable identities, lifecycle/discovery, retained migrations and source upload validation.",
+        "files": {
+          "app/Classes/Extension/Extension.php": "789da332d390382928342f38e375433cccac999779424d0f3b1e37878237649c",
+          "app/Classes/Extension/Gateway.php": "a5b418538210735c2d560c4eda2f7597460ce9e4b4288cfe2ce522e95b22186a",
+          "app/Classes/Extension/Server.php": "ea39b2a9aa28f13c42e86baa6d32fecf526a46c277dc63d17c1a0bdf5346ee61",
+          "app/Console/Commands/CronJob.php": "70dc75e5a98771704f7964ed12b1ebab704b3de47699c0b115aa76dd0c6f0640",
+          "app/Helpers/EventHelper.php": "7041aaa57a84876624f15ef8e298e62d9563e4538fc49f368c5d280c0d2bfb54",
+          "app/Helpers/ExtensionHelper.php": "ec1ce54906765e3a3d110ab80c06137bc0ef65fabe59b31be26a245ab5ce4a24",
+          "app/Models/Category.php": "7a7470d4162af10323f1cc6a4f8407e14c7a43f3df6e74bd1b737439275e8de4",
+          "app/Models/CustomProperty.php": "f62492322852ca2dc3ce07fc206e7868f4cf953680d564475367bfae5ab48671",
+          "app/Models/Extension.php": "e555402a1756bc4d7158581d854528d49fc5417ddf546b88a838dbeb5d4746ed",
+          "app/Models/Property.php": "b59c6af90f867e8d9c486962599ee055bc414e1af5c726cc7a4e0c485c501067",
+          "app/Models/Role.php": "a448eccd3afb1b165b0e60fd1b6c859baf3436246f788c1b6a958f939e655e35",
+          "app/Models/Server.php": "a01949a031d2861bb34ac2cb7ad0629ba8a789925aa2150c3cff7ca2718bf221",
+          "app/Models/Setting.php": "ebd048151b977f617ad238d0b773619640b58f885d31e338f73d884a02b9e8fc",
+          "app/Observers/PropertyObserver.php": "e08fae80062c957bf61c88cd665f8c3a784b8010aee52691cb74febb66b765e6",
+          "app/Providers/AppServiceProvider.php": "d95ba08a510ede88d18db8ef0f1249379e7567f27253b2a1d35418d210b1ddba",
+          "app/Providers/SettingsProvider.php": "b77755865e4e93940f2a2bf5fa24687139e4170f367c4fc50b72caebf5354bce",
+          "app/Services/Extensions/UploadExtensionService.php": "88aa8d87fe1e6f734bd79f7e9f5ac4bda176b213d0b1fa0793da40d3c95e9b42",
+          "bootstrap/app.php": "216fa17cb432fbbf3aa7eeea86a45c70561cc9e0acc55ba1d00bf19f1dab53d2",
+          "composer.lock": "fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be",
+          "routes/console.php": "dafb0ac2ef2590482351b04f069e2f18139071d97d506a21ea5e104f3e226a7c",
+          "config/app.php": [
+            "0051ccbf4a68b136216e13971dc54896efd910a2b966c1f01f9c6f64c97c0ac8",
+            "6d1b13371419075004f03df4b7eb8af7b96308f3466b590e929ab272c6bfc14f"
+          ],
+          "app/Events/Setting/Saving.php": "d6b25c0291392a1ae600078afa466c853dfcef1decb0915712340c4d361a3990",
+          "app/Events/Setting/Retrieved.php": "b9e8bdd0fc7a8cb5312e15763657af3cf2eec49fdce660d5f8903ed6e8619b14",
+          "app/Redactors/RightRedactor.php": "fcc6cc9cf636cf385d9dc8cd4e8accdd667ff2f8405e39c67097f58fc0652816"
+        }
+      },
+      "mail": {
+        "consumers": [
+          "Domains/Mail/DomainNotice.php",
+          "Domains/Services/ReminderDelivery.php",
+          "Domains/Services/ReminderTemplates.php"
+        ],
+        "review": "Re-review inherited data, customized HTML/text, preferences, disabled mail, log ownership and queue serialization.",
+        "files": {
+          "app/Helpers/NotificationHelper.php": "d3c542312a894a934c00d9e7e3a0040335a848594e1b4e50880133993f83406b",
+          "app/Mail/Mail.php": "c0bef134a3fb5f8f353a11e54a2257cbc9d18c4dbfa24e41fb6d53a9e4f6baab",
+          "app/Models/EmailLog.php": "7a38a8c41f34d9b1731760b7555520491d3ba36bd275346e367ef0f314e68f17",
+          "app/Models/Notification.php": "995a0813ff9486273ce6d1ef79bbd78e909528a6d2f501db184df2df0755de4a",
+          "app/Models/NotificationPreference.php": "3f032cf5edcff22e9a1a9ecca5697d2aa17711b2390bfd95b9a32bec63e1957c",
+          "app/Models/NotificationSubscription.php": "283f8fbb7fa680d8b6c20d0d010d6946e0442b79d3935815f09e88178cff1457",
+          "app/Models/NotificationTemplate.php": "43970fe4cd707f94ccb468cc2e5de32157b36eb4152b1e2a3f503ad18ac799d2",
+          "app/Observers/NotificationObserver.php": "5229106d593cb35aca9cec7f10e8d588c75bebe5f34a492fdb5b013b1e4022d3",
+          "resources/views/components/mail/base.blade.php": "04c23cad9cd2efe281b3db0cff738756b52f7e0cd8b2e7b517f4ed85da76540e",
+          "vendor/laravel/framework/src/Illuminate/Queue/SerializesModels.php": "29ff50de875925956c56b217ef9b78643cef0e12e23885fdf37e0ed9b697e51d",
+          "app/Enums/NotificationEnabledStatus.php": "111f51b21d444b2860c3d3d7471b133ba0426825f9b60418e9020af729643624"
+        }
+      },
+      "admin-secrecy": {
+        "consumers": [
+          "Domains/Admin/SecureCreateServer.php",
+          "Domains/Admin/SecureEditServer.php",
+          "Domains/Admin/SecureEditService.php",
+          "Domains/Services/NativeServerGuard.php",
+          "Domains/Services/Runtime.php"
+        ],
+        "review": "Re-review every editor/write path, credential serialization on mount/hydrate, permissions, field traversal and save transactions; containment does not authorize global hooks.",
+        "files": {
+          "app/Admin/Resources/ServerResource.php": "ae95123726c07ca46dfc5d97ba289feabe1ff793e99f8ba42c2809eaa87efccc",
+          "app/Admin/Resources/ServerResource/Pages/CreateServer.php": "e0a789c03919493f19e464783890acdeef7f5a89651cc2f24c6ee281f9a673fe",
+          "app/Admin/Resources/ServerResource/Pages/EditServer.php": "7d5a81955bdc248bfe3ea09a9eba7f5d2872a535b3ac497781b51f8d680beca5",
+          "app/Admin/Resources/ServerResource/Pages/ListServers.php": "e5deaf84462839159c10ac84dec5351c665063d297d6749a8a550ad9cb8a288e",
+          "app/Admin/Resources/ServiceResource.php": "5addbba443f72f96716b9b2aad3737e3f6d6e5fa4622bc7a2d5cd78ea6d39816",
+          "app/Admin/Resources/ServiceResource/Pages/CreateService.php": "7a0c9e9475243ae567434f748d0b58d126773d159a7ef58f5a6192c3d0bc0cc0",
+          "app/Admin/Resources/ServiceResource/Pages/EditService.php": "19ff63c0287738a9d89d58f2cc0d5c0799453493818ac04395549103d12a13e5",
+          "app/Admin/Resources/ServiceResource/Pages/ListService.php": "b9d3502fbdfec5778212a888ade3beeab34b049701e7dc6ddc2cf84592ff87ed",
+          "app/Admin/Resources/ServiceResource/RelationManagers/ConfigOptionsRelationManager.php": "477a4f0110959f61823f2c0e2ee2b90b4c33e899e09157d4ca8a9b5d32077f04",
+          "app/Admin/Resources/ServiceResource/RelationManagers/InvoicesRelationManager.php": "c5381dc52c13fa62eef6ae31a4b7d6a58ce0bc6097315be62b91a40cf3d0068c",
+          "app/Admin/Resources/ServiceResource/Widgets/CancellationOverview.php": "016545c1758333620dfdd082c8620c859a17215ebd298b14f2eb417be51bf0b2",
+          "app/Providers/Filament/AdminPanelProvider.php": "50c13f67807e2c494dff3afa6b1e9e118aaedec79b02301c824e1b6020b99a59",
+          "routes/web.php": "e91e7f4369867e12074fc955aa67db2e546daf690db3a4eb14f35ab70e51ae6c",
+          "vendor/filament/actions/src/Action.php": "f97dc89c351b46e5c93a3269bbbc032ae2957c0bc926310cfa45b7f304288b30",
+          "vendor/filament/actions/src/Concerns/CanUseDatabaseTransactions.php": "556402622570342c3cc5ac8b54a074948a53e0235573f106341b201a04fb57c5",
+          "vendor/filament/filament/src/Pages/Concerns/CanUseDatabaseTransactions.php": "5c27fb508b106a7faaee445dc3a2abeddbd328e9931c5dff43b5ed2643c53b8c",
+          "vendor/filament/filament/src/Resources/Pages/CreateRecord.php": "a2b10956d7973d0beeb73e3bfa396dcfb3d486a1d89e417574675cee360a11ae",
+          "vendor/filament/filament/src/Resources/Pages/EditRecord.php": "369fce445119a7042aa7fff2b324ec4d11a65f4da5c482dd98f5f09feeee2221",
+          "vendor/livewire/livewire/src/EventBus.php": "e5446f10eda12066edbc6297ad5a5ff9bf1ca0a5660cd244cb712d46f9150ab3",
+          "vendor/livewire/livewire/src/Mechanisms/HandleComponents/HandleComponents.php": "1db85f3949a766bff3f62e51e3a7bc0363a337b3aae105baa7a75296fa2c52de"
+        }
+      },
+      "request-input": {
+        "consumers": [
+          "Domains/Http/RawPost.php",
+          "Domains/Services/Runtime.php",
+          "Domains/routes/owned.php",
+          "Domains/Http/Controllers/OwnerActionController.php"
+        ],
+        "review": "Re-review raw transfer-code and DNS/SRV byte preservation, JSON/form parsing and unchanged auth/CSRF/throttle boundaries.",
+        "files": {
+          "app/Http/Middleware/MustVerfiyEmail.php": "cdc90d1e4ce9a1ac910e6212523546b41ac9104a7ef26c6bd0734e82df2973a5",
+          "vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/ConvertEmptyStringsToNull.php": "64ae32b200990166e5fffb143658f88f5eb457a8cfb2bb5677f39cd77655198c",
+          "vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/TrimStrings.php": "675e568aefd139a3571fd217c41b03489826dce65b7a09d4ecdb31a186df5819",
+          "vendor/laravel/framework/src/Illuminate/Http/Request.php": "b588e38f63b4050aeb78e8d0ba90bd5adebba883f5c7391153e457c34e73175d",
+          "vendor/symfony/http-foundation/Request.php": "0be852b84fb890ae05faf7b62a84324b8176c7996e0ecc33f521990aaff415a0"
+        }
+      },
+      "historical-conversion": {
+        "consumers": [
+          "scripts/conversion/QuietWindow.php",
+          "scripts/conversion/Mapper.php",
+          "scripts/conversion/AppHost.php",
+          "scripts/conversion/AppInventory.php"
+        ],
+        "review": "Re-review private queue envelopes/reservations, generated maintenance fence and bypass rules, scheduler mutex discovery, reflected cache fields and persisted quiet-window observations before conversion.",
+        "files": {
+          "vendor/laravel/framework/src/Illuminate/Console/Scheduling/Schedule.php": "0a0668efb17d281ed35767fd4bef0e2076ee34d9e770b66951afcd484802745e",
+          "vendor/laravel/framework/src/Illuminate/Console/Scheduling/Event.php": "48ad3d94cf8779236cdf08eca62fa9e06a1b45cd9ef40465d577affb941a9758",
+          "vendor/laravel/framework/src/Illuminate/Console/Scheduling/CallbackEvent.php": "b716b3075b68716560d4d3f23985d8f467b76dc72c566ad644ecc297a6dd9b64",
+          "vendor/laravel/framework/src/Illuminate/Console/Scheduling/CacheEventMutex.php": "56a97585d5a8d353c5a3c5f78a526014c7ef3beeb3a75271a96d5497fa8da4b5",
+          "vendor/laravel/framework/src/Illuminate/Console/Scheduling/CacheSchedulingMutex.php": "ad731be4d4071eb0c344a667fee66c6693ff0bad1b620f19047c1ff6a9c33ae6",
+          "vendor/laravel/framework/src/Illuminate/Cache/DatabaseStore.php": "1df45d12a4d675d15b10353eff2f0c3457c6eab79e4ffe50fb85b6dffe2e6b34",
+          "vendor/laravel/framework/src/Illuminate/Cache/FileStore.php": "d8bece77ea6f9f38d9c71723c1895030d34301be0f142c858b7c06261c4d1b3d",
+          "vendor/laravel/framework/src/Illuminate/Queue/Queue.php": "51d6e9301df87ddb521520557d0e505e9a14231e2bc32be1d753e4648b4e7138",
+          "vendor/laravel/framework/src/Illuminate/Queue/DatabaseQueue.php": "70afabf220661e103d6242cca5273ed0cbf938320e2274459c0360bffa372c74",
+          "vendor/laravel/framework/src/Illuminate/Foundation/Console/DownCommand.php": "642c8be360560edc82c400230196a6c8954cfc9bce235707311d4a12050377eb",
+          "vendor/laravel/framework/src/Illuminate/Foundation/Console/stubs/maintenance-mode.stub": "a8dc7e2db39e3e41b20ccb5709ce726679ef69d7a4c78de4a7d63b6665e08289",
+          "vendor/laravel/framework/src/Illuminate/Foundation/FileBasedMaintenanceMode.php": "1624538dce9383bdc11508ec7cb3b789ca4310d13c9cbe3dbf9362fdda78497a",
+          "vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/PreventRequestsDuringMaintenance.php": "de0043732f22cb58263fcb3c696bf21698f6ec41e864dfc4ea35b52f5f71738d",
+          "public/index.php": "e1ad0c43365cdef3ee38738ea7140804e90eaeb0a11102884e97cbd0848c26af",
+          "bootstrap/app.php": "216fa17cb432fbbf3aa7eeea86a45c70561cc9e0acc55ba1d00bf19f1dab53d2",
+          "config/cache.php": "8e51d6c7220f6ce2b989397e4543cfa4315aef461eb99a0322d55ccd957f6f04",
+          "config/queue.php": "c2846fd6a0a06a0d8fa5f599c4e0cf7e293d7de67b04dfbd72c9644f4ff47c24",
+          "config/database.php": "6864dd7490e095490e91d2e115af31293c07140f3fce00f876bc5a1971eeb5e0",
+          "vendor/laravel/framework/src/Illuminate/Cache/DatabaseLock.php": "05257b67976a203d0b45d8bf871671c8d4166f5a3e599326ce1f4ac0c9991ff8"
+        }
+      }
+    },
+    "watch": {
+      "app/Admin/Resources/ServerResource": "admin-secrecy",
+      "app/Admin/Resources/ServiceResource": "admin-secrecy",
+      "app/Services/Invoice": "funding-renewal"
+    }
+  }
+}

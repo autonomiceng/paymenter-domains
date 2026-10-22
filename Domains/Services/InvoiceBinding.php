@@ -37,9 +37,8 @@ final class InvoiceBinding
         Event::listen(\App\Events\InvoiceItem\Creating::class, function ($e): void {
             $line = $e->invoiceItem->reference_type === (new Service)->getMorphClass() ? ($this->services[$e->invoiceItem->reference_id] ?? null) : null;
             if ($line) {
-                $term = $line['selection']->term; $years = $term.' '.($term === 1 ? 'year' : 'years');
-                $e->invoiceItem->description = ($line['selection']->action === 'register' ? 'Register ' : 'Transfer ').$line['name']
-                    .' ('.($line['selection']->action === 'transfer' ? 'adds ' : '').$years.')';
+                $e->invoiceItem->description = InvoiceDescription::acquisition($line['name'],
+                    $line['selection']->action, $line['selection']->term, $this->clock->now());
             }
         });
         Event::listen(\App\Events\InvoiceItem\Created::class, fn ($e) => $this->bind($e->invoiceItem));

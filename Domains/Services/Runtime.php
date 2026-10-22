@@ -2,8 +2,6 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Illuminate\Foundation\Http\Middleware\TrimStrings;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Event,Gate,Schedule,View};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\SystemClock;
@@ -51,8 +49,6 @@ final class Runtime
     public function boot(): void
     {
         ConversionGate::requireComplete();if($this->booted){return;}$this->booted=true;
-        // Boot runs before the global middleware and on both console and HTTP lifecycles.
-        TrimStrings::skipWhen(fn(Request $r)=>$r->isMethod('POST')&&preg_match('~\Adomains/[0-9]+/(?:transfer-code|manage/(?:dns|srv))\z~D',$r->path())===1);
         View::addNamespace('domains',dirname(__DIR__).'/resources/views');
         require dirname(__DIR__).'/routes/web.php';require dirname(__DIR__).'/routes/owned.php';
         app()->booted(self::secureNativeRoutes(...));

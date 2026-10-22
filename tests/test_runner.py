@@ -20,6 +20,28 @@ runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
 
 
 class RunnerTests(unittest.TestCase):
+    def test_graceful_timeout_allows_resource_cleanup(self):
+        code = "import signal,time; signal.signal(signal.SIGTERM,lambda *args:(print('cleaned',flush=True),exit(0))); time.sleep(30)"
+        stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT, env=os.environ, timeout=2, graceful=3)
+        self.assertEqual((status, timed_out, stdout, stderr), (124, True, b'cleaned\n', b''))
+
+    def test_mariadb_skip_is_not_acceptance(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); (root/'Domains').mkdir(); (root/'output').mkdir()
+            with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', return_value=(b'image unavailable', b'', 77, False)), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(runner.run([('mariadb', ['probe'])], {}, root/'output', ['mariadb'], {}), 77)
+            receipt = json.loads((root/'output/receipt.json').read_text())
+            self.assertFalse(receipt['complete'])
+            self.assertEqual(receipt['skipped_suites'], ['mariadb'])
+            self.assertTrue(receipt['results'][0]['skipped'])
+
+    def test_mariadb_is_always_explicit_opt_in(self):
+        for source in ['', '/synthetic/dependency']:
+            with mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': source}):
+                self.assertNotIn('mariadb', runner.default_suites())
+                self.assertEqual('native' in runner.default_suites(), bool(source))
+        self.assertIn('mariadb', runner.CATEGORIES)
+
     def test_failure_timeout_or_source_mutation_saves_output_and_stops(self):
         for failure in ['timeout', 'exit', 'mutation']:
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:

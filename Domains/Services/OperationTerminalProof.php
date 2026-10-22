@@ -10,7 +10,7 @@ final class OperationTerminalProof
     {
         return $claims->locked($id, static function ($op, $domain, $all): Operation {
             $a = $op->attempt ?? [];
-            if ($op->state !== 'held' || !in_array($op->safe_code, ['pre_send_interrupted', 'seal_authority_invalid'], true)
+            if ($op->state !== 'held' || !in_array($op->safe_code, ['pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required'], true)
                 || !isset($a['claim_key']) || ($a['seal'] ?? null) !== 'absent' || ($a['send_state'] ?? null) !== 'definitely_unsent'
                 || array_diff(array_keys($a), ['claim_key', 'seal', 'send_state']) || $op->lease_expires_at !== null
                 || $op->provider_order_id !== null || $op->confirmed_expires_at !== null || array_key_exists('actual', $op->cost ?? [])

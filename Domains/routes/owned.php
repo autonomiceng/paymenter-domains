@@ -1,12 +1,10 @@
 <?php
 // Enom 444f31c routes; MIT, Copyright (c) 2026 Autonomic Engineering. Not loaded by any provider.
-use Illuminate\Foundation\Http\Middleware\TrimStrings;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController as Action;
 use App\Http\Middleware\MustVerfiyEmail;
 use Illuminate\Support\Facades\Route;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController as Owner;
-// Definitions are dormant; install39 must load them before the global input middleware runs.
-TrimStrings::except(['transfer_code','records.*.address']);
+// Byte-sensitive POST values are decoded inside their owned controller handlers.
 Route::middleware(['web','auth',MustVerfiyEmail::class,'throttle:60,1,domains.owner'])->group(function():void {
     Route::post('/domains/{domain}/setup',[Action::class,'setup'])->whereNumber('domain')->name('domains.domains.setup-save')->block(10,10);
     Route::post('/domains/{domain}/account-contacts',[Action::class,'contacts'])->whereNumber('domain')->name('domains.domains.contacts-save')->block(10,10);
