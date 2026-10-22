@@ -66,3 +66,4 @@ Focused mutation checks remove each new guard and exercise the shared scenario. 
 checks are reviewed against their independent refusing layer; none grants enrollment.
 These offline tests make no real registrar calls and do not establish provider ownership, live
 acceptance, shared-database race behavior or permission to purchase domains.
+The installed default-account review asserts the saved ending, registration and renewal terms, and registry evidence.
