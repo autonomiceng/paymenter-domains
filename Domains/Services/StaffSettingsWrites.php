@@ -141,15 +141,15 @@ final class StaffSettingsWrites
             $ending=(string)($data['ending']??'');\Paymenter\Extensions\Servers\Domains\Data\CanonicalName::parse('example.'.$ending,[$ending]);$endings=$old?->endings??[];
             $registrationRoute=$old?->registrationRoute;$registrationInterval=$old?->registrationIntervalSeconds??0;
             $testRegistration=$binding->registrarKey==='enom'&&$binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Test
-                &&EnomTestRegistration::deploymentEnabled();
+                &&(EnomTestRegistration::deploymentEnabled()||EnomTestTransfer::deploymentEnabled());
             if(!$old&&Domain::where('server_id',$s->id)->whereNotNull('reservation_name')->orderBy('id')->lockForUpdate()->get()->isNotEmpty()){throw new \DomainException('Repair must preserve all holder renewal acceptance.');}
             if(($data['accept']??false)===true){
                 // Explicit independent exact-term evidence is required. Annual NameSilo prices prove no multiyear terms.
                 if(($data['verified']??false)!==true){throw new \DomainException('Independent term verification required.');}
                 if($testRegistration){
-                    if(($data['test_registration_accepted']??false)!==true){throw new \DomainException('Review the Enom TEST Purchase route and request interval before accepting registration terms.');}
+                    if(($data['test_registration_accepted']??false)!==true){throw new \DomainException(EnomTestTransfer::deploymentEnabled()?'Review the Enom TEST Purchase / TP_CreateOrder route and request interval before accepting acquisition terms.':'Review the Enom TEST Purchase route and request interval before accepting registration terms.');}
                     $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
-                    if(!$protocol['batch_route']||$protocol['interval_seconds']<25){throw new \DomainException('Enom TEST Purchase route acceptance is unavailable.');}
+                    if(!$protocol['batch_route']||$protocol['interval_seconds']<25){throw new \DomainException(EnomTestTransfer::deploymentEnabled()?'Enom TEST acquisition route acceptance is unavailable.':'Enom TEST Purchase route acceptance is unavailable.');}
                     $registrationRoute=$protocol['route'];$registrationInterval=$protocol['interval_seconds'];
                 }
                 $terms=array_map(static fn($v)=>is_string($v)&&preg_match('/^(?:[1-9]|10)$/D',$v)?(int)$v:$v,$data['terms']??[]);

@@ -20,9 +20,9 @@ $loader=require $fixture.'/vendor/autoload.php';
 $loader->addPsr4('App\\',$fixture.'/app/',true);
 $loader->addPsr4('Paymenter\\Extensions\\',$fixture.'/extensions/',true);
 $app=require $fixture.'/bootstrap/app.php';
-if(in_array(getenv('PACKAGE_PHASE'),['enom-test-management','enom-test-management-restart','enom-test-registration','enom-test-renewal','enom-test-renewal-restart','enom-test-renewal-race-issue','enom-test-renewal-race-admit','enom-test-renewal-race-verify'],true)){
+if(in_array(getenv('PACKAGE_PHASE'),['enom-test-transfer','enom-test-transfer-restart','enom-test-management','enom-test-management-restart','enom-test-registration','enom-test-renewal','enom-test-renewal-restart','enom-test-renewal-race-issue','enom-test-renewal-race-admit','enom-test-renewal-race-verify'],true)){
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
-        static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>in_array(getenv('PACKAGE_PHASE'),['enom-test-management','enom-test-registration','enom-test-renewal'],true),'domains.enom_writes.management'=>getenv('PACKAGE_PHASE')==='enom-test-management-restart','domains.enom_writes.renewal'=>str_starts_with((string)getenv('PACKAGE_PHASE'),'enom-test-renewal-')]));
+        static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>in_array(getenv('PACKAGE_PHASE'),['enom-test-transfer','enom-test-management','enom-test-registration','enom-test-renewal'],true),'domains.enom_writes.transfer'=>in_array(getenv('PACKAGE_PHASE'),['enom-test-transfer','enom-test-transfer-restart'],true),'domains.enom_writes.management'=>getenv('PACKAGE_PHASE')==='enom-test-management-restart','domains.enom_writes.renewal'=>str_starts_with((string)getenv('PACKAGE_PHASE'),'enom-test-renewal-')]));
 }
 if(in_array(getenv('PACKAGE_PHASE'), ['identity','catalogue','catalogue-retained'], true)){
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,

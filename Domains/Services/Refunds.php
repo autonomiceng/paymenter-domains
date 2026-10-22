@@ -23,7 +23,8 @@ final readonly class Refunds
             }
             if ($op->state !== 'held' || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Only held unpaid-to-provider requests may be closed.'); }
             RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireCurrent($op, $l);
-            if ($op->action === 'transfer' && (($op->attempt ?? []) !== [] || $op->safe_code === 'transfer_not_registered')) {
+            $testUnsent=OperationClaims::testCallRefusalUnsent($op);
+            if ($op->action === 'transfer' && (($op->attempt ?? []) !== [] || $op->safe_code === 'transfer_not_registered')&&!$testUnsent) {
                 throw new \DomainException('A fresh registry404 disposition is unavailable; retain this hold.');
             }
             $audit = ['actor_id' => $staffId, 'reason' => $reason, 'at' => $this->clock->now()->format(DATE_ATOM),
@@ -31,7 +32,7 @@ final readonly class Refunds
             // Retain the decision if credit fails; retryPending independently rechecks funding and negative proof.
             ContactRecovery::financialDisposition($op, ['state' => 'rejected', 'safe_code' => 'refund_approved',
                 'funding' => [...($op->funding ?? []), 'refund_authorization' => $audit]]);
-            if (in_array($op->action,['register','transfer'],true)&&($op->attempt??[])===[]) {
+            if (in_array($op->action,['register','transfer'],true)&&(($op->attempt??[])===[]||($op->action==='transfer'&&$testUnsent))) {
                 $op->update(['attempt'=>OperationTerminalProof::rejectedAttempt($op,$l['domain'])]);
             }
             AcquisitionRetirement::retainClosure($op,$l['transactions']->where('invoice_id',$op->invoice_id),

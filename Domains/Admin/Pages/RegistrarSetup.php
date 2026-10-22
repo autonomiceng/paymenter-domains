@@ -42,6 +42,9 @@ class RegistrarSetup extends Page
             if ($a?->registrar_key==='enom' && $a->environment==='test' && config('domains.enom_writes.registration')===true) {
                 $facts['Enom TEST registration']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRegistration::reason();
             }
+            if($a?->registrar_key==='enom'&&$a->environment==='test'&&config('domains.enom_writes.transfer')===true){
+                $facts['Enom TEST inbound transfer']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::reason();
+            }
             if($a?->registrar_key==='enom'&&$a->environment==='test'&&config('domains.enom_writes.renewal')===true){
                 $facts['Enom TEST renewal']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::reason();
                 try{$facts['TEST renewal acceptance']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::accepted(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a))?'Accepted':'Not accepted';}

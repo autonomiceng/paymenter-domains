@@ -18,10 +18,11 @@ final readonly class EnomTestReconciliationReader implements CatalogueReader
     public function reconcile(AttemptEvidence $attempt,RequestContext $c):ReconciliationResult
     {
         $renewal=$attempt->query->action===Action::Renew&&\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding());
+        $transfer=$attempt->query->action===Action::Transfer&&\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::enabled($this->binding())&&is_string($attempt->transferReference)&&preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->transferReference);
         $captured=is_string($attempt->providerReference)&&preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->providerReference)&&$attempt->executionFacts;
         $history=$renewal&&$attempt->historyAcceptance?->covers($attempt,$c->now());
         if($attempt->binding->registrarKey!=='enom'||$attempt->binding->environment!==Environment::Test
-            ||!($attempt->query->action===Action::Register||$renewal)||!($captured||$history)){
+            ||!($attempt->query->action===Action::Register||$renewal||$transfer)||!($captured||$history||$transfer)){
             throw new \DomainException($renewal?'Captured TEST order or accepted renewal history is required.':'Captured TEST Purchase OrderID is required.');
         }
         $attempt->executionFacts?->requireAttempt($attempt);

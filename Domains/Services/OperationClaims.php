@@ -167,11 +167,11 @@ final class OperationClaims
     public function holdTestCallCap(Operation $claimed): Operation
     {
         return $this->locked((int)$claimed->id,function($op)use($claimed):Operation {
-            if(!self::sameClaim($op,$claimed)||$op->action!=='register'||$op->state!=='running') { return $op; }
+            if(!self::sameClaim($op,$claimed)||!in_array($op->action,['register','transfer'],true)||$op->state!=='running') { return $op; }
             $attempt=$op->attempt??[];$sealed=($attempt['seal']??null)==='sealed';
             try { self::requireNoSendEvidence($op); } catch (\Throwable) { return $op; }
             if($sealed) {
-                if(($attempt['send_state']??null)!=='possibly_sent'||!isset($attempt['dispatch_attempted_at'],$attempt['authorized_cost'],$attempt['registration_admission'])) { return $op; }
+                if(($attempt['send_state']??null)!=='possibly_sent'||!isset($attempt['dispatch_attempted_at'],$attempt['authorized_cost'],$attempt[$op->action==='transfer'?'transfer_admission':'registration_admission'])) { return $op; }
                 if(!EnomTestCalls::purchaseUnconsumed($op->account_fingerprint,(int)$op->id)) { return $op; }
             } elseif(!self::unsealed($op)||($attempt['send_state']??null)!=='definitely_unsent') { return $op; }
             $history=$attempt['test_call_refusals']??[];
@@ -181,7 +181,7 @@ final class OperationClaims
             if(count($history)>=100) { return $op; }
             $funding=$op->funding??[];unset($funding['claim'],$funding['seal']);
             $refusalAttempt=['test_call_refusals'=>[...$history,$event],...array_intersect_key($attempt,['capacity_deferrals'=>true])];
-            $op->update(['attempt'=>$refusalAttempt,'funding'=>$funding,'state'=>'held','safe_code'=>'enom_test_call_cap',
+            $op->update(['attempt'=>$refusalAttempt,'funding'=>$funding,'state'=>'held','safe_code'=>$op->action==='transfer'?'enom_test_transfer_call_cap':'enom_test_call_cap',
                 'lease_expires_at'=>null,'started_at'=>null,'request_fingerprint'=>null]);
             return $op;
         });
@@ -206,8 +206,8 @@ final class OperationClaims
             if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
                 $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
             } elseif (in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)
-                && (self::virgin($op)||(in_array($reason,['enom_test_call_cap','write_acceptance_required','nameservers_required',
-                    'registry_details_unsupported','processing','write_disabled','usd_balance_required','enom_test_setup_required'],true)&&self::testCallRetry($op)))) {
+                && (self::virgin($op)||(in_array($reason,['enom_test_call_cap','enom_test_transfer_call_cap','write_acceptance_required','nameservers_required',
+                    'registry_details_unsupported','processing','write_disabled','usd_balance_required','enom_test_transfer_usd_balance_required','enom_test_setup_required','enom_test_transfer_setup_required'],true)&&self::testCallRetry($op)))) {
                 $op->update(['state' => 'held', 'safe_code' => $reason]);
             }
             return $op;
@@ -216,10 +216,10 @@ final class OperationClaims
     /** Staff may release only this retained, proven-unsent TEST preflight hold. */
     public static function testCallRefusalRetryable(Operation $op): bool
     {
-        return $op->state==='held'&&in_array($op->safe_code,['enom_test_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid',
+        return $op->state==='held'&&in_array($op->safe_code,['enom_test_call_cap','enom_test_transfer_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid',
                 'nameservers_required','write_acceptance_required','write_rate_limited','registry_details_unsupported','processing','write_disabled',
-                'usd_balance_required','enom_test_setup_required'],true)
-            &&$op->action==='register'&&$op->registrar_key==='enom'
+                'usd_balance_required','enom_test_transfer_usd_balance_required','enom_test_setup_required','enom_test_transfer_setup_required'],true)
+            &&in_array($op->action,['register','transfer'],true)&&$op->registrar_key==='enom'
             &&$op->lease_expires_at===null&&$op->completed_at===null
             &&$op->provider_order_id===null&&$op->confirmed_expires_at===null
             &&self::testCallRefusalUnsent($op)
@@ -238,16 +238,16 @@ final class OperationClaims
     public static function testCallRefusalUnsent(Operation $op): bool
     {
         $a=$op->attempt??[];$f=$op->funding??[];$history=$a['test_call_refusals']??null;
-        $holdCodes=['enom_test_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required',
-            'write_acceptance_required','write_rate_limited','registry_details_unsupported','processing','write_disabled','usd_balance_required','enom_test_setup_required'];
-        if($op->action!=='register'||$op->registrar_key!=='enom'||!self::testCallHistory($history)||!$history||!self::unsealed($op)
+        $holdCodes=['enom_test_call_cap','enom_test_transfer_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required',
+            'write_acceptance_required','write_rate_limited','registry_details_unsupported','processing','write_disabled','usd_balance_required','enom_test_transfer_usd_balance_required','enom_test_setup_required','enom_test_transfer_setup_required'];
+        if(!in_array($op->action,['register','transfer'],true)||$op->registrar_key!=='enom'||!self::testCallHistory($history)||!$history||!self::unsealed($op)
             ||$op->lease_expires_at!==null||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->completed_at!==null
             ||array_key_exists('actual',$op->cost??[])||array_key_exists('execution',$op->cost??[])||array_key_exists('dispatch_attempted_at',$op->policy??[])
             ||array_diff(array_keys($f),['claim','seal','refund_authorization','refund','financial_adjustments'])||array_key_exists('seal',$f)) { return false; }
         $held=$op->state==='held'&&in_array($op->safe_code,$holdCodes,true);
         $queued=$op->state==='queued'&&in_array($op->safe_code,[null,'write_rate_limited'],true);
         $approved=$op->state==='rejected'&&$op->safe_code==='refund_approved';
-        $terminal=$op->state==='rejected'&&in_array($op->safe_code,$holdCodes,true)
+        $terminal=$op->state==='rejected'&&(in_array($op->safe_code,$holdCodes,true)||$approved)
             &&($a['disposition']??null)==='rejected'&&($a['rejection_basis']??null)==='definitely_unsent'
             &&($a['terminal']??null)===['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation];
         if(!$held&&!$queued&&!$approved&&!$terminal) { return false; }
@@ -258,10 +258,11 @@ final class OperationClaims
                 ||!is_string($auth['at']??null)||$auth['operation_key']!==$op->operation_key||$auth['generation']!==$op->authority_generation) { return false; }
         }
         $unclaimedKeys=['test_call_refusals','capacity_deferrals'];
+        if($terminal){$unclaimedKeys=[...$unclaimedKeys,'seal','send_state','disposition','rejection_basis','terminal'];}
         if(!isset($a['claim_key'])) {
             $deferrals=$a['capacity_deferrals']??[];
-            return !$terminal&&!array_diff(array_keys($a),$unclaimedKeys)&&$op->started_at===null&&$op->request_fingerprint===null
-                &&!array_key_exists('seal',$a)&&!array_key_exists('send_state',$a)&&!array_key_exists('claim',$f)&&!array_key_exists('seal',$f)
+            return !array_diff(array_keys($a),$unclaimedKeys)&&$op->started_at===null&&$op->request_fingerprint===null
+                &&($terminal?($a['seal']==='absent'&&$a['send_state']==='definitely_unsent'):(!array_key_exists('seal',$a)&&!array_key_exists('send_state',$a)))&&!array_key_exists('claim',$f)&&!array_key_exists('seal',$f)
                 &&(!array_key_exists('capacity_deferrals',$a)||(is_array($deferrals)&&array_is_list($deferrals)&&count($deferrals)<=5
                     &&!array_filter($deferrals,static fn($at)=>!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/D',$at))));
         }

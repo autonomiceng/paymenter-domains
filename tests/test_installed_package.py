@@ -72,7 +72,7 @@ def refuse_unsafe_archives(root, current):
 
 
 def main(scenario):
-    if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'acquisition', 'enom-exchange', 'enom-test-registration', 'enom-test-renewal', 'enom-test-management', 'namesilo-registration', 'namesilo-renewal', 'namesilo-enrollment'):
+    if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'acquisition', 'enom-exchange', 'enom-test-registration', 'enom-test-renewal', 'enom-test-management', 'enom-test-transfer', 'namesilo-registration', 'namesilo-renewal', 'namesilo-enrollment'):
         raise ValueError('Unknown installed package scenario')
     began = time.monotonic()
     fixture = Path(os.environ['PAYMENTER_TEST_FIXTURE'])
@@ -154,6 +154,10 @@ def main(scenario):
             phase('catalogue-retained')
             evidence['test_catalogue_fresh_reinstall'] = True
             evidence['fresh_installed_registration_held'] = True
+        elif scenario == 'enom-test-transfer':
+            phase(scenario)
+            phase('enom-test-transfer-restart')
+            evidence['test_transfer_paid_code_cap_history_restart_timeout'] = True
         elif scenario == 'enom-test-management':
             phase(scenario)
             phase('enom-test-management-restart')

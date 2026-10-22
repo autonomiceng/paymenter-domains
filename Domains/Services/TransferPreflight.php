@@ -34,7 +34,7 @@ final readonly class TransferPreflight implements SealPreflight
             if (!$this->profiles->hasProof($op)) { $this->profiles->prepare($op, $context); }
         }
         $capability = $this->accepted->requireCurrent($context->binding, $query, $op);
-        $reader = $this->bindings->reader($context->binding->serverId); $context->binding->requireMatch($reader->binding());
+        $reader = $context->binding->registrarKey==='enom'&&EnomTestTransfer::enabled($context->binding)?$this->bindings->registrationPreflightReader($context->binding):$this->bindings->reader($context->binding->serverId); $context->binding->requireMatch($reader->binding());
         $observed = $context->now(); $transfer = $this->precheck->check($query->name, self::selection($op, $domain), $reader, $context);
         $quote = $reader->quote($query, $context); $balance = BalanceReads::read($reader, $context, 'preflight');
         foreach ([$quote, $balance] as $result) {

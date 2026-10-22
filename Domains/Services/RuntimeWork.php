@@ -63,7 +63,7 @@ final readonly class RuntimeWork
             });if(!$row){break;}
             $a=Account::where('server_id',$row->server_id)->first();
             if(!$a||$a->account_fingerprint!==$row->account_fingerprint){continue;}
-            $testRegistration=self::testRegistrationEnabled($a)||EnomTestManagement::enabled(CatalogueAcceptances::binding($a))||EnomTestRenewal::enabled(CatalogueAcceptances::binding($a));
+            $testRegistration=self::testRegistrationEnabled($a)||EnomTestManagement::enabled(CatalogueAcceptances::binding($a))||EnomTestTransfer::enabled(CatalogueAcceptances::binding($a))||EnomTestRenewal::enabled(CatalogueAcceptances::binding($a));
             if(!$testRegistration){$this->attempt('registrar_balance',fn()=>app(RegistrarBalances::class)->daily($a),(int)$a->server_id);}
             $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->where('id','>',$row->operation_cursor)
                 ->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])->orderBy('id')->limit(25)->get();
