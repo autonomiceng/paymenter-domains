@@ -5,7 +5,7 @@ require __DIR__.'/Support/reconciliation-fixture.php';
 use App\Models\{Invoice, Service};
 use Illuminate\Support\Facades\{Artisan, DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation, Price};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, NativeDomainGuard};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, NativeDomainGuard, StaffSettingsReview, StaffSettingsWrites};
 
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot(); $guard->boot();
 $billing = new DomainBilling($bindings, $guard, $clock); Queue::fake();
@@ -43,6 +43,20 @@ $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused'
 commerceReject(fn () => $billing->invoice($d->id, $user, 3));
 $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => false]]);
 $renewal = $billing->invoice($d->id, $user, 3); $op = Operation::where('invoice_id', $renewal->id)->sole();
+// Staff calendar and gate reviews after issue apply to later invoices only.
+require_once __DIR__.'/Support/staff-panel.php';
+$staff = staffUser(['admin.domains.view', 'admin.domains.manage-policy', StaffSettingsReview::permission('renewal_billing')]);
+$staffWrites = new StaffSettingsWrites($native, $sellers, $bindings);
+$issuedDebt = static fn () => serialize([DB::table('invoices')->where('id', $renewal->id)->get(), DB::table('invoice_items')->where('invoice_id', $renewal->id)->get(), DB::table('invoice_transactions')->get(), $op->fresh()->getRawOriginal()]);
+$debtBefore = $issuedDebt();
+foreach ([[true, false, 60, 30], [false, true, 21, 7]] as [$scheduled, $manual, $issue, $due]) {
+    $ticket = StaffSettingsReview::ticket($staff->id, $server->id, null, 'renewal_billing', StaffSettingsReview::stamp($server->id, null));
+    $staffWrites->run(new StaffSettingsReview($staff->id, $server->id, null, 'renewal_billing', $ticket, 'Move the renewal calendar after issue'),
+        ['scheduled' => $scheduled, 'manual' => $manual, 'issue_days' => $issue, 'due_days' => $due, 'confirmed' => true]);
+    same(['issue' => $issue, 'due' => $due], Paymenter\Extensions\Servers\Domains\Services\BillingCalendar::timing($server->settings()->get()), 'Reviewed calendar '.$issue.'/'.$due.' saved');
+    same($renewal->id, $billing->invoice($d->id, $user, 3)->id, 'Calendar '.$issue.'/'.$due.' returns the issued invoice');
+    same($debtBefore, $issuedDebt(), 'Calendar '.$issue.'/'.$due.' leaves issued due date, term and amount unchanged');
+}
 // Cancellation skips scheduled work without erasing an already issued obligation.
 $issuedBefore=serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('invoice_transactions')->get(),$op->fresh()->getRawOriginal()]);
 $issuedCancel=App\Models\ServiceCancellation::create(['service_id'=>$s->id,'type'=>'end_of_period','reason'=>'Synthetic retained-debt cancellation']);

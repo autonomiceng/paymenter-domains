@@ -78,3 +78,17 @@ attributes after rendering. An existing estimate or renewal cap never replaces m
 invalid authorization; zero and large exact amounts remain distinct from unknown. Registration
 and transfer keep their checkout estimate labels, and renewal authorization requires cost rights.
 These are synthetic native staff-fact checks, not installed panel or provider acceptance.
+
+## Renewal billing review
+
+`renewal-billing-settings-test.php` covers **Review renewal billing** on Registrar setup:
+absent rows show Off/Off and the 21/7 calendar marked as defaults, and the modal prefills them.
+A native submit writes exactly four plain rows and one audit entry with actor, reason, reviewed
+input and effective before/after values. Replay, stale pages, unchanged values, missing keys,
+non-boolean switches, non-integer days and calendar bounds (issue > due, issue ≤ 365, due ≥ 1)
+refuse with exact copy and write nothing; 365/364 and 2/1 save. An invalid saved calendar is
+reported with no effective days, never silently repaired. The action is hidden and the writer refuses
+without the policy or action permission, and tickets bound to another actor or action refuse.
+`renewal-billing-test.php` changes the calendar and switches through the reviewed writer after a
+renewal invoice is issued and checks the invoice, items, transactions and operation stay unchanged.
+These are synthetic native checks, not installed panel acceptance.

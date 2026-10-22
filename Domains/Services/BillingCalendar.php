@@ -18,7 +18,7 @@ final class BillingCalendar
         return ['expiry' => $expiry->format('Y-m-d'), 'issue' => $expiry->modify('-'.$issue.' days')->format('Y-m-d'),
             'due' => $expiry->modify('-'.$due.' days')->format('Y-m-d')];
     }
-    private static function requireTiming(int $issue, int $due): void
+    public static function requireTiming(int $issue, int $due): void
     { if ($issue <= $due || $due < 1 || $issue > 365) { throw new \DomainException('Valid billing calendar required.'); } }
     private static function days(mixed $value): int
     { if (filter_var($value, FILTER_VALIDATE_INT) === false) { throw new \DomainException('Invalid renewal timing.'); } return (int) $value; }

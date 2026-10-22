@@ -122,6 +122,7 @@
     "tests/staff-settings-history-test.php",
     "tests/staff-tld-writes-test.php",
     "tests/staff-tld-actions-test.php",
+    "tests/renewal-billing-settings-test.php",
     "tests/reminders-test.php",
     "tests/reminder-transfer-test.php",
     "tests/reminder-safety-test.php",

@@ -11,13 +11,13 @@ final class StaffSettingsReview
     public const KEY='domains_staff_settings_audit';
     public const KEYS='domains_staff_review_keys';
     public const HISTORY_LIMIT=50;
-    public const ACTIONS=['test_management'=>'Review TEST management acceptance','test_renewal'=>'Review TEST renewal acceptance','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
+    public const ACTIONS=['test_management'=>'Review TEST management acceptance','test_renewal'=>'Review TEST renewal acceptance','renewal_billing'=>'Review renewal billing','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
         'tld_settings'=>'Review TLD availability','seller'=>'Select seller','publish'=>'Publish prices','import'=>'Import accepted ending','acceptance'=>'Review catalogue acceptance','history'=>'Review history acceptance','enroll_sandbox'=>'Enroll NameSilo OTE key','configure'=>'Verify identity','probe'=>'Read balance','processing'=>'Change processing','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
     private array $verified=[];
     private array $before=[];
     private array $input=[];
     public function input(array $data): void
-    { $this->input=array_intersect_key($data,array_flip(['ending','history_action','delivery_id','alert_id','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention'])); }
+    { $this->input=array_intersect_key($data,array_flip(['ending','history_action','delivery_id','alert_id','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
         public readonly string $action,private readonly string $ticket,public readonly string $reason) {}
     public static function permission(string $action): string
@@ -124,6 +124,7 @@ final class StaffSettingsReview
             'history'=>array_map(function($action)use($a){try{$v=$a?HistoryAcceptances::load(CatalogueAcceptances::binding($a),$action):null;return $v?['timezone'=>$v->timezone,'lag'=>$v->lagSeconds,'retention'=>$v->retentionSeconds,'vocabulary'=>$v->vocabulary]:null;}catch(\Throwable){return 'unavailable';}},[\Paymenter\Extensions\Servers\Domains\Data\Action::Register,\Paymenter\Extensions\Servers\Domains\Data\Action::Renew,\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer]),
             'sellers'=>SalesPolicy::when($t,fn($q)=>$q->where('tld',$t->tld))->limit($t?1:0)->lockForUpdate()->get()->map(fn($p)=>['tld'=>$p->tld,'server'=>$p->server_id,'revision'=>$p->revision,'register'=>$p->register_enabled,'transfer'=>$p->transfer_enabled])->all(),
             'prices'=>Price::where('server_id',$server)->when($t,fn($q)=>$q->where('tld',$t->tld))->orderBy('id')->limit($t?12:0)->lockForUpdate()->get()->map(fn($p)=>['id'=>$p->id,'revision'=>$p->revision,'retail'=>$p->retail,'hold'=>$p->hold_reason])->all(),
+            ...($this->action==='renewal_billing'?['renewal_billing'=>RenewalBillingSettings::read($server,true)]:[]),
             'snapshot'=>self::stamp($server,$tld,true)];
     }
     /** Outcome audit grants no authority; retain it even if permissions or the saved state changed during I/O. */

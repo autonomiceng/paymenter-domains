@@ -55,6 +55,7 @@ class RegistrarSetup extends Page
                 try{$facts['TEST management acceptance']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::accepted(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a))?'Accepted':'Not accepted';}
                 catch(\Throwable){$facts['TEST management acceptance']='Unavailable';}
             }
+            $facts += \Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::facts((int)$s->id);
             $facts += \Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for((int)$s->id);
             $facts += \Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule((int)$s->id);
             $entries=[];foreach($facts as $label=>$value){$entries[]=TextEntry::make('s'.$s->id.'_'.count($entries))->label($label)->state((string)$value)->badge($label==='Environment');}
