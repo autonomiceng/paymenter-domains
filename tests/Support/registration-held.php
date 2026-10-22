@@ -54,10 +54,10 @@ commerceReject(fn()=>$settings->run($review('acceptance',null),['ending'=>$endin
 $settings->run($review('acceptance',null),['ending'=>$ending,'accept'=>true,'verified'=>true,'terms'=>[1],'registry'=>true]);
 expect(count(Review::historyRows($server->fresh()))>0,'Explicit acceptance recorded in staff audit');
 $accepted=CatalogueAcceptances::load($binding);
-same(['com'],array_keys($accepted->endings),'Review saves the accepted ending');
-same([1],$accepted->endings['com']['register'],'Review saves accepted registration terms');
-same([1],$accepted->endings['com']['renew'],'Review preserves annual renewal terms');
-same(true,$accepted->endings['com']['registry'],'Review saves registry evidence');
+same([$ending],array_keys($accepted->endings),'Review saves the accepted ending');
+same([1],$accepted->endings[$ending]['register'],'Review saves accepted registration terms');
+same([1],$accepted->endings[$ending]['renew'],'Review preserves annual renewal terms');
+same(true,$accepted->endings[$ending]['registry'],'Review saves registry evidence');
 commerceReject(fn()=>$bindings->setProcessing($server->id,true));
 commerceReject(fn()=>$settings->run($review('processing',null),['enabled'=>true,'confirmed'=>true]));
 same(false,$account->fresh()->processing_enabled,'Staff acceptance without reviewed runtime/shared workers cannot enable spending');

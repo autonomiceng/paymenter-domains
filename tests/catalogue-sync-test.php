@@ -119,7 +119,7 @@ foreach (['<Price>10.00</Price>', '<ProductEnabled><Value>true</Value></ProductE
 }
 $enom->pricePayload = null;
 // Registration requires any eligible exact term, independently of a valid annual renewal.
-$enom->disabledRegisterTerms = [];
+$enom->disabledRegisterTerms = [1];
 same(1, $sync->refresh(1, $context(1))['synced'], 'Refresh with only the later registration term priced');
 same(true, Tld::where('server_id', 1)->firstOrFail()->register_enabled, 'An eligible later term enables registration');
 $enom->disabledRegisterTerms = [1, 3];
