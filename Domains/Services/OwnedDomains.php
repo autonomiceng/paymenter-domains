@@ -177,6 +177,27 @@ final readonly class OwnedDomains
         $badge = $adopted ? \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company(config('settings.company_name')).' Registration' : null;
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';
         return new OwnedDomain($d->domain,$status,$tone,$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
-            $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, registrationBadge:$badge, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState));
+            $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, registrationBadge:$badge, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
+            renewNow:$forms&&$renewal==='On'?$this->renewNow($d):[]);
+    }
+    /** Owner renewal request; DomainBilling stays the authority, this only hides requests it would refuse. */
+    private function renewNow(Domain $d): array
+    {
+        if ($d->status !== 'active' || $d->service?->status !== 'active' || !$d->provider_expires_at) { return []; }
+        try {
+            $settings = \App\Models\Server::findOrFail($d->server_id)->settings;
+            if (filter_var($settings->pluck('value', 'key')->get('domains_manual_renewals_enabled'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) !== true) { return []; }
+            $key = RenewalCycles::key($d);
+            $cycle = $d->operations()->where('action', 'renew')->where(fn ($q) => $q->where('operation_key', $key)->orWhere('operation_key', 'like', $key.':replacement:%'))->orderByDesc('id')->first();
+            if ($cycle) {
+                $invoice = $cycle->state === 'awaiting_payment' ? Invoice::whereKey($cycle->invoice_id)->where('user_id', $d->user_id)->where('status', 'pending')->first() : null;
+                return $invoice ? ['invoice' => route('invoices.show', $invoice)] : [];
+            }
+            $expiry = $d->provider_expires_at->toDateTimeImmutable(); $timing = BillingCalendar::timing($settings);
+            $due = BillingCalendar::dates($expiry, $timing['issue'], $timing['due'])['due'];
+            $terms = DomainBilling::terms($expiry, $this->clock->now());
+            if ($this->clock->now()->format('Y-m-d') >= $due || $terms === []) { return []; }
+            return ['url' => route('domains.domains.renew', $d->id), 'terms' => $terms, 'order_by' => (new \DateTimeImmutable($due))->modify('-1 day')->format('Y-m-d')];
+        } catch (\Throwable) { return []; }
     }
 }

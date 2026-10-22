@@ -115,3 +115,19 @@ late success. Tests also switch to a second valid same-owner agreement before co
 exercise repeated settlement, and complete a renewal before billing the next cycle.
 These tests use synthetic gateways and offline SQLite; live delivery and shared-database
 concurrency remain unverified.
+
+## Staff renewal billing and owner requests
+
+Supersedes the note above that there is no staff editor: Registrar setup → **Review renewal
+billing** now sets both switches and the issue/due calendar through an audited staff review
+(`renewal-billing-settings-test.php`). Calendar changes apply to invoices issued afterwards;
+`renewal-billing-test.php` confirms an issued renewal invoice and its operation stay unchanged.
+
+`owner-renewal-test.php` covers **Renew now** on an active native domain page. With owner
+requests off there is no form and a direct POST refuses with plain copy and creates no debt.
+With them on, terms run from 1 year up to the ten-year registry horizon, and the form is offered
+until the day before the due date. Malformed and out-of-horizon terms, foreign owners, replayed
+or mismatched form keys and paused processing create nothing. A request redirects to the invoice
+for the requested term; a duplicate returns the same invoice, a different term refuses, and the
+page then links the issued invoice. From the due date the form is hidden and requests refuse.
+Owner copy never shows internal reasons. No registrar job is queued.

@@ -47,7 +47,7 @@ final class DomainBilling
             }
             $today = $this->clock->now()->format('Y-m-d');
             if ($today >= $calendar['due'] || (!$actor && $today < $calendar['issue'])) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
-            if ($years < 1 || $years > 10 || $d->provider_expires_at->addYearsNoOverflow($years) > $this->clock->now()->modify('+10 years')) {
+            if (!in_array($years, self::terms($d->provider_expires_at->toDateTimeImmutable(), $this->clock->now()), true)) {
                 throw new \DomainException('Renewal term exceeds the registry horizon.');
             }
             // Holding retail is independent of current seller, sales/renew flags and provider cost.
@@ -84,6 +84,13 @@ final class DomainBilling
         });
     }
 
+
+    /** Renewal terms of 1 to 10 years whose new expiry stays within ten years of now. */
+    public static function terms(\DateTimeImmutable $expiry, \DateTimeImmutable $now): array
+    {
+        $horizon = $now->modify('+10 years');
+        return array_values(array_filter(range(1, 10), static fn (int $years) => \Carbon\CarbonImmutable::instance($expiry)->addYearsNoOverflow($years) <= $horizon));
+    }
 
     /** Validated saved calendar, shared by billing and its month-out notice. */
     public static function calendarFor(array $l):array
