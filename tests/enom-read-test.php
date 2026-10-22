@@ -286,3 +286,5 @@ foreach (['expiry' => ReadCommand::Expiry, 'renewalInfo' => ReadCommand::Renewal
     same('123', $read->facts()['provider_reference'], 'Private read retains proven provider identity');
     same(true, $read->facts()['owned'], 'Private facts carry positive ownership marker');
 }
+
+require __DIR__.'/Support/enom-captured-audit.php';

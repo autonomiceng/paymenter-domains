@@ -69,3 +69,9 @@ Expiry reconciliation accepts the primary flat expiration only with matching aut
 local-day evidence and continues refusing secondary expiry aliases. Hold, maximum,
 price and currency failures retain their refusal/unknown behavior. Mutation checks cover
 wrapper reads, primary-expiration refusal and empty Check currency acceptance.
+
+Captured-read audit: `enom-read-test.php` loads synthetic full-envelope replies for
+all captured read commands, pinning ownership, contact roles, nullable flags,
+expiry, grouped available balance, catalogue capabilities, Check v2 and DNS shapes.
+The captured WPPS dollar price is normalized only in the privacy reader; malformed
+amounts stay unknown. Empty expired inventory never proves subject eligibility.
