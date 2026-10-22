@@ -78,7 +78,7 @@ same($before,$ledger(),'Foreign and mismatched intents create no invoice');
 // Processing off is an internal refusal: generic copy, no reason code.
 $bindings->setProcessing($server->id,false);
 same([],$owners->present($d->fresh())->renewNow,'Processing off hides the request');
-expect(!str_contains($page($d),'Create renewal invoice'),'Processing off page has no request');$refused($d,['years'=>'2'],OwnerRenewalController::UNAVAILABLE);$bindings->setProcessing($server->id,true);
+expect(!str_contains($page($d),'Create renewal invoice'),'Processing off page has no request');$refused($d,['years'=>'2'],OwnerRenewalController::UNAVAILABLE);$bindings->setProcessing($server->id, true, syntheticActivation());
 same($before,$ledger(),'Paused processing creates no invoice');
 // Raw rows retain invalid authority that normal model guards would refuse.
 $policy=$d->fresh()->renewal_policy;

@@ -36,7 +36,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         $server = Server::create(['name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
         $binding = $bindings->configure($server->id, $key, $environment, ['token' => 'account-'.$key]);
         if ($environment === Environment::Live) { $bindings->confirmLiveSite($server->id, rtrim(config('app.url'), '/')); }
-        $bindings->setProcessing($server->id, true, $activation);
+        $bindings->setProcessing($server->id, true, $activation ?? syntheticActivation());
         $tld = Tld::create(['server_id' => $server->id, 'registrar_key' => $key, 'account_fingerprint' => $binding->fingerprint,
             'tld' => $ending, 'enabled' => true, 'min_years' => 1, 'max_years' => 3]);
         $terms = $key === 'enom' ? [1, 3] : [1];

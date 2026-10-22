@@ -57,7 +57,7 @@ $bindings = new AccountBindings($registry); $bound = [];
 foreach ([1 => 'enom', 2 => 'namesilo'] as $id => $key) {
     Server::create(['id' => $id, 'name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
     $bound[$id] = $bindings->configure($id, $key, Environment::Test, ['key' => 'synthetic-private-key']);
-    $bindings->setProcessing($id, true);
+    $bindings->setProcessing($id, true, syntheticActivation());
 }
 $context = fn (int $id, int $budget = 20) => new RequestContext($bound[$id], RequestOrigin::Background, $clock->now()->modify('+5 minutes'), new RequestBudget($budget), $clock);
 $row = ['register' => [1], 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true];

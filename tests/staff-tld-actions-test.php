@@ -75,7 +75,7 @@ same('9.99',Illuminate\Support\Facades\DB::table('domains_registrar_balances')->
 $providerReads=$reads->calls;
 // Restore the original synthetic reader binding after the configure-action credential rotation.
 $fixtureBindings->configure($t->server_id,'enom',\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,['token'=>'account-enom']);
-$fixtureBindings->setProcessing($t->server_id,true);
+$fixtureBindings->setProcessing($t->server_id, true, syntheticActivation());
 // Earlier acceptance actions deliberately invalidate publication proof; import fresh synthetic evidence.
 $enomAccount=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole();
 $enomBinding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($enomAccount);

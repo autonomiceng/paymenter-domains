@@ -9,3 +9,5 @@ Enom TEST deployment-wide daily limit remain separate.
 `native-identity-readiness-test.php` pins the empty minute-budget wording.
 These are synthetic offline SQLite checks; no registrar traffic or shared-database
 concurrency acceptance is implied.
+
+`binding-test.php` refuses processing activation without an acceptance callback before runtime registration and preserves the disabled state after a rejected callback. `management-test.php` polls live leases, unsealed attempts, exhausted read budgets and terminal states twice without I/O or mutation; binding failures still throw.

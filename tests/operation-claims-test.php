@@ -41,7 +41,7 @@ foreach (['reversal', 'generation', 'reservation', 'owner', 'pause', 'payload', 
         };
     };
     $result = $assertNoSend($op); same('absent', $result->attempt['seal'], 'Authority changes block final seal');
-    $preflight->during = null; if ($change === 'pause') { $bindings->setProcessing($op->server_id, true); }
+    $preflight->during = null; if ($change === 'pause') { $bindings->setProcessing($op->server_id, true, syntheticActivation()); }
 }
 foreach (['capability', 'premium', 'short', 'old'] as $change) {
     $op = $new('invalid-'.$change.'.com');

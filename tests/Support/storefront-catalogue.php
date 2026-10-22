@@ -13,7 +13,7 @@ function storefrontCatalogueFixture(array $fixture, array $endings, array $terms
     extract($fixture);
     $server = Server::create(['name' => 'Catalogue fixture', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
     $binding = $bindings->configure($server->id, 'enom', Environment::Test, ['token' => 'catalogue-fixture-'.$server->id]);
-    $bindings->setProcessing($server->id, true);
+    $bindings->setProcessing($server->id, true, syntheticActivation());
     $rows = array_fill_keys($endings, ['register' => $terms, 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]);
     $accepted = CatalogueAcceptances::save($binding, 0, $rows); $catalogueTlds = [];
     foreach ($endings as $ending) {

@@ -38,7 +38,7 @@ $tlds[0]->update(['enabled' => false, 'register_enabled' => false, 'renew_enable
 $bindings->setProcessing($server->id, false);
 $clock->instant = new DateTimeImmutable('2027-09-26T12:00:00Z');
 commerceReject(fn () => $billing->invoice($d->id, $user, 3));
-$bindings->setProcessing($server->id, true);
+$bindings->setProcessing($server->id, true, syntheticActivation());
 $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => true]]);
 commerceReject(fn () => $billing->invoice($d->id, $user, 3));
 $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => false]]);
@@ -121,7 +121,7 @@ same(0, Artisan::call('app:cron-job'), 'Actual native cron completes');
 same(null, $s->fresh()->expires_at, 'Actual native cron leaves native expiry null');
 same((array) $frozen, (array) DB::table('invoice_items')->where('invoice_id', $renewal->id)->first(), 'Native cron preserves issued amount');
 // A separate real completed domain exercises scheduled issue and bill+alert below wholesale.
-$bindings->setProcessing($server->id, true);
+$bindings->setProcessing($server->id, true, syntheticActivation());
 $tld->update(['enabled' => true, 'register_enabled' => true, 'renew_enabled' => true]); $prices->republish($tld); $native->publish($tld->id, $now);
 $sellers->change('com', 3, $server->id, true, true, $now);
 Carbon\Carbon::setTestNow(); Carbon\CarbonImmutable::setTestNow();

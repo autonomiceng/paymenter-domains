@@ -144,12 +144,12 @@ foreach ($changes as [$table, $id, $changeset]) {
     expect(!$check()->allowed(), 'Post-read changed '.$table.' refuses'); DB::table($table)->where('id', $id)->update($saved);
 }
 $state->during = static fn () => $bindings->setProcessing($binding->serverId, false);
-expect(!$check()->allowed(), 'Processing pause during reads refuses'); $bindings->setProcessing($binding->serverId, true);
+expect(!$check()->allowed(), 'Processing pause during reads refuses'); $bindings->setProcessing($binding->serverId, true, syntheticActivation());
 $state->during = static function () use ($bindings, $binding): void {
     $timestamps = DB::table('settings')->pluck('updated_at', 'id');
     $accountTime = DB::table('domains_accounts')->where('server_id', $binding->serverId)->value('updated_at');
     $bindings->configure($binding->serverId, 'enom', Environment::Test, ['token' => 'account-enom']);
-    $bindings->setProcessing($binding->serverId, true);
+    $bindings->setProcessing($binding->serverId, true, syntheticActivation());
     // Rotation detection must use ciphertext, even when persisted timestamps do not change.
     foreach ($timestamps as $id => $time) { DB::table('settings')->where('id', $id)->update(['updated_at' => $time]); }
     DB::table('domains_accounts')->where('server_id', $binding->serverId)->update(['updated_at' => $accountTime]);

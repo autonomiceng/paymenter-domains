@@ -37,7 +37,7 @@ foreach ([1,2] as $pass) {
     same('queued',$engine->run($op->id,$writer)->state,'Processing pause during admission pass '.$pass.' stays retryable');
     same('renewal_acceptance_required',$op->fresh()->safe_code,'Configuration reason survives authority recheck'); same($writes,$state->writes,'Paused processing sends nothing');
     same([],$op->fresh()->attempt??[],'Pause precedes sealing');
-    $renewBindings->setProcessing($b->serverId,true); $state->during=null; $state->duringCommand=null; Cache::flush();
+    $renewBindings->setProcessing($b->serverId, true, syntheticActivation()); $state->during=null; $state->duringCommand=null; Cache::flush();
     same('pending',$engine->run($op->id,$writer)->state,'Resumed processing recovers the same obligation'); same($writes+1,$state->writes,'Resumption sends exactly once');
 }
 echo "Every required Enom renewal subread recovers without holding or replay\n"; $nativeSuccessful=true;

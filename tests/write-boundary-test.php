@@ -41,7 +41,7 @@ foreach ($ops as $change => $op) {
     $before = count($transport->calls); $result = $engine->execute($op->id);
     same($before, count($transport->calls), 'Post-seal '.$change.' refuses transport'); same('uncertain', $result->state, 'Sealed refusal preserves uncertainty');
     expect(array_key_exists('execution', $result->attempt), 'Sealed refusal records execution null');
-    if ($change === 'pause') { $bindings->setProcessing($op->server_id, true); }
+    if ($change === 'pause') { $bindings->setProcessing($op->server_id, true, syntheticActivation()); }
     if ($change === 'acceptance') { CatalogueAcceptances::save($enomBinding, 2, ['com' => ['register' => [1, 3], 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]]); }
     if ($change === 'lease') { $clock->instant = $clock->now()->modify('-26 seconds'); }
 }

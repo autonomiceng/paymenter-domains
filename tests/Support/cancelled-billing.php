@@ -29,6 +29,6 @@ $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$setting('domains_
 expect($billing->invoice($otherSource->domain_id,$user) instanceof App\Models\Invoice,'Otherwise eligible uncancelled manual billing succeeds');
 $setting('domains_manual_renewals_enabled',false);
 $unrelated=ServiceCancellation::create(['service_id'=>$otherSource->service_id,'type'=>'end_of_period','reason'=>'Synthetic unrelated request']);
-$bindings->setProcessing($server->id,false);commerceReject(fn()=>$billing->invoice($d->id));$bindings->setProcessing($server->id,true);
+$bindings->setProcessing($server->id,false);commerceReject(fn()=>$billing->invoice($d->id));$bindings->setProcessing($server->id, true, syntheticActivation());
 DB::table('service_cancellations')->where('id',$unrelated->id)->delete();
 $clock->instant=$billingTime;

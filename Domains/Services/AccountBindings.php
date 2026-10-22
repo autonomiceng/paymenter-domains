@@ -159,7 +159,7 @@ final class AccountBindings
 
     public function setProcessing(int $serverId, bool $enabled, ?\Closure $acceptance=null): void
     {
-        if($enabled&&app()->bound(Runtime::class)&&!$acceptance){throw new \DomainException('Installed activation requires staff review.');}
+        if($enabled&&!$acceptance){throw new \DomainException('Installed activation requires staff review.');}
         DB::transaction(function () use ($serverId, $enabled,$acceptance): void {
             $server=$this->server($serverId, true);
             $account = Account::where('server_id', $serverId)->lockForUpdate()->firstOrFail();
