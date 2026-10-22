@@ -241,6 +241,9 @@ try {
     $refused(fn () => RenewalContinuation::claim($out.'/receipt.json'), 'Renewal continuation evidence refused.'); $reset();
     chmod($out.'/attempt-private.json', 0644);
     $refused(fn () => RenewalContinuation::claim($out.'/receipt.json'), 'Private evidence permissions refused.'); chmod($out.'/attempt-private.json', 0600);
+    rename($out.'/attempt-private.json',$out.'/attempt-target.json');symlink($out.'/attempt-target.json',$out.'/attempt-private.json');
+    $refused(fn()=>RenewalContinuation::claim($out.'/receipt.json'),'Private evidence permissions refused.');
+    unlink($out.'/attempt-private.json');$reset();
     $refused(fn () => RenewalContinuation::claim($out.'/receipt.json', 59), 'Cumulative OTE budget refused.');
     putenv('OTE_RENEWAL_CONTEXT=interactive');
     $wire = new GuardedTransport('offline-secret-token', true, $out,

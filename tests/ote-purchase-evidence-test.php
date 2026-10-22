@@ -56,6 +56,14 @@ $probe = static function (string $scenario): array {
             $field = $scenario === 'tamper-name' ? 'name' : 'authorized_amount';
             $bad = $saved; $bad[$field] = $field === 'name' ? 'contract-ote-123456789abc.com' : '0.01';
             file_put_contents($out.'/attempt-private.json', json_encode($bad));
+        } elseif ($scenario === 'mode-0644') {
+            chmod($out.'/attempt-private.json', 0644); clearstatcache();
+            same(0644, fileperms($out.'/attempt-private.json') & 0777, 'Invalid private evidence mode installed');
+        } elseif ($scenario === 'symlink') {
+            rename($out.'/attempt-private.json', $out.'/attempt-target.json');
+            chmod($out.'/attempt-target.json', 0600);
+            symlink($out.'/attempt-target.json', $out.'/attempt-private.json');
+            expect(is_link($out.'/attempt-private.json'), 'Private evidence symlink installed');
         }
         $binding = new AccountBinding('namesilo', 1, Environment::Test, 'synthetic');
         $category = $wire->purchaseAttempt()->reconcile($wire, new Client($binding, 'offline-secret-token', $wire), $binding, new SystemClock);
@@ -66,9 +74,9 @@ $probe = static function (string $scenario): array {
             expect(!str_contains($receipt, $private), 'Private attempt values absent from receipt');
         }
         same(1, count(array_filter($calls, static fn ($v) => $v === 'registerDomain')), 'Unknown never registers again');
-        if (!str_starts_with($scenario, 'tamper-')) {
+        if (!str_starts_with($scenario, 'tamper-') && !in_array($scenario, ['mode-0644', 'symlink'], true)) {
             expect(in_array('listOrders', $calls, true) && in_array('getDomainInfo', $calls, true), 'Unknown invokes real production reconciliation');
-        } else { same(['registerDomain'], $calls, 'Changed evidence refused before reconciliation'); }
+        } else { same(['registerDomain'], $calls, 'Invalid private evidence refused before reconciliation'); }
         foreach ([$wire->domain, '8.9500'] as $leak) {
             $wire->receipt['leak'] = $leak; $refused = false;
             try { $wire->save(); } catch (Throwable $error) {
@@ -87,7 +95,39 @@ $probe = static function (string $scenario): array {
 };
 foreach (['registered' => 'registered_in_account', 'absent' => 'not_registered', 'wrong-name' => 'ambiguous',
     'wrong-amount' => 'ambiguous', 'duplicate' => 'ambiguous', 'unknown-info' => 'ambiguous', 'unavailable' => 'ambiguous',
-    'owned-no-order' => 'ambiguous', 'unknown-orders' => 'ambiguous', 'null-detail' => 'ambiguous', 'wrong-operation' => 'ambiguous', 'timeout' => 'ambiguous', 'tamper-name' => 'ambiguous', 'tamper-amount' => 'ambiguous'] as $scenario => $expected) {
+    'owned-no-order' => 'ambiguous', 'unknown-orders' => 'ambiguous', 'null-detail' => 'ambiguous', 'wrong-operation' => 'ambiguous', 'timeout' => 'ambiguous', 'tamper-name' => 'ambiguous', 'tamper-amount' => 'ambiguous',
+    'mode-0644' => 'ambiguous', 'symlink' => 'ambiguous'] as $scenario => $expected) {
     [$category] = $probe($scenario); same($expected, $category, 'Closed category for '.$scenario);
 }
+
+foreach ([false, true] as $invalid) {
+    $out=sys_get_temp_dir().'/ote-auth-'.bin2hex(random_bytes(6));mkdir($out,0700);$calls=[];
+    try {
+        $fake=static function($command,$p)use(&$calls):TransportResponse{$calls[]=$command;return new TransportResponse(200,json_encode(['request'=>['operation'=>$command],'reply'=>['code'=>300,'detail'=>'synthetic']]));};
+        $wire=new GuardedTransport('offline-secret-token',true,$out,$fake,static fn()=>21,10);
+        if($invalid){$wire->purchaseAuthorization(static fn()=>new stdClass);}
+        $refused=false;
+        try{$wire->raw('https://ote.namesilo.com/apibatch','registerDomain',['domain'=>$wire->domain,'years'=>1,'auto_renew'=>0,'private'=>0]);}
+        catch(RuntimeException){$refused=true;}
+        expect($refused,'Missing or invalid purchase authorization refuses registration');
+        same([], $calls, 'Unauthorized registration never reaches fake transport');
+        expect(!file_exists($out.'/attempt-private.json'), 'Unauthorized registration writes no private evidence');
+    } finally {foreach(glob($out.'/*') as $file){unlink($file);}rmdir($out);}
+}
+
+$out=sys_get_temp_dir().'/ote-renewal-evidence-'.bin2hex(random_bytes(6));mkdir($out,0700);$calls=[];
+try {
+    $fake=static function($command,$p)use(&$calls):TransportResponse{$calls[]=$command;return new TransportResponse(200,json_encode(['request'=>['operation'=>$command],'reply'=>['code'=>300,'detail'=>'synthetic']]));};
+    $wire=new GuardedTransport('offline-secret-token',true,$out,$fake,static fn()=>21,10);
+    $wire->purchaseAuthorization(static fn()=>new Money('8.9500','USD'));
+    $wire->raw('https://ote.namesilo.com/apibatch','registerDomain',['domain'=>$wire->domain,'years'=>1,'auto_renew'=>0,'private'=>0]);
+    $wire->authorizeRenewal(true);$wire->renewalBefore('2027-10-22');
+    $wire->raw('https://ote.namesilo.com/apibatch','renewDomain',['domain'=>$wire->domain,'years'=>1,'auto_renew'=>0]);
+    same(['registerDomain','renewDomain'],$calls,'Authorized renewal follows the recorded registration');
+    $registration=json_decode(file_get_contents($out.'/registration-attempt-private.json'),true,16,JSON_THROW_ON_ERROR);
+    $renewal=json_decode(file_get_contents($out.'/attempt-private.json'),true,16,JSON_THROW_ON_ERROR);
+    same('registerDomain',$registration['command'],'First purchase is archived as registration evidence');
+    same('renewDomain',$renewal['command'],'Current private evidence is the renewal');
+    same('2027-10-22',$renewal['before_expiry'],'Renewal evidence retains the prior expiry');
+} finally {foreach(glob($out.'/*') as $file){unlink($file);}rmdir($out);}
 echo "Private purchase evidence: persistence, real reconciliation, categories and redaction passed\n";

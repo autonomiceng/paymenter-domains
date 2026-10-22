@@ -38,6 +38,7 @@ same(0, Account::count(), 'Unverified identity cannot configure a real reader');
 $expectedBinding = new AccountBinding('namesilo', 1, Environment::Test, 'synthetic-stable-id');
 $binding = $bindings->configure(1, 'namesilo', Environment::Test, ['key' => 'synthetic-key-a']);
 $account = Account::where('server_id', 1)->firstOrFail();
+same(false, $account->processing_enabled, 'Initial NameSilo configuration leaves processing off');
 same('synthetic-stable-id', $account->stable_identity, 'Configured account stores verified NameSilo identity');
 same($expectedBinding->fingerprint, $account->account_fingerprint, 'Configured account fingerprint derives from verified NameSilo identity');
 same($expectedBinding->fingerprint, $binding->fingerprint, 'Configured binding fingerprint derives from verified NameSilo identity');
