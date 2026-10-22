@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\{DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController, OwnerRenewalController};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, NativeDomainGuard, RenewalCycles, RuntimeIneligible, RuntimeReason};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, NativeDomainGuard, OwnedDomains, RenewalCycles, RuntimeIneligible, RuntimeReason};
 $guard=new NativeDomainGuard(new HolderPricing($prices),$clock);$guard->boot();
 $billing=new DomainBilling($bindings,$guard,$clock);Queue::fake();
 $controller=new OwnerRenewalController($owners,$billing);$session=app('request')->session();$other=commerceUser();
@@ -27,9 +27,19 @@ $refused=static function($domain,array $data,string $message)use($controller,$re
     same([$message],$session->get('errors')->getBag('default')->get('renew'),'Exact owner refusal: '.$message);
 };
 $replay=static function($call):void {try{$call();expect(false,'Replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Replay needs a fresh intent');}};
-$page=static function($domain)use($user,$session,$owners):string {
+$bounded=static function(callable $read):mixed {
+    DB::flushQueryLog();DB::connection()->enableQueryLog();
+    try{$result=$read();$queries=DB::getQueryLog();}finally{DB::connection()->disableQueryLog();DB::flushQueryLog();}
+    $operations=0;
+    foreach($queries as $query){
+        expect(!preg_match('/^(?:insert|update|delete) /i',$query['query']),'Owner read has no database writes');
+        if(str_contains($query['query'],'from "domains_operations"')){$operations++;expect(str_contains($query['query'],'limit'),'Owner renewal operation reads are bounded');}
+    }
+    expect($operations>0,'Owner renewal read checks operation queries');return $result;
+};
+$page=static function($domain)use($user,$session,$owners,$bounded):string {
     $r=Request::create('/domains/'.$domain->id,'GET');$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
-    return (new OwnedDomainController($owners))->show($r,$domain->id)->render();
+    return $bounded(fn()=>(new OwnedDomainController($owners))->show($r,$domain->id)->render());
 };
 $ledger=static fn()=>serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('invoice_transactions')->get(),Operation::where('action','renew')->get()->map->getRawOriginal()->all()]);
 $clock->instant=new DateTimeImmutable('2027-09-01T12:00:00Z');
@@ -175,7 +185,9 @@ foreach(['queued','running','pending','uncertain'] as $operationState){
 }
 DB::table('domains_operations')->where('id',$op->id)->update($rawOp);
 $rawDomain=$d->fresh()->getRawOriginal();DB::table('domains_domains')->where('id',$d->id)->update(['provider_expires_at'=>null]);
-same(['status'=>'review'],$owners->present($d->fresh())->renewNow,'Retained cycle with missing expiry shows review');DB::table('domains_domains')->where('id',$d->id)->update($rawDomain);
+same(['status'=>'review'],$bounded(fn()=>$owners->present($d->fresh())->renewNow),'Retained cycle with missing expiry shows review');DB::table('domains_domains')->where('id',$d->id)->update($rawDomain);
+$rawLate=$late->fresh()->getRawOriginal();DB::table('domains_domains')->where('id',$late->id)->update(['provider_expires_at'=>null]);
+same([],$bounded(fn()=>$owners->present($late->fresh())->renewNow),'Missing expiry without a renewal has no cycle');DB::table('domains_domains')->where('id',$late->id)->update($rawLate);
 
 
 // Auto-renew off: billing refuses manual requests for a stopped renewal, so the page offers none; turning it on restores the form.
@@ -215,9 +227,52 @@ same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible with
 $server->settings()->updateOrCreate(['key'=>'domains_due_days'],['value'=>'invalid','type'=>'string']);same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible with invalid calendar');$server->settings()->where('key','domains_due_days')->delete();
 same(range(1,9),$cycle()['terms']??null,'Retired unpaid cycle offers a replacement request');
 $html=$page($d);expect(str_contains($html,'Create renewal invoice')&&!str_contains($html,'Renewal invoice cancelled'),'Retired page shows the form, not the status');
+// Replacement proof covers every debt, even beyond one page or under an unexpected key.
+$copies=[];$copyInvoices=[];$copyItems=[];
+$duplicate=static function(Operation $original,string $key,?string $base=null)use(&$copyInvoices,&$copyItems):Operation {
+    $invoice=Invoice::findOrFail($original->invoice_id)->getRawOriginal();unset($invoice['id'],$invoice['number']);
+    $invoiceId=DB::table('invoices')->insertGetId($invoice);$copyInvoices[]=$invoiceId;
+    $item=\App\Models\InvoiceItem::findOrFail($original->invoice_item_id)->getRawOriginal();unset($item['id']);$item['invoice_id']=$invoiceId;
+    $itemId=DB::table('invoice_items')->insertGetId($item);$copyItems[]=$itemId;
+    $copy=$original->replicate();$copy->operation_key=$key;$copy->invoice_id=$invoiceId;$copy->invoice_item_id=$itemId;
+    $attempt=$copy->attempt;$attempt['terminal']['operation_key']=$key;$attempt['terminal']['invoice_id']=$invoiceId;$copy->attempt=$attempt;
+    if($base!==null){$copy->base_expires_at=$base;}$copy->save();return $copy;
+};
+for($i=1;$i<=101;$i++){
+    $copy=$duplicate($op->fresh(),$i===101?'owner-cycle-unexpected':$op->operation_key.':replacement:'.$i);$copies[]=$copy->id;
+}
+foreach([1,2] as $pass){
+    same(null,$bounded(fn()=>OwnedDomains::renewalCycle($d->fresh())),'Every retired debt permits replacement: '.$pass);
+    same(['status'=>'cancelled'],$bounded(fn()=>OwnedDomains::renewalCycle($d->fresh(),true)),'Large retired cycle retains its status: '.$pass);
+}
+DB::table('domains_operations')->where('id',$copy->id)->update(['safe_code'=>'needs_review']);
+same(['status'=>'review'],$bounded(fn()=>OwnedDomains::renewalCycle($d->fresh())),'Unexpected-key debt on the second page blocks replacement');
+DB::table('domains_operations')->where('id',$copy->id)->update(['safe_code'=>'renewal_cancelled_unpaid']);
+DB::table('domains_operations')->where('id',$copy->id)->update(['base_expires_at'=>'not-a-date']);
+same(['status'=>'review'],$bounded(fn()=>OwnedDomains::renewalCycle($d->fresh())),'Malformed retained expiry still requires review');
+same(['status'=>'review'],$bounded(fn()=>OwnedDomains::renewalCycle($d->fresh(),true)),'Malformed retained expiry has no cancelled fallback');
+DB::table('domains_operations')->where('id',$copy->id)->update(['base_expires_at'=>$op->getRawOriginal('base_expires_at')]);
+DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'needs_review']);
+same(['status'=>'review'],$bounded(fn()=>OwnedDomains::renewalCycle($d->fresh())),'Old debt outside the newest 100 blocks replacement');
+DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'renewal_cancelled_unpaid']);
+DB::table('domains_operations')->whereIn('id',$copies)->delete();
+DB::table('invoice_items')->whereIn('id',$copyItems)->delete();DB::table('invoices')->whereIn('id',$copyInvoices)->delete();
 $response=$controller->renew($req($d,['years'=>'1']),$d->id);$replacement=Operation::where('domain_id',$d->id)->where('action','renew')->orderByDesc('id')->first();
-same([$op->operation_key.':replacement:1',1,route('invoices.show',$replacement->invoice_id)],[$replacement->operation_key,(int)$replacement->term,$response->getTargetUrl()],'Replacement request lands on its own invoice');
-same(['invoice'=>route('invoices.show',$replacement->invoice_id)],$cycle(),'Replacement cycle links its invoice');
+$replacementUrl=route('invoices.show',Invoice::findOrFail($replacement->invoice_id));
+same([$op->operation_key.':replacement:1',1,$replacementUrl],[$replacement->operation_key,(int)$replacement->term,$response->getTargetUrl()],'Replacement request lands on its own invoice');
+same(['invoice'=>$replacementUrl],$cycle(),'Replacement cycle links its invoice');
+// Newer history for other cycles cannot hide the current invoice.
+$copies=[];$copyInvoices=[];$copyItems=[];
+for($i=0;$i<105;$i++){
+    $copy=$duplicate($op->fresh(),'renew:'.$d->id.':g'.$d->authority_generation.':2026-10-18:replacement:'.$i,'2026-10-18');$copies[]=$copy->id;
+}
+foreach([strtoupper($replacement->operation_key),strtoupper($op->operation_key),$op->operation_key.'0:replacement:1'] as $key){
+    $copy=$duplicate($op->fresh(),$key);$copies[]=$copy->id;
+}
+same(['invoice'=>$replacementUrl],$bounded(fn()=>$cycle()),'Large unrelated history preserves the current invoice');
+$html=$page($d);expect(str_contains($html,'View renewal invoice'),'Large history page still links the current invoice');
+DB::table('domains_operations')->whereIn('id',$copies)->delete();
+DB::table('invoice_items')->whereIn('id',$copyItems)->delete();DB::table('invoices')->whereIn('id',$copyInvoices)->delete();
 
 // Owner copy for every billing refusal hides reasons and internal messages.
 foreach([[new RuntimeIneligible(RuntimeReason::SpendingPaused),OwnerRenewalController::UNAVAILABLE],[new RuntimeIneligible(RuntimeReason::LifecycleNotReady),OwnerRenewalController::UNAVAILABLE],

@@ -176,7 +176,7 @@ final readonly class OwnedDomains
     private function renewNow(Domain $d, bool $forms): array
     {
         if (!$d->provider_expires_at) {
-            return $d->operations()->where('action', 'renew')->where('authority_generation', $d->authority_generation)->exists() ? ['status' => 'review'] : [];
+            return $d->operations()->where('action', 'renew')->where('authority_generation', $d->authority_generation)->limit(1)->exists() ? ['status' => 'review'] : [];
         }
         try {
             if ($cycle = self::renewalCycle($d)) { return $cycle; }
@@ -191,13 +191,12 @@ final readonly class OwnedDomains
     /** This cycle as billing sees it: null while a new request is possible, else its pending invoice or an owner status. */
     public static function renewalCycle(Domain $d, bool $retained = false): ?array
     {
-        $key = RenewalCycles::key($d); $ops = $d->operations()->where('action', 'renew')->orderBy('id')->get();
-        $cycle = $ops->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
+        $key = RenewalCycles::key($d);
+        $cycle = $d->operations()->where('action', 'renew')
+            ->where(fn ($q) => $q->whereLike('operation_key', $key, caseSensitive: true)->orWhereLike('operation_key', $key.':replacement:%', caseSensitive: true))
+            ->orderByDesc('id')->first();
         if (!$cycle) { return null; }
-        $ids = $ops->pluck('invoice_id')->filter()->all();
-        $l = ['domain' => $d, 'service' => $d->service, 'operations' => $ops, 'invoices' => Invoice::whereIn('id', $ids)->get(),
-            'items' => \App\Models\InvoiceItem::whereIn('invoice_id', $ids)->get(), 'transactions' => \App\Models\InvoiceTransaction::whereIn('invoice_id', $ids)->get(),
-            'credit' => $d->service?->user?->credits()->where('currency_code', 'USD')->first()];
+        $l = self::renewalLedger($d, collect([$cycle]));
         if ($cycle->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($cycle, $d)) {
             $invoice = $l['invoices']->firstWhere('id', $cycle->invoice_id);
             if ($invoice?->status === 'cancelled' && (int) $invoice->user_id === (int) $d->user_id) { return ['status' => 'cancelled']; }
@@ -208,7 +207,21 @@ final readonly class OwnedDomains
                 default => ['status' => 'review'] };
         }
         // A retired or refunded debt permits a replacement only when billing's cycle proof holds.
-        try { RenewalCycles::next($l); } catch (\Throwable) { return ['status' => 'review']; }
+        try {
+            // Keep date validation in the shared proof, including malformed dates and unexpected keys.
+            $d->operations()->where('action', 'renew')->where('authority_generation', $d->authority_generation)
+                ->chunkById(100, function ($ops) use ($d): void {
+                    // Only the proof is needed here; the writer computes the replacement number under locks.
+                    RenewalCycles::next(self::renewalLedger($d, $ops));
+                });
+        } catch (\Throwable) { return ['status' => 'review']; }
         return $retained ? ['status' => $cycle->safe_code === 'renewal_cancelled_unpaid' ? 'cancelled' : 'review'] : null;
+    }
+    private static function renewalLedger(Domain $d, \Illuminate\Support\Collection $ops): array
+    {
+        $ids = $ops->pluck('invoice_id')->filter()->all();
+        return ['domain' => $d, 'service' => $d->service, 'operations' => $ops, 'invoices' => Invoice::whereIn('id', $ids)->get(),
+            'items' => \App\Models\InvoiceItem::whereIn('invoice_id', $ids)->get(), 'transactions' => \App\Models\InvoiceTransaction::whereIn('invoice_id', $ids)->get(),
+            'credit' => $d->service?->user?->credits()->where('currency_code', 'USD')->first()];
     }
 }
