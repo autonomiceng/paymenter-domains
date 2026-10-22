@@ -140,3 +140,24 @@ POST then gets the cancelled copy). After staff retire the unpaid invoice, the f
 a request issues a replacement invoice; payment history on the retired invoice keeps it in review.
 TLD minimum and maximum years are not applied to renewals: billing and the form both cap terms
 only by the ten-year registry horizon.
+
+
+## Owner renewal eligibility and retained cycles
+
+`owner-renewal-test.php` checks the page and POST against the same billing eligibility.
+Processing off, paused spending, unresolved anchors, unresolved prior operations, nonstandard
+pricing and inactive holdings hide new requests without creating debt. Pending, paid, cancelled
+and held cycles remain visible when manual requests or renewal are off, a service is suspended,
+a domain needs review, the request cutoff has passed or the saved calendar is invalid. A retired
+unpaid cycle still shows its cancelled status when a replacement cannot be requested.
+
+Payment links and retained due dates use billing's existing-invoice validation. Raw database
+fixtures cover missing items, extra invoice members, wrong currency, amount, dates, owner and
+operation bindings. Each shows review without a payment link or new debt; guarded model edits
+are not used to create these inconsistent retained rows.
+
+`adoption-customer-test.php` creates real renewal invoices. It checks the adopted owner page
+and POST after unpaid retirement and after a paid, unsent renewal is refunded and approved for
+replacement. Both offer the permitted request, return the replacement invoice and preserve the
+old evidence. Duplicate submits return the same invoice and show one current-cycle panel.
+These offline SQLite checks do not establish production locking or provider acceptance.
