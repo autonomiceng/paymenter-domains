@@ -13,6 +13,11 @@ same(['UpdateExpiredDomains',['DomainName'=>$d->domain,'NumYears'=>1,'UseCreditC
 same('9002',$op->fresh()->provider_order_id,'Grace original order retained without inventing completion');
 $state->expiry='2028-10-18'; $state->charge='8.00';
 same('succeeded',$completion->run($op->id)->state,'Grace completes only with unique actual charge and matching full-term expiry');
+[$op,$d,$b]=$makeRenewal('renew-local-clock.com'); [$engine,$writer,$completion]=$compose($b);
+$engine->run($op->id,$writer); $state->expiry='2028-10-18'; $state->charge='8.00'; $state->billTime='6:02:00 AM';
+$completed=$completion->run($op->id);
+same('succeeded',$completed->state,'Captured renewal uses the same provider-local window');
+expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($completed,$d->fresh(),$b),'Renewal local proof remains usable for the next cycle');
 [$op,$d,$b]=$makeRenewal('renew-transient.com'); [$engine,$writer,$completion]=$compose($b);
 same('pending',$engine->run($op->id,$writer)->state,'Original transient cycle sent');
 $state->fail=ReadCommand::Info;

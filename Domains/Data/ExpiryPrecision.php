@@ -7,4 +7,5 @@ enum ExpiryPrecision: string
 {
     case Date = 'date';
     case Instant = 'instant';
+    case Local = 'local'; // Wall-clock seconds with no known UTC offset.
 }

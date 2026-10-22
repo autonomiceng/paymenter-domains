@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, DateEvidence, Dis
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, HistoryAcceptances, OperationClaims, OperationReconciliation, RegistrarRegistry};
-$observation = (object) ['name' => '', 'years' => 1, 'expiryYears' => null, 'reference' => '9001', 'fault' => '', 'calls' => [], 'during' => null];
+$observation = (object) ['name' => '', 'years' => 1, 'expiryYears' => null, 'reference' => '9001', 'fault' => '', 'billDate' => '10/18/2026 5:00:01 AM', 'calls' => [], 'during' => null];
 $wire = new class($observation) implements Transport {
     public function __construct(private $state) {}
     public function send(Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
@@ -21,7 +21,7 @@ $wire = new class($observation) implements Transport {
             ReadCommand::Expiry => '<ExpirationDate>'.$expiry.'</ExpirationDate>',
             ReadCommand::Renewal => '<RenewName>0</RenewName>', ReadCommand::Lock => '<Reg-Lock>1</Reg-Lock>',
             ReadCommand::Privacy => '<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
-            ReadCommand::Order => '<Order><OrderID>'.$s->reference.'</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>10/18/2026 5:00:01 AM</BillDate><OrderDetail>'.$item.'</OrderDetail>'.($s->fault === 'multiple' ? '<OrderDetail>'.$item.'</OrderDetail>' : '').'</Order>',
+            ReadCommand::Order => '<Order><OrderID>'.$s->reference.'</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>'.$s->billDate.'</BillDate><OrderDetail>'.$item.'</OrderDetail>'.($s->fault === 'multiple' ? '<OrderDetail>'.$item.'</OrderDetail>' : '').'</Order>',
             ReadCommand::Orders => '<OrderCount>1</OrderCount><OrderList><Order><OrderID>'.$s->reference.'</OrderID></Order></OrderList>',
             default => '',
         };
@@ -47,6 +47,6 @@ $prepare = static function (string $name, string $mode = 'accepted') use ($new, 
         $claims->finish($sealed, $result);
     }
     $observation->name = $name; $observation->years = $op->term; $observation->expiryYears = null; $observation->reference = '9001';
-    $observation->fault = ''; $observation->calls = []; $observation->during = null;
+    $observation->fault = ''; $observation->billDate = '10/18/2026 5:00:01 AM'; $observation->calls = []; $observation->during = null;
     return [$op->fresh(), $binding];
 };

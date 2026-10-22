@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, Money, RenewalCode, RenewalRequest};
+use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, DateEvidence, ExpiryPrecision, Money, RenewalCode, RenewalRequest};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Owns the renewal-specific ordered prefix. No general callback or write-authority scope is exposed. */
 final readonly class RenewalAuthority
@@ -122,10 +122,13 @@ final readonly class RenewalAuthority
             $reference = $op->attempt[$op->action === 'renew' ? 'renewal' : 'registration']['order_reference'] ?? $op->attempt['evidence']['registration']['orderReference'] ?? null;
             if ($p['source'] === 'accepted_history' && $reference === null) { $original->provider_order_id = null; }
             $attempt = ReconciliationEvidence::attempt($original, $domain, $binding);
-            $processed = new \DateTimeImmutable($p['processed_at'] ?? 'invalid');
+            $precision = ExpiryPrecision::from($p['processed_precision'] ?? 'instant');
+            if ($precision === ExpiryPrecision::Local && $p['source'] !== 'captured_order') { return false; }
+            $processed = new DateEvidence($p['processed_at'] ?? '', $precision, $p['processed_source'] ?? 'retained_order',
+                $p['processed_timezone'] ?? ($precision === ExpiryPrecision::Instant ? (new \DateTimeImmutable($p['processed_at']))->getTimezone()->getName() : null));
             if (($p['window_start'] ?? null) !== $attempt->windowStart->format(DATE_ATOM)
                 || ($p['window_end'] ?? null) !== $attempt->windowEnd->format(DATE_ATOM)
-                || $processed < $attempt->windowStart || $processed > $attempt->windowEnd) { return false; }
+                || !ReconciliationEvidence::processedWithin($attempt, $processed, $p['order_reference'] ?? null)) { return false; }
             if ($p['source'] === 'captured_order') {
                 if (!$attempt->executionFacts) { return false; }
                 $attempt->executionFacts->requireAttempt($attempt);

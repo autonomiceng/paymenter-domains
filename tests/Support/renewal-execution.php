@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainBillin
 \App\Models\Setting::updateOrCreate(['key'=>'credits_auto_use','settingable_type'=>null], ['value'=>false,'type'=>'boolean']);
 $state = (object) ['name' => '', 'expiry' => '10/18/2027 5:00:00 AM', 'day' => '10/18/2027',
     'price' => '8.95', 'balance' => '100.00', 'owner' => 'account-enom', 'id' => '456', 'auto' => '0',
-    'premium' => '0', 'hold' => 'False', 'maximum' => '8', 'expired' => 'Expired', 'during' => null, 'duringCommand' => null, 'calls' => [], 'fail' => null, 'years' => 1, 'writes' => 0, 'lost' => false, 'after' => '2028-10-18', 'charge' => '8.95', 'order' => '9002', 'orderYear' => '2027', 'multiple' => false, 'afterWrite' => null, 'lastWrite' => null];
+    'premium' => '0', 'hold' => 'False', 'maximum' => '8', 'expired' => 'Expired', 'during' => null, 'duringCommand' => null, 'calls' => [], 'fail' => null, 'years' => 1, 'writes' => 0, 'lost' => false, 'after' => '2028-10-18', 'charge' => '8.95', 'order' => '9002', 'orderYear' => '2027', 'billTime' => '5:00:01 AM', 'multiple' => false, 'afterWrite' => null, 'lastWrite' => null];
 $transport = new class($state) implements Transport {
     public function __construct(private $s) {}
     public function send(Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
@@ -32,7 +32,7 @@ $transport = new class($state) implements Transport {
             ReadCommand::Balance => '<AvailableBalance>'.$s->balance.'</AvailableBalance>',
             ReadCommand::Expired => '<DomainCount>1</DomainCount><DomainDetail><DomainName>'.$s->name.'</DomainName><DomainNameID>'.$s->id.'</DomainNameID><Status>'.$s->expired.'</Status><Expiration-Date>'.$s->day.'</Expiration-Date></DomainDetail>',
             ReadCommand::Expiry => '<ExpirationDate>'.$s->after.'</ExpirationDate>',
-            ReadCommand::Order => '<Order><OrderID>'.$s->order.'</OrderID><Result>true</Result><OrderBillAmount>$'.$s->charge.'</OrderBillAmount><BillDate>10/18/'.$s->orderYear.' 5:00:01 AM</BillDate><OrderDetail><Description>'.$s->name.'</Description><ProductType>Renew</ProductType><Quantity>'.$s->years.'</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>'.$s->charge.'</AmountPaid><ExpiryDateTime>'.$s->after.'</ExpiryDateTime></OrderDetail></Order>',
+            ReadCommand::Order => '<Order><OrderID>'.$s->order.'</OrderID><Result>true</Result><OrderBillAmount>$'.$s->charge.'</OrderBillAmount><BillDate>10/18/'.$s->orderYear.' '.$s->billTime.'</BillDate><OrderDetail><Description>'.$s->name.'</Description><ProductType>Renew</ProductType><Quantity>'.$s->years.'</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>'.$s->charge.'</AmountPaid><ExpiryDateTime>'.$s->after.'</ExpiryDateTime></OrderDetail></Order>',
             default => throw new LogicException('No spending or unbounded command permitted'),
         };
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$data.'</interface-response>';
@@ -46,7 +46,7 @@ $billing = new DomainBilling($bindings, $guard, $clock); $cycles = new RenewalCy
 $makeRenewal = static function (string $name, bool $paid = true, int $years = 1, bool $credit = false, ?Closure $beforeBill = null) use ($prepare, $reconcile, $clock, $billing, $state, $product, $user) {
     [$original, $binding] = $prepare($name); same('succeeded', $reconcile->run($original->id)->state, 'Real original charge and expiry anchor');
     $d = $original->domain()->firstOrFail(); $state->name = $name; $state->expiry = '10/18/2027 5:00:00 AM'; $state->day = '10/18/2027';
-    $state->years = $years; $state->after = (2027 + $years).'-10-18'; $state->orderYear = '2027'; $state->charge = '8.95'; $state->price = '8.00'; $state->auto = '0';
+    $state->years = $years; $state->after = (2027 + $years).'-10-18'; $state->orderYear = '2027'; $state->billTime = '5:00:01 AM'; $state->charge = '8.95'; $state->price = '8.00'; $state->auto = '0';
     $state->owner = 'account-enom'; $state->id = '456'; $state->during = null; $state->calls = []; $state->lost = false; $state->afterWrite = null;
     $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
     $product->server->settings()->updateOrCreate(['key' => 'domains_manual_renewals_enabled'], ['value' => true, 'type' => 'boolean']);
