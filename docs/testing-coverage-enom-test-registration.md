@@ -83,3 +83,4 @@ Removing any cap-deferral catch must fail the corresponding regression.
 its queue-harness job handler after raising the cap. It asserts the seven confirmation reads,
 completion and no second Purchase. This is an offline installed-package queue-harness check, not a
 deployed scheduler/worker delivery claim.
+The three-year short-readback case ties the observed order reference to the Purchase response.

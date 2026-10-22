@@ -104,6 +104,7 @@ same([3], array_column($registration->purchases, 'NumYears'), 'M8 exactly one Pu
 same(['pending', 'registration_evidence_required', '2027-10-18'],
     [$result->state, $result->safe_code, $result->attempt['registration']['response_expiry']], 'M8 short Purchase remains financially unresolved');
 $observation->name = $op->domain->domain; $observation->years = 3; $observation->expiryYears = 1; $observation->reference = '1234';
+same($result->attempt['evidence']['registration']['orderReference'], $observation->reference, 'Observed order matches the Purchase response');
 $result = $reconcile->run($op->id);
 same([\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Info,
     \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Renewal,
