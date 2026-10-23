@@ -58,7 +58,10 @@ final class RuntimePorts
             if(in_array($op->state,['queued','awaiting_payment'],true)){$ports['renewal']->run((int)$op->id,$ports['renewal_writer']);}
             elseif(in_array($op->state,['pending','uncertain','running'],true)){$ports['renewal_completion']->run((int)$op->id);}
         }elseif(in_array($op->action,['register','transfer'],true)){
-            if(in_array($op->state,['queued','awaiting_payment','awaiting_code'],true)){if(NativePaidHooks::serviceMissing()){return;}$ports['acquisition']->execute((int)$op->id);}
+            if(in_array($op->state,['queued','awaiting_payment','awaiting_code'],true)){
+                if($missing=NativePaidHooks::serviceMissing()){HookDiagnostics::deferred((int)$op->id,$missing);return;}
+                $ports['acquisition']->execute((int)$op->id);
+            }
             elseif(in_array($op->state,['pending','uncertain','running'],true)){$ports['reconciliation']->run((int)$op->id);}
         }
     }

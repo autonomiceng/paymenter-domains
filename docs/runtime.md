@@ -14,6 +14,16 @@ Run native queue workers and `schedule:run` on one shared deployment. The minute
 
 Registrar setup shows last completed turns, binding drift, saved wire usage and unresolved notification claims. Compare rotation lag with account count; inspect failed native queue jobs before retrying. Expected management read refusals leave the request unchanged and do not create failed jobs. Review uncertain requests and their read history; the 20-read safety limit requires manual investigation and has no automatic reset. An expired scheduler lock does not authorize an uncertain registrar write. Restore the original binding rather than rebind retained history. Notification check review records independent inspection; a continuing failure reopens the alert. Notification handoff review records independent staff inspection and never releases or resends the original claim. Render/check failures remain retryable before handoff; uncertain handoffs never replay automatically. Schedule audit segments rotate after 100 edits or before the encrypted text limit into encrypted native settings under the same account lock; retain previous application encryption keys until audited re-encryption.
 
+`Domains hook unavailable.` describes missing listeners in the process that logged it.
+New registrations and transfers wait when executed there; a healthy worker can pick them up.
+The warning records missing event names, console/HTTP mode, PID and a command name or matched
+route template. Arguments, query strings and route parameter values are excluded; unmatched
+paths appear as `[unmatched]`. An optional deployment identifier comes from `app.release`,
+then `RELEASE_ID` (1 to 128 letters, digits, dots, underscores, colons, plus or minus signs).
+An affected operation logs `Domains paid operation deferred: required Service listeners missing.`
+once per operation per process, including its ID and the same context. Deferral changes no
+operation or financial state. Registrar setup and domain facts describe only their current process.
+
 Paid missing-code and actual account-credit notices work with optional schedules off. Native notification preferences and template/channel switches still apply. Queue acceptance is not delivery confirmation.
 
 Themes can use the read-only `NativePresenter` singleton:

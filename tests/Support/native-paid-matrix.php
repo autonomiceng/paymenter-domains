@@ -124,9 +124,33 @@ Queue::assertNotPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::c
 $transfer=$new(placeholderComFixtureName('paid-long-transfer-placeholder.com'),paid:false,action:'transfer');$paid($transfer);expect(in_array($transfer->fresh()->state,['pending','uncertain'],true),'Transfer entered processing on first sync job: '.$transfer->fresh()->state.' / '.$transfer->fresh()->safe_code);$sent=$writer->calls;
 $clock->instant=$now->modify('+4 days');$work->operation($transfer->id);$manual($transfer);event(new App\Events\Invoice\Paid(Invoice::find($transfer->invoice_id)));
 same($sent,$writer->calls,'Days-long transfer reads retained attempt only');expect(in_array($transfer->fresh()->state,['pending','uncertain'],true),'Transfer remains processing until positive registry evidence');
-// Public capability loss pauses acquisition sends without blocking native billing or reconciliation.
-$clock->instant=$now;$missing=$new(placeholderComFixtureName('paid-no-service-hook-placeholder.com'),paid:false);Service::flushEventListeners();$before=$writer->calls;$paid($missing);
-same($before,$writer->calls,'Missing Service hooks pause acquisition send');same('awaiting_payment',$missing->fresh()->state,'Missing hooks preserve unsent work without a permanent hold');expect(str_contains(NativePaidHooks::notices()['Paymenter payment events'],'Service saving'),'Staff sees precise missing Service event');
+// Remove only saving. Keep the real callbacks for restoration, including the expiry guard.
+$clock->instant=$now;$missing=$new(placeholderComFixtureName('paid-no-service-hook-placeholder.com'),paid:false);
+$queue=Queue::getFacadeRoot();Queue::fake();$before=$writer->calls;$paid($missing);Queue::swap($queue);
+$savingEvent='eloquent.saving: '.Service::class;$saving=Event::getRawListeners()[$savingEvent];Event::forget($savingEvent);
+same(['Service saving model event'],NativePaidHooks::serviceMissing(),'Only saving is missing');
+$money=nativeFinancialSnapshot($missing);$operation=$missing->fresh()->getRawOriginal();
+$manual($missing);$work->operation($missing->id);
+same($before,$writer->calls,'Missing Service hooks pause acquisition send');
+same('awaiting_payment',$missing->fresh()->state,'Missing hooks preserve unsent work without a permanent hold');
+same('paid',Invoice::findOrFail($missing->invoice_id)->status,'Native payment remains paid');
+same($money,nativeFinancialSnapshot($missing),'Deferred paid work preserves native and financial state');
+same($operation,$missing->fresh()->getRawOriginal(),'Deferred work preserves operation bytes');
+$notice='Required Service listeners are missing in this process: Service saving model event. New registrations and transfers run here wait until a healthy process picks them up.';
+same($notice,RuntimeHealth::site()['Paymenter payment events'],'Runtime health describes current process');
+Illuminate\Support\Facades\Auth::login($staff);
+same($notice,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events'],'Domain facts reuse the process notice');
+$setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class)->assertSee($notice);
+same(1,substr_count(html_entity_decode($setup->html(),ENT_QUOTES),$notice),'Registrar setup shows the fact once');
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$missing->domain_id])->assertSee($notice);
+foreach($saving as$listener){Event::listen($savingEvent,$listener);}
+same([],NativePaidHooks::serviceMissing(),'Real saving guards restored');
+same('Available',RuntimeHealth::site()['Paymenter payment events'],'Healthy runtime fact clears');
+expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events']),'Healthy domain fact clears');
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class)->assertDontSee($notice);
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$missing->domain_id])->assertDontSee($notice);
+$manual($missing);$work->operation($missing->id);
+same($before+1,$writer->calls,'Actual saving guards allow one recovered send: '.$missing->fresh()->state.' / '.$missing->fresh()->safe_code);
 // Actual staff queue and detail surfaces, including invoice permission narrowing.
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class)->filterTable('late_payment')->assertCanSeeTableRecords([$failed->domain,$retired->domain])->assertCanNotSeeTableRecords([$mixed->domain]);
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('Paid after order closed')->assertSee('Invoice #'.$failed->invoice_id)->assertSee('Registrar request #'.$failed->id);

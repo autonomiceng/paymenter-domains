@@ -273,6 +273,7 @@
     "tests/staff-watch-summary-owners-test.php",
     "tests/watch-transfer-test.php",
     "tests/runtime-health-test.php",
+    "tests/test_hook_attribution.py",
     "tests/staff-renewal-release-test.php",
     "tests/user-deletion-test.php",
     "tests/lifecycle-policy-test.php"

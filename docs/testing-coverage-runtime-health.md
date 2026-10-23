@@ -14,3 +14,15 @@ concurrency acceptance is implied.
 The cadence text counts selected operations, domains and TLDs separately from the shared registrar request limiter. The native health test checks both units.
 Processing review refuses unchanged state and unsupported cache/session/queue settings or short retry windows.
 Stale settings tickets reach the stamp guard for processing and notification reviews.
+
+`test_hook_attribution.py` starts fresh console and HTTP kernels against a disposable installed
+extension and retained SQLite database. HTTP binds its request before bootstrap. Native provider
+discovery precedes assertions; healthy boots emit no hook warning. Removing only saving after
+provider boot checks exact warning and deferral context, argument/query/path redaction, release
+fallback, unchanged paid operation/financial bytes, zero sends and one diagnostic per operation
+across scheduler ticks and a second RuntimePorts instance. Fresh healthy processes recover the
+same registration and transfer through genuine action bridges and exercise the real expiry guard.
+Both native-paid matrices check the shared process notice in RuntimeHealth, Registrar setup,
+DomainFacts and ViewDomain, then clear it by restoring the original saving callbacks. Lost invoice
+Paid wake recovery remains independent. These are offline SQLite/kernel/Livewire checks, not
+installed worker, browser, registrar or shared-database acceptance.
