@@ -2,56 +2,66 @@
 // Adapted from Enom 444f31c ViewDomain, split read-only support; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages;
-use Filament\Resources\Pages\ViewRecord;
-use Filament\Schemas\Schema;
-use Filament\Schemas\Components\Section;
+use Filament\Actions\{Action, ActionGroup};
 use Filament\Infolists\Components\TextEntry;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,OperationResource};
-use Paymenter\Extensions\Servers\Domains\Services\ObservationWork;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,DomainQueries,Staff};
+use Filament\Resources\Pages\ViewRecord;
+use Filament\Schemas\Components\{Callout, Grid, Section};
+use Filament\Schemas\Schema;
+use Illuminate\Support\HtmlString;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainFacts, HoldingActions, MissingEntry, OperationActions, Staff};
+use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
 {
     protected static string $resource = DomainResource::class;
     public function getTitle(): string { Staff::requireView(); return (string)$this->getRecord()->domain; }
-    public function getHeading(): \Illuminate\Support\HtmlString { return new \Illuminate\Support\HtmlString('<span style="overflow-wrap:anywhere">'.e($this->getTitle()).'</span>'); }
-    public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains','Domain #'.$this->getRecord()->id]; }
+    public function getHeading(): HtmlString
+    {
+        $status=DomainFacts::status($this->getRecord());
+        return new HtmlString('<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem"><span class="font-mono" style="overflow-wrap:anywhere">'.e($this->getTitle()).'</span>'
+            .(DemoData::is($this->getRecord())?DemoData::tag(inline:true)->toHtml():'')
+            .view('filament::components.badge',['color'=>$status['tone'],'size'=>'lg','slot'=>new HtmlString(e($status['label']))])->render().'</span>');
+    }
+    public function getSubheading(): ?string { return DomainFacts::status($this->getRecord())['reason']; }
+    public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains',$this->getTitle()]; }
     protected function getHeaderActions(): array
-    { return [\Filament\Actions\Action::make('adoptionPreview')->label('Preview adoption')->visible(fn () => Staff::can(Staff::ADOPT_PREVIEW) && $this->getRecord()->adoptionPending())
-        ->url(fn () => DomainResource::getUrl('adoption', ['record' => $this->getRecord()->id])),
-        ...\Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionActions::make($this->getRecord()),
-        ...\Paymenter\Extensions\Servers\Domains\Admin\Support\HoldingActions::make($this->getRecord()),
-        ...\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::scheduledReads($this->getRecord())]; }
+    {
+        $d=$this->getRecord(); $renewal=HoldingActions::make($d);
+        $more=array_values(array_filter($renewal,fn(Action $a)=>$a->getName()==='reprice'));
+        // Import domain for a pending import sits in the page notice.
+        return [...AcquisitionActions::make($d),
+            ...array_filter($renewal,fn(Action $a)=>$a->getName()!=='reprice'),
+            ...($more?[ActionGroup::make($more)->label('More')->button()->color('gray')]:[])];
+    }
+    /** Resume sync sits in the page notice and is mounted as a page action. */
+    public function resume_observationAction(): Action
+    { return OperationActions::scheduledReads($this->getRecord())[0]??Action::make('resume_observation')->hidden(); }
     // ViewRecord otherwise fills public form data with the entire model's attributes.
     protected function fillForm(): void { $this->data=[]; }
     public function infolist(Schema $schema): Schema
     {
-        $entries=[];
-        foreach (DomainFacts::for($this->getRecord()) as $label=>$value) {
-            $entries[]=TextEntry::make('fact_'.count($entries))->label($label)->state($value)->listWithLineBreaks()
-                ->extraAttributes(['style'=>'overflow-wrap:anywhere']);
-        }
-        $sections=\Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview::section($this->getRecord());$hold=DomainFacts::recordHold($this->getRecord());
-        if ($hold!==null) {
-            $d=$this->getRecord();$request=DomainQueries::operations($d)->orderByDesc('id')->value('id');
-            $stopped=ObservationWork::stopped($d);
-            $description=$stopped?'No scheduled reads run for this domain until staff resume them.':'Domain facts still refresh. Record checks stay paused until staff resume them.';
-            $review=[TextEntry::make('record_hold_reason')->label('Reason')->state($hold),
-                TextEntry::make('record_next_step')->label('Next step')->state($request===null?
-                    'There is no current registrar request for this domain. Ask an administrator to review scheduled reads.':
-                    'Review the reason, then choose Resume scheduled reads on this page.')];
-            if ($request!==null) {
-                $review[]=TextEntry::make('record_permission')->label('Permission')->state('Requires the Resume scheduled reads permission.');
-                $link='<a href="'.e(OperationResource::getUrl('view',['record'=>$request])).'" class="fi-link" style="text-decoration:underline;text-underline-offset:3px;--tw-outline-style:solid;display:inline-block;padding:2px;outline-offset:-2px">Open registrar request</a>';
-                $review[]=TextEntry::make('record_recovery')->label('Request')->state(new \Illuminate\Support\HtmlString($link));
+        $d=$this->getRecord(); $facts=DomainFacts::for($d); $notice=DomainFacts::notice($d); $components=[];
+        if ($notice) {
+            $buttons=[];
+            $resume=($notice['resume']??false)?$this->getAction('resume_observation',false):null;
+            if ($resume?->isVisible()) { $buttons[]=$resume->label('Resume sync')->toHtml(); }
+            foreach ([$notice['action']??null,$notice['link']??null] as $i=>$link) {
+                if ($link&&$link['url']) { $buttons[]=view('filament::components.button.index',['tag'=>'a','href'=>$link['url'],'color'=>$i===0?'primary':'gray','size'=>'sm','slot'=>new HtmlString(e($link['label']))])->render(); }
             }
-            $sections[]=Section::make($stopped?'Scheduled reads stopped':'Record checks paused')->icon('heroicon-o-exclamation-triangle')->iconColor('warning')
-                ->description($description)->columnSpanFull()->schema($review);
+            $components[]=Callout::make($notice['title'])->description($notice['body']??null)->status($notice['tone'])->columnSpanFull()
+                ->footer($buttons?new HtmlString('<div style="display:flex;flex-wrap:wrap;gap:.5rem">'.implode('',array_filter($buttons)).'</div>'):null);
         }
-        $adoption = DomainFacts::adoptionReview($this->getRecord());
-        if ($adoption) { $sections[] = Section::make('Adoption needs review')->icon('heroicon-o-exclamation-triangle')->iconColor('warning')
-            ->description('Adoption itself made no charge. These retained notes do not grant renewal authority.')
-            ->columnSpanFull()->schema([TextEntry::make('adoption_review')->label('Review notes')->state($adoption)->listWithLineBreaks()]); }
-        return $schema->components([...$sections,Section::make('Domain')->description('Saved facts. Viewing this page makes no registrar requests.')
-            ->columnSpanFull()->columns(2)->schema($entries)]);
+        $section=fn(string $title,array $labels)=>Section::make($title)->schema(array_map(fn(string $label)=>self::entry($label,$facts[$label]),
+            array_values(array_filter($labels,fn($label)=>isset($facts[$label])))))->columnSpan(1);
+        return $schema->components([...$components,Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()
+            ->schema([$section('Registration',DomainFacts::REGISTRATION),$section('Billing',DomainFacts::BILLING)])]);
+    }
+    private static function entry(string $label, array $fact): TextEntry
+    {
+        $entry=TextEntry::make('fact_'.md5($label))->label($label)->state($fact['value'])->inlineLabel()
+            ->extraAttributes(['style'=>'overflow-wrap:anywhere'])->belowContent($fact['sub'])->url($fact['url']);
+        if ($fact['help']) { $entry->hintIcon('heroicon-m-question-mark-circle',$fact['help']); }
+        if ($fact['demo']) { $entry->suffix(DemoData::tag(inline:true)); }
+        return MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['tone']);
     }
 }

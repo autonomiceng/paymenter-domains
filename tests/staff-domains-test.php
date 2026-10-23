@@ -9,6 +9,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, Labels, RefundCandidates, RequestFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Policies\DomainPolicy;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
@@ -33,16 +34,20 @@ foreach (range(0,15) as $mask) {
     if (!$view) { $page->assertForbidden(); continue; }
     $page->assertCanSeeTableRecords([$held,$active,$long]);
     $page=Livewire::actingAs($user)->test(ViewDomain::class,['record'=>$held->id]);
-    $page->assertSuccessful()->assertSee('Saved facts')->assertSet('data',[]);
+    $page->assertSuccessful()->assertSee('Registration')->assertSee('Billing')->assertSet('data',[]);
     $activity=Livewire::actingAs($user)->test(RequestsRelationManager::class,['ownerRecord'=>$held,'pageClass'=>ViewDomain::class]);
     $activity->assertCanSeeTableRecords([$held->operations()->sole()]);
     $body=$page->html().json_encode($page->snapshot).$activity->html().json_encode($activity->snapshot);
     expect(!str_contains($body,'PRIVATE-')&&!str_contains($body,'private-operation-'),'No secret/raw evidence in HTML or Livewire');
-    same($cost,str_contains($body,'827.43'),'Cost HTML independent permission');
-    same($cost,str_contains($body,'839.47'),'Actual nested charge permission');
-    same($metadata,str_contains($body,'Transfer code: Stored'),'Metadata independent permission');
-    if (!$cost) { expect(!str_contains($body,'839.47'),'Actual charge does not leak'); }
-    expect(!str_contains(json_encode($page->snapshot),'827.43')&&!str_contains(json_encode($activity->snapshot),'827.43'),'No cost in public component data');
+    expect(!str_contains($body,'827.43')&&!str_contains($body,'839.47')&&!str_contains($body,'Transfer code'),'Costs and metadata stay on the request page');
+    // The request page keeps the independent cost and metadata permissions.
+    $request=Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$held->operations()->sole()->id]);
+    $detail=$request->html().json_encode($request->snapshot);
+    expect(!str_contains($detail,'PRIVATE-')&&!str_contains($detail,'private-operation-'),'No secret/raw evidence on the request page');
+    same($cost,str_contains($request->html(),'827.43'),'Cost HTML independent permission');
+    same($cost,str_contains($request->html(),'839.47'),'Actual nested charge permission');
+    same($metadata,str_contains($request->html(),'Transfer code: Stored'),'Metadata independent permission');
+    expect(!str_contains(json_encode($request->snapshot),'827.43'),'No cost in public component data');
 }
 echo "Permission matrix passed.\n";
 $wild=staffUser(['*']); Auth::setUser($wild);
@@ -53,86 +58,99 @@ staffDomainFilterLookalikes($viewer, $active);
 \Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();
 DB::table('domains_domains')->where('id',$active->id)->update(['provenance'=>'adoption_pending']);
 $pending=$active->fresh();expect($pending->adoptionPending(),'Pending provenance overrides stored active status');
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['adoption_pending'])->assertCanSeeTableRecords([$pending])->assertCanNotSeeTableRecords([$held,$long]);
+// Held transfers are Under review too, never Pending transfer.
+staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$pending,$held,$long]);
+staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['pending_transfer'])->assertCanNotSeeTableRecords([$pending,$held,$long]);
 staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active'])->assertCanNotSeeTableRecords([$pending]);
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active','adoption_pending'])->assertCanSeeTableRecords([$pending]);
+staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active','under_review'])->assertCanSeeTableRecords([$pending]);
+same(['Under review','Import not confirmed'],[DomainFacts::status($pending)['label'],DomainFacts::status($pending)['reason']],'Pending import is Under review');
 DB::table('domains_domains')->where('id',$active->id)->update(['provenance'=>null]);
-DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'needs_review']);
 $acquisition=$active->operations()->sole();$storedState=$acquisition->state;
-foreach(['held','uncertain'] as $shown){
+DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'needs_review']);
+foreach(['held'=>'Transfer on hold','uncertain'=>'Transfer not confirmed'] as $shown=>$reason){
     DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>$shown]);
-    staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',[$shown])->assertCanSeeTableRecords([$active]);
-    staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['needs_review'])->assertCanNotSeeTableRecords([$active]);
+    staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$active]);
+    staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active','pending_transfer'])->assertCanNotSeeTableRecords([$active]);
+    same(['Under review',$reason],[DomainFacts::status($active->fresh())['label'],DomainFacts::status($active->fresh())['reason']],'Latest acquisition names the review reason');
 }
 DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>'succeeded']);
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['needs_review'])->assertCanSeeTableRecords([$active]);
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['held','uncertain'])->assertCanNotSeeTableRecords([$active]);
+staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$active]);
+same(['Under review',null],[DomainFacts::status($active->fresh())['label'],DomainFacts::status($active->fresh())['reason']],'Stored review status without a held acquisition');
 DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'active']);
 DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>$storedState]);
 
 
 // Current record holds are safe review alerts; stale identities and arbitrary reasons never leak.
 $recordService=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::class;
-foreach (['history_limit'=>'Record history has reached its safety limit.','ownership_drift'=>'The registrar account no longer lists this domain.',
-    'records_unavailable'=>'Current records could not be confirmed.','unmapped_reason_code'=>'The record check needs review.'] as $reason=>$label) {
+$requestId=$active->operations()->sole()->id;$requestUrl=\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$requestId]);
+foreach (['history_limit'=>'Sync stopped: DNS record history is full.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
+    'records_unavailable'=>"Sync stopped: couldn't read DNS records.",'unmapped_reason_code'=>'Sync stopped: DNS record check failed.'] as $reason=>$label) {
     $recordService::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-18T12:00:00Z'));
     $alert=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id]);
-    $alert->assertSee('Record checks paused')->assertSee($label)->assertSee('choose '.\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS['resume_observation'])->assertSee('Open registrar request')->assertSeeHtml('href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$active->operations()->sole()->id])).'"')->assertDontSee('unmapped_reason_code')->assertSet('data',[]);
-    $markup=new DOMDocument;@$markup->loadHTML($alert->html());$links=(new DOMXPath($markup))->query('//a[normalize-space(.)="Open registrar request"]');
-    same(1,$links->length,'Record alert has its own recovery link');
-    expect(str_contains($links->item(0)->getAttribute('style'),'text-decoration:underline') && str_contains($links->item(0)->getAttribute('style'),'--tw-outline-style:solid') && str_contains($links->item(0)->getAttribute('style'),'outline-offset:-2px') && str_contains($links->item(0)->getAttribute('style'),'padding:2px'),'Recovery link has visible underline and native focus outline');
-    same(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$active->operations()->sole()->id]),$links->item(0)->getAttribute('href'),'Recovery link targets current bound request');
+    $alert->assertSee($label)->assertSee('Open request #'.$requestId)->assertSeeHtml('href="'.e($requestUrl).'"')->assertDontSee('unmapped_reason_code')->assertDontSee('Resume sync')->assertSet('data',[]);
+    $markup=new DOMDocument;@$markup->loadHTML($alert->html());$links=(new DOMXPath($markup))->query('//a[normalize-space(.)="Open request #'.$requestId.'"]');
+    same(1,$links->length,'Record notice has its own request link');
+    same($requestUrl,$links->item(0)->getAttribute('href'),'Request link targets current bound request');
     expect(!str_contains(json_encode($alert->snapshot),'record_hold'),'Encrypted hold is absent from public state');
 }
 $op=$active->operations()->sole();DB::table('domains_operations')->where('id',$op->id)->update(['authority_generation'=>$active->authority_generation+1]);
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('There is no current registrar request for this domain')->assertDontSee('Open registrar request');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Sync stopped: DNS record check failed.')->assertDontSee('Open request #');
 DB::table('domains_operations')->where('id',$op->id)->update(['authority_generation'=>$active->authority_generation]);
 $copy=$active->fresh();$p=$copy->observation;$p['record_hold']['identity']['generation']=0;$copy->update(['observation'=>$p]);
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Record checks paused');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Sync stopped');
 $p=$copy->fresh()->observation;unset($p['record_hold']);$copy->update(['observation'=>$p]);
 same(null,DomainFacts::recordHold($copy->fresh()),'An ordinary domain has no record alert');
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$held->server_id,'account_fingerprint'=>$held->account_fingerprint,
     'domain_id'=>$held->id,'generation'=>$held->authority_generation,'due_at'=>0]);
 foreach (['read_unavailable','budget_exhausted','superseded']as$code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code]);
-    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Scheduled reads stopped')->assertSee('Scheduled reads need staff review')->assertDontSee('Domain facts still refresh.');
+    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Sync failed')->assertSee('0 attempts. Stopped until resumed.')->assertSee('Sync stopped after repeated failures.');
     foreach(['generation'=>$held->authority_generation+1,'server_id'=>$held->server_id+100,'account_fingerprint'=>str_repeat('a',64),'phase'=>'foreign']as$field=>$value){
         $old=DB::table('domains_observation_work')->where('id',$work)->value($field);DB::table('domains_observation_work')->where('id',$work)->update([$field=>$value]);
         expect(!$recordService::stopped($held->fresh()),'Foreign scheduled work never stops this holding');DB::table('domains_observation_work')->where('id',$work)->update([$field=>$old]);
     }
 }
-foreach ([[null,0,0,'Waiting for next check · 0 checks'],['healthy_pending',1,0,'Transfer pending at registrar · 1 check'],['refreshed',0,0,'Saved facts refreshed'],
-    ['unresolved',2,1,'Check needs review · 2 checks · 1 resume'],['refreshed',0,2,'Saved facts refreshed · 2 resumes']] as [$code,$tries,$resumes,$label]) {
-    DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>$tries,'resumes'=>$resumes]);
-    same([$label],DomainFacts::for($held)['Observation work'],'Saved variable observation outcomes have distinct counters and labels');
-    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee($label);
+$sync=static function()use($held): array { $f=DomainFacts::for($held->fresh()); return array_key_exists('Last sync',$f)?[$f['Last sync']['value'],$f['Last sync']['sub']]:['absent',null]; };
+foreach ([['read_unavailable',1,'1 attempt. Stopped until resumed.'],['budget_exhausted',5,'5 attempts. Stopped until resumed.']] as [$code,$tries,$sub]) {
+    DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>$tries]);
+    same(['Sync failed',$sub],$sync(),'Stopped sync shows Sync failed with its attempts');
 }
+foreach ([null,'healthy_pending','refreshed','unresolved'] as $code) {
+    DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>2]);
+    same([null,null],$sync(),'Running sync without a saved read shows Missing, not a failure');
+}
+DB::table('domains_domains')->where('id',$held->id)->update(['last_synced_at'=>'2026-10-20 15:05:00']);
+same(['Oct 20, 2026 15:05 UTC',null],$sync(),'Last sync shows the saved read time');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>null,'claim'=>str_repeat('a',32),'lease_until'=>time()+300,'tries'=>1]);
-same(['Check in progress · 1 check · 2 resumes'],DomainFacts::for($held)['Observation work'],'A claimed reasonless check is in progress');
+same(['Oct 20, 2026 15:05 UTC','Syncing now'],$sync(),'A claimed check is syncing now');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'unmapped_reason_code']);
-expect(!str_contains(implode('',DomainFacts::for($held)['Observation work']),'PRIVATE'),'Unknown saved work code never echoes');
-DB::table('domains_observation_work')->where('id',$work)->update(['generation'=>$held->authority_generation+1]);
-same(['Not scheduled'],DomainFacts::for($held)['Observation work'],'Foreign generation observation work is excluded');
+expect(!str_contains(json_encode(DomainFacts::for($held->fresh())),'unmapped_reason_code'),'Unknown saved work code never echoes');
+DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'read_unavailable','generation'=>$held->authority_generation+1]);
+same(['Oct 20, 2026 15:05 UTC',null],$sync(),'Foreign generation observation work is excluded');
+DB::table('domains_domains')->where('id',$held->id)->update(['last_synced_at'=>null]);
 DB::table('domains_observation_work')->where('id',$work)->delete();
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('review.example')->assertCanSeeTableRecords([$held])->assertCanNotSeeTableRecords([$active,$long]);
-foreach ([['status',['transfer_pending'],[$held,$long],[$active]],['server_id','2',[$active],[$held,$long]],
-    ['expiring','30',[$held,$long],[$active]],['held',true,[$held,$long],[$active]]] as [$filter,$value,$yes,$no]) {
+foreach ([['status',['under_review'],[$held,$long],[$active]],['server_id','2',[$active],[$held,$long]],
+    ['expiring','30',[$held,$long],[$active]],['status',['active'],[$active],[$held,$long]]] as [$filter,$value,$yes,$no]) {
     staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),$filter,$value)->assertCanSeeTableRecords($yes)->assertCanNotSeeTableRecords($no);
 }
 DB::table('domains_operations')->where('domain_id',$long->id)->update(['state'=>'uncertain']);
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'unresolved',true)->assertCanSeeTableRecords([$long])->assertCanNotSeeTableRecords([$held,$active]);
+staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$held,$long])->assertCanNotSeeTableRecords([$active]);
+same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::attention(Domain::query(),['uncertain'])->pluck('id')->all(),'Unconfirmed transfer query');
+same(['Under review','Transfer needs attention'],[DomainFacts::status($long->fresh())['label'],DomainFacts::status($long->fresh())['reason']],'Unconfirmed transfer keeps its saved reason');
 // Rejected paid obligations remain visible even when a credit retry failed.
 $review=$long->operations()->sole();
 DB::table('domains_operations')->where('id',$review->id)->update(['state'=>'rejected','funding_basis'=>'paid_invoice','safe_code'=>'transfer_code_timeout']);
 $review->refresh();
 expect(RefundCandidates::matches($review,$review->funding??[]),'Paid timeout is a review candidate, never eligibility proof');
 expect(str_contains(RequestFacts::for($review)['refund'],'candidate'),'Failed credit retry candidate is visible');
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'credit_review',true)->assertCanSeeTableRecords([$long])->assertCanNotSeeTableRecords([$held,$active]);
+same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::creditReview(Domain::query())->pluck('id')->all(),'Credit review query');
+staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['pending_transfer'])->assertCanSeeTableRecords([$long]);
 $review->funding=['refund'=>null]; expect(!RefundCandidates::matches($review,$review->funding),'Even null credit marker excludes uncredited interpretation');
 $review->funding=[]; $review->safe_code='transfer_provider_rejected'; expect(!RefundCandidates::matches($review,[]),'Sent rejection is not an unsent credit candidate');
 DB::table('domains_operations')->where('id',$review->id)->update(['safe_code'=>'transfer_provider_rejected']);
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'registrar_rejected',true)->assertCanSeeTableRecords([$long])->assertCanNotSeeTableRecords([$held,$active]);
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'credit_review',true)->assertCanNotSeeTableRecords([$long,$held,$active]);
+same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::registrarRejected(Domain::query())->pluck('id')->all(),'Registrar rejected query');
+same([],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::creditReview(Domain::query())->pluck('id')->all(),'Sent rejection leaves credit review');
 $review->safe_code='transfer_code_timeout'; $review->funding_basis='complimentary';
 expect(str_contains(RequestFacts::for($review)['refund'],'no credit inferred'),'Never-paid rejections do not imply customer credit');
 // A cross-bound operation must never appear just because its domain_id was forged through privileged SQL.
@@ -319,5 +337,5 @@ $open->call('$refresh')->assertForbidden();
 expect(!Staff::can()&&!DomainResource::canViewAny(),'Revocation reloads current role');
 expect(!DomainResource::canCreate()&&!DomainResource::canEdit($held)&&!DomainResource::canDelete($held),'No resource writes');
 expect(!class_exists('Paymenter\\Extensions\\Servers\\Domains\\Domains',false),'Dormant entry');
-echo "Staff domains: native Filament list/view/activity, 16 permission combinations, filters, binding and secret/cost boundaries passed.\n";
+echo "Staff domains: native Filament list/view/history, 16 permission combinations, filters, binding and secret/cost boundaries passed.\n";
 $nativeSuccessful=true;

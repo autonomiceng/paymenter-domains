@@ -53,7 +53,7 @@ $assert('domains_domains', $domain->id, ['confirmed_revision' => 2, 'renewal_pol
 \Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 Auth::login($staff);
 $raw = $adoption->getRawOriginal('evidence'); DB::table('domains_adoptions')->where('id', $adoption->id)->update(['evidence' => 'not-ciphertext']);
-try { same('Unavailable; staff review required', DomainFacts::for($domain->fresh())['Adoption evidence'], 'Unreadable proof has explicit staff review state'); }
+try { $facts = DomainFacts::for($domain->fresh()); expect(isset($facts['Registrar']) && !str_contains(json_encode($facts), 'not-ciphertext'), 'Unreadable proof never breaks or leaks into staff facts'); }
 finally { DB::table('domains_adoptions')->where('id', $adoption->id)->update(['evidence' => $raw]); }
 // Adversarial native objects satisfy every old financial/checkout identity predicate.
 // Only the explicit adoption exclusion must reject this fabricated acquisition evidence.

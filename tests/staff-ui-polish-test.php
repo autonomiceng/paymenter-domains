@@ -7,7 +7,7 @@ use App\Models\Server;
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Labels,PaidUncertainty,RequestFacts,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{PaidUncertainty,RequestFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{NativePaidHooks,OwnedDomains};
 staffPanel();[$held,$active,$uncertain]=staffData();
@@ -23,18 +23,21 @@ $opQueries=array_filter($queries,fn($q)=>str_contains($q['query'],'from "domains
 same(1,count($opQueries),'Exactly one acquisition query for the rendered table page');
 $userReads=array_filter($queries,fn($q)=>str_contains($q['query'],'from "users"')&&str_contains($q['query'],'"email"'));
 same(1,count($userReads),'Customer descriptions use one eager query');
-$page->assertSee('On hold')->assertSee('Unconfirmed')->assertSee('Needs review')->assertSee($viewer->email)->assertSee('Offline registrar (synthetic)');
+$customer=trim($viewer->first_name.' '.$viewer->last_name)?:$viewer->email;
+$page->assertSee('Under review')->assertSee('Transfer needs attention')->assertSee($customer)->assertSee('Offline registrar (synthetic)')->assertDontSee('Missing');
 $instance=$page->instance();$columns=$instance->getTable()->getColumns();
 $records=$instance->getTableRecords()->keyBy('id');
-foreach([[$held,'held','warning'],[$uncertain,'uncertain','danger'],[$active,'needs_review','danger']] as [$domain,$state,$color]){
+foreach([[$held,'Transfer needs attention'],[$uncertain,'Transfer needs attention'],[$active,null]] as [$domain,$reason]){
     $record=$records[$domain->id];$column=$columns['status']->record($record);
-    same(in_array($state,['held','uncertain'],true)?Labels::state($state):Labels::status($state),$column->formatState($record->status),'Badge reuses existing staff vocabulary');
-    same($color,$column->getColor($record->status),'Badge tone matches underlying state');
-    same('See Registrar requests',$column->getTooltip(),'Badge points staff to requests');
+    same('Under review',$column->getState(),'Held, uncertain and stored review share one status');
+    same('warning',$column->getColor($column->getState()),'Under review tone');
+    same($reason,$column->getDescriptionBelow(),'Reason sits under the badge');
+    same(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($domain->fresh()),\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($record,false,false),'Batched list status matches the page');
+    same(null,$column->getTooltip(),'No tooltip: the reason is visible');
     same(OwnedDomains::acquisition($record->operations,$record)?->id,$record->latestAcquisition?->id,'Batch matches customer acquisition lookup');
-    same($viewer->email,$columns['domain']->record($record)->getDescriptionBelow(),'Customer email is first');
-    same('Customer #'.$viewer->id,$columns['domain']->getTooltip(),'Customer ID remains secondary');
-    same('Unconfirmed',$columns['provider_expires_at']->record($record)->getState(),'Unknown expiry has normal text state');
+    same($customer,$columns['domain']->record($record)->getDescriptionBelow(),'Customer name under the domain');
+    same(null,$columns['domain']->getTooltip(),'No customer ID tooltip');
+    same(null,$columns['provider_expires_at']->record($record)->getState(),'Expiry of a domain under review is blank, not Missing');
 }
 // A newer unrelated action, stale generation or foreign binding must not displace the acquisition.
 $base=$held->operations()->sole();
@@ -46,10 +49,13 @@ same($base->id,$held->fresh()->latestAcquisition->id,'Foreign lookalikes do not 
 $copy=$base->replicate();$copy->operation_key='synthetic-resolved';$copy->state='succeeded';$copy->save();
 $resolved=Livewire::actingAs($viewer)->test(ListDomains::class)->instance();
 $record=$resolved->getTableRecords()->keyBy('id')[$held->id];
-same('Needs review',$resolved->getTable()->getColumn('status')->record($record)->formatState($record->status),'Resolved latest acquisition never revives an older hold');
+$column=$resolved->getTable()->getColumn('status')->record($record);
+same(['Under review',null],[$column->getState(),$column->getDescriptionBelow()],'Resolved latest acquisition never revives an older hold');
 // Fallback descriptions preserve retained rows when native records are missing.
 DB::table('domains_domains')->where('id',$held->id)->update(['user_id'=>999999,'server_id'=>999999]);
-$fallback=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSee('Customer #999999')->assertSee('Server #999999');
+$fallback=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSee($held->domain)->assertSee('Missing')->assertDontSee('#999999');
+$record=$fallback->instance()->getTableRecords()->keyBy('id')[$held->id];$columns=$fallback->instance()->getTable()->getColumns();
+same([null,'Missing'],[$columns['domain']->record($record)->getDescriptionBelow(),$columns['server_id']->record($record)->getState()],'Missing customer and registrar account keep the row');
 // Age grammar and exact staff copy; frozen timestamps avoid dependence on fixture business clocks.
 $op=clone $base;$op->state='uncertain';$op->funding_basis='paid_invoice';$op->safe_code=null;
 foreach([0=>'less than 1 hour',1=>'1 hour',7=>'7 hours'] as $hours=>$age){

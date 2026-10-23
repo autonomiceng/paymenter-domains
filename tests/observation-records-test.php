@@ -40,9 +40,9 @@ same('refreshed',$observer->run($d->id),'Record failure preserves successful dom
 same('read_failed',$d->fresh()->observation['record_hold']['code']??null,'Partial Enom discovery retains its safe failure cause');
 require_once __DIR__.'/Support/staff-panel.php';
 \Illuminate\Support\Facades\Auth::login(staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]));
-same('Current records could not be confirmed. · read_failed',\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Existing staff record fact exposes the closed cause');
+same("Sync stopped: couldn't read DNS records.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Staff record notice names the stopped read');
 $unsafe=clone $d->fresh();$unsafeFacts=$unsafe->observation;$unsafeFacts['record_hold']['code']='PRIVATE-PROVIDER-PAYLOAD';$unsafe->observation=$unsafeFacts;
-same('Current records could not be confirmed. · read_exception',\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($unsafe),'Arbitrary stored payload cannot become a displayed cause');
+same("Sync stopped: couldn't read DNS records.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($unsafe),'Arbitrary stored payload cannot become a displayed cause');
 \Illuminate\Support\Facades\Auth::login($user);
 $r=$d->fresh()->observation['records'];same('complete',$r['families']['dns']['state'],'Independent completed family remains proven');
 same('unknown',$r['families']['srv']['state'],'Failed family unknown');same('unknown',$r['families']['ds']['state'],'Unattempted family unknown');

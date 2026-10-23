@@ -6,19 +6,21 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\{ListOperations,ViewOperation};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{RequestFacts,Staff,StaffReviewHistory};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
 use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
 $op=$new(placeholderComFixtureName('staff-history-placeholder.com'));$domain=$op->domain;
-$activity=static fn()=>Livewire::actingAs($staff)->test(RequestsRelationManager::class,['ownerRecord'=>$domain,'pageClass'=>ViewDomain::class]);
+// Staff review lines show in the Registrar requests Review column and on the request page; the domain History table links there.
+$activity=static fn()=>Livewire::actingAs($staff)->test(ListOperations::class);
+$history=static fn()=>Livewire::actingAs($staff)->test(RequestsRelationManager::class,['ownerRecord'=>$domain,'pageClass'=>ViewDomain::class]);
 $reason='<script>alert("review")</script> Hold for evidence';
 $review=static function($action,$reason)use($service,$staff,$op,$ticket){$service->run($staff,$op->domain_id,$op->id,$action,$ticket($op->fresh(),$action),$reason);};
 $review('hold',$reason);
 $cell=$activity()->assertSuccessful()->assertSee('Held · 2026-10-18 12:00:00 UTC');
-expect(str_contains($cell->html(),'&lt;script&gt;alert(&quot;review&quot;)&lt;/script&gt;'),'Activity escapes script reason');
-expect(!str_contains($cell->html(),$reason),'Activity never emits raw script reason');
+expect(str_contains($cell->html(),'&lt;script&gt;alert(&quot;review&quot;)&lt;/script&gt;'),'Review column escapes script reason');
+expect(!str_contains($cell->html(),$reason),'Review column never emits raw script reason');
 $review('release','Release after evidence review');
 $cell=$activity()->assertSee($reason)->assertSee('Release after evidence review');
 expect(strpos($cell->html(),'Held ·')<strpos($cell->html(),'Released ·'),'Hold precedes release in recorded order');
@@ -34,13 +36,16 @@ $cell->assertDontSee($reason)->assertSee('1 older staff review entry not shown; 
 $detail=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('Held ·');
 expect(str_contains($detail->html(),'&lt;script&gt;alert(&quot;review&quot;)&lt;/script&gt;'),'Detail escapes script reason');
 expect(!str_contains($detail->html(),$reason),'Detail never emits raw script reason');
+$history()->assertSuccessful()->assertSee('Request #'.$op->id)->assertDontSee('Held ·')->assertDontSee('Hold for evidence');
 // History is carried in loaded policy; one and four rows must perform exactly the same reads.
 $measure=static function($page){DB::enableQueryLog();DB::flushQueryLog();$page->call('$refresh')->assertSuccessful();$q=DB::getQueryLog();DB::disableQueryLog();return count($q);};
-$one=$measure($cell);
+$one=$measure($cell);$timeline=$history();$historyOne=$measure($timeline);
 for($i=1;$i<=3;$i++){$copy=$op->fresh()->replicate();$copy->operation_key='history-copy-'.$i;$copy->invoice_item_id=null;$copy->save();}
-$cell->call('$refresh')->assertCountTableRecords(4);$many=$measure($cell);
-same($one,$many,'All Activity query counts remain constant at one versus four history rows');
-echo 'History Activity queries: '.$one.' at 1 row; '.$many." at 4 rows.\n";
+$copies=Paymenter\Extensions\Servers\Domains\Models\Operation::where('operation_key','like','history-copy-%')->get();
+$cell->call('$refresh')->assertCanSeeTableRecords([$op,...$copies]);$many=$measure($cell);
+$timeline->call('$refresh')->assertCountTableRecords(4);same($historyOne,$measure($timeline),'Domain History query count stays constant at one versus four requests');
+same($one,$many,'Review column query counts remain constant at one versus four requests');
+echo 'Review column queries: '.$one.' at 1 row; '.$many." at 4 rows.\n";
 // Additional bounded, synthetic retained entries include a stored display name and failed phase.
 $history=$op->fresh()->policy['staff_actions'];
 for($i=4;$i<25;$i++){$history[]=['action'=>'recheck','phase'=>'read_failed','at'=>'2026-10-18T12:00:00+00:00','reason'=>'History reason '.$i];}
@@ -72,7 +77,7 @@ foreach(['show','index'] as $page){$html=($page==='show'?$controller->show($r,$d
     foreach([$reason,'Hold for evidence','Release after evidence review','History reason','CELL-TAIL','Stored staff','Read current evidence','Staff review history'] as $private){expect(!str_contains($html,$private),'Customer portal excludes staff reason/actor history');}
 }
 DB::table('roles')->where('id',$staff->role_id)->update(['permissions'=>'[]']);Auth::setUser($staff);
-$cell->call('$refresh')->assertForbidden();$detail->call('$refresh')->assertForbidden();
+$cell->call('$refresh')->assertForbidden();$timeline->call('$refresh')->assertForbidden();$detail->call('$refresh')->assertForbidden();
 foreach([fn()=>StaffReviewHistory::for($op),fn()=>RequestFacts::review($op)] as $read){
     try{$read();expect(false,'Revoked history read must refuse');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Fresh staff view permission required');}
 }

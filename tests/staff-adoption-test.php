@@ -17,7 +17,10 @@ app()->instance(AdoptionReader::class, $reader);
 $id = adoptionPendingFixture($service, $binding)->id;
 $viewOnly = staffUser([Staff::VIEW]);
 Livewire::actingAs($viewOnly)->test(AdoptionPreview::class, ['record' => $id])->assertForbidden();
-Livewire::actingAs($staff)->test(ViewDomain::class, ['record' => $id])->assertActionVisible('adoptionPreview');
+// Import domain is offered once, in the notice that explains it.
+$adoptionUrl = \Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('adoption', ['record' => $id]);
+Livewire::actingAs($staff)->test(ViewDomain::class, ['record' => $id])->assertSeeHtml('href="'.$adoptionUrl.'"')->assertActionDoesNotExist('adoptionPreview');
+Livewire::actingAs($viewOnly)->test(ViewDomain::class, ['record' => $id])->assertSuccessful()->assertDontSeeHtml('href="'.$adoptionUrl.'"');
 $view = Livewire::actingAs($staff)->test(AdoptionPreview::class, ['record' => $id])->assertSuccessful()
     ->assertSee('Adoption is not enabled yet')->assertSee('No fresh preview yet.')->assertSee('TEST')->assertActionDisabled('confirm')
     ->assertSee(AdoptionPreview::UNAVAILABLE)->assertSee('This is a TEST account rehearsal; it cannot verify a live registration.');

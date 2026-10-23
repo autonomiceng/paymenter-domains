@@ -15,9 +15,9 @@ $c = ServiceCancellation::create(['service_id' => $service->id, 'type' => 'end_o
 same('end_of_period', $c->fresh()->type, 'Adopted customer can stop renewal before first renewal');
 staffPanel(); \Illuminate\Support\Facades\Auth::login($staff);
 $d->update(['observation' => ['adoption_review' => ['inside_issue_window' => true]]]);
-$notes = implode(' ', \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::adoptionReview($d->fresh()));
-expect(str_contains($notes, 'Existing issued invoices and their reminders retain their own rules.'), 'Later stop preserves issued-debt review wording');
-expect(!str_contains($notes, 'No renewal invoices or renewal reminders are scheduled.'), 'Later stop never claims issued reminders are suppressed');
+$facts = \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($d->fresh());
+same(['Off', 'Cancels at period end'], [$facts['Auto-renew']['value'], $facts['Auto-renew']['sub']], 'Later stop is the customer cancellation, not the import intent');
+same(['On', null], [$facts['Renewal invoices']['value'], $facts['Renewal invoices']['sub']], 'Later stop never claims issued invoices are stopped');
 $l = DB::transaction(fn () => HoldingLocks::take($d));
 expect(RenewalStop::stopped($l), 'Later native cancellation stops future renewal');
 expect(!RenewalStop::blocksExisting($l), 'End-of-period stop does not disable domain management');

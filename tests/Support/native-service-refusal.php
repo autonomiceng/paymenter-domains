@@ -24,7 +24,7 @@ $before=static function(): array {
     $rows=[];foreach(['services','orders','properties','domains_domains','domains_operations','domains_accounts','settings','invoices','invoice_items','invoice_transactions','jobs','audits'] as $table){$rows[$table]=DB::table($table)->orderBy('id')->get()->toJson();}return $rows;
 };
 $mount=static function()use($staff,$service){session()->forget('filament.notifications');return Livewire::actingAs($staff)->test(EditService::class,['record'=>$service->id])->assertSuccessful();};
-$priceNotice=Notification::make()->danger()->title('Price change refused')->body('Domain prices cannot be changed here. For a confirmed active domain, use Update renewal price on the Domains page. This service was not saved.');
+$priceNotice=Notification::make()->danger()->title('Price change refused')->body('Domain prices cannot be changed here. For a confirmed active domain, use Edit renewal price on the domain page. This service was not saved.');
 $identityNotice=Notification::make()->danger()->title('Service change refused')->body('Product, plan, user, quantity, currency and coupon are fixed for managed domains. This service was not saved.');
 $deleteNotice=Notification::make()->danger()->title('Service could not be deleted')->body('Managed domain services are retained. To stop renewal or retire an unpaid order, use the Domains page.');
 $capture=static function($page,string $name)use($refusalCapture):void {if($refusalCapture!==null){$refusalCapture($page,$name);}};

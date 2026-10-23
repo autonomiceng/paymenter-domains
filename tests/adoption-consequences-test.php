@@ -55,10 +55,11 @@ foreach (HistoryLink::all() as $link) {
 // A retained billing-window alert must never contradict original renewal-off intent.
 staffPanel(); \Illuminate\Support\Facades\Auth::login($staff);
 $d->update(['observation' => [...($d->observation ?? []), 'adoption_review' => ['inside_issue_window' => true, 'near_due' => true]]]);
-$notes = \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::adoptionReview($d->fresh());
-expect(str_contains(implode(' ', $notes), 'No renewal invoices or renewal reminders are scheduled.'), 'Renewal-off staff warning reflects original intent');
+$facts = \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($d->fresh());
+same(['Off', 'Set at import'], [$facts['Auto-renew']['value'], $facts['Auto-renew']['sub']], 'Renewal-off staff fact reflects original intent');
+same(null, \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh()), 'Renewal off at import: no cutoff notice');
 \Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class, ['record' => $d->id])
-    ->assertSee('No renewal invoices or renewal reminders are scheduled.')->assertDontSee('Ordinary billing may issue an invoice');
+    ->assertSee('Set at import')->assertDontSee('Imported after the invoice date');
 same($money, scenarioMoney(), 'Adoption history never rewrites invoice/payment/reference/credit'); same(0, Operation::count(), 'History never fabricates operation/funding/refund candidates');
 (new App\Listeners\CancellationCreatedListener)->handle(new App\Events\ServiceCancellation\Created($c));
 same('active', $service->fresh()->status, 'Native end-of-period listener cannot terminate adoption'); same($money, scenarioMoney(), 'Native cancellation listener does not cancel history');

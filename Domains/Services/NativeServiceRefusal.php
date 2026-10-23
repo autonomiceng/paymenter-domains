@@ -20,7 +20,7 @@ final class NativeServiceRefusal
         logger()->warning('Managed domain native service change refused.',['service_id'=>$record->getRawOriginal('id'),'operation'=>$operation,'reason'=>$reason]);
         [$title,$message]=match(true){
             $operation==='delete'=>['Service could not be deleted','Managed domain services are retained. To stop renewal or retire an unpaid order, use the Domains page.'],
-            $reason==='price'=>['Price change refused','Domain prices cannot be changed here. For a confirmed active domain, use Update renewal price on the Domains page. This service was not saved.'],
+            $reason==='price'=>['Price change refused','Domain prices cannot be changed here. For a confirmed active domain, use Edit renewal price on the domain page. This service was not saved.'],
             default=>['Service change refused','Product, plan, user, quantity, currency and coupon are fixed for managed domains. This service was not saved.'],
         };
         Notification::make()->danger()->title($title)->body($message)->send();

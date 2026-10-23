@@ -144,13 +144,14 @@ same(2, $promoted->authority_generation, 'Pending generation advances once'); sa
 // Retained issue-window and price flags have a native staff reader, never raw provider text.
 staffPanel(); \Illuminate\Support\Facades\Auth::login($staff);
 $promoted->update(['observation' => [...($promoted->observation ?? []), 'adoption_review' => ['inside_issue_window' => true, 'near_due' => false, 'price' => 'PRIVATE-PROVIDER-ALERT']]]);
-$notes = \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::adoptionReview($promoted->fresh());
-expect(str_contains(implode(' ', $notes), 'apply available credit immediately'), 'Billing-window staff alert is readable');
-expect(!str_contains(implode(' ', $notes), 'PRIVATE-PROVIDER-ALERT'), 'Staff alert uses safe price labels');
+$facts = \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($promoted->fresh());
+same(['Cost missing', 'danger'], [$facts['Renewal price']['sub'], $facts['Renewal price']['tone']], 'Unknown price review code is a safe label');
+expect(!str_contains(json_encode($facts), 'PRIVATE-PROVIDER-ALERT'), 'Staff facts use safe price labels');
+same(null, \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($promoted->fresh()), 'Inside the billing window needs no notice: Next invoice shows the date');
 \Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 \Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class, ['record' => $promoted->id])
-    ->assertSee('Adoption needs review')->assertSee('Ordinary billing may issue an invoice');
+    ->assertSee('Billing')->assertSee('Cost missing')->assertDontSee('Adoption needs review')->assertDontSee('PRIVATE-PROVIDER-ALERT');
 $promoted->update(['observation' => ['adoption_review' => ['near_due' => true]]]);
-expect(str_contains(implode(' ', \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::adoptionReview($promoted->fresh())), 'cutoff was reached'), 'Reached-cutoff staff alert is readable');
+same(['Imported after the invoice date. No renewal invoice was issued.', 'Open service'], [(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($promoted->fresh()) ?? [])['title'] ?? null, (\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($promoted->fresh()) ?? [])['action']['label'] ?? null], 'Reached-cutoff staff notice is readable');
 $nativeSuccessful = true;
 echo "Fresh adoption, stale evidence, locked identities, replay and whole-transaction rollback passed\n";

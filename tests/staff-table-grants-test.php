@@ -43,8 +43,10 @@ same($queueOne,$queueMany,'Queue permission queries do not grow with row count')
 same($activityOne,$activityMany,'Activity permission queries do not grow with row count');
 same($domainsOne,$domainsMany,'Correction rows reuse the scoped activity owner');
 expect($domainsMany<=1,'Only Livewire owner hydration may read the domain');
+$queue->assertSee('827.43')->assertSee('839.47')->assertSee('Transfer code: Stored')->assertSee('Correction unresolved');
+// Costs and request metadata live on the request page; domain History lists the requests only.
+$activity->assertSee('Request #'.$op->id)->assertDontSee('827.43')->assertDontSee('839.47')->assertDontSee('Transfer code: Stored');
 foreach([$queue,$activity] as $page){
-    $page->assertSee('827.43')->assertSee('839.47')->assertSee('Transfer code: Stored')->assertSee('Correction unresolved');
     expect(!str_contains(json_encode($page->snapshot),'827.43')&&!str_contains(json_encode($page->snapshot),'StaffGrants'),'Render grants/costs never enter public component data');
 }
 foreach([[Staff::VIEW],[Staff::VIEW,Staff::COSTS],[Staff::VIEW,Staff::METADATA],['*']] as $permissions){
@@ -53,8 +55,9 @@ foreach([[Staff::VIEW],[Staff::VIEW,Staff::COSTS],[Staff::VIEW,Staff::METADATA],
     $metadata=in_array('*',$permissions,true)||in_array(Staff::METADATA,$permissions,true);
     foreach([$queue,$activity] as $page){
         $page->call('$refresh')->assertSuccessful();
-        same($cost,str_contains($page->html(),'827.43'),'Costs follow fresh per-request grants');
-        same($metadata,str_contains($page->html(),'Transfer code: Stored'),'Metadata follows fresh per-request grants');
+        $shown=$page===$queue;
+        same($shown&&$cost,str_contains($page->html(),'827.43'),'Costs follow fresh per-request grants');
+        same($shown&&$metadata,str_contains($page->html(),'Transfer code: Stored'),'Metadata follows fresh per-request grants');
     }
     $facts=RequestFacts::for($op);same($cost,isset($facts['cost']),'Default caller checks current costs');
     same($metadata,isset($facts['metadata']),'Default caller checks current metadata');

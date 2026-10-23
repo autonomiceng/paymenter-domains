@@ -271,6 +271,8 @@ empty nameservers never imply a reset, and NameSilo does not offer one.
 unknown evidence, exact nested costs and HTML/Livewire secret boundaries. The optional
 `staff-domains-render.php OUTPUT_DIRECTORY` renders static native panel fixtures with synthetic
 records and the pinned compiled Filament stylesheet. Browser captures cover 1440/1024, light/dark.
+`staff-domain-page-render.php OUTPUT_DIRECTORY` captures the Domains list and the domain page when active,
+sync failed, demo paused under Enom Test mode, missing expiry, under review and pending order.
 No provider requests, staff writes, installed registration or production acceptance are established.
 The staff fixture also records Paymenter's native `*` role semantics (all read permissions,
 no mutation actions) and paid-rejection credit-review selection; that SQL queue includes already

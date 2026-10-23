@@ -37,6 +37,12 @@ final class DemoData
         return $account !== null && $account->registrar_key === 'enom' && self::is($account) && !$account->processing_enabled
             && Account::query()->where('registrar_key', 'enom')->where('environment', 'test')->get()->contains(static fn (Account $a): bool => !self::is($a));
     }
+    /** A demo Enom account is paused while Enom runs in Test mode or real Enom writes are on. */
+    public static function paused(Account $account): bool
+    {
+        return self::is($account) && $account->registrar_key === 'enom' && (config('domains.enom_identity.environment') === 'test'
+            || config('domains.enom_writes.registration') === true || config('domains.enom_writes.renewal') === true);
+    }
     public static function tag(bool $inline = false, bool $test = false): HtmlString
     {
         return new HtmlString(view('domains::partials.demo-tag', ['inline' => $inline, 'test' => $test])->render());

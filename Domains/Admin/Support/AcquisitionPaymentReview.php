@@ -20,7 +20,7 @@ final class AcquisitionPaymentReview
             ->whereColumn('a.domain_id','domains_domains.id')->where('a.code','acquisition_late_money')->whereNull('a.resolved_at'));
     }
     public static function count(Domain $d): int
-    {return DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','acquisition_late_money')->whereNull('resolved_at')->count();}
+    {if(!Schema::hasTable('domains_obligation_alerts')){return 0;}return DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','acquisition_late_money')->whereNull('resolved_at')->count();}
     public static function section(Domain $d): array
     {
         Staff::requireView();if(!Schema::hasTable('domains_obligation_alerts')){return [];}

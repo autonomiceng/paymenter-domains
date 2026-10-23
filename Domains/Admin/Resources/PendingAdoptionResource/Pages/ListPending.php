@@ -10,4 +10,5 @@ class ListPending extends ListRecords
     public function getTitle(): string{return 'Adoption pending';}
     public function getSubheading(): string{return 'Read-only setup queue. These registrations are not approved for renewal handling.';}
     protected function getHeaderActions(): array{return [];}
+    public function mount(): void{parent::mount();$this->redirect(PendingAdoptionResource::redirectUrl());}
 }

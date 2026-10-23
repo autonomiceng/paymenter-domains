@@ -2,11 +2,14 @@
 // Simultaneous native filter discriminators; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 use Carbon\{Carbon, CarbonImmutable};
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ListOperations;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
 
 /** Every lookalike has its own current, identity-matching holding and request. */
 function staffFilterLookalikes(Domain $seed, bool $expiry = false): array
@@ -74,21 +77,28 @@ function staffDomainFilterLookalikes($viewer, Domain $seed): void
         $rows = staffFilterLookalikes($seed, true);
         Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('filter-')
             ->assertCanSeeTableRecords(array_column($rows, 'domain'))->assertCountTableRecords(count($rows));
-        foreach ([
-            ['registrar_rejected', true, ['provider_rejected']],
-            ['expiring', '30', ['today', 'window_end']],
-            ['expired', true, ['yesterday']],
-            ['held', true, ['held', 'contact_hold']],
-            ['unresolved', true, ['uncertain', 'pending', 'running']],
-            // This SQL queue includes credited rows; encrypted refund evidence is interpreted per row.
-            ['credit_review', true, ['timeout', 'registration_rejected', 'renewal_rejected', 'reasonless', 'credited_timeout']],
-        ] as [$filter, $value, $keys]) {
-            staffAssertLookalikeFilter($viewer, ListDomains::class, $filter, $value, $rows, 'domain', $keys);
+        staffAssertLookalikeFilter($viewer, ListDomains::class, 'expiring', '30', $rows, 'domain', ['today', 'window_end']);
+        // Former toggles: registrar rejections and credit review now live on Registrar requests; their SQL is unchanged.
+        $ids = static fn (Builder $q): array => $q->whereIn('id', array_map(fn ($r) => $r['domain']->id, $rows))->orderBy('id')->pluck('id')->all();
+        $keys = static fn (array $names): array => collect($names)->map(fn ($k) => $rows[$k]['domain']->id)->sort()->values()->all();
+        same($keys(['provider_rejected']), $ids(DomainQueries::registrarRejected(Domain::query())), 'Registrar rejected transfers query');
+        // This SQL queue includes credited rows; encrypted refund evidence is interpreted per row.
+        same($keys(['timeout', 'registration_rejected', 'renewal_rejected', 'reasonless', 'credited_timeout']), $ids(DomainQueries::creditReview(Domain::query())), 'Customer credit review query');
+        // The Status filter selects exactly the rows whose page status is in that group, for each stored status.
+        foreach (['active' => ['yesterday', 'today'], 'transfer_pending' => ['held', 'uncertain'], 'registration_pending' => ['contact_hold'], 'needs_review' => ['awaiting_payment']] as $status => $sample) {
+            DB::table('domains_domains')->whereIn('id', array_map(fn ($r) => $r['domain']->id, $rows))->update(['status' => $status]);
+            $expected = array_fill_keys(array_keys(DomainStatus::SET), []); $groups = array_flip(array_map(fn ($s) => $s[0], DomainStatus::SET));
+            foreach ($rows as $key => $pair) { $expected[$groups[DomainFacts::status($pair['domain']->fresh())['label']]][] = $key; }
+            foreach ($expected as $group => $members) {
+                same($keys($members), $ids(DomainQueries::status(Domain::query(), [$group])), 'Status filter matches page status: '.$status.' as '.$group);
+            }
+            $group = array_key_first(array_filter($expected, fn ($m) => in_array($sample[0], $m, true)));
+            staffAssertLookalikeFilter($viewer, ListDomains::class, 'status', [$group], $rows, 'domain', $expected[$group]);
         }
     } finally {
         DB::rollBack(); Carbon::setTestNow($mutableNow); CarbonImmutable::setTestNow($immutableNow);
     }
-    echo "Domain lookalike filters: rejection reason, inclusive expiry window, expired, holds and credit review passed.\n";
+    echo "Domain lookalike filters: rejection reason, inclusive expiry window, status groups and credit review passed.\n";
 }
 
 function staffOperationFilterLookalikes($viewer, Domain $seed): void

@@ -32,11 +32,11 @@ Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();staff
 $pageClass=Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class;
 $modalOp=$new(placeholderComFixtureName('unpaid-modal-placeholder.com'),paid:false);Auth::login($staff);
 $page=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$modalOp->domain_id])->mountAction('retire_unpaid')->assertActionMounted('retire_unpaid');
-$page->setActionData(['reason'=>'Retire from real staff modal'])->callMountedAction()->assertNotified('Unpaid order retired')->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$modalOp->domain_id]));
+$page->setActionData(['reason'=>'Retire from real staff modal'])->callMountedAction()->assertNotified('Order cancelled')->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$modalOp->domain_id]));
 Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$modalOp->domain_id])->assertActionDoesNotExist('retire_unpaid');same(null,$modalOp->domain->fresh()->reservation_name,'Real modal invokes retirement');
 $paid=$new(placeholderComFixtureName('unpaid-refusal-placeholder.com'));Auth::login($staff);
 $refusal=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$paid->domain_id])->mountAction('retire_unpaid');
-$refusal->setActionData(['reason'=>'Paid modal must refuse'])->callMountedAction()->assertNotified('Order retirement refused');
+$refusal->setActionData(['reason'=>'Paid modal must refuse'])->callMountedAction()->assertNotified("Couldn't cancel order");
 same($paid->domain->domain,$paid->domain->fresh()->reservation_name,'Paid modal retains name');
 $viewOnly=staffUser(['admin.domains.view']);Livewire\Livewire::actingAs($viewOnly)->test($pageClass,['record'=>$paid->domain_id])->assertActionDoesNotExist('retire_unpaid');
 echo "Unpaid retirement staff review, audit, late money and modals passed.\n";$nativeSuccessful=true;

@@ -139,10 +139,10 @@ same($operation,$missing->fresh()->getRawOriginal(),'Deferred work preserves ope
 $notice='Required Service listeners are missing in this process: Service saving model event. New registrations and transfers run here wait until a healthy process picks them up.';
 same($notice,RuntimeHealth::site()['Paymenter payment events'],'Runtime health describes current process');
 Illuminate\Support\Facades\Auth::login($staff);
-same($notice,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events'],'Domain facts reuse the process notice');
+expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events']),'Process notice lives with registrar setup, not on each domain');
 $setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class)->assertSee($notice);
 same(1,substr_count(html_entity_decode($setup->html(),ENT_QUOTES),$notice),'Registrar setup shows the fact once');
-Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$missing->domain_id])->assertSee($notice);
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$missing->domain_id])->assertDontSee($notice);
 foreach($saving as$listener){Event::listen($savingEvent,$listener);}
 same([],NativePaidHooks::serviceMissing(),'Real saving guards restored');
 same('Available',RuntimeHealth::site()['Paymenter payment events'],'Healthy runtime fact clears');
@@ -152,7 +152,11 @@ Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\A
 $manual($missing);$work->operation($missing->id);
 same($before+1,$writer->calls,'Actual saving guards allow one recovered send: '.$missing->fresh()->state.' / '.$missing->fresh()->safe_code);
 // Actual staff queue and detail surfaces, including invoice permission narrowing.
-Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class)->filterTable('late_payment')->assertCanSeeTableRecords([$failed->domain,$retired->domain])->assertCanNotSeeTableRecords([$mixed->domain]);
-Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('Paid after order closed')->assertSee('Invoice #'.$failed->invoice_id)->assertSee('Registrar request #'.$failed->id);
-$viewOnly=staffUser(['admin.domains.view']);Livewire\Livewire::actingAs($viewOnly)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('invoice edit access required');
+$late=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class)->filterTable('status',['under_review']);
+$late->set('tableDeferredFilters',$late->get('tableFilters'))->call('applyTableFilters')->assertCanSeeTableRecords([$failed->domain,$retired->domain])->assertCanNotSeeTableRecords([$mixed->domain]);
+same(['Under review','Paid after order closed'],array_values(array_intersect_key(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($failed->domain->fresh()),['label'=>1,'reason'=>1])),'Late payment is Under review with its reason');
+$invoiceUrl=App\Admin\Resources\InvoiceResource::getUrl('edit',['record'=>$failed->invoice_id]);
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('Paid after order closed')->assertSee('Paid after the order closed.')->assertSee('Open invoice')->assertSeeHtml('href="'.e($invoiceUrl).'"');
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$failed->domain,'pageClass'=>Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class])->assertSee('Request #'.$failed->id);
+$viewOnly=staffUser(['admin.domains.view']);Livewire\Livewire::actingAs($viewOnly)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('Paid after the order closed.')->assertDontSee('Open invoice')->assertDontSeeHtml('href="'.e($invoiceUrl).'"');
 echo "Native paid matrix: mixed/Credit, early sync, duplicates, contacts, transfer, refund, late money, reactivation, recovery and staff review passed.\n";$nativeSuccessful=true;

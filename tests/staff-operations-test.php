@@ -28,7 +28,9 @@ foreach (['held'=>[], 'unresolved'=>[$ops[0]], 'failed_transfer'=>[$ops[2]], 'pa
 }
 Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$ops[2]->id])->assertSuccessful()
     ->assertSee('Registrar refund is manual; request it from registrar support')->assertSee('No staff release or credit is available.');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Account spending holds')->assertSee('Request #'.$ops[2]->id);
+// Account-wide spending holds sit on the request page, not the domain page.
+Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$ops[0]->id])->assertSee('Account spending holds')->assertSee('Request #'.$ops[2]->id);
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSuccessful()->assertDontSee('Account spending holds');
 expect(str_contains(implode(' ',PaidUncertainty::for($held)),' · since '),'Account-wide hold includes age');
 same(null,RequestFacts::for($ops[1])['reason'],'Absent reason remains absent');
 $completed=clone $ops[0];$completed->state='succeeded';same('Original send response was unknown; completion later confirmed',RequestFacts::review($completed)[0],'Completed readback explains original response uncertainty');
