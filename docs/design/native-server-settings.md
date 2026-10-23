@@ -59,6 +59,17 @@ server, verified binding and settings remain. Other writers retain the guard exc
 and unrelated native server deletion continues. Missing notification/action capabilities
 are reported in Registrar setup; the underlying deletion guard remains in force.
 
+Native Edit Service also handles refused identity, price and Delete writes with a
+danger notification and Halt. These notices apply only to the current native service
+page/record and its matching Save/Delete context; other writers retain their original
+exception. Price guidance points confirmed active domains to Update renewal price
+on the Domains page. Fixed field names are listed for identity refusals; deletion
+guidance points to
+Stop renewal or Retire unpaid order there. The native Recalculate Price hint
+only edits a draft; its changed price is refused on Save. A refused service delete
+leaves processing unchanged. Missing feedback capabilities are shown in Registrar setup
+without weakening the guards.
+
 Native Create Server, Edit Server and Edit Service use unchanged native routes. No
 Secure editor, route remap, global Livewire interception or testing-only editor switch
 remains. Harmless native saves continue; scoped model guards refuse unsafe writes.
@@ -71,3 +82,8 @@ to deleted classes; they cannot be retained across this deployment. New native r
 are exercised with the real route:cache command, fresh HTTP boot and Livewire hydration.
 The remaining native editor/write paths stay pinned by the test-only upgrade tripwire.
 Offline fixtures do not establish provider, installed-theme or InnoDB concurrency acceptance.
+
+Refusals from the Properties and Configs tabs and from Services list bulk delete still
+raise the original guard exception. Handled feedback for those paths is follow-up work.
+On Active service Delete, the native terminate step is a Domains no-op; its native
+audit event remains even though the service is retained and processing is unchanged.

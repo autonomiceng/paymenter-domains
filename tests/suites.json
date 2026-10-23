@@ -25,7 +25,8 @@
     "tests/pricing-test.php",
     "tests/ote-purchase-evidence-test.php",
     "tests/ote-renewal-probe-test.php",
-    "tests/conversion-app-policy-test.php"
+    "tests/conversion-app-policy-test.php",
+    "tests/watch-notice-plan-test.php"
   ],
   "native": [
     "tests/native-fixture-test.php",
@@ -132,6 +133,8 @@
     "tests/psl-review-staff-test.php",
     "tests/watch-storage-test.php",
     "tests/test_installed_package.py",
+    "tests/test_installed_package_fresh.py",
+    "tests/test_installed_package_upgrade.py",
     "tests/operation-clock-test.php",
     "tests/operation-rate-test.php",
     "tests/conversion-new-pin-test.php",
@@ -203,13 +206,18 @@
     "tests/seller-switch-lifecycle-namesilo-transfer-test.php",
     "tests/acquisition-retirement-refusals-test.php",
     "tests/acquisition-retirement-staff-test.php",
+    "tests/domain-counts-test.php",
+    "tests/staff-table-grants-test.php",
+    "tests/staff-tld-grants-test.php",
     "tests/watch-registry-work-test.php",
     "tests/watch-registry-observer-test.php",
     "tests/rdap-quota-test.php",
     "tests/watch-dns-confirmation-test.php",
     "tests/watch-scheduler-test.php",
     "tests/watch-discovery-work-test.php",
-    "tests/watch-maintenance-test.php"
+    "tests/watch-maintenance-test.php",
+    "tests/native-service-refusal-test.php",
+    "tests/native-service-refusal-holding-test.php"
   ],
   "ui": [],
   "runner": [

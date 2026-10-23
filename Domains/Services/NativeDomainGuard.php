@@ -36,7 +36,7 @@ final class NativeDomainGuard
         }
         Service::updating(fn (Service $s) => $this->saving($s));
         Service::deleting(static function (Service $s): void {
-            if (Domain::whereIn('service_id', self::ids($s))->exists()) { throw new \DomainException('Managed holding services are retained.'); }
+            if (Domain::whereIn('service_id', self::ids($s))->exists()) { NativeServiceRefusal::notify($s,'delete'); throw new \DomainException('Managed holding services are retained.'); }
         });
         User::deleting(static function (User $user): void {
             if (Domain::whereIn('user_id', self::ids($user))->exists()
@@ -124,9 +124,11 @@ final class NativeDomainGuard
         // Native paid/cron code must never fabricate a registrar expiry.
         $service->expires_at = null;
         if ($service->isDirty(['product_id', 'plan_id', 'user_id', 'order_id', 'quantity', 'currency_code', 'coupon_id'])) {
+            NativeServiceRefusal::notify($service,'save');
             throw new \DomainException('Managed service binding is permanent.');
         }
         if (!$service->isDirty('price')) { return; } // Lifecycle saves do not depend on stale retail/mode.
+        NativeServiceRefusal::notify($service,'save','price');
         throw new \DomainException('Managed pricing authority requires a dedicated audited transition.');
     }
 

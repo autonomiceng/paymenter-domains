@@ -253,7 +253,10 @@ No installed schedule, provider acceptance or concurrent MariaDB guarantee is es
 `owned-pages-test.php` exercises current native/ledger ownership, capability labels,
 held contacts, pending transfers, safe correction states and real Blade rendering.
 `PAYMENTER_TEST_APP=<pinned source> python3 scripts/render-owned.py SHELL_DIR OUTPUT_DIR`
-renders synthetic owner DTOs inside the supplied site shell.
+renders synthetic owner DTOs inside the supplied site shell. It needs cached native PHP
+archives (`PHP_RUNTIME_ARCHIVE_CACHE`, or seed with `python3 scripts/bootstrap.py --native --download`)
+and reads `SHELL_DIR/ref-domains-register.html`. It writes pages to `OUTPUT_DIR` and copies
+them back into `SHELL_DIR` as `ui33-*.html` (`ui34-*.html` with `records`).
 It does not boot the extension, read registrar state or enable processing.
 The owner action/management suites cover exact encrypted code bytes, paid UTC cutoffs,
 immutable setup, purchase grammar, native CSRF, atomic replay, engine requests and synthetic readback.
@@ -638,3 +641,8 @@ Watch scheduling tests use synthetic local discovery and dispatch callbacks, an 
 and an asynchronous queue configuration. They cover five-minute turns, bounded product/owner
 rotation, duplicate hints, queue timeouts, outage deduplication, and 90-day evidence retention.
 Activation and live/concurrent resolver/queue acceptance remain separate operator gates.
+
+Watch notice policy is exercised offline by `watch-notice-plan-test.php`: exact UTC windows,
+nearest discovery, bounded catch-up, retained correction keys, clock reversal, independent DNS
+confirmation and restoration only for previously handed-off channels. Pure inputs grant no
+owner, installed queue, public resolver or SMTP acceptance.

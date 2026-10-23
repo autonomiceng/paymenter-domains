@@ -563,3 +563,53 @@ The upgrade tripwire pins native delete dispatch and Filament's handled Halt beh
 The runner hygiene suite requires the conventions exceptions section to be empty.
 Old Secure-class snapshots and caches require drained deployment, cache rebuild and page
 reload; offline native fixtures do not establish installed-theme or provider acceptance.
+
+## Owner retry input and list projections
+
+The paired owner-management suites exercise normalized native POST input, allowlisted contact
+and role retention, field errors in only the failed contact step, escaped redisplay and domain
+scoping. Nameserver, lock and setup retries retain their nonsecret values; confirmations and
+injected private fields are excluded. Owner-action tests assert code failures flash no input.
+Record-error suites retain bounded public DNS/SRV/DS/glue drafts without session flashing.
+Real active holdings compare full and list DTO facts and assert zero settings queries for list
+projections. These offline fixtures do not establish provider or installed browser acceptance.
+
+
+## Installed-package scenario commands
+
+`test_installed_package.py` runs default-held registration and all three unsafe-archive
+refusals. `test_installed_package_fresh.py` runs the current-build lifecycle;
+`test_installed_package_upgrade.py` builds the pinned previous revision, applies the
+existing observation-index fixture adjustment and runs the previous-to-current lifecycle.
+Both lifecycle commands retain install, seed, repeated upload/verify, server-delete/verify
+and file-removal/reinstall/verify phases. Each command gates on 1.5 GiB available memory
+and owns a temporary application/database under the runner fixture parent.
+Each prints only its scenario's JSON evidence; together they retain every original key,
+including both archive hashes and previous-fixture provenance. Offline native SQLite
+acceptance does not establish provider, installed-theme or concurrent-database acceptance.
+
+## Native service refusal feedback
+
+`native-service-refusal-test.php` and `native-service-refusal-holding-test.php` run
+the real native Edit Service page with each guard boot order. Manual price Save,
+each native identity field (product, plan, user, quantity, currency, coupon), and
+Delete return handled danger notices with unchanged service, ledger, invoice, settings
+and processing state. The Active Delete case checks the default terminate-server
+branch against the real Domains no-op with native auditing enabled: only its native
+terminate audit is added and the same refusal is handled. No workflow or registrar
+job is queued; only the fixture's existing native checkout after-response callbacks
+replay.
+Recalculate Price exercises the actual hint action: the native
+success notice and draft value remain, stored state stays unchanged, and Save of the
+changed draft is handled as a price refusal. Hosting saves and deletion still work.
+
+Non-UI writes keep the exact original DomainException type/message. Scoping probes
+exercise an unrelated Livewire page, a different native record, unrelated mounted
+actions, Save during Delete and deletion without the Delete action. Mutation probes
+remove these checks independently and must fail the same acceptance matrix. Offline
+rendered notifications cover price, recalculated-price Save, identity and Delete at
+1440/1024 in dark/light; they do not establish installed-theme or browser interaction
+acceptance. Native Active expiry validation remains an accepted upstream limitation.
+
+Public notice planner: `watch-notice-plan-test.php` covers expiry-window and DNS-episode policy
+with synthetic current/stale/revision inputs; persistence, delivery and installed acceptance remain separate.

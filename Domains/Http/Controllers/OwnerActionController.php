@@ -88,13 +88,31 @@ final readonly class OwnerActionController
                 $errors=(new \Illuminate\Support\ViewErrorBag)->put('default',new \Illuminate\Support\MessageBag($messages));
                 return response($view->with(['domain'=>$dto,'errors'=>$errors]),422)->header('Cache-Control','no-store, private');
             }
-            return redirect()->route('domains.domains.show',$domain)->withErrors($error->messages(''));
+            return $this->failed($request,$domain,$action,$error->messages(''));
         } catch (\Paymenter\Extensions\Servers\Domains\Services\SetupValidation $error) {
-            return redirect()->route('domains.domains.setup',$domain)->withErrors(array_intersect_key([
+            return $this->failed($request,$domain,$action,array_intersect_key([
                 'nameservers'=>'Check the nameservers.','privacy'=>'Domain privacy is not available for this domain.'],array_flip($error->fields)));
         } catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation $error) {
-            return redirect()->route('domains.domains.show',$domain)->withErrors(array_fill_keys(array_unique(array_map(static fn($field)=>preg_replace('/^contacts\\.[^.]+\\./','contact.',$field),$error->fields)),'Check this contact detail.'));
-        } catch (\Throwable) { return redirect()->route('domains.domains.show',$domain)->withErrors(['owner_action'=>'We couldn’t save this change. Check the details and try again. If it keeps happening, contact support.']); }
+            return $this->failed($request,$domain,$action,array_fill_keys(array_unique(array_map(static fn($field)=>preg_replace('/^contacts\\.[^.]+\\./','contact.',$field),$error->fields)),'Check this contact detail.'));
+        } catch (\Throwable) { return $this->failed($request,$domain,$action,['owner_action'=>'We couldn’t save this change. Check the details and try again. If it keeps happening, contact support.']); }
+    }
+    private function failed(Request $request,int $domain,string $action,array $errors)
+    {
+        // Never flash arbitrary input, confirmation, intent keys or transfer/authentication secrets.
+        $input=[];$p=$request->request->all();
+        if (in_array($action,['contacts','contact_profile'],true)) {
+            $contact=is_array($p['contact']??null)?$p['contact']:[];$input['contact']=[];
+            foreach (array_keys(\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits('enom')) as $field) {
+                if (array_key_exists($field,$contact) && ($contact[$field]===null || is_string($contact[$field]) && strlen($contact[$field])<=4096)) { $input['contact'][$field]=$contact[$field]??''; }
+            }
+            if (is_string($p['role']??null) && in_array($p['role'],['all',...\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::ROLES],true)) { $input['role']=$p['role']; }
+        }
+        if (in_array($action,['nameservers','setup'],true) && is_string($p['nameservers']??null) && strlen($p['nameservers'])<=4096) { $input['nameservers']=$p['nameservers']; }
+        if ($action==='setup' && in_array($p['privacy']??null,['0','1'],true)) { $input['privacy']=$p['privacy']; }
+        if ($action==='lock' && in_array($p['locked']??null,['0','1'],true)) { $input['locked']=$p['locked']; }
+        $form=route($action==='setup'?'domains.domains.setup-save':'domains.domains.manage',$action==='setup'?[$domain]:[$domain,$action]);
+        return redirect()->route($action==='setup'?'domains.domains.setup':'domains.domains.show',$domain)
+            ->withErrors($errors)->withInput($input)->with('domains_failed_form',$form);
     }
     private static function servers(string $text): array
     { return $text===''?[]:array_values(array_filter(array_map('trim',preg_split('/\r\n|\n|\r/',$text)),fn($v)=>$v!=='')); }

@@ -23,9 +23,9 @@ final class NativeIdentity
             if(self::routed($s)){if(self::dirty($s,[...self::SERVICE,'expires_at'],true)){self::refuse();}if(!app()->bound(InvoiceBinding::class)){self::refuse();}app(InvoiceBinding::class)->admitIdentity($s);}
         });
         Service::updating(static function(Service $s):void {
-            if((self::dirty($s,self::SERVICE)||self::dirty($s,['price'],persisted:false))&&!NativeDomainGuard::identityProjection($s)){self::service($s);}
+            if((self::dirty($s,self::SERVICE)||self::dirty($s,['price'],persisted:false))&&!NativeDomainGuard::identityProjection($s)){self::service($s,'save');}
         });
-        Service::deleting(self::service(...));
+        Service::deleting(static fn(Service $s)=>self::service($s,'delete'));
         ServiceConfig::saving(self::config(...));ServiceConfig::updating(self::config(...));ServiceConfig::deleting(self::config(...));
         Property::saving(self::property(...));Property::updating(self::property(...));Property::deleting(static fn(Property $p)=>self::property($p,true));
         foreach(['updating','deleting'] as $event){
@@ -121,7 +121,8 @@ final class NativeIdentity
             if($plan?->priceable_type===(new Product)->getMorphClass()&&self::product((int)$plan->priceable_id)){return true;}
         }return false;
     }
-    private static function service(Service $s): void {if(self::routed($s)){self::refuse();}}
+    private static function service(Service $s,?string $operation=null): void
+    {if(self::routed($s)){if($operation!==null){NativeServiceRefusal::notify($s,$operation,self::dirty($s,self::SERVICE)?'identity':'price');}self::refuse();}}
     private static function order(Order $o): void
     {
         foreach(Service::whereIn('order_id',array_filter(array_column(self::rows($o),'id')))->lazyById(100) as $s){self::service($s);}

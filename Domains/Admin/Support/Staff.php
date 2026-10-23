@@ -42,5 +42,5 @@ final class Staff
         $user = Auth::user();
         return self::allows($user instanceof User ? $user : null, $permission);
     }
-    public static function requireView(): void { abort_unless(self::can(), 403); }
+    public static function requireView(): StaffGrants { return StaffGrants::current(); }
 }

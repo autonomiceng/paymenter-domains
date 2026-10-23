@@ -24,9 +24,9 @@ final class TldFacts
         $p=SalesPolicy::where('tld',$tld->tld)->first();
         return !$p?->server_id?'No seller':self::registrar((string)$p->registrar_key).' · account #'.$p->server_id.' · revision '.$p->revision;
     }
-    public static function prices(Tld $tld): array
+    public static function prices(Tld $tld, ?StaffGrants $grants = null): array
     {
-        Staff::requireView();
+        $grants ??= Staff::requireView();
         $out=[];
         try{$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding(Account::where('server_id',$tld->server_id)->firstOrFail()))->revision;}catch(\Throwable){$accepted=null;}
         try{$ruleHash=hash('sha256',json_encode((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($tld),JSON_THROW_ON_ERROR));}catch(\Throwable){$ruleHash=null;}
@@ -45,7 +45,7 @@ final class TldFacts
             if($p->action!=='renew'&&($accepted===null||($p->eligibility['catalogue_revision']??null)!==$accepted)){$row['warning'].=' · Account acceptance changed; new sales held pending import';}
             if($ruleHash===null||($p->eligibility['rule_hash']??null)!==$ruleHash){$row['warning'].=' · Rule changed · publish required';}
             $row['warning']=trim(str_replace('None · ','',$row['warning']));
-            if(Staff::can(Staff::COSTS)){
+            if($grants->costs){
                 $row['cost']=$p->wholesale===null?(($p->eligibility['price_unavailable']??false)?'Price unavailable':'Unknown'):self::money($p->wholesale,4);
                 $row['margin']=$p->wholesale===null||$p->retail===null?'Unknown':self::exactMoney(PricingRule::decimal(PricingRule::units(PriceCatalogue::retail($p->retail),2)*100-PricingRule::units(PriceCatalogue::cost($p->wholesale)),4));
                 $row['source']=$p->source.' · '.match($p->eligibility['source_unit']??$p->unit){'exact_term_annual_rate'=>'annual rate for exact term','annual'=>'annual rate',default=>'term total'};
@@ -64,17 +64,18 @@ final class TldFacts
     { return preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$value).' USD'; }
     public static function table(Tld $tld): HtmlString
     {
-        $rows=self::prices($tld); if(!$rows){return new HtmlString('No saved prices. Unknown cost is never zero.');}
+        $grants=Staff::requireView();
+        $rows=self::prices($tld,$grants); if(!$rows){return new HtmlString('No saved prices. Unknown cost is never zero.');}
         $head=['action'=>'Action','term'=>'Term','retail'=>'Your price','revision'=>'Revision'];
         $html='<div style="max-width:100%;overflow-x:auto"><table style="width:100%;border-collapse:collapse"><caption style="text-align:left;padding:8px">Term totals before tax. Cost and retail use the same term.</caption><thead><tr>';
         foreach($head as $label){$html.='<th scope="col" style="padding:8px;text-align:left;white-space:nowrap">'.e($label).'</th>';}$html.='</tr></thead><tbody>';
         foreach($rows as $row){
             $html.='<tr>';foreach($head as $key=>$label){$html.='<td style="padding:8px;white-space:nowrap;vertical-align:top">'.e($row[$key]??'Unknown').'</td>';}$html.='</tr>';
             $detail='';
-            if(Staff::can(Staff::COSTS)){$detail='Cost <span style="white-space:nowrap">'.e($row['cost']).'</span> · Margin <span style="white-space:nowrap">'.e($row['margin']).'</span><br>';}
+            if($grants->costs){$detail='Cost <span style="white-space:nowrap">'.e($row['cost']).'</span> · Margin <span style="white-space:nowrap">'.e($row['margin']).'</span><br>';}
             if($row['warning']!=='None'){$detail.='Needs attention: '.e($row['warning']).'<br>';}
             $detail.='Cost '.strtolower($row['freshness']);
-            if(Staff::can(Staff::COSTS)){$detail.=' · '.e($row['source']).'<br>Observed '.e($row['observed']).' · fresh until '.e($row['until']??'Unknown');}
+            if($grants->costs){$detail.=' · '.e($row['source']).'<br>Observed '.e($row['observed']).' · fresh until '.e($row['until']??'Unknown');}
             $html.='<tr><td colspan="4" style="padding:0 8px 16px;font-size:0.875rem">'.$detail.'</td></tr>';
         }
         return new HtmlString($html.'</tbody></table></div>');
@@ -84,7 +85,7 @@ final class TldFacts
         try{$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding($a));$count=count($accepted->endings);return 'Revision '.$accepted->revision.' · '.$count.' '.($count===1?'ending':'endings');}
         catch(\Throwable){return 'Unavailable · new sales held';}
     }
-    public static function salesState(Tld $t): string
+    public static function salesState(Tld $t, ?StaffGrants $grants = null): string
     {
         if(Price::where(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint,'tld'=>$t->tld])->get()->contains(fn($p)=>($p->eligibility['price_unavailable']??false)===true)){return 'Price unavailable · registration and transfer off';}
         if(!$t->enabled||(!$t->register_enabled&&!$t->transfer_enabled)){return 'New sales paused';}
@@ -97,7 +98,7 @@ final class TldFacts
             $engine->current((int)$t->server_id,$t->account_fingerprint,$t->tld,$action,$term,'USD',now()->toDateTimeImmutable());
             return 'Price eligible · check selected seller';
         }catch(\Throwable){
-            $rows=self::prices($t);$text=implode(' ',array_column($rows,'warning'));
+            $rows=self::prices($t,$grants);$text=implode(' ',array_column($rows,'warning'));
             if(str_contains($text,'Rule changed')){return 'New sales held · rule changed, publish required';}
             if(collect($rows)->contains(fn($r)=>str_contains($r['warning'],'Cost unknown'))){return 'New sales held · cost unknown';}
             if(collect($rows)->contains(fn($r)=>$r['freshness']==='Stale')){return 'New sales held · cost stale';}

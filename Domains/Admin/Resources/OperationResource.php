@@ -28,6 +28,7 @@ class OperationResource extends Resource
     { Staff::requireView(); return OperationQueries::bound(parent::getEloquentQuery()); }
     public static function table(Table $table): Table
     {
+        $grants=Staff::requireView();
         return $table->columns([
             TextColumn::make('id')->label('Request')->prefix('#')->sortable(),
             TextColumn::make('domain.domain')->label('Domain')->searchable()->wrap()
@@ -37,7 +38,7 @@ class OperationResource extends Resource
             TextColumn::make('state')->label('Status')->badge()->color(fn($state)=>Labels::color($state))
                 ->formatStateUsing(fn($state)=>Labels::state($state))->wrap()
                 ->description(fn($record)=>$record->safe_code===null?null:Labels::reason($record->safe_code)),
-            TextColumn::make('review')->label('Review')->state(fn($record)=>array_values(array_unique(array_filter([PaidUncertainty::holdSummary($record)??PaidUncertainty::summary($record),...RequestFacts::review($record)]))))->listWithLineBreaks()->wrap()->placeholder('None')
+            TextColumn::make('review')->label('Review')->state(fn($record)=>array_values(array_unique(array_filter([PaidUncertainty::holdSummary($record,$grants)??PaidUncertainty::summary($record,$grants),...RequestFacts::review($record,$grants)]))))->listWithLineBreaks()->wrap()->placeholder('None')
                 ->extraAttributes(['style'=>'max-width:30rem;overflow-wrap:break-word;display:grid;row-gap:0.5rem']),
         ])->filters([
             SelectFilter::make('state')->label('Status')->multiple()->options(['held'=>'On hold','uncertain'=>'Unconfirmed',

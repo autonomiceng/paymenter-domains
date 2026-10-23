@@ -25,7 +25,8 @@ reviews:
         This is a public open-source repository. Flag anything that should not be public:
         credentials, tokens, private keys, real hostnames, IP addresses, server paths,
         database names, personal email addresses, or customer data. Examples and test data
-        must use example.com, documentation IP ranges, and placeholder values.
+        must use reserved example names (example.com, example.net, example.org, *.example,
+        *.test), documentation IP ranges, and placeholder values.
     - path: "NameSilo/**"
       instructions: |
         Paymenter domain registrar extension (Laravel/PHP) for the NameSilo registrar API. Check

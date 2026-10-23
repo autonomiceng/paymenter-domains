@@ -28,16 +28,17 @@ class TldResource extends Resource
     {Staff::requireView();return TldFacts::bound(parent::getEloquentQuery())->with('server:id,name');}
     public static function table(Table $table): Table
     {
+        $grants=Staff::requireView();
         return $table->columns([
             TextColumn::make('tld')->label('TLD')->prefix('.')->searchable()->sortable()->extraAttributes(['style'=>'word-break:normal;overflow-wrap:normal'])
-                ->description(fn($record)=>new \Illuminate\Support\HtmlString(e($record->use_default_rule?'Default rule':'TLD override').'<br>'.e(TldFacts::salesState($record)).'<br>Seller: '.e(TldFacts::seller($record))))->wrap(),
+                ->description(fn($record)=>new \Illuminate\Support\HtmlString(e($record->use_default_rule?'Default rule':'TLD override').'<br>'.e(TldFacts::salesState($record,$grants)).'<br>Seller: '.e(TldFacts::seller($record))))->wrap(),
             TextColumn::make('registrar_key')->label('Registrar / account')->formatStateUsing(fn($state)=>TldFacts::registrar($state))
                 ->description(fn($record)=>'Account #'.$record->server_id.' · '.$record->server->name),
             TextColumn::make('holders')->label('Renewal holders')->state(fn($record)=>TldFacts::holders($record)),
-            TextColumn::make('renewal')->label('Annual renewal')->state(fn($record)=>collect(TldFacts::prices($record))->firstWhere('action','Renewal')['retail']??'Unknown')
+            TextColumn::make('renewal')->label('Annual renewal')->state(fn($record)=>collect(TldFacts::prices($record,$grants))->firstWhere('action','Renewal')['retail']??'Unknown')
                 ->formatStateUsing(fn($state)=>new \Illuminate\Support\HtmlString('<span style="white-space:nowrap">'.e($state).'</span>'))
-                ->description(function($record){$row=collect(TldFacts::prices($record))->firstWhere('action','Renewal');return new \Illuminate\Support\HtmlString(
-                    (Staff::can(Staff::COSTS)?'Cost <span style="white-space:nowrap">'.e($row['cost']??'Unknown').'</span><br>':'').e(($row['warning']??'None')==='None'?'':$row['warning']));})->wrap(),
+                ->description(function($record)use($grants){$row=collect(TldFacts::prices($record,$grants))->firstWhere('action','Renewal');return new \Illuminate\Support\HtmlString(
+                    ($grants->costs?'Cost <span style="white-space:nowrap">'.e($row['cost']??'Unknown').'</span><br>':'').e(($row['warning']??'None')==='None'?'':$row['warning']));})->wrap(),
             TextColumn::make('refresh')->label('Cost refresh')->visibleFrom('xl')->state(fn($record)=>TldFacts::refreshState((int)$record->server_id))->wrap(),
         ])->filters([SelectFilter::make('registrar_key')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo']),
             SelectFilter::make('server_id')->label('Account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all())])
