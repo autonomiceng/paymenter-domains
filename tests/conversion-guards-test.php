@@ -64,6 +64,9 @@ foreach(Inputs::pins()as$pin){
     $changed=$pin;$changed['files']['Models/Unexpected.php']=str_repeat('0',64);
     conversionRefuses(fn()=>\DomainsConversion\SourcePins::admit($changed,Inputs::pins()),'Model inventory needs explicit support','Changed source schema');
 }
+$newSource=array_values(array_filter(Inputs::pins(),fn($pin)=>$pin['revision']==='3dee81f39d9cd9728006b2dadc5e7fd4ba9b6e4c'))[0];
+$priorPins=array_values(array_filter(Inputs::pins(),fn($pin)=>$pin['revision']!==$newSource['revision']));
+\DomainsConversion\SourcePins::admit($newSource,$priorPins);
 Inputs::revision(Inputs::REVISION);conversionRefuses(fn()=>Inputs::revision('wrong'),'Wrong source revision','Accepted source revision required');
 conversionRefuses(fn()=>Inputs::source($temporary,'wrong'),'CLI source revision guard','Accepted source revision required');
 conversionRefuses(fn()=>Inputs::source($temporary,Inputs::REVISION),'Source bytes mismatch','Installed source bytes differ');

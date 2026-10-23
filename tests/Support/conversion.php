@@ -28,11 +28,18 @@ $plan=$product->plans()->create(['name'=>'Annual','type'=>'recurring','billing_p
 DB::table('enom_tlds')->insert(['id'=>12,'server_id'=>$server->id,'tld'=>'co.uk','use_default_rule'=>true]);
 $multi=Product::create(['category_id'=>$category->id,'server_id'=>$server->id,'name'=>'Multi-level ending','slug'=>'co-uk-registration','hidden'=>true,'allow_quantity'=>'separated']);
 foreach(['enom_catalogue'=>'1','enom_tld_id'=>'12','enom_action'=>'register']as$key=>$value){$multi->settings()->create(['key'=>$key,'value'=>$value,'type'=>'string','encrypted'=>false]);}
+$retiredProduct=Product::create(['category_id'=>$category->id,'server_id'=>$server->id,'name'=>'Domain name','slug'=>'domain-name','description'=>'Ordered and managed on the Domains page.','hidden'=>true,
+    'image'=>null,'stock'=>null,'per_user_limit'=>null,'sort'=>null,'allow_quantity'=>'disabled','email_template'=>null]);
+$retiredPlan=$retiredProduct->plans()->create(['name'=>'Yearly','type'=>'recurring','billing_period'=>1,'billing_unit'=>'year']);
 $user=User::create(['first_name'=>'Domain','last_name'=>'Owner','email'=>'conversion-owner@example.test','password'=>'password']);
 $staff=staffUser(['admin.enom.view','admin.enom.manage-policy']);$evidence=['accounts'=>[(string)$server->id=>['source'=>'authenticated_provider_read','uid'=>strtolower($uid),'environment'=>'test','credential_digest'=>Inputs::digest([$uid,$token]),'accepted_by'=>$staff->id,'accepted_at'=>time(),'reason'=>'conversion_review','domain_id'=>21]],'domains'=>[]];
 $definitions=ReminderTemplates::definitions();$template=NotificationTemplate::forceCreate(array_intersect_key(['key'=>'enom_domain_expiring',...$definitions['domains_domain_expiring'],'subject'=>'Customized retained reminder'],array_flip(Schema::getColumnListing('notification_templates'))));
+$legacyTransferTemplate=NotificationTemplate::forceCreate(array_intersect_key(['key'=>'enom_transfer_code_reminder',...$definitions['domains_transfer_code_reminder'],'subject'=>'Customized legacy transfer reminder'],array_flip(Schema::getColumnListing('notification_templates'))));
+$neutralTransferTemplate=NotificationTemplate::forceCreate(array_intersect_key(['key'=>'domains_transfer_code_reminder',...$definitions['domains_transfer_code_reminder'],'subject'=>'Customized neutral transfer reminder'],array_flip(Schema::getColumnListing('notification_templates'))));
 DB::table('credits')->insert(['user_id'=>$user->id,'currency_code'=>'USD','amount'=>'4.25']);
 DB::table('notification_preferences')->insert(['user_id'=>$user->id,'notification_template_id'=>$template->id,'mail_enabled'=>false,'in_app_enabled'=>true]);
+DB::table('notification_preferences')->insert(['user_id'=>$user->id,'notification_template_id'=>$legacyTransferTemplate->id,'mail_enabled'=>false,'in_app_enabled'=>true]);
+DB::table('notification_preferences')->insert(['user_id'=>$user->id,'notification_template_id'=>$neutralTransferTemplate->id,'mail_enabled'=>true,'in_app_enabled'=>false]);
 DB::table('failed_jobs')->insert(['uuid'=>'synthetic-failed-job','connection'=>'database','queue'=>'default','payload'=>'retained payload','exception'=>'retained failure']);
 $services=[];$invoices=[];$sourcePayloads=[];
 foreach([21=>['purchased-placeholder.com',true,'active'],22=>['imported-placeholder.com',false,'active'],23=>['unknown-placeholder.com',true,'active'],24=>['cancelled-placeholder.com',false,'cancelled']]as$id=>[$name,$managed,$state]){
