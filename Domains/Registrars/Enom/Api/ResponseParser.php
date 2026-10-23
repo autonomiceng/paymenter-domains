@@ -71,9 +71,10 @@ final class ResponseParser
         foreach($codes as $c){if(!is_string($c)||(!in_array($c,['500','501','502','503','504','505','506','507','508','509','530','531','535','541','542','543','544','545','546','547','548','550','551','552','556','524181'],true)&&!preg_match('/^[347](?:01|03|04|05|06|12|13|15|16|17)[0-9]{3}$/D',$c))){return false;}}return true;
     }
 
-    private function txtAddress(\DOMElement $node): bool
+    private function recordAddress(\DOMElement $node): bool
     {
         if (strtolower($node->tagName) !== 'address' || !$node->parentNode instanceof \DOMElement) { return false; }
+        if (strtolower($node->parentNode->tagName) === 'host') { return true; }
         foreach ($node->parentNode->childNodes as $child) {
             if ($child instanceof \DOMElement && strtolower($child->tagName) === 'type' && strtoupper(trim($child->textContent)) === 'TXT') { return true; }
         }
@@ -98,7 +99,7 @@ final class ResponseParser
                 } else { $data[$key] = $value; }
             } elseif ($child instanceof \DOMText || $child instanceof \DOMCdataSection) { $text .= $child->textContent; }
         }
-        if (!$data) { return $this->txtAddress($node) ? $text : trim($text); }
+        if (!$data) { return $this->recordAddress($node) ? $text : trim($text); }
         if (trim($text) !== '') { $data['#text'] = trim($text); }
         return $data;
     }

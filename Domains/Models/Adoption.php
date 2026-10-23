@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
-/** Retained preview storage, never verified adoption or holding authority. */
+/** Retained requests; only the locked confirmer attaches committed evidence to a holding. */
 final class Adoption extends Model
 {
     protected $table = 'domains_adoptions';

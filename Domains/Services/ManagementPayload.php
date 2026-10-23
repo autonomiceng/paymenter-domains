@@ -51,7 +51,7 @@ class ManagementPayload
         return ['algorithm' => $a, 'digest_type' => $t, 'digest' => $d, 'key_tag' => self::integer($r['key_tag'] ?? null)];
     }
     private static function fqdn(#[\SensitiveParameter] string $v): bool
-    { return strlen($v) <= 254 && str_ends_with($v, '.') && filter_var(substr($v, 0, -1), FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) && str_contains(substr($v, 0, -1), '.'); }
+    { return strlen($v) <= 254 && str_ends_with($v, '.') && !str_ends_with(substr($v, 0, -1), '.') && filter_var(substr($v, 0, -1), FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) && str_contains(substr($v, 0, -1), '.'); }
     public static function host(#[\SensitiveParameter] array $r): array
     {
         $name = self::text($r['name'] ?? '', 253); $type = strtoupper(self::text($r['type'] ?? '', 10)); $address = self::text($r['address'] ?? '', 2048);
@@ -83,7 +83,11 @@ class ManagementPayload
     public static function canonical(string $kind, #[\SensitiveParameter] array $rows): array
     {
         $rows = array_map(function (#[\SensitiveParameter] $r) use ($kind) {
-            if ($kind === 'dns') { $r = self::host($r); $r['name'] = strtolower(rtrim($r['name'], '.')); if (in_array($r['type'], ['CNAME', 'MX'], true)) { $r['address'] = strtolower($r['address']); } }
+            if ($kind === 'dns') {
+                $r = self::host($r); $r['name'] = strtolower(rtrim($r['name'], '.'));
+                if (in_array($r['type'], ['CNAME', 'MX'], true)) { $r['address'] = strtolower($r['address']); }
+                if (in_array($r['type'], ['A', 'AAAA', 'MXE'], true)) { $r['address'] = inet_ntop(inet_pton($r['address'])); }
+            }
             elseif ($kind === 'srv') { $r = self::srv($r); unset($r['host_id']); $r['target'] = strtolower($r['target']); }
             else { $r = self::ds($r); }
             ksort($r); return $r;

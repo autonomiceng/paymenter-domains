@@ -375,7 +375,7 @@ these links. Slice 39 must prevent them and presentation/identity edits being re
 invalid hidden/quantity/slug edits deliberately fail closed pending those guards. Creation of hidden
 projections for disabled TLDs is bounded operationally by authorized publication in 37/39; avoiding
 unused first projections is a later optimization. Native publication invocation moved from cat14's
-15 hook gate to 37/39. Scheduler31/38/39 must republish on sync and freshness expiry. MariaDB EXPLAIN
+15 hook gate to 37/39. Scheduler 31/38/39 must republish on sync and freshness expiry. MariaDB EXPLAIN
 must verify publication's unlocked slug/marker discovery followed by primary-key product locks;
 no FOR UPDATE over the unindexed slug/marker OR scan. Native product locks still follow native
 checkout order; deadlocks/timeouts abort the entire checkout, never resume a partial batch.
@@ -394,20 +394,20 @@ require positive net, independently of margin. Each domain line has quantity one
 The admitted batch exists only for this transaction and clears on outer commit/rollback. Slice 17
 consumes it synchronously; contacts/registry validation (18) and claims/dispatch (19/20) remain required.
 
-Presentation32/39 must translate customer-correctable refusals to native DisplayException or field
+Presentation 32/39 must translate customer-correctable refusals to native DisplayException or field
 validation, and offer an explicit re-edit/recheck path after receipt expiry outside the checkout
-transaction. Generic DomainException handling is not ready for installation. Slice39 must install
+transaction. Generic DomainException handling is not ready for installation. Slice 39 must install
 exactly one shared CartAdmission instance before InvoiceBinding; the double-adapter test only
 simulates an earlier listener changing cached native prices.
 
-Slice 17's internal InvoiceBinding boot follows CartAdmission boot (installation39 still closed).
+Slice 17's internal InvoiceBinding boot follows CartAdmission boot (installation 39 still closed).
 Order Creating preflights ALL annual renewal projections, then locks ALL reservation-name matches ordered by
 Domain ID and operations by ID. Native Service creating consumes only the current admitted batch;
 InvoiceItem Created synchronously reserves the global name, inserts its immutable account/generation
 operation and projects the same product's annual plan/service.price and null native expiry. The native coupon association
-is retained for usage limits;24/39 must intercept coupon repricing before installation.
+is retained for usage limits; 24/39 must intercept coupon repricing before installation.
 The original invoice total/description/checkout term and product/plan IDs remain frozen in encrypted
-snapshots; estimated wholesale is separate. Contacts/registry18 remain setup_required; no spending,
+snapshots; estimated wholesale is separate. Contacts/registry 18 remain setup_required; no spending,
 jobs or provider writes occur. Duplicate item events only validate current binding and return; they
 never reprice, recreate history or replace snapshots. New bindings outside admission refuse.
 
@@ -416,15 +416,15 @@ before domain/operation locks. Its private context cannot accept selected subset
 outer commit/rollback. requirePaid validates frozen native/owner/account/generation/name identity,
 USD and positive domain amount; only succeeded signed payment amounts count toward the FULL native
 invoice total, including hosting and other lines. Paid status alone is insufficient. This yields
-funding evidence only: engine19 must revalidate it under ordered claim locks alongside processing,
+funding evidence only: engine 19 must revalidate it under ordered claim locks alongside processing,
 ownership, reservation, generation, prior outcomes and leases/seals. A copied snapshot never grants
 spending authority. 24/39 still own annual repricing/native save guards before installation.
 
-Slice24 must reconcile holder-price tax basis: native service.price includes exclusive tax while
+Slice 24 must reconcile holder-price tax basis: native service.price includes exclusive tax while
 HolderPricing currently compares untaxed retail. It must also intercept native paid-invoice renewal
 activation/expiry and route renewal invoice items, preserving the purchased term and provider expiry.
 MariaDB acceptance must cover reservation-name range/gap locks, neighbouring-name deadlocks and
-1062/1213/1205 whole-checkout aborts. Existing-name conflicts currently refuse during binding;39 must
+1062/1213/1205 whole-checkout aborts. Existing-name conflicts currently refuse during binding; 39 must
 ensure no native jobs escape the outer transaction (or add an earlier reservation preflight).
 
 ## Contact setup and retained profiles (slice 18)
@@ -443,7 +443,7 @@ the OWNER's details with a reason and bounded audit, only for the same contact-h
 obligation. Register returns queued; transfer stays held under [transfer rules](transfers.md). Registry/EPP/NS/deadlines and financial
 rows are preserved. Staff may terminally reject held nonbillable contacts as audited definitely-unsent,
 never credit or release the name. Any send, claim/lease, recorded execution (including null), provider
-reference, charge, candidate, unknown attempt field or financial refund blocks recovery.19 must align
+reference, charge, candidate, unknown attempt field or financial refund blocks recovery. 19 must align
 this refusal contract with its sealed-attempt representation; neither API creates claims/jobs or spends.
 
 `domains_contact_profiles` is retained on down, encrypted, immutable and unique by server/provider-ID
@@ -451,13 +451,13 @@ fingerprint, with owner and immutable account identity. ContactProfiles is an in
 20/30 must prove fresh contactAdd and non-default readback before recording, never adopt account
 inventory/customer IDs. Four roles resolve LOCAL IDs through owner/account predicates to provider IDs.
 No profile update is allowed; changed contacts require a new provider profile and confirmed association
-in 30, so another customer's domains cannot be changed through a shared/default profile.301/302 remain
+in 30, so another customer's domains cannot be changed through a shared/default profile. 301/302 remain
 purchased discrepancies needing reconciliation/correction (21/30), never refund/replay/unsent proof.
 39/42 must invoke ContactProfileSchema::verify after Migrator even when migration bookkeeping skips;
 this slice adds no entry point, provider writes, routes or production identity/profile acceptance.
 
-This section supersedes17's setup_required placeholder statement above. Before ANY acquisition
-claim/seal,19/20 must call ContactSetup::requireReady under their current locks: explicit false
+This section supersedes 17's setup_required placeholder statement above. Before ANY acquisition
+claim/seal, 19/20 must call ContactSetup::requireReady under their current locks: explicit false
 setup_required, true registry_supported, and validated frozen contacts/registry. Queued is not
 dispatch permission. Only ContactRecovery may release contact_details_required; it refuses foreign
 held codes. Registry-unsupported paid holds stay held; transfer timeout/disposition limits are in [transfers.md](transfers.md).
@@ -466,23 +466,23 @@ permission reads. MariaDB acceptance must test that older read-view/cancellation
 Profile fingerprints use an HMAC keyed by a random secret in encrypted retained profile details.
 The first retained server profile anchors that key under the server/account lock; APP_KEY rotation
 with previous decryption keys preserves uniqueness. Missing decryption keys or corrupt anchors refuse
-recording.39/42 must preserve encrypted keys during rotation/re-encryption; never delete the anchor.
+recording. 39/42 must preserve encrypted keys during rotation/re-encryption; never delete the anchor.
 Sequential provider IDs cannot be enumerated from the index alone. NameSilo's empty schema originates from per-ending durable registry acceptance,
-not a live schema probe; that acceptance and the local blocked endings still apply.39 must register
+not a live schema probe; that acceptance and the local blocked endings still apply. 39 must register
 admin.domains.manage and coordinate migration000003 with the finance lane before installation.
 
 19/20 must schedule ContactRecovery::hold after a contact-refused claim transaction commits (e.g.
 DB::afterCommit); it owns its transaction. Stale setup flags also enter a recoverable contact hold;
 audited recollection reasserts readiness only after frozen registry and fresh owner contacts validate.
-Paid awaiting_payment may become held then queued here;19 must still confirm full native funding
+Paid awaiting_payment may become held then queued here; 19 must still confirm full native funding
 under its current claim locks. Preserve BOTH independent Operation updating guards on rebase.
 
 ## Operation claims and seals (slice 19)
 
 `DomainOperations` composes `OperationClaims`, an unregistered trusted `OperationPreflight` and
 an admitted writer. Only synthetic writers exist. Registration is the initial supported financial
-route; transfer/renewal/complimentary/management authority remains closed for 23–30. Preflight20/21
-must compose contacts18 and fresh ordinary-name/term/capability/cost/balance policy; the readiness
+route; transfer/renewal/complimentary/management authority remains closed for 23–30. Preflight 20/21
+must compose contacts 18 and fresh ordinary-name/term/capability/cost/balance policy; the readiness
 DTO itself is evidence only. No production preflight, write bridge, job boot or scheduler is installed.
 
 Claims and seals each lock native owner, complete invoice/items/payments/services/products/plans/
@@ -496,7 +496,7 @@ One random claim token and request digest identify the worker. A seal commits be
 its cost, funding and desired-state digest are frozen. Write-once attempt keys preserve absent
 execution versus recorded null. A live descriptor/context must be consumed once by the future
 bridge immediately before its named send; copied/forged/reused descriptors grant no authority.
-Only the facade opens that in-memory scope after sealing. Bridges20 must enforce this consumption,
+Only the facade opens that in-memory scope after sealing. Bridges 20 must enforce this consumption,
 accepted account/site, fixed origin, deadlines/budgets and default-off feature gates themselves.
 
 Ten 25-second requests plus 50 seconds yield a 300-second worker timeout and a 360-second claim
@@ -507,11 +507,11 @@ exceptions hold definitely-unsealed work; post-seal exceptions record null execu
 Every response, including ack or rejection, awaits 21/22 action-specific proof; no automatic replay,
 refund, fallback, completion or reservation release exists. A late worker cannot overwrite a changed
 claim. For the same sealed worker, write-once late facts survive expiry and stale quarantine without
-changing uncertainty or reopening authority. Reconciliation22 interprets these facts and correlates charges.
+changing uncertainty or reopening authority. Reconciliation 22 interprets these facts and correlates charges.
 MariaDB paired races, current reads/EXPLAIN, cancellation writers acquiring the service prefix,
 queue timeout versus retry_after and installed native guards remain 39/44 acceptance gates.
 
-The combined18/19 claim authority calls ContactSetup::requireReady at claim and seal with the
+The combined 18/19 claim authority calls ContactSetup::requireReady at claim and seal with the
 already locked domain relation. A contact refusal before claiming schedules ContactRecovery::hold
 only after commit; recovery reacquires its own ordered prefix and current funding. No claim/seal/
 grant is created by that refusal. A postclaim contact change instead holds the attempted operation
@@ -523,10 +523,10 @@ scope; contact_disposition is write-once and contact_readmissions stays a bounde
 policy prefix. Later policy writers must merge and preserve both audit keys. No finance migration
 is needed; contact profile migration000003 retains its unique basename.
 
-## Slice20 admitted bridge boundary
+## Slice 20 admitted bridge boundary
 
 No schema change. Internal registration bridges consume the exact live engine grant, re-lock the
-slice19 financial prefix and recheck the durable seal, current ownership/funding/account/reservation,
+slice 19 financial prefix and recheck the durable seal, current ownership/funding/account/reservation,
 generation, contacts and absence of unresolved work. They return only the locked frozen payload to
 a protected named synthetic wire method after commit. DTOs, clones, contexts and durable receipts confer
 no write authority; read transports still cannot dispatch purchase mappings. All feature gates default
@@ -543,13 +543,13 @@ Seal also rejects encrypted evidence changes since claim and independently forbi
 refund and candidate facts by presence. The final transport entry consumes live engine authority;
 only its protected named wire method receives the fixed origin, timeout and frozen payload.
 
-## Slice21 registration acceptance and correction work
+## Slice 21 registration acceptance and correction work
 
 No migration. Immediate registration facts live in encrypted attempt evidence; registration and
 corrections are write-once audit keys. Accepted purchases become pending, retaining reservation,
-native paid invoice and registration_pending domain until22 proves unique charge/term/ownership.
+native paid invoice and registration_pending domain until 22 proves unique charge/term/ownership.
 No cost floor, refund, replay, seller fallback or expiry/billing anchor follows acknowledgement.
-Correction entries require separate authorization and readback; their execution belongs to29–31/33.
+Correction entries require separate authorization and readback; their execution belongs to 29–31/33.
 Enom purchases on default DNS then attempts NS/readback. NameSilo 300/301/302 are purchases;
 readback/removal failures retain acceptance and auto_renew/contact/NS/privacy correction work.
 Unknown responses remain uncertain, including provider refusals lacking correlated no-charge proof.
@@ -562,24 +562,24 @@ Production protocol paths require the bound bridge, real RegistrationPreflight a
 per-account gate objects. Every concrete send first consumes base-private in-flight authority.
 Ports have no default network exchange or installed composition. Account identity/USD/batch/live
 acceptance, installed shared gates/cache, queues, paired MariaDB races and rate-limit release
-remain39; unknown/late evidence interpretation and unique charge acceptance remain22.
+remain 39; unknown/late evidence interpretation and unique charge acceptance remain 22.
 
 NameSilo protocol composition also requires the same profile service in acceptance, preflight and
-transport before claim. Ordinary checkout lacks desired NS/privacy capture:32/33 must capture and
-freeze these before installed activation39; missing NS holds before profile work. Installed39 must
+transport before claim. Ordinary checkout lacks desired NS/privacy capture: 32/33 must capture and
+freeze these before installed activation 39; missing NS holds before profile work. Installed 39 must
 allow only RegistrationBridge + RegistrationProtocol writers; direct transport seams are synthetic.
 Completion retries retain the original result; changed authority retains acceptance/corrections as
-uncertain. Slice22 selects financial_completion=awaiting_unique_charge even with correction safe codes.
+uncertain. Slice 22 selects financial_completion=awaiting_unique_charge even with correction safe codes.
 Correction progress uses separate append-only records; the original requirements never change.
 
-## Slice22 original-attempt reconciliation
+## Slice 22 original-attempt reconciliation
 
 `OperationReconciliation::run` selects pending `registration.financial_completion=awaiting_unique_charge`
 regardless of correction safe codes, uncertain attempts, or expired running leases. Each poll first
-retains an encrypted staff-alert marker (notification delivery38/staff workflow36);
+retains an encrypted staff-alert marker (notification delivery 38/staff workflow 36);
 Only completed, covered reads with unchanged authority consume the five-poll budget; missing acceptance,
 lag, failed/incomplete reads and stale snapshots do not. A distinct poll_limit_reached alert and bounded
-append-only internal resume audit permit later staff-triggered reads; staff authorization/UI stays36.
+append-only internal resume audit permit later staff-triggered reads; staff authorization/UI stays 36.
 No retries of purchase, refund, seller fallback or rejection follow observation. Live leases refuse.
 The existing user/native-funding/server/account/settings/domain/ordered-operation lock prefix captures
 and rechecks lifecycle, binding, generation, all operation evidence and acceptance around bounded
@@ -594,7 +594,7 @@ Encrypted server setting `domains_history_acceptance` binds USD, all-pages compl
 registrar registration vocabulary, explicit timezone, lag and retention. Absence is unaccepted;
 unknown/paged envelopes, unsupported detail shapes, missing/ambiguous timestamps, exhausted budgets,
 zero or multiple matches and out-of-window rows stay unresolved. Acceptance is an internal seam;
-real account/provider contract acceptance and staff authorization remain39/36. Enom discovery accepts
+real account/provider contract acceptance and staff authorization remain 39/36. Enom discovery accepts
 only the opt-in flat OrderList/OrderCount shape; unaccepted provider variants remain unresolved.
 
 A unique successful exact domain/action/term order with USD charge and precise original-window time
@@ -609,14 +609,14 @@ Publication still holds below-cost registration/transfer and bills below-cost re
 `OperationTerminalProof::encode` normalizes only a completed, held, definitely-unsealed local worker
 with no send/result/charge/candidate/refund facts. Expired claims, seals and present-null results never
 become unsent. Reservation release remains solely in `DomainReservations`; no sent/provider rejection
-or no-charge proof is synthesized from history. Refund-once26, renewal23–25, transfers27–28, installed
-queue/scheduler acceptance39 and shared refresh/correction execution31 remain separate.
+or no-charge proof is synthesized from history. Refund-once 26, renewal 23–25, transfers 27–28, installed
+queue/scheduler acceptance 39 and shared refresh/correction execution 31 remain separate.
 
-### Held-domain renewal admission (slice23)
+### Held-domain renewal admission (slice 23)
 
 `RenewalAdmission::check` accepts an expected domain/generation/confirmed revision/provider ID/expiry
 and exact term. Its own private ordered native-owner/service/product/plan/cancellation/property/product-settings/server/
-account/settings/TLD/prices/domain/operations prefix validates current holding authority and slice22's
+account/settings/TLD/prices/domain/operations prefix validates current holding authority and slice 22's
 persisted original-attempt/completion proof. It never calls the generic trusted-writer lock seam.
 A fresh bounded read window (10 requests/250 seconds, quote lifetime at most 120 seconds) runs outside
 transactions; then the prefix retakes locks and rejects changed anchors, authority or settings,
@@ -626,30 +626,30 @@ Only proven ordinary or explicitly accepted one-year grace states with matching 
 provider auto-renew off, nonpremium exact USD term cost and sufficient USD balance can pass.
 Explicit Enom restoration inventory is a typed refusal; unknown states and NameSilo's unproven
 restore-safe renewal path remain closed. Account USD/batch/rate acceptance defaults closed and shares
-slice20's nonblocking account slot. Below-cost renewal produces a staff alert, never a retail floor.
+slice 20's nonblocking account slot. Below-cost renewal produces a staff alert, never a retail floor.
 Neutral typed decisions are server-only prospective facts: they create no obligation, funding/dispatch
-grant, invoice, operation or expiry change. Billing24 and paid/complimentary authority, caps and
-execution25 must revalidate independently; transfer-completion anchors extend the proof seam in28.
+grant, invoice, operation or expiry change. Billing 24 and paid/complimentary authority, caps and
+execution 25 must revalidate independently; transfer-completion anchors extend the proof seam in 28.
 
-Before composing billing24/execution25, extend `RenewalRequest` with the expected obligation key.
+Before composing billing 24/execution 25, extend `RenewalRequest` with the expected obligation key.
 Exempt exactly that matching unsealed obligation from sibling refusal, and accept the latest proven
 completed renewal anchor; registration-only proof and register-only terminal safety are insufficient
-for repeated renewals. Conversion41 must supply independently accepted converted-holding anchors.
-Invoice24 locks belong between owner and service, matching `InvoiceFunding`; obligations fix the
+for repeated renewals. Conversion 41 must supply independently accepted converted-holding anchors.
+Invoice 24 locks belong between owner and service, matching `InvoiceFunding`; obligations fix the
 term (including accepted additional years) independently of the annual native plan.
-Admission reserves the shared account slot once for that attempt: execution25 must carry that
+Admission reserves the shared account slot once for that attempt: execution 25 must carry that
 reservation through its final rechecks, never reserve again for the same immediate send. A separate
-attempt needs a new slot. Constructor account/grace acceptance is internal only; wiring39 must read
+attempt needs a new slot. Constructor account/grace acceptance is internal only; wiring 39 must read
 it from locked binding-scoped settings and recheck it at the end of the window.
 Immutable completed-history proof reconstruction currently fails closed if current history acceptance
-is malformed/foreign; holder-safe recovery/acceptance tooling remains37/39. Neutral authority/read
-codes also cover transient database/processing and mismatched-result failures; retry policy31 and
-staff diagnostics35 must distinguish these without exposing exceptions. The retained retail comparison
-is an advisory margin alert only; billing24 must use the validated holding renewal-price API (USD,
+is malformed/foreign; holder-safe recovery/acceptance tooling remains 37/39. Neutral authority/read
+codes also cover transient database/processing and mismatched-result failures; retry policy 31 and
+staff diagnostics 35 must distinguish these without exposing exceptions. The retained retail comparison
+is an advisory margin alert only; billing 24 must use the validated holding renewal-price API (USD,
 positive retail, term-total unit) and emit a staff alert when retail/margin is unknown.
 
 
-Slice23b narrows NameSilo's refusal above: ordinary annual renewal may pass exact account-scoped
+Slice 23b narrows NameSilo's refusal above: ordinary annual renewal may pass exact account-scoped
 `Active`, date-only expiry at least two UTC calendar days ahead and an exact accepted account quote.
 Validity ends when that UTC margin ceases. Grace/redemption remain unknown. NameSilo request and
 snapshot provider domain IDs must both be null. Enom saved-ID behavior is unchanged.
@@ -657,28 +657,28 @@ Sealing now retains write-once encrypted `attempt.registration_admission` (premi
 term and authorized cost) after DispatchReadiness validation. No schema changes. A uniquely completed
 registration anchor whose actual USD charge equals the authorized cost (normalized decimals) must match this proof before NameSilo's premium gate
 can pass. Older holdings without that evidence retain Cost refusal; no flag is backfilled from
-Active or a catalogue price. Slice28 must establish independent nonpremium proof for transfer-ins.
-All23 auto-renew, balance, authority/generation, account acceptance and margin checks still apply.
+Active or a catalogue price. Slice 28 must establish independent nonpremium proof for transfer-ins.
+All 23 auto-renew, balance, authority/generation, account acceptance and margin checks still apply.
 The model permits adding this proof only in the original absent-to-sealed registration update.
-Execution25 must honour validUntil and repeat Active plus the two-day margin immediately before send;
-wiring39 must independently confirm restores disabled in API Manager. Acceptance tooling37/39 must
+Execution 25 must honour validUntil and repeat Active plus the two-day margin immediately before send;
+wiring 39 must independently confirm restores disabled in API Manager. Acceptance tooling 37/39 must
 recheck per-TLD renewal-safe acceptance, including revocation, beyond today's account-wide quote acceptance.
 Only annual NameSilo costs are accepted; other terms currently refuse State rather than Term.
-When24/25 advance the anchor to a completed renewal, retain or resolve the original registration's
+When 24/25 advance the anchor to a completed renewal, retain or resolve the original registration's
 nonpremium proof; never backfill registration_admission onto renewal operation rows.
 
-## Renewal invoices and native lifecycle (slice24)
+## Renewal invoices and native lifecycle (slice 24)
 
 `DomainBilling::invoice` owns a transaction. `HoldingLocks` takes the owner, all current owner
 invoices/items/payments, every referenced service/product/plan, cancellations/configs/properties/
 product markers/links, server/account/settings, TLD/prices, domain and ordered operations. Native
 invoice locks precede services, matching InvoiceFunding. All billing price/rule reads are current
 locking reads, including within an older native cron read view. MariaDB paired-connection tests
-and EXPLAIN remain39: verify owner-invoice range locks, mixed-service ordering, concurrent native
+and EXPLAIN remain 39: verify owner-invoice range locks, mixed-service ordering, concurrent native
 cancellation/config writers and publication; SQLite establishes sequential behavior only.
 
 Scheduled `domains_billing_enabled` and owner-requested `domains_manual_renewals_enabled` default
-false and are independent. `domains_issue_days`/`domains_due_days` default21/7; new scheduled debts
+false and are independent. `domains_issue_days`/`domains_due_days` default 21/7; new scheduled debts
 require issue <= today < due, manual debts may issue earlier but never at/after due. Existing
 obligations retain their term/calendar/amount through price, policy, date and gate changes. A unique
 `renew:{domain}:g{generation}:{expiry}` key arbitrates the cycle under the domain lock. Obligations
@@ -687,55 +687,55 @@ No provider admission is performed to bill. Non-selling holders still bill; acco
 automatic spending pauses refuse new debt. Existing obligations remain frozen. Billing uses validated positive USD term-total RenewalPrice retail; unknown/stale costs and rule failures retain
 published retail with an encrypted staff-alert marker. Below-cost renewal bills without a floor.
 
-`NativeDomainGuard::boot` is dormant until39. Install once before CartAdmission/InvoiceBinding;
+`NativeDomainGuard::boot` is dormant until 39. Install once before CartAdmission/InvoiceBinding;
 it binds ManagedPaidInvoice so native payment processing skips managed Service items, while other
 native items retain upstream behavior. Renewal items have null native references. Payment grants no
-activation, expiry, claim or execution: provider-confirmed completion remains22/25. Initial checkout
+activation, expiry, claim or execution: provider-confirmed completion remains 22/25. Initial checkout
 uses a narrow validated annual transition; future projections use the locked holding annual retail
 plus native exclusive tax once. Coupon associations remain usage accounting, never renewal pricing.
 Dirty native price saves require an outer transaction and fresh holder retail; stale forms, zero,
 retained-only evidence, acquisition recalc, native configs and binding/annual mapping changes refuse.
 Lifecycle-only status saves proceed without current price evidence and preserve null native expiry.
 Ordinary price_mode/billing_managed edits cannot create complimentary authority; audited transitions
-and complimentary cycles/caps remain25/35. Issued bound items and their invoice routing/calendar are
+and complimentary cycles/caps remain 25/35. Issued bound items and their invoice routing/calendar are
 immutable. Raw SQL, query-builder bulk writes, direct PDO, quiet/event-suppressed writes retain the privileged-maintenance exclusion (Reservation authority; Account binding authority); no safety beyond it is claimed. Concurrent native User deletion and checkout for that same user can orphan a retained domain; adoption stays off pending resolution. This also affects current admitted checkout with adoption off. Missing identity refuses engine authority; post-delete and durable cursor checks record staff discrepancies.
 
-Slice25 must compose action-specific paid funding (renewal items intentionally have null references),
+Slice 25 must compose action-specific paid funding (renewal items intentionally have null references),
 expected-obligation-key admission, latest completed-renewal anchors, fixed terms/caps, stale/late paid
 obligations/preferences, overrun pause and provider execution/completion. No operation dispatch, credit
 auto-use, refund, reminders, notification delivery, scheduler, public routes or extension entry ships
-here.26 owns financial disposition;27–28 transfer anchors;39 installed single-authority hooks, native
-queue transaction behavior and MariaDB acceptance;41 independently proven converted holding anchors.
+here. 26 owns financial disposition; 27–28 transfer anchors; 39 installed single-authority hooks, native
+queue transaction behavior and MariaDB acceptance; 41 independently proven converted holding anchors.
 
 Billing reuses the full sealed registration-completion proof, not a succeeded state label. Historical
-completed-renewal/transfer anchors remain25/28. Tax selection mirrors native Settings::tax using
+completed-renewal/transfer anchors remain 25/28. Tax selection mirrors native Settings::tax using
 locked owner properties and tax rows. Parent invoice deletion is refused before native cascade;
 renewal base/expected expiry are frozen with the term. Native service/product/annual-plan deletion refuses.
 The native panel currently defaults database transactions off: dirty price edits fail closed without
-an outer transaction.39 must wrap the installed admin save before taking the ordered prefix. The
-slice24 regression executes the real recalc action and persistence method inside that transaction;
+an outer transaction. 39 must wrap the installed admin save before taking the ordered prefix. The
+slice 24 regression executes the real recalc action and persistence method inside that transaction;
 it does not establish mounted-panel/browser acceptance or change native panel configuration.
 
 User/order deletion also refuses before native cascades can erase holding records. Renewal invoice
 membership is frozen after issuance, including null-reference additions and reparented adjustments.
 HolderPricing::assertSave delegates to NativeDomainGuard's single locked, tax-aware save authority.
-The positive dirty-price regression changes9.99 to fresh gross11.44; it is not an unchanged-price save.
-Native InvoiceTransaction edit/delete authority remains25/26/35/39: execution must reacquire signed
+The positive dirty-price regression changes 9.99 to fresh gross 11.44; it is not an unchanged-price save.
+Native InvoiceTransaction edit/delete authority remains 25/26/35/39: execution must reacquire signed
 current payments and funding, and installed staff financial mutations need explicit audited policy.
-DomainBilling's prior-anchor checks must be extended in25 for completed renewal cycles. Latest
+DomainBilling's prior-anchor checks must be extended in 25 for completed renewal cycles. Latest
 observation alerts are health summaries; immutable operation policy.price retains each cycle's alert
-and retained flag. Delivery38 must consume operation evidence rather than the latest summary alone.
-Installed39 must also prove no caller already holds later rows before taking HoldingLocks, and
+and retained flag. Delivery 38 must consume operation evidence rather than the latest summary alone.
+Installed 39 must also prove no caller already holds later rows before taking HoldingLocks, and
 EXPLAIN the product_upgrades OR query. Shared tax-row exclusive locking is safe but may serialize.
 
-Cancelled unpaid renewal invoices refuse further billing for that cycle until25/26 implements a
+Cancelled unpaid renewal invoices refuse further billing for that cycle until 25/26 implements a
 verified terminal unpaid disposition plus a replacement-key suffix, preserving the original unique
 expiry/generation obligation and all issued evidence (Enom b561b9f renewal_cancelled_unpaid parity).
-Slice25 should consolidate RenewalAuthority's duplicated route checks onto the ordered HoldingLocks
-prefix.39 must bind NativeDomainGuard as a singleton; boot-once is per instance. Calendar cutoffs
+Slice 25 should consolidate RenewalAuthority's duplicated route checks onto the ordered HoldingLocks
+prefix. 39 must bind NativeDomainGuard as a singleton; boot-once is per instance. Calendar cutoffs
 refuse new overdue debt even if retained domain status says expired/grace. Scheduled callers default
 to one year; an explicit fixed paid term is internal policy input. Enom's actor-only multi-year rule
-is in complimentary(), whose distinct audited cycle/term authority remains25, not paid invoicing.
+is in complimentary(), whose distinct audited cycle/term authority remains 25, not paid invoicing.
 
 Holding order ownership cannot be reparented; user deletion also checks indirect holding orders,
 including already-drifted historical parents, before native cascades. Service saves resolve the
@@ -744,7 +744,7 @@ the binding guard. Bound invoice-item protection likewise checks original and pr
 Deletion guards check both original and proposed native IDs: Eloquent deletes using the original
 primary key even when a caller changes the in-memory ID before delete(). No key spoof bypass is allowed.
 
-## Renewal execution and completion (slice25)
+## Renewal execution and completion (slice 25)
 
 RenewalAuthority now shares HoldingLocks, including signed current payments. The request names
 exactly its virgin obligation; all other unresolved work refuses. Paid null-reference renewal
@@ -764,7 +764,7 @@ RenewalWriter grant. Final consume repeats local acceptance/funding/binding/dead
 Named Extend/UpdateExpiredDomains or annual renewDomain ports have no default network sender.
 Below-cost retail never holds dispatch; fresh cost over the fixed obligation cap pauses spending
 and retains a staff alert. Typed transient admission refusals stay queued; paid unsendable debts retain net-funding
-refund candidates for26. Exact-live-grant prewire refusal records definitely_unsent; no refund occurs.
+refund candidates for 26. Exact-live-grant prewire refusal records definitely_unsent; no refund occurs.
 Issued paid obligations survive renew preferences, tariff and calendar changes; service cancellation requires review.
 Credit auto-use follows only native `settings.credits_auto_use` (default true); stale server settings are ignored. Unknown costs refuse.
 
@@ -777,14 +777,14 @@ actual charge differences retain Cost refusal before future billing or admission
 completes evidence and pauses future spending. Revocation after send cannot erase that outcome.
 Expired running attempts quarantine without replay, including when writes are disabled.
 
-These are internal, default-off seams.26 owns refunds;27/28 transfer anchors;31/35 scheduling,
-held readmission and audited policy workflows;36/37 staff acceptance/history recovery;38 delivery;
+These are internal, default-off seams. 26 owns refunds; 27/28 transfer anchors; 31/35 scheduling,
+held readmission and audited policy workflows; 36/37 staff acceptance/history recovery; 38 delivery;
 39 installed singleton hooks, fresh binding-scoped policy, restores-disabled acceptance, native
 financial transition integration, queue/deadline/shared-cache and paired MariaDB lock acceptance.
 
-Slice26 `Refunds` locks the owner, USD credit, native ledger and holding before interpreting
+Slice 26 `Refunds` locks the owner, USD credit, native ledger and holding before interpreting
 unsent proof and the exact issued positive line. The whole invoice needs positive net succeeded
-native funding; processing/failed payments and status labels grant nothing. Only exact typed25
+native funding; processing/failed payments and status labels grant nothing. Only exact typed 25
 prewire refusals can override a sealed renewal's possibly-sent marker. Unknown/fallback facts,
 even null-valued keys, refuse credit. Refunding retains invoice/payment history and reservations.
 Held disposition records fresh domain-manage + invoice-update rights, bounded reason and actor;
@@ -792,9 +792,9 @@ contact holds use their recovery seam. The rejected decision survives credit fai
 immutable funding.refund commit together, once; bounded retries recheck current evidence.
 FinancialAdjustments appends signed native transactions and bounded immutable audits under the
 same locks plus native transaction-create rights; cumulative corrections cannot add net funds.
-Original payments stay immutable. Installed native action routing remains35/39.
+Original payments stay immutable. Installed native action routing remains 35/39.
 Unsuitable paid renewals and late payments to retired cancelled debt use the same proof. Late
 retired payments unblock replacement only when an exact full refund still covers every retained
-transaction; later activity blocks again. Notifications38, scheduling31 and MariaDB races39 remain.
-Refunded unsuitable paid renewals still own their cycle; safe replacement authority remains35/36.
+transaction; later activity blocks again. Notifications 38, scheduling 31 and MariaDB races 39 remain.
+Refunded unsuitable paid renewals still own their cycle; safe replacement authority remains 35/36.
 Correction-only history remains unattempted; current native rows are rechecked and seals retain audits. See [adoption and invoice-history storage](storage-adoptions.md). CR30: RenewalAuthority now rechecks current per-TLD renewal-safe and annual-term acceptance at capture and recheck, including revocation, using CanonicalName and the settings locks already held by HoldingLocks.

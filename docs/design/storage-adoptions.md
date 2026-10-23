@@ -62,7 +62,7 @@ Request keys/digests, account fingerprints, evidence and reasons are hidden from
 
 `HistoryLink` stores domain/service/user/invoice IDs, nullable invoice-item ID, source
 (`native_service|staff_verified_import`), linked-by actor, reason, linked time and encrypted
-`evidence` with version1. It is append-only: ordinary edits, numeric updates and deletes refuse.
+`evidence` with version 1. It is append-only: ordinary edits, numeric updates and deletes refuse.
 `link_key` is SHA-256 of the JSON array `[domain_id, invoice_id, invoice_item_id]` using integer
 IDs and explicit JSON null. The model derives it and rejects inconsistent supplied values;
 invoice-only links therefore remain unique despite their null item. Distinct items, invoices
@@ -199,3 +199,43 @@ identity validation. They therefore refuse TEST and do-not-renew holdings for al
 holding consumers, including observation, management, refunds, unpaid retirement
 and staff review. Before activation, split structural identity validation from
 renewal eligibility and qualify each consumer's intended policy.
+
+## Fresh-preview confirmation
+
+`AdoptionCommit::confirm` owns the outer transaction and requires the default-off
+`domains.adoption.enabled` deployment feature. There is no staff setting that enables it.
+Fresh adopt, domain-manage and native service-update permissions join preview/view
+permissions. History additionally requires invoice-view. The locked staff role is
+current; request keys remain actor-bound and the complete evidence digest is immutable.
+
+The A0 identity context retains sorted native Orders before Services, then native
+products/plans/cancellations/properties/tax. Its prepared extension prefix retains
+server/account/settings, TLD and renewal prices before domain and ordered operations,
+then the adoption row. Attachment reuses that prepared identity without acquiring
+an earlier lock after a ledger lock. Confirmation repeats preview capture on these
+current rows, compares its digest and checks both the saved deadline and a maximum
+120-second evidence age. It never refreshes provider facts under locks.
+
+New names reserve an internal pending row at generation zero inside this transaction,
+then attach verified generation one before commit. The transient row is never a
+purchase or an externally visible pending conversion. Converted pending rows retain
+ID/service/customer/account and advance generation exactly once; a missing reservation
+is acquired through the same unique key. Any duplicate, deadlock, timeout, callback
+failure or stale proof rolls the whole transaction back. No native order, invoice,
+payment, complimentary authority, funding or registrar operation is created.
+
+Projection uses the reviewed account's annual retail with native exclusive tax once,
+sets the existing service active and retains null native expiry. Verified registrar
+expiry determines the renewal calendar; near-due/price concerns retain staff review
+facts. Confirmation creates no invoice or extra registration year; subsequent ordinary
+renewal billing may issue an invoice and apply credit when its gates pass. Identical committed
+replay returns the original holding without repricing, generation change or new reads.
+Different digest/actor refuses. A new preview of an already adopted name refuses.
+
+This first confirmation boundary refuses history links and renewal-off intent until
+their atomic workflow is qualified. Activation remains off: the native user-deletion
+race, shared-database qualification, accepted provider contract and non-renewal
+consumer policies remain open. NameSilo adoption remains unsupported.
+
+The native holding page shows retained issue-window/cutoff and safe price review
+notes. It warns about ordinary invoice creation and credit application after adoption.

@@ -46,6 +46,10 @@ class ViewDomain extends ViewRecord
             $sections[]=Section::make($stopped?'Scheduled reads stopped':'Record checks paused')->icon('heroicon-o-exclamation-triangle')->iconColor('warning')
                 ->description($description)->columnSpanFull()->schema($review);
         }
+        $adoption = DomainFacts::adoptionReview($this->getRecord());
+        if ($adoption) { $sections[] = Section::make('Adoption needs review')->icon('heroicon-o-exclamation-triangle')->iconColor('warning')
+            ->description('Adoption itself made no charge. These retained notes do not grant renewal authority.')
+            ->columnSpanFull()->schema([TextEntry::make('adoption_review')->label('Review notes')->state($adoption)->listWithLineBreaks()]); }
         return $schema->components([...$sections,Section::make('Domain')->description('Saved facts. Viewing this page makes no registrar requests.')
             ->columnSpanFull()->columns(2)->schema($entries)]);
     }
