@@ -32,7 +32,7 @@ Keep credentials, contact data, transfer codes and raw provider replies out of t
    `tests/runtime-install-test.php`, not by an injected installed-ZIP scenario. The upgrade test's previous runtime is a pinned
    local development commit, not a compatibility claim for an earlier release.
    Also run `tests/test_schema_mariadb.py` with the prerequisites in
-   [coverage notes](testing-coverage.md#mysqlmariadb-schema-identifiers-and-native-lifecycle).
+   [coverage notes](testing-coverage/native-lifecycle.md#mysqlmariadb-schema-identifiers-and-native-lifecycle).
    This opt-in rehearsal proves fresh install and retained reinstall/upgrade on real
    MariaDB, including reference cleanup, with empty and prefixed table names. Retain its
    receipt separately; the default native install tests use SQLite.

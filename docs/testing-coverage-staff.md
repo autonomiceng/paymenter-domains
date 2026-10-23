@@ -1,7 +1,7 @@
 # Testing coverage: staff review
 
-Area coverage notes split out of [testing-coverage.md](testing-coverage.md), which is at its
-size cap. Setup and suites stay in [testing.md](testing.md).
+Area coverage notes were split from the [testing coverage index](testing-coverage.md).
+Setup and suites stay in [testing.md](testing.md).
 
 ## Staff request history
 
