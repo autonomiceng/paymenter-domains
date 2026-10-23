@@ -26,7 +26,8 @@
     "tests/ote-purchase-evidence-test.php",
     "tests/ote-renewal-probe-test.php",
     "tests/conversion-app-policy-test.php",
-    "tests/watch-notice-plan-test.php"
+    "tests/watch-notice-plan-test.php",
+    "tests/status-sets-test.php"
   ],
   "native": [
     "tests/enom-curl-test.php",
