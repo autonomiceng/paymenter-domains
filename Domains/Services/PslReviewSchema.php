@@ -12,13 +12,13 @@ final class PslReviewSchema
         $t->string('source_url', 2048); $t->longText('compressed_body'); $t->string('safe_code', 40);
         $t->unsignedBigInteger('fetched_at');
     }
-    private static function audit(Blueprint $t): void
+    private static function audit(Blueprint $t, bool $legacyDates = false): void
     {
         $t->id(); $t->string('subject_type', 40); $t->unsignedBigInteger('subject_id');
         $t->unsignedBigInteger('user_id')->nullable(); $t->unsignedBigInteger('actor_id')->nullable();
         $t->string('event', 64); $t->text('reason')->nullable();
         $t->string('before_revision', 64)->nullable(); $t->string('after_revision', 64);
-        $t->longText('data'); $t->timestamp('created_at');
+        $t->longText('data'); ($legacyDates ? $t->timestamp('created_at') : $t->dateTime('created_at'));
     }
     public static function install(): void
     {
@@ -27,9 +27,9 @@ final class PslReviewSchema
         if (!$a) { Schema::create('domains_psl_candidates', self::candidates(...)); Schema::create('domains_watch_audit', self::audit(...)); }
         self::verify();
     }
-    public static function verify(): void
+    public static function verify(bool $legacyDates = false): void
     {
         SchemaVerifier::verify('domains_psl_candidates', self::candidates(...));
-        SchemaVerifier::verify('domains_watch_audit', self::audit(...));
+        SchemaVerifier::verify('domains_watch_audit', static fn (Blueprint $t) => self::audit($t, $legacyDates));
     }
 }

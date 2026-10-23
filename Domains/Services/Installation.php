@@ -45,10 +45,10 @@ final class Installation
                 if(!in_array('2026_10_19_000007_create_psl_snapshots',$ran,true)){throw new \DomainException('Retained public suffix history has no installation record.');}PslSchema::verify();
             }
             if(Schema::hasTable('domains_psl_candidates')||Schema::hasTable('domains_watch_audit')){
-                if(!in_array('2026_10_19_000008_create_psl_reviews',$ran,true)){throw new \DomainException('Retained suffix review history has no installation record.');}PslReviewSchema::verify();
+                if(!in_array('2026_10_19_000008_create_psl_reviews',$ran,true)){throw new \DomainException('Retained suffix review history has no installation record.');}EvidenceDatesSchema::verify(PslReviewSchema::class);
             }
             if(Schema::hasTable('domains_watch_product_maps')||Schema::hasTable('domains_watch_names')||Schema::hasTable('domains_watch_sources')){
-                if(!in_array('2026_10_19_000009_create_watch_storage',$ran,true)){throw new \DomainException('Retained watch storage history has no installation record.');}WatchSchema::verify();
+                if(!in_array('2026_10_19_000009_create_watch_storage',$ran,true)){throw new \DomainException('Retained watch storage history has no installation record.');}EvidenceDatesSchema::verify(WatchSchema::class);
             }
             foreach([
                 [UserDeletionSchema::TABLE,UserDeletionSchema::MIGRATION,UserDeletionSchema::class],
@@ -63,7 +63,10 @@ final class Installation
             ] as [$table,$migration,$schema]){
                 $recorded=in_array($migration,$ran,true);
                 if(Schema::hasTable($table)&&!$recorded){throw new \DomainException('Retained holding storage has no installation record.');}
-                if($recorded){$schema::verify();} // Refuse lost/drifted tables before any migration can fill gaps.
+                if($recorded){
+                    if(in_array($schema, EvidenceDatesSchema::SCHEMAS, true)){EvidenceDatesSchema::verify($schema);}
+                    else{$schema::verify();}
+                } // Refuse lost/drifted tables before any migration can fill gaps.
             }
             $auditRecorded=in_array(StaffAuditSchema::MIGRATION,$ran,true);
             $auditPresent=array_filter(array_map(Schema::hasTable(...),StaffAuditSchema::tables()));

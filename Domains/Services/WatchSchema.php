@@ -44,9 +44,9 @@ final class WatchSchema
         }
         self::verify();
     }
-    public static function verify(): void
+    public static function verify(bool $legacyDates = false): void
     {
-        PslReviewSchema::verify();
+        PslReviewSchema::verify($legacyDates);
         SchemaVerifier::verify(self::tables()[0], self::maps(...)); SchemaVerifier::verify(self::tables()[1], self::names(...));
         SchemaVerifier::verify(self::tables()[2], self::sources(...));
     }

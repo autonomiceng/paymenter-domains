@@ -35,6 +35,7 @@
     "tests/paymenter-upgrade-tripwire-test.php",
     "tests/raw-post-test.php",
     "tests/schema-test.php",
+    "tests/evidence-dates-upgrade-test.php",
     "tests/schema-identifiers-test.php",
     "tests/schema-reference-safety-test.php",
     "tests/reservation-test.php",

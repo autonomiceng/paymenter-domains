@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Schema;
 /** Storage only: a saved adoption never grants holding, funding or dispatch authority. */
 final class AdoptionSchema
 {
-    private static function definition(Blueprint $t): void
+    private static function definition(Blueprint $t, bool $legacyDates = false): void
     {
         $t->id(); $t->string('request_key', 128)->unique(); $t->string('request_digest', 64);
         $t->unsignedBigInteger('domain_id')->nullable(); $t->unsignedBigInteger('service_id');
@@ -17,7 +17,7 @@ final class AdoptionSchema
         $t->string('state', 16); $t->string('origin', 32); $t->longText('evidence');
         $t->unsignedBigInteger('actor_id'); $t->text('reason'); $t->boolean('do_not_renew');
         $t->unsignedBigInteger('cancellation_id')->nullable();
-        $t->timestamp('observed_at'); $t->timestamp('valid_until'); $t->timestamp('committed_at')->nullable();
+        ($legacyDates ? $t->timestamp('observed_at') : $t->dateTime('observed_at')); ($legacyDates ? $t->timestamp('valid_until') : $t->dateTime('valid_until')); $t->timestamp('committed_at')->nullable();
         // Only committed rows populate this projection; previews keep their proposed generation in evidence.
         $t->unsignedBigInteger('authority_generation')->nullable(); $t->timestamps();
         $t->unique(['domain_id', 'authority_generation']);
@@ -27,5 +27,5 @@ final class AdoptionSchema
         if (!Schema::hasTable('domains_adoptions')) { Schema::create('domains_adoptions', self::definition(...)); }
         self::verify();
     }
-    public static function verify(): void { SchemaVerifier::verify('domains_adoptions', self::definition(...)); }
+    public static function verify(bool $legacyDates = false): void { SchemaVerifier::verify('domains_adoptions', static fn (Blueprint $t) => self::definition($t, $legacyDates)); }
 }

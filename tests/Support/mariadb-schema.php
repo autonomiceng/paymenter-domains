@@ -19,6 +19,8 @@ DB::listen(static function ($query) use (&$references, &$verified): void {
         }
     }
 });
+DB::statement('SET SESSION explicit_defaults_for_timestamp = OFF');
+same(0, (int) DB::selectOne('SELECT @@session.explicit_defaults_for_timestamp AS value')->value, 'Exercise implicit timestamp behavior');
 Artisan::call('migrate', ['--force' => true]);
 // Upstream's invoice-number migration uses literal unprefixed SQL. Build native
 // tables normally, then prepare their prefixed fixture names before Domains runs.
@@ -27,6 +29,7 @@ if ($requestedPrefix !== '') {
     foreach (Schema::getTableListing($database, false) as $name) { Schema::rename($name, $requestedPrefix.$name); }
     config(['database.connections.mysql.prefix' => $requestedPrefix]);
     DB::purge('mysql'); Schema::clearResolvedInstance('db.schema');
+    DB::statement('SET SESSION explicit_defaults_for_timestamp = OFF');
 }
 $native = Schema::getTableListing($database, false); sort($native);
 expect(!array_filter($native, static fn ($name) => str_contains($name, 'domains_')), 'Fresh database has no Domains tables');
@@ -63,6 +66,7 @@ Schema::table('domains_adoptions', static fn ($t) => $t->string('unexpected')->n
 try { AdoptionSchema::verify(); throw new LogicException('Schema drift accepted'); }
 catch (RuntimeException $error) { same('Retained Domains schema mismatch: domains_adoptions', $error->getMessage(), 'Specific drift refusal'); }
 $after = Schema::getTableListing($database, false); sort($after); same($tables, $after, 'Failed verification also removes reference tables');
+Schema::table('domains_adoptions', static fn ($t) => $t->dropColumn('unexpected'));
 $guardServer=\App\Models\Server::create(['name'=>'Freshness guard','type'=>'server','extension'=>'Domains','enabled'=>true]);
 Schema::create('domains_freshness_guard',static function($table):void {$table->id();$table->unsignedBigInteger('server_id');});
 DB::table('domains_freshness_guard')->insert(['server_id'=>$guardServer->id]);
@@ -70,10 +74,14 @@ try{(new \ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Services\Accoun
     ->invoke(app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class),(int)$guardServer->id);
     throw new LogicException('Prefixed retained Domains table passed the fresh-server guard');
 }catch(DomainException $error){same('Sandbox enrollment requires a fresh server.',$error->getMessage(),'Prefixed retained table blocks sandbox enrollment');}
-Schema::drop('domains_freshness_guard');$guardServer->delete();
+Schema::drop('domains_freshness_guard');$guardServer->newQuery()->whereKey($guardServer->id)->delete();
+$evidenceDatesBootstrapped = true;
+require dirname(__DIR__).'/evidence-dates-upgrade-test.php';
+$nativeSuccessful = false;
 $version = DB::selectOne('SELECT VERSION() AS version')->version;
 expect(str_starts_with($version, '11.4.5-MariaDB'), 'Pinned real MariaDB version');
 echo json_encode(['complete' => true, 'server_version' => $version, 'prefix' => $prefix,
     'retained_tables' => count($owned), 'verified_tables' => count($verified), 'reference_creates' => count($references),
+    'implicit_timestamp_defaults_off' => true, 'evidence_dates_upgrade' => true,
     'fresh' => true, 'reinstall' => true, 'upgrade' => true, 'cleanup_success_and_failure' => true])."\n";
 $nativeSuccessful = true;
