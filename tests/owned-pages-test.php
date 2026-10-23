@@ -43,10 +43,23 @@ foreach ([0,1] as $i) {
 
 }
 $index=$controller->index($request($user))->render();same(2,storefrontDom($index)->query('//tbody/tr')->length,'Only current native and ledger owner records');
+expect(str_contains($index,'This page uses a test system. Nothing here is registered for real.'),'D7 controller summary index all-test banner');
+same(2,storefrontDom($index)->query('//tbody/tr/td/span[normalize-space()="Test"]')->length,'D7 real summary index test tags');
+expect(str_contains($index,'domains-tone-warn'),'D3 real summary index actionable status tone');
 $r=$request($user);$r->query->add(['q'=>'other','sort'=>'-name','status'=>'pending']);$page=$controller->index($r);
 same(1,$page->getData()['domains']->total(),'Owner search and status filter retain the native/ledger predicate');same(2,$page->getData()['filterCounts'][''],'Counts cover only current owner');
 $r->query->set('q','%');same(0,$controller->index($r)->getData()['domains']->total(),'Search wildcard is literal');expect(str_contains($controller->index($r)->render(),'Show all domains'),'Filtered empty state has an escape');
 same(0,storefrontDom($controller->index($request($other))->render())->query('//tbody/tr')->length,'Cross-owner index empty');
+// Only visible owned rows determine the index mix, independently of public seller selection.
+foreach ([[$tlds[0]->server_id], []] as $testServers) {
+    Illuminate\Support\Facades\DB::table('domains_accounts')->update(['environment'=>'live']);
+    Illuminate\Support\Facades\DB::table('domains_accounts')->whereIn('server_id',$testServers)->update(['environment'=>'test']);
+    $mixed=$controller->index($request($user))->render();
+    same(count($testServers),storefrontDom($mixed)->query('//tbody/tr/td/span[normalize-space()="Test"]')->length,'D7 real summary index some/none tags');
+    same(count($testServers),storefrontDom($mixed)->query('//*[@class="domains-testbar"]')->length,'D7 real summary index some/none banner');
+    if($testServers){expect(str_contains($mixed,"Items marked Test use a test system and aren't registered for real."),'D7 real summary mixed copy');}
+}
+Illuminate\Support\Facades\DB::table('domains_accounts')->update(['environment'=>'test']);
 $d=Domain::firstOrFail();Illuminate\Support\Facades\DB::table('services')->where('id',$d->service_id)->update(['user_id'=>$other->id]);
 try{$owners->owned($user,$d->id);expect(false,'Native ownership drift refused');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}
 $store=new Paymenter\Extensions\Servers\Domains\Services\Storefront($sellers,$prices,$native,$bindings,

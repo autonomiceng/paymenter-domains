@@ -10,6 +10,11 @@ final class WatchName extends WatchRecord
     protected $hidden = ['registration_evidence'];
     protected $casts = ['revision' => 'integer', 'profile_revision' => 'integer', 'notice_preferences' => 'array', 'registration_evidence' => 'encrypted:array'];
     protected array $identity = ['id', 'user_id', 'canonical_name', 'origin'];
+    public function sources(): \Illuminate\Database\Eloquent\Relations\HasMany {return $this->hasMany(WatchSource::class,'watch_id');}
+    public function delegation(): \Illuminate\Database\Eloquent\Relations\HasOne {return $this->hasOne(WatchDnsObservation::class,'watch_id')->ofMany(['id'=>'max'],fn($q)=>$q->where('check_kind','delegation'));}
+    public function points(): \Illuminate\Database\Eloquent\Relations\HasOne {return $this->hasOne(WatchDnsObservation::class,'watch_id')->ofMany(['id'=>'max'],fn($q)=>$q->where('check_kind','points'));}
+    public function registry(): \Illuminate\Database\Eloquent\Relations\HasOne {return $this->hasOne(WatchRegistryObservation::class,'watch_id')->latestOfMany();}
+    public function work(): \Illuminate\Database\Eloquent\Relations\HasMany {return $this->hasMany(WatchWorkRow::class,'watch_id');}
     protected function validateRecord(): void
     {
         if (!self::canonical($this->canonical_name) || !self::digest($this->psl_revision) || $this->origin !== 'service' ||

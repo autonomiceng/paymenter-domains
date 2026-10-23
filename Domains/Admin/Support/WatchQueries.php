@@ -1,0 +1,21 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Illuminate\Database\Eloquent\Builder;
+use Paymenter\Extensions\Servers\Domains\Models\WatchRegistryObservation;
+use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
+final class WatchQueries
+{
+    public static function stale(Builder $query): Builder
+    {return $query->where(fn($query)=>$query->whereDoesntHave('delegation',fn($query)=>$query->where('valid_until','>',time())->whereNotNull('dns'))->orWhereDoesntHave('points',fn($query)=>$query->where('valid_until','>',time())->where('partial',false)->whereNotNull('website')->whereNotNull('email'))->orWhereDoesntHave('registry',fn($query)=>$query->where('valid_until','>',time())->where('result','facts')));}
+    /** Explicit historical filter over encrypted registry facts. Streaming decrypt, no provider reads. */
+    public static function expiry(Builder $query,int $days): Builder
+    {
+        abort_unless(Staff::can(Writes::VIEW),403);if(!in_array($days,[7,30,90],true)){return $query;}$ids=[];$today=gmdate('Y-m-d');$end=gmdate('Y-m-d',time()+$days*86400);
+        $latest=WatchRegistryObservation::selectRaw('max(id)')->where('result','facts')->groupBy('watch_id');
+        foreach(WatchRegistryObservation::whereIn('id',$latest)->orderBy('watch_id')->limit(1000)->cursor() as $record){try{$date=$record->facts['expiry']??null;if(is_string($date)&&substr($date,0,10)>=$today&&substr($date,0,10)<=$end){$ids[]=$record->watch_id;}}catch(\Throwable){}}
+        return $query->whereIn('id',$ids);
+    }
+    public static function observed(?string $dns): string{return match($dns){'platform'=>'Platform DNS','external'=>'External DNS',default=>'Unknown'};}
+}

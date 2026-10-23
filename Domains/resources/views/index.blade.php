@@ -26,14 +26,20 @@
 <label for="domains-q" class="domains-sr">Search your domains</label><input id="domains-q" class="domains-input" type="search" name="q" value="{{ $search }}" placeholder="Search domains" maxlength="253" autocomplete="off">
 <label for="domains-sort" class="domains-sr">Sort by</label><select id="domains-sort" name="sort" class="domains-input">@foreach (['expiry'=>'Expiry, soonest first','-expiry'=>'Expiry, latest first','name'=>'Name, A to Z','-name'=>'Name, Z to A'] as $value=>$label)<option value="{{ $value }}" @selected($sort === $value)>{{ $label }}</option>@endforeach</select><button type="submit" class="domains-btn domains-btn--secondary domains-btn--sm">Apply</button></form></div>
 @if ($domains->isEmpty())<div class="domains-empty domains-section"><p>No domains match {{ $search !== '' ? '“'.$search.'”' : 'this filter' }}.</p><a class="domains-a" href="{{ route('domains.domains.index') }}">Show all domains</a></div>@else
-<div class="domains-tablewrap"><table class="domains-tbl domains-stackable"><thead><tr><th scope="col">Domain</th><th scope="col">Status</th><th scope="col">Expires</th><th scope="col">Auto-renew</th><th scope="col"><span class="domains-sr">Actions</span></th></tr></thead><tbody>
+<div class="domains-tablewrap"><table class="domains-tbl domains-stackable"><thead><tr><th scope="col">Domain</th><th scope="col">Registration and DNS</th><th scope="col">Expires</th><th scope="col">Renewal</th><th scope="col"><span class="domains-sr">Actions</span></th></tr></thead><tbody>
 @foreach ($domains as $domain)
-<tr><td><a class="domains-domain" href="{{ $domain->actions['show'] }}">{{ $domain->name }}</a>@if ($domain->testEnvironment) <span class="domains-badge domains-tone-muted">Test</span>@endif</td><td><span class="domains-badge domains-tone-{{ $domain->tone }}">{{ $domain->status }}</span></td><td data-label="Expires">@include('domains::partials.date', ['date' => $domain->expiry, 'fallback' => '—'])</td><td data-label="Auto-renew">{{ $domain->renewal }}</td><td class="domains-end"><a class="domains-btn domains-btn--secondary domains-btn--sm" href="{{ $domain->actions['show'] }}" aria-label="Manage {{ $domain->name }}">Manage</a></td></tr>
+<tr><td class="domains-name-cell"><a class="domains-domain domains-wrap" href="{{ $domain->urls['detail'] }}">{{ $domain->name }}</a>@if($domain->testEnvironment) <span class="domains-badge domains-tone-muted">Test</span>@endif @if($domain->displayName)<p class="domains-small domains-wrap">{{ $domain->displayName }}</p>@endif
+@if($domain->relatedServices)<p class="domains-small">Related services</p><ul>@foreach(array_slice($domain->relatedServices,0,3) as $service)<li><a class="domains-a domains-small" href="{{ $service['url'] }}">{{ $service['label'] }}</a></li>@endforeach</ul>@if($domain->relatedOverflow)<span class="domains-small">And more related services</span>@endif@endif</td>
+<td class="domains-cell-wide" data-label="Registration and DNS"><div class="domains-row">@foreach([...(in_array('adopt.pending',$domain->stateKeys,true)?[]:[$domain->registrationKey]),...$domain->dnsKeys,...$domain->stateKeys] as $key)<span class="domains-badge domains-tone-{{ $domain->tone($key) }}">{{ $domain->labels[$key]??'Details unavailable' }}</span>@endforeach</div></td>
+<td class="domains-cell-wide" data-label="Expires">@include('domains::partials.date', ['date' => $domain->expiry, 'fallback' => 'Expiry unknown'])</td>
+<td class="domains-cell-wide" data-label="Renewal">{{ in_array('adopt.pending',$domain->stateKeys,true)?'Pending verification':($domain->renewalOff?'Renewal off':($domain->renewalDueAt?($domain->renewalDueProjected?'Planned due ':'Due ').\Carbon\CarbonImmutable::parse($domain->renewalDueAt)->format('M j, Y'):'See details')) }}@if($domain->renewalPrice && !$domain->renewalOff && !in_array('adopt.pending',$domain->stateKeys,true))<p class="domains-small">{{ $domain->renewalPrice }}/yr</p>@endif</td>
+<td class="domains-end"><a class="domains-btn domains-btn--secondary domains-btn--sm" href="{{ $domain->urls['detail'] }}" aria-label="Manage {{ $domain->name }}">Manage</a></td></tr>
 @endforeach
 </tbody></table></div>
 @endif
 @endif
 </section>
 @if ($domains->hasPages())<div>{{ $domains->links() }}</div>@endif
+@isset($watches)@include('domains::partials.related')@endisset
 </div></div>
 @endcomponent

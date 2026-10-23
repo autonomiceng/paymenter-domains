@@ -46,7 +46,7 @@ final class Runtime
     public function boot(): void
     {
         ConversionGate::requireComplete();if($this->booted){return;}$this->booted=true;
-        View::addNamespace('domains',dirname(__DIR__).'/resources/views');
+        View::addNamespace('domains',dirname(__DIR__).'/resources/views');HostingDomainRow::boot();
         require dirname(__DIR__).'/routes/web.php';require dirname(__DIR__).'/routes/owned.php';
         app(NativeServerGuard::class)->boot();app(NativeDomainGuard::class)->boot();
         NativeCancellation::boot();AcquisitionRetirement::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::boot();

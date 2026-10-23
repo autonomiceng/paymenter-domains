@@ -98,6 +98,7 @@ FormKeys::consume($intent, 'order:replay.com'); $session->put('domains.form_keys
 try { FormKeys::consume($intent, 'order:replay.com'); expect(false, 'Concurrent stale session must not replay'); }
 catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(419, $e->getStatusCode(), 'Atomic claim remains after simulated slow read'); }
 // Actual reserved holding: strangers, owners and guests get the exact same result and no read.
+// The environment boolean follows the public selected seller, never a reserved holding's account.
 $user = commerceUser(); $other = commerceUser(); $product = $native->product($tlds[0], 'register');
 $order = App\Models\Order::create(['user_id' => $user->id, 'currency_code' => 'USD', 'status' => 'pending']);
 $service = App\Models\Service::create(['order_id' => $order->id, 'user_id' => $user->id, 'product_id' => $product->id,
@@ -110,6 +111,15 @@ foreach ([$user, $other] as $actor) {
     same($guest, $controller->check($req(['domain' => 'private.com', '_request_key' => $key], user: $actor))->getData(true), 'Cross-owner/held record privacy');
 }
 same($before, $reads->calls, 'Reservations never trigger provider lookup or disclose holding state');
+expect(str_contains($guest['html'], '>Test</span>'), 'D7 reserved result still uses public selected seller test flag');
+// Change only the private holder environment: its existence must not affect a public test label.
+$holdingAccount = Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[1]->server_id)->firstOrFail();
+$holdingEnvironment = $holdingAccount->environment;
+Illuminate\Support\Facades\DB::table('domains_domains')->where('id', $domain->id)->update(['server_id' => $tlds[1]->server_id]);
+Illuminate\Support\Facades\DB::table('domains_accounts')->where('id', $holdingAccount->id)->update(['environment' => 'live']);
+same($guest, $check('private.com')->getData(true), 'D7 private live holding cannot change public test result');
+Illuminate\Support\Facades\DB::table('domains_accounts')->where('id', $holdingAccount->id)->update(['environment' => $holdingEnvironment]);
+Illuminate\Support\Facades\DB::table('domains_domains')->where('id', $domain->id)->update(['server_id' => $tlds[0]->server_id]);
 // Actual native cart hook is explicitly booted only by this fixture.
 $admission = new CartAdmission($native, $sellers, $eligibility, $clock); $admission->boot();
 $cart = commerceCart($user); $orderKey = FormKeys::issue($req(), 'order:purchase.com');

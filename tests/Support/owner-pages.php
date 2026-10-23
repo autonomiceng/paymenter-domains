@@ -11,3 +11,5 @@ $owners=new OwnedDomains($clock,$ports,new \Paymenter\Extensions\Servers\Domains
 require dirname(__DIR__,2).'/Domains/routes/web.php';
 require dirname(__DIR__,2).'/Domains/routes/owned.php';
 storefrontViews();
+
+foreach(['PslSchema','PslReviewSchema','WatchSchema','WatchDnsSchema','ManagedPublicWorkSchema','ManagedPublicSchema','WatchScheduleSchema','WatchNoticeSchema','AdoptionSchema','NativeIntentSchema'] as $schema){$class='Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema;$class::install();}

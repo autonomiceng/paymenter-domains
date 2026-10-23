@@ -17,7 +17,7 @@ final readonly class OwnedDomains
     public function owned(User $user, int $id): Domain
     {
         return Domain::whereKey($id)->where('user_id',$user->id)
-            ->whereHas('service',fn($q)=>$q->where('user_id',$user->id))->firstOrFail();
+            ->whereHas('service',fn($q)=>$q->where('user_id',$user->id)->whereHas('order',fn($q)=>$q->where('user_id',$user->id)))->firstOrFail();
     }
     public function operation(Domain $domain): ?Operation
     {

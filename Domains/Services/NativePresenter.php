@@ -19,6 +19,9 @@ final readonly class NativePresenter
             ->with(['service.cancellation','service.user'])->get() as $d){$result[(int)$d->service_id]=$this->owned->present($d,false);}
         return $result;
     }
+    /** Neutral watch/managed summaries for hosting rows; preserve the original domain-only adapter. */
+    public function domainSummaries(User $owner,array $serviceIds): array
+    { return (new DomainSummaries())->services($owner,$serviceIds); }
     /** Exact invoice-item binding; a current service alone cannot impersonate an issued domain line. */
     public function invoice(User $owner,int $invoiceId): array
     {

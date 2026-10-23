@@ -349,6 +349,16 @@
           "resources/views/components/mail/layout.blade.php": "4638a4928a792f50de053e44b37506c0d875952fbed075b7aeed830b3e355197",
           "routes/web.php": "e91e7f4369867e12074fc955aa67db2e546daf690db3a4eb14f35ab70e51ae6c"
         }
+      },
+      "hosting-domain-row": {
+        "consumers": [
+          "Domains/Services/HostingDomainRow.php"
+        ],
+        "review": "Verify exact services.show field rendering, authenticated current-owner lookup, escaped Htmlable links and no public component data mutation.",
+        "files": {
+          "themes/default/views/services/show.blade.php": "28d4ce7feb15cec2fb7c6894aec7cb3f5cf60369d227b054849fa8faebf56e2e",
+          "app/Livewire/Services/Show.php": "57ffe70f9a7e4e6e87b043d6e7d8214f18d32de49310ac560c099fd5c6046cdb"
+        }
       }
     },
     "watch": {

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Models;
 use Paymenter\Extensions\Servers\Domains\Dns\RoutingProfile;
-/** Internal deployment composition only; no staff editing/enablement action ships yet. */
+/** Routing rules edited through the scoped staff action; discovery remains default off. */
 final class WatchProfile extends WatchRecord
 {
     protected $table = 'domains_watch_profiles';

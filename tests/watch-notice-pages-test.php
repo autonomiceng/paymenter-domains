@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchNoticeController;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Services\WatchNoticePreferences as Pref;
+require dirname(__DIR__).'/Domains/routes/owned.php';
 $f=noticeFixture();extract($f);storefrontViews();$controller=new WatchNoticeController();$session=app('request')->session();
 $request=static function($actor,array $data=[],string $method='GET')use($session){$r=Request::create('/domains/checks/watch/1',$method,$data);$r->setUserResolver(fn()=>$actor);$r->setLaravelSession($session);return $r;};
 foreach([$id,999999] as $foreign){try{$controller->show($request($other),'watch',$foreign);expect(false,'Foreign locator refuses');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(404,$e->getStatusCode(),'Cross-owner and missing target');}}

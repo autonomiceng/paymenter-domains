@@ -685,3 +685,13 @@ unmounts with its danger notification while records and finance remain retained;
 Save keeps its draft. The Cancel dependency is pinned in the upgrade tripwire.
 These are offline native HTML/Livewire checks, not installed screenshot, contrast,
 MariaDB concurrency or live registrar acceptance.
+
+### W5 customer-polish restack
+
+Customer-polish Blade cases now use DomainSummary on the index, retaining every pricing,
+banner and row-tag assertion. The visible empty page is checked independently of hidden totals.
+All summary registration/DNS/state tones render on both index and detail; unknown keys are muted.
+Known expired/grace/redemption remains bad, while a reported expiry-day boundary is a warning.
+OwnedDomain retains its D3 matrix and serves owner forms and NativePresenter theme consumers.
+Real controller pages cover all/some/none owned test mixes; reserved public results retain the
+selected seller test flag when a private holding account is live. These checks stay offline.

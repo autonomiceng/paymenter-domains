@@ -8,5 +8,5 @@ final readonly class WatchDnsTicket
     public function __construct(public int $watchId, public int $userId, public string $kind, public string $claim,
         public int $startedAt, public string $stamp, public int $profileId, public int $profileRevision,
         public string $pslRevision, public int $watchRevision, public RoutingProfile $profile,
-        public array $hostnames, public int $cursor, public int $interval, public int $sourceCursor = 0, public int $nextSourceCursor = 0, public bool $sourceOverflow = false) {}
+        public array $hostnames, public int $cursor, public int $interval, public int $sourceCursor = 0, public int $nextSourceCursor = 0, public bool $sourceOverflow = false, public ?string $presentationStamp = null) {}
 }
