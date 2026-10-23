@@ -69,6 +69,7 @@ final class Labels
             'renewal_funding_or_authority'=>'Renewal funding or authority needs review','renewal_cost_overrun'=>'Renewal cost exceeds authorized limit',
             'target_changed'=>'Check target changed','term'=>'Term needs review','balance'=>'Registrar balance needs review',
             'acquisition_cancelled_unpaid'=>'Unpaid order retired','registration_adopted'=>'Registration adopted',
+            'registration_managed'=>'Registration managed','ready'=>'Ready for check',
             'awaiting_acceptance'=>'Awaiting feature acceptance'][$value] ?? 'Review retained evidence';
     }
     public static function flag(mixed $value): string { return match ($value) { true=>'Yes', false=>'No', default=>'Unknown' }; }

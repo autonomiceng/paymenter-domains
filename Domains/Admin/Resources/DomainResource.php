@@ -43,6 +43,8 @@ class DomainResource extends Resource
             TextColumn::make('registrar_key')->label('Registrar')->formatStateUsing(fn($state)=>match($state) {'enom'=>'Enom','namesilo'=>'NameSilo',default=>'Unknown'})
                 ->description(fn(Domain $record)=>'Server #'.$record->server_id),
             TextColumn::make('status')->badge()->formatStateUsing(fn($state,Domain $record)=>Labels::status($record->adoptionPending()?'adoption_pending':$state))->color(fn($state,Domain $record)=>Labels::color($record->adoptionPending()?'adoption_pending':$state)),
+            TextColumn::make('payment_review')->label('Payment review')->state(fn(Domain $record)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview::count($record))
+                ->formatStateUsing(fn($state)=>$state ? $state.($state===1?' activity':' activities') : 'None')->badge()->color(fn($state)=>$state ? 'warning' : 'gray'),
             TextColumn::make('provider_expires_at')->label('Expires')->date('M j, Y')->placeholder('Unknown')->sortable(),
         ])->filters([
             SelectFilter::make('status')->label('Status')->multiple()->options(Labels::statuses()),
@@ -56,6 +58,7 @@ class DomainResource extends Resource
                 }),
             Filter::make('expired')->label('Expired')->query(fn(Builder $query)=>$query->whereDate('provider_expires_at','<',CarbonImmutable::today())),
             Filter::make('held')->label('On hold')->query(fn(Builder $query)=>DomainQueries::attention($query,['held'])),
+            Filter::make('late_payment')->label('Paid after order closed')->query(fn(Builder $query)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview::query($query)),
             Filter::make('credit_review')->label('Customer credit review')->query(fn(Builder $query)=>DomainQueries::creditReview($query)),
             Filter::make('registrar_rejected')->label('Registrar rejected transfers')->query(fn(Builder $query)=>DomainQueries::registrarRejected($query)),
             Filter::make('unresolved')->label('In progress or unconfirmed')->query(fn(Builder $query)=>DomainQueries::attention($query,['uncertain','running','pending'])),

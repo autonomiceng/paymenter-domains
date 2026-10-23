@@ -29,6 +29,7 @@ function staffData(bool $ordinaryCompleted = false): array
 {
     \Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();
     \Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
+    \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
     require_once __DIR__.'/accounts.php';
     $a=fixtureAccount(1,'namesilo','PRIVATE-ACCOUNT-IDENTITY'); $b=fixtureAccount(2,'enom','PRIVATE-OTHER-IDENTITY');
     $domains=[];

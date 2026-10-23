@@ -19,7 +19,11 @@ $viewOnly = staffUser([Staff::VIEW]);
 Livewire::actingAs($viewOnly)->test(AdoptionPreview::class, ['record' => $id])->assertForbidden();
 Livewire::actingAs($staff)->test(ViewDomain::class, ['record' => $id])->assertActionVisible('adoptionPreview');
 $view = Livewire::actingAs($staff)->test(AdoptionPreview::class, ['record' => $id])->assertSuccessful()
-    ->assertSee('Adoption is not enabled yet')->assertSee('No fresh preview yet.')->assertSee('TEST')->assertActionDisabled('confirm');
+    ->assertSee('Adoption is not enabled yet')->assertSee('No fresh preview yet.')->assertSee('TEST')->assertActionDisabled('confirm')
+    ->assertSee(AdoptionPreview::UNAVAILABLE)->assertSee('This is a TEST account rehearsal; it cannot verify a live registration.');
+same(AdoptionPreview::UNAVAILABLE, $view->instance()->getAction('confirm')->getTooltip(), 'Disabled confirm tooltip explains why');
+$view->mountAction('preview'); expect(str_contains((string) $view->instance()->getMountedAction()->getModalDescription(), 'The preview charges nothing and adopts nothing.'), 'Preview modal states it charges and adopts nothing'); $view->unmountAction();
+foreach (['Saved environment', 'Source expiry', 'live holding', 'Adoption remains disabled', 'mapping'] as $jargon) { expect(!str_contains($view->html(), $jargon), 'Staff preview has no internal jargon '.$jargon); }
 $initialHtml = $view->html();
 same(0, count($wire->calls), 'GET page and modal rendering never call registrar');
 $view->callAction('preview', data: ['reason' => '', 'do_not_renew' => false])->assertHasActionErrors(['reason' => 'required']);
@@ -27,7 +31,7 @@ same(0, count($wire->calls), 'Required reason prevents wire');
 $before = [$service->fresh()->getAttributes(), Domain::findOrFail($id)->getRawOriginal(), App\Models\Invoice::count()];
 $view = Livewire::actingAs($staff)->test(AdoptionPreview::class, ['record' => $id]);
 $view->callAction('preview', data: ['reason' => 'Reviewed synthetic service mapping', 'do_not_renew' => true])->assertHasNoActionErrors()
-    ->assertSee('Rehearsal checks passed')->assertSee('No renewal (do not renew)')->assertSee('Source expiry')->assertSee('2027-10-20 (UTC date)')->assertSee($owner->name)->assertSee('2027-10-20 06:14 UTC')->assertSee('Adoption preview')->assertSee('USD')->assertSee('Requested for later adoption review')->assertActionDisabled('confirm');
+    ->assertSee('Rehearsal checks passed. A TEST account cannot verify a live registration.')->assertSee('None shown because do not renew was requested')->assertDontSee('renewal off')->assertSee('Expiry on file')->assertSee('Oct 20, 2027')->assertSee($owner->name)->assertSee('Oct 20, 2027 06:14 UTC')->assertSee('Adoption preview')->assertSee('USD')->assertSee('Requested for review; no cancellation has been created.')->assertActionDisabled('confirm')->assertDontSee('(UTC date)');
 same(4, count($wire->calls), 'Only explicit action makes bounded named readback'); same(1, Adoption::count(), 'Preview retains evidence');
 $view->callAction('confirm'); same('adoption_pending', Domain::findOrFail($id)->status, 'Disabled confirm cannot promote a holding');
 same($before, [$service->fresh()->getAttributes(), Domain::findOrFail($id)->getRawOriginal(), App\Models\Invoice::count()], 'Staff preview changes no native/holding/invoice state');
@@ -41,15 +45,18 @@ foreach (Review::LABELS as $code => $label) {
     if (in_array($code, ['permission_denied', 'mapping_unconfirmed', 'account_unconfirmed', 'competing_holding', 'unresolved_debt', 'changed', 'price_unconfirmed', 'native_expiry_present', 'preview_failed'], true)) { $sample = []; }
     $projection = (new Review($code, $sample))->jsonSerialize(); $page->review = $projection;
     $rendered[$code] = $page->infolist(Schema::make($page))->toHtml();
-    expect(str_contains(html_entity_decode(strip_tags($rendered[$code])), $projection['message']), 'Native rendered refusal label: '.$code);
+    $shown = $code === 'ready' ? 'Rehearsal checks passed. A TEST account cannot verify a live registration.' : $projection['message'];
+    expect(str_contains(html_entity_decode(strip_tags($rendered[$code])), $shown), 'Native rendered refusal label: '.$code);
     expect(!str_contains($rendered[$code], 'synthetic-secret'), 'Refusal rendering contains no credential');
 }
 $page->review = (new Review('ready', [...$details, 'environment' => 'live', 'test_only' => false]))->jsonSerialize();
 $rendered['live-ready'] = $page->infolist(Schema::make($page))->toHtml();
-expect(str_contains(strip_tags($rendered['live-ready']), 'Live'), 'Synthetic live badge rendered');
+expect(str_contains(strip_tags($rendered['live-ready']), 'Live') && str_contains(strip_tags($rendered['live-ready']), Review::LABELS['ready']), 'Synthetic live badge and eligible result rendered');
+expect(!str_contains(strip_tags($rendered['live-ready']), 'TEST account rehearsal'), 'Live preview has no TEST note');
+foreach (['live holding', '2027-10-20', 'Source expiry'] as $old) { expect(!str_contains(strip_tags($rendered['ready']), $old), 'Rendered preview omits '.$old); }
 $page->review = (new Review('ready', [...$details, 'do_not_renew' => false, 'requested_do_not_renew' => false, 'renewal_due' => '2027-10-13']))->jsonSerialize();
 $rendered['ready-renewing'] = $page->infolist(Schema::make($page))->toHtml();
-expect(str_contains(strip_tags($rendered['ready-renewing']), '2027-10-13'), 'Native page renders the default seven-day renewal due date');
+expect(str_contains(strip_tags($rendered['ready-renewing']), 'Oct 13, 2027'), 'Native page renders the default seven-day renewal due date');
 $page->reviewReason = '<script>alert(1)</script>';
 expect(!str_contains($page->infolist(Schema::make($page))->toHtml(), '<script>alert(1)</script>'), 'Staff reason escaped by native entry');
 $out = $argv[1] ?? null;
@@ -78,7 +85,7 @@ if ($out !== null) {
     }
     file_put_contents($out.'/capture-index.json', json_encode(['capture_status' => 'rendered HTML; PNG capture pending', 'records' => $index], JSON_PRETTY_PRINT));
     file_put_contents($out.'/rendered-strings.json', json_encode($strings, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-    file_put_contents($out.'/strings.json', json_encode(['labels' => Review::LABELS, 'confirm' => 'Adoption is not enabled yet', 'test' => 'TEST — rehearsal only', 'test_ready' => (new Review('ready', ['test_only' => true]))->jsonSerialize()['message'], 'capture_status' => 'rendered HTML; PNG capture pending'], JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
+    file_put_contents($out.'/strings.json', json_encode(['labels' => Review::LABELS, 'confirm' => AdoptionPreview::UNAVAILABLE, 'test' => 'TEST — rehearsal only', 'test_ready' => (new Review('ready', ['test_only' => true]))->jsonSerialize()['message'], 'capture_status' => 'rendered HTML; PNG capture pending'], JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 }
 $roleBefore = $staff->role->permissions;
 $bindingRow = DB::table('domains_accounts')->where('server_id', $binding->serverId)->first();

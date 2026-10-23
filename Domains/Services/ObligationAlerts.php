@@ -9,7 +9,7 @@ final class ObligationAlerts
 {
     public const LABELS=[
         'acquisition_retirement_review'=>'Unpaid order needs review · automatic retirement was refused; the name stays reserved',
-        'acquisition_late_money'=>'Payment after retirement · review the cancelled order and native payments; no registrar request is reopened',
+        'acquisition_late_money'=>'Paid after order closed · check the invoice and its payments; nothing is sent to the registrar',
         'native_identity_missing'=>'Customer, order or service missing. The domain and its name stay reserved until a later release adds a resolution step. Do not restore deleted records manually.',
         'unknown_expiry'=>'Expiry unknown · confirm the saved expiry before contacting the customer',
         'unknown_price'=>'Renewal price unknown · review pricing before contacting the customer',

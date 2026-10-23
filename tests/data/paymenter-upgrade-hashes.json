@@ -294,6 +294,40 @@
           "app/Models/ServiceCancellation.php": "38b60cf9f786129d4c03e63534d6443d3cf5ddb65b7c0cb02a5c3afeb428de49",
           "vendor/laravel/framework/src/Illuminate/Database/Eloquent/Model.php": "c4c2a8e8755df5e912ec941f8881dcc515ff3802211855874e6b839469ddc3dc"
         }
+      },
+      "native-paid-loop": {
+        "consumers": [
+          "Domains/Domains.php",
+          "Domains/Services/Runtime.php",
+          "Domains/Services/RuntimeWork.php",
+          "Domains/Services/NativePaidHooks.php",
+          "Domains/Services/AcquisitionRetirement.php",
+          "Domains/Services/NativeActivationInformation.php"
+        ],
+        "review": "Re-qualify baseline and unbound native paid matrices: mixed Credit/hosting, jobs before Service save, duplicate wakes, terminal refunds/reactivation, Paid after-commit recovery, model-event capability checks and product information mail rendering.",
+        "files": {
+          "app/Services/Invoice/ProcessPaidInvoiceService.php": "e98b4a6c3aba5612d0c448c138034926fa2030cabd2ccb81cfcb1d9511f171e3",
+          "app/Services/Service/RenewServiceService.php": "9cfa9654cbc2fcb19f18464bb8f2b95f35acd3324c82086903fce72db9f6b5f5",
+          "app/Observers/InvoiceObserver.php": "4b4fe7651d8af3038248849a1555b0e8516d15889e902cef541d9a98f558ff64",
+          "app/Observers/ServiceObserver.php": "fcc3746865b635bed108b147dfd6fb95e025b930f7da4d2787076333167299b7",
+          "app/Events/Invoice/Paid.php": "72a22528a1af5a3367df815ebefbc0b7d184372bc10d387f2e1a5467e93e3644",
+          "app/Jobs/Server/CreateJob.php": "bd7de73780c2f2d5e619d936995ec9b95bd3271d540c5fe9672ab3a748520b40",
+          "app/Jobs/Server/UnsuspendJob.php": "c6ff22201e2c83d1409ec468e8440a5197425b017c4117a4af29fcbb9cef58ee",
+          "app/Helpers/ExtensionHelper.php": "ec1ce54906765e3a3d110ab80c06137bc0ef65fabe59b31be26a245ab5ce4a24",
+          "app/Helpers/NotificationHelper.php": "d3c542312a894a934c00d9e7e3a0040335a848594e1b4e50880133993f83406b",
+          "app/Mail/Mail.php": "c0bef134a3fb5f8f353a11e54a2257cbc9d18c4dbfa24e41fb6d53a9e4f6baab",
+          "app/Models/Product.php": "ec0684f739b859536e24283fa4ed7f8e06d9085565123f07082c1047d1082ad0",
+          "app/Models/Service.php": "4841f017fcddb3a79c83ca36249b510485a7323b3108c5fd50269c232e286e3e",
+          "vendor/laravel/framework/src/Illuminate/Database/Eloquent/Concerns/HasEvents.php": "71152dc3e696b917c3e46dcf598285a882caa9f8bda386126e5f271a1cbd087d",
+          "vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php": "311870c9967361e47ec7e183ef12177fb32b12cb8e807042ae5a32f5c4ecc2d7",
+          "app/Observers/InvoiceTransactionObserver.php": "3f4b9c2d0f42fa8d36b126bb10fb65b7dd332d20502b968662a8d3f5129b222e",
+          "app/Listeners/InvoiceTransactionCreatedListener.php": "4b315fe1b7d88b1477d85cb4119ef4f9881202fa3ab01fe7e5ad7cf3fb9b6d0f",
+          "app/Models/InvoiceTransaction.php": "678121d0d7ff7a897c1156534a5c0b04962cc748a995f268d0a84a67e2f29e39",
+          "database/seeders/EmailTemplateSeeder.php": "6cfbfe9c4ee4af6f53a2b586a68f341aeaf26c5ca3bb76fa8c4ca3999f2b3561",
+          "resources/views/components/mail/base.blade.php": "04c23cad9cd2efe281b3db0cff738756b52f7e0cd8b2e7b517f4ed85da76540e",
+          "resources/views/components/mail/layout.blade.php": "4638a4928a792f50de053e44b37506c0d875952fbed075b7aeed830b3e355197",
+          "routes/web.php": "e91e7f4369867e12074fc955aa67db2e546daf690db3a4eb14f35ab70e51ae6c"
+        }
       }
     },
     "watch": {

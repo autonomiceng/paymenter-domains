@@ -61,6 +61,7 @@ final class DomainFacts
             RenewalStop::stopped($renewal)=>'Stops at end of current period (service cancellation).',default=>'On'};
         $history=$d->renewal_policy['staff_holdings']??[];
         $result['Change history']=array_map(static fn($r)=>(isset($r['at'])?(new \DateTimeImmutable($r['at']))->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC':'Unknown time').' · Staff #'.($r['actor_id']??'?').' · '.(StaffHoldingReview::ACTIONS[$r['action']??'']??'Review').' · '.($r['reason']??''),array_slice($history,-5))?:['None'];}catch(\Throwable){$result['Future renewals']='Unavailable; review encryption access';$result['Change history']='Unavailable; review encryption access';}
+        $result += array_filter(\Paymenter\Extensions\Servers\Domains\Services\NativePaidHooks::notices(),static fn($notice)=>$notice!=='Available');
         $result += ReminderFacts::for($d);
         $result['Data retention']='Encrypted contact and operation evidence is retained. Erasure requires a separately reviewed policy.';
         return $result;

@@ -185,7 +185,17 @@
     "tests/transfer-dispatch-namesilo-test.php",
     "tests/transfer-dispatch-refusals-test.php",
     "tests/managed-public-storage-test.php",
-    "tests/managed-public-upgrade-test.php"
+    "tests/managed-public-upgrade-test.php",
+    "tests/managed-public-confirmation-test.php",
+    "tests/managed-public-observer-test.php",
+    "tests/managed-public-overflow-test.php",
+    "tests/managed-public-quota-test.php",
+    "tests/managed-public-reconciliation-test.php",
+    "tests/managed-public-relink-test.php",
+    "tests/managed-public-source-drift-test.php",
+    "tests/managed-public-stamp-test.php",
+    "tests/native-paid-baseline-test.php",
+    "tests/native-paid-candidate-test.php"
   ],
   "ui": [],
   "runner": [

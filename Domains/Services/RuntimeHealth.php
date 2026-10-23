@@ -22,7 +22,7 @@ final class RuntimeHealth
             $unsafe=collect(app('router')->getRoutes()->getRoutes())->contains(fn($r)=>in_array(explode('@',$r->getActionName())[0],[\App\Admin\Resources\ServerResource\Pages\CreateServer::class,\App\Admin\Resources\ServerResource\Pages\EditServer::class,\App\Admin\Resources\ServiceResource\Pages\EditService::class],true));
             $editors=['Native editors'=>$unsafe?'Refresh the native route cache; unsafe editors are refused':'Protected'];
         }
-        return ['Missing Paymenter records'=>$identity->isEmpty()?'None recorded':$identity->pluck('domain')->implode(', ').' — '.ObligationAlerts::LABELS['native_identity_missing'],
+        return [...NativePaidHooks::notices(),'Missing Paymenter records'=>$identity->isEmpty()?'None recorded':$identity->pluck('domain')->implode(', ').' — '.ObligationAlerts::LABELS['native_identity_missing'],
             'Domain editor notice'=>($missing=\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::missing())===null?'Available':'Paused · missing '.$missing,
             'Registrar configuration'=>match(app(AccountBindings::class)->configurationStatus($server)){
                 'matched'=>'Matches verified account',

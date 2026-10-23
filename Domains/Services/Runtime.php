@@ -66,7 +66,8 @@ final class Runtime
             'children'=>[['name'=>'Register a domain','url'=>route('domains.domains.search'),'spa'=>false],['name'=>'Domain pricing','url'=>route('domains.domains.pricing'),'spa'=>false]]]);
         Event::listen('navigation.dashboard',fn()=>['name'=>'Domains','url'=>route('domains.domains.index'),'icon'=>'ri-global','priority'=>12,'spa'=>false]);
         foreach(['Domain','Operation'] as $model){Gate::policy('Paymenter\\Extensions\\Servers\\Domains\\Models\\'.$model,'Paymenter\\Extensions\\Servers\\Domains\\Policies\\'.$model.'Policy');}
-        Event::listen(\App\Events\Invoice\Paid::class,function($e):void {\Illuminate\Support\Facades\DB::afterCommit(fn()=>app(RuntimeWork::class)->invoice((int)$e->invoice->id));});
+        NativePaidHooks::boot();
+        app()->booted(static function():void {foreach(NativePaidHooks::notices()as$feature=>$notice){if($notice!=='Available'){logger()->warning('Domains hook unavailable.',['feature'=>$feature,'notice'=>$notice]);}}});
         Schedule::call(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\RunRuntime::dispatch())->name('domains-runtime')->everyMinute()->withoutOverlapping(15)->onOneServer();
     }
 }
