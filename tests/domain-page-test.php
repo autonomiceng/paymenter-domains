@@ -25,7 +25,7 @@ $management=static function(array $more=[]):array {
     $m['lock']['state']=true;
     $m['privacy']+=['free'=>false,'price'=>'$8.00','state'=>false];$m['privacy']['actions']=['privacy_enable'=>'/domains/1/manage/privacy_enable','privacy_disable'=>'/domains/1/manage/privacy_disable','privacy_purchase'=>'/domains/1/manage/privacy_purchase'];
     $m['contacts']+=['staged'=>false,'limits'=>\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits('enom')];
-    $m['auth_code_email']['recipient']='registrant';
+    $m['auth_code_email']['recipient']='owner';
     return array_replace_recursive($m,$more);
 };
 $domain=static fn(array $more=[])=>new OwnedDomain(...[...['name'=>$name,'status'=>'Active','tone'=>'ok','expiry'=>'2027-03-01','renewal'=>'On','renewalPrice'=>'$14.99',
@@ -66,7 +66,7 @@ same(['Jane Doe jane@example.com',['Edit contacts']],[$text('contacts'),$action(
 same('Owner',$norm($dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__l")]/text()')->item(0)),'Owner row label');
 same(0,$dom->query('//*[contains(@class,"domains-row__a")]//*[self::a or self::button][not(contains(@class,"domains-a"))]')->length,'Every row action uses the one link style');
 expect(str_contains($html,'.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: none;'),'Row actions are not underlined');
-same(['Emailed to the registrant',['Email auth code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
+same(['Emailed to the owner',['Email auth code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
 same(0,$dom->query('//li[@id="auto_renew_off"]')->length,'Registrar auto-renew row is staff only');
 foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records','ds'=>'dnssec','lock'=>'transfer-lock','privacy'=>'privacy','auth_code_email'=>'transfer-code']as$id=>$anchor){
     same(1,$dom->query('//li[@id="'.$id.'"]//a[@href="'.route('domains.help').'#'.$anchor.'"]')->length,'Help popover links to help: '.$id);
@@ -77,9 +77,15 @@ same(1,$dom->query('//li[@id="nameservers"]//dialog[@id="edit-nameservers"][not(
 foreach(['Nameservers, one per line','2 to 12, like ns1.example.com.','Use Beco nameservers','>Save<','Change nameservers?','If the new nameservers aren’t set up, your website and email stop working.']as$t){expect(str_contains($html,$t),'Nameservers dialog: '.$t);}
 foreach(['Turn off transfer lock?','Anyone with the auth code can then move '.$name.' to another registrar.']as$t){expect(str_contains($html,$t),'Lock dialog: '.$t);}
 same(1,$dom->query('//li[@id="lock"]//form[@data-confirm]//dialog[not(@open)]//button[@name="confirmed"][normalize-space(.)="Turn off"]')->length,'Lock off confirms in a dialog');
-foreach(['Email the auth code?','We’ll email it to the registrant.']as$t){expect(str_contains($html,$t),'Auth code dialog: '.$t);}
+foreach(['Email the auth code?','We’ll email it to the owner.']as$t){expect(str_contains($html,$t),'Auth code dialog: '.$t);}
 same(1,$dom->query('//li[@id="auth_code_email"]//dialog//button[@name="confirmed"][normalize-space(.)="Email auth code"]')->length,'Auth code dialog button');
-same(['All contacts','Registrant','Admin','Tech','Billing'],array_map($norm,iterator_to_array($dom->query('//li[@id="contacts"]//select[@name="role"]/option'))),'Contact roles');
+same(['All contacts','Owner','Admin','Tech','Billing'],array_map($norm,iterator_to_array($dom->query('//li[@id="contacts"]//select[@name="role"]/option'))),'Contact roles');
+// One term for the owner: no visible text on the page says registrant.
+$visible=implode(' ',array_map(static fn($n)=>$n->nodeValue,iterator_to_array($dom->query('//body//text()[not(ancestor::style) and not(ancestor::script)]'))));
+expect(stripos($visible,'registrant')===false,'Page text says owner, never registrant');
+// Renewal card at desktop width: labels and Missing plus its fix stay on one line each; the cause sits below.
+expect(str_contains($html,'.domains .domains-card dt { flex: none; white-space: nowrap; }'),'Renewal card labels do not wrap at desktop width');
+expect(str_contains($html,'.domains .domains-missing__line { flex-wrap: nowrap; white-space: nowrap; }'),'Missing and its fix share one line at desktop width');
 expect(str_contains($html,'Up to 50 records. Saving replaces the list.'),'DNS limit hint');
 same(0,$dom->query('//input[@type="checkbox"]')->length,'No checkboxes on the page');
 same(['Delete','Delete'],array_map(fn($b)=>$norm($b->firstChild),iterator_to_array($dom->query('//dialog[@id="edit-dns"]//tbody//button[@data-delete-record][@type="submit"][@value="1"]'))),'Each DNS record has a Delete action');
@@ -126,7 +132,7 @@ same('Off Contact support',$card($dom,'Auto-renew'),'Staff stop');
 $d=$domain(['expiry'=>null]);$dom=storefrontDom($render($d,$summary($d)));
 same('Missing Contact support Shows after the next sync',$card($dom,'Expires'),'Missing expiry: one fix, then its cause');
 same('Missing Contact support Not issued yet',$card($dom,'Next invoice'),'Missing next invoice: one fix, then its cause');
-same(2,$dom->query('//section[@id="renewal"]//dd/span[contains(@class,"domains-missing")]/following-sibling::*[1][self::a[contains(@class,"domains-missing__fix")]]/following-sibling::*[1][contains(@class,"domains-sub")]')->length,'Fix sits on the Missing line, cause below');
+same(2,$dom->query('//section[@id="renewal"]//dd/span[contains(@class,"domains-missing__line")][span[contains(@class,"domains-missing")]/following-sibling::*[1][self::a[contains(@class,"domains-missing__fix")]]]/following-sibling::*[1][contains(@class,"domains-sub")]')->length,'Fix sits on the Missing line, cause below');
 $d=$domain(['owner'=>null]);$dom=storefrontDom($render($d,$summary($d)));
 same(['Missing No contact details on file',['Edit contacts']],$row($dom,'contacts'),'Owner without stored contact');
 $d=$domain(['management'=>$management(['lock'=>['state'=>null]])]);$dom=storefrontDom($render($d,$summary($d)));

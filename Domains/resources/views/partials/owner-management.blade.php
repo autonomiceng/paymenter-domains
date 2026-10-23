@@ -101,7 +101,7 @@
 <form method="POST" action="{{ $section['actions'][$action] }}" class="domains-owner-form">
 @if ($section['staged'])<p class="domains-hint">{{ $action === 'contact_profile' ? 'Step 1 of 2: we send the new details for approval.' : 'Step 2 of 2: apply the approved details.' }}</p>@endif
 @include('domains::partials.form-key')
-<label class="domains-label" for="role-{{ $action }}">Contact</label><select id="role-{{ $action }}" class="domains-input" name="role">@foreach (['all' => 'All contacts', 'registrant' => 'Registrant', 'admin' => 'Admin', 'tech' => 'Tech', 'auxbilling' => 'Billing'] as $role => $roleLabel)<option value="{{ $role }}" @selected($contactFailed && old('role', 'all') === $role)>{{ $roleLabel }}</option>@endforeach</select>
+<label class="domains-label" for="role-{{ $action }}">Contact</label><select id="role-{{ $action }}" class="domains-input" name="role">@foreach (['all' => 'All contacts', 'registrant' => 'Owner', 'admin' => 'Admin', 'tech' => 'Tech', 'auxbilling' => 'Billing'] as $role => $roleLabel)<option value="{{ $role }}" @selected($contactFailed && old('role', 'all') === $role)>{{ $roleLabel }}</option>@endforeach</select>
 @include('domains::partials.contact', ['prefix' => 'contact', 'useOld' => $contactFailed, 'errors' => $contactFailed ? $errors : new \Illuminate\Support\ViewErrorBag, 'idPrefix' => $action, 'section' => 'owner-'.$action, 'stateRequired' => $section['staged'], 'limits' => $section['limits'] ?? null])
 <p class="domains-hint">Changing the owner’s name, organization or email can block transfers to another registrar for 60 days.</p>
 <div class="domains-buttons"><button type="submit" class="domains-btn domains-btn--primary">{{ $buttonLabel }}</button></div></form>

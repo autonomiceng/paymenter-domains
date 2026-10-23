@@ -21,7 +21,7 @@ $m['ds']+=['records'=>[],'recordCheckHeld'=>false];$m['ds']['actions']=['ds_add'
 $m['lock']['state']=true;
 $m['privacy']+=['free'=>true,'price'=>null,'state'=>true];$m['privacy']['actions']=['privacy_enable'=>'/domains/1/manage/privacy_enable','privacy_disable'=>'/domains/1/manage/privacy_disable'];
 $m['contacts']+=['staged'=>false,'limits'=>ContactDetails::limits('enom')];
-$m['auth_code_email']['recipient']='registrant';
+$m['auth_code_email']['recipient']='owner';
 $history=[['number'=>'INV-1042','status'=>'Paid','url'=>'/invoices/1042','date'=>'2027-01-04']];
 $progress=[['label'=>'Nameservers','state'=>'Done','date'=>'2026-10-20'],['label'=>'Registration','state'=>'Done','date'=>'2026-03-01']];
 $domain=static fn(string $name,array $more=[])=>new OwnedDomain(...[...['name'=>$name,'status'=>'Active','tone'=>'ok','expiry'=>'2027-03-01','renewal'=>'On','renewalPrice'=>'$14.99',

@@ -18,7 +18,7 @@ final class OwnerHelp
         'transfer-lock'=>'When it’s off, anyone with the auth code can move this domain.',
         'transfer-code'=>'Also called an EPP code. Treat it like a password.',
         'privacy'=>'Some registries require the owner’s details to stay public.',
-        'contacts'=>'The domain owner is also called the registrant.',
+        'contacts'=>'The owner holds the domain. The other contacts handle admin, tech and billing.',
         'auto-renew'=>'Sends a renewal invoice before the domain expires.',
     ];
     public static function path(): string

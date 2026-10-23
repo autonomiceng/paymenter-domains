@@ -116,7 +116,7 @@ final readonly class OwnedDomains
                     $current=$obs['sections']['nameservers']['facts']['nameservers']??null;
                     $management['nameservers']['current']=is_array($current)&&$current&&array_is_list($current)&&count(array_filter($current,'is_string'))===count($current)?$current:null; }
                 if (isset($management['contacts'])) { $management['contacts']['staged']=$d->registrar_key==='namesilo'; $management['contacts']['limits']=ContactDetails::limits($d->registrar_key); }
-                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'admin contact':'registrant'; }
+                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'admin contact':'owner'; }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $value=$obs['sections'][$cap]['facts'][$fact]??$obs['facts'][$fact]??null; $management[$cap]['state']=is_bool($value)?$value:null; } }
             }

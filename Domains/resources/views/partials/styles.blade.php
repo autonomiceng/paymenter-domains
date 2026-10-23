@@ -445,7 +445,14 @@
 .domains .domains-card > div { display: flex; justify-content: space-between; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid var(--e-line); }
 .domains .domains-card > div:last-child { border-bottom: 0; }
 .domains .domains-card dt { display: inline-flex; align-items: center; gap: .375rem; font-size: .8125rem; font-weight: 500; color: var(--e-muted); }
-.domains .domains-card dd { text-align: right; font-weight: 500; }
+.domains .domains-card dd { min-width: 0; text-align: right; font-weight: 500; }
+.domains .domains-missing__line { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .25rem .375rem; }
+.domains .domains-missing__line .domains-missing__fix { margin-inline-start: 0; }
+.domains .domains-card .domains-missing__fix { font-size: .8125rem; }
+@media (min-width: 640px) {
+  .domains .domains-card dt { flex: none; white-space: nowrap; }
+  .domains .domains-missing__line { flex-wrap: nowrap; white-space: nowrap; }
+}
 .domains .domains-btn--block { display: flex; justify-content: center; box-sizing: border-box; width: 100%; margin-top: 1rem; }
 .domains .domains-edit { width: min(40rem, calc(100vw - 2rem)); }
 .domains .domains-edit:not(:modal) { max-width: none; }
