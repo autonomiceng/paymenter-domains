@@ -3,7 +3,8 @@
 This development tool is excluded from the runtime archive. It supports the exact
 source trees pinned by `source.json` on Paymenter 1.5.9. The default dedicated Linux/systemd
 host policy and the explicitly selected app profile are described separately below.
-No provider requests are made. Keep both registrar runtimes parked outside the active
+The converter makes no provider requests. The evidence collector below makes
+only authenticated ownership reads. Keep both registrar runtimes parked outside the active
 extension directory during conversion. Unsupported source bindings, native plans, queue
 shapes or host scheduling require a separately reviewed prerequisite; do not weaken guards.
 
@@ -92,6 +93,81 @@ an explicit repair/restore plan; never overwrite newer outcomes.
 After reopening, enable read, billing and processing only as separate acceptance steps,
 each with its own authority and verification. Read acceptance requires an authenticated
 provider call and explicit task authorization; this offline converter grants none.
+
+## Collecting conversion evidence
+
+Run `scripts/collect-conversion-evidence.php` during the stopped conversion window,
+with both registrar runtimes parked as above, before the converter dry run. It is a
+development-only tool excluded from the runtime ZIP. Independently review the source
+account and selected holdings first: `--accepted-by` records a staff member with
+source view and policy permissions, and `--reason` is a bounded snake-case reason.
+The collector reads encrypted existing server settings in memory and accepts only
+authenticated `GetDomainInfo` ownership reads. It does not accept credentials on the
+command line. SQLite and MySQL/MariaDB primary sessions are made read-only; other
+database drivers and read/write replicas refuse. A lost database session refuses
+reconnection, preserving the read-only boundary. Keep the application stopped so
+source anchors cannot change during collection and conversion.
+
+For a TEST account, using canonical absolute paths and the application's PHP CLI:
+
+```sh
+php scripts/collect-conversion-evidence.php --app /srv/paymenter \
+  --out /private/conversion-evidence.json --accepted-by 42 --reason conversion_review
+```
+
+The configured account environment chooses the fixed TEST or live endpoint; there
+is no endpoint override. Default scope is purchase-candidates from the converter's
+source rules. Repeat `--domain SOURCE_LEDGER_ID` to narrow that scope; `--limit N`
+caps it. Neither option forces an imported or uncertain holding to become purchased.
+Requests are spaced at least one second apart per provider login and environment
+within the process. Run
+only one collector at a time. Each request permits only HTTPS, no redirects, a
+10-second connection timeout, a 30-second total timeout and at most 1 MiB of XML.
+
+Live collection requires both `--live` and explicit `--domain` IDs. Operate one name
+at a time under staff control; no TEST rehearsal authorizes live requests. This
+one-name procedure requires exactly one retained Enom account. A multi-account
+installation cannot use it: stop and resolve that prerequisite in a separate review
+rather than broadening the live scope or trying to accumulate files:
+
+```sh
+php scripts/collect-conversion-evidence.php --app /srv/paymenter \
+  --out /private/conversion-evidence.json --accepted-by 42 --reason conversion_review \
+  --live --domain 123
+```
+
+A successful run writes the converter's documented JSON, containing credential
+digests and minimal validated ownership XML, with mode `0600`. The XML is rebuilt
+from the authenticated reply using only the accepted name, provider ID, owner and
+expiry; the converter's `accepted_read_sha256` covers this minimal copy.
+It refuses an existing file unless `--replace`; replacement discards its old contents and does not merge
+proofs from earlier runs. Initial publication is atomic without overwriting a
+concurrently created destination; explicit replacement uses a private temporary
+file and rename. Keep the parent directory private and do not enable TLS key logging.
+Stdout is empty; stderr reports collected/omitted counts and omitted source ledger
+IDs, without credentials, contacts or XML. A failed read becomes an omission: with
+a valid account anchor, an omitted purchase-candidate remains adoption pending in
+the converter dry run. Review those names and their staff-managed renewal coverage.
+
+The converter needs one successful ownership anchor for **every retained Enom
+account** in the same file. If scope, limits or failures leave any account without
+one, collection exits unsuccessfully and publishes no file. This includes a scoped
+run that excludes another account entirely. An account with no purchase-candidate
+can never be anchored by this collector: collection always refuses, and the
+account-evidence prerequisite must be resolved separately before conversion.
+There is no automatic merge or acceptance of historical account proof. Every name
+staff intend to prove purchased must be present in the single file passed to the
+converter. Unselected and failed candidates remain adoption pending; stderr lists
+failed reads only, so review all pending IDs from the converter dry run. Replacing
+the file with a later one-name run discards earlier names' proofs.
+
+Pass the private file as the converter's `--evidence` argument and review the dry run
+before any apply. Account acceptance expires after 24 hours; collection grants no
+runtime processing or provider-write permission. Keep the file out of source control,
+logs and shared artifacts, and delete it after conversion and required private
+verification, including any private `.conversion-evidence-*` temporary files left
+by an interrupted process. Follow the stopped-window and backup procedure above
+throughout.
 
 ## Accepted source pins
 

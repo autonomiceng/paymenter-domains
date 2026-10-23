@@ -5,7 +5,8 @@ namespace DomainsConversion;
 use App\Models\{Server,Service,Invoice,InvoiceItem,Product,User};
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CanonicalName,Environment};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand,ResponseParser};
+require_once __DIR__.'/OwnershipRead.php';
+require_once __DIR__.'/SourceAccount.php';
 use Paymenter\Extensions\Servers\Domains\Services\{PricingRule,ReminderSchedules};
 /** Builds a deterministic cleartext plan in memory; only aggregate counts leave this process. */
 final class Planner
@@ -44,13 +45,12 @@ final class Planner
             $ops=DB::table('enom_operations')->where('domain_id',$d['id'])->orderBy('id')->get();$generation=(int)$d['authority_generation']+1;
             if((int)$d['authority_generation']!==0){throw new \DomainException('Unsupported source authority epoch.');}
             Mapper::embedded($policy,$d,$a['old']);Mapper::embedded($obs,$d,$a['old']);
-            $acquisition=$ops->first(fn($o)=>$o->action==='register'&&$this->purchase((array)$o,$d,$a));
-            $managed=(bool)$d['billing_managed']&&$acquisition!==null&&$markers->get('enom_action')==='register';$latest=null;$mapped=[];
+            $managed=$this->registrationCandidate($d,$a);$latest=null;$mapped=[];
             foreach($ops as$o){$o=(array)$o;$row=Mapper::operation($o,$d,$a,$generation);$mapped[$o['id']]=$row;
                 if($managed&&in_array($o['state'],['succeeded','rejected'],true)&&!$this->completion($o,[...$d,'provider_expires_at'=>$o['confirmed_expires_at']],$a)){$this->unsupported[]=['id'=>$o['id'],'state'=>$o['state'],'action'=>$o['action']];}
                 if(!in_array($o['state'],['succeeded','rejected'],true)){$this->unknown[]=['id'=>$o['id'],'state'=>$o['state'],'action'=>$o['action']];}
                 if($managed&&$this->completion($o,$d,$a)){$latest=$o;}}
-            if($managed&&!$latest){$managed=false;}
+            if($managed&&(!$latest||!array_key_exists((string)$d['id'],$this->evidence['domains']??[]))){$managed=false;}
             if($managed&&$d['reservation_name']!==$d['domain']){throw new \DomainException('Managed purchase has no retained reservation.');}
             if($managed){$read=$this->read($d,$a);if($read['id']!==$d['provider_domain_id']||$read['expiry']!==$d['provider_expires_at']){throw new \DomainException('Accepted holding read contradicts confirmed source anchor.');}
                 $snapshot['checkout']=['user_id'=>(int)$d['user_id'],'service_id'=>(int)$service->id,'order_id'=>(int)$service->order_id,
@@ -81,10 +81,7 @@ final class Planner
     }
     private function account(Server $s,$domains): void
     {
-        $settings=$s->settings;$v=$settings->pluck('value','key');$uid=$v->get('uid');$token=$v->get('token');$env=$v->get('environment','test');
-        if(!is_string($uid)||trim($uid)!==$uid||$uid===''||!is_string($token)||$token===''||!$settings->firstWhere('key','uid')?->encrypted||!$settings->firstWhere('key','token')?->encrypted||!in_array($env,['test','live'],true)){throw new \DomainException('Encrypted bound source credentials required.');}
-        $old=hash('sha256',$env.':'.strtolower($uid));if($v->get('enom_account_binding')!==$old){throw new \DomainException('Source account binding mismatch.');}
-        if($env==='live'&&$v->get('enom_live_url')!==rtrim((string)config('app.url'),'/')){throw new \DomainException('Source live-site binding mismatch.');}
+        $source=SourceAccount::read($s);['uid'=>$uid,'token'=>$token,'environment'=>$env,'old'=>$old]=$source;
         $a=$this->evidence['accounts'][(string)$s->id]??[];
         $actor=User::find($a['accepted_by']??0);
         if(!$actor||!$actor->role||!$actor->hasPermission('admin.enom.view')||!$actor->hasPermission('admin.enom.manage-policy')||($a['source']??null)!=='authenticated_provider_read'||($a['uid']??null)!==strtolower($uid)||($a['environment']??null)!==$env
@@ -98,15 +95,21 @@ final class Planner
     }
     private function read(array $d,array $a): array
     {
-        $e=$this->evidence['domains'][(string)$d['id']]??[];$xml=$e['xml']??'';
-        $r=(new ResponseParser)->parse(ReadCommand::Info,is_string($xml)?$xml:'');$i=$r->value('getdomaininfo',[]);$n=$i['domainname']??null;$s=$i['status']??[];
-        $name=is_array($n)?($n['#text']??null):$n;$id=is_array($n)?($n['@attributes']['domainnameid']??null):($i['domainnameid']??null);$owner=$s['belongs-to']??null;
-        if(is_array($owner)){$owner=$owner['#text']??null;}$expiry=$s['expiration']??null;
-        if($r->status!=='success'||$name!==$d['domain']||!is_string($owner)||strtolower($owner)!==$a['uid']||!is_string($id)||!preg_match('/^[1-9][0-9]{0,19}$/D',$id)
-            ||(isset($i['domainnameid'])&&$i['domainnameid']!==$id)||!is_string($expiry)||!preg_match('/^\d{4}-\d\d-\d\d$/D',$expiry)
-            ||($e['account_fingerprint']??null)!==$a['old']){throw new \DomainException('Positive offline ownership/identity read required.');}
-        $date=\DateTimeImmutable::createFromFormat('!Y-m-d',$expiry);if(!$date||$date->format('Y-m-d')!==$expiry){throw new \DomainException('Precise accepted expiry required.');}
-        return ['id'=>$id,'expiry'=>$expiry];
+        return OwnershipRead::parse($d,$a,$this->evidence['domains'][(string)$d['id']]??[]);
+    }
+    /** Same purchase/anchor decision used by plan(), before independent per-name read evidence. */
+    public function purchaseCandidate(array $d,array $a): bool
+    {
+        return $this->registrationCandidate($d,$a)&&DB::table('enom_operations')->where('domain_id',$d['id'])->get()
+            ->contains(fn($o)=>$this->completion((array)$o,$d,$a));
+    }
+    private function registrationCandidate(array $d,array $a): bool
+    {
+        if(!(bool)$d['billing_managed']){return false;}
+        $service=Service::findOrFail($d['service_id']);
+        if($service->product?->settings->firstWhere('key','enom_action')?->value!=='register'){return false;}
+        $ops=DB::table('enom_operations')->where('domain_id',$d['id'])->orderBy('id')->get();
+        return $ops->contains(fn($o)=>$o->action==='register'&&$this->purchase((array)$o,$d,$a));
     }
     private function purchase(array $o,array $d,array $a): bool
     {

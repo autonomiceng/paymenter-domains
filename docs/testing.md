@@ -776,3 +776,10 @@ before owned repricing can still activate without overwriting retail. A same-sec
 clock rollover cannot change the preplanned timestamp. Caught refusals restore the locked preimage.
 For Option E these rules supersede the legacy fresh-retail native-price acceptance described in
 `docs/design/storage.md`: every dirty native price edit requires an owned projection.
+
+## Closed adoption readback
+
+`adoption-enom-test.php` uses synthetic XML and a closed fake transport. It checks the
+four-command adoption vocabulary, every excluded general read and modeled mutation
+individually, injected parameters, ownership/ID/expiry parsing, renewal and hold
+refusals, six-request budget, deadline and per-wire bounds. No account calls occur.

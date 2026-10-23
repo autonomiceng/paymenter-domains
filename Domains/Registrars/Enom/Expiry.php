@@ -34,6 +34,24 @@ final class Expiry
         }
         return $confirmed;
     }
+    public static function reconcile(ProtocolResult $extend, ?DateEvidence $authenticated, ProtocolResult $authenticatedInfo): ?DateEvidence
+    {
+        $expiry = Expiry::read($extend);
+        if (!$expiry || !$authenticated) { return null; }
+        if ($expiry->precision === ExpiryPrecision::Instant) {
+            return $authenticated->precision === ExpiryPrecision::Instant && $expiry->value === $authenticated->value ? $authenticated : null;
+        }
+        $raw = $extend->value('getextendinfo.expiration');
+        if ($authenticated->precision !== ExpiryPrecision::Instant || !is_string($raw) || !preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/D', $raw)) { return null; }
+        $authenticatedRaw = $authenticatedInfo->value('getdomaininfo.status.expiration');
+        if (!is_string($authenticatedRaw) || !preg_match('/[T ]\d{1,2}:\d{2}/', $authenticatedRaw)) { return null; }
+        // Only the frozen scalar US local-date and authenticated timestamp shapes may reconcile.
+        foreach (['registryexpdate', 'domaininfo.registryexpdate', 'expirationdate', 'getdomaininfo.status.expiration', 'expiration', 'order.orderdetail.expirydatetime'] as $path) {
+            if ($extend->value($path) !== null) { return null; }
+        }
+        $local = (new \DateTimeImmutable($authenticated->value))->setTimezone(new \DateTimeZone('America/Los_Angeles'));
+        return $expiry->value === $local->format('Y-m-d') ? $authenticated : null;
+    }
     private static function date(string $input, \DateTimeZone $zone): ?DateEvidence
     {
         if (!preg_match('/^(?:\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2})?)?|\d{1,2}\/\d{1,2}\/\d{4}(?: \d{1,2}:\d{2}(?::\d{2})? (?:AM|PM))?|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?) \d{1,2}, \d{4}(?: \d{1,2}:\d{2}(?::\d{2})? (?:AM|PM))?)$/iD', $input)) { return null; }

@@ -59,6 +59,13 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     {
         return is_string($value) ? match (strtolower($value)) { '1', 'true', 'yes' => true, '0', 'false', 'no' => false, default => null } : null;
     }
+    public static function autoRenew(ProtocolResult $renew): ?bool
+    {
+        if ($renew->status !== 'success') { return null; }
+        $auto = self::flag($renew->value('auto-renew', $renew->value('renewname')));
+        if ($renew->value('auto-renew') !== null && $renew->value('renewname') !== null && self::flag($renew->value('renewname')) !== $auto) { return null; }
+        return $auto;
+    }
     private function read(ReadCommand $command, array $parameters, #[\SensitiveParameter] RequestContext $context): ProtocolResult
     {
         $this->binding()->requireMatch($context->binding);
@@ -157,24 +164,10 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     {
         $parts = $this->parts($name); $reply = $this->read(ReadCommand::Info, $parts, $context);
         if ($reply->status !== 'success') { return [$reply, $parts, null]; }
-        $info = $reply->value('getdomaininfo');
-        $domain = is_array($info) ? ($info['domainname'] ?? null) : null;
-        $label = is_array($domain) ? ($domain['#text'] ?? null) : $domain;
-        $attributes = is_array($domain) ? ($domain['@attributes'] ?? []) : [];
-        $status = is_array($info) ? ($info['status'] ?? null) : null;
-        if (!is_array($status) || !is_string($label) || strtolower($label) !== $name || !is_array($attributes)
-            || (isset($attributes['sld']) && (!is_string($attributes['sld']) || strtolower($attributes['sld']) !== $parts['SLD']))
-            || (isset($attributes['tld']) && (!is_string($attributes['tld']) || strtolower($attributes['tld']) !== $parts['TLD']))) { return [new ProtocolResult('unknown', 'invalid_payload'), $parts, null]; }
-        $owner = $status['belongs-to'] ?? null;
-        if (is_array($owner)) { $owner = $owner['#text'] ?? null; }
-        $id = $attributes['domainnameid'] ?? $info['domainnameid'] ?? null;
-        if ((isset($attributes['domainnameid'], $info['domainnameid']) && $attributes['domainnameid'] !== $info['domainnameid'])
-            || !is_string($owner) || !is_string($id) || !preg_match('/^[1-9][0-9]{0,19}$/D', $id)) { return [new ProtocolResult('unknown', 'invalid_payload'), $parts, null]; }
-        try { $owned = $this->binding()->matches(new AccountBinding('enom', $this->binding()->serverId, $this->binding()->environment, $owner)); }
-        catch (\InvalidArgumentException) { return [new ProtocolResult('unknown', 'invalid_payload'), $parts, null]; }
-        if (!$owned) { return [$reply, $parts, new DomainSnapshot($this->binding(), $name, false)]; }
-        return [$reply, $parts, new DomainSnapshot($this->binding(), $name, true, Expiry::read($reply), providerReference: $id)];
+        $domain = Identity::read($this->binding(), $name, $parts, $reply);
+        return [$domain === null ? new ProtocolResult('unknown', 'invalid_payload') : $reply, $parts, $domain];
     }
+
     public function readDomain(string $name, #[\SensitiveParameter] RequestContext $context): DriverResult
     {
         [$reply, $parts, $domain] = $this->identity($name, $context);
@@ -185,8 +178,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         foreach ([$renew, $lock, $privacy] as $required) {
             if ($required->status !== 'success') { return $this->neutral($required, new Evidence(domain: $domain)); }
         }
-        $auto = self::flag($renew->value('auto-renew', $renew->value('renewname')));
-        if ($renew->value('auto-renew') !== null && $renew->value('renewname') !== null && self::flag($renew->value('renewname')) !== $auto) { $auto = null; }
+        $auto = self::autoRenew($renew);
         $privacyFlag = self::flag($privacy->value('getwppsinfo.wppsenabled'));
         $allowed = self::flag($privacy->value('getwppsinfo.wppsallowed')); $exists = self::flag($privacy->value('getwppsinfo.wppsexists'));
         if ($allowed === null || $exists === null || ($privacyFlag === true && (!$allowed || !$exists))) { $privacyFlag = null; }
