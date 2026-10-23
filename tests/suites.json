@@ -116,6 +116,8 @@
     "tests/owner-declutter-test.php",
     "tests/owner-help-test.php",
     "tests/status-pill-test.php",
+    "tests/missing-test.php",
+    "tests/demo-data-test.php",
     "tests/owner-management-test.php",
     "tests/owner-management-namesilo-test.php",
     "tests/staff-domains-test.php",

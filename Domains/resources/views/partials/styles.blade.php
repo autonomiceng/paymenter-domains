@@ -367,6 +367,13 @@
 .domains .domains-related { margin-top:2.5rem; }
 .domains .domains-related > .domains-panel { margin-block:1rem; }
 .domains .domains-badge { white-space:normal; }
+.domains .domains-missing { display:inline-flex; align-items:center; gap:.375rem; color: var(--e-bad); font-weight:600; }
+.domains .domains-missing__cause { margin-inline-start:.5rem; color:var(--e-muted); }
+.domains .domains-missing__fix { margin-inline-start:.5rem; }
+/* Demo tag: the only orange on the page. Wraps as one unit after the name. */
+.domains .domains-demo-tag { display: inline-flex; align-items:center; height:18px; padding:0 6px; margin-inline-start:8px; border-radius:4px; border:1px solid rgb(251 146 60 / .55);
+    background:rgb(251 146 60 / .10); color:#c2410c; font-size:11px; font-weight:600; line-height:1; letter-spacing:.03em; white-space: nowrap; vertical-align:2px; cursor:help; }
+.dark .domains .domains-demo-tag { color:#fdba74; }
 .domains a:focus-visible,.domains summary:focus-visible { outline:2px solid var(--e-accent);outline-offset:3px; }
 @media(max-width:639px) { .domains .domains-summary .domains-facts { grid-template-columns:1fr; } .domains .domains-summary .domains-fact { min-width:0; } }
 .domains fieldset{min-width:0}.domains .domains-checkbox{overflow-wrap:anywhere}
