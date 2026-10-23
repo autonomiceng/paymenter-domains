@@ -8,7 +8,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations,TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations,StaffReviewRefused,TransferInputs};
 final class OperationActions
 {
     public static function make(Operation $op,string $stamp): array
@@ -26,6 +26,7 @@ final class OperationActions
                     try { $actor=Auth::user(); if(!$actor instanceof \App\Models\User){throw new \DomainException('Staff required.');}
                         app(StaffOperations::class)->run($actor,(int)$op->domain_id,(int)$op->id,$name,(string)($data['review_key']??''),trim((string)($data['reason']??'')));
                         Notification::make()->success()->title('Review recorded')->body('Reload this page to see the current request.')->send();
+                    }catch(StaffReviewRefused $error){Notification::make()->danger()->title('Review refused')->body($error->getMessage())->send();
                     }catch(\Throwable){Notification::make()->danger()->title('Review refused')->body('Reload this page and review current permissions, funding and retained evidence.'
                             .(in_array($name,['refund','credit'],true)?' A credit decision may be retained; check the ledger before retrying.':''))->send();}
                 });
@@ -34,6 +35,7 @@ final class OperationActions
     }
     public static function relevant(string $action,Operation $op): bool
     {
+        if(StaffOperationReview::liveLease($op,app(Clock::class))){return false;}
         if(PaidUncertainty::summary($op)!==null&&!in_array($action,['recheck','resume_reads','resume_observation'],true)){return false;}
         return match($action){
             'hold'=>in_array($op->state,['queued','awaiting_payment','awaiting_code'],true),

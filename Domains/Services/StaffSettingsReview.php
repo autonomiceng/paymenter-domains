@@ -42,7 +42,7 @@ final class StaffSettingsReview
         $role=$u->role_id?Role::whereKey($u->role_id)->lockForUpdate()->first():null;$u->setRelation('role',$role);
         foreach(['admin.domains.view','admin.domains.manage-policy',self::permission($this->action)] as $p){
             if(!$u->hasPermission($p)){throw new \DomainException('Current staff permissions required.');}}
-        if(strlen($this->reason)<5||strlen($this->reason)>500||$this->reason!==trim($this->reason)||preg_match('/[\x00-\x1f\x7f]/',$this->reason)){throw new \DomainException('A one-line reason is required.');}
+        StaffReason::require($this->reason);
     }
     /** Canonical shared mutex: all servers, then accounts, policies, TLDs, prices, settings. */
     public function lockAccounts(): void

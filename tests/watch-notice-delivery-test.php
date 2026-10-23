@@ -38,7 +38,8 @@ expect($delivery->handoff($next,$tomorrow+2),'Capped drift mail eligible next da
 // Staff cannot replay the old key; native evidence/reason/role are mandatory and rechecked.
 $again=$tomorrow+86400;noticeDns($f,$again);noticeDns($f,$again+900);$again+=900;$planner->plan('watch',$id,$uid,$again+2);
 $staff=staffUser(['admin.domains.view','admin.domains.watch.manage']);$inspection=WatchNoticeReview::inspect($staff,$next);expect($inspection['native_id']!==null,'Native email evidence retained');
-$resend=WatchNoticeReview::resend($staff,$next,(int)$inspection['native_id'],'Synthetic inspected native evidence',str_repeat('e',64),$again+3,$delivery);expect($resend!==null && $resend!==$next,'New audited resend identity');
+foreach([str_repeat('é',9),str_repeat('é',501),"invalid\xff\xff\xff"] as $bad){$refused=false;try{WatchNoticeReview::resend($staff,$next,(int)$inspection['native_id'],$bad,str_repeat('e',64),$again+3,$delivery);}catch(DomainException){$refused=true;}expect($refused,'Resend character length and UTF-8 required');}
+$resend=WatchNoticeReview::resend($staff,$next,(int)$inspection['native_id'],str_repeat('🦦',500),str_repeat('e',64),$again+3,$delivery);expect($resend!==null && $resend!==$next,'New audited resend identity');
 $staff->role->update(['permissions'=>[]]);expect(!$delivery->handoff($resend,$again+3),'Revoked staff role suppresses pending resend');
 same('suppressed',DB::table('domains_watch_deliveries')->find($resend)->state,'Role revocation suppresses rather than caps');
 same('accepted',DB::table('domains_watch_deliveries')->find($mail)->state,'Original accepted evidence unchanged');

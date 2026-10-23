@@ -32,7 +32,7 @@ final class ReminderSchedules
     public static function save(User $actor,int $serverId,int $revision,bool $enabled,string $before,string $after,string $reason):void
     {
         OperationClaims::outside();$b=self::offsets($before);$a=self::offsets($after);
-        if(strlen($reason)<5||strlen($reason)>500||$reason!==trim($reason)||preg_match('/[\x00-\x1f\x7f]/',$reason)){throw new \DomainException('A safe audit reason is required.');}
+        StaffReason::require($reason);
         DB::transaction(function()use($actor,$serverId,$revision,$enabled,$b,$a,$reason):void {
             $u=User::whereKey($actor->id)->lockForUpdate()->firstOrFail();$role=$u->role()->lockForUpdate()->first();$u->setRelation('role',$role);
             if(!$u->hasPermission(Staff::VIEW)||!$u->hasPermission(Staff::POLICY)){throw new \DomainException('Reminder policy permission required.');}

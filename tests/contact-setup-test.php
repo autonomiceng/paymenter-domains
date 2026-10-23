@@ -175,7 +175,7 @@ foreach ([['attempt' => ['execution' => null]], ['attempt' => ['seal' => 'unknow
     // Test-only restore of exact pre-case bytes; no runtime evidence-rewriting API.
     DB::table('domains_operations')->where('id', $held->id)->update($rawHeld);
 }
-foreach (['', 'bad', "bad\nreason", str_repeat('x', 501)] as $reason) {
+foreach (['', 'bad', "bad\nreason", str_repeat('x', 501), str_repeat('é',4), "valid\xff"] as $reason) {
     contactReject(static fn () => ContactRecovery::replace($staff, $held->id, $reason));
 }
 // Native owner/route/lifecycle, generation, reservation and signed-net funding remain authoritative.
@@ -191,7 +191,7 @@ foreach ([['services', $serviceId, ['user_id' => $other->id]], ['services', $ser
 $reversal = InvoiceTransaction::create(['invoice_id' => $held->invoice_id, 'amount' => '-0.01', 'fee' => 0, 'status' => 'succeeded']);
 contactReject(static fn () => ContactRecovery::replace($staff, $held->id, 'Funding is no longer complete'));
 DB::table('invoice_transactions')->where('id', $reversal->id)->delete();
-$recovered = ContactRecovery::replace($staff, $held->id, 'Owner corrected account details');
+$recovered = ContactRecovery::replace($staff, $held->id, str_repeat('🦦',500));
 same('queued', $recovered->state, 'Same paid never-sent obligation readmitted, no new operation');
 ContactSetup::requireReady($recovered);
 same('2 Updated Street', $recovered->payload['contacts']['tech']['address1'], 'Staff uses OWNER account details');

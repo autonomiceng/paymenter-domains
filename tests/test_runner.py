@@ -20,6 +20,32 @@ runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
 
 
 class RunnerTests(unittest.TestCase):
+    def test_ote_output_resolves_symlinked_tmpdir(self):
+        spec = importlib.util.spec_from_file_location('ote_contract', ROOT/'scripts/ote-contract.py')
+        ote = importlib.util.module_from_spec(spec); spec.loader.exec_module(ote)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve(); target = root/'real'; target.mkdir()
+            link = root/'alias'; link.symlink_to(target, target_is_directory=True)
+            def child(argv, **options):
+                output = Path(options['env']['OTE_OUTPUT'])
+                # Exact equivalent of PHP realpath($output) === $output and private mode.
+                self.assertEqual(str(output), os.path.realpath(output))
+                self.assertEqual(output.stat().st_mode & 0o077, 0)
+                (output/'receipt.json').write_text('{}')
+                return subprocess.CompletedProcess(argv, 0)
+            previous_mask = os.umask(0o077)
+            try:
+                with mock.patch.object(ote.tempfile, 'tempdir', str(link)), \
+                     mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': ''}), \
+                     mock.patch.object(sys, 'argv', ['ote-contract.py', '--self-test']), \
+                     mock.patch.object(ote, 'prepare', return_value=(None, root/'php', root/'curl.so')), \
+                     mock.patch.object(ote.subprocess, 'run', side_effect=child) as run, \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(ote.main(), 0)
+                    self.assertEqual(run.call_count, 1)
+            finally:
+                os.umask(previous_mask)
+
     def test_owned_renderer_rejects_unknown_mode_before_environment_or_files(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); assets = root/'assets'; assets.mkdir(); destination = root/'output'

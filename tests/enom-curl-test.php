@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api;
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 ini_set('zend.exception_ignore_args', '0');
-function curl_init(): object { return new \stdClass; }
+function curl_init(): object { ++$GLOBALS['enomCurl']['inits']; return new \stdClass; }
 function curl_setopt_array($handle, array $options): bool { $GLOBALS['enomCurl']['options'] = $options; return !$GLOBALS['enomCurl']['configFail']; }
 function curl_exec($handle): bool
 {
@@ -19,7 +19,7 @@ function curl_getinfo($handle, int $option): int { return $GLOBALS['enomCurl']['
 function curl_close($handle): void { $GLOBALS['enomCurl']['closed']++; }
 function resetCurl(array $overrides = []): void
 {
-    $GLOBALS['enomCurl'] = $overrides + ['calls' => 0, 'closed' => 0, 'options' => [], 'chunks' => ['xml'], 'timeout' => false, 'configFail' => false, 'status' => 200];
+    $GLOBALS['enomCurl'] = $overrides + ['calls' => 0, 'inits' => 0, 'closed' => 0, 'options' => [], 'chunks' => ['xml'], 'timeout' => false, 'configFail' => false, 'status' => 200];
 }
 $transport = new CurlTransport;
 foreach ([Environment::Test, Environment::Live] as $environment) {
@@ -39,7 +39,7 @@ foreach ([[0, 'uid', 'token'], [25001, 'uid', 'token'], [1200, '', 'token'], [12
     resetCurl();
     try { $transport->send(Environment::Test, ReadCommand::Balance, [], $uid, $token, $timeout); throw new \LogicException('Expected input guard refusal'); }
     catch (\RuntimeException) {}
-    same(0, $GLOBALS['enomCurl']['calls'], 'Invalid transport input never dispatches');
+    same([0, 0], [$GLOBALS['enomCurl']['inits'], $GLOBALS['enomCurl']['calls']], 'Invalid transport input never dispatches');
 }
 resetCurl();
 $transport->send(Environment::Test, ReadCommand::Balance, [], 'uid', 'token', 25000);
@@ -63,7 +63,7 @@ foreach ([ReadCommand::Balance, ReadCommand::Tlds] as $command) {
 foreach (['synthetic-keylog', '0'] as $keylog) {
 resetCurl(); putenv('SSLKEYLOGFILE='.$keylog);
 try { $transport->send(Environment::Test, ReadCommand::Balance, [], 'uid', 'token', 25000); throw new \LogicException('Expected TLS guard'); }
-catch (\RuntimeException) { same(0, $GLOBALS['enomCurl']['calls'], 'TLS key logging refuses before dispatch'); }
+catch (\RuntimeException) { same([0, 0], [$GLOBALS['enomCurl']['inits'], $GLOBALS['enomCurl']['calls']], 'TLS key logging refuses before dispatch'); }
 putenv('SSLKEYLOGFILE');
 }
 echo "Enom transport: synthetic HTTPS, POST, deadline cap, streaming, no retries and redaction passed.\n";
@@ -71,5 +71,5 @@ echo "Enom transport: synthetic HTTPS, POST, deadline cap, streaming, no retries
 foreach ([['command' => 'Purchase'], ['UID' => 'override'], ['Years' => 1]] as $unsafe) {
     resetCurl();
     try { $transport->send(Environment::Test, ReadCommand::Balance, $unsafe, 'uid', 'token', 25000); throw new \LogicException('Expected named parameter refusal'); }
-    catch (\RuntimeException) { same(0, $GLOBALS['enomCurl']['calls'], 'Direct transport rejects mutation/credential/unrelated parameters'); }
+    catch (\RuntimeException) { same([0, 0], [$GLOBALS['enomCurl']['inits'], $GLOBALS['enomCurl']['calls']], 'Direct transport rejects mutation/credential/unrelated parameters'); }
 }

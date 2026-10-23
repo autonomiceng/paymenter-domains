@@ -16,7 +16,7 @@ final class DomainSummaryTones
             'domain.awaiting_payment','domain.review','watch.expired','registry_expiry_reached','watch.ns_changed',
             'ns_changed','watch.stale','watch.partial','domain.points.partial' => 'warn',
             'domain.expired','domain.redemption','watch.redemption' => 'bad',
-            'domain.registration.unknown','domain.dns.unknown','domain.points.unknown','domain.points.help',
+            'domain.registration.unknown','domain.dns.unknown','domain.points.unknown','domain.details.partial','domain.points.help',
             'domain.cancelled','adopt.renewal_off','watch.paused','watch.retired','watch.not_checked',
             'watch.unknown','watch.no_coverage','watch.not_registered','dns_unavailable','expiry_unavailable',
             'adopt.pending_notice','watch.ns_changed_notice' => 'muted',

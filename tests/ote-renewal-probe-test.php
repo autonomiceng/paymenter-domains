@@ -12,8 +12,12 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, Syst
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse;
 
-$refused = static function (Closure $f): void {
-    try { $f(); } catch (Throwable) { return; } throw new RuntimeException('Expected refusal');
+$refused = static function (Closure $f, string $expected): void {
+    try { $f(); } catch (Throwable $error) {
+        same(RuntimeException::class, $error::class, 'Renewal refusal class');
+        same($expected, $error->getMessage(), 'Renewal refusal must name its guard: '.$expected.'; received '.$error->getMessage()); return;
+    }
+    throw new RuntimeException('Expected refusal: '.$expected);
 };
 $cleanup = static function (string $directory) use (&$cleanup): void {
     foreach (glob($directory.'/*') as $file) { is_dir($file) ? $cleanup($file) : unlink($file); } rmdir($directory);
@@ -84,7 +88,11 @@ $probe = static function (string $scenario, string $route = 'background') use ($
         $binding = new AccountBinding('namesilo', 1, Environment::Test, 'synthetic');
         $thrown = false;
         try { RenewalProbe::run($wire, new Client($binding, 'offline-secret-token', $wire), $binding, new SystemClock); }
-        catch (Throwable) { $thrown = true; }
+        catch (Throwable $error) {
+            same(RuntimeException::class, $error::class, 'Unresolved renewal exception class');
+            same('OTE renewal needs investigation.', $error->getMessage(), 'Unresolved renewal stops at its outcome guard');
+            $thrown = true;
+        }
         if (in_array($scenario, ['expired', 'budget'], true)) {
             same(false, $attempted, 'Readback/budget prevents purchase'); return;
         }
@@ -135,15 +143,15 @@ try {
     expect(!str_contains(file_get_contents($out.'/receipt.json'), 'private contact person 123'), 'Contact refusal never published');
     PurchaseAttempt::writePrivate($out.'/atomic.json', ['original' => true]);
     $GLOBALS['ote_sync_failure'] = true;
-    $refused(fn () => PurchaseAttempt::writePrivate($out.'/atomic.json', ['replacement' => true]));
+    $refused(fn () => PurchaseAttempt::writePrivate($out.'/atomic.json', ['replacement' => true]), 'Private attempt persistence failed.');
     $GLOBALS['ote_sync_failure'] = false;
     same(['original' => true], PurchaseAttempt::readPrivate($out.'/atomic.json'), 'Failed sync preserves the original private evidence');
     same([], glob($out.'/*.pending-*'), 'Failed persistence removes private temporary fixture');
     $secretWire = new GuardedTransport('offline-secret-token', true, $out,
         static fn () => new TransportResponse(200, json_encode(['request' => ['operation' => 'contactAdd'], 'reply' => ['code' => 210, 'detail' => 'offline-secret-token']])), static fn () => 21);
-    $refused(fn () => $secretWire->raw('https://ote.namesilo.com/apibatch', 'contactAdd', []));
+    $refused(fn () => $secretWire->raw('https://ote.namesilo.com/apibatch', 'contactAdd', []), 'OTE exchange unresolved.');
     expect(!str_contains(file_get_contents($out.'/attempt-private.json'), 'offline-secret-token'), 'Credential-bearing detail never persisted');
-    $wire->receipt['leak'] = 'private contact person 123'; $refused(fn () => $wire->save());
+    $wire->receipt['leak'] = 'private contact person 123'; $refused(fn () => $wire->save(), 'Private reply detail leak refused.');
 } finally { $cleanup($out); }
 
 echo "OTE renewal: command routing, exact reconciliation, private refusals and no replay passed\n";
@@ -166,20 +174,24 @@ try {
     foreach (['renewal_category' => 'ambiguous', 'name' => 'contract-ote-987654321abc.com', 'command' => 'registerDomain',
         'term' => 2, 'route' => '/api', 'before_expiry' => 'invalid', 'dispatch_utc' => '2020-01-01T00:00:00+00:00'] as $field => $bad) {
         PurchaseAttempt::writePrivate($out.'/attempt-private.json', array_replace($attempt, [$field => $bad]));
-        $refused(fn () => RenewalContinuation::claim($out.'/receipt.json')); $reset();
+        if ($field === 'dispatch_utc') {
+            $aged = $prior; $aged['requests'][1]['utc'] = $bad;
+            PurchaseAttempt::writePrivate($out.'/receipt.json', $aged); // Isolate age, with matching retained timestamps.
+        }
+        $refused(fn () => RenewalContinuation::claim($out.'/receipt.json'), 'Renewal continuation evidence refused.'); $reset();
     }
     $bad = $prior; $bad['checks']['registration'] = 'unresolved_possibly_sent';
     PurchaseAttempt::writePrivate($out.'/receipt.json', $bad);
-    $refused(fn () => RenewalContinuation::claim($out.'/receipt.json')); $reset();
+    $refused(fn () => RenewalContinuation::claim($out.'/receipt.json'), 'Renewal continuation evidence refused.'); $reset();
     $bad = $prior; $bad['renewal_reconciliation']['category'] = 'ambiguous';
     PurchaseAttempt::writePrivate($out.'/receipt.json', $bad);
-    $refused(fn () => RenewalContinuation::claim($out.'/receipt.json')); $reset();
-    $bad = $prior; $bad['requests'][] = $bad['requests'][1];
+    $refused(fn () => RenewalContinuation::claim($out.'/receipt.json'), 'Renewal continuation evidence refused.'); $reset();
+    $bad = $prior; $bad['requests'][] = $bad['requests'][1]; $bad['request_count'] = 3;
     PurchaseAttempt::writePrivate($out.'/receipt.json', $bad);
-    $refused(fn () => RenewalContinuation::claim($out.'/receipt.json')); $reset();
+    $refused(fn () => RenewalContinuation::claim($out.'/receipt.json'), 'Renewal continuation evidence refused.'); $reset();
     chmod($out.'/attempt-private.json', 0644);
-    $refused(fn () => RenewalContinuation::claim($out.'/receipt.json')); chmod($out.'/attempt-private.json', 0600);
-    $refused(fn () => RenewalContinuation::claim($out.'/receipt.json', 59));
+    $refused(fn () => RenewalContinuation::claim($out.'/receipt.json'), 'Private evidence permissions refused.'); chmod($out.'/attempt-private.json', 0600);
+    $refused(fn () => RenewalContinuation::claim($out.'/receipt.json', 59), 'Cumulative OTE budget refused.');
     putenv('OTE_RENEWAL_CONTEXT=interactive');
     $wire = new GuardedTransport('offline-secret-token', true, $out,
         static fn ($command) => new TransportResponse(200, json_encode(['request' => ['operation' => $command], 'reply' => [
@@ -192,14 +204,15 @@ try {
         limit: 40, continuationReceipt: $out.'/receipt.json');
     same($name, $wire->domain, 'Only retained sent identity may continue');
     same($before, $wire->continuationExpiry, 'Original pre-renewal baseline retained for fresh comparison');
-    $refused(fn () => RenewalContinuation::claim($out.'/receipt.json'));
+    $refused(fn () => RenewalContinuation::claim($out.'/receipt.json'), 'Renewal continuation already consumed.');
     foreach (['contactAdd', 'registerDomain', 'domainLock'] as $command) {
-        $refused(fn () => $wire->raw('https://ote.namesilo.com/apibatch', $command, ['domain' => $name]));
+        $parameters = $command === 'contactAdd' ? [] : ['domain' => $name];
+        $refused(fn () => $wire->raw('https://ote.namesilo.com/apibatch', $command, $parameters), 'Renewal continuation scope refused.');
     }
     same(0, $wire->receipt['request_count'], 'Continuation cannot start registration or management');
     $wire->purchaseAuthorization(static fn () => new \Paymenter\Extensions\Servers\Domains\Data\Money('8.95', 'USD'));
     $wire->renewalBefore($before); putenv('OTE_RENEWAL_CONTEXT=background');
-    $refused(fn () => $wire->raw('https://ote.namesilo.com/apibatch', 'renewDomain', ['domain' => $name, 'years' => 1, 'auto_renew' => 0]));
+    $refused(fn () => $wire->raw('https://ote.namesilo.com/apibatch', 'renewDomain', ['domain' => $name, 'years' => 1, 'auto_renew' => 0]), 'Renewal route requires claimed continuation.');
     same(0, $wire->receipt['request_count'], 'Claimed continuation cannot dispatch on the batch route');
     putenv('OTE_RENEWAL_CONTEXT=interactive');
     $binding = new AccountBinding('namesilo', 1, Environment::Test, 'synthetic');

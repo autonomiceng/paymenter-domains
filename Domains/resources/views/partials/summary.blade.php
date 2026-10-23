@@ -2,7 +2,9 @@
 <article class="domains-summary" aria-label="{{ $summary->name }}">
 @if($summary->displayName && $summary->displayName!==$summary->name)<p class="domains-small domains-wrap">{{ $summary->displayName }}</p>@endif
 <div class="domains-row domains-summary-badges">
-@foreach([...(array_intersect(['adopt.pending','watch.not_registered'],$summary->stateKeys)?[]:[$summary->registrationKey]),...$summary->dnsKeys,...array_diff($summary->stateKeys,['watch.not_registered','watch.no_coverage'],($summaryOnManaged??false)?['adopt.pending','adopt.provenance']:[])] as $label)<span class="domains-badge domains-tone-{{ $summary->tone($label) }}">{{ $summary->labels[$label]??'Details unavailable' }}</span>@endforeach
+@php($summaryEvidence=[...(array_intersect(['adopt.pending','watch.not_registered'],$summary->stateKeys)?[]:[$summary->registrationKey]),...$summary->dnsKeys])
+@php($summaryStates=array_values(array_diff($summary->stateKeys,['watch.not_registered','watch.no_coverage'],($summaryOnManaged??false)?['adopt.pending','adopt.provenance']:[])))
+@foreach(($summaryCompact??false)?$summary->listBadges($summaryEvidence,$summaryStates):[...$summaryEvidence,...$summaryStates] as $label)<span class="domains-badge domains-tone-{{ $summary->tone($label) }}">{{ $summary->labels[$label]??'Details unavailable' }}</span>@endforeach
 </div>
 @foreach(array_intersect($summary->stateKeys,['watch.not_registered','watch.no_coverage']) as $key)<p class="domains-notice"><span>{{ $summary->labels[$key] }}</span></p>@endforeach
 @if(in_array('adopt.pending',$summary->stateKeys,true))@unless($summaryOnManaged??false)<p class="domains-notice">{{ $summary->labels['adopt.pending_notice'] }}</p>@endunless@if($summary->urls['invoiceHistory']??null)<p><a class="domains-a" href="{{ $summary->urls['invoiceHistory'] }}">View invoice history</a></p>@endif@endif

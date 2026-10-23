@@ -61,16 +61,21 @@ foreach ([1 => 'enom', 2 => 'namesilo'] as $id => $key) {
 }
 $context = fn (int $id, int $budget = 20) => new RequestContext($bound[$id], RequestOrigin::Background, $clock->now()->modify('+5 minutes'), new RequestBudget($budget), $clock);
 $row = ['register' => [1], 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true];
-$reject = static function (callable $call): void { try { $call(); } catch (Throwable) { return; } throw new RuntimeException('Expected refusal.'); };
+$reject = static function (callable $call, string $expected): void {
+    try { $call(); } catch (Throwable $error) {
+        same($expected, $error->getMessage(), 'Catalogue refusal must name its guard: '.$expected.'; received '.$error->getMessage()); return;
+    }
+    throw new RuntimeException('Expected refusal: '.$expected);
+};
 $rules = new PricingRules; $prices = new PriceCatalogue($rules); $sync = new CatalogueSync($bindings, $prices);
-$reject(fn () => $sync->refresh(2, $context(2))); same(0, $ns->calls, 'No acceptance means no reads');
-$reject(fn () => new CatalogueAcceptance($bound[2], 1, ['com' => [...$row, 'register' => [3]]]));
+$reject(fn () => $sync->refresh(2, $context(2)), 'Catalogue acceptance is unavailable.'); same(0, $ns->calls, 'No acceptance means no reads');
+$reject(fn () => new CatalogueAcceptance($bound[2], 1, ['com' => [...$row, 'register' => [3]]]), 'Only accepted annual catalogue units are supported.');
 $a1 = CatalogueAcceptances::save($bound[1], 0, ['com' => [...$row, 'register' => [1, 3]]]);
 $a2 = CatalogueAcceptances::save($bound[2], 0, ['com' => $row, 'co.uk' => $row]);
 same(1, CatalogueAcceptances::load($bound[2])->revision, 'Acceptance durable across reads');
 $raw = DB::table('settings')->where('key', CatalogueAcceptances::KEY)->first()->value;
 expect(!str_contains($raw, 'renewal_safe') && !str_contains($raw, $bound[1]->fingerprint), 'Native acceptance encrypted');
-$reject(fn () => CatalogueAcceptances::save($bound[2], 0, ['com' => $row]));
+$reject(fn () => CatalogueAcceptances::save($bound[2], 0, ['com' => $row]), 'Stale acceptance revision.');
 // Bound native encrypted TEXT capacity before saving, including envelope overhead.
 $large = []; $fit = [];
 for ($i = 0; $i < 500; $i++) {
@@ -82,7 +87,7 @@ for ($i = 0; $i < 500; $i++) {
 CatalogueAcceptances::save($bound[1], 1, $fit);
 $stored = DB::table('settings')->where('key', CatalogueAcceptances::KEY)->where('settingable_id', 1)->value('value');
 expect(strlen($stored) < 65535, 'Boundary acceptance ciphertext fits native TEXT');
-$reject(fn () => CatalogueAcceptances::save($bound[1], 2, $large));
+$reject(fn () => CatalogueAcceptances::save($bound[1], 2, $large), 'Acceptance exceeds encrypted settings capacity.');
 same($stored, DB::table('settings')->where('key', CatalogueAcceptances::KEY)->where('settingable_id', 1)->value('value'), 'Oversize cannot corrupt existing acceptance');
 CatalogueAcceptances::save($bound[1], 2, ['com' => [...$row, 'register' => [1, 3]]]);
 DB::flushQueryLog(); DB::enableQueryLog();
@@ -127,10 +132,10 @@ foreach (Tld::all() as $tld) { same(false, $tld->enabled, 'Import never selects 
 $sellers = new SellerPolicies($prices, $bindings); $sellers->initialize('com');
 $sellers->change('com', 1, 1, true, true, $clock->now()); $old = $sellers->selection('com', 'register', 3, $clock->now());
 $sellers->change('com', 2, 2, true, true, $clock->now());
-$reject(fn () => DB::transaction(fn () => $sellers->admit([$old], $clock->now())));
+$reject(fn () => DB::transaction(fn () => $sellers->admit([$old], $clock->now())), 'Seller selection changed; refresh checkout.');
 // Legacy cost refreshes cannot inherit publication proof or extend its cadence.
 same(2, $prices->sync(2, fn () => [new \Paymenter\Extensions\Servers\Domains\Data\CatalogueRate('register', 1, '8.25', 'synthetic', $clock->now(), $clock->now()->modify('+7 days'))])['synced'], 'Legacy cost-only refresh');
-$reject(fn () => $sellers->selection('com', 'register', 1, $clock->now()));
+$reject(fn () => $sellers->selection('com', 'register', 1, $clock->now()), 'Catalogue publication evidence changed.');
 expect(!isset(Price::where('server_id', 2)->where('tld', 'com')->where('action', 'register')->firstOrFail()->eligibility['catalogue_revision']), 'Legacy writer drops publication proof');
 same(2, $sync->refresh(2, $context(2))['synced'], 'Accepted sync restores publication proof');
 $beforeRenewal = $prices->renewal(1, $bound[1]->fingerprint, 'com', 'USD', $clock->now());
@@ -153,8 +158,8 @@ $sellers->change('com', 3, 1, true, true, $clock->now());
 Tld::where('server_id', 1)->update(['max_years' => 3]);
 $retained = $prices->current(1, $bound[1]->fingerprint, 'com', 'register', 3, 'USD', $clock->now());
 $unsupported = new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection('com', 1, 'enom', $bound[1]->fingerprint, 4, 'register', 3, 'USD', $retained->id, $retained->revision);
-$reject(fn () => DB::transaction(fn () => $sellers->admit([$unsupported], $clock->now())));
-$reject(fn () => $sellers->selection('com', 'register', 3, $clock->now()));
+$reject(fn () => DB::transaction(fn () => $sellers->admit([$unsupported], $clock->now())), 'Catalogue publication evidence changed.');
+$reject(fn () => $sellers->selection('com', 'register', 3, $clock->now()), 'Catalogue publication evidence changed.');
 $sellers->change('com', 4, 2, true, true, $clock->now());
 Tld::where('server_id', 1)->update(['max_years' => 1]);
 // Out-of-range retained terms do not poison rule republication or regain publication.
@@ -171,8 +176,8 @@ $oldCart = $sellers->selection('com', 'register', 1, $clock->now());
 $priorRenewal = $prices->renewal(2, $bound[2]->fingerprint, 'com', 'USD', $clock->now());
 $ns->quarantine = true;
 same(['synced' => 1, 'failed' => [], 'quarantined' => ['.com']], $sync->refresh(2, $context(2)), 'Malformed sold ending quarantines while valid compound ending imports');
-$reject(fn () => $sellers->selection('com', 'register', 1, $clock->now()));
-$reject(fn () => DB::transaction(fn () => $sellers->admit([$oldCart], $clock->now())));
+$reject(fn () => $sellers->selection('com', 'register', 1, $clock->now()), 'Seller action or term is unavailable.');
+$reject(fn () => DB::transaction(fn () => $sellers->admit([$oldCart], $clock->now())), 'Seller action or term is unavailable.');
 $quarantined = Price::where('server_id', 2)->where('tld', 'com')->orderBy('id')->get();
 foreach ($quarantined as $price) {
     same(null, $price->wholesale, 'Quarantined unknown never becomes zero');
@@ -192,14 +197,14 @@ same($snapshot, Price::where('server_id', 2)->where('tld', 'com')->orderBy('id')
 $unavailable = static fn (string $ending, DateTimeImmutable $at) => new \Paymenter\Extensions\Servers\Domains\Data\CatalogueUnavailable($bound[2], $ending, $at);
 $accepted = CatalogueAcceptances::load($bound[2]);
 foreach ([$clock->now()->modify('-1 second'), $clock->now()->modify('+1 second')] as $invalidAt) {
-    $reject(fn () => $prices->unavailable($unavailable('com', $invalidAt), $accepted, static fn () => null, $clock->now()));
+    $reject(fn () => $prices->unavailable($unavailable('com', $invalidAt), $accepted, static fn () => null, $clock->now()), ($invalidAt < $clock->now() ? 'Stale quarantine.' : 'Unaccepted quarantine.'));
 }
 same($snapshot, Price::where('server_id', 2)->where('tld', 'com')->orderBy('id')->get()->toJson(), 'Stale/future quarantine keeps revisions and evidence');
-$reject(fn () => $prices->unavailable($unavailable('com', $clock->now()), $a1, static fn () => null, $clock->now()));
+$reject(fn () => $prices->unavailable($unavailable('com', $clock->now()), $a1, static fn () => null, $clock->now()), 'Registrar account binding mismatch.');
 $neverPriced = new CatalogueAcceptance($bound[2], $accepted->revision, ['feedback' => $row]);
 $prices->unavailable($unavailable('feedback', $clock->now()), $neverPriced, static fn () => null, $clock->now());
 same(3, Price::where('server_id', 2)->where('tld', 'feedback')->whereNull('wholesale')->count(), 'Never-priced quarantine records all accepted actions as unknown');
-$reject(fn () => $prices->current(2, $bound[2]->fingerprint, 'feedback', 'register', 1, 'USD', $clock->now()));
+$reject(fn () => $prices->current(2, $bound[2]->fingerprint, 'feedback', 'register', 1, 'USD', $clock->now()), 'No current eligible price.');
 $prior = DB::table('domains_prices')->where('server_id', 2)->get()->toJson();
 $ns->during = fn () => CatalogueAcceptances::save($bound[2], 1, ['com' => $row, 'co.uk' => $row]);
 same(0, $sync->refresh(2, $context(2))['synced'], 'Quarantine cannot bypass acceptance revision race');
@@ -208,24 +213,24 @@ $ns->quarantine = false;
 same(2, $sync->refresh(2, $context(2))['synced'], 'Fresh valid evidence recovers quarantined ending');
 $oldCart = $sellers->selection('com', 'register', 1, $clock->now());
 $revoked = CatalogueAcceptances::save($bound[2], 2, ['com' => [...$row, 'renewal_safe' => false], 'co.uk' => $row]);
-$reject(fn () => $sellers->selection('com', 'register', 1, $clock->now()));
-$reject(fn () => DB::transaction(fn () => $sellers->admit([$oldCart], $clock->now())));
+$reject(fn () => $sellers->selection('com', 'register', 1, $clock->now()), 'Acquisition acceptance unavailable.');
+$reject(fn () => DB::transaction(fn () => $sellers->admit([$oldCart], $clock->now())), 'Acquisition acceptance unavailable.');
 $prior = DB::table('domains_prices')->where('server_id', 2)->get()->toJson();
 $ns->during = fn () => CatalogueAcceptances::save($bound[2], 3, ['com' => $row, 'co.uk' => $row]);
 same(0, $sync->refresh(2, $context(2))['synced'], 'Revision change during read rejects all stale results');
 same($prior, DB::table('domains_prices')->where('server_id', 2)->get()->toJson(), 'Acceptance race retains old evidence');
 $calls = $ns->calls;
-$reject(fn () => $sync->refresh(2, $context(1))); same($calls, $ns->calls, 'Wrong context binding refuses before reads');
+$reject(fn () => $sync->refresh(2, $context(1)), 'Registrar account binding mismatch.'); same($calls, $ns->calls, 'Wrong context binding refuses before reads');
 $bindings->setProcessing(2, false); // spending pause does not discard holder observation authority
 same(2, $sync->refresh(2, $context(2))['synced'], 'Paused account still refreshes holder prices');
 $calls = $ns->calls;
 $setting = Server::findOrFail(2)->settings()->where('key', 'domains_credentials')->firstOrFail();
 $setting->value = json_encode(['key' => 'changed-without-verification']); $setting->save();
-$reject(fn () => $sync->refresh(2, $context(2))); same($calls, $ns->calls, 'Unverified credentials refuse before reads');
+$reject(fn () => $sync->refresh(2, $context(2)), 'Registrar configuration could not be verified.'); same($calls, $ns->calls, 'Unverified credentials refuse before reads');
 $bindings->configure(2, 'namesilo', Environment::Test, ['key' => 'synthetic-private-key']);
 Server::findOrFail(2)->update(['enabled' => false]);
-$reject(fn () => $sync->refresh(2, $context(2))); same($calls, $ns->calls, 'Disabled server refuses before read');
-$reject(fn () => DB::transaction(fn () => $sync->refresh(1, $context(1))));
+$reject(fn () => $sync->refresh(2, $context(2)), 'Domains server is unavailable.'); same($calls, $ns->calls, 'Disabled server refuses before read');
+$reject(fn () => DB::transaction(fn () => $sync->refresh(1, $context(1))), 'Catalogue reads must finish outside locks.');
 // Bounded Enom runs rotate their starting suffix and expose explicit scheduler subsets.
 $enom->noPrice = false;
 $enAcceptance = CatalogueAcceptances::load($bound[1]);
@@ -235,7 +240,7 @@ $clock->at = $clock->at->modify('+1800 seconds');
 $next = $sync->refresh(1, $context(1, 5)); same(1, $next['synced'], 'Next cadence serves the other ending');
 expect($first['failed'] !== $next['failed'], 'Tail ending is not permanently starved');
 same(1, $sync->refresh(1, $context(1, 5), new CatalogueFreshness, ['net'])['synced'], 'Explicit bounded subset reaches tail holder');
-$reject(fn () => $sync->refresh(1, $context(1), new CatalogueFreshness, ['invalid']));
+$reject(fn () => $sync->refresh(1, $context(1), new CatalogueFreshness, ['invalid']), 'Unaccepted refresh subset.');
 $clock->at = $clock->at->modify('+2 hours');
 same(true, $prices->renewal(2, $bound[2]->fingerprint, 'com', 'USD', $clock->now())->retained, 'Failure margin expiry retains holder retail');
 $nativeSuccessful = true;

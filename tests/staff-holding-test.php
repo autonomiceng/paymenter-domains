@@ -39,7 +39,8 @@ $clock->instant=$clock->now()->modify('+901 seconds');commerceReject(fn()=>$revi
 $key=$ticket($d,'stop');$staff->role->update(['permissions'=>['admin.domains.view']]);commerceReject(fn()=>$review->run($staff,$d->id,'stop',$key,'Revoked role refused'));
 $staff->role->update(['permissions'=>$permissions]);
 $key=$ticket($d,'stop');commerceReject(fn()=>$review->run($staff,$d->id,'stop',$key,"Bad\nreason"));
-$review->run($staff,$d->id,'stop',$ticket($d,'stop'),str_repeat('é',300));same(str_repeat('é',300),$d->fresh()->renewal_policy['staff_holdings'][1]['reason'],'Multibyte reason uses characters consistently');
+foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>$review->run($staff,$d->id,'stop',$ticket($d,'stop'),$bad));}
+$review->run($staff,$d->id,'stop',$ticket($d,'stop'),str_repeat('🦦',500));same(str_repeat('🦦',500),$d->fresh()->renewal_policy['staff_holdings'][1]['reason'],'Multibyte reason uses characters consistently');
 $review->run($staff,$d->id,'stop',$ticket($d,'stop'),'Customer stops future invoices');same(true,$d->fresh()->renewal_policy['renewals_stopped'],'Stop records future billing policy');
 same(null,$billing->invoice($d->id),'Scheduled stop skips quietly');commerceReject(fn()=>$billing->invoice($d->id,$user));
 commerceReject(fn()=>$cycles->complimentary($d->id,$staff,1,new Paymenter\Extensions\Servers\Domains\Data\Money('8.95','USD'),'stopped_cycle'));

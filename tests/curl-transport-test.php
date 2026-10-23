@@ -6,7 +6,7 @@ require dirname(__FILE__).'/bootstrap.php';
 // Exercise redaction even when the host includes arguments in exception traces.
 ini_set('zend.exception_ignore_args', '0');
 
-function curl_init(): object { return new \stdClass; }
+function curl_init(): object { ++$GLOBALS['curlFake']['inits']; return new \stdClass; }
 function curl_setopt_array($handle, array $options): bool { $GLOBALS['curlFake']['options'] = $options; return true; }
 function curl_exec($handle): bool
 {
@@ -21,7 +21,7 @@ function curl_getinfo($handle, int $option): int { return $GLOBALS['curlFake']['
 function curl_close($handle): void { ++$GLOBALS['curlFake']['closed']; }
 function fake(array $overrides = []): void
 {
-    $GLOBALS['curlFake'] = $overrides + ['options' => [], 'calls' => 0, 'closed' => 0,
+    $GLOBALS['curlFake'] = $overrides + ['options' => [], 'calls' => 0, 'inits' => 0, 'closed' => 0,
         'timeout' => false, 'chunks' => ['{}'], 'status' => 200];
 }
 
@@ -40,7 +40,7 @@ foreach ([0, -1, 25001] as $timeoutMs) {
     try { $transport->sendWithin(Environment::Sandbox, RequestContext::Background, RegistrarRequest::balance(), 'test-api-key', $timeoutMs); }
     catch (\InvalidArgumentException) { $refused = true; }
     same(true, $refused, "Invalid deadline {$timeoutMs} ms refused");
-    same(0, $GLOBALS['curlFake']['calls'], "Invalid deadline {$timeoutMs} ms never dispatches");
+    same([0, 0], [$GLOBALS['curlFake']['inits'], $GLOBALS['curlFake']['calls']], "Invalid deadline {$timeoutMs} ms never dispatches");
 }
 foreach ([Environment::Live, Environment::Sandbox] as $environment) {
     foreach ([RequestContext::Interactive, RequestContext::Background] as $context) {
@@ -90,11 +90,11 @@ try {
     $transport->send(Environment::Sandbox, RequestContext::Background, PurchaseMapping::renew('example.com', 1, false), 'test-api-key');
     throw new \RuntimeException('Draft renewal reached transport');
 } catch (\TypeError) {
-    same(0, $GLOBALS['curlFake']['calls'], 'Direct transport structurally blocks purchase mapping');
+    same([0, 0], [$GLOBALS['curlFake']['inits'], $GLOBALS['curlFake']['calls']], 'Direct transport structurally blocks purchase mapping');
 }
 putenv('SSLKEYLOGFILE=synthetic-keylog');
 same(Outcome::Unknown, $client->execute(RegistrarRequest::balance(), RequestContext::Background)->outcome, 'TLS key logging guard');
-same(0, $GLOBALS['curlFake']['calls'], 'TLS logging blocks before dispatch');
+same([0, 0], [$GLOBALS['curlFake']['inits'], $GLOBALS['curlFake']['calls']], 'TLS logging blocks before dispatch');
 putenv('SSLKEYLOGFILE');
 
 echo "Transport: synthetic HTTPS options, routing, streaming cap, redirects and timeouts passed.\n";

@@ -50,7 +50,7 @@ final class WatchSource extends WatchRecord
     public function retire(string $reason): void
     {
         DB::transaction(function () use ($reason): void {
-            if (trim($reason) === '' || strlen($reason) > 1000) { throw new \DomainException('A retirement reason is required.'); }
+            if (trim($reason) === '' || !\Paymenter\Extensions\Servers\Domains\Services\StaffReason::valid($reason,1,1000)) { throw new \DomainException('A retirement reason is required.'); }
             if (!$this->exists || $this->isDirty()) { throw new \DomainException('Retirement requires an unchanged saved source.'); }
             $saved = self::whereKey($this->getRawOriginal('id'))->lockForUpdate()->firstOrFail();
             if ((int) $saved->revision !== (int) $this->getRawOriginal('revision')) { throw new \DomainException('The saved source changed.'); }

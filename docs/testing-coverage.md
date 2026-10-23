@@ -695,3 +695,76 @@ Known expired/grace/redemption remains bad, while a reported expiry-day boundary
 OwnedDomain retains its D3 matrix and serves owner forms and NativePresenter theme consumers.
 Real controller pages cover all/some/none owned test mixes; reserved public results retain the
 selected seller test flag when a private holding account is live. These checks stay offline.
+
+### Customer list chip density
+
+`Support/customer-polish-views.php` pins the list rule shared by the domain index and the
+"Related to your hosting" rows: state chips first, then known evidence, then one chip for all
+missing axes. A freshness chip (Not checked yet, then Checks are out of date, then Checks partly
+complete) covers missing axes; otherwise a single muted "Some details unavailable" chip does.
+A row with three unknown axes renders exactly one muted chip. An exhaustive DNS/pointer/partial
+matrix asserts the collapse never adds a label, never shows a per-axis unknown chip, and never
+gives unknown or partial evidence a positive or empty-case label. Shuffled freshness states pin
+the priority order. The detail view still lists every axis and keeps the "Check details and
+timestamps" disclosure with its check times. Related rows keep the not-registered and no-coverage
+notices out of the chips, and managed context still hides adoption chips. Eight mutations (old
+order, uncollapsed related rows, gap plus freshness, kept unknown axes, invented "DNS only",
+swapped freshness priority, dropped managed exclusion, dropped check times) each fail the test.
+These checks are offline Blade/DOM checks.
+
+The domain index shows "Renewal off" once, in its Renewal column: the row drops the matching
+state chip only when that column says "Renewal off". Related rows, the compact summary and the
+detail summary have no Renewal column and keep the chip, as does a row whose column says
+something else or "Pending verification". The matrix asserts the column variant drops only that
+chip. Eight mutations (duplicate chip, chip dropped everywhere, related rows claiming the column,
+ignored column text, an extra dropped state, pending counted as shown, chip dropped from the
+managed detail, column text removed) each fail the test.
+
+### 2026-10-20 — staff reviews and active worker evidence
+
+`staff-operation-lease-test.php` uses real funded claims, seals and send verification
+with the existing fake clock and offline preflight. Recheck, reconciliation resume
+and scheduled-read resume are refused during a live running lease, in both the
+claim→seal and seal→verifySend windows. The UI hides all review actions; a stale
+callback returns fixed user-safe text. Equal-to-now, past and absent leases retain
+staff recheck/reconciliation recovery. A read-finished audit also refuses a lease
+acquired during unlocked I/O, retaining the durable requested audit unchanged.
+No claim-evidence comparison or append-only guarantee is relaxed.
+
+`staff-reason-test.php` checks four/500/501 Unicode characters, invalid UTF-8,
+control characters, actual Filament form/server behavior and safe refusal text.
+Arbitrary DomainException/runtime messages remain behind the generic notification.
+Settings, holdings, contact recovery, acquisition retirement, reminder schedules,
+watch writes/mappings/profiles, notice resend and PSL tests cover their own Unicode
+limits. Adoption already validates UTF-8 and its max-only 500-character form rule.
+Watch storage's internal 1000-character limit and the PSL 1000-character rule remain
+distinct from the usual staff 5–500 and resend 10–500 rules.
+
+Staff audit removal/empty replacement changes only `staff_actions`. Management
+policy removal changes only `management`; management read-history removal/empty
+replacement preserves every unrelated attempt key. Temporary guard-removal
+mutations must make each isolated refusal assertion fail, with the guards restored
+before the full suite. These are sequential synthetic SQLite interleavings, not
+shared-database concurrency, provider acceptance or production evidence.
+
+## Transport refusals before cURL setup
+
+`tests/enom-curl-test.php` and `tests/curl-transport-test.php` count `curl_init` as well as `curl_exec`. Every pre-dispatch refusal (invalid deadline or credentials, TLS key logging, unsafe parameters, purchase mapping) asserts that no handle was created and no request was sent.
+
+### Staff watch findings
+
+`staff-watch-findings-test.php` renders the native staff watch list and detail over eight
+synthetic watches (healthy, confirmed and unconfirmed nameserver change, expiry reached,
+expiry within 30 days, out-of-date registry, not checked, paused). Each row's findings must
+equal the customer `DomainSummaries` state keys, render with the customer tones, and show
+"No findings" when healthy. The native attention filter must return exactly the six actionable
+rows. Customer name and email appear only with `admin.users.view`; the native user link also
+needs `admin.users.update`; revocation falls back on the next request. List, filter and
+detail GETs leave work, observation, registry and notice rows unchanged. Query counts are
+equal for 1 and 25 rows of one customer and for a 25-row page across one or five customers.
+The filter evaluates the first 1,000 active names once per request in batches of at most 250;
+applying it costs one more render plus one multi-owner batch per chunk. Mutations to the attention rule, permission
+checks, expiry window, tones, stopped-watch handling and the filter memo each fail this test.
+Offline only; no installed or live checks.
+
+`staff-watch-findings-test.php` also pins the watch detail header: its flex bases apply only at 40rem and wider. Below that Filament stacks the header as a column, where a flex basis becomes height and left about 800 px of blank space above Findings at 375 px.

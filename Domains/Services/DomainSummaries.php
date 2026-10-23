@@ -25,9 +25,11 @@ final class DomainSummaries
             if ($dto && in_array((int)$s->service_id,array_column($dto->relatedServices,'id'),true)) { $out[$s->service_id]=$dto; } }
         return $out;
     }
-    private function latest(string $model,string $column,array $ids,int $owner): array
+    private function latest(string $model,string $column,array $ids,?int $owner): array
     {
-        $q=$model::where('user_id',$owner)->whereIn($column,$ids);
+        $q=$model::whereIn($column,$ids);
+        if ($owner!==null) { $q->where('user_id',$owner); }
+        else { $q->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_watch_names as w')->whereColumn('w.id',$model::make()->getTable().'.watch_id')->whereColumn('w.user_id',$model::make()->getTable().'.user_id')); }
         $group=[$column];if ($model!==WatchRegistryObservation::class) { $group[]='check_kind'; }
         $ids=(clone $q)->selectRaw('max(id)')->groupBy(...$group);
         foreach ($model===WatchRegistryObservation::class?['result']:['dns','website','email'] as $axis) {
@@ -40,10 +42,18 @@ final class DomainSummaries
     {
         $domainIds=array_unique($domainIds);$watchIds=array_unique($watchIds);
         if (count($domainIds)+count($watchIds)>250) { throw new \InvalidArgumentException('At most 250 targets per batch.'); }
-        $now??=time();$uid=(int)$owner->id;$c=new DomainSummaryContext($uid,$domainIds,$watchIds);
+        return $this->summaries(new DomainSummaryContext((int)$owner->id,$domainIds,$watchIds),$now??time());
+    }
+    /** Staff-only multi-owner watch projection. Customer batch() always retains its owner-scoped context. */
+    public function staffWatches(array $watchIds,?int $now=null): array
+    { return $this->summaries(DomainSummaryContext::staffWatches(array_unique($watchIds)),$now??time()); }
+    private function summaries(DomainSummaryContext $c,int $now): array
+    {
+        if ($c->staff && $c->domains) { throw new \LogicException('Staff watch context cannot include managed domains.'); }
+        $uid=$c->owner;
         $dids=array_keys($c->domains);$wids=array_keys($c->watches);
-        $dns=['watch'=>$this->latest(WatchDnsObservation::class,'watch_id',$wids,$uid),'managed'=>$this->latest(ManagedPublicObservation::class,'domain_id',$dids,$uid)];
-        $registry=$this->latest(WatchRegistryObservation::class,'watch_id',$wids,$uid);
+        $dns=['watch'=>$this->latest(WatchDnsObservation::class,'watch_id',$wids,$c->staff?null:$uid),'managed'=>$this->latest(ManagedPublicObservation::class,'domain_id',$dids,$uid)];
+        $registry=$this->latest(WatchRegistryObservation::class,'watch_id',$wids,$c->staff?null:$uid);
         $work=['watch'=>DB::table('domains_watch_work')->whereIn('watch_id',$wids)->get()->groupBy('watch_id')->all(),
             'managed'=>DB::table(ManagedPublicWorkSchema::TABLE)->whereIn('domain_id',$dids)->whereNull('retired_at')->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_domains as d')->whereColumn('d.id','domain_id')->whereColumn('d.authority_generation','generation'))->get()->groupBy('domain_id')->all()];
         $adoptions=Adoption::whereIn('id',array_map(fn($d)=>$d->adoption_id,$c->domains))->get()->keyBy('id');
@@ -54,13 +64,14 @@ final class DomainSummaries
         $cycles=Operation::whereIn('id',Operation::selectRaw('max(domains_operations.id)')->join('domains_domains as d','d.id','=','domains_operations.domain_id')->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')->where('action','renew')->groupBy('domain_id'))->limit(250)->get()->groupBy('domain_id');
         $acquisitions=Operation::whereIn('id',Operation::selectRaw('max(domains_operations.id)')->join('domains_domains as d','d.id','=','domains_operations.domain_id')->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')->whereIn('action',['register','transfer'])->groupBy('domain_id'))->limit(250)->get()->keyBy('domain_id');
         $invoices=Invoice::where('user_id',$uid)->whereIn('id',$cycles->flatten()->pluck('invoice_id'))->get()->keyBy('id');
-        $names=[...array_map(fn($d)=>$d->domain,$c->domains),...array_map(fn($w)=>$w->canonical_name,$c->watches)];
-        $noticeStates=DB::table('domains_watch_notice_state')->where('user_id',$uid)->whereIn('scope',array_map(fn($n)=>WatchNoticePreferences::scope($uid,$n),$names))->get()->keyBy('scope');
+        $targets=[...$c->domains,...$c->watches];
+        $scopes=array_map(fn($t)=>WatchNoticePreferences::scope((int)$t->user_id,$t instanceof WatchName?$t->canonical_name:$t->domain),$targets);
+        $noticeStates=DB::table('domains_watch_notice_state')->whereIn('user_id',$c->staff?array_map(fn($w)=>$w->user_id,$c->watches):[$uid])->whereIn('scope',$scopes)->get()->keyBy('scope');
         $transferEndings=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('transfer_enabled',true)->pluck('tld')->all();
         $items=InvoiceItem::whereIn('id',$cycles->flatten()->pluck('invoice_item_id'))->get()->keyBy('id');$out=[];
         foreach (['managed'=>$c->domains,'watch'=>$c->watches] as $kind=>$targets) {
             foreach ($targets as $id=>$t) {
-                $stamp=$c->stamp($kind,$id);$rows=$dns[$kind][$id]??collect();$jobs=$work[$kind][$id]??collect();$fresh=[];$signals=[];$lastKnown=[];
+                $uid=(int)$t->user_id;$stamp=$c->stamp($kind,$id);$rows=$dns[$kind][$id]??collect();$jobs=$work[$kind][$id]??collect();$fresh=[];$signals=[];$lastKnown=[];
                 foreach (['dns'=>'delegation','website'=>'points','email'=>'points'] as $axis=>$family) {
                     $attempt=$rows->firstWhere('check_kind',$family);$row=$rows->first(fn($r)=>$r->check_kind===$family && $r->{$axis}!==null);$job=$jobs->firstWhere('kind',$family);
                     $match=$row && $stamp && hash_equals($stamp,$row->facts['presentation_stamp']??'');
@@ -112,7 +123,7 @@ final class DomainSummaries
                     if ($due && $due<=gmdate('Y-m-d',$now)) { $due=null; }
                 }
                 $delegation=$rows->firstWhere('check_kind','delegation');$expected=$kind==='watch'?$t->expected_dns:($c->configs[$id]->expected_dns??null);
-                $scope=WatchNoticePreferences::scope($uid,$kind==='watch'?$t->canonical_name:$t->domain);$episode=$noticeStates[$scope]??null;
+                $scope=WatchNoticePreferences::scope($uid,$kind==='watch'?$t->canonical_name:$t->domain);$episode=$noticeStates[$scope]??null;if ($episode && (int)$episode->user_id!==$uid) { $episode=null; }
                 try { $episode=$episode?json_decode(Crypt::decryptString($episode->data),true,64,JSON_THROW_ON_ERROR):[]; if (!is_array($episode) || !is_array($episode['portal']??[]) || array_filter($episode['portal']??[],fn($v)=>!is_array($v) || array_filter($v,fn($key)=>!is_string($key)))) { $episode=[]; } } catch (\Throwable) { $episode=[]; }
                 $noticeKeys=($episode['target']??null)===[$kind,(int)$id]?array_values(array_unique(array_merge(...array_values($episode['portal']??[[]])))):[];$noticeDates=[];
                 if ($expected==='platform' && !$signals['dns']['stale'] && $signals['dns']['value']==='external') {

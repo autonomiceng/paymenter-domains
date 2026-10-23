@@ -19,6 +19,7 @@
   ],
   "contracts": [
     "tests/ote-reconciliation-test.php",
+    "tests/ote-transport-cache-test.php",
     "tests/namesilo-contact-readback-test.php",
     "tests/profile-diagnostics-test.php",
     "tests/driver-contract-test.php",
@@ -232,7 +233,11 @@
     "tests/domain-summaries-test.php",
     "tests/domain-summary-managed-test.php",
     "tests/domain-portal-test.php",
-    "tests/staff-watch-test.php"
+    "tests/staff-watch-test.php",
+    "tests/staff-operation-lease-test.php",
+    "tests/staff-reason-test.php",
+    "tests/staff-watch-findings-test.php",
+    "tests/staff-watch-summary-owners-test.php"
   ],
   "ui": [],
   "runner": [

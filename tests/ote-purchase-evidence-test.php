@@ -71,7 +71,12 @@ $probe = static function (string $scenario): array {
         } else { same(['registerDomain'], $calls, 'Changed evidence refused before reconciliation'); }
         foreach ([$wire->domain, '8.9500'] as $leak) {
             $wire->receipt['leak'] = $leak; $refused = false;
-            try { $wire->save(); } catch (Throwable) { $refused = true; }
+            try { $wire->save(); } catch (Throwable $error) {
+                same(RuntimeException::class, $error::class, 'Private evidence refusal class');
+                same('Private attempt receipt leak refused.',
+                    $error->getMessage(), 'Private evidence refusal must name its guard: '.$scenario.'; received '.$error->getMessage());
+                $refused = true;
+            }
             expect($refused, 'Private name or amount injection into receipt refused');
             unset($wire->receipt['leak']);
         }

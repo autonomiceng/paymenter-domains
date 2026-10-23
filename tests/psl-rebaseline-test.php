@@ -16,14 +16,14 @@ $preview=$reviews->preview();same(10,$preview['removed']['icann']['count'],'ICAN
 $staff=staffUser([Staff::VIEW,'admin.domains.watch.view']);
 $refused=false;try{$reviews->accept($staff,$hash,substr($hash,0,12),'Reviewed');}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$refused=$e->getStatusCode()===403;}expect($refused,'Default manage denial');
 $staff->role()->first()->update(['permissions'=>[Staff::VIEW,'admin.domains.watch.view','admin.domains.watch.manage']]);
-foreach ([[$hash,'wrong','Reviewed'],[$hash,substr($hash,0,12),''],[str_repeat('f',64),str_repeat('f',12),'Reviewed']] as [$h,$confirmation,$reason]) {
+foreach ([[$hash,'wrong','Reviewed'],[$hash,substr($hash,0,12),''],[$hash,substr($hash,0,12),str_repeat('é',1001)],[$hash,substr($hash,0,12),"valid\xff"],[str_repeat('f',64),str_repeat('f',12),'Reviewed']] as [$h,$confirmation,$reason]) {
     $refused=false;try{$reviews->accept($staff,$h,$confirmation,$reason);}catch(PslFailure){$refused=true;}expect($refused,'Hash, confirmation and reason required');same($original,$lists->revision(),'Refusal retains good copy');
 }
 // Even hash-consistent privileged replacement cannot bypass current sentinel validation.
 $bad=str_replace("\ncom\n","\n",$body);DB::table('domains_psl_candidates')->update(['revision'=>hash('sha256',$bad),'compressed_body'=>base64_encode(gzencode($bad))]);
 $refused=false;try{$reviews->accept($staff,hash('sha256',$bad),substr(hash('sha256',$bad),0,12),'Reviewed');}catch(PslFailure $e){$refused=$e->safeCode==='sentinel_missing';}expect($refused,'Sentinels never bypassable');
 DB::table('domains_psl_candidates')->update(['revision'=>$hash,'compressed_body'=>base64_encode(gzencode($body))]);
-$reviews->accept($staff,$hash,substr($hash,0,12),'Verified removal against source');same($hash,$lists->revision(),'Accepted exact candidate becomes last good');same(null,$reviews->pending(),'Consumed candidate');same(0,(int)$lists->status()->consecutive_failures,'Acceptance clears unsuccessful-attempt count');
+$reviews->accept($staff,$hash,substr($hash,0,12),str_repeat('🦦',1000));same($hash,$lists->revision(),'Accepted exact candidate becomes last good');same(null,$reviews->pending(),'Consumed candidate');same(0,(int)$lists->status()->consecutive_failures,'Acceptance clears unsuccessful-attempt count');
 $audit=WatchAudit::firstOrFail();same('psl_rebaseline',$audit->event,'Audit event');same($staff->id,$audit->actor_id,'Audit actor');same($original,$audit->before_revision,'Audit baseline');same($hash,$audit->after_revision,'Audit exact hash');same(10,$audit->data['removed']['icann']['count'],'Encrypted review evidence');
 foreach ([fn()=>$audit->update(['reason'=>'rewrite']),fn()=>$audit->delete()] as $mutation) { $refused=false;try{$mutation();}catch(DomainException){$refused=true;}expect($refused,'Audit append-only'); }
 // Simulate a previously validated rule now refused by ICU; no invalid new rule is accepted.

@@ -24,7 +24,7 @@ final class WatchNoticeReview
     }
     public static function resend(User $actor,int $id,int $nativeId,string $reason,string $requestKey,int $now,WatchNoticeDelivery $delivery): ?int
     {
-        if (DB::transactionLevel()!==0 || strlen(trim($reason))<10 || strlen($reason)>500 || !preg_match('/\A[a-f0-9]{64}\z/D',$requestKey)) { throw new \DomainException('Native evidence, reason and request key are required.'); }
+        if (DB::transactionLevel()!==0 || !StaffReason::valid(trim($reason),10,500) || !preg_match('/\A[a-f0-9]{64}\z/D',$requestKey)) { throw new \DomainException('Native evidence, reason and request key are required.'); }
         $r=DB::transaction(function()use($actor,$id,$nativeId,$reason,$requestKey,$now):array {
             abort_unless(self::allowed((int)$actor->id,DB::transactionLevel()>0),403);
             $d=DB::table('domains_watch_deliveries')->where('id',$id)->lockForUpdate()->first();

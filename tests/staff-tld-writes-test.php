@@ -12,8 +12,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review
 $f=commerceFixture(true);extract($f);tldPanel();Carbon\Carbon::setTestNow($now);$t=$tlds[0];
 $permissions=[Staff::VIEW,Staff::POLICY,Staff::COSTS];foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
 $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($native,$sellers,$bindings,true);app()->instance(StaffSettingsWrites::class,$writer);
-$review=static fn(string $action,?int $ending=null,?int $account=null,?string $stamp=null,?string $key=null)=>new Review($u->id,$account??$t->server_id,$ending,$action,
-    $key??Review::ticket($u->id,$account??$t->server_id,$ending,$action,$stamp??Review::stamp($account??$t->server_id,$ending)),'Synthetic reviewed change');
+$review=static fn(string $action,?int $ending=null,?int $account=null,?string $stamp=null,?string $key=null,string $reason='Synthetic reviewed change')=>new Review($u->id,$account??$t->server_id,$ending,$action,
+    $key??Review::ticket($u->id,$account??$t->server_id,$ending,$action,$stamp??Review::stamp($account??$t->server_id,$ending)),$reason);
 $fixed=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'1.00','fixed_renew'=>'1.00','fixed_transfer'=>'1.00'];
 foreach(array_keys(Review::ACTIONS) as $action){
     $page=Livewire::actingAs($u)->test(in_array($action,['configure','probe','acceptance','history','processing','delivery_review','alert_review'],true)?RegistrarSetup::class:ViewTld::class,
@@ -34,7 +34,8 @@ foreach(array_keys(Review::ACTIONS) as $action){
     $bad=$review($action,$setup?null:$t->id,null,str_repeat('0',64));
     commerceReject(fn()=>$writer->run($bad,['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'account-enom'],'history_action'=>'register'], $now));
 }
-$r=$review('default_rule',$t->id);$writer->run($r,$fixed,$now);same('fixed',(new PricingRules)->defaultRule($t->server_id)['mode'],'Default saved');
+foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>$writer->run($review('default_rule',$t->id,reason:$bad),$fixed,$now));}
+$r=$review('default_rule',$t->id,reason:str_repeat('🦦',500));$writer->run($r,$fixed,$now);same('fixed',(new PricingRules)->defaultRule($t->server_id)['mode'],'Default saved');
 expect(str_contains(TldFacts::salesState($t->fresh()),'publish required'),'Unpublished rule blocks ready status');
 expect(str_contains(implode(' ',array_column(TldFacts::prices($t->fresh()),'warning')),'Rule changed'),'Unpublished rule has visible alert');
 commerceReject(fn()=>$writer->run($r,$fixed,$now)); // replay

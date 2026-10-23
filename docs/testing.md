@@ -671,3 +671,10 @@ this narrow adapter when those files change.
 Staff watch coverage uses native Filament pages, fresh permission checks and actor-bound one-use revision tickets.
 It exercises stale/revoked actions, local queue wakeup limits, retained leases, disabled configuration saves,
 separate reviewed enablement, archived source links, schema drift and read-only pending adoption.
+
+Staff watch summaries batch up to 250 watches across owners using the same local projection
+as customer summaries. `staff-watch-summary-owners-test` compares every DTO field against
+per-owner batches, checks constant queries for 25 rows across 1/5/25 customers, and injects
+foreign-owner DNS/registry/source/native identities to verify isolation. Fresh watch-view
+permission is required. The attention filter evaluates the first 1,000 active names in four
+bounded batches; the cap bounds local decryption and response work, with no provider reads.

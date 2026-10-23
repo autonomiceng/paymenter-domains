@@ -60,7 +60,7 @@ class PublicSuffixList extends Page
                     return [Hidden::make('revision')->default($preview['revision'] ?? ''),
                         TextEntry::make('changes')->label('Removed rules')->state(self::removedRules($preview))->listWithLineBreaks(),
                         TextInput::make('confirmation')->label('Type '.substr($preview['revision'] ?? '', 0, 12).' to confirm')->required()->in([substr($preview['revision'] ?? '', 0, 12)]),
-                        Textarea::make('reason')->label('Reason')->required()->maxLength(1000)->rules([fn() => function ($attribute, $value, $fail): void { if (strlen($value) > 1000) { $fail('Use at most 1000 bytes for the reason.'); } }])];
+                        Textarea::make('reason')->label('Reason')->required()->maxLength(1000)->rules([fn() => function ($attribute, $value, $fail): void { if (!\Paymenter\Extensions\Servers\Domains\Services\StaffReason::valid($value,1,1000)) { $fail('Use at most 1000 characters and valid UTF-8 for the reason.'); } }])];
                 })->action(function (array $data): void {
                     self::requireManage();
                     try { app(PslRebaseline::class)->accept(auth()->user(), $data['revision'], $data['confirmation'], $data['reason']); }

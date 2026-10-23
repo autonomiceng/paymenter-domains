@@ -13,7 +13,7 @@ final class WatchProfile extends WatchRecord
     protected function validateRecord(): void
     {
         if (!is_string($this->name) || trim($this->name) === '' || strlen($this->name) > 128 ||
-            !is_string($this->reason) || trim($this->reason) === '' || strlen($this->reason) > 1000 || (int) $this->edited_by < 1) {
+            !is_string($this->reason) || trim($this->reason) === '' || !\Paymenter\Extensions\Servers\Domains\Services\StaffReason::valid($this->reason,1,1000) || (int) $this->edited_by < 1) {
             throw new \DomainException('A profile name, actor and reason are required.');
         }
         $profile = $this->profile();

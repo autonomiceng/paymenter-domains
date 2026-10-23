@@ -27,7 +27,9 @@ same('queued',$op->fresh()->state,'Unattempted hold queues through explicit writ
 $audit=$op->fresh()->policy['staff_actions'][0]; same($staff->id,$audit['actor_id'],'Current staff audited');
 same('held',$audit['before']['state'],'Before retained');same('queued',$audit['after']['state'],'After retained');
 commerceReject(fn()=>$run($op,'release',$key));
-commerceReject(fn()=>$op->fresh()->update(['policy'=>[]]));
+foreach([array_diff_key($op->fresh()->policy,['staff_actions'=>true]),[...$op->fresh()->policy,'staff_actions'=>[]]] as $changed){
+    commerceReject(fn()=>$op->fresh()->update(['policy'=>$changed]));
+}
 echo "Release guard passed.\n";
 // Authorized native hold and refund confirmations invoke only the engine refund path.
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('hold',['reason'=>'Pause for customer review'])->assertNotified('Review recorded');
@@ -51,7 +53,7 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->c
 echo "Native disposition passed.\n";
 // Open page and old tickets cannot act after state changes, expiration, domain spoofing or role revocation.
 $stale=$held('staff-stale.com');$open=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$stale->id]);$key=$ticket($stale,'release');
-$stale->update(['safe_code'=>'funding']);$open->callAction('release',['reason'=>'Stale review cannot resume'])->assertNotified(Notification::make()->danger()->title('Review refused')->body('Reload this page and review current permissions, funding and retained evidence.'));
+$stale->update(['safe_code'=>'funding']);$open->callAction('release',['reason'=>'Stale review cannot resume'])->assertNotified(Notification::make()->danger()->title('Review refused')->body('This request changed. Reload this page.'));
 commerceReject(fn()=>$run($stale,'release',$key));
 $foreign=$held('staff-foreign.com');$key=$ticket($stale->fresh(),'refund');
 commerceReject(fn()=>$service->run($staff,$foreign->domain_id,$foreign->id,'refund',$key,'Cross domain review refused'));
