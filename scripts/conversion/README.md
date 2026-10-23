@@ -70,7 +70,7 @@ suppression identities, preventing duplicate catch-up delivery. Customized templ
 IDs/content/preferences; unsupported data/object/legacy-route references refuse. Compatibility
 variables preserve absent invoice as null (including isset/null comparisons), USD currency and a false automatic-renewal promise. Conflicting saved
 per-domain calendars/credit preferences need a reviewed prerequisite, not silent replacement.
-Both host profiles require the native default database `jobs` queue; other backends/connections/tables refuse.
+The dedicated profile requires the native default database `jobs` queue; other backends/connections/tables refuse.
 Known, unreserved legacy queue jobs are removed only with a durable ID map and encrypted
 original payload audit; native jobs are retained. Legacy attempts remain held for review,
 never fabricated as unsent, funded, neutral dispatch grants or new provider completions.
@@ -233,8 +233,8 @@ refuse. Unreadable system cron files are recorded and require operator review. O
 spools are not read. This inspection cannot discover indirect shell wrappers or remote
 triggers, user systemd timers, at jobs, periodic/anacron tasks or supervisor wrappers: inventory and disable them explicitly. A missing crontab executable refuses.
 
-Only `database` queues on the native default connection/table are supported; pending
-or reserved Enom/Domains jobs block app conversion. Do not broadly clear jobs. Drain or
+Both `database` and `sync` queues are supported in the app profile. Database queues require
+the native default connection/table; pending or reserved Enom/Domains jobs block app conversion. Do not broadly clear jobs. Drain or
 resolve registrar work under the legacy engine before maintenance; preserve unresolved
 outcomes and restart the entire stopped-window procedure. Native jobs and failed-job audit
 remain retained. The dedicated profile retains its reviewed known-job mapping/audit behavior.

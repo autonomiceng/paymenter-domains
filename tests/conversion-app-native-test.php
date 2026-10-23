@@ -98,12 +98,17 @@ file_put_contents($cache.'/unreadable','9999999999value');chmod($cache.'/unreada
 conversionRefuses(fn()=>QuietWindow::snapshot(),'Unreadable required cache refuses','Required app inventory');chmod($cache.'/unreadable',0600);unlink($cache.'/unreadable');
 config(['cache.stores.conversion_file.path'=>$temporary.'/missing']);Cache::forgetDriver('conversion_file');conversionRefuses(fn()=>QuietWindow::snapshot(),'Missing cache directory refuses','File cache inventory');
 config(['queue.default'=>'sync','queue.connections.sync'=>['driver'=>'sync']]);
-$appConverter=new Converter($evidence,$maintenance,'app');
-conversionRefuses(fn()=>$appConverter->run(),'App mapper refuses sync queue','Only native default database');
+$appConverter=new Converter($evidence,$maintenance,'app');expect($appConverter->run()['dry_run'],'App supports sync queue');
+$syncPlanner=new Planner($evidence,'app');Mapper::jobs($syncPlanner,true);same([],$syncPlanner->changes,'Explicit sync allowance leaves jobs unchanged');
+conversionRefuses(fn()=>Mapper::jobs(new Planner($evidence,'app')),'Mapper refuses sync by default','Only native default database');
+conversionRefuses(fn()=>Mapper::jobs(new Planner($evidence,'app'),false),'Mapper refuses sync without allowance','Only native default database');
 conversionRefuses(fn()=>(new Converter($evidence,$maintenance))->run(),'Dedicated queue policy unchanged','Only native default database');
-foreach([null,[],['driver'=>'sync','connection'=>DB::getDefaultConnection(),'table'=>'jobs'],['driver'=>'redis','connection'=>DB::getDefaultConnection(),'table'=>'jobs']]as$queue){
+foreach([null,[],(object)['driver'=>'sync'],['driver'=>'redis','connection'=>DB::getDefaultConnection(),'table'=>'jobs']]as$queue){
     config(['queue.connections.sync'=>$queue]);
-    conversionRefuses(fn()=>Mapper::jobs(new Planner($evidence)),'Mapper refuses every non-database queue','Only native default database');
+    foreach([false,true]as$allowSync){
+        conversionRefuses(fn()=>Mapper::jobs(new Planner($evidence),$allowSync),'Mapper refuses unsupported queues even with sync allowance','Only native default database');
+    }
+    conversionRefuses(fn()=>$appConverter->run(),'App refuses unsupported queues','Only native default database');
 }
 $default=['driver'=>'database','connection'=>DB::getDefaultConnection(),'table'=>'jobs'];
 config(['queue.default'=>'database','queue.connections.database'=>$default]);
