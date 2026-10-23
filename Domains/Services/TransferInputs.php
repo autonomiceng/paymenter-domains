@@ -128,7 +128,7 @@ final class TransferInputs
                 'transfer_timeout' => ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'deadline' => $deadline->format(DATE_ATOM)]];
             ContactSetup::recoveryWrite(fn () => $op->update(['state' => 'rejected', 'safe_code' => 'transfer_code_timeout', 'attempt' => $attempt, 'completed_at' => $this->clock->now()]));
             $l['domain']->update(['status' => 'transfer_rejected']);
-            $l['service']->update(['status' => 'cancelled', 'expires_at' => null]);
+            NativeDomainGuard::terminal($l, $op);
             return true;
         });
         return $rejected ? $this->refunds->creditRejected($id) : null;

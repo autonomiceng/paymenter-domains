@@ -12,7 +12,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 final class NativeDomainGuard
 {
     private bool $booted = false;
-    private static ?Service $projecting = null;
+    /** Exact-object, synchronous grants; never exposed to native forms or persisted. */
+    private static ?\WeakMap $projections = null;
     public function __construct(private readonly HolderPricing $pricing, private readonly Clock $clock) {}
 
     public function boot(): void
@@ -112,12 +113,12 @@ final class NativeDomainGuard
 
     private function saving(Service $service): void
     {
-        if (self::$projecting === $service) { return; }
+        if (self::identityProjection($service)) { return; }
         $domain = Domain::whereIn('service_id', self::ids($service))->first(); if (!$domain) { return; }
         self::assertSave($service, $domain, $this->clock->now(), $this->pricing);
     }
 
-    /** Single native save contract; callers own the ordered outer transaction for dirty prices. */
+    /** Native lifecycle saves continue; financial and binding edits require owned authority. */
     public static function assertSave(Service $service, Domain $domain, \DateTimeImmutable $now, HolderPricing $pricing): void
     {
         if ((int) $domain->service_id !== (int) $service->id) { throw new \DomainException('Foreign holding service.'); }
@@ -127,28 +128,22 @@ final class NativeDomainGuard
             throw new \DomainException('Managed service binding is permanent.');
         }
         if (!$service->isDirty('price')) { return; } // Lifecycle saves do not depend on stale retail/mode.
-        if (DB::transactionLevel() !== 1) { throw new \DomainException('Native price saves require an outer transaction.'); }
-        $locked = HoldingLocks::take($domain); $current = $locked['service'];
-        foreach (['product_id', 'plan_id', 'user_id', 'order_id', 'quantity', 'currency_code', 'coupon_id', 'price', 'status'] as $key) {
-            if ((string) $service->getRawOriginal($key) !== (string) $current->getRawOriginal($key)) { throw new \DomainException('Stale native service save.'); }
-        }
-        $retail = $pricing->renewal($locked['domain'], 'USD', $now, true, $locked['tld']);
-        if ($locked['domain']->price_mode !== 'standard' || $retail->retained
-            || PricingRule::minor($service->price) !== PricingRule::minor(self::gross($retail->retail, $locked['tax']))) {
-            throw new \DomainException('Native reprice requires fresh holding-account annual retail.');
-        }
+        throw new \DomainException('Managed pricing authority requires a dedicated audited transition.');
     }
 
     /** Internal initial checkout transition, validated against the just-frozen admitted checkout. */
     public static function initial(Service $service, Domain $domain): void
     {
         $c = $domain->snapshot['checkout'] ?? [];
-        if (DB::transactionLevel() !== 1 || $domain->provider_expires_at !== null
+        if (DB::transactionLevel() !== 1 || $domain->isDirty() || $domain->provider_expires_at !== null
             || (int) $service->id !== (int) $domain->service_id || (int) $service->plan_id !== ($c['annual_plan_id'] ?? null)
             || (int) $service->product_id !== ($c['product_id'] ?? null) || (int) $service->user_id !== ($c['user_id'] ?? null)
             || $service->expires_at !== null || RetailLine::decimal($service->price) !== ($c['annual_price'] ?? null)
             || array_diff(array_keys($service->getDirty()), ['plan_id', 'price', 'label', 'expires_at'])) { throw new \DomainException('Unadmitted initial projection.'); }
-        self::persist($service);
+        foreach (['id' => 'service_id', 'product_id' => 'product_id', 'plan_id' => 'plan_id', 'user_id' => 'user_id', 'order_id' => 'order_id'] as $key => $frozen) {
+            if ((int) $service->getRawOriginal($key) !== ($c[$frozen] ?? null)) { throw new \DomainException('Unadmitted initial projection.'); }
+        }
+        self::persist($service, $service->getRawOriginal(), $service->getDirty());
     }
 
     /** Caller holds HoldingLocks; retained retail is allowed only through this billing projection. */
@@ -156,19 +151,105 @@ final class NativeDomainGuard
     {
         if (DB::transactionLevel() !== 1) { throw new \LogicException('Projection requires holding locks.'); }
         $domain = $locked['domain']; $service = $locked['service'];
+        if (($locked['advisory'] ?? true) || $service->isDirty()) { throw new \DomainException('Holding native authority changed.'); }
         if ($domain->price_mode !== 'standard') { throw new \DomainException('Complimentary authority belongs to renewal execution.'); }
         $retail = $this->pricing->renewal($domain, 'USD', $this->clock->now(), true, $locked['tld']);
         $gross = self::gross($retail->retail, $locked['tax']);
-        $service->forceFill(['price' => $gross, 'expires_at' => null]); self::persist($service);
+        self::persist($service, $service->getRawOriginal(), ['price' => $gross, 'expires_at' => null]);
         return ['id' => $retail->id, 'revision' => $retail->revision, 'annual_net' => $retail->retail, 'annual_gross' => $gross,
             'currency' => 'USD', 'unit' => 'term_total', 'retained' => $retail->retained, 'staff_alert' => $retail->staffAlert];
     }
 
-    private static function persist(Service $service): void
+    /** The funding context selects the already locked object; callers cannot substitute a Service. */
+    public static function completeInitial(InvoiceFunding $funding, Operation $op, Domain $domain): void
     {
-        if (self::$projecting !== null) { throw new \LogicException('Nested projection refused.'); }
-        self::$projecting = $service;
-        try { $service->save(); } finally { self::$projecting = null; }
+        $service = $funding->initialService($op, $domain);
+        self::persist($service, $service->getRawOriginal(), ['status' => Service::STATUS_ACTIVE, 'expires_at' => null]);
+    }
+
+    /** Existing unsent and full-funding checks remain mandatory for owned terminal projections. */
+    public static function terminal(array $locked, Operation $op): void
+    {
+        if (($locked['advisory'] ?? true) || $op->state !== 'rejected' || !in_array($op->action, ['register', 'transfer'], true)
+            || !$locked['operations']->contains(static fn ($row) => $row === $op)) { throw new \DomainException('No retained refund disposition.'); }
+        RefundProof::requireUnsent($op, $locked['domain']); RefundPayment::requireCurrent($op, $locked);
+        $service = $locked['service'];
+        self::persist($service, $service->getRawOriginal(), ['status' => Service::STATUS_CANCELLED, 'expires_at' => null]);
+    }
+
+    /** Read-only guard check: a different instance, row, field, value or preimage grants nothing. */
+    public static function identityProjection(Service $service): bool
+    {
+        if (self::$projections === null || !isset(self::$projections[$service])) { return false; }
+        self::matchProjection($service); return true;
+    }
+
+    private static function matchProjection(Service $service): void
+    {
+        $grant = self::$projections[$service];
+        if (!$grant['active'] || DB::transactionLevel() !== $grant['level'] || DB::connection() !== $grant['connection']
+            || !$grant['connection']->getPdo()->inTransaction() || !$service->exists
+            || $service->getConnection() !== $grant['connection'] || $service->getKey() !== $grant['id']
+            || $service->getKeyName() !== 'id' || $service->getTable() !== (new Service)->getTable()
+            || $service->getRawOriginal() !== $grant['before'] || $service->getAttributes() !== $grant['after']
+            || $service->getDirty() !== $grant['dirty']) { throw new \DomainException('Unadmitted initial projection.'); }
+    }
+
+    /** Private issuance only after an owned writer's checks. One saving event consumes the grant. */
+    private static function persist(Service $service, array $before, array $values): void
+    {
+        if (DB::transactionLevel() !== 1 || !$service->exists || $service->getRawOriginal() !== $before) {
+            throw new \LogicException('Projection requires holding locks.');
+        }
+        if (self::$projections === null) {
+            self::$projections = new \WeakMap;
+            Service::saving(static function (Service $row): void {
+                if (!isset(self::$projections[$row])) { return; }
+                self::matchProjection($row); $grant = self::$projections[$row];
+                if ($grant['consumed']) { throw new \LogicException('Nested projection refused.'); }
+                $grant['consumed'] = true; self::$projections[$row] = $grant;
+            });
+            Service::updating(static function (Service $row): void {
+                if (!isset(self::$projections[$row])) { return; }
+                self::matchProjection($row); $grant = self::$projections[$row];
+                if (!$grant['consumed'] || $grant['updating']) { throw new \LogicException('Nested projection refused.'); }
+                $grant['updating'] = true; self::$projections[$row] = $grant;
+            });
+            foreach ([\Illuminate\Database\Events\TransactionBeginning::class, \Illuminate\Database\Events\TransactionCommitted::class, \Illuminate\Database\Events\TransactionRolledBack::class] as $event) {
+                \Illuminate\Support\Facades\Event::listen($event, static function ($e): void {
+                    foreach (self::$projections as $row => $grant) {
+                        if ($grant['connection'] === $e->connection && ($e instanceof \Illuminate\Database\Events\TransactionRolledBack
+                            || $e->connection->transactionLevel() === 0 || ($e instanceof \Illuminate\Database\Events\TransactionBeginning && $e->connection->transactionLevel() === 1))) {
+                            $grant['active'] = false; self::$projections[$row] = $grant;
+                        }
+                    }
+                });
+            }
+        }
+        if (count(self::$projections) !== 0 || array_diff(array_keys($service->getDirty()), array_keys($values))) {
+            throw new \LogicException('Nested projection refused.');
+        }
+        // Savepoint contains late public callbacks too; a caught refusal cannot commit their SQL.
+        DB::transaction(static function () use ($service, $before, $values): void {
+            $timestamps = $service->timestamps;
+            $service->forceFill($values);
+            if ($service->isDirty() && $service->usesTimestamps()) { $service->updateTimestamps(); }
+            $service->timestamps = false; // Do not let Eloquent restamp a clean same-second timestamp.
+            // Copy scalars by value; no mutable caller references or reusable token escapes.
+            self::$projections[$service] = ['connection' => DB::connection(), 'level' => DB::transactionLevel(), 'id' => $service->getKey(),
+                'before' => $before, 'after' => $service->getAttributes(), 'dirty' => $service->getDirty(), 'active' => true, 'consumed' => false, 'updating' => false];
+            try {
+                if (!$service->save() || !self::$projections[$service]['consumed']) { throw new \LogicException('Projection requires holding locks.'); }
+                $grant = self::$projections[$service];
+                if (!$grant['active'] || !$service->exists || DB::transactionLevel() !== $grant['level'] || $service->getAttributes() !== $grant['after']
+                    || $service->getConnection() !== $grant['connection'] || $service->getKeyName() !== 'id'
+                    || $service->getTable() !== (new Service)->getTable()) { throw new \DomainException('Unadmitted initial projection.'); }
+            } catch (\Throwable $e) {
+                $service->setRawAttributes($before, true); $service->exists = true;
+                $service->setTable((new Service)->getTable())->setKeyName('id')->setConnection(DB::connection()->getName());
+                throw $e;
+            } finally { $service->timestamps = $timestamps; unset(self::$projections[$service]); }
+        });
     }
 
     private static function gross(string $retail, \App\Models\TaxRate|int $tax): string

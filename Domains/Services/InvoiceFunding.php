@@ -69,8 +69,16 @@ final class InvoiceFunding
 
     public function completeInitial(Operation $op, Domain $domain): void
     {
+        NativeDomainGuard::completeInitial($this, $op, $domain);
+    }
+
+    /** The live context owns this exact locked object, including its expected prior state. */
+    public function initialService(Operation $op, Domain $domain): Service
+    {
         $this->requireInitial($op, $domain);
-        $this->services->get($op->service_id)->update(['status' => Service::STATUS_ACTIVE, 'expires_at' => null]);
+        $service = $this->services->get($op->service_id);
+        if ($service->isDirty()) { throw new \DomainException('Acquisition lifecycle changed.'); }
+        return $service;
     }
 
     /** Funding evidence only. Engine19 supplies its current domain then operation under ordered locks. */

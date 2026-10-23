@@ -29,6 +29,7 @@ class RegistrarSetup extends Page
                 'Catalogue acceptance'=>$a?TldFacts::acceptance($a):'Unavailable · new sales held',
                 'Connection'=>app(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class)->connectionAvailable()?'Not tested this visit':'Unavailable','Retained domains'=>$a?\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count():0,
                 'Renewal safety'=>'Keep both registrar accounts serviced. Seller selection affects new sales only.',
+                'Adoption readiness'=>'Off. Staff deleting a customer while that customer is checking out can remove the new domain’s Paymenter order and service. This can happen now, with adoption off. Affected domains appear under Missing Paymenter records. Adoption stays off until a later release closes this gap. Before any activation, let in-progress customer, order and service edits finish, then restart web and queue workers. Direct database edits bypass these checks.',
                 'Credentials'=>'Saved credentials are never displayed. Processing stays off after configuration.'];
             $facts += \Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for((int)$s->id);
             $facts += \Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule((int)$s->id);

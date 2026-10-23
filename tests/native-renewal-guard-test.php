@@ -73,8 +73,8 @@ same('11.44', RetailLine::decimal($service->fresh()->price), 'Holder projection 
 same('11.44', $bill->items->sole()->price, 'Invoice shares native gross tax basis');
 commerceReject(fn () => DB::transaction(fn () => $save->invoke($page, $stale, ['price' => '11.44'])));
 DB::table('services')->where('id', $service->id)->update(['price' => '9.99']);
-DB::transaction(fn () => $save->invoke($page, $service->fresh(), ['price' => '11.44']));
-same('11.44', RetailLine::decimal($service->fresh()->price), 'Matching native gross price accepted');
+commerceReject(fn () => DB::transaction(fn () => $save->invoke($page, $service->fresh(), ['price' => '11.44'])));
+same('9.99', RetailLine::decimal($service->fresh()->price), 'Native price edits require an owned projection even at current retail');
 // An arbitrary dirty edit requires current evidence even when it equals the retained retail.
 $price = Price::where(['server_id' => $server->id, 'action' => 'renew'])->sole(); $price->update(['wholesale' => null, 'revision' => $price->revision + 1]);
 DB::table('services')->where('id', $service->id)->update(['price' => '9.99']);

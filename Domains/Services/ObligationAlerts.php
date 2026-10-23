@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 final class ObligationAlerts
 {
     public const LABELS=[
+        'native_identity_missing'=>'Customer, order or service missing. The domain and its name stay reserved until a later release adds a resolution step. Do not restore deleted records manually.',
         'unknown_expiry'=>'Expiry unknown · confirm the saved expiry before contacting the customer',
         'unknown_price'=>'Renewal price unknown · review pricing before contacting the customer',
         'unknown_cost'=>'Renewal cost unknown · review the holding account price',

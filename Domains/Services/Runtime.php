@@ -11,7 +11,7 @@ final class Runtime
     private bool $booted=false;
     public static function register(): void
     {
-        ConversionGate::requireComplete();$app=app();if($app->bound(self::class)){return;}
+        ConversionGate::requireComplete();NativeIdentity::boot();$app=app();if($app->bound(self::class)){return;}
         $app->singleton(self::class);
         foreach([RegistrarRegistry::class,AccountBindings::class,PricingRules::class,PriceCatalogue::class,SellerPolicies::class,NativeCatalogue::class,
             CheckoutEligibility::class,CartAdmission::class,InvoiceBinding::class,HolderPricing::class,NativeDomainGuard::class,NativeServerGuard::class,

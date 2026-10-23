@@ -698,7 +698,7 @@ retained-only evidence, acquisition recalc, native configs and binding/annual ma
 Lifecycle-only status saves proceed without current price evidence and preserve null native expiry.
 Ordinary price_mode/billing_managed edits cannot create complimentary authority; audited transitions
 and complimentary cycles/caps remain25/35. Issued bound items and their invoice routing/calendar are
-immutable. Raw SQL, query-builder bulk writes, direct PDO, quiet/event-suppressed writes retain the privileged-maintenance exclusion (Reservation authority; Account binding authority); no safety beyond it is claimed.
+immutable. Raw SQL, query-builder bulk writes, direct PDO, quiet/event-suppressed writes retain the privileged-maintenance exclusion (Reservation authority; Account binding authority); no safety beyond it is claimed. Concurrent native User deletion and checkout for that same user can orphan a retained domain; adoption stays off pending resolution. This also affects current admitted checkout with adoption off. Missing identity refuses engine authority; post-delete and durable cursor checks record staff discrepancies.
 
 Slice25 must compose action-specific paid funding (renewal items intentionally have null references),
 expected-obligation-key admission, latest completed-renewal anchors, fixed terms/caps, stale/late paid

@@ -45,7 +45,7 @@ final readonly class RuntimeWork
                 ->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])->orderBy('id')->limit(25)->get();
             foreach($ops as $op){if($op->action==='transfer'){$this->attempt('transfer_payment',fn()=>app(TransferInputs::class)->paymentAccepted((int)$op->id));}$this->attempt('operation',fn()=>$this->enqueue((int)$op->id));}
             $domains=Domain::where('server_id',$a->server_id)->where('id','>',$row->domain_cursor)->orderBy('id')->limit(25)->get();
-            foreach($domains as $d){$this->attempt('billing',fn()=>app(DomainBilling::class)->invoice((int)$d->id));}
+            foreach($domains as $d){$this->attempt('native_identity',fn()=>NativeIdentityDiscrepancies::inspect($d,$this->clock->now()->getTimestamp()));$this->attempt('billing',fn()=>app(DomainBilling::class)->invoice((int)$d->id));}
             $tlds=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->where('id','>',$row->tld_cursor)->orderBy('id')->limit(25)->get();
             foreach($tlds as $t){$this->attempt('publication',fn()=>app(NativeCatalogue::class)->publish((int)$t->id,$this->clock->now()));}
             DB::table('domains_runtime_turns')->where('id',$row->id)->update(['tld_cursor'=>$tlds->count()===25?$tlds->last()->id:0,'operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'domain_cursor'=>$domains->count()===25?$domains->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
