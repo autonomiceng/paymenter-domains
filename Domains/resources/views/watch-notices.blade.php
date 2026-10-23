@@ -3,7 +3,9 @@
 @include('domains::partials.styles')
 <a class="domains-back" href="{{ route('domains.domains.index') }}">Domains</a>
 <h1 class="domains-title domains-wrap">{{ $name }}</h1><p class="domains-lede">Public domain checks · Dates are UTC</p>
-@isset($summary)<section class="domains-panel domains-section" aria-label="Domain details">@include('domains::partials.summary',['summaryFinancials'=>$kind!=='managed','summaryOnChecks'=>true])@if($kind==='managed')<p><a class="domains-a" href="{{ $summary->urls['detail'] }}">View registration details and billing</a></p>@endif</section>@endisset
+@php($noticeKinds=array_column($notices,'kind'))
+@php($noticesBelow=array_keys(array_filter(['ns_changed'=>in_array('ns_changed',$noticeKinds,true)||in_array('ns_changed',$portal,true),'expired'=>in_array('expired',$noticeKinds,true)||in_array('registry_expiry_reached',$portal,true)])))
+@isset($summary)<section class="domains-panel domains-section" aria-label="Domain details">@include('domains::partials.summary',['summaryFinancials'=>$kind!=='managed','summaryOnChecks'=>true,'summaryNoticesBelow'=>$noticesBelow])@if($kind==='managed')<p><a class="domains-a" href="{{ $summary->urls['detail'] }}">View registration details and billing</a></p>@endif</section>@endisset
 
 @if(session('watch_saved'))<div class="domains-notice" role="status">{{ session('watch_saved') }}</div>@endif
 @error('preferences')<div class="domains-notice" role="alert">{{ $message }}</div>@enderror
@@ -14,8 +16,8 @@
 @elseif($notice['kind']==='ns_changed')As of {{ $notice['date'] }}, {{ $name }} no longer uses the nameservers provided by {{ $notice['company'] }}. If you did not expect this, contact support.
 @else As of {{ $notice['date'] }}, {{ $name }} uses the nameservers provided by {{ $notice['company'] }} again.
 @endif</p></div>@endforeach
-@if(in_array('registry_expiry_reached',$portal,true) && !in_array('expired',array_column($notices,'kind'),true))<p>The last recorded public registry expiry date for {{ $name }} was {{ $expiryDate }}. Check its registration status with your registration provider.</p>@endif
-@if(in_array('ns_changed',$portal,true) && !in_array('ns_changed',array_column($notices,'kind'),true))<p>Since {{ $episodeDate }}, {{ $name }} has not used the nameservers provided by {{ $company }}. If you did not expect this, contact support.</p>@endif
+@if(in_array('registry_expiry_reached',$portal,true) && !in_array('expired',$noticeKinds,true))<p>The last recorded public registry expiry date for {{ $name }} was {{ $expiryDate }}. Check its registration status with your registration provider.</p>@endif
+@if(in_array('ns_changed',$portal,true) && !in_array('ns_changed',$noticeKinds,true))<p>Since {{ $episodeDate }}, {{ $name }} has not used the nameservers provided by {{ $company }}. If you did not expect this, contact support.</p>@endif
 @if(in_array('ns_pending',$portal,true))<p>As of {{ $statusDate }}, we are checking a possible nameserver change for {{ $name }}. We will check again to confirm it. No action is needed yet.</p>@endif
 @if(in_array('expiry_unavailable',$portal,true))<p>As of {{ $statusDate }}, we cannot read current public registration details for {{ $name }}, so expiry notices are paused until a check succeeds. We will keep trying. Previous notices remain visible.</p>@endif
 @if(in_array('dns_unavailable',$portal,true))<p>As of {{ $statusDate }}, we cannot read current DNS details for {{ $name }}, so nameserver notices are paused until a check succeeds. We will keep trying. Previous notices remain visible.</p>@endif

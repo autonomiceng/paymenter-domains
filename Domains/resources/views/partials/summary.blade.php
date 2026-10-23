@@ -5,7 +5,8 @@
 @unless($summaryOnManaged??false)@include('domains::partials.status-pill',['pill'=>\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::summary($summary)])@endunless
 @foreach(array_intersect($summary->stateKeys,['watch.not_registered','watch.no_coverage']) as $key)<p class="domains-notice"><span>{{ $summary->labels[$key] }}</span></p>@endforeach
 @if(in_array('adopt.pending',$summary->stateKeys,true))@unless($summaryOnManaged??false)<p class="domains-notice">{{ $summary->labels['adopt.pending_notice'] }}</p>@endunless@if($summary->urls['invoiceHistory']??null)<p><a class="domains-a" href="{{ $summary->urls['invoiceHistory'] }}">View invoice history</a></p>@endif@endif
-@if(in_array('watch.ns_changed',$summary->stateKeys,true))
+{{-- summaryNoticesBelow: notice kinds the page already states below (domain checks page). Say each fact once. --}}
+@if(in_array('watch.ns_changed',$summary->stateKeys,true) && !in_array('ns_changed',$summaryNoticesBelow??[],true))
 <p class="domains-notice"><span>{{ strtr($summary->labels['watch.ns_changed_notice'],['{domain}'=>$summary->name,'{date}'=>isset($summary->noticeDates['dns'])?\Carbon\CarbonImmutable::createFromTimestampUTC((int)$summary->noticeDates['dns'])->format('M j, Y, H:i').' UTC':'date unavailable']) }} <a class="domains-a" href="{{ $summary->urls['support'] }}">contact support</a>.</span></p>
 @endif
 @if($summaryFinancials??true)<dl class="domains-facts">
@@ -16,7 +17,7 @@
 </dl>
 @if($summary->renewalOff && !in_array('adopt.pending',$summary->stateKeys,true))<p>@if($summary->renewalReminderOff)No renewal invoices or renewal reminders are scheduled.@else Future renewal invoices are stopped. Existing renewal invoices keep their own payment and reminder rules.@endif@if($summary->expiry) Registration is shown until @include('domains::partials.date',['date'=>$summary->expiry]).@endif</p>@endif
 @endif
-@if($summary->kind==='watch' && !($summaryCompact??false) && array_intersect(['watch.expired','watch.redemption','domain.expired','domain.redemption'],$summary->stateKeys))<p class="domains-small">Registry dates can lag behind a recent renewal. Contact your registration provider to check its status.</p>@endif
+@if($summary->kind==='watch' && !($summaryCompact??false) && array_intersect(['watch.expired','watch.redemption','domain.expired','domain.redemption'],$summary->stateKeys))<p class="domains-small">Registry dates can lag behind a recent renewal.@unless(in_array('expired',$summaryNoticesBelow??[],true)) Contact your registration provider to check its status.@endunless</p>@endif
 @if($summary->relatedServices)<div class="domains-summary-links"><strong>Related services</strong><ul>@foreach(array_slice($summary->relatedServices,0,3) as $service)<li><a class="domains-a" href="{{ $service['url'] }}">{{ $service['label'] }}</a></li>@endforeach</ul>@if($summary->relatedOverflow)<span class="domains-small">And more related services</span>@endif</div>@endif
 @if($summary->hostnames)<p class="domains-small domains-wrap">Primary hostnames: {{ implode(', ',array_slice($summary->hostnames,0,3)) }}</p>@endif
 @if($summary->urls['compareTransfer']??null)<p><a class="{{ ($summaryCompact??false)?'domains-btn domains-btn--secondary domains-btn--sm':'domains-a' }}" href="{{ $summary->urls['compareTransfer'] }}">Compare transfer price</a></p>@endif

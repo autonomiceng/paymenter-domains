@@ -26,6 +26,24 @@ try{$controller->save($request($owner,$payload,'POST'),'watch',$id);expect(false
 $data=$controller->show($request($owner),'watch',$id)->getData();$data['name']=str_repeat('a',63).'.example';$data['notices']=[['kind'=>'ns_changed','company'=>'<script>unsafe</script>','date'=>'January 15, 2027']];
 $queries=0;DB::listen(static function()use(&$queries){$queries++;});$before=$queries;$long=view('domains::watch-notices',$data)->render();same($before,$queries,'Blade does not query database');
 expect(str_contains($long,'&lt;script&gt;unsafe&lt;/script&gt;') && !str_contains($long,'<script>unsafe'),'Company escaped');expect(str_contains($long,$data['name']),'Long domain retained');
+// Say each fact once: the summary card drops a notice that Latest notices already states, and keeps it where it is the only place.
+$text=static fn(string $html)=>preg_replace('/\s+/',' ',strip_tags($html));
+$moved=static fn(string $html)=>substr_count($text($html),'no longer uses the')+substr_count($text($html),'has not used the nameservers');
+$provider='Contact your registration provider to check its status.';
+$state=static fn(array $states,string $kind='watch')=>new Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(...[...get_object_vars($data['summary']),'kind'=>$kind,'stateKeys'=>$states,'noticeDates'=>['dns'=>1800000000]]);
+$page=static fn(array $states,array $notices,array $portal,bool $editable=true)=>view('domains::watch-notices',[...$data,'summary'=>$state($states),'notices'=>$notices,'portal'=>$portal,'editable'=>$editable])->render();
+$row=static fn(string $kind)=>[['kind'=>$kind,'company'=>'Example Hosting','date'=>'January 15, 2027']];
+same(1,$moved($page(['watch.ns_changed'],$row('ns_changed'),['ns_changed'])),'Checks page states a nameserver change once with an open notice');
+same(1,$moved($page(['watch.ns_changed'],[],['ns_changed'])),'Checks page states a nameserver change once from the portal fallback');
+same(1,$moved($page(['watch.ns_changed'],[],[],false)),'Summary keeps the nameserver change when Latest notices does not state it');
+expect(str_contains($page(['watch.ns_changed'],$row('ns_changed'),['ns_changed']),'Needs action'),'Summary keeps the status pill');
+same(1,substr_count($text($page(['watch.expired'],$row('expired'),['registry_expiry_reached'])),$provider),'Checks page asks to contact the registration provider once with an open notice');
+same(1,substr_count($text($page(['watch.expired'],[],['registry_expiry_reached'])),'with your registration provider'),'Portal fallback states the expiry once');
+same(0,substr_count($text($page(['watch.expired'],[],['registry_expiry_reached'])),$provider),'Summary drops the provider sentence when the fallback states it');
+same(1,substr_count($text($page(['watch.expired'],$row('expired'),[])),'Registry dates can lag behind a recent renewal.'),'Summary keeps the registry lag caveat');
+same(1,substr_count($text($page(['watch.redemption'],[],[],false)),$provider),'Summary keeps the provider sentence when Latest notices does not state it');
+$owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain($data['name'],'Active','ok','2027-01-15','On','$14.00',['show'=>'/domains/1'],[],['contacts'=>false,'required'=>false],[],[],true);
+same(1,$moved(view('domains::show',['domain'=>$owned,'summary'=>$state(['domain.active','watch.ns_changed'],'managed'),'keys'=>[]])->render()),'Domain detail page states a nameserver change once');
 require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
 foreach(['show','save']as$action){$route=app('router')->getRoutes()->getByName('domains.checks.'.$action);expect(in_array('web',$route->gatherMiddleware(),true)&&in_array('auth',$route->gatherMiddleware(),true),'Native web auth guards preferences');}
 $nativeSuccessful=true;echo "Owner-safe preference detail, CSRF/session key, stale revision, escaping and query-free Blade passed.\n";
