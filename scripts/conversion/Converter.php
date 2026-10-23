@@ -59,7 +59,7 @@ final class Converter
     {
         foreach(['servers','products','roles','notification_templates']as$table){foreach($plan->changes[$table]??[]as$id=>$values){
             $row=(array)DB::table($table==='servers'?(new Server)->getTable():$table)->where('id',$id)->firstOrFail();
-            foreach($values as$key=>$value){$got=$row[$key];if($key==='permissions'){$got=json_decode($got,true,128,JSON_THROW_ON_ERROR);$value=json_decode($value,true,128,JSON_THROW_ON_ERROR);}
+            foreach($values as$key=>$value){$got=$row[$key];if($key==='permissions'){$got=json_decode($got,true,128,JSON_THROW_ON_ERROR);$value=json_decode($value,true,128,JSON_THROW_ON_ERROR);}elseif(is_bool($value)){$got=(bool)$got;}
                 if($got!==$value){throw new \DomainException('Native target readback mismatch.');}}
         }}
         foreach(['settings'=>Server::class,'product_settings'=>Product::class]as$kind=>$model){foreach($plan->changes[$kind]??[]as$id=>$values){
@@ -105,7 +105,20 @@ final class Converter
     private function audit(Planner $p): array
     {
         $audit=['changes'=>$p->changes,'source'=>[],'before'=>[],'evidence'=>$this->evidence];foreach(['enom_domains','enom_operations','enom_tlds']as$t){$audit['source'][$t]=DB::table($t)->orderBy('id')->get()->map(fn($r)=>(array)$r)->all();}
-        foreach(['servers','products','roles','notification_templates']as$t){$audit['before'][$t]=DB::table($t==='servers'?(new Server)->getTable():$t)->whereIn('id',array_keys($p->changes[$t]??[]))->orderBy('id')->get()->map(fn($r)=>(array)$r)->all();}foreach(['server_settings'=>[Server::class,'settings'],'product_settings'=>[Product::class,'product_settings']]as$key=>[$model,$kind]){foreach(array_keys($p->changes[$kind]??[])as$id){$audit['before'][$key][$id]=$model::findOrFail($id)->settings()->orderBy('id')->get()->map(fn($row)=>$row->getRawOriginal())->all();}}return $audit;
+        foreach(['servers','products','roles','notification_templates']as$t){$ids=array_keys($p->changes[$t]??[]);if($t==='notification_templates'){foreach($p->changes['notification_template_collisions']??[]as$collision){$ids[]=$collision['equivalent_id'];}}$ids=array_values(array_unique($ids));$audit['before'][$t]=DB::table($t==='servers'?(new Server)->getTable():$t)->whereIn('id',$ids)->orderBy('id')->get()->map(fn($r)=>(array)$r)->all();}foreach(['server_settings'=>[Server::class,'settings'],'product_settings'=>[Product::class,'product_settings']]as$key=>[$model,$kind]){foreach(array_keys($p->changes[$kind]??[])as$id){$audit['before'][$key][$id]=$model::findOrFail($id)->settings()->orderBy('id')->get()->map(fn($row)=>$row->getRawOriginal())->all();}}
+        // Recompare the dependencies that make a retired product safe to detach.
+        // They are outside Planner::sourceDigest(), so staging drift must be explicit.
+        foreach($p->changes['products']??[]as$id=>$values){if(!array_key_exists('server_id',$values)||$values['server_id']!==null){continue;}
+            $product=Product::findOrFail($id);$category=DB::table('categories')->where('id',$product->category_id)->first(['id','slug']);$planIds=DB::table('plans')->where('priceable_type',$product->getMorphClass())->where('priceable_id',$id)->orderBy('id')->pluck('id')->all();
+            $audit['before']['retired_product_dependencies'][$id]=[
+                'category'=>$category?(array)$category:null,
+                'product_settings'=>DB::table('settings')->where('settingable_type',$product->getMorphClass())->where('settingable_id',$id)->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),
+                'config_option_products'=>DB::table('config_option_products')->where('product_id',$id)->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),
+                'product_upgrades'=>DB::table('product_upgrades')->where(fn($q)=>$q->where('product_id',$id)->orWhere('upgrade_id',$id))->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),
+                'plan_settings'=>DB::table('settings')->where('settingable_type',(new \App\Models\Plan)->getMorphClass())->whereIn('settingable_id',$planIds)->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),
+            ];
+        }
+        return $audit;
     }
     public static function resultDigest(): string
     {

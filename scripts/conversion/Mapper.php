@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace DomainsConversion;
-use App\Models\{Server,Product,NotificationTemplate,Role};
+use App\Models\{Category,Server,Product,NotificationTemplate,Role};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{ReminderTemplates,ReminderSchedules};
 final class Mapper
@@ -59,6 +59,10 @@ final class Mapper
                 'revision'=>1,'audit'=>[['source'=>'enom_05_conversion','enabled_before'=>true,'enabled_after'=>false]]]);
         }
         foreach(Product::whereIn('server_id',array_keys($p->bindings))->orderBy('id')->get()as$product){$v=$product->settings->pluck('value','key');
+            if(!$v->has('enom_catalogue')&&!$v->has('enom_tld_id')&&!$v->has('enom_action')){
+                if(!self::retiredProduct($product)){throw new \DomainException('Unreviewed native product on legacy server.');}
+                $p->changes['products'][$product->id]=['server_id'=>null];continue;
+            }
             $id=$v->get('enom_tld_id');$action=$v->get('enom_action');$t=DB::table('enom_tlds')->where('id',$id)->first();
             if($v->get('enom_catalogue')!=='1'||!$t||(int)$t->server_id!==(int)$product->server_id||!in_array($action,['register','transfer'],true)
                 ||!$product->hidden||$product->allow_quantity!=='separated'){throw new \DomainException('Unreviewed native product on legacy server.');}
@@ -68,12 +72,14 @@ final class Mapper
         }
         foreach(NotificationTemplate::where('key','like','enom_%')->orderBy('id')->get()as$t){$key='domains_'.substr($t->key,5);$definitions=ReminderTemplates::definitions();
             if(!isset($definitions[$key])){throw new \DomainException('Unknown legacy notification template.');}
-            // Preserve IDs and preference foreign keys; existing neutral template collision needs prior resolution.
-            if(NotificationTemplate::where('key',$key)->exists()){throw new \DomainException('Resolve neutral notification collision before conversion.');}
+            $equivalent=NotificationTemplate::where('key',$key)->first();
             foreach(['subject','body','in_app_title','in_app_body','in_app_url']as$field){$text=(string)$t->$field;preg_match_all('/\$([A-Za-z_][A-Za-z0-9_]*)/',$text,$vars);
                 $invoiceSafe=preg_replace('/@(if|elseif|unless)\s*\(\s*!?\s*\$invoice\s*(?:(?:===|!==|==|!=)\s*null\s*)?\)|@isset\s*\(\s*\$invoice\s*\)/','',$text);
                 if(preg_match('/\$invoice\b/',$invoiceSafe)||array_diff($vars[1],['domain','expires','days','invoice','due','invoice_on','overdue','complimentary','years','amount','invoice_url','domain_url','deadline','action','renews_automatically','currency'])||str_contains($text,'->')||preg_match('/\$[A-Za-z_][A-Za-z0-9_]*\s*[)\s]*\[/',$text)||preg_match('/enom[.\\\\]/i',$text)){throw new \DomainException('Retained template requires unsupported data or legacy route.');}}
-            $p->changes['notification_templates'][$t->id]=['key'=>$key];
+            if($equivalent){
+                $p->changes['notification_templates'][$t->id]=['enabled'=>false];
+                $p->changes['notification_template_collisions'][$t->id]=['legacy_key'=>$t->key,'equivalent_id'=>(int)$equivalent->id,'equivalent_key'=>$key];
+            }else{$p->changes['notification_templates'][$t->id]=['key'=>$key];}
         }
         foreach($p->changes['settings']??[]as$id=>$values){foreach($values as$key=>$value){if(Server::findOrFail($id)->settings()->where('key',$key)->exists()){throw new \DomainException('Neutral server setting collision.');}}}
         foreach($p->changes['product_settings']??[]as$id=>$values){foreach($values as$key=>$value){if(Product::findOrFail($id)->settings()->where('key',$key)->exists()){throw new \DomainException('Neutral product marker collision.');}}}
@@ -81,6 +87,24 @@ final class Mapper
         foreach(Role::orderBy('id')->get()as$r){$permissions=$r->permissions??[];$new=$permissions;
             foreach($permissions as$permission){if(str_starts_with($permission,'admin.enom.')){$suffix=substr($permission,11);if(in_array($suffix,$allowed,true)){$new[]='admin.domains.'.$suffix;}}}
             if($new!==$permissions){$p->changes['roles'][$r->id]=['permissions'=>json_encode(array_values(array_unique($new)),JSON_THROW_ON_ERROR)];}}
+    }
+    /** The hidden generic 0.4 product after its Enom marker and sale prices were retired. */
+    private static function retiredProduct(Product $product): bool
+    {
+        $serverId=(int)$product->server_id;$category=Category::find($product->category_id);
+        if(!$serverId||$product->name!=='Domain name'||!in_array($product->slug,['domain-name','domain-name-'.$serverId],true)
+            ||$product->description!=='Ordered and managed on the Domains page.'||!$product->hidden||$product->allow_quantity!=='disabled'
+            ||$product->image!==null||$product->stock!==null||$product->per_user_limit!==null||$product->sort!==null||$product->email_template!==null
+            ||$category?->slug!=='domains'||$product->settings()->exists()
+            ||DB::table('config_option_products')->where('product_id',$product->id)->exists()
+            ||DB::table('product_upgrades')->where('product_id',$product->id)->orWhere('upgrade_id',$product->id)->exists()) {return false;}
+        $plans=DB::table('plans')->where('priceable_type',$product->getMorphClass())->where('priceable_id',$product->id)->get();
+        if($plans->count()!==1){return false;}$plan=$plans->first();$planId=(int)$plan->id;
+        if($plan->name!=='Yearly'||$plan->type!=='recurring'||(int)$plan->billing_period!==1||$plan->billing_unit!=='year'||$plan->sort!==null
+            ||DB::table('settings')->where('settingable_type',(new \App\Models\Plan)->getMorphClass())->where('settingable_id',$planId)->exists()
+            ||DB::table('prices')->where('plan_id',$planId)->exists()
+            ||DB::table('services')->where('product_id',$product->id)->orWhere('plan_id',$planId)->exists()) {return false;}
+        return true;
     }
     public static function jobs(Planner $p,bool $allowSync=false): void
     {
