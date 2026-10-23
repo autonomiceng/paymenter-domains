@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 
 final class SourceSchema {
     // A changed source layout requires an implementation review and an exact schema digest here.
-    public const PIN_SCHEMAS=[];
+    public const PIN_SCHEMAS=['3dee81f39d9cd9728006b2dadc5e7fd4ba9b6e4c'=>'466138a56eae64112ea2ecc23a3df13b76c31f1e26157dd3adcf3793a75ccdce'];
     private const NATIVE=['extensions','products','roles','notification_templates','settings','jobs','audits'];
     public static function transactional(): void
     {

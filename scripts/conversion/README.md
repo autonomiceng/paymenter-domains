@@ -66,6 +66,10 @@ transaction before recording completion. A stopped stage can be resumed only wit
 source/plan/evidence within the evidence validity window below. Native server/product settings and rows being renamed are rechecked against the encrypted audit before copy. Leave maintenance active after any failure. Incomplete journals refuse
 normal runtime boot. Completed repeat checks source/result digests and returns without writes;
 post-cutover activity instead refuses replay. Source tables and failed jobs remain untouched. Source reminder claims map to neutral
+delivery rows. The exact unused 0.4 `Domain name` product is detached only with no services,
+sale prices or catalogue links; its product and yearly plan rows remain. A legacy template
+collision keeps both templates and preferences, disables the legacy row, and records both
+template rows in the encrypted audit.
 suppression identities, preventing duplicate catch-up delivery. Customized templates retain
 IDs/content/preferences; unsupported data/object/legacy-route references refuse. Compatibility
 variables preserve absent invoice as null (including isset/null comparisons), USD currency and a false automatic-renewal promise. Conflicting saved
@@ -174,8 +178,8 @@ throughout.
 
 ## Accepted source pins
 
-`source.json` is a reviewed list of exact runtime byte inventories. Both the original
-`b9b12e9` and `e1ace20` source revisions are accepted; use their full hashes from that file.
+`source.json` is a reviewed list of exact runtime byte inventories. Revisions `b9b12e9`,
+`e1ace20` and `3dee81f` are accepted; use their full hashes from that file.
 The selected revision binds the dry run, backup marker and sealed converted proof.
 For a future clean local Enom checkout, first declare matching runtime proof revision
 support, then run `php scripts/pin-conversion-source.php --checkout PATH --revision FULL_SHA`.

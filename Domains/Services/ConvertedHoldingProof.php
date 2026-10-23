@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 /** Converter-sealed historical completion, never a dispatch/funding grant. Source audit stays outside runtime. */
 final class ConvertedHoldingProof
 {
-    public const SOURCE_REVISIONS=['b9b12e9675c8aaea90b5c6ccd4d30b9e42af4dad','e1ace20007e2141e71812f5f46565208d2c31cef'];
+    public const SOURCE_REVISIONS=['b9b12e9675c8aaea90b5c6ccd4d30b9e42af4dad','e1ace20007e2141e71812f5f46565208d2c31cef','3dee81f39d9cd9728006b2dadc5e7fd4ba9b6e4c'];
     public static function completed(Operation $o,Domain $d,AccountBinding $b): bool
     {
         $proof=$o->attempt['converted_completion']??[];$data=$proof['data']??null;
