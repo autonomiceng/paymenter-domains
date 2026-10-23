@@ -183,7 +183,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
     (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
     print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands), 'only_tests': sorted(set(only or [])), 'receipt': str(output/'receipt.json')}))
-    if len(results) == len(commands) and any(r['skipped'] for r in results) and all(r['exit'] in [0, 77] for r in results):
+    if (len(results) == len(commands) and any(r['skipped'] for r in results) and dependency_unchanged
+            and all(r['exit'] in [0, 77] and r['runtime_unchanged'] for r in results)):
         return 77
     return 0 if complete else 1
 

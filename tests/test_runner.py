@@ -282,6 +282,51 @@ class RunnerTests(unittest.TestCase):
         stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT, env=os.environ, timeout=2, graceful=3)
         self.assertEqual((status, timed_out, stdout, stderr), (124, True, b'cleaned\n', b''))
 
+    def test_graceful_timeout_escalates_when_sigterm_is_ignored(self):
+        code = "import os,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print(os.getpid(),flush=True); time.sleep(30)"
+        started = time.monotonic()
+        stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT,
+                                                         env=os.environ, timeout=2, graceful=1)
+        elapsed = time.monotonic() - started
+        self.assertEqual((status, timed_out, stderr), (124, True, b''))
+        self.assertGreaterEqual(elapsed, 3)
+        self.assertLess(elapsed, 8)
+        pid = int(stdout.strip())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+
+    def test_mariadb_non_skip_failure_is_receipted_as_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); (root/'Domains').mkdir(); (root/'output').mkdir()
+            with mock.patch.object(runner, 'ROOT', root), \
+                 mock.patch.object(runner, 'execute', return_value=(b'failed', b'problem', 2, False)), \
+                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(runner.run([('mariadb', ['probe'])], {}, root/'output', ['mariadb'], {}), 1)
+            receipt = json.loads((root/'output/receipt.json').read_text())
+            self.assertFalse(receipt['complete']); self.assertEqual(receipt['skipped_suites'], [])
+            self.assertEqual(receipt['results'][0]['exit'], 2)
+            self.assertFalse(receipt['results'][0]['skipped'])
+
+    def test_mariadb_skip_cannot_mask_integrity_failures(self):
+        for failure in ['dependency', 'dependency_error', 'worker', 'runtime', 'final_runtime']:
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
+                before = {'Probe.php': 'original'}; changed = {'Probe.php': 'changed'}
+                snapshots = [before, changed, changed] if failure == 'runtime' else [before, before, changed if failure == 'final_runtime' else before]
+                verify = mock.Mock(side_effect=ValueError('changed')) if failure == 'dependency_error' else mock.Mock(return_value=(None, changed))
+                worker_check = mock.Mock(side_effect=ValueError('worker changed')) if failure == 'worker' else None
+                dependency = ('source', before) if failure.startswith('dependency') else None
+                with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'hashes', side_effect=snapshots), \
+                     mock.patch.object(runner.native, 'verify', verify), \
+                     mock.patch.object(runner, 'execute', return_value=(b'unavailable', b'', 77, False)), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(runner.run([('mariadb', ['probe'])], {}, output, ['mariadb'], {},
+                                                dependency, worker_check=worker_check), 1)
+                receipt = json.loads((output/'receipt.json').read_text())
+                self.assertFalse(receipt['complete'])
+                self.assertEqual(receipt['dependency_unchanged'], failure in ['runtime', 'final_runtime'])
+                self.assertEqual(receipt['results'][0]['runtime_unchanged'], failure not in ['runtime', 'final_runtime'])
+
     def test_mariadb_skip_is_not_acceptance(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'Domains').mkdir(); (root/'output').mkdir()

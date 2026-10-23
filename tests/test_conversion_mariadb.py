@@ -39,8 +39,6 @@ def run():
     os.umask(0o077)
     def terminate(signum, frame):
         raise KeyboardInterrupt('Termination requested; cleaning owned container.')
-    signal.signal(signal.SIGTERM, terminate)
-    signal.signal(signal.SIGINT, terminate)
     scratch_root=Path(os.environ.get('TMPDIR', ''))
     if not scratch_root.is_absolute() or not scratch_root.is_dir():
         raise ValueError('Set TMPDIR to an existing private scratch root before the rehearsal.')
@@ -65,7 +63,10 @@ def run():
             raise RuntimeError(f'{role} failed; inspect private command logs.')
         return result
 
+    previous = {sig: signal.getsignal(sig) for sig in [signal.SIGTERM, signal.SIGINT]}
     try:
+        for sig in previous:
+            signal.signal(sig, terminate)
         if not shutil.which('docker'):
             receipt.update(skipped='Docker is unavailable.'); return receipt
         if os.environ.get('DOCKER_HOST') and not os.environ['DOCKER_HOST'].startswith('unix://'):
@@ -241,29 +242,33 @@ def run():
         receipt['error'] = str(error)
         raise
     finally:
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
         try:
-            if container_id is None and start_attempted:
-                # A timed-out start can still create our container. Never stop a reused name.
-                probe=subprocess.run(['docker', 'container', 'inspect', CONTAINER], capture_output=True, timeout=20, env=docker_env) if shutil.which('docker') else None
-                if probe is not None and probe.returncode==0:
-                    info=json.loads(probe.stdout)[0]
-                    if info.get('Config',{}).get('Labels',{}).get('domains-conversion-rehearsal')==owner:
-                        container_id=info['Id']
-            if container_id:
-                stopped = subprocess.run(['docker', 'stop', '-t', '5', container_id], capture_output=True, timeout=30, env=docker_env)
-                receipt['container_stopped'] = stopped.returncode == 0
-                if stopped.returncode:
-                    receipt['complete'] = False
-            if original is not None and 'dependency_unchanged' not in receipt:
-                receipt['dependency_unchanged']=native.verify(source)[1]==original
-                if not receipt['dependency_unchanged']:
-                    receipt['complete']=False
-        except Exception as error:
-            receipt.update(complete=False, cleanup_error=type(error).__name__)
-        (scratch/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
-        print(json.dumps({'complete': receipt['complete'], 'receipt': str(scratch/'receipt.json'), 'skipped': receipt.get('skipped')}), flush=True)
+            for sig in previous:
+                signal.signal(sig, signal.SIG_IGN)
+            try:
+                if container_id is None and start_attempted:
+                    # A timed-out start can still create our container. Never stop a reused name.
+                    probe=subprocess.run(['docker', 'container', 'inspect', CONTAINER], capture_output=True, timeout=20, env=docker_env) if shutil.which('docker') else None
+                    if probe is not None and probe.returncode==0:
+                        info=json.loads(probe.stdout)[0]
+                        if info.get('Config',{}).get('Labels',{}).get('domains-conversion-rehearsal')==owner:
+                            container_id=info['Id']
+                if container_id:
+                    stopped = subprocess.run(['docker', 'stop', '-t', '5', container_id], capture_output=True, timeout=30, env=docker_env)
+                    receipt['container_stopped'] = stopped.returncode == 0
+                    if stopped.returncode:
+                        receipt['complete'] = False
+                if original is not None and 'dependency_unchanged' not in receipt:
+                    receipt['dependency_unchanged']=native.verify(source)[1]==original
+                    if not receipt['dependency_unchanged']:
+                        receipt['complete']=False
+            except Exception as error:
+                receipt.update(complete=False, cleanup_error=type(error).__name__)
+            (scratch/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
+            print(json.dumps({'complete': receipt['complete'], 'receipt': str(scratch/'receipt.json'), 'skipped': receipt.get('skipped')}), flush=True)
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
 
 
 if __name__ == '__main__':

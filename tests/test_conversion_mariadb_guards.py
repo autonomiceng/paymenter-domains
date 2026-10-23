@@ -1,8 +1,10 @@
 # MIT, Copyright (c) 2026 Autonomic Engineering. No Docker calls: ownership and refusal regressions.
 import contextlib
 import io
+import itertools
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import tempfile
@@ -17,6 +19,36 @@ class MariaGuardTests(unittest.TestCase):
     def environment(self, directory, **extra):
         return dict(TMPDIR=directory, PATH='/usr/bin:/bin', CONVERSION_MARIADB_PHP='/synthetic/php',
                     PAYMENTER_TEST_APP='/synthetic/app', CONVERSION_ENOM_CHECKOUT='/synthetic/source', **extra)
+
+    def test_restores_handlers_after_skip_failure_and_receipt_error(self):
+        for subject, outcome in itertools.product([harness, schema_harness], ['skip', 'failure', 'receipt_error', 'setup_error', 'owner_error', 'handler_setup_error']):
+            with self.subTest(harness=subject.__name__, outcome=outcome), tempfile.TemporaryDirectory() as directory:
+                handlers = {sig: signal.getsignal(sig) for sig in [signal.SIGTERM, signal.SIGINT]}
+                sentinels = {sig: lambda *args: None for sig in handlers}
+                for sig, handler in sentinels.items(): signal.signal(sig, handler)
+                try:
+                    environment = self.environment(directory, DOCKER_HOST='tcp://remote.invalid')
+                    if outcome == 'setup_error': environment['TMPDIR'] = 'relative'
+                    original_signal = signal.signal
+                    installs = 0
+                    def install(sig, handler):
+                        nonlocal installs
+                        if callable(handler) and handler not in sentinels.values():
+                            installs += 1
+                            if installs == 2: raise OSError('handler setup failed')
+                        return original_signal(sig, handler)
+                    with mock.patch.dict(os.environ, environment, clear=True), \
+                         mock.patch.object(subject.shutil, 'which', return_value=None if outcome in ['skip', 'receipt_error'] else '/docker'), \
+                         mock.patch.object(Path, 'write_text', side_effect=OSError('receipt failed')) if outcome == 'receipt_error' else contextlib.nullcontext(), \
+                         mock.patch.object(subject.secrets, 'token_hex', side_effect=OSError('owner failed')) if outcome == 'owner_error' else contextlib.nullcontext(), \
+                         mock.patch.object(signal, 'signal', side_effect=install) if outcome == 'handler_setup_error' else contextlib.nullcontext(), \
+                         contextlib.redirect_stdout(io.StringIO()):
+                        if outcome == 'skip': self.assertIn('skipped', subject.run())
+                        else:
+                            with self.assertRaises((RuntimeError, OSError, ValueError)): subject.run()
+                    for sig, handler in sentinels.items(): self.assertIs(signal.getsignal(sig), handler)
+                finally:
+                    for sig, handler in handlers.items(): signal.signal(sig, handler)
 
     def test_schema_fixture_overrides_inherited_database_url(self):
         with mock.patch.dict(os.environ, {'DB_URL': 'mysql://operator:synthetic@localhost/host_database?unix_socket=/host/mysql.sock',

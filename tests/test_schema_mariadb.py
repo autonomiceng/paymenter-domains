@@ -45,7 +45,7 @@ def run(*, exercise=None):
     attempted = False
     docker_env = None
     original = None
-    previous = {}
+    previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
 
     def command(role, argv, *, env=None, data=None, timeout=120, check=True):
         started = time.monotonic()
@@ -63,8 +63,8 @@ def run(*, exercise=None):
         raise KeyboardInterrupt('Termination requested; cleaning owned container.')
 
     try:
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            previous[sig] = signal.signal(sig, terminate)
+        for sig in previous:
+            signal.signal(sig, terminate)
         if not shutil.which('docker'):
             receipt['skipped'] = 'Docker unavailable.'; return receipt
         if os.environ.get('DOCKER_HOST') and not os.environ['DOCKER_HOST'].startswith('unix://'):
@@ -133,36 +133,38 @@ def run(*, exercise=None):
         receipt['complete'] = True
         return receipt
     finally:
-        for sig in previous:
-            signal.signal(sig, signal.SIG_IGN)
         try:
-            if attempted and container_id is None:
-                probe = subprocess.run(['docker', 'container', 'inspect', container], env=docker_env, capture_output=True, timeout=20)
-                if probe.returncode == 0:
-                    info = json.loads(probe.stdout)[0]
-                    if info.get('Config', {}).get('Labels', {}).get('domains-schema-rehearsal') == owner:
-                        container_id = info['Id']
-            if container_id:
-                result = subprocess.run(['docker', 'stop', '-t', '5', container_id], env=docker_env, capture_output=True, timeout=30)
-                for _ in range(25):
-                    removed = subprocess.run(['docker', 'container', 'inspect', container_id], env=docker_env, capture_output=True, timeout=20)
-                    if removed.returncode != 0: break
-                    time.sleep(0.2)
-                receipt['container_removed'] = result.returncode == 0 and removed.returncode != 0
-                if not receipt['container_removed']:
-                    receipt['complete'] = False
-            if original is not None:
-                receipt['dependency_unchanged'] = native.verify(source)[1] == original
-                if not receipt['dependency_unchanged']:
-                    receipt['complete'] = False
-        except Exception as error:
-            receipt.update(complete=False, cleanup_error=type(error).__name__)
+            for sig in previous:
+                signal.signal(sig, signal.SIG_IGN)
+            try:
+                if attempted and container_id is None:
+                    probe = subprocess.run(['docker', 'container', 'inspect', container], env=docker_env, capture_output=True, timeout=20)
+                    if probe.returncode == 0:
+                        info = json.loads(probe.stdout)[0]
+                        if info.get('Config', {}).get('Labels', {}).get('domains-schema-rehearsal') == owner:
+                            container_id = info['Id']
+                if container_id:
+                    result = subprocess.run(['docker', 'stop', '-t', '5', container_id], env=docker_env, capture_output=True, timeout=30)
+                    for _ in range(25):
+                        removed = subprocess.run(['docker', 'container', 'inspect', container_id], env=docker_env, capture_output=True, timeout=20)
+                        if removed.returncode != 0: break
+                        time.sleep(0.2)
+                    receipt['container_removed'] = result.returncode == 0 and removed.returncode != 0
+                    if not receipt['container_removed']:
+                        receipt['complete'] = False
+                if original is not None:
+                    receipt['dependency_unchanged'] = native.verify(source)[1] == original
+                    if not receipt['dependency_unchanged']:
+                        receipt['complete'] = False
+            except Exception as error:
+                receipt.update(complete=False, cleanup_error=type(error).__name__)
+            finally:
+                shutil.rmtree(scratch/'app', ignore_errors=True)
+                receipt['seconds'] = time.monotonic()-began
+                (scratch/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
+                print(json.dumps({'complete': receipt['complete'], 'receipt': str(scratch/'receipt.json'), 'seconds': receipt['seconds'],
+                                  'skipped': receipt.get('skipped')}), flush=True)
         finally:
-            shutil.rmtree(scratch/'app', ignore_errors=True)
-            receipt['seconds'] = time.monotonic()-began
-            (scratch/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
-            print(json.dumps({'complete': receipt['complete'], 'receipt': str(scratch/'receipt.json'), 'seconds': receipt['seconds'],
-                              'skipped': receipt.get('skipped')}), flush=True)
             for sig, handler in previous.items():
                 signal.signal(sig, handler)
 
