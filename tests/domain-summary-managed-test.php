@@ -19,11 +19,11 @@ same(null,$staleSummary->nameservers,'Prior-generation registrar nameservers are
 $storeNameservers($registrarNameservers);
 $initial=$r->one($owner,'managed',$d->id,$now);$initialHtml=view('domains::partials.summary',['summary'=>$initial,'summaryOnManaged'=>true])->render();
 same(['ns1.registration.example','ns2.registration.example'],$initial->nameservers['nameservers']??null,'Current registration nameservers appear before the first DNS check');
-expect(str_contains($initialHtml,'Nameservers observed: ns1.registration.example, ns2.registration.example')&&!str_contains($initialHtml,'No DNS check results yet.'),'Owner sees current registration nameservers before a DNS check');
+expect(str_contains($initialHtml,'<dt>Nameservers</dt><dd><span class="domains-wrap">ns1.registration.example, ns2.registration.example</span> <span class="domains-small">Checked ')&&!str_contains($initialHtml,'domains-missing'),'Owner sees current registration nameservers before a DNS check');
 $requested=NameserverEvidence::requested(['ns1.registration.example','ns2.registration.example'],'registration_request',$clock->now());$storeNameservers($requested);
 $requestedSummary=$r->one($owner,'managed',$d->id,$now);$requestedHtml=view('domains::partials.summary',['summary'=>$requestedSummary,'summaryOnManaged'=>true])->render();
 same('requested',$requestedSummary->nameservers['state']??null,'Requested values remain unconfirmed in the owner summary');
-expect(str_contains($requestedHtml,'Nameservers requested: ns1.registration.example, ns2.registration.example'),'Owner labels submitted nameservers as requested');
+expect(str_contains($requestedHtml,'<span class="domains-wrap">ns1.registration.example, ns2.registration.example</span> <span class="domains-small">Requested ')&&!str_contains($requestedHtml,'Checked '),'Owner labels submitted nameservers as requested');
 $storeNameservers($registrarNameservers);
 foreach(['delegation','points'] as $kind){managedDue($d->id,$now,$kind);$t=$signals->begin($d->id,$owner->id,$kind,$now);expect($t!==null,'Managed ticket');expect($signals->finish($t,$kind==='delegation'?new DnsReading($kind,'platform'):new DnsReading($kind,website:false,email:false),$now+1),'Managed sample');}
 $s=$r->one($owner,'managed',$d->id,$now+2);expect(in_array('domain.points.platform_empty',$s->dnsKeys,true),'Current generation complete DNS only');same('domain.registration.platform',$s->registrationKey,'Adopted managed registration');expect(in_array('adopt.provenance',$s->stateKeys,true),'Adopted activity');expect($s->urls['preferences']!==null,'Managed preferences remain available with hosting links');
@@ -42,13 +42,13 @@ expect($signals->finish($ticket,new DnsReading('delegation','external',queries:[
 $checked=$r->one($owner,'managed',$d->id,$now+12);$checkedHtml=view('domains::partials.summary',['summary'=>$checked,'summaryOnManaged'=>true])->render();
 same(['ns1.public.example','ns2.public.example'],$checked->nameservers['nameservers']??null,'Later public DNS check overrides registrar nameservers');
 same('public_dns_check',$checked->nameservers['source']??null,'Owner summary labels public DNS source');
-expect(str_contains($checkedHtml,'Observed: ns1.public.example, ns2.public.example')&&!str_contains($checkedHtml,'ns1.registration.example'),'Owner page displays the later nameserver check');
+expect(str_contains($checkedHtml,'<span class="domains-wrap">ns1.public.example, ns2.public.example</span> <span class="domains-small">Checked ')&&!str_contains($checkedHtml,'ns1.registration.example'),'Owner page displays the later nameserver check');
 $delegationObservation=\Paymenter\Extensions\Servers\Domains\Models\ManagedPublicObservation::where('domain_id',$d->id)->where('check_kind','delegation')->orderByDesc('id')->firstOrFail();
 $stalePublicSummary=$r->one($owner,'managed',$d->id,(int)$delegationObservation->valid_until);
 same(['ns1.registration.example','ns2.registration.example'],$stalePublicSummary->nameservers['nameservers']??null,'Expired public DNS nameservers no longer override registrar facts');
 managedDue($d->id,$now+20,'points');$t=$signals->begin($d->id,$owner->id,'points',$now+20);expect($t!==null,'Unknown ticket');$signals->finish($t,new DnsReading('points'),$now+21);
 $s=$r->one($owner,'managed',$d->id,$now+22);same(false,$s->lastKnown['website']['value'],'Failed attempt retains last value');same($now,$s->lastKnown['website']['checkedAt'],'Failed attempt retains last timestamp');same(true,$s->lastKnown['website']['stale'],'Retained fact is stale');expect(!in_array('domain.points.platform_empty',$s->dnsKeys,true),'Unknown managed points have no empty label');
-$history=view('domains::partials.summary',['summary'=>$s])->render();expect(str_contains($history,'Last known details')&&str_contains($history,'No platform pointer recorded'),'Failed check retains labeled historical facts');
+$history=view('domains::partials.summary',['summary'=>$s])->render();expect(!str_contains($history,'Last known')&&!str_contains($history,'pointer')&&str_contains($history,'<span class="domains-wrap">ns1.public.example, ns2.public.example</span>'),'Failed check shows only current facts, never retained ones');
 // Suspended related hosting is omitted by the producer; delegation remains current and partial positives survive.
 $host->update(['status'=>'suspended']);
 foreach(['delegation','points'] as $kind){managedDue($d->id,$now+40,$kind);$t=$signals->begin($d->id,$owner->id,$kind,$now+40);expect($t!==null,'Omitted hosting ticket');$signals->finish($t,$kind==='delegation'?new DnsReading($kind,'platform'):new DnsReading($kind,website:true,email:null,partial:true),$now+41);}

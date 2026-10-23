@@ -15,7 +15,6 @@ $summary=new \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(na
     labels:\Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings::all(),expiry:'2027-01-15',expiryPrecision:'date',expirySource:'Public registry',
     freshness:[],renewalDueAt:null,renewalPrice:null,relatedServices:[['label'=>'Hosting','url'=>'/services/1']],hostnames:['www.example.com'],
     urls:['detail'=>'/domains/checks/watch/1','compareTransfer'=>route('domains.watch.transfer',1)]);
-$html=view('domains::index',['domains'=>new \Illuminate\Pagination\LengthAwarePaginator([],0,25),
-    'watches'=>new \Illuminate\Pagination\LengthAwarePaginator([$summary],1,25)])->render();
-writeRenderArtifact($out.'/compact-card.html',$html);$strings['compact-card']=trim(preg_replace('/\s+/',' ',strip_tags(preg_replace('~<style\b[^>]*>.*?</style>~si','',$html))));
+$html=view('domains::partials.summary',['summary'=>$summary])->render();
+writeRenderArtifact($out.'/watch-summary.html',$html);$strings['watch-summary']=trim(preg_replace('/\s+/',' ',strip_tags(preg_replace('~<style\b[^>]*>.*?</style>~si','',$html))));
 writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES));$nativeSuccessful=true;echo "All comparison states rendered using actual Blade.\n";

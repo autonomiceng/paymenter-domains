@@ -84,6 +84,10 @@
         });
         dialog.querySelector('[data-confirm-cancel]')?.addEventListener('click', () => dialog.close());
     });
+    // List filters apply on change; the search box submits on Enter.
+    document.querySelectorAll('form[data-domains-autosubmit]').forEach(form => {
+        form.addEventListener('change', event => { if (event.target.matches('select')) form.requestSubmit(); });
+    });
     // Help popovers: hover, focus, click or tap opens; Esc, a second click or leaving closes.
     const helps = [...document.querySelectorAll('[data-help]')];
     helps.forEach(help => {

@@ -55,7 +55,7 @@ $watch=static fn(string $name,bool $demo)=>new DomainSummary($name,null,'watch',
 foreach([true,false] as $demo){
     $name=reservedFixtureName($demo?'demo-watch.example.com':'real-watch.example.com');$summary=$watch($name,$demo);
     $empty=new Illuminate\Pagination\LengthAwarePaginator([],0,25);
-    $list=view('domains::index',['domains'=>$empty,'watches'=>new Illuminate\Pagination\LengthAwarePaginator([$summary],1,25)])->render();
-    $expectTags($list,$name,$demo?'Demo':'none','related list');
+    $list=view('domains::index',['domains'=>new Illuminate\Pagination\LengthAwarePaginator([$summary],1,25)])->render();
+    $expectTags($list,$name,$demo?'Demo':'none','domains list hosting row');
 }
 $nativeSuccessful=true;echo "Customer Demo and Test tag checks passed.\n";

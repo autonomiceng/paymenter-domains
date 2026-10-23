@@ -35,8 +35,8 @@ foreach ($nameSiloModes as $mode) {
             same(['ns2.provider.example', 'ns1.provider.example'], $fact['nameservers'] ?? null, 'NameSilo domain-info values are stored as observed');
             same('observed', $fact['state'] ?? null, 'NameSilo provenance is explicit');
             $page = $ownerPage($result);
-            expect(str_contains($page, 'Nameservers observed: ns2.provider.example, ns1.provider.example')
-                && !str_contains($page, 'No DNS check results yet.'), 'NameSilo registration nameservers reach the owner detail page');
+            expect(str_contains($page, '<dt>Nameservers</dt><dd><span class="domains-wrap">ns2.provider.example, ns1.provider.example</span>')
+                && !str_contains($page, 'Shows after the first check'), 'NameSilo registration nameservers reach the owner detail page');
         } elseif ($mode === 'badns') {
             same(['ns1.provider.example', 'ns2.provider.example'], $fact['nameservers'] ?? null, 'Submitted values are retained when domain-info nameservers are malformed');
             same('requested', $fact['state'] ?? null, 'Malformed readback does not confirm submitted values');

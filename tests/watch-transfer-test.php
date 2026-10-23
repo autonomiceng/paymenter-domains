@@ -70,8 +70,8 @@ DB::table('cart_items')->where('id',$item->id)->delete();$post();$inserted=false
 $wire->during=function()use($wire,$item,&$inserted){$wire->during=function()use($item,&$inserted){DB::table('cart_items')->insert($item->getAttributes());$inserted=true;};};
 $assertInCart($post(['step'=>'confirm','authority'=>'1']),'Final cart read detects concurrent transfer');expect($inserted,'Final-read insertion reached');same(1,App\Models\CartItem::count(),'Final read adds no duplicate');
 app('request')->cookies->remove('cart');
-$summary=(new DomainSummaries)->one($owner,'watch',$id,$at);$compact=view('domains::partials.related',['watches'=>new Illuminate\Pagination\LengthAwarePaginator([$summary],1,25)])->render();
-same(1,storefrontDom($compact)->query('//a[@href="'.$summary->urls['compareTransfer'].'" and normalize-space(.)="Compare transfer price"]')->length,'Compact card exposes comparison');
+$summary=(new DomainSummaries)->one($owner,'watch',$id,$at);$compact=view('domains::partials.summary',['summary'=>$summary])->render();
+same(1,storefrontDom($compact)->query('//a[@href="'.$summary->urls['compareTransfer'].'" and normalize-space(.)="Compare transfer price"]')->length,'Watch summary exposes comparison');
 config(['domains.watch_transfer.enabled'=>false]);$summary=(new DomainSummaries)->one($owner,'watch',$id,$at);
-expect(!str_contains(view('domains::partials.related',['watches'=>new Illuminate\Pagination\LengthAwarePaginator([$summary],1,25)])->render(),'Compare transfer price'),'Compact card without URL omits comparison');
+expect(!str_contains(view('domains::partials.summary',['summary'=>$summary])->render(),'Compare transfer price'),'Watch summary without URL omits comparison');
 $nativeSuccessful=true;echo "Watch comparison: pure gates, no invented savings, owner/revision races, strict reads and neutral native cart passed.\n";

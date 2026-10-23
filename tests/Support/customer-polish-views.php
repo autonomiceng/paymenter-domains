@@ -71,50 +71,54 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     ];
     $summaries = array_map(fn ($name) => $dto($name.'.example', 'managed', ...[...array_slice($rows[$name], 0, 3), $rows[$name][4]]), array_keys($rows));
     $watches = [$dto('watch-unchecked.example', 'watch', 'domain.registration.unknown', $unknown, ['watch.not_checked']), $dto('watch-known.example', 'watch', 'domain.registration.external', DnsSignalLabels::keys('external', false, false), []), $dto('related-off.example', 'managed', 'domain.registration.platform', DnsSignalLabels::keys('platform', false, false), ['domain.active', 'adopt.renewal_off'], 'active')];
-    $html = view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator($summaries, count($summaries), 25), 'watches' => new \Illuminate\Pagination\LengthAwarePaginator($watches, count($watches), 25)])->render();
+    // One list: hosting domains are rows after the registered domains on this page.
+    $html = view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator([...$summaries, ...$watches], count($summaries) + count($watches), 25)])->render();
     $dom = storefrontDom($html);
     $pills = static fn ($dom, $context = null) => array_map(fn ($span) => trim($span->textContent), iterator_to_array($dom->query('.//span[contains(@class,"domains-badge")]', $context ?? $dom->document->documentElement)));
     foreach (array_keys($rows) as $i => $name) {
         same([$rows[$name][3]], $pills($dom, $dom->query('//tbody/tr['.($i + 1).']')->item(0)), 'List row has one status pill: '.$name);
     }
     same('Status', trim($dom->query('//thead/tr/th[2]')->item(0)->textContent), 'List column is Status');
-    $evidence = [...array_map(fn ($key) => $strings[$key], [...array_keys(DnsSignalLabels::strings('Example Hosting')), 'domain.registration.platform', 'domain.registration.external', 'domain.registration.unknown', 'domain.details.partial', 'watch.not_checked', 'watch.stale', 'watch.partial']), 'Adopted registration', 'Renewal off'];
+    $evidence = [...array_map(fn ($key) => $strings[$key], [...array_keys(DnsSignalLabels::strings('Example Hosting')), 'domain.registration.platform', 'domain.registration.external', 'domain.registration.unknown', 'domain.details.partial', 'watch.not_checked', 'watch.stale', 'watch.partial']), 'Adopted registration', 'Renewal off', 'Auto-renew off', 'At your registrar'];
     same([], array_intersect($pills($dom), $evidence), 'No registration, DNS, renewal or check pills on the list');
-    $related = $dom->query('//section[@class="domains-related"]/section');
-    same([[], [], ['Active']], array_map(fn ($node) => $pills($dom, $node), iterator_to_array($related)), 'Related rows: no pill without current registry facts; managed row shows Active');
+    $related = array_map(fn ($i) => $dom->query('//tbody/tr['.$i.']')->item(0), range(count($summaries) + 1, count($summaries) + count($watches)));
+    same([[], [], ['Active']], array_map(fn ($node) => $pills($dom, $node), $related), 'Hosting rows: no pill without current registry facts; managed row shows Active');
+    same(['At your registrar', 'At your registrar', 'Auto-renew off'], array_map(fn ($node) => trim($dom->query('td[@data-label="Renewal"]', $node)->item(0)->textContent), $related), 'Hosting rows renew at their registrar; a registered row keeps its own renewal');
     $detail = view('domains::partials.summary', ['summary' => $summaries[2]])->render();
     foreach (['domain.registration.unknown', 'domain.dns.unknown', 'domain.points.unknown', 'watch.not_checked'] as $key) { expect(!str_contains($detail, '>'.$strings[$key].'<'), 'Detail shows no chip that only says something is unknown: '.$key); }
-    same(1, substr_count($detail, '>No DNS check results yet.<'), 'Unchecked detail shows one quiet line instead of the disclosure');
-    same(0, storefrontDom($detail)->query('//details[@class="domains-checks"]')->length, 'Unchecked detail has no empty disclosure');
+    $nameservers = static fn (DOMXPath $dom) => preg_replace('/\s+/', ' ', trim($dom->query('//div[@class="domains-fact"][dt="Nameservers"]/dd')->item(0)?->textContent ?? ''));
+    same('Missing Shows after the first check', $nameservers(storefrontDom($detail)), 'Unchecked detail says Nameservers Missing with its cause');
+    same(0, storefrontDom($detail)->query('//details')->length, 'Unchecked detail has no disclosure');
     $fresh = ['delegation' => ['checkedAt' => null, 'stale' => false, 'partial' => false, 'nextCheck' => 1767225600], 'points' => ['checkedAt' => 1767139200, 'stale' => true, 'partial' => true, 'nextCheck' => null]];
     $detailDom = storefrontDom(view('domains::partials.summary', ['summary' => new DomainSummary('held.example', null, 'managed', 'domain.registration.unknown', $unknown, null, null, ['domain.review', 'watch.not_checked'], $strings, null, null, null, $fresh, null, null, [], [], [])])->render());
-    same('Check details and timestamps', trim($detailDom->query('//details[@class="domains-checks"]/summary')->item(0)?->textContent ?? ''), 'Detail keeps the check disclosure');
-    $facts = array_map(fn ($node) => preg_replace('/\s+/', ' ', trim($node->textContent)), iterator_to_array($detailDom->query('//details[@class="domains-checks"]//dd')));
-    same(['Out of date Last checked Dec 31, 2025, 00:00 UTC'], $facts, 'Detail disclosure lists only checked families, with real timestamps');
+    same(0, $detailDom->query('//details')->length, 'Detail has no check disclosure');
+    same('Missing Shows after the first check', $nameservers($detailDom), 'A pointer check never stands in for a nameserver check');
+    foreach (['Out of date', 'Last checked', 'Next check', 'pointer'] as $old) { expect(!str_contains($detailDom->document->saveHTML(), $old), 'Detail drops check bookkeeping: '.$old); }
     // DNS evidence moved from chips into the check details as plain values.
     $checked = ['delegation' => ['checkedAt' => 1767139200, 'stale' => false, 'partial' => false, 'nextCheck' => null], 'points' => ['checkedAt' => 1767139200, 'stale' => false, 'partial' => false, 'nextCheck' => null], 'registry' => ['checkedAt' => 1767139200, 'stale' => false, 'partial' => false, 'nextCheck' => null]];
     $watchDom = storefrontDom(view('domains::partials.summary', ['summary' => new DomainSummary('watch-known.example', null, 'watch', 'domain.registration.external', DnsSignalLabels::keys('external', false, false), false, false, [], $strings, '2099-01-01', 'date', 'Public registry', $checked, null, null, [], [], [], statusState: 'active')])->render());
     same(['Active'], $pills($watchDom), 'Watch detail with current registry facts shows Active only');
-    $facts = array_map(fn ($node) => preg_replace('/\s+/', ' ', trim($node->textContent)), iterator_to_array($watchDom->query('//details[@class="domains-checks"]//dd')));
-    expect(str_starts_with($facts[0], $strings['domain.dns.external']) && str_starts_with($facts[1], $strings['domain.points.external_empty']) && str_starts_with($facts[2], $strings['domain.registration.external']), 'Check details show DNS, pointer and registration values as text');
+    same($strings['domain.dns.external'].' Checked Dec 31, 2025', $nameservers($watchDom), 'Nameservers row shows the current DNS value and its check date');
+    same('Jan 1, 2099', preg_replace('/\s+/', ' ', trim($watchDom->query('//div[@class="domains-fact"][dt="Expires"]/dd')->item(0)?->textContent ?? '')), 'Expires row shows the registry date without its source');
+    foreach (['Public registry', 'Date only', 'Registry expiry', 'Primary hostnames'] as $old) { expect(!str_contains($watchDom->document->saveHTML(), $old), 'Watch summary drops: '.$old); }
     // Notices stay notices; adoption and renewal state never become pills.
-    $compact = static fn (DomainSummary $summary, array $with = []) => storefrontDom(view('domains::partials.summary', ['summary' => $summary, 'summaryCompact' => true, ...$with])->render());
+    $compact = static fn (DomainSummary $summary, array $with = []) => storefrontDom(view('domains::partials.summary', ['summary' => $summary, ...$with])->render());
     foreach (['watch.not_registered' => 'domain.registration.unknown', 'watch.no_coverage' => 'domain.registration.external'] as $state => $registration) {
         $notice = $compact($dto('notice.example', 'watch', $registration, $unknown, [$state]));
-        same($state === 'watch.not_registered' ? ['Action required'] : [], $pills($notice), 'Related row pill: '.$state);
-        same([$strings[$state]], array_map(fn ($node) => trim($node->textContent), iterator_to_array($notice->query('//p[@class="domains-notice"]'))), 'Related row keeps notice: '.$state);
+        same($state === 'watch.not_registered' ? ['Action required'] : [], $pills($notice), 'Watch summary pill: '.$state);
+        same([$strings[$state]], array_map(fn ($node) => trim($node->textContent), iterator_to_array($notice->query('//p[@class="domains-notice"]'))), 'Watch summary keeps notice: '.$state);
     }
     $adopting = $dto('adopting.example', 'managed', 'domain.registration.platform', DnsSignalLabels::keys('platform', true, true), ['adopt.pending', 'adopt.provenance', 'domain.active'], 'adoption_pending');
     same(['Under review'], $pills($compact($adopting)), 'Pending outranks active');
     same([], $pills($compact($adopting, ['summaryOnManaged' => true])), 'Managed context leaves the pill to the page header');
     $offRow = $dom->query('//tbody/tr[td/a[normalize-space()="renewal-off.example"]]')->item(0);
-    same('Renewal off', trim($dom->query('td[@data-label="Renewal"]', $offRow)->item(0)->textContent), 'Renewal column says renewal off');
-    same(1, substr_count($offRow->textContent, 'Renewal off'), 'Index row says renewal off once');
+    same('Auto-renew off', trim($dom->query('td[@data-label="Renewal"]', $offRow)->item(0)->textContent), 'Renewal column says Auto-renew off');
+    same(1, substr_count($offRow->textContent, 'Auto-renew off'), 'Index row says Auto-renew off once');
     $pendingOff = new DomainSummary('pending-off.example', null, 'managed', 'domain.registration.unknown', $unknown, null, null, ['adopt.pending', 'adopt.renewal_off'], $strings, null, null, null, [], null, null, [], [], ['detail' => '/domains/pending-off.example'], renewalOff: true);
     $pendingRow = storefrontDom(view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator([$pendingOff], 1, 25)])->render())->query('//tbody/tr')->item(0);
     expect(!$pendingOff->renewalOffShown(), 'Pending verification never counts as a shown renewal off');
-    same('Pending verification', trim($pendingRow->getElementsByTagName('td')->item(3)->textContent), 'Pending row Renewal column');
-    same(0, substr_count($pendingRow->textContent, 'Renewal off'), 'Pending row shows no renewal off pill');
+    same('Auto-renew on', trim($pendingRow->getElementsByTagName('td')->item(3)->textContent), 'Pending row Renewal column: the Under review pill explains the wait');
+    same(0, substr_count($pendingRow->textContent, 'Auto-renew off'), 'Pending row never says Auto-renew off');
     foreach ([true, 'some', false] as $test) {
         $search = storefrontData(); $search['testEnvironment'] = $test;
         foreach ($search['results'] as $i => &$row) { $row['testEnvironment'] = $test === true || ($test === 'some' && $i === 0); } unset($row);

@@ -31,9 +31,11 @@ final class DnsSignalLabels
         $mixed = ($website === true || $email === true) && (($signals['website']['mixed'] ?? false) || ($signals['email']['mixed'] ?? false));
         return self::keys($signals['dns']['value'] ?? null, $website, $email, $mixed, $partial);
     }
+    /** The configured company name without a trailing environment name such as " (local)"; "Beco" when unset. */
     public static function company(mixed $setting): string
     {
-        return is_string($setting) && trim($setting) !== '' ? trim($setting) : 'us';
+        $name = is_string($setting) ? trim((string) preg_replace('/\s*\((?:local|dev|development|test|testing|stage|staging|demo|sandbox|preview)\)\s*\z/i', '', $setting)) : '';
+        return $name !== '' ? $name : 'Beco';
     }
     public static function configuredStrings(): array { return self::strings(config('settings.company_name')); }
     public static function strings(mixed $companyName): array

@@ -341,7 +341,7 @@
 .domains .domains-filter > .domains-input { max-width: 100%; }
 @media (max-width: 639px) { .domains .domains-filter > .domains-input { width: 100%; } }
 
-/* Enom 444f31c empty state */
+/* Empty state */
 .domains .domains-empty { padding: 3rem 1.5rem; text-align: center; }
 .domains .domains-empty p { color: var(--e-muted); max-width: 42ch; margin: .375rem auto 1.25rem; font-size: .9375rem; }
 /* Record editors share the table overflow and input focus rules. */
@@ -365,8 +365,21 @@
 .domains .domains-summary-links { margin-block:1rem; }
 .domains .domains-checks { margin-block:1rem; }
 .domains .domains-checks > summary { cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
-.domains .domains-related { margin-top:2.5rem; }
-.domains .domains-related > .domains-panel { margin-block:1rem; }
+/* Domains list: the whole row opens the domain; a fix link inside a cell stays clickable above it. */
+.domains .domains-linkrow { position:relative; }
+.domains .domains-row-link::after { content:""; position:absolute; inset:0; }
+.domains .domains-row-link:focus-visible { outline:none; }
+.domains .domains-linkrow:is(:hover, :focus-within) td { background: color-mix(in srgb, var(--e-accent) 10%, transparent); }
+.domains .domains-linkrow .domains-missing__fix { position:relative; z-index:1; }
+.domains .domains-list .domains-domain { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight:500; text-decoration:none; }
+.domains .domains-list .domains-domain:hover { text-decoration:underline; }
+.domains .domains-list td { vertical-align:top; }
+.domains .domains-cell-main { display:block; }
+.domains .domains-cell-sub, .domains .domains-list .domains-missing__cause, .domains .domains-list .domains-missing__fix { display:block; margin:.2rem 0 0; font-size:.75rem; color:var(--e-muted); }
+.domains .domains-list .domains-missing__fix { color:var(--e-accent); }
+.domains .domains-cell-sub .domains-missing { font-weight:500; }
+.domains .domains-tone-text-warn { color: var(--e-warn); }
+.domains .domains-tone-text-bad { color: var(--e-bad); }
 .domains .domains-badge { white-space:normal; }
 .domains .domains-missing { display:inline-flex; align-items:center; gap:.375rem; color: var(--e-bad); font-weight:600; }
 .domains .domains-missing__cause { margin-inline-start:.5rem; color:var(--e-muted); }

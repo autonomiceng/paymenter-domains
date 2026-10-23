@@ -20,6 +20,7 @@ foreach (['Off','No glue records',false,0,'0'] as $value) { expect(!Missing::is(
 $text=static fn(DOMXPath $dom,string $query)=>array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query($query)));
 $full=storefrontDom(view('domains::partials.missing',['cause'=>'Shows when the transfer completes','fix'=>['label'=>'Renew now','url'=>'/domains/1/renew']])->render());
 same(['Missing'],$text($full,'//*[@class="domains-missing"]'),'The value reads Missing');
+same('Missing Shows when the transfer completes Renew now',trim(preg_replace('/\s+/',' ',$full->query('//body')->item(0)->textContent)),'Value, cause and fix read as separate words');
 same('true',$full->query('//*[@class="domains-missing"]/svg')->item(0)?->getAttribute('aria-hidden'),'The warning icon is decorative');
 same(['Shows when the transfer completes'],$text($full,'//*[@class="domains-missing__cause"]'),'The cause sits next to the value');
 same(['Renew now'],$text($full,'//a[contains(@class,"domains-missing__fix")]'),'One fix next to it');

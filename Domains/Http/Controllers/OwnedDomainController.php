@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Http\Controllers;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
 use Paymenter\Extensions\Servers\Domains\Services\DomainSummaries;
@@ -17,23 +18,27 @@ final readonly class OwnedDomainController
         $raw=$request->query('q');$search=is_string($raw)?trim(substr($raw,0,253)):'';
         $raw=$request->query('status');$filter=is_string($raw)&&isset(DomainStatus::SET[$raw])?$raw:'';
         $sort=in_array($request->query('sort'),['expiry','-expiry','name','-name'],true)?$request->query('sort'):'expiry';
-        // Status depends on the order, renewal stops and expiry, not only the status column, so chips count resolved rows.
-        $summaries=new DomainSummaries();$now=now('UTC')->getTimestamp();$dtos=[];$keys=[];
-        foreach ((clone $base)->pluck('id')->chunk(250) as $ids) { $dtos+=$summaries->batch($request->user(),$ids->all(),[],$now); }
-        foreach ($dtos as $key=>$dto) { if ($dto->statusState!==null) { $keys[(int)substr($key,8)]=DomainStatus::key($dto->statusState); } }
-        $query=clone $base;
-        if ($search!=='') { $query->where('domain','like','%'.addcslashes(strtolower($search),'%_\\').'%'); }
-        if ($filter!=='') { $query->whereIn('id',array_keys($keys,$filter,true)); }
-        if (str_contains($sort,'expiry')) { $query->orderByRaw('provider_expires_at IS NULL')->orderBy('provider_expires_at',$sort[0]==='-'?'desc':'asc'); }
-        $query->orderBy('domain',$sort==='-name'?'desc':'asc');
-        $domains=$query->paginate(25)->appends(array_filter(['q'=>$search,'status'=>$filter,'sort'=>$sort],fn($v)=>$v!==''));
-        $domains->setCollection($domains->getCollection()->map(fn($d)=>$dtos['managed:'.$d->id]??null)->filter()->values());
-        $filterCounts=[''=>count($dtos),...array_count_values($keys)];
-        $watches=WatchName::where('user_id',$request->user()->id)->whereNull('managed_domain_id')->whereIn('state',['active','paused','retired'])
-            ->whereNotIn('canonical_name',(clone $base)->select('domain'))->orderBy('canonical_name')->paginate(25,['*'],'related_page')->withQueryString();
-        $dtos=$summaries->batch($request->user(),[],$watches->getCollection()->pluck('id')->all());
-        $watches->setCollection($watches->getCollection()->map(fn($w)=>$dtos['watch:'.$w->id]??null)->filter()->values());
-        return view('domains::index',compact('domains','watches','search','filter','sort','filterCounts'));
+        // One list: registered domains and the domains your hosting uses. Status depends on the order, renewal stops
+        // and expiry, not only the status column, so chips, filters and sorting work on resolved rows.
+        $summaries=new DomainSummaries();$now=now('UTC')->getTimestamp();$rows=[];
+        foreach ((clone $base)->pluck('id')->chunk(250) as $ids) { $rows+=$summaries->batch($request->user(),$ids->all(),[],$now); }
+        $watches=WatchName::where('user_id',$request->user()->id)->whereNull('managed_domain_id')->whereIn('state',['active','paused','retired'])->whereNotIn('canonical_name',(clone $base)->select('domain'))->pluck('id');
+        foreach ($watches->chunk(250) as $ids) { $rows+=$summaries->batch($request->user(),[],$ids->all(),$now); }
+        $key=fn($row)=>$row->statusState===null?null:DomainStatus::key($row->statusState);
+        $filterCounts=[''=>count($rows),...array_count_values(array_filter(array_map($key,array_values($rows))))];
+        if ($search!=='') { $rows=array_filter($rows,fn($row)=>str_contains(strtolower($row->name),strtolower($search))); }
+        if ($filter!=='') { $rows=array_filter($rows,fn($row)=>$key($row)===$filter); }
+        $desc=$sort[0]==='-';$rows=array_values($rows);
+        usort($rows,function($a,$b)use($sort,$desc){
+            if (str_contains($sort,'expiry')) { [$x,$y]=[$a->expiry?substr($a->expiry,0,10):null,$b->expiry?substr($b->expiry,0,10):null];
+                if (($x===null)!==($y===null)) { return $x===null?1:-1; }
+                if ($x!==$y) { return $desc?strcmp($y,$x):strcmp($x,$y); }
+                return strcmp($a->name,$b->name); }
+            return $desc?strcmp($b->name,$a->name):strcmp($a->name,$b->name);
+        });
+        $page=max(1,(int)$request->query('page',1));
+        $domains=new LengthAwarePaginator(array_slice($rows,($page-1)*25,25),count($rows),25,$page,['path'=>route('domains.domains.index'),'query'=>array_filter(['q'=>$search,'status'=>$filter,'sort'=>$sort],fn($v)=>$v!=='')]);
+        return view('domains::index',compact('domains','search','filter','sort','filterCounts'));
     }
     public function show(Request $request,int $domain) { return $this->page($request,$domain,'show'); }
     public function setup(Request $request,int $domain) { return $this->page($request,$domain,'setup'); }
