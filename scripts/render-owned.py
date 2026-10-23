@@ -48,7 +48,7 @@ class StaticShell(HTMLParser):
 
 
 def main():
-    if len(sys.argv) not in (3, 4):
+    if len(sys.argv) not in (3, 4) or len(sys.argv) == 4 and sys.argv[3] != 'records':
         sys.exit('usage: render-owned.py SHELL_DIR OUTPUT_DIR [records]')
     ASSETS, DEST = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
     records = len(sys.argv) == 4 and sys.argv[3] == 'records'

@@ -118,7 +118,7 @@ $staff=staffUser(['admin.domains.view','admin.services.view','admin.services.vie
 $edit=Livewire\Livewire::actingAs($staff)->test(App\Admin\Resources\ServiceResource\Pages\EditService::class,['record'=>$s->id])->assertSuccessful();
 expect(str_contains(strip_tags($edit->html()),'This is a domain; manage it on the Domains page.'),'Actual native editor renders notice text and link');
 $edit->call('save')->assertHasFormErrors(['expires_at']); // Native Active form validation remains unchanged.
-expect(str_contains($edit->html(),'Any expiry date entered here is cleared on save.'),'Native notice explains expiry behavior');
+expect(str_contains($edit->html(),'Paymenter asks for an expiry date before it saves. Enter any date: Domains clears it on save and shows the expiry reported by the registrar on the Domains page.'),'Native notice explains expiry behavior');
 $edit->fillForm(['expires_at'=>'2030-01-01','label'=>'Actual staff save'])->call('save')->assertHasNoFormErrors();
 same(null,$s->fresh()->expires_at,'Actual native staff form clears expiry');
 $edit->fillForm(['status'=>'cancelled'])->call('save')->assertHasFormErrors(['status'])->assertSee(NativeCancellation::MESSAGE);

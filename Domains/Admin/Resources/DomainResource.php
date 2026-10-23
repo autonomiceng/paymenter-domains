@@ -36,20 +36,26 @@ class DomainResource extends Resource
     }
     public static function table(Table $table): Table
     {
-        return $table->columns([
+        return $table->modifyQueryUsing(fn (Builder $query) => $query->with(['user:id,email', 'server:id,name', 'latestAcquisition:domains_operations.id,domains_operations.domain_id,domains_operations.action,domains_operations.state,domains_operations.authority_generation,domains_operations.account_fingerprint']))->columns([
             TextColumn::make('domain')->label('Domain')->searchable()->sortable()->wrap()
-                ->description(fn(Domain $record)=>'Customer #'.$record->user_id)
+                ->description(fn(Domain $record)=>$record->user?->email ?? 'Customer #'.$record->user_id)
+                ->tooltip(fn(Domain $record)=>'Customer #'.$record->user_id)
                 ->extraAttributes(['style'=>'overflow-wrap:anywhere;max-width:24rem']),
             TextColumn::make('registrar_key')->label('Registrar')->formatStateUsing(fn($state)=>match($state) {'enom'=>'Enom','namesilo'=>'NameSilo',default=>'Unknown'})
-                ->description(fn(Domain $record)=>'Server #'.$record->server_id),
-            TextColumn::make('status')->badge()->formatStateUsing(fn($state,Domain $record)=>Labels::status($record->adoptionPending()?'adoption_pending':$state))->color(fn($state,Domain $record)=>Labels::color($record->adoptionPending()?'adoption_pending':$state)),
+                ->description(fn(Domain $record)=>$record->server?->name ?? 'Server #'.$record->server_id),
+            TextColumn::make('status')->badge()->tooltip('See Registrar requests')->formatStateUsing(fn($state,Domain $record)=>in_array(self::listState($record),['held','uncertain'],true)?Labels::state(self::listState($record)):Labels::status(self::listState($record)))->color(fn($state,Domain $record)=>Labels::color(self::listState($record))),
             TextColumn::make('payment_review')->label('Payment review')->state(fn(Domain $record)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview::count($record))
                 ->formatStateUsing(fn($state)=>$state ? $state.($state===1?' activity':' activities') : 'None')->badge()->color(fn($state)=>$state ? 'warning' : 'gray'),
-            TextColumn::make('provider_expires_at')->label('Expires')->date('M j, Y')->placeholder('Unknown')->sortable(),
+            TextColumn::make('provider_expires_at')->label('Expires')->state(fn(Domain $record)=>$record->provider_expires_at?->format('M j, Y') ?? 'Unconfirmed')
+                ->sortable(query: fn(Builder $query,string $direction)=>$query->orderBy('provider_expires_at',$direction)),
         ])->filters([
             SelectFilter::make('status')->label('Status')->multiple()->options(Labels::statuses()),
-            SelectFilter::make('server_id')->label('Registrar account')->options(fn()=>Staff::can() ? Account::orderBy('server_id')->get()
-                ->mapWithKeys(fn($a)=>[$a->server_id=>match($a->registrar_key) {'enom'=>'Enom', 'namesilo'=>'NameSilo',default=>'Unknown'}.' · Server #'.$a->server_id])->all() : []),
+            SelectFilter::make('server_id')->label('Registrar account')->options(function(): array {
+                if (!Staff::can()) { return []; }
+                $accounts=Account::orderBy('server_id')->get();
+                $names=\App\Models\Server::whereIn('id',$accounts->pluck('server_id'))->pluck('name','id');
+                return $accounts->mapWithKeys(fn($a)=>[$a->server_id=>match($a->registrar_key) {'enom'=>'Enom','namesilo'=>'NameSilo',default=>'Unknown'}.' · '.($names[$a->server_id] ?? 'Server #'.$a->server_id)])->all();
+            }),
             SelectFilter::make('expiring')->label('Expiring within')->options(['7'=>'7 days','30'=>'30 days','60'=>'60 days','90'=>'90 days'])
                 ->query(function(Builder $query,array $data) {
                     $days=(int)($data['value']??0);
@@ -65,6 +71,12 @@ class DomainResource extends Resource
         ])->recordUrl(fn(Domain $record)=>static::getUrl('view',['record'=>$record]))
             ->defaultSort('domain')->paginated([25,50,100])->defaultPaginationPageOption(25)
             ->emptyStateHeading('No domains yet')->emptyStateDescription('Domains appear here when customers order them.');
+    }
+    private static function listState(Domain $record): string
+    {
+        if ($record->adoptionPending()) { return 'adoption_pending'; }
+        $state=$record->status==='needs_review' ? $record->latestAcquisition?->state : null;
+        return in_array($state,['held','uncertain'],true) ? $state : $record->status;
     }
     public static function getRelations(): array { return [RequestsRelationManager::class]; }
     public static function getPages(): array { return ['index'=>ListDomains::route('/'),'adopt'=>AdoptDomain::route('/adopt'),'view'=>ViewDomain::route('/{record}'),'adoption'=>AdoptionPreview::route('/{record}/adoption')]; }

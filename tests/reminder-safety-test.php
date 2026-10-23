@@ -58,4 +58,37 @@ $batch=ReminderSchedules::next($clock->now()->getTimestamp(),2);same(2,count($ba
 $next=ReminderSchedules::next($clock->now()->getTimestamp(),2);expect(!array_intersect($batch,$next),'Other account turn is independent');
 $again=ReminderSchedules::next($clock->now()->getTimestamp());same([],$again,'Cadence prevents fixed-time repeat work');
 commerceReject(fn()=>ReminderSchedules::next($clock->now()->getTimestamp(),26));
+// Real scheduled selection must expose failures without leaking the exception message.
+[$broken]=$make('throwing-reminder.com');[$healthy]=$make('following-reminder.com');
+$throwOnRead=[];
+\Paymenter\Extensions\Servers\Domains\Models\Domain::retrieved(static function($domain)use(&$throwOnRead):void {
+    if(isset($throwOnRead[$domain->id])&&$domain->getRawOriginal('domain')!==null){unset($throwOnRead[$domain->id]);throw new RuntimeException('private-reminder-provider-contact-credential');}
+});
+$handler=new class extends \Monolog\Handler\AbstractHandler {
+    public array $warnings=[];public bool $fail=false;
+    public function handle(\Monolog\LogRecord $record):bool
+    {
+        if($record->message!=='Domains reminder check failed.'){return false;}
+        $this->warnings[]=['level'=>$record->level,'message'=>$record->message,'context'=>$record->context];
+        if($this->fail){throw new RuntimeException('private-logger-credential');}return true;
+    }
+};
+$logger=logger()->getLogger();$logger->pushHandler($handler);
+try {
+    foreach([false,true]as$loggerFails){
+        DB::table('domains_reminder_schedules')->update(['due_at'=>$clock->now()->getTimestamp()+300]);
+        DB::table('domains_reminder_schedules')->where('server_id',$broken->server_id)->update(['due_at'=>0,'cursor'=>$broken->id-1]);
+        $throwOnRead=[$broken->id=>true];$handler->fail=$loggerFails;
+        same($loggerFails?0:1,$reminders->sweep(1,2),'Sweep continues to healthy next domain even if warning handler throws; no duplicate notice');
+        expect(DB::table('domains_obligation_alerts')->where('domain_id',$broken->id)->where('code','reminder_failed')->exists(),'Throwing reminder retains staff evidence');
+    }
+}finally{$logger->popHandler();}
+same(array_fill(0,2,['level'=>\Monolog\Level::Warning,'message'=>'Domains reminder check failed.',
+    'context'=>['domain_id'=>$broken->id,'exception_class'=>RuntimeException::class]]),$handler->warnings,'Warnings contain only class and domain ID, never private exception text or objects');
+expect(DB::table('domains_reminder_deliveries')->where('domain_id',$healthy->id)->where('state','accepted')->exists(),'Later holding still receives its notice');
+[$unmanaged]=$make('unmanaged-reminder.com');
+DB::table('domains_domains')->where('id',$unmanaged->id)->update(['billing_managed'=>false]);
+same(false,$reminders->remind($unmanaged->id),'Unmanaged holding quietly skips before managed authority locks');
+expect(!DB::table('domains_reminder_deliveries')->where('domain_id',$unmanaged->id)->exists(),'Unmanaged holding sends no notice');
+expect(!DB::table('domains_obligation_alerts')->where('domain_id',$unmanaged->id)->exists(),'Unmanaged holding creates no reminder failure alert');
 echo "Native invoice authority, scheduled/off/expired notices, preferences, retained migration and bounded cursor checks passed.\n";$nativeSuccessful=true;

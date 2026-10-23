@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages;
-use App\Models\{Service, User};
+use App\Models\{Server, Service, User};
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Select, TextInput, Toggle};
 use Filament\Infolists\Components\TextEntry;
@@ -77,10 +77,10 @@ class AdoptDomain extends Page
     public function confirmAction(): Action
     {
         return Action::make('confirm')->label('Confirm adoption')->visible(fn () => $this->previewId !== null && $this->adoptedId === null)
-            ->disabled(fn () => !$this->confirmable())->modalHeading('4. Confirm adoption')->modalSubmitActionLabel('Confirm adoption')
+            ->disabled(fn () => !$this->confirmable())->modalHeading(fn () => 'Adopt '.($this->target['name'] ?? 'registration').' for '.$this->customerLabel())->modalSubmitActionLabel('Confirm adoption')
             ->modalDescription(function (): string {
                 $facts = $this->review['details'] ?? [];
-                return 'Adopt '.$this->target['name'].' for Customer #'.$this->target['customer'].' / Service #'.$this->target['service'].' / Account #'.$this->target['account']
+                return 'Customer #'.$this->target['customer'].' · Service #'.$this->target['service'].' · Account #'.$this->target['account']
                     .'. Expiry: '.self::when($facts['expiry'] ?? null).'. Annual charge: '.($facts['annual_charge'] ?? 'Unconfirmed').' USD including applicable tax. '
                     .(($facts['do_not_renew'] ?? false) ? 'Do not renew; retain end-of-period cancellation. ' : 'Renewal on; ordinary billing gates still apply. ')
                     .'No charge occurs now. Reason: '.$this->reason;
@@ -126,22 +126,32 @@ class AdoptDomain extends Page
                 : (new \DateTimeImmutable($value))->setTimezone($utc)->format('M j, Y H:i').' UTC';
         } catch (\Throwable) { return 'Unconfirmed'; }
     }
+    private function customerLabel(): string
+    { return User::find($this->target['customer'] ?? null)?->email ?? 'Customer #'.($this->target['customer'] ?? ''); }
+    private static function readinessList(array $items): string
+    {
+        return '<ul style="list-style:disc outside;padding-inline-start:1.25rem;margin:0">'
+            .implode('', array_map(fn ($item) => '<li style="margin-block:.25rem">'.e($item).'</li>', $items)).'</ul>';
+    }
     public function content(Schema $schema): Schema
     {
         self::permission(); $sections = []; $enabled = config('domains.adoption.enabled', false) === true;
-        $open = ['Deleting a customer while they are checking out can remove their new order and service. A later release must close this gap.',
-            'Registrar test scenarios are accepted. This installed site still needs its own end-to-end check.',
-            'The live registrar account and its standard renewal pricing still need to be confirmed.',
-            'Managed public DNS for adopted names is recorded but stays inactive until it is approved separately.',
-            'Simultaneous staff and customer edits have not yet been checked against this site\'s own database.'];
-        if (!$enabled) { $open = [...$open, 'Before switching on, let in-progress customer, order and service edits finish, then restart web and queue workers.',
-            'You can choose a service and read previews now. Previews charge nothing and adopt nothing. Switching adoption on is a site configuration change, not a staff action.']; }
-        $sections[] = Section::make($enabled ? 'Adoption review' : 'Adoption is not enabled yet')
-            ->description('No charge occurs now. Adoption does not buy, transfer or renew a registration. Historical invoices remain unchanged.')
-            ->schema([TextEntry::make('readiness')->label($enabled ? 'Known open items' : 'Still needed before adoption can be switched on')->state($open)->listWithLineBreaks()->bulleted()]);
+        $open = ['Run an end-to-end check on this site.',
+            'Close the gap where deleting a customer during checkout can remove their new order and service.',
+            'Confirm the live registrar account and its standard renewal pricing.',
+            'Approve managed public DNS for adopted names. It is recorded but stays inactive until then.',
+            "Check simultaneous staff and customer edits against this site's database."];
+        if (!$enabled) { $open[] = 'Before switching on: let in-progress customer, order and service edits finish, then restart web and queue workers.'; }
+        $readiness = Section::make($enabled ? 'Adoption review' : 'Adoption is not enabled yet')
+            ->description($enabled ? 'No charge occurs now. Adoption does not buy, transfer or renew a registration. Historical invoices remain unchanged.'
+                : 'You can choose a service and read previews now. Previews charge nothing and adopt nothing. Adoption does not buy, transfer or renew a registration, and historical invoices stay unchanged. Switching adoption on is a site configuration change, not a staff action.')
+            ->schema([TextEntry::make('done')->label('Done')->state(self::readinessList(['Registrar test scenarios pass.']))->html(),
+                TextEntry::make('readiness')->label($enabled ? 'Known open items' : 'Still needed')->state(self::readinessList($open))->html()]);
+        if (!$enabled) { $readiness->icon('heroicon-o-exclamation-triangle')->iconColor('warning'); }
+        $sections[] = $readiness;
         $sections[] = Section::make('1. Customer, service and account')->columns(2)->schema([
-            TextEntry::make('selection')->label('Selected registration')->state($this->target ? $this->target['name'].' · Customer #'.$this->target['customer'].' · Service #'.$this->target['service'] : 'Choose a dedicated domain service.'),
-            TextEntry::make('environment')->label('Proof account')->state($this->target ? 'Account #'.$this->target['account'].' · '.($this->target['environment'] === 'test' ? 'TEST — Test-account rehearsal. This does not verify a live registration.' : 'Live') : 'Not selected'),
+            TextEntry::make('selection')->label('Selected registration')->state($this->target ? $this->target['name'].' · '.$this->customerLabel().' · Service #'.$this->target['service'] : 'Choose a dedicated domain service.'),
+            TextEntry::make('environment')->label('Registrar account')->state($this->target ? (Server::find($this->target['account'])?->name ?? 'Account #'.$this->target['account']).' · '.($this->target['environment'] === 'test' ? 'Test account. A rehearsal; it does not verify a live registration.' : 'Live') : 'Not selected'),
             Actions::make([$this->chooseAction()])->columnSpanFull()]);
         if ($this->target && $this->adoptedId === null) { $sections[] = Section::make('2. Fresh readback')->description('Readback is an explicit staff action. Facts expire after 120 seconds.')->schema([Actions::make([$this->readbackAction()])]); }
         if ($this->refusal) { $sections[] = Section::make('Confirmation not completed')->description($this->refusal)->schema([]); }

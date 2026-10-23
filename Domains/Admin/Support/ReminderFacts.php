@@ -19,12 +19,16 @@ final class ReminderFacts
     {
         Staff::requireView();if(!Schema::hasTable('domains_reminder_schedules')){return [];}
         $r=DB::table('domains_reminder_schedules')->where('server_id',$server)->first();
-        $days=static fn($v)=>implode(', ',json_decode($v,true,8,JSON_THROW_ON_ERROR))?:'None';
+        $days=static function($v,bool $before=false):string {
+            $values=json_decode($v,true,8,JSON_THROW_ON_ERROR);
+            if($before){rsort($values,SORT_NUMERIC);}else{sort($values,SORT_NUMERIC);}
+            return implode(', ',$values)?:'None';
+        };
         $hold=Schema::hasTable('domains_observation_queues')?DB::table('domains_observation_queues')->where('server_id',$server)->value('catalogue_hold'):null;
         $binding=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server)->value('account_fingerprint');
         return ['Catalogue refresh'=>$hold?'On hold · inspect saved catalogue work before resuming':'No saved catalogue hold',
             'Customer reminders'=>$r?($r->account_fingerprint!==$binding?'On hold · account changed':($r->enabled?'On':'Off')):'Not configured',
-            'Days before expiry'=>$r?$days($r->before_days):'60, 30, 7, 1','Days after expiry'=>$r?$days($r->after_days):'3',
+            'Days before expiry'=>$r?$days($r->before_days,true):'60, 30, 7, 1','Days after expiry'=>$r?$days($r->after_days):'3',
             'Notification safety'=>'Unknown expiry or price alerts staff. Queued mail is not delivery confirmation.'];
     }
 }

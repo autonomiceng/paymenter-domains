@@ -32,6 +32,7 @@ $req = static function (array $input = [], string $method = 'POST', ?App\Models\
 $key = FormKeys::issue($req(), 'search');
 $check = static fn ($name) => $controller->check($req(['domain' => $name, '_request_key' => $key]));
 same(['com'], array_column($store->endings(), 'tld'), 'Only selected seller ending is published');
+same(true, $store->endings()[0]['testEnvironment'], 'D7 public catalogue carries only a test boolean');
 same('$7.80', $store->endings()[0]['register'], 'Selected Enom retail, not cost or other account');
 Illuminate\Support\Facades\DB::enableQueryLog(); Illuminate\Support\Facades\DB::flushQueryLog();
 $store->endings();
@@ -56,6 +57,7 @@ $sellers->change('com', 2, $tlds[1]->server_id, true, true, $now);
 same('$9.00', $store->endings()[0]['register'], 'Switched selected seller table');
 $sellers->change('com', 3, $tlds[0]->server_id, true, true, $now);
 $result = $check('EXAMPLE.COM.')->getData(true);
+expect(str_contains($result['html'], '>Test</span>'), 'D7 checked AJAX result carries test label');
 same('available', $result['status'], 'Canonical ordinary explicit false premium gets offer');
 expect(str_contains($result['html'], 'name="action" value="register"'), 'Offer is a neutral CSRF/form-key POST');
 foreach (['enom', 'namesilo', 'fingerprint', 'wholesale', 'server_id', 'account-'] as $secret) {
@@ -75,6 +77,7 @@ foreach (['https://www.example.com/path', 'www.example.com', 'example.unoffered'
     same('example', $data['sld'], 'Approved pasted-name parsing'); expect(count($data['results']) === 1, 'Safe alternative ending');
 }
 same('The name can be at most 63 characters.', StorefrontController::parseName(str_repeat('a', 64))['error'], 'Approved long-label copy');
+expect($controller->search($req(['name' => 'example'], 'GET'))->getData()['results'][0]['testEnvironment'], 'D7 initial idle result carries test flag');
 expect($controller->search($req([], 'GET'))->getData()['testEnvironment'] === true, 'Test mode flag without seller identity');
 $transferState = (object) ['calls' => 0, 'fail' => false]; $transferBindings = storefrontTransferReader($transferState);
 $transferEligibility = new CheckoutEligibility($transferBindings, $clock, new TransferPrecheck(new Rdap(static fn () => ['status' => 503, 'body' => ''])));
@@ -185,4 +188,5 @@ same(0, $dom->query('//li[@data-domains-result]//*[@role="status"]')->length, 'N
 $data['endings'] = []; $data['results'] = [];
 expect(str_contains(view('domains::search', $data)->render(), 'Check back soon.'), 'Closed storefront view');
 same('$9,999,999,999.99', Storefront::money('9999999999.99'), 'Exact large-money display');
+require __DIR__.'/Support/customer-polish-views.php';
 $nativeSuccessful = true; echo "Dormant storefront native controller, DOM states, privacy and budget checks passed.\n";

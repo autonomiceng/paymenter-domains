@@ -116,7 +116,7 @@ $completed->domain->service->fresh()->update(['status'=>'active']);
 app()->instance(AcquisitionRetirement::class,$retirement);$retirement->inspect($completed->domain_id);same(1,$alerts($completed)->count(),'Sweep recovers reactivation after missed cancellation wake');
 $clock->instant=$now;
 // Lost Paid listener: native siblings continue; fair scheduler recovers only retained work.
-Event::forget(App\Events\Invoice\Paid::class);expect(str_contains(NativePaidHooks::notices()['Paid invoice wake'],'Paused'),'Missing exact Paid listener is visible');
+Event::forget(App\Events\Invoice\Paid::class);expect(str_contains(NativePaidHooks::notices()['Start after payment'],'Paused'),'Missing exact Paid listener is visible');
 $lost=$new('paid-lost-event.com',paid:false);$queue=Queue::getFacadeRoot();Queue::fake();$paid($lost);same('awaiting_payment',$lost->fresh()->state,'Missing event leaves recoverable operation');
 Queue::assertNotPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class);Queue::swap($queue);$work->tick();$work->operation($lost->id);same('uncertain',$lost->fresh()->state,'Scheduler recovers lost Paid wake');NativePaidHooks::boot();
 // Multi-day transfer reconciliation cannot turn into a second acquisition send.
@@ -125,7 +125,7 @@ $clock->instant=$now->modify('+4 days');$work->operation($transfer->id);$manual(
 same($sent,$writer->calls,'Days-long transfer reads retained attempt only');expect(in_array($transfer->fresh()->state,['pending','uncertain'],true),'Transfer remains processing until positive registry evidence');
 // Public capability loss pauses acquisition sends without blocking native billing or reconciliation.
 $clock->instant=$now;$missing=$new('paid-no-service-hook.com',paid:false);Service::flushEventListeners();$before=$writer->calls;$paid($missing);
-same($before,$writer->calls,'Missing Service hooks pause acquisition send');same('awaiting_payment',$missing->fresh()->state,'Missing hooks preserve unsent work without a permanent hold');expect(str_contains(NativePaidHooks::notices()['Native payment lifecycle'],'Service saving'),'Staff sees precise missing Service event');
+same($before,$writer->calls,'Missing Service hooks pause acquisition send');same('awaiting_payment',$missing->fresh()->state,'Missing hooks preserve unsent work without a permanent hold');expect(str_contains(NativePaidHooks::notices()['Paymenter payment events'],'Service saving'),'Staff sees precise missing Service event');
 // Actual staff queue and detail surfaces, including invoice permission narrowing.
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class)->filterTable('late_payment')->assertCanSeeTableRecords([$failed->domain,$retired->domain])->assertCanNotSeeTableRecords([$mixed->domain]);
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('Paid after order closed')->assertSee('Invoice #'.$failed->invoice_id)->assertSee('Registrar request #'.$failed->id);

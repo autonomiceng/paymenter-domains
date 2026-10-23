@@ -7,6 +7,8 @@
         $last = array_pop($terms);
         return implode(', ', $terms).' or '.$last.' years';
     };
+    $showTerms = collect($rows)->contains(fn($row) => $termRange($row['terms']) !== '1 year');
+    $longerTerms = collect($rows)->contains(fn($row) => collect($row['terms'])->contains(fn($term) => $term > 1));
 @endphp
 <div class="container mt-14 mb-10">
 <div class="domains">
@@ -44,24 +46,24 @@
                             <th scope="col" class="domains-end">Register, first year</th>
                             <th scope="col" class="domains-end">Renew, per year</th>
                             <th scope="col" class="domains-end">Transfer, adds 1 year</th>
-                            <th scope="col" class="domains-end">Register for</th>
+                            @if ($showTerms)<th scope="col" class="domains-end">Register for</th>@endif
                         </tr>
                     </thead>
                     <tbody>
                         @foreach ($rows as $row)
                             <tr>
-                                <th scope="row" class="domains-domain domains-cell-wide">.{{ $row['tld'] }}</th>
+                                <th scope="row" class="domains-domain domains-cell-wide">.{{ $row['tld'] }}@if ($row['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</th>
                                 <td class="domains-end domains-num" data-label="Register">{{ $row['register'] ?? '—' }}</td>
-                                <td class="domains-end domains-num" data-label="Renew">{{ $row['renew'] ? $row['renew'].'/yr' : '—' }}</td>
+                                <td class="domains-end domains-num" data-label="Renew, per year">{{ $row['renew'] ?: '—' }}</td>
                                 <td class="domains-end domains-num" data-label="Transfer">{{ $row['transfer'] ?? '—' }}</td>
-                                <td class="domains-end" data-label="Register for">{{ $termRange($row['terms']) }}</td>
+                                @if ($showTerms)<td class="domains-end" data-label="Register for">{{ $termRange($row['terms']) }}</td>@endif
                             </tr>
                         @endforeach
                     </tbody>
                 </table>
             </div>
         </section>
-        <p class="domains-small domains-muted">Prices plus tax where applicable. Each registration term has its own total. Search for a name to see the price for each term.</p>
+        <p class="domains-small domains-muted">Prices plus tax where applicable.@if ($longerTerms) Longer terms are priced per term; search for a name to see each total.@endif</p>
     @endif
 </div>
 </div>

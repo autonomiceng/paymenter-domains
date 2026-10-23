@@ -32,6 +32,7 @@ $noticeTitles=static fn():array=>array_column(session()->get('filament.claimed_n
 $noSuccess=static function(string $title)use($noticeTitles):void {expect(!in_array($title,$noticeTitles(),true),'Refused operation must not send '.$title);};
 $snapshot=$before();
 $page=$mount()->fillForm(['price'=>'99.00','label'=>'Must not save with price'])->call('save')->assertSuccessful()->assertHasNoFormErrors();
+$page->assertSet('data.price','99.00')->assertSet('data.label','Must not save with price')->assertSet('mountedActions',[]);
 $capture($page,'price');$noSuccess('Saved');$page->assertNotified($priceNotice);same($snapshot,$before(),'Price refusal saves none of the native or retained state');
 // The native hint only changes draft form state and sends its own success notice. Save is the write boundary.
 $page=$mount()->callAction(TestAction::make('Recalculate Price')->schemaComponent('price','form'))->assertSuccessful()->assertHasNoActionErrors();
@@ -51,12 +52,12 @@ foreach(['product_id'=>$hostingProduct->id,'plan_id'=>$otherPlan->id,'user_id'=>
     if($field==='product_id'){$capture($page,'identity');}
     $noSuccess('Saved');$page->assertNotified($identityNotice);same($snapshot,$before(),'Identity refusal changes nothing: '.$field);
 }
-$snapshot=$before();$page=$mount()->callAction('delete')->assertSuccessful()->assertActionHalted('delete');
+$snapshot=$before();$page=$mount()->callAction('delete')->assertSuccessful()->assertActionNotMounted('delete')->assertSet('mountedActions',[]);
 $capture($page,'delete');$noSuccess('Deleted');$page->assertNotified($deleteNotice);same($snapshot,$before(),'Native delete refusal retains all state and processing');
 // Active native Delete first invokes the real Domains no-op and records its native audit.
 DB::table('services')->where('id',$service->id)->update(['status'=>'active']);
 $page=$mount();Queue::fake();$snapshot=$before();$auditCount=$service->audits()->count();
-$page->callAction('delete',data:['deleteExtensionServer'=>true])->assertSuccessful()->assertActionHalted('delete');
+$page->callAction('delete',data:['deleteExtensionServer'=>true])->assertSuccessful()->assertActionNotMounted('delete')->assertSet('mountedActions',[]);
 same(['Service could not be deleted'],$noticeTitles(),'Active Delete has only the handled refusal, with no extension error or success');
 $page->assertNotified($deleteNotice);
 // Livewire termination replays the fixture checkout's existing after-response callbacks.

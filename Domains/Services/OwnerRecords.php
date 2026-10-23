@@ -11,6 +11,11 @@ final class OwnerRecords
     {
         $raw=ObservationProjection::sections($d)['srv']['facts']['records']??[];
         $known=array_map(fn($r)=>ManagementPayload::srv($r),$raw);
+        // Match the form's canonical row-set digest before resolving any displayed source index.
+        if (array_filter($p['record_sources']??[],static fn($source)=>$source!=='')
+            && ManagementPayload::digest($known,'srv')!==($p['preimage_digest']??null)) {
+            throw new OwnerFormValidation(['srv.records']);
+        }
         $known=self::ordered('srv',$known);
         $seen=[];
         foreach ($p['records'] as $i=>&$row) {

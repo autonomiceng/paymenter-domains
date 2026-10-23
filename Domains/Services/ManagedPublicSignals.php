@@ -24,7 +24,11 @@ final class ManagedPublicSignals
         catch (\LogicException|\RuntimeException) { return false; }
         if ($changed===null) { $this->retire($id,$now);return false; }
         // This runs after the relink transaction commits. The work rows, not the hint, are durable intent.
-        try { if ($changed && $this->hint) { ($this->hint)($id,$owner); } } catch (\Throwable) { /* Daily sweep repairs lost hints. */ }
+        try { if ($changed && $this->hint) { ($this->hint)($id,$owner); } }
+        catch (\Throwable $e) {
+            try { logger()->warning('Domains managed public check hint deferred.', ['domain_id' => $id, 'exception_class' => $e::class]); }
+            catch (\Throwable) { /* Daily sweep repairs lost hints even if logging fails. */ }
+        }
         return true;
     }
     public function retire(int $id,int $now): void

@@ -2,7 +2,16 @@
 // Enom 444f31c owner/service presentation; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
-/** Customer data only. No models, binding, operation keys, provider IDs or financial evidence. */
+/**
+ * Customer data only. No models, binding, operation keys, provider IDs or financial evidence.
+ * tone: ok|info|warn|bad|muted; status is the customer-facing label.
+ * expiry: registrar-reported registration expiry (Y-m-d), null when unconfirmed.
+ * renewalDue: due date (Y-m-d) of the exact retained pending renewal invoice, not expiry
+ * or a projected renewal date; null when no matching issued invoice is confirmed.
+ * renewal: On or Off for an active domain's local renewal preference; otherwise —,
+ * or Paused during setup. This does not describe the registrar's auto-renew setting.
+ * plannedRenewalDue: projected future due date for an adopted domain, separate from renewalDue.
+ */
 final readonly class OwnedDomain
 {
     public function __construct(public string $name, public string $status, public string $tone,

@@ -55,7 +55,7 @@ function storefrontCorruptionChecks(array $fixture, Storefront $store): void
         }
         Cache::flush(); $before = $reads->calls; $public = array_column($store->endings(), null, 'tld');
         same(['com', 'net', 'xyz'], array_keys($public), 'Corrupt '.$corruption.' isolates broken, old, below-cost and unknown offers');
-        same(['tld' => 'net', 'price' => '$20.00', 'register' => '$20.00', 'transfer' => '$22.00', 'renew' => '$21.00', 'terms' => [1, 3]],
+        same(['tld' => 'net', 'price' => '$20.00', 'register' => '$20.00', 'transfer' => '$22.00', 'renew' => '$21.00', 'terms' => [1, 3], 'testEnvironment' => true],
             $public['net'], 'Corrupt '.$corruption.' preserves exact healthy row');
         same(null, $public['xyz']['transfer'], 'Corrupt transfer never leaks a price');
         same([1, 3], $public['xyz']['terms'], 'Registration-only ending retains exact terms');

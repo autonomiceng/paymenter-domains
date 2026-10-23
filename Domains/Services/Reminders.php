@@ -16,7 +16,11 @@ final readonly class Reminders
         for($turn=0;$turn<$accounts;$turn++){
             // Claim one account only; an interrupted account cannot advance every other cursor.
             foreach(ReminderSchedules::next($this->clock->now()->getTimestamp(),$limit) as $id){
-                try{$sent+=$this->remind((int)$id)?1:0;}catch(\Throwable){$this->failure((int)$id,'reminder_failed');}
+                try{$sent+=$this->remind((int)$id)?1:0;}catch(\Throwable $e){
+                    try{logger()->warning('Domains reminder check failed.', ['domain_id'=>(int)$id,'exception_class'=>$e::class]);}
+                    catch(\Throwable){} // Logging cannot interrupt the account sweep or its failure evidence.
+                    $this->failure((int)$id,'reminder_failed');
+                }
             }
         }
         return $sent;
@@ -24,7 +28,7 @@ final readonly class Reminders
     public function remind(int $id):bool
     {
         OperationClaims::outside();$now=$this->clock->now();$seed=Domain::findOrFail($id);
-        if($seed->adoptionPending()){return false;}
+        if(!$seed->billing_managed||$seed->adoptionPending()){return false;}
         $claim=DB::transaction(function()use($seed,$now):?array {
             $l=HoldingLocks::take($seed);$d=$l['domain'];
             $schedule=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->lockForUpdate()->first();
@@ -51,7 +55,10 @@ final readonly class Reminders
     {
         try{DB::transaction(function()use($id,$code):void {
             $d=Domain::whereKey($id)->lockForUpdate()->first();if($d){ObligationAlerts::record($d,$code,$this->clock->now()->getTimestamp());}
-        });}catch(\Throwable){} // Database failure is not a customer-send permission.
+        });}catch(\Throwable $e){
+            try{logger()->warning('Domains reminder failure could not be recorded.', ['domain_id'=>$id,'exception_class'=>$e::class]);}
+            catch(\Throwable){} // Database or logging failure is not a customer-send permission.
+        }
     }
     private static function refund(array $l,\DateTimeImmutable $now,array &$alerts):?array
     {

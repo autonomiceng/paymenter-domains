@@ -8,7 +8,7 @@
     };
 @endphp
 <li class="domains-result {{ ($first ?? false) ? 'is-first' : '' }}" data-domains-result data-domain="{{ $result['domain'] }}" data-state="{{ $state }}">
-    <div class="domains-result__name"><span>{{ $result['sld'] }}</span><wbr><span class="domains-tld">.{{ $result['tld'] }}</span></div>
+    <div class="domains-result__name"><span>{{ $result['sld'] }}</span><wbr><span class="domains-tld">.{{ $result['tld'] }}</span>@if ($result['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</div>
     <div class="domains-result__status"><span class="{{ $state === 'idle' ? 'domains-checking' : 'domains-badge domains-tone-'.$tone }}">{{ $label }}</span></div>
     <div class="domains-result__price">@if (in_array($state, ['available', 'transferable'], true))<strong>{{ $state === 'transferable' ? 'Transfer for '.$result['price'] : $result['price'].' for '.$result['term'].($result['term'] === 1 ? ' year' : ' years') }}</strong><small>{{ $state === 'transferable' ? 'Adds 1 year' : 'Renews at '.$result['renew'].'/yr' }}</small>@elseif ($state === 'premium')
         Not sold here

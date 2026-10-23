@@ -16,7 +16,9 @@ final class Storefront
 
     public function endings(): array
     {
-        return (new StorefrontCatalogueCache($this->clock))->remember(fn () => $this->catalogueRows());
+        $rows = (new StorefrontCatalogueCache($this->clock))->remember(fn () => $this->catalogueRows());
+        $tests = $this->testEndings($rows);
+        return array_map(static fn ($row) => [...$row, 'testEnvironment' => in_array($row['tld'], $tests, true)], $rows);
     }
 
     private function catalogueRows(): array
@@ -39,10 +41,16 @@ final class Storefront
 
     public function testEnvironment(array $rows): bool|string
     {
+        $tests = count($this->testEndings($rows));
+        return $tests === 0 ? false : ($tests === count($rows) ? true : 'some');
+    }
+
+    /** Test labels describe the public selected seller, never a reserved domain's owner/account. */
+    private function testEndings(array $rows): array
+    {
         $ids = SalesPolicy::whereIn('tld', array_column($rows, 'tld'))->pluck('server_id', 'tld');
         $environments = Account::whereIn('server_id', $ids->values())->pluck('environment', 'server_id');
-        $tests = $ids->filter(static fn ($id) => ($environments[$id] ?? null) === 'test')->count();
-        return $tests === 0 ? false : ($tests === count($rows) ? true : 'some');
+        return $ids->filter(static fn ($id) => ($environments[$id] ?? null) === 'test')->keys()->all();
     }
 
     /** Safe public result only. Any reservation has the SAME response regardless of owner or lifecycle. */
@@ -50,7 +58,8 @@ final class Storefront
     {
         $name = CanonicalName::normalize($input);
         $ending = CanonicalName::parse($name, SalesPolicy::pluck('tld')->all())['tld'];
-        $base = ['domain' => $name, 'sld' => substr($name, 0, -strlen($ending)-1), 'tld' => $ending, 'status' => 'taken'];
+        $base = ['domain' => $name, 'sld' => substr($name, 0, -strlen($ending)-1), 'tld' => $ending, 'status' => 'taken',
+            'testEnvironment' => $this->testEndings([['tld' => $ending]]) !== []];
         if (Domain::where('reservation_name', $name)->exists()) { return $base; }
         $offers = []; $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock);
         foreach (range(1, 10) as $term) {

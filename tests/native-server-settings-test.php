@@ -58,6 +58,10 @@ $panel=Filament\Facades\Filament::getCurrentPanel();$panel->pages([RegistrarSetu
 Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel):void {RegistrarSetup::registerRoutes($panel);BalancesPage::registerRoutes($panel);});
 app('router')->getRoutes()->refreshNameLookups();
 $writer=new StaffSettingsWrites(app(NativeCatalogue::class),app(SellerPolicies::class),$bindings,true);app()->instance(StaffSettingsWrites::class,$writer);
+$processingAction=static fn(Server $s)=>TestAction::make('processing_'.$s->id)->schemaComponent('account_'.$s->id,'content');
+$unconfigured=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertActionDisabled($processingAction($first))
+    ->assertActionExists($processingAction($first),fn($action)=>$action->getTooltip()==='Configure and verify this account first.');
+$unconfigured->mountAction($processingAction($first))->assertActionNotMounted($processingAction($first));
 $configure=static function(Server $s,string $registrar,string $secret)use($staff):void {
     $name=TestAction::make('configure_'.$s->id)->schemaComponent('account_'.$s->id,'content');
     $page=Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($name)->assertActionMounted($name);
@@ -68,6 +72,7 @@ $configure($first,'enom','PRIVATE-ORIGINAL-ENOM');$configure($second,'namesilo',
 foreach([$first,$second] as $server){
     $a=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($a);
     same(false,$a->processing_enabled,'Owned verified configuration starts paused');
+    Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertActionEnabled($processingAction($server));
     $bindings->setProcessing($server->id,true,static fn()=>null);
     BalanceReads::record($binding,new Money('42.17','USD'),$clock->now(),'manual');
     expect($bindings->configurationAvailable($server->id),'Local configuration validated without constructing reader');
@@ -102,9 +107,14 @@ foreach([$first,$second] as $server){
     same($readerCalls,$io->readers,'Changed credentials refuse before reader or spending transport composition');
     $facts=RegistrarBalances::facts($a,$clock->now());same('Unknown',$facts['balance'],'Wrong account never displays original account balance');same('Configuration unavailable',$facts['error'],'Changed credentials give safe balance status');
     same('42.17',DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->value('amount'),'Held display retains original balance history');
+    $pause=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertActionEnabled($processingAction($server));
+    DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);
+    $disabled=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertActionDisabled($processingAction($server));
+    DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
     $health=RuntimeHealth::for($server->id);expect(str_contains($health['Registrar configuration'],'saved settings no longer match the verified account'),'Hold covers credential and digest settings');expect(str_contains($health['Registrar configuration'],'re-enter credentials for the original account'),'Local health gives actionable hold');
     Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('On hold')->assertSee('re-enter credentials for the original account')->assertDontSee('PRIVATE-WRONG');
-    Livewire::actingAs($staff)->test(BalancesPage::class)->assertDontSee('PRIVATE-WRONG');
+    Livewire::actingAs($staff)->test(BalancesPage::class)->assertDontSee('PRIVATE-WRONG')
+        ->assertActionExists(TestAction::make('funds_'.$server->id)->schemaComponent('account_'.$server->id,'content'),fn($action)=>$action->getColor()==='gray'&&$action->isOutlined()&&$action->getIconPosition()===\Filament\Support\Enums\IconPosition::After);
     // A positively verified different account still cannot repurpose the retained binding.
     serverSettingsReject(fn()=>$bindings->configure($server->id,$a->registrar_key,Environment::Test,$a->registrar_key==='enom'?['uid'=>'other-account','token'=>'PRIVATE-WRONG-ROTATION']:['api_key'=>'PRIVATE-WRONG-ROTATION']));
     same($binding->fingerprint,$a->fresh()->account_fingerprint,'Failed rotation retains B1 fingerprint key');

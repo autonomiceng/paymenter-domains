@@ -33,6 +33,8 @@
     "tests/paymenter-upgrade-tripwire-test.php",
     "tests/raw-post-test.php",
     "tests/schema-test.php",
+    "tests/schema-identifiers-test.php",
+    "tests/schema-reference-safety-test.php",
     "tests/reservation-test.php",
     "tests/binding-test.php",
     "tests/pricing-rules-test.php",
@@ -225,7 +227,8 @@
     "tests/watch-notice-priority-test.php",
     "tests/watch-notice-pages-test.php",
     "tests/watch-notice-snapshot-test.php",
-    "tests/watch-notice-overflow-test.php"
+    "tests/watch-notice-overflow-test.php",
+    "tests/staff-ui-polish-test.php"
   ],
   "ui": [],
   "runner": [
@@ -241,6 +244,7 @@
     "tests/test_package.py"
   ],
   "mariadb": [
-    "tests/test_conversion_mariadb.py"
+    "tests/test_conversion_mariadb.py",
+    "tests/test_schema_mariadb.py"
   ]
 }
