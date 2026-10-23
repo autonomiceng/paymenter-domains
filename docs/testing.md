@@ -612,3 +612,13 @@ fixture's sole published suffix, `.com` (`Support/commerce.php`).
 
 Upgrade re-review, native identity, adoption and later per-feature coverage notes are in
 [testing-coverage.md](testing-coverage.md). Append new coverage notes there; this file keeps setup and suites.
+
+## Parallel offline suites
+
+`python3 scripts/test.py --jobs 4` uses four workers. `--jobs 1` keeps serial execution.
+`DOMAINS_TEST_JOBS` sets the default; otherwise it is half the CPU count, between one and four.
+Each worker owns its fixture, PHP runtime and temporary paths. Source and copied dependencies are checked before commands start and after the run.
+Console output prints each command's block as it completes; receipts keep manifest order and indexed output files.
+Receipts add `jobs` and command `seconds` for concurrency and timing.
+The first failure stops new work; running commands finish. Runs that include MariaDB run serially.
+In parallel runs, writes to `Domains/`, even when restored, fail.

@@ -166,9 +166,12 @@
           "Domains/Admin/SecureEditServer.php",
           "Domains/Admin/SecureEditService.php",
           "Domains/Services/NativeServerGuard.php",
-          "Domains/Services/Runtime.php"
+          "Domains/Services/Runtime.php",
+          "Domains/Services/AccountBindings.php",
+          "Domains/Services/RegistrarBalances.php",
+          "tests/native-server-settings-test.php"
         ],
-        "review": "Re-review every editor/write path, credential serialization on mount/hydrate, permissions, field traversal and save transactions; containment does not authorize global hooks.",
+        "review": "Re-review native server creation, permissions, accepted decrypted settings exposure, declared-option-only persistence and unchanged saves; qualify credential/digest holds and fingerprint-keyed balance hiding with remaps and mount/hydrate interception disabled. Re-review remaining editor/write paths, field traversal and save transactions; containment does not authorize global hooks.",
         "files": {
           "app/Admin/Resources/ServerResource.php": "ae95123726c07ca46dfc5d97ba289feabe1ff793e99f8ba42c2809eaa87efccc",
           "app/Admin/Resources/ServerResource/Pages/CreateServer.php": "e0a789c03919493f19e464783890acdeef7f5a89651cc2f24c6ee281f9a673fe",

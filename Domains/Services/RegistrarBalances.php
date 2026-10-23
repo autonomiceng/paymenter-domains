@@ -67,14 +67,17 @@ final readonly class RegistrarBalances
     public static function facts(Account $a,\DateTimeImmutable $now): array
     {
         $row=DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->first();
+        // A native credential edit is not account verification. Retain the cache, but never
+        // display its amount while the current server configuration cannot prove this binding.
+        $available=app(AccountBindings::class)->configurationAvailable((int)$a->server_id);
         $forecast=BalanceForecast::for($a,$now);
-        $unknown=!$row?->read_at||$row->last_error_code!==null||$row->amount===null||$row->currency!==$forecast['currency'];
+        $unknown=!$available||!$row?->read_at||$row->last_error_code!==null||$row->amount===null||$row->currency!==$forecast['currency'];
         $low=!$unknown&&BalanceForecast::compare($row->amount,$forecast['total'])<0;
         $status=$unknown?'Unknown':($low?'Low for upcoming renewals':'OK');
         if($forecast['unknown']>0){$status=($low||$unknown?$status.' · ':'').'Upcoming renewals unknown';}
-        return ['status'=>$status,'low'=>$low,'balance'=>$row?->amount===null?'Unknown':self::money($row->amount,$row->currency),
+        return ['status'=>$status,'low'=>$low,'balance'=>!$available||$row?->amount===null?'Unknown':self::money($row->amount,$row->currency),
             'as_of'=>$row?->read_at?gmdate('Y-m-d H:i:s',$row->read_at).' UTC':'Never read',
-            'error'=>match($row?->last_error_code){null=>'None','rate_limited'=>'Read deferred','configuration_unavailable'=>'Configuration unavailable',default=>'Read failed'},
+            'error'=>match($available?$row?->last_error_code:'configuration_unavailable'){null=>'None','rate_limited'=>'Read deferred','configuration_unavailable'=>'Configuration unavailable',default=>'Read failed'},
             'total'=>self::money($forecast['total'],$forecast['currency']),'unknown'=>$forecast['unknown']];
     }
     private static function money(string $amount,string $currency): string

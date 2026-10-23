@@ -88,6 +88,7 @@ final class TldFacts
     {
         if(Price::where(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint,'tld'=>$t->tld])->get()->contains(fn($p)=>($p->eligibility['price_unavailable']??false)===true)){return 'Price unavailable · registration and transfer off';}
         if(!$t->enabled||(!$t->register_enabled&&!$t->transfer_enabled)){return 'New sales paused';}
+        if(!$t->renew_enabled){return 'New sales held · renewal is turned off. Enable Annual renewal catalogue support to sell this ending.';}
         $action=$t->register_enabled?'register':'transfer';$term=$action==='register'?$t->min_years:1;
         try{\Paymenter\Extensions\Servers\Domains\Services\PublicationEligibility::require($t,$action,$term);}catch(\Throwable){return 'New sales held · pending import or acceptance';}
         try{

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
+require __DIR__.'/Support/staff-filter-lookalikes.php';
 use Illuminate\Support\Facades\{Auth, DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
@@ -48,6 +49,7 @@ $wild=staffUser(['*']); Auth::setUser($wild);
 expect(Staff::can(Staff::COSTS)&&Staff::can(Staff::METADATA)&&$policy->managePolicy($wild,$held),'Native wildcard includes all read permissions');
 expect(!$policy->update($wild,$held),'Wildcard cannot add staff writes in this slice');
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
+staffDomainFilterLookalikes($viewer, $active);
 // Current record holds are safe review alerts; stale identities and arbitrary reasons never leak.
 $recordService=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::class;
 foreach (['history_limit'=>'Record history has reached its safety limit.','ownership_drift'=>'The registrar account no longer lists this domain.',

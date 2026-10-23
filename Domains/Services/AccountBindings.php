@@ -90,6 +90,30 @@ final class AccountBindings
         return $this->registry->reader($this->binding($account), $this->configuration($account, true));
     }
 
+    /** Local credential/site validation only; never resolves a provider reader or sends a request. */
+    public function configurationAvailable(int $serverId): bool
+    { return $this->configurationStatus($serverId) === 'matched'; }
+
+    /** Safe local reason codes for staff recovery; no credential or provider detail leaves this check. */
+    public function configurationStatus(int $serverId): string
+    {
+        try {
+            $server = Server::find($serverId);
+            if (!$server || $server->extension !== 'Domains') { return 'server_unavailable'; }
+            if (!$server->enabled) { return 'server_disabled'; }
+            $account = Account::where('server_id', $serverId)->first();
+            if (!$account) { return 'not_configured'; }
+            $binding = $this->binding($account);
+            if ($binding->environment === Environment::Live) {
+                try { $site = self::site(); } catch (\Throwable) { return 'site_invalid'; }
+                if ($account->live_site === null) { return 'site_unbound'; }
+                if ($account->live_site !== $site) { return 'site_mismatch'; }
+            }
+            $this->configuration($account, true);
+            return 'matched';
+        } catch (\Throwable) { return 'configuration_unavailable'; }
+    }
+
     /** Named adoption factory: accepted credentials and exact site guard, independent of spending. */
     public function adoptionReader(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $expected,
         \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,

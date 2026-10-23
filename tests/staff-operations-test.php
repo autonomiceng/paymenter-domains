@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
+require __DIR__.'/Support/staff-filter-lookalikes.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
@@ -15,6 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Services\RefundCandidates as Selection;
 use Paymenter\Extensions\Servers\Domains\Services\AccountSpendingHolds;
 staffPanel(); [$held,$active,$long]=staffData();
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer); $ops=Operation::orderBy('id')->get();
+staffOperationFilterLookalikes($viewer, $active);
 DB::table('domains_operations')->where('id',$ops[0]->id)->update(['funding_basis'=>'paid_invoice','state'=>'uncertain']);
 DB::table('domains_operations')->where('id',$ops[2]->id)->update(['funding_basis'=>'paid_invoice','state'=>'rejected','safe_code'=>'transfer_provider_rejected']);
 $ops=Operation::orderBy('id')->get();

@@ -41,6 +41,7 @@ final class Runtime
     {if(!app()->bound(self::class)){return $fallback;}return app(RuntimePorts::class)->managementEngine(CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->firstOrFail()));}
     public static function secureNativeRoutes(): void
     {
+        if(NativeServerGuard::testingNativeEditors()){return;}
         $map=[\App\Admin\Resources\ServerResource\Pages\CreateServer::class=>\Paymenter\Extensions\Servers\Domains\Admin\SecureCreateServer::class,
             \App\Admin\Resources\ServerResource\Pages\EditServer::class=>\Paymenter\Extensions\Servers\Domains\Admin\SecureEditServer::class,
             \App\Admin\Resources\ServiceResource\Pages\EditService::class=>\Paymenter\Extensions\Servers\Domains\Admin\SecureEditService::class];

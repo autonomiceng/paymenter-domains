@@ -24,13 +24,13 @@ class RegistrarSetup extends Page
         foreach(Server::where('extension','Domains')->orderBy('id')->get() as $s){
             $a=Account::where('server_id',$s->id)->first();
             $facts=['Environment'=>$a?->environment==='live'?'Live':($a?'Test':'Not configured'),
-                'Processing'=>$a?->processing_enabled?'On':'Off',
+                'Processing'=>$a?->processing_enabled?(app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class)->configurationAvailable((int)$s->id)?'On':'On hold'):'Off',
                 'Account binding'=>$a?'Verified · immutable':'Not configured',
                 'Catalogue acceptance'=>$a?TldFacts::acceptance($a):'Unavailable · new sales held',
                 'Connection'=>app(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class)->connectionAvailable()?'Not tested this visit':'Unavailable','Retained domains'=>$a?\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count():0,
                 'Renewal safety'=>'Keep both registrar accounts serviced. Seller selection affects new sales only.',
                 'Adoption readiness'=>'Off. Staff deleting a customer while that customer is checking out can remove the new domain’s Paymenter order and service. This can happen now, with adoption off. Affected domains appear under Missing Paymenter records. Adoption stays off until a later release closes this gap. Before any activation, let in-progress customer, order and service edits finish, then restart web and queue workers. Direct database edits bypass these checks.',
-                'Credentials'=>'Saved credentials are never displayed. Processing stays off after configuration.'];
+                'Credentials'=>'This page does not display saved credentials. Treat staff with server-edit permission as able to access them. Saving credentials pauses processing until you resume it.'];
             $facts += \Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for((int)$s->id);
             $facts += \Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule((int)$s->id);
             $entries=[];foreach($facts as $label=>$value){$entries[]=TextEntry::make('s'.$s->id.'_'.count($entries))->label($label)->state((string)$value);}
