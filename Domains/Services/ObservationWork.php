@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
 /** No installed schedule or writer. One turn/account, bounded discovery and one read job/turn. */
 final class ObservationWork
 {
-    private const STOPPED=['read_unavailable','budget_exhausted','superseded'];
+    private const STOPPED=['read_unavailable','budget_exhausted','superseded',...ReadFailure::CODES];
     /** Only the current binding, generation and follow-up phase can stop this holding. */
     public static function stopped(Domain $d): bool
     {
@@ -56,20 +56,23 @@ final class ObservationWork
                     &&(EnomTestRegistration::enabled(CatalogueAcceptances::binding($account))||EnomTestRenewal::enabled(CatalogueAcceptances::binding($account))||EnomTestTransfer::enabled(CatalogueAcceptances::binding($account)))){$summary[$queue->server_id]='read_deferred';continue;}
                 $this->discover($queue); if ($this->catalogue) {
                     try { $this->catalogue($queue); }
+                    catch (ReadDeferred|EnomTestCallLimit) { /* Local refusal does not invalidate saved evidence. */ }
                     catch (\Throwable $e) {
-                        try { logger()->warning('Domains catalogue check failed.', ['server_id' => (int) $queue->server_id, 'exception_class' => $e::class]); }
+                        try { $this->catalogueFailure($queue,ReadFailure::code($e)); }
+                        catch (\Throwable) { /* Diagnostic persistence cannot prevent independent domain reads. */ }
+                        try { logger()->warning('Domains catalogue check failed.', ['server_id'=>(int)$queue->server_id,'account_fingerprint'=>$queue->account_fingerprint,'safe_code'=>ReadFailure::code($e)]); }
                         catch (\Throwable) { /* Logging cannot prevent this account's observation work. */ }
                     }
                 }
                 $job=$this->claim($queue); if (!$job) { $summary[$queue->server_id]='idle'; continue; }
                 try { $code=$this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint); }
                 catch (ReadDeferred|EnomTestCallLimit) { $code='read_deferred'; }
-                catch (\Throwable) { $code='read_unavailable'; }
+                catch (\Throwable $error) { $code=ReadFailure::code($error); }
                 $this->finish($job,$code); $summary[$queue->server_id]=$code;
             } catch (\Throwable $e) {
-                try { logger()->warning('Domains observation account failed.', ['server_id' => (int) $queue->server_id, 'exception_class' => $e::class]); }
+                try { logger()->warning('Domains observation account failed.', ['server_id'=>(int)$queue->server_id,'account_fingerprint'=>$queue->account_fingerprint,'safe_code'=>ReadFailure::code($e)]); }
                 catch (\Throwable) { /* Logging cannot interrupt other account turns. */ }
-                $summary[$queue->server_id]='account_unavailable';
+                $summary[$queue->server_id]=ReadFailure::code($e);
             }
         }
         return $summary;
@@ -121,7 +124,7 @@ final class ObservationWork
         DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)->update([
             'claim'=>null,'lease_until'=>0,'tries'=>$code==='refreshed'?0:$tries,
             'due_at'=>$now+($pending?21600:($code==='refreshed'?($follow?300:86400):900)),
-            'safe_code'=>$exhausted?'budget_exhausted':$code]);
+            'safe_code'=>in_array($code,ReadFailure::CODES,true)?$code:($exhausted?'budget_exhausted':$code)]);
     }
     /** Internal audited read-only resume. Fresh staff policy/permission belongs36. */
     public function resume(int $id, string $reason, ?StaffOperationReview $review = null): void
@@ -151,23 +154,49 @@ final class ObservationWork
     }
     private function catalogue(object $queue): void
     {
-        $a=Account::where('server_id',$queue->server_id)->firstOrFail(); $b=CatalogueAcceptances::binding($a); if (TestCatalogue::testDeployment($b)||EnomLive::deployment($b)) { return; } $accepted=CatalogueAcceptances::load($b); $keys=array_keys($accepted->endings);
+        $now=$this->clock->now()->getTimestamp();
+        $current=DB::table('domains_observation_queues')->where('id',$queue->id)->firstOrFail();
+        if ($current->catalogue_due>$now||$current->catalogue_hold!==null||$current->catalogue_lease>$now) { return; }
+        $a=Account::where('server_id',$queue->server_id)->firstOrFail();
+        if ($a->account_fingerprint!==$queue->account_fingerprint) { throw new ReadDeferred('Observation queue binding changed.'); }
+        $b=CatalogueAcceptances::binding($a); if (TestCatalogue::testDeployment($b)||EnomLive::deployment($b)) { return; } $accepted=CatalogueAcceptances::load($b); $keys=array_keys($accepted->endings);
         if (!$keys) { return; } $fresh=new CatalogueFreshness; $now=$this->clock->now()->getTimestamp();
         $claim=DB::transaction(function () use ($queue,$now): ?object {
             $q=DB::table('domains_observation_queues')->where('id',$queue->id); $row=(clone $q)->lockForUpdate()->firstOrFail();
             if ($row->catalogue_due>$now||$row->catalogue_hold!==null||$row->catalogue_lease>$now) { return null; }
             // Crash after sending holds until explicit resume; an expired lease never automatically replays failure.
             $row->catalogue_claim=bin2hex(random_bytes(16));
-            $q->update(['catalogue_claim'=>$row->catalogue_claim,'catalogue_lease'=>$now+300,'catalogue_hold'=>'read_unavailable']); return $row;
+            $q->update(['catalogue_claim'=>$row->catalogue_claim,'catalogue_lease'=>$now+300,'catalogue_hold'=>'catalogue_interrupted']); return $row;
         });
-        if (!$claim) { return; } $cursor=$claim->catalogue_cursor%count($keys); $deferred=false; $ok=false;
+        if (!$claim) { return; } $cursor=$claim->catalogue_cursor%count($keys); $deferred=false; $ok=false; $code='catalogue_evidence_missing';
         try {
             $ctx=new RequestContext($b,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true);
             $summary=$this->catalogue->refresh($b->serverId,$ctx,$fresh,[$keys[$cursor]]);
             $ok=$summary['failed']===[]&&$summary['synced']+count($summary['quarantined']??[])===1;
-        } catch (ReadDeferred) { $deferred=true; } catch (\Throwable) {}
+            $codes=$summary['failure_codes']??[]; $code=reset($codes)?:$code;
+        } catch (ReadDeferred|EnomTestCallLimit) { $deferred=true; } catch (\Throwable $error) { $code=ReadFailure::code($error); }
+        if (!$ok&&!$deferred) {
+            try { $this->catalogueFailure($queue,$code,$claim->catalogue_claim); }
+            catch (\Throwable) { /* Claim completion cannot depend on diagnostic persistence. */ }
+        }
         DB::table('domains_observation_queues')->where('id',$queue->id)->where('catalogue_claim',$claim->catalogue_claim)->update([
-            'catalogue_claim'=>null,'catalogue_lease'=>0,'catalogue_hold'=>$ok||$deferred?null:'read_unavailable',
+            'catalogue_claim'=>null,'catalogue_lease'=>0,'catalogue_hold'=>$ok||$deferred?null:$code,
             'catalogue_cursor'=>$cursor+($ok?1:0),'catalogue_due'=>$now+($deferred?60:max(1,intdiv($fresh->intervalSeconds,count($keys))))]);
+    }
+    private function catalogueFailure(object $queue, string $code, ?string $claim=null): void
+    {
+        $code=ReadFailure::safe($code);
+        DB::transaction(function () use ($queue,$code,$claim): void {
+            $q=DB::table('domains_observation_queues')->where('id',$queue->id)->where('account_fingerprint',$queue->account_fingerprint);
+            if ($claim!==null) { $q->where('catalogue_claim',$claim); }
+            $row=(clone $q)->lockForUpdate()->first(); if (!$row) { return; }
+            $audit=json_decode($row->catalogue_audit??'[]',true,8,JSON_THROW_ON_ERROR);
+            $last=end($audit);
+            if ($claim===null && ($last['code']??null)===$code && ($last['account_fingerprint']??null)===$queue->account_fingerprint) { return; }
+            $audit[]=['code'=>$code,'server_id'=>(int)$queue->server_id,'account_fingerprint'=>$queue->account_fingerprint,'at'=>$this->clock->now()->format(DATE_ATOM)];
+            $values=['catalogue_audit'=>json_encode($audit,JSON_THROW_ON_ERROR)];
+            if ($claim!==null) { $values['catalogue_hold']=$code; }
+            $q->update($values);
+        });
     }
 }

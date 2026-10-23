@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader;
-use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry, CatalogueFreshness, CatalogueUnavailable, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry, CatalogueFailure, CatalogueFreshness, CatalogueUnavailable, RequestContext};
 
 final class CatalogueSync
 {
@@ -34,10 +34,18 @@ final class CatalogueSync
         try { $batch = $reader->catalogueBatch($accepted, $freshness, $context); }
         catch (EnomTestCallLimit $error) { throw $error; }
         catch (ReadDeferred $error) { throw $error; }
-        catch (\Throwable) { return ['synced' => 0, 'failed' => array_map(static fn (string $tld): string => '.'.$tld, array_keys($accepted->endings))]; }
+        catch (\Throwable $error) {
+            $failed = array_map(static fn (string $tld): string => '.'.$tld, array_keys($accepted->endings));
+            return ['synced' => 0, 'failed' => $failed, 'failure_codes' => array_fill_keys($failed, ReadFailure::code($error))];
+        }
         foreach ($accepted->endings as $tld => $_) {
             try {
                 $entry = $batch[$tld] ?? null;
+                if ($entry instanceof CatalogueFailure) {
+                    $summary['failed'][] = '.'.$tld;
+                    $summary['failure_codes']['.'.$tld] = $entry->code;
+                    continue;
+                }
                 $recheck = function ($server, $account) use ($accepted): void {
                     $this->bindings->requireReadableLocked($server, $account);
                     if (CatalogueAcceptances::load($accepted->binding, true)->revision !== $accepted->revision) {
@@ -58,7 +66,11 @@ final class CatalogueSync
                 }
                 $this->prices->import($entry, $accepted, $recheck, $context->now(), $review);
                 $summary['synced']++;
-            } catch (\Throwable) { $summary['failed'][] = '.'.$tld; }
+            } catch (ReadDeferred|EnomTestCallLimit $error) { throw $error; }
+            catch (\Throwable $error) {
+                $summary['failed'][] = '.'.$tld;
+                $summary['failure_codes']['.'.$tld] = ReadFailure::code($error,'catalogue_import_failed');
+            }
         }
         return $summary;
     }

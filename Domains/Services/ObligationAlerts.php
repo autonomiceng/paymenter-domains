@@ -65,7 +65,7 @@ final class ObligationAlerts
             $phase=isset($follow['operation_key'])&&($follow['generation']??null)===$d->authority_generation?hash('sha256',$follow['operation_key']):'holding';
             if(DB::table('domains_observation_work')->where('domain_id',$d->id)->where('generation',$d->authority_generation)
                 ->where('account_fingerprint',$d->account_fingerprint)->where('phase',$phase)
-                ->whereIn('safe_code',['budget_exhausted','read_unavailable'])->exists()){$keys[]=self::record($d,'observation_review',$now);}
+                ->whereIn('safe_code',['budget_exhausted','read_unavailable',...ReadFailure::CODES])->exists()){$keys[]=self::record($d,'observation_review',$now);}
         }
         return $keys;
     }

@@ -56,8 +56,8 @@ final class RequestContext
     }
 
     /** Observation opts into conservative failure holds even when adapters return failure values. */
-    public function requireReadSuccess(bool $successful): void
-    { if ($this->stopOnReadFailure&&!$successful) { throw new \DomainException('Registrar read failed.'); } }
+    public function requireReadSuccess(bool $successful, #[\SensitiveParameter] ?\RuntimeException $failure=null): void
+    { if ($this->stopOnReadFailure&&!$successful) { throw $failure??new \DomainException('Registrar read failed.'); } }
 
     /** Observation/freshness checks must use the same accepted clock as request deadlines. */
     public function now(): \DateTimeImmutable { return $this->clock->now(); }

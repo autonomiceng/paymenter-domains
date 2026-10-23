@@ -139,6 +139,27 @@ final class TldFacts
     {
         if(!\Illuminate\Support\Facades\Schema::hasTable('domains_observation_queues')){return 'No refresh result saved';}
         $row=\Illuminate\Support\Facades\DB::table('domains_observation_queues')->where('server_id',$serverId)->first();
-        return $row?->catalogue_hold!==null?'Refresh failed or interrupted · saved prices retained':'No failed refresh recorded';
+        $code=self::refreshCode($row?->catalogue_hold);
+        return $code!==null?'Refresh failed or interrupted · saved prices retained · '.$code.' · account #'.$serverId:'No failed refresh recorded';
+    }
+    private static function refreshCode(?string $code): ?string
+    { return $code===null?null:(in_array($code,['read_unavailable',...\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::CODES],true)?$code:'read_exception'); }
+    /** Active hold or last retained failure after resume/success. at is the retained failure time, not refresh time. */
+    public static function refreshFacts(int $serverId): ?array
+    {
+        if(!\Illuminate\Support\Facades\Schema::hasTable('domains_observation_queues')){return null;}
+        $row=\Illuminate\Support\Facades\DB::table('domains_observation_queues')->where('server_id',$serverId)->first();
+        if(!$row){return null;}
+        try{$audit=json_decode($row->catalogue_audit??'[]',true,8,JSON_THROW_ON_ERROR);}
+        catch(\JsonException){$audit=[];}
+        if(!is_array($audit)){$audit=[];}
+        foreach(array_reverse($audit) as $failure){
+            if(in_array($failure['code']??null,\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::CODES,true)
+                &&($row->catalogue_hold===null||$failure['code']===$row->catalogue_hold)){
+                return array_intersect_key($failure,array_flip(['code','server_id','account_fingerprint','at']));
+            }
+        }
+        return $row->catalogue_hold===null?null:['code'=>self::refreshCode($row->catalogue_hold),'server_id'=>(int)$row->server_id,
+            'account_fingerprint'=>$row->account_fingerprint,'at'=>null];
     }
 }

@@ -17,10 +17,11 @@ final readonly class PslTransport
             && !preg_match('/(?:^|\.)(?:localhost|local|internal|invalid|test)\z/iD', $p['host'])
             && !preg_match('/[\x00-\x20\x7f\\\\]/', $url);
     }
-    public function fetch(string $url, array $headers): array
+    public function fetch(string $url, array $headers, ?\Closure $onSend = null): array
     {
         if (!self::validUrl($url)) { throw new PslFailure('source_invalid'); }
-        $r = $this->exchange ? ($this->exchange)($url, $headers) : $this->send($url, $headers);
+        if ($this->exchange) { $onSend?->__invoke(); $r = ($this->exchange)($url, $headers); }
+        else { $r = $this->send($url, $headers, $onSend); }
         if (!is_array($r) || !is_int($r['status'] ?? null) || !is_string($r['body'] ?? null)) { throw new PslFailure('transport_failed'); }
         if (strlen($r['body']) > PslValidator::MAX_BYTES) { throw new PslFailure('too_large'); }
         if ($r['status'] >= 300 && $r['status'] !== 304 && $r['status'] < 400) { throw new PslFailure('redirect_refused'); }
@@ -29,10 +30,12 @@ final readonly class PslTransport
     }
     public static function header(mixed $value): ?string
     { return is_string($value) && strlen($value) <= 512 && !preg_match('/[\x00-\x1f\x7f]/', $value) ? $value : null; }
-    private function send(string $url, array $headers): array
+    private function send(string $url, array $headers, ?\Closure $onSend): array
     {
         $start = hrtime(true); $host = parse_url($url, PHP_URL_HOST);
-        $records = $this->resolve ? ($this->resolve)($host) : dns_get_record($host, DNS_A | DNS_AAAA);
+        try { $records = $this->resolve ? ($this->resolve)($host) : dns_get_record($host, DNS_A | DNS_AAAA); }
+        catch (\Throwable) { throw new PslFailure('dns_failed'); }
+        if (!is_array($records) || !$records) { throw new PslFailure('dns_failed'); }
         $addresses = [];
         foreach ($records ?: [] as $record) {
             $ip = $record['ip'] ?? $record['ipv6'] ?? null;
@@ -62,6 +65,7 @@ final readonly class PslTransport
                 $body .= $chunk; return strlen($chunk);
             }]);
         try {
+            $onSend?->__invoke();
             $ok = curl_exec($curl) !== false;
             if ($oversize) { throw new PslFailure('too_large'); }
             if (!$ok) { throw new PslFailure(curl_errno($curl) === CURLE_OPERATION_TIMEDOUT ? 'timeout' : 'transport_failed'); }

@@ -19,6 +19,7 @@ final class PslFacts
             'source_invalid' => 'The source URL must use HTTPS with no credentials, query or fragment.',
             'redirect_refused' => 'The source redirected the request. Redirects are refused.', 'timeout' => 'The update timed out.',
             'endpoint_unsafe' => 'The source did not resolve only to public addresses.',
+            'dns_failed' => 'dns_failed',
             'too_small', 'too_large', 'too_few_rules' => 'The downloaded list was outside the accepted size or rule-count limits.',
             'markers_order', 'markers_missing' => 'The list sections were missing or in the wrong order.',
             'rule_invalid', 'invalid_utf8' => 'The downloaded list could not be parsed completely.',

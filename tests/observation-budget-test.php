@@ -43,4 +43,27 @@ try {
 } finally {
     DB::table('domains_read_budgets')->where('server_id',$b->serverId)->update(['account_fingerprint'=>$b->fingerprint]);
 }
+// Real provider wrappers retain storage causes only for observation; neither path dispatches.
+$enomWire=new class implements \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport {
+    public int $calls=0;
+    public function send($env,$command,$parameters,$uid,$token,$timeoutMs):string{$this->calls++;throw new LogicException('Unexpected send');}
+};
+$nsWire=new class implements \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\DeadlineTransport {
+    public int $calls=0;
+    public function send($env,$origin,$request,$key):\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse{throw new LogicException('Unexpected send');}
+    public function sendWithin($env,$origin,$request,$key,$timeoutMs):\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse{$this->calls++;throw new LogicException('Unexpected send');}
+};
+$drivers=[new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($e,'account-enom','synthetic',$enomWire),['com']),
+    new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver(new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client($b,'synthetic',$nsWire))];
+\Illuminate\Support\Facades\Schema::rename('domains_read_budgets','unavailable_read_budgets');
+try{foreach($drivers as $driver){foreach([false,true] as $stop){
+    $ctx=new RequestContext($driver->binding(),RequestOrigin::Background,$clock->now()->modify('+1 minute'),new RequestBudget(5),$clock,$budget,stopOnReadFailure:$stop);$code=null;
+    try{$result=$driver->readDomain('example.com',$ctx);}catch(Throwable $error){$code=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error);}
+    same($stop?'storage_unavailable':null,$code,'Provider wrapper preserves observation budget-storage cause: '.$driver->binding()->registrarKey);
+    if(!$stop){same(\Paymenter\Extensions\Servers\Domains\Data\Disposition::Unknown,$result->disposition,'Ordinary read keeps unknown-result contract');}
+}}}finally{\Illuminate\Support\Facades\Schema::rename('unavailable_read_budgets','domains_read_budgets');}
+same([0,0],[$enomWire->calls,$nsWire->calls],'Storage refusal never dispatches either provider');
+foreach(['Catalogue binding mismatch.'=>'binding_mismatch','Unavailable registrar server.'=>'account_unavailable','Unaccepted refresh subset.'=>'catalogue_evidence_invalid'] as $message=>$expected){
+    same($expected,\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code(new DomainException($message)),'Known local catalogue guard retains cause');
+}
 $nativeSuccessful=true; echo "Durable per-account/wire budgets passed\n";

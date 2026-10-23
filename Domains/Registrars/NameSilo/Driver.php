@@ -33,6 +33,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         if ($reply->outcome !== Outcome::Success) { throw new \DomainException('Catalogue batch read failed.'); }
         $rows = $reply->catalogueRows();
         foreach ($accepted->endings as $tld => $row) {
+            if (!array_key_exists($tld,$rows)) { $entries[$tld]=null; continue; }
             if (array_key_exists($tld, $rows) && $rows[$tld] === null) {
                 $entries[$tld] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueUnavailable($this->binding(), $tld, $started);
                 continue;
@@ -51,7 +52,9 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
                 }
                 $entries[$tld] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($this->binding(), $tld, $rates,
                     $row['register'], $row['registry'], $row['renewal_safe']);
-            } catch (\Throwable) { $entries[$tld] = null; }
+            } catch (\Throwable $error) {
+                $entries[$tld] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFailure(\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error,'catalogue_evidence_invalid'));
+            }
         }
         return $entries;
     }
@@ -65,7 +68,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     {
         $this->binding()->requireMatch($context->binding);
         try { return $this->client->read($request, $context); }
-        catch (\RuntimeException) { return new RegistrarResult(Outcome::Unknown); }
+        catch (\RuntimeException $error) { $context->requireReadSuccess(false,$error); return new RegistrarResult(Outcome::Unknown); }
     }
     private function neutral(RegistrarResult $reply, Evidence $facts = new Evidence): DriverResult
     {

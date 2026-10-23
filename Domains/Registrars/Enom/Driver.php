@@ -46,7 +46,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
                     $facts['auto_renew_only'] === false, $fields['fields']);
             } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $error) { throw $error; }
             catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $error) { throw $error; }
-            catch (\Throwable) { $entries[$tld] = null; }
+            catch (\Throwable $error) { $entries[$tld] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFailure(\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error)); }
         }
         return $entries;
     }
@@ -72,7 +72,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     {
         $this->binding()->requireMatch($context->binding);
         try { return $this->client->read($command, $parameters, $context); }
-        catch (\RuntimeException) { return new ProtocolResult('unknown', 'context_refused'); }
+        catch (\RuntimeException $error) { $context->requireReadSuccess(false,$error); return new ProtocolResult('unknown', 'context_refused'); }
     }
     private function parts(string $name): array
     {

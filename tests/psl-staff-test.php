@@ -63,6 +63,9 @@ same('domains-public-suffix-list',$job->uniqueId(),'Separate job has its own uni
 $clock->at+=30*86400+1;Livewire::actingAs($staff)->test(Page::class)->assertSee('Out of date warning');
 $clock->at+=60*86400;Livewire::actingAs($staff)->test(Page::class)->assertSee('New discovery paused');
 DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'rules_lost_private']);Livewire::actingAs($staff)->test(Page::class)->assertSee('More than 5%');
+DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'dns_failed']);
+same('dns_failed',PslFacts::rows($list)['Last attempt result'],'Page facts preserve the DNS failure code');
+Livewire::actingAs($staff)->test(Page::class)->assertSee('dns_failed');
 $page=Livewire::actingAs($staff)->test(Page::class);$setRights([Staff::VIEW,Page::MANAGE]);$page->call('$refresh')->assertForbidden();
 // The native migrator/retained-history preflight must neither replace lost data nor repair partial installs.
 $setRights($rights);$entry->upgraded('0.1.0');$entry->uninstalled();same(1,DB::table('domains_psl_snapshots')->count(),'Lifecycle retains snapshot');

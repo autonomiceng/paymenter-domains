@@ -36,13 +36,18 @@ final class TestCatalogue
             $reader = $bindings->reader($review->serverId);
             $context = new RequestContext($binding, RequestOrigin::Interactive, $clock->now()->modify('+25 seconds'),
                 new RequestBudget(15), $clock, Runtime::limiter(), stopOnReadFailure: true);
-            if ((!$reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\CataloguePreview
-                && !$reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomTestReconciliationReader)
-                || !in_array($ending, $reader->catalogue($context)->facts()['tlds'] ?? [], true)) {
-                throw new \DomainException('Catalogue import unavailable.');
+            $listed=[];
+            if ($reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\CataloguePreview
+                || $reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomTestReconciliationReader) {
+                try { $listed=$reader->catalogue($context)->facts()['tlds']??[]; }
+                catch (ReadDeferred|EnomTestCallLimit $error) { throw $error; }
+                catch (\Throwable $error) { throw new CatalogueImportFailure(ReadFailure::code($error)); }
+            }
+            if (!in_array($ending, $listed, true)) {
+                throw new CatalogueImportFailure('catalogue_evidence_missing');
             }
             $result = app(CatalogueSync::class)->refresh($review->serverId, $context, new CatalogueFreshness, [$ending], $review);
-            if ($result !== ['synced' => 1, 'failed' => []]) { throw new \DomainException('Catalogue import unavailable.'); }
+            if ($result !== ['synced' => 1, 'failed' => []]) { throw new CatalogueImportFailure($result['failure_codes']['.'.$ending]??'catalogue_import_failed'); }
             app(SellerPolicies::class)->initialize($ending);
             self::withdrawCarts($binding, $ending);
             $phase = 'catalogue_finished';

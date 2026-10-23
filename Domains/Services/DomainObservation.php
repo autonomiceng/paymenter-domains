@@ -31,7 +31,7 @@ final class DomainObservation
             return [$binding,$l['stamp'],$attempt,$l['domain'],$knownGlue,$recordOverflow,$recordEnabled];
         });
         $ctx=new RequestContext($binding,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true);
-        $snapshot=null; $transfer=TransferStatus::Unknown; $records=null; $failed=false; $recordFailed=false; $deferred=false;
+        $snapshot=null; $transfer=TransferStatus::Unknown; $records=null; $failed=false; $recordFailed=false; $deferred=false; $failureCode=null;
         $recordHeld=ObservationRecords::held($seed);
         try {
             $reader=$this->bindings->reader($binding->serverId);
@@ -40,11 +40,12 @@ final class DomainObservation
                 $snapshot=$facts->domain; $transfer=$facts->transfer;
             } else { $result=$reader->readDomain($seed->domain,$ctx); $binding->requireMatch($result->binding); $snapshot=$result->evidence()->domain; }
             if ($snapshot) { $binding->requireMatch($snapshot->binding); if ($snapshot->name!==$seed->domain) { throw new \DomainException('Observation name changed.'); } }
-            if ($this->clock->now()>=$ctx->deadline || (!$snapshot&&$transfer===TransferStatus::Unknown)) { throw new \DomainException('Observation unavailable.'); }
+            if ($this->clock->now()>=$ctx->deadline) { throw new \DomainException('Observation deadline reached.'); }
+            if (!$snapshot&&$transfer===TransferStatus::Unknown) { throw new \DomainException('Observation unavailable.'); }
         } catch (ReadDeferred|EnomTestCallLimit $e) { throw $e; }
         catch (\Throwable $e) {
             if (!$recordEnabled || $seed->status!=='active') { throw $e; }
-            $snapshot=null; $transfer=TransferStatus::Unknown; $failed=true;
+            $snapshot=null; $transfer=TransferStatus::Unknown; $failed=true; $failureCode=ReadFailure::code($e);
         }
         // A failed primary read retains inventory; record failures retain successful domain facts.
         if (!$failed && $recordEnabled && $seed->status==='active' && !$recordOverflow && !$recordHeld) {
@@ -54,12 +55,13 @@ final class DomainObservation
                     $port=$this->records->forDomain($seed);
                     $r=new \Paymenter\Extensions\Servers\Domains\Data\ManagementRequest($binding,'observation:'.$seed->id,$seed->domain,'discovery',[],$seed->provider_domain_id);
                     $records=$port->discover($r,$ctx,$knownGlue);
+                    if (isset($records['failure_code'])) { $failureCode=ReadFailure::safe($records['failure_code']); }
                     if ($this->clock->now()>=$ctx->deadline) { throw new \DomainException('Observation deadline reached.'); }
                 } catch (ReadDeferred|EnomTestCallLimit) { $records=null; $deferred=true; }
-                catch (\Throwable) { $records=['glue'=>['state'=>'partial','records'=>$knownGlue]]; $recordFailed=true; }
+                catch (\Throwable $error) { $records=['glue'=>['state'=>'partial','records'=>$knownGlue]]; $recordFailed=true; $failureCode=ReadFailure::code($error); }
             }
         }
-        return DB::transaction(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled): string {
+        return DB::transaction(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled,$failureCode): string {
             $l=HoldingLocks::take($seed); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
             $binding->requireMatch(CatalogueAcceptances::binding($l['account']));
             if ($stamp!==$l['stamp']) { throw new ReadDeferred('Observation authority changed.'); }
@@ -70,9 +72,9 @@ final class DomainObservation
             $incomplete=$binding->registrarKey==='enom' && $records!==null
                 && array_filter(['dns','srv','ds'],fn($k)=>($records[$k]['state']??null)!=='complete');
             if ($recordEnabled && !$recordHeld && ($recordOverflow || $recordFailed || ($records['glue']['read_failed']??false) || $incomplete)) {
-                ObservationRecords::hold($l['domain'],$recordOverflow?'history_limit':($snapshot?->owned===false?'ownership_drift':'records_unavailable'),$this->clock->now());
+                ObservationRecords::hold($l['domain'],$recordOverflow?'history_limit':($snapshot?->owned===false?'ownership_drift':'records_unavailable'),$this->clock->now(),$failureCode);
             }
-            if ($failed) { ObservationRecords::failPrimary($l['domain'],$this->clock->now()); return 'read_unavailable'; }
+            if ($failed) { ObservationRecords::failPrimary($l['domain'],$this->clock->now(),$failureCode); return $failureCode; }
             if ($deferred) { return 'read_deferred'; }
             return $l['domain']->status==='transfer_pending'&&$transfer===TransferStatus::Pending?'healthy_pending':($l['domain']->status==='active'&&!($l['domain']->observation['drift']??true)?'refreshed':'unresolved');
         });

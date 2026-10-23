@@ -43,11 +43,12 @@ final class PublicSuffixList
         $claim = DB::transaction(function () use ($now, $scheduled): ?array {
             $s = DB::table('domains_psl_status')->where('id', 1)->lockForUpdate()->firstOrFail();
             if ($s->last_network_fetch_at !== null && $now < (int) $s->last_network_fetch_at + 86400) { return null; }
+            if ($s->last_result === 'checking' && $s->last_attempt_at !== null && $now < (int) $s->last_attempt_at + 120) { return null; }
             if ($scheduled && $s->last_attempt_at !== null && $now < (int) $s->last_attempt_at + 7 * 86400) { return null; }
             $url = $this->source(); $token = bin2hex(random_bytes(16));
             DB::table('domains_psl_status')->where('id', 1)->update(['last_attempt_at' => $now,
-                'last_network_fetch_at' => PslTransport::validUrl($url) ? $now : $s->last_network_fetch_at, 'attempt_token' => $token, 'last_result' => 'checking']);
-            return [$url, $this->current(), $token]; // Reserve before DNS/HTTP, including failed or crashed attempts.
+                'attempt_token' => $token, 'last_result' => 'checking']);
+            return [$url, $this->current(), $token]; // Lease admission while DNS runs; crashed attempts expire after 120 seconds.
         });
         if ($claim === null) { return 'rate_limited'; }
         [$url, $old, $token] = $claim; $r = null;
@@ -57,7 +58,13 @@ final class PublicSuffixList
                 if (PslTransport::header($old->etag) !== null) { $headers[] = 'If-None-Match: '.$old->etag; }
                 if (PslTransport::header($old->last_modified) !== null) { $headers[] = 'If-Modified-Since: '.$old->last_modified; }
             }
-            $r = $this->transport->fetch($url, $headers);
+            $r = $this->transport->fetch($url, $headers, function () use ($token): void {
+                DB::transaction(function () use ($token): void {
+                    $q = DB::table('domains_psl_status')->where('id', 1); $s = (clone $q)->lockForUpdate()->firstOrFail();
+                    if ($s->attempt_token !== $token) { throw new PslFailure('superseded'); }
+                    $q->update(['last_network_fetch_at' => $this->clock->now()->getTimestamp()]);
+                });
+            });
             if ($r['status'] === 304 && (!$old || !$headers || $old->source_url !== $url)) { throw new PslFailure('unexpected_304'); }
             $rules = null;
             if ($r['status'] === 200) {

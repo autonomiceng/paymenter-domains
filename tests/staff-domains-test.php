@@ -74,10 +74,10 @@ DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>
 // Current record holds are safe review alerts; stale identities and arbitrary reasons never leak.
 $recordService=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::class;
 foreach (['history_limit'=>'Record history has reached its safety limit.','ownership_drift'=>'The registrar account no longer lists this domain.',
-    'records_unavailable'=>'Current records could not be confirmed.','PRIVATE-UNKNOWN'=>'The record check needs review.'] as $reason=>$label) {
+    'records_unavailable'=>'Current records could not be confirmed.','unmapped_reason_code'=>'The record check needs review.'] as $reason=>$label) {
     $recordService::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-18T12:00:00Z'));
     $alert=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id]);
-    $alert->assertSee('Record checks paused')->assertSee($label)->assertSee('choose '.\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS['resume_observation'])->assertSee('Open registrar request')->assertSeeHtml('href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$active->operations()->sole()->id])).'"')->assertDontSee('PRIVATE-UNKNOWN')->assertSet('data',[]);
+    $alert->assertSee('Record checks paused')->assertSee($label)->assertSee('choose '.\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS['resume_observation'])->assertSee('Open registrar request')->assertSeeHtml('href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$active->operations()->sole()->id])).'"')->assertDontSee('unmapped_reason_code')->assertSet('data',[]);
     $markup=new DOMDocument;@$markup->loadHTML($alert->html());$links=(new DOMXPath($markup))->query('//a[normalize-space(.)="Open registrar request"]');
     same(1,$links->length,'Record alert has its own recovery link');
     expect(str_contains($links->item(0)->getAttribute('style'),'text-decoration:underline') && str_contains($links->item(0)->getAttribute('style'),'--tw-outline-style:solid') && str_contains($links->item(0)->getAttribute('style'),'outline-offset:-2px') && str_contains($links->item(0)->getAttribute('style'),'padding:2px'),'Recovery link has visible underline and native focus outline');
@@ -109,7 +109,7 @@ foreach ([[null,0,0,'Waiting for next check · 0 checks'],['healthy_pending',1,0
 }
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>null,'claim'=>str_repeat('a',32),'lease_until'=>time()+300,'tries'=>1]);
 same(['Check in progress · 1 check · 2 resumes'],DomainFacts::for($held)['Observation work'],'A claimed reasonless check is in progress');
-DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'PRIVATE-UNKNOWN']);
+DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'unmapped_reason_code']);
 expect(!str_contains(implode('',DomainFacts::for($held)['Observation work']),'PRIVATE'),'Unknown saved work code never echoes');
 DB::table('domains_observation_work')->where('id',$work)->update(['generation'=>$held->authority_generation+1]);
 same(['Not scheduled'],DomainFacts::for($held)['Observation work'],'Foreign generation observation work is excluded');
@@ -138,6 +138,9 @@ expect(str_contains(RequestFacts::for($review)['refund'],'no credit inferred'),'
 // A cross-bound operation must never appear just because its domain_id was forged through privileged SQL.
 $ordinaryActivity=Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active,'pageClass'=>ViewDomain::class]);
 $ordinaryActivity->assertCanSeeTableRecords([$active->operations()->sole()])->assertDontSee('Review retained evidence');
+DB::table('domains_operations')->where('domain_id',$active->id)->update(['safe_code'=>'unmapped_reason_code']);
+Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active,'pageClass'=>ViewDomain::class])
+    ->assertSee('unmapped_reason_code')->assertDontSee('Review retained evidence');
 DB::table('domains_operations')->where('domain_id',$active->id)->update(['safe_code'=>'PRIVATE-UNKNOWN']);
 Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active,'pageClass'=>ViewDomain::class])
     ->assertSee('Review retained evidence')->assertDontSee('PRIVATE-UNKNOWN');
@@ -153,7 +156,11 @@ Livewire::actingAs($customer)->test(ViewDomain::class,['record'=>$held->id])->as
 Auth::setUser($customer);
 try { DomainFacts::for($held); expect(false,'Customer read denied'); } catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(403,$e->getStatusCode(),'Support default deny'); }
 Auth::setUser($viewer); $op=$held->operations()->first();
-$op->safe_code='PRIVATE-UNKNOWN'; same('Review retained evidence',RequestFacts::for($op)['reason'],'Unknown codes never echo');
+$op->safe_code='PRIVATE-UNKNOWN'; same('Review retained evidence',RequestFacts::for($op)['reason'],'Unknown private strings never echo');
+foreach(['provider exception: secret','<script>secret</script>',"read_failed\nsecret",str_repeat('a',65),'unsafe__code','_unsafe'] as $invalid){
+    same('Review retained evidence',Labels::reason($invalid),'Invalid reason strings remain hidden');
+}
+same(str_repeat('a',64),Labels::reason(str_repeat('a',64)),'Safe code length boundary remains visible');
 $op->safe_code='transfer_provider_rejected'; $op->funding=['refund'=>['private'=>'PRIVATE-CREDIT']];
 $facts=RequestFacts::for($op);
 expect(str_contains($facts['registrar_refund'],'manual'),'NameSilo manual refund indicator');
@@ -162,15 +169,109 @@ same('Original send response unknown; never resend',RequestFacts::review($op)[0]
 expect(!str_contains($facts['registrar_refund'],'Customer credit'),'Registrar refund does not duplicate customer-credit wording');
 $op->state='rejected'; $op->safe_code='transfer_code_timeout';
 expect(!isset(RequestFacts::for($op)['registrar_refund']),'Local unsent rejection does not imply a registrar charge');
-foreach (\Paymenter\Extensions\Servers\Domains\Data\RenewalCode::cases() as $reason) {
-    expect(Labels::reason($reason->value)!=='Review retained evidence','Persisted renewal reasons have staff labels');
+// Check explicit map keys. Passthrough alone must never satisfy mapping coverage.
+$labelsSource=file_get_contents(dirname(__DIR__).'/Domains/Admin/Support/Labels.php');
+$reasonSource=explode('public static function reason(', $labelsSource, 2)[1];
+preg_match_all("/'([a-z][a-z0-9_]*)'\\s*=>/",$reasonSource,$mapped);
+$mapped=array_fill_keys($mapped[1],true);$emitted=[];
+foreach (\Paymenter\Extensions\Servers\Domains\Data\RenewalCode::cases() as $reason) { $emitted[$reason->value][]='RenewalCode'; }
+foreach ([\Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::class,\Paymenter\Extensions\Servers\Domains\Services\OperationFailure::class] as $enum) {
+    foreach($enum::cases() as $reason){$emitted[$reason->value][]=$enum;}
 }
-// Inventory literal persisted safe codes and typed write holds, retaining an unknown fallback.
-foreach (glob(dirname(__DIR__).'/Domains/Services/*.php') as $file) {
-    $source=file_get_contents($file);
-    preg_match_all("/'safe_code'\\s*=>\\s*'([a-z_]+)'|new WriteHeld\\('([a-z_]+)'/",$source,$codes,PREG_SET_ORDER);
-    foreach ($codes as $code) { expect(Labels::reason($code[1]?:$code[2])!=='Review retained evidence','Saved engine code has a staff label'); }
+foreach(\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::CODES as $code){$emitted[$code][]='ReadFailure::CODES';}
+// Tokenize expressions so multiline ternaries, double quotes, comments and nested arrays do not hide codes.
+$inventory=static function(string $source):array{
+    $tokens=array_values(array_filter(token_get_all($source),fn($t)=>!is_array($t)||!in_array($t[0],[T_WHITESPACE,T_COMMENT,T_DOC_COMMENT],true)));
+    $text=static fn($t)=>is_array($t)?$t[1]:$t;$codes=[];$bodies=[];$contexts=[];
+    foreach($tokens as $i=>$token){
+        if(!is_array($token)||$token[0]!==T_FUNCTION){continue;}$signature='';
+        for($j=$i+1;isset($tokens[$j])&&!in_array($text($tokens[$j]),['{',';'],true);$j++){$signature.=$text($tokens[$j]);}
+        $bodies[$j]=(bool)preg_match('/:\??string$/D',$signature);
+    }
+    foreach($tokens as $i=>$token){
+        $next=$text($tokens[$i+1]??'');$value=$text($token);
+        if($value==='{'){$contexts[]=$bodies[$i]??(end($contexts)?:false);}
+        if($value==='}') {array_pop($contexts);}
+        $field=is_array($token)&&$token[0]===T_CONSTANT_ENCAPSED_STRING&&in_array(substr($value,1,-1),['safe_code','reason'],true);
+        $start=null;
+        if($field&&$next==='=>'){$start=$i+2;}
+        elseif($field&&$next===']'&&$text($tokens[$i+2]??'')==='='){$start=$i+3;}
+        elseif(in_array($value,['$code','$reason','safe_code'],true)&&$next==='='){$start=$i+2;}
+        elseif(is_array($token)&&$token[0]===T_RETURN&&(end($contexts)||is_array($tokens[$i+1]??null)&&$tokens[$i+1][0]===T_CONSTANT_ENCAPSED_STRING&&$text($tokens[$i+2]??'')===';')){$start=$i+1;}
+        elseif(is_array($token)&&$token[0]===T_NEW&&str_ends_with($next,'WriteHeld')&&$text($tokens[$i+2]??'')==='('){$start=$i+3;}
+        if(is_array($token)&&$token[0]===T_FOREACH){
+            for($j=$i+1;isset($tokens[$j])&&$text($tokens[$j])!=='as';$j++){}
+            if($text($tokens[$j+1]??'')==='$code'){$start=$i+2;}
+        }
+        if($start===null){continue;}$depth=0;$callDepth=null;
+        for($j=$start;isset($tokens[$j]);$j++){
+            $t=$tokens[$j];$v=$text($t);
+            if($depth===0&&in_array($v,[',',';',')',']','}'],true)){break;}
+            if($v==='('&&is_array($tokens[$j-1]??null)&&in_array($tokens[$j-1][0],[T_STRING,T_VARIABLE,T_MATCH],true)){$callDepth??=$depth;}
+            if(in_array($v,['(','[','{'],true)){$depth++;}
+            if(in_array($v,[')',']','}'],true)){$depth--;}
+            if($callDepth!==null&&$depth===$callDepth){$callDepth=null;}
+            if($callDepth!==null||!is_array($t)||$t[0]!==T_CONSTANT_ENCAPSED_STRING){continue;}
+            // Array keys and indexed field names are data structure, not emitted values.
+            if($text($tokens[$j+1]??'')==='=>'||$text($tokens[$j-1]??'')==='['&&$text($tokens[$j+1]??'')===']'){continue;}
+            $adjacent=[$text($tokens[$j-1]??''),$text($tokens[$j+1]??'')];
+            if(array_intersect($adjacent,['===','!==','==','!=','.'])){continue;}
+            $v=substr($v,1,-1);if(preg_match('/^[a-z][a-z0-9_]*$/D',$v)){$codes[]=$v;}
+        }
+    }
+    return array_unique($codes);
+};
+$probe=$inventory(<<<'PHP'
+<?php
+function diagnostic(): string { return $ready ? "ternary_reason" : 'alternate_reason'; }
+$code = match ($state) { 'unrelated_status' => 'matched_reason', default => 'default_reason' };
+$record = ['safe_code' => $ok ? 'field_reason' : 'fallback_reason', 'status' => 'unrelated_result'];
+throw new \Example\WriteHeld("held_reason"); // 'ignored_comment'
+PHP);
+sort($probe);
+same(['alternate_reason','default_reason','fallback_reason','field_reason','held_reason','matched_reason','ternary_reason'],$probe,'Inventory covers quoted, conditional and typed reasons without status fields');
+// These values have separate presenters or describe results, audit events, inputs or configuration.
+// Exclusions are per file and code: a new reason in any service still fails coverage.
+$excluded=[
+    'AccountBindings.php'=>['matched','server_unavailable','server_disabled','not_configured','site_invalid','site_unbound','site_mismatch','configuration_unavailable'],
+    'RegistrarBalances.php'=>['rate_limited','configuration_unavailable','read_failed','test_call_refused'], // Balance facts.
+    'AdoptionReader.php'=>['identity_unconfirmed','expiry_disagrees','read_failed'], // Adoption RefusalCode messages.
+    'PublicSuffixList.php'=>['not_modified','identical','updated','internal_error','rate_limited','stored_rules_rejected'], // PslFacts.
+    'PslRebaseline.php'=>['stored_rules_rejected','rules_lost'],
+    'WatchMaintenance.php'=>['waiting','dispatch_overdue','checks_unsuccessful','current'], // Health summary().
+    'WatchWork.php'=>['disabled','queue_configuration'],
+    'PublicRegistryReader.php'=>['no_expiry','facts','endpoint_failed','deferred'], // Result reason, distinct safe_code.
+    'WatchRegistryObserver.php'=>['deferred'],
+    'DnsResolverSettings.php'=>['dns_rcode_'], // DNS response prefix, formatted locally.
+    'DomainManagement.php'=>['owner_request','staff_correction','nameservers','lock','auto_renew_off','privacy','contacts','dns','ds','glue',
+        'ds_add','glue_add','glue_update','privacy_enable','privacy_disable','privacy_purchase'], // Audit reasons and capability names.
+    'ManagedPublicEnrollment.php'=>['managed_enrollment'],
+    'NativeServiceRefusal.php'=>['identity','price'], // Structured log fields.
+    'StaffSettingsReview.php'=>['unavailable'], // Configuration snapshot sentinel.
+    'TransferInputs.php'=>['transfer_code'], // Request field name.
+    'RefundProof.php'=>['unsent'], // Driver execution disposition.
+    'NativeCatalogue.php'=>['registration','transfer'], // Product slug suffixes.
+    'RenewalStop.php'=>['cancellation','staff','adopted'], // Renewal intent source, presented separately.
+    'ObservationWork.php'=>['holding'], // Work phase identity.
+];
+// Auto Pay uses its own explicit labels in this class.
+preg_match_all("/'([a-z][a-z0-9_]*)'\\s*=>/",explode('public static function statuses()', $labelsSource, 2)[0],$autoPay);
+$excluded['RenewalAutoPay.php']=$autoPay[1];
+foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__).'/Domains/Services')) as $file){
+    if($file->getExtension()!=='php'){continue;}
+    foreach(array_diff($inventory(file_get_contents($file->getPathname())),$excluded[$file->getBasename()]??[]) as $code){$emitted[$code][]=$file->getBasename();}
 }
+// These services forward codes from closed vocabularies rather than emitting literals at the write.
+$dnsReason=new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Dns\DnsReading::class,'safeCode');
+$dnsSource=implode('',array_slice(file($dnsReason->getFileName()),$dnsReason->getStartLine()-1,$dnsReason->getEndLine()-$dnsReason->getStartLine()+1));
+foreach($inventory('<?php class Diagnostic {'.$dnsSource.'}') as $code){$emitted[$code][]='DnsReading::safeCode';}
+preg_match_all('/[\'"]([a-z][a-z0-9_]*)[\'"]/D',file_get_contents(dirname(__DIR__).'/Domains/Services/WriteHeld.php'),$holds);
+foreach($holds[1] as $code){$emitted[$code][]='WriteHeld whitelist';}
+$missing=array_diff_key($emitted,$mapped);ksort($missing);
+expect($missing===[],'Service reason codes need explicit staff mappings: '.json_encode($missing));
+echo 'Explicit staff reason mapping coverage: '.count($emitted)." codes.\n";
+same('future_reason_code',Labels::reason('future_reason_code'),'Unknown reason code stays visible');
+same('Review retained evidence',Labels::reason(null),'Absent reason keeps the existing label');
 $op->attempt=['execution'=>null]; expect(str_contains(RequestFacts::for($op)['outcome'],'unknown'),'Null execution remains unknown');
 $ordinary=clone $op; $ordinary->state='succeeded'; $ordinary->safe_code=null; $ordinary->attempt=[]; $ordinary->policy=[]; $ordinary->funding=[];
 same(['Customer credit: not assessed'],RequestFacts::review($ordinary),'Ordinary rows omit default warning, empty corrections and zero audit');

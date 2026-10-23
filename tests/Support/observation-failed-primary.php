@@ -32,20 +32,21 @@ foreach (['malformed','transport'] as $failure) {
     $clock->instant=$clock->now()->modify('+61 seconds');$state->calls=[];$observation->calls=[];
     if ($failure==='malformed') { $observation->fault='info_missing'; }
     else { $observation->during=static function():void { throw new RuntimeException('Synthetic primary transport failure'); }; }
-    same('read_unavailable',$failedWork->tick(1)[$d->server_id],'All-failed '.$failure.' observation reports failure');
+    $failureCode=$failure==='malformed'?'read_no_evidence':'read_failed';
+    same($failureCode,$failedWork->tick(1)[$d->server_id],'All-failed '.$failure.' observation reports failure');
     $fresh=$d->fresh();$current=$fresh->observation;
     same($prior['records'],$current['records'],'All-failed '.$failure.' preserves exact inventory/time/watermark');
     same($prior['facts'],$current['facts'],'All-failed '.$failure.' preserves successful facts and timestamp');
     same($synced,$fresh->last_synced_at->format(DATE_ATOM),'All-failed read cannot advance last sync');
     same($prior['sections'],$current['sections'],'All-failed read preserves saved nameservers/section timestamps');
     same($prior,[...array_diff_key($current,['record_hold'=>true,'record_failure'=>true])],'Only separate failure markers change observation');
-    same(['identity'=>ObservationRecords::identity($fresh),'at'=>$clock->now()->format(DATE_ATOM)],$current['record_failure'],'Current primary failure retained separately');
-    same([...$current['record_failure'],'reason'=>'read_unavailable'],$current['record_hold'],'Current failure holds record stage');
+    same(['identity'=>ObservationRecords::identity($fresh),'at'=>$clock->now()->format(DATE_ATOM),'code'=>$failureCode],$current['record_failure'],'Current primary failure retained separately');
+    same([...$current['record_failure'],'reason'=>$failureCode],$current['record_hold'],'Current failure holds record stage');
     same([ReadCommand::Info],$observation->calls,'First primary failure stops all later domain reads');
     same([],$state->calls,'No record reads or provider writes after primary failure');
     same($operations,$fresh->operations->map->getAttributes()->all(),'All operation and financial evidence retained');
     $failedJob=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();
-    same('read_unavailable',$failedJob->safe_code,'Scheduled work stops on failed primary read');
+    same($failureCode,$failedJob->safe_code,'Scheduled work stops on failed primary read');
     expect(ObservationRecords::stopped($fresh),'Current failed checks require explicit resume');
     $dom=storefrontDom($page());
     foreach ($stale as $kind=>$request) {

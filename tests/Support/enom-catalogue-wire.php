@@ -9,6 +9,7 @@ $GLOBALS['catalogueWire']=static function($handle,array $options,array $form): b
     expect($options[CURLOPT_TIMEOUT_MS]<=25000,'Bounded catalogue deadline');
     $command=$form['Command'];$GLOBALS['catalogueCalls'][]=$form;
     if(isset($GLOBALS['catalogueDuring'])){$during=$GLOBALS['catalogueDuring'];unset($GLOBALS['catalogueDuring']);$during();}
+    if($command==='GetTLDList'&&($GLOBALS['catalogueListFailed']??false)){return false;}
     $ending=$form['TLD']??'com';
     $payload=match($command){
         'GetBalance'=>'<AvailableBalance>100.00</AvailableBalance>',

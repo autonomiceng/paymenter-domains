@@ -20,7 +20,7 @@ $calls=count($observe->calls);$clock->instant=$clock->now()->modify('+1 day');$w
 // Explicit resume after the window is one bounded read, not a fresh seven-day window.
 $work->resume($job->id,'staff_pending_resume');$work->tick(2);same('budget_exhausted',DB::table('domains_observation_work')->where('id',$job->id)->value('safe_code'),'Resume retains original window');
 // A failed domain-info wire must not be hidden by a healthy pending status/history.
-$observe->fault='owner';$work->resume($job->id,'staff_partial_failure_probe');same('read_unavailable',$work->tick(2)[$ns],'Partial read failure holds rather than treating healthy status as success');
+$observe->fault='owner';$work->resume($job->id,'staff_partial_failure_probe');same('read_failed',$work->tick(2)[$ns],'Partial read failure holds rather than treating healthy status as success');
 $calls=count($observe->calls);$clock->instant=$clock->now()->modify('+1 day');$work->tick(2);same($calls,count($observe->calls),'Partial failure never automatically retries');$observe->fault='';
 $observe->status='Transfer Completed';$clock->instant=$clock->now()->modify('+1 minute');$observer->run($d->id);
 same($before,$original->fresh()->getAttributes(),'Even terminal/owned facts cannot complete transfer financially');same(null,$d->fresh()->renewal_policy['billing_anchor']??null,'No financial anchor from observer');

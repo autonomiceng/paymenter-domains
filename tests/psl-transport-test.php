@@ -20,7 +20,7 @@ namespace {
     use Paymenter\Extensions\Servers\Domains\Services\{PslTransport,PslFailure,PslValidator};
     $ips=[['ip'=>'93.184.216.34']]; $t=new PslTransport(null,function($host)use(&$ips){return $ips;});
     $url='https://psl.example.com/list';
-    $refuse=function($code, $run) { try{$run();expect(false,'Must refuse '.$code);}catch(PslFailure $e){same($code,$e->safeCode,'Safe transport code');} };
+    $refuse=function($code, $run) { try{$run();expect(false,'Must refuse '.$code);}catch(PslFailure $e){same($code,$e->safeCode,'Safe transport code '.$code.', got '.$e->safeCode);} };
     same('synthetic',$t->fetch($url,['If-None-Match: "v0"'])['body'],'Fake sender runs');
     foreach([CURLOPT_FOLLOWLOCATION=>false,CURLOPT_MAXREDIRS=>0,CURLOPT_PROXY=>'',CURLOPT_NOPROXY=>'*',CURLOPT_VERBOSE=>false,
         CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,
@@ -36,8 +36,23 @@ namespace {
         $ips=[['ip'=>'93.184.216.34'],[str_contains($ip,':')?'ipv6':'ip'=>$ip]]; $before=$executions;
         $refuse('endpoint_unsafe',fn()=>$t->fetch($url,[]));same($before,$executions,'Mixed unsafe DNS zero exchanges');
     }
-    $ips=[];$refuse('endpoint_unsafe',fn()=>$t->fetch($url,[]));
+    foreach([[],false]as$records){
+        $ips=$records;$before=$executions;$refuse('dns_failed',fn()=>$t->fetch($url,[]));same($before,$executions,'Failed DNS zero exchanges');
+    }
+    $refuse('dns_failed',fn()=>(new PslTransport(null,static function(){throw new \RuntimeException('Resolver unavailable');}))->fetch($url,[]));
     $ips=[['ipv6'=>'2606:4700:4700::1111']];$t->fetch($url,[]);same(['psl.example.com:443:[2606:4700:4700::1111]'],$options[CURLOPT_RESOLVE],'IPv6 pin');
+    $before=$executions;$started=0;
+    $t->fetch($url,[],function()use($before,&$executions,&$started){same($before,$executions,'Admission before cURL execution');$started++;});
+    same(1,$started,'Exactly one send admission');same($before+1,$executions,'Admitted exchange sent');
+    $ips=[];$refuse('dns_failed',fn()=>$t->fetch($url,[],function()use(&$started){$started++;}));
+    same(1,$started,'Failed DNS never invokes send admission');
+    $ips=[['ip'=>'127.0.0.1']];$refuse('endpoint_unsafe',fn()=>$t->fetch($url,[],function()use(&$started){$started++;}));
+    same(1,$started,'Unsafe endpoint never invokes send admission');
+    $ips=[['ip'=>'93.184.216.34']];$before=$executions;
+    $refuse('superseded',fn()=>$t->fetch($url,[],static function(){throw new PslFailure('superseded');}));
+    same($before,$executions,'Refused send admission makes zero exchanges');
+    (new PslTransport(function()use(&$started){same(2,$started,'Admission before injected exchange');return ['status'=>200,'body'=>''];}))
+        ->fetch($url,[],function()use(&$started){$started++;});
     $before=$executions;$status=302;$refuse('redirect_refused',fn()=>$t->fetch($url,[]));same($before+1,$executions,'No redirect or retry');
     $status=200;$errno=CURLE_OPERATION_TIMEDOUT;$before=$executions;$refuse('timeout',fn()=>$t->fetch($url,[]));same($before+1,$executions,'Timeout no retry');
     $errno=CURLE_RECV_ERROR;$refuse('transport_failed',fn()=>$t->fetch($url,[]));

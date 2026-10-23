@@ -45,7 +45,7 @@ $visible=strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$html)
 foreach(['enom','namesilo']as$name){expect(!str_contains(strtolower($visible),$name),'Customer copy stays registrar-neutral');}
 // A failed ordinary read while processing is off stops scheduled work without a record hold.
 $bindings->setProcessing($d->server_id,false);$observation->fault='info_missing';$dueRecords();$runtimePorts->initialManagedRecordObservations();
-same('read_unavailable',DB::table('domains_observation_work')->where('id',$job->id)->value('safe_code'),'Paused ordinary read failure stops its job');
+same('read_no_evidence',DB::table('domains_observation_work')->where('id',$job->id)->value('safe_code'),'Paused ordinary read failure stops its job');
 expect(!ObservationRecords::held($d->fresh()),'Stopped ordinary read has no fabricated record hold');
 $bindings->setProcessing($d->server_id,true,static fn()=>null);$html=$page();expect(str_contains($html,'after our team resumes record checks'),'Stopped scheduled reads require manual-recovery copy');expect(!str_contains($html,'Checks normally run daily.'),'Stopped scheduled reads never promise daily retries');
 $io=count($observation->calls);$clock->instant=$clock->now()->modify('+1 day');$runtimePorts->initialManagedRecordObservations();same($io,count($observation->calls),'Stopped job never retries automatically after re-enabling');

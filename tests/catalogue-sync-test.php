@@ -19,7 +19,7 @@ $clock = new class implements Clock {
     public function now(): DateTimeImmutable { return $this->at; }
 };
 $ns = new class implements DeadlineTransport {
-    public int $calls = 0; public bool $fail = false; public bool $omit = false; public bool $quarantine = false; public ?Closure $during = null;
+    public int $calls = 0; public bool $fail = false; public bool $omit = false; public bool $quarantine = false; public string $registration = '8.25'; public ?Closure $during = null;
     public function send(WireEnvironment $env, WireContext $origin, RegistrarRequest $request, string $key): TransportResponse { throw new LogicException; }
     public function sendWithin(WireEnvironment $env, WireContext $origin, RegistrarRequest $request, string $key, int $timeoutMs): TransportResponse
     {
@@ -27,7 +27,7 @@ $ns = new class implements DeadlineTransport {
         same([], $request->parameters(), 'No retail or quantity flags'); $this->calls++;
         if ($this->during) { ($this->during)(); $this->during = null; }
         if ($this->fail) { throw new RuntimeException('synthetic-private-key'); }
-        $row = ['registration' => '8.25', 'renew' => '10.00', 'transfer' => '9.00'];
+        $row = ['registration' => $this->registration, 'renew' => '10.00', 'transfer' => '9.00'];
         return new TransportResponse(200, json_encode(['request' => ['operation' => 'getPrices'], 'reply' => ['code' => 300, 'detail' => 'synthetic',
             'com' => $this->quarantine ? array_diff_key($row, ['registration' => true]) : $row,
             ...($this->omit ? [] : ['co.uk' => $row])]]));
@@ -103,9 +103,15 @@ foreach (Price::where('server_id', 2)->get() as $price) {
 }
 same(1, $ns->calls, 'One getPrices read for all endings and actions');
 same('8.2500', $prices->current(2, $bound[2]->fingerprint, 'co.uk', 'register', 1, 'USD', $clock->now())->wholesale, 'Literal multi-label suffix lookup');
+$retained=DB::table('domains_prices')->orderBy('id')->get()->toJson();$ns->registration='100000000.00';
+same(['synced'=>0,'failed'=>['.com','.co.uk'],'failure_codes'=>['.com'=>'catalogue_evidence_invalid','.co.uk'=>'catalogue_evidence_invalid']],$sync->refresh(2,$context(2)),'Out-of-range NameSilo evidence is invalid, not absent');
+same($retained,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Invalid NameSilo evidence retains prices');$ns->registration='8.25';
 same(0, Price::where('server_id', 2)->where('term', 3)->count(), 'NameSilo does not extrapolate');
 same('2026-10-18T13:00:00+00:00', Price::where('server_id', 2)->firstOrFail()->fresh_until->format(DATE_ATOM), 'Shared cadence plus failure margin');
 same(['synced' => 1, 'failed' => []], $sync->refresh(1, $context(1)), 'Enom accepted exact term batch');
+$enom->fail = true;
+same(['synced' => 0, 'failed' => ['.com'], 'failure_codes' => ['.com' => 'read_failed']], $sync->refresh(1, $context(1)), 'Enom transport failure retains a closed cause, distinct from absent evidence');
+$enom->fail = false;
 same('26.8650', $prices->current(1, $bound[1]->fingerprint, 'com', 'register', 3, 'USD', $clock->now())->wholesale, 'Enom selected-term exact total');
 // Every malformed price shape fails the ending atomically and preserves retained costs.
 foreach (['<Price>10.00</Price>', '<ProductEnabled><Value>true</Value></ProductEnabled><Price>10.00</Price>',
@@ -113,7 +119,7 @@ foreach (['<Price>10.00</Price>', '<ProductEnabled><Value>true</Value></ProductE
     $beforePrices = DB::table('domains_prices')->orderBy('id')->get()->toJson();
     $beforeTlds = DB::table('domains_tlds')->orderBy('id')->get()->toJson();
     $enom->pricePayload = '<ProductPrice>'.$malformed.'</ProductPrice>';
-    same(['synced' => 0, 'failed' => ['.com']], $sync->refresh(1, $context(1)), 'Malformed price is reported as a read failure');
+    same(['synced' => 0, 'failed' => ['.com'], 'failure_codes' => ['.com' => 'read_failed']], $sync->refresh(1, $context(1)), 'Malformed price is reported as a read failure');
     same($beforePrices, DB::table('domains_prices')->orderBy('id')->get()->toJson(), 'Malformed reply preserves every prior cost and offer');
     same($beforeTlds, DB::table('domains_tlds')->orderBy('id')->get()->toJson(), 'Malformed reply preserves TLD configuration');
 }
@@ -150,7 +156,7 @@ same($before, DB::table('domains_prices')->orderBy('id')->get()->toJson(), 'Fail
 same($beforeTlds, DB::table('domains_tlds')->orderBy('id')->get()->toJson(), 'Read failures retain all TLD flags and bounds');
 $ns->fail = $enom->fail = false; $ns->omit = true;
 $compound = DB::table('domains_prices')->where('tld', 'co.uk')->get()->toJson();
-same(['synced' => 1, 'failed' => ['.co.uk']], $sync->refresh(2, $context(2)), 'Missing ending is failure, never no-price');
+same(['synced' => 1, 'failed' => ['.co.uk'], 'failure_codes' => ['.co.uk' => 'catalogue_evidence_missing']], $sync->refresh(2, $context(2)), 'Missing ending is failure, never no-price');
 same($compound, DB::table('domains_prices')->where('tld', 'co.uk')->get()->toJson(), 'Omission retains old evidence');
 $ns->omit = false; $enom->max = 1;
 same(1, $sync->refresh(1, $context(1))['synced'], 'Changed live bounds accepted without extrapolation');

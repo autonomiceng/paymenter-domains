@@ -89,11 +89,13 @@ final class DomainFacts
         try {
             if (!\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::stopped($d)) { return null; }
             if (!\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($d)) { return 'Scheduled reads need staff review before they can resume.'; }
-            return match($d->observation['record_hold']['reason']??null) {
+            $hold=$d->observation['record_hold'];
+            return match($hold['reason']??null) {
                 'history_limit'=>'Record history has reached its safety limit.',
                 'ownership_drift'=>'The registrar account no longer lists this domain.',
                 'records_unavailable'=>'Current records could not be confirmed.',
-                default=>'The record check needs review.' };
+                default=>'The record check needs review.' }
+                .(isset($hold['code'])?' · '.\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::safe($hold['code']):'');
         } catch (\Throwable) { return 'Record check details are unavailable; review encryption access.'; }
     }
     private static function work(object $job): string

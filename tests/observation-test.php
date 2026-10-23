@@ -26,7 +26,10 @@ $work->tick(1); $job=DB::table('domains_observation_work')->where('domain_id',$d
 (new ObservationWork($observer,$clock,$budget))->tick(1);same($calls,count($observation->calls),'Due/lease survives new worker');
 DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$clock->now()->getTimestamp(),'lease_until'=>$clock->now()->getTimestamp()+300]);
 $work->tick(1);same($calls,count($observation->calls),'Live worker not duplicated');
-$clock->instant=$clock->now()->modify('+301 seconds');$observation->fault='info_missing';$work->tick(1);$calls=count($observation->calls);
+$clock->instant=$clock->now()->modify('+301 seconds');$observation->fault='info_missing';
+same('read_no_evidence',$work->tick(1)[$d->server_id],'Failed domain read retains its cause');
+same('read_no_evidence',DB::table('domains_observation_work')->where('id',$job->id)->value('safe_code'),'Scheduled failure retains safe cause with bound account');
+expect(ObservationWork::stopped($d->fresh()),'Specific failure cause remains stopped');$calls=count($observation->calls);
 $clock->instant=$clock->now()->modify('+1 day');$work->tick(1);same($calls,count($observation->calls),'Failed read has no automatic retries');
 $observation->fault='';$work->resume($job->id,'staff_read_resume');
 DB::table('domains_read_budgets')->where('server_id',$d->server_id)->update(['used'=>60,'window_at'=>$clock->now()->getTimestamp()*1000000]);
@@ -78,4 +81,16 @@ same('succeeded',$reconcile->run($pending->id)->state,'Actual completion after p
 for($i=0;$i<3;$i++){$clock->instant=$clock->now()->modify('+301 seconds');(new ObservationWork($observer,$clock,$budget))->tick(1);}
 same('observed',$pendingDomain->fresh()->observation['followup']['state'],'New acquisition phase drains through restarted queue');
 same(2,DB::table('domains_observation_work')->where('domain_id',$pendingDomain->id)->count(),'Distinct acquisition work retains pending history');same(5,DB::table('domains_observation_work')->where('id',$pendingJob->id)->value('tries'),'Old exhausted history unchanged');
+// Account-level failures retain a safe cause and never consume provider capacity.
+$queue=DB::table('domains_observation_queues')->where('server_id',$d->server_id)->sole();$calls=count($observation->calls);
+DB::table('domains_observation_queues')->where('id',$queue->id)->update(['account_fingerprint'=>str_repeat('e',64)]);
+same('binding_mismatch',$work->tick(1)[$d->server_id],'Account catch retains binding failure cause');
+same($calls,count($observation->calls),'Account mismatch never reads provider');
+DB::table('domains_observation_queues')->where('id',$queue->id)->update(['account_fingerprint'=>$queue->account_fingerprint]);
+// A broken catalogue audit cannot prevent an independent due domain read.
+$savedAcceptance=App\Models\Server::findOrFail($d->server_id)->settings()->where('key',\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::KEY)->sole();$savedAcceptance->delete();
+DB::table('domains_observation_queues')->where('id',$queue->id)->update(['catalogue_audit'=>'invalid-json','catalogue_hold'=>null,'catalogue_due'=>0]);
+DB::table('domains_observation_work')->where('domain_id',$d->id)->update(['safe_code'=>null,'due_at'=>0,'lease_until'=>0]);
+$calls=count($observation->calls);$isolated=new ObservationWork($observer,$clock,$budget,new \Paymenter\Extensions\Servers\Domains\Services\CatalogueSync($readBindings,$prices));$isolated->tick(1);
+expect(count($observation->calls)>$calls,'Catalogue diagnostic persistence cannot skip independent domain reads');
 $nativeSuccessful=true;echo "Shared observation, follow-up and correction projections passed\n";

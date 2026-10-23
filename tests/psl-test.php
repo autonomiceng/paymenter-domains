@@ -13,6 +13,19 @@ $psl = new PSL($clock, new PslTransport(function($url, $headers) use (&$calls, &
     same(0, DB::transactionLevel(), 'HTTP outside locks'); if ($nested) { $nested(); } $calls[] = [$url, $headers];
     if ($response instanceof Throwable) { throw $response; } return $response;
 }), $v);
+// DNS admission is serialized without consuming the daily network allowance.
+$dns = new PSL($clock, new PslTransport(null, function()use($psl):array {
+    same('rate_limited',$psl->update(),'Manual admission blocked while DNS pending');
+    same('rate_limited',$psl->update(true),'Scheduled admission blocked while DNS pending');
+    return [];
+}), $v);
+$lastNetwork=$psl->status()->last_network_fetch_at;$result=$dns->update();
+same($lastNetwork,$psl->status()->last_network_fetch_at,'Failed DNS is not a network fetch');
+same('dns_failed',$result,'DNS failure retains its cause');same('dns_failed',$psl->status()->last_result,'DNS cause persisted');
+same(null,$psl->nextAllowedAt(),'DNS failure does not lock out manual retry');
+$unsafe = new PSL($clock,new PslTransport(null,fn()=>[['ip'=>'93.184.216.34'],['ip'=>'127.0.0.1']]),$v);
+same('endpoint_unsafe',$unsafe->update(),'Non-global answer still refused');
+same($lastNetwork,$psl->status()->last_network_fetch_at,'Unsafe DNS is not a network fetch');
 same(false, $psl->discoveryAllowed(), 'No initial discovery'); same(false, $psl->staleWarning(), 'No warning without copy'); same(null, $psl->revision(), 'No revision');
 $nested = function()use($psl):void { same('rate_limited',$psl->update(),'Concurrent/reentrant manual admission blocked before HTTP'); $psl->tick(); };
 same('updated', $psl->update(), 'First current'); $nested=null; same(hash('sha256', $body), $psl->revision(), 'Exact hash');
@@ -60,6 +73,8 @@ foreach ($invalid as $expected=>$bad) {
 foreach ([['status'=>302,'body'=>''], new PslFailure('timeout'), new RuntimeException('PRIVATE internal detail'), ['status'=>500,'body'=>'']] as $i=>$bad) {
     $clock->at += 86400; $response = $bad;
     same(['redirect_refused','timeout','internal_error','http_failed'][$i], $psl->update(), 'Transport refusal');
+    same($clock->at,$psl->status()->last_network_fetch_at,'Dispatched failure consumes network allowance');
+    same('rate_limited',$psl->update(),'Dispatched failure cannot retry immediately');
     same($copies, DB::table('domains_psl_snapshots')->orderBy('id')->get()->toJson(), 'Transport retains copies');
 }
 // Changing the source never sends validators for the old endpoint; non-HTTPS never reaches the fake.
@@ -78,6 +93,17 @@ foreach ([30*86400-1,30*86400,30*86400+1,90*86400-1,90*86400,90*86400+1] as $age
 $clock->at = $validated + 7*86400 - 1; $before = count($calls); $psl->tick(); same($before,count($calls),'Weekly minus second');
 $clock->at++; $psl->tick(); same($before+1,count($calls),'Weekly exact'); same('rate_limited',$psl->update(),'Scheduled admission caps manual');
 $clock->at -= 86400; same('rate_limited',$psl->update(),'Clock rollback retains cap');
+// An expired DNS lease can be replaced, but its original owner must never dispatch afterward.
+$clock->at=(int)$psl->status()->last_network_fetch_at+86400;$dispatchAt=$clock->at+120;
+$stalled=new PSL($clock,new PslTransport(null,function()use($clock,$psl):array {
+    $clock->at+=119;same('rate_limited',$psl->update(),'Pending lease protects manual admission through 119 seconds');
+    same('rate_limited',$psl->update(true),'Pending lease protects scheduled admission through 119 seconds');
+    $clock->at++;same('identical',$psl->update(),'Expired DNS lease can be replaced at 120 seconds');
+    $clock->at++;return [['ip'=>'93.184.216.34']];
+}),$v);
+same('superseded',$stalled->update(),'Superseded DNS attempt cannot send');
+same($dispatchAt,$psl->status()->last_network_fetch_at,'Only replacement dispatch records network time');
+same('identical',$psl->status()->last_result,'Superseded worker retains replacement result');
 // Replacement additions cannot mask disappearing old rules. Exactly 5% loss is accepted.
 $original = $v->parse(pslFixture()); $v->parse(pslFixture(38,38), $original);
 try { $v->parse(str_replace('i37.example','new.example',pslFixture(38,40)), $original); expect(false,'More than five percent refused'); } catch(PslFailure $e) { same('rules_lost_icann',$e->safeCode,'Loss despite replacement'); }

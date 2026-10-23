@@ -202,7 +202,8 @@ final class SettingsActions
                 'Pause processing on every legacy Enom server before installing or enabling Domains.'=>'Pause processing on every legacy Enom server first.',
                 'TEST catalogue reads are unavailable.'=>'TEST catalogue import is available only for Enom TEST accounts on a deployment that enables it. No provider call was made.',
                 'Catalogue ending is not accepted.'=>'Accept this TLD before importing. No provider call was made.',
-                'Catalogue import unavailable.'=>'Import did not complete. No prices changed; Enom TEST reads may have been made. Reload and check acceptance and permissions.',
+                'Catalogue import unavailable.'=>'Import did not complete. No prices changed; Enom TEST reads may have been made. Reload and check acceptance and permissions.'
+                    .($error instanceof \Paymenter\Extensions\Servers\Domains\Services\CatalogueImportFailure?' · '.$error->failureCode:''),
                 'Connection checks are unavailable.'=>$name==='configure'&&($data['registrar']??null)==='namesilo'?'NameSilo identity verification is unavailable. This account cannot be connected.':'Connection checks are unavailable. No provider call was made.',
                 'identity_credentials_refused'=>'Enom refused the user ID or API token. Check both for the selected environment.',
                 'identity_unavailable'=>'Enom did not confirm this account. Nothing was saved. Try again later.',

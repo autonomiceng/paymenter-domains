@@ -33,11 +33,11 @@ final class ObservationRecords
         $d->update(['observation'=>$p]);
     }
     /** Failure is separate from saved inventory and survives staff resume until new record evidence. */
-    public static function failPrimary(Domain $d, \DateTimeImmutable $now): void
+    public static function failPrimary(Domain $d, \DateTimeImmutable $now, string $code='read_failed'): void
     {
         $p=$d->observation??[];
-        $p['record_failure']=['identity'=>self::identity($d),'at'=>$now->format(DATE_ATOM)];
-        if (!self::held($d)) { $p['record_hold']=[...$p['record_failure'],'reason'=>'read_unavailable']; }
+        $p['record_failure']=['identity'=>self::identity($d),'at'=>$now->format(DATE_ATOM),'code'=>$code];
+        if (!self::held($d)) { $p['record_hold']=[...$p['record_failure'],'reason'=>$code]; }
         $d->update(['observation'=>$p]);
     }
     /** Staff recovery is needed for either a record hold or stopped current scheduled reads. */
@@ -45,10 +45,11 @@ final class ObservationRecords
     { return self::held($d) || ObservationWork::stopped($d); }
     public static function held(Domain $d): bool
     { return ($d->observation['record_hold']['identity']??null)===self::identity($d); }
-    public static function hold(Domain $d, string $reason, \DateTimeImmutable $now): void
+    public static function hold(Domain $d, string $reason, \DateTimeImmutable $now, ?string $code=null): void
     {
         $p=$d->observation??[];
         $p['record_hold']=['identity'=>self::identity($d),'reason'=>$reason,'at'=>$now->format(DATE_ATOM)];
+        if ($code!==null) { $p['record_hold']['code']=$code; }
         $d->update(['observation'=>$p]);
     }
     public static function current(Domain $d): ?array

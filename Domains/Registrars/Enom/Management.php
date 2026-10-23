@@ -58,14 +58,14 @@ final class Management extends ManagementProtocol
                 $v=$this->get($r,$c,$command); $c->requireReadSuccess($v->status==='success');
                 $out[$kind]=['state'=>'complete','records'=>ManagementRead::records($v,$kind)];
             } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $e) { throw $e; }
-            catch (\Throwable) { return $out; } // Stop at first failure; never retry a failed wire.
+            catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); return $out; } // Stop at first failure; never retry a failed wire.
         }
         foreach (array_slice($knownGlue,0,13,true) as $host=>$prior) {
             try {
                 $ip=ManagementRead::glue($this->get($r,$c,R::HostStatus,['CheckNSName'=>$host]),$host);
                 if ($ip!==null) { \Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::publicIp($ip); $out['glue']['records'][$host]=$ip; } else { unset($out['glue']['records'][$host]); }
             } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $e) { throw $e; }
-            catch (\Throwable) { $out['glue']['read_failed']=true; break; } // Retain partial history, never infer absence.
+            catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); $out['glue']['read_failed']=true; break; } // Retain partial history, never infer absence.
         }
         $hosts=$out['glue']['records'];
         if (count($hosts)>13) { $out['glue']['records']=array_slice($hosts,13,null,true)+array_slice($hosts,0,13,true); }

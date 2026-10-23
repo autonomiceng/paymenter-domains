@@ -37,6 +37,13 @@ same('refreshed',$observer->run($d->id),'Positive empty record containers are co
 foreach(['dns','srv','ds']as$k){same([],OwnerRecords::forDomain($d->fresh())[$k],'Proven empty '.$k);}
 $state->fault='GetDomainSRVHosts';$state->calls=[];
 same('refreshed',$observer->run($d->id),'Record failure preserves successful domain refresh');expect(ObservationRecords::held($d->fresh()),'Record stage is durably held');
+same('read_failed',$d->fresh()->observation['record_hold']['code']??null,'Partial Enom discovery retains its safe failure cause');
+require_once __DIR__.'/Support/staff-panel.php';
+\Illuminate\Support\Facades\Auth::login(staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]));
+same('Current records could not be confirmed. · read_failed',\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Existing staff record fact exposes the closed cause');
+$unsafe=clone $d->fresh();$unsafeFacts=$unsafe->observation;$unsafeFacts['record_hold']['code']='PRIVATE-PROVIDER-PAYLOAD';$unsafe->observation=$unsafeFacts;
+same('Current records could not be confirmed. · read_exception',\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($unsafe),'Arbitrary stored payload cannot become a displayed cause');
+\Illuminate\Support\Facades\Auth::login($user);
 $r=$d->fresh()->observation['records'];same('complete',$r['families']['dns']['state'],'Independent completed family remains proven');
 same('unknown',$r['families']['srv']['state'],'Failed family unknown');same('unknown',$r['families']['ds']['state'],'Unattempted family unknown');
 expect(!in_array('GetDnsSec',array_column($state->calls,0),true),'No further wire after failure');
@@ -45,7 +52,7 @@ same(0,storefrontDom($html)->query('//form[contains(@action,"/manage/srv")]')->l
 expect(isset(OwnerRecords::forDomain($d->fresh())['dns']),'Healthy primary retains independently complete DNS under partial-record hold');
 // A later primary failure also invalidates the healthy family under an existing partial-record hold.
 $prior=$d->fresh()->observation;$observation->fault='info_missing';$clock->instant=$clock->now()->modify('+61 seconds');
-same('read_unavailable',$observer->run($d->id),'Failed primary under existing partial-record hold');
+same('read_no_evidence',$observer->run($d->id),'Failed primary under existing partial-record hold');
 same($prior['records'],$d->fresh()->observation['records'],'Existing hold cannot allow failed-primary inventory replacement');
 same($prior['record_hold'],$d->fresh()->observation['record_hold'],'Existing record hold evidence is retained');
 expect(!isset(OwnerRecords::forDomain($d->fresh())['dns']),'Failed primary blocks previously healthy DNS family under existing hold');
@@ -165,7 +172,7 @@ Cache::flush();$op=$submit($d,$driver,'glue_add',['host'=>'ns51.discovery-placeh
 $prior=$d->fresh()->observation['records'];$clock->instant=$clock->now()->modify('+61 seconds');
 same('refreshed',$observer->run($d->id),'Host overflow holds only record publication');same($prior,$d->fresh()->observation['records'],'Host overflow cannot advance watermark');
 same(51,count(ObservationProjection::sections($d->fresh())['known_glue']),'All51 confirmed hosts remain recoverable');expect(!isset(OwnerRecords::forDomain($d->fresh())['dns']),'Host overflow holds owner whole-list forms');
-$observation->fault='info_missing';same('read_unavailable',$observer->run($d->id),'Failed domain read still preserves overflowed history');same($prior,$d->fresh()->observation['records'],'Failure saving never truncates confirmed51st host');$observation->fault='';
+$observation->fault='info_missing';same('read_no_evidence',$observer->run($d->id),'Failed domain read still preserves overflowed history');same($prior,$d->fresh()->observation['records'],'Failure saving never truncates confirmed51st host');$observation->fault='';
 // History overflow never publishes a snapshot that forgets later confirmed child history.
 Cache::flush();$op=$submit($d,$driver,'glue_add',['host'=>'ns102.discovery-placeholder.com','ip'=>'8.8.4.4']);$management->run($op->id,$driver);
 $row=$op->fresh()->getRawOriginal();unset($row['id']);

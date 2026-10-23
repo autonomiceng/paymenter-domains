@@ -58,6 +58,17 @@ $refuse(fn()=>$write('import',['ending'=>'com']));same(0,Tld::where('server_id',
 $GLOBALS['catalogueDuring']=static function()use($write):void {$write('default_rule',['mode'=>'markup_percent','markup'=>'31.00','round_up'=>'none']);};
 $refuse(fn()=>$write('import',['ending'=>'com']));same(0,Tld::where('server_id',$server->id)->count(),'In-flight settings drift rolls back import');
 $GLOBALS['catalogueMissing']=true;$before=count($GLOBALS['catalogueCalls']);$refuse(fn()=>$write('import',['ending'=>'com']));same($before+1,count($GLOBALS['catalogueCalls']),'Ending absent from provider list stops after one read');$GLOBALS['catalogueMissing']=false;
+$GLOBALS['catalogueListFailed']=true;$before=count($GLOBALS['catalogueCalls']);
+try{$write('import',['ending'=>'com']);expect(false,'Failed initial catalogue read must refuse import');}catch(DomainException $error){
+    same('read_failed',\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error),'Initial catalogue transport failure retains its closed cause');
+    expect(str_contains(\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal($error,'import'),'read_failed'),'Existing import refusal exposes initial list-read failure');
+}finally{$GLOBALS['catalogueListFailed']=false;}
+same($before+1,count($GLOBALS['catalogueCalls']),'Failed initial list stops after one read');same(0,Tld::where('server_id',$server->id)->count(),'Failed initial list imports no rows');
+$GLOBALS['catalogueBadPrice']=true;
+try{$write('import',['ending'=>'com']);expect(false,'Malformed staff import must fail');}catch(DomainException $error){
+    same('read_failed',\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error),'Staff TEST import preserves its closed adapter cause');
+    expect(str_contains(\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal($error,'import'),'read_failed'),'Existing import refusal exposes the closed cause');
+}$GLOBALS['catalogueBadPrice']=false;
 $write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 $before=count($GLOBALS['catalogueCalls']);
 Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($action('import'))->setActionData(['ending'=>'com','reason'=>'Import accepted annual TEST baseline'])
@@ -133,7 +144,7 @@ $refuse(fn()=>$write('import',['ending'=>'com']));same($before,DB::table('domain
 $wrong=$review('probe');$wrong->local(static fn()=>null);
 $clock=app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
 $context=new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(15),$clock,Paymenter\Extensions\Servers\Domains\Services\Runtime::limiter());
-same(['synced'=>0,'failed'=>['.com']],app(Paymenter\Extensions\Servers\Domains\Services\CatalogueSync::class)->refresh($server->id,$context,new Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness,['com'],$wrong),'Another action review cannot authorize import');
+same(['synced'=>0,'failed'=>['.com'],'failure_codes'=>['.com'=>'catalogue_import_failed']],app(Paymenter\Extensions\Servers\Domains\Services\CatalogueSync::class)->refresh($server->id,$context,new Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness,['com'],$wrong),'Another action review cannot authorize import');
 same($before,DB::table('domains_prices')->where('server_id',$server->id)->get()->toJson(),'Wrong-action review preserves all prices');
 $before=count($GLOBALS['catalogueCalls']);tldRefusal(fn()=>app(Paymenter\Extensions\Servers\Domains\Services\CatalogueSync::class)->refresh($server->id,$context,new Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness,['com']),'TEST catalogue import requires staff review.');same($before,count($GLOBALS['catalogueCalls']),'Direct unreviewed sync makes no call');
 $preview=$bindings->reader($server->id);$query=new Paymenter\Extensions\Servers\Domains\Data\Query('held-placeholder.com',Paymenter\Extensions\Servers\Domains\Data\Action::Register,1);
