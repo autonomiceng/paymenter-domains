@@ -54,11 +54,28 @@ $clock->at++;app(RuntimeWork::class)->tick();same(3,$count,'Due PSL fetch stays 
 $events=app(Illuminate\Console\Scheduling\Schedule::class)->events();
 $scheduled=array_values(array_filter($events,fn($e)=>$e->description==='domains-public-suffix-list'));
 same(1,count($scheduled),'Exactly one separate PSL schedule');expect($scheduled[0]->withoutOverlapping&&$scheduled[0]->onOneServer,'PSL schedule owns an overlap lock');
+$cron=new \Cron\CronExpression($scheduled[0]->expression);
+$due=$cron->getNextRunDate('2026-10-23 00:00:00',0,true,'UTC');
+$next=$cron->getNextRunDate($due,0,false,'UTC');
+same(86400,$next->getTimestamp()-$due->getTimestamp(),'PSL scheduler dispatches once daily');
 Illuminate\Support\Facades\Bus::fake([get_class($job)]);$scheduled[0]->run(app());
 Illuminate\Support\Facades\Bus::assertDispatched(get_class($job),fn($sent)=>$sent->queue===null);
 $scheduled[0]->run(app());Illuminate\Support\Facades\Bus::assertDispatchedTimes(get_class($job),1);
 same(120,$job->timeout,'Public-data job has a separate execution timeout');
 same('domains-public-suffix-list',$job->uniqueId(),'Separate job has its own unique lock');
+$clock->at+=60;$job->handle($list);same(4,$count,'Fresh cached list skips the download through the job');
+$clock->at+=7*86400-60;$failures=0;
+$failedList=new Lists($clock,new PslTransport(function()use(&$failures){$failures++;throw new \Paymenter\Extensions\Servers\Domains\Services\PslFailure('timeout');}),new PslValidator(128,5,1));
+$saved=$list->current();$job->handle($failedList);
+same(1,$failures,'Due job attempts one failed download');same('timeout',$list->status()->last_result,'Job retains the download failure');
+$failedAt=$list->status()->last_attempt_at;
+for($minute=1;$minute<=5;$minute++){$clock->at+=60;$job->handle($failedList);}
+same(1,$failures,'Failed download does not retry each minute through the job');
+same($failedAt,$list->status()->last_attempt_at,'Skipped jobs do not renew the failed attempt age');
+same((array)$saved,(array)$list->current(),'Failed download retains the cached list');
+same(1,$job->tries,'Failed public-data jobs have no queue retry');
+$clock->at=$failedAt+7*86400-1;$job->handle($failedList);same(1,$failures,'Failed download preserves weekly admission');
+$clock->at++;$job->handle($failedList);same(2,$failures,'Failed download becomes eligible again after a week');
 
 $clock->at+=30*86400+1;Livewire::actingAs($staff)->test(Page::class)->assertSee('Out of date warning');
 $clock->at+=60*86400;Livewire::actingAs($staff)->test(Page::class)->assertSee('New discovery paused');
