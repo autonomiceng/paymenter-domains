@@ -15,14 +15,15 @@ $wire = new class($observation) implements Transport {
         expect($timeoutMs > 0 && $timeoutMs <= 25000, 'Bounded read timeout'); $s = $this->state; $s->calls[] = $command;
         if ($s->during) { $hook = $s->during; $s->during = null; $hook(); }
         $expiry = (2026 + ($s->expiryYears ?? $s->years)).'-10-18'; if ($s->fault === 'term') { $expiry = '2026-10-18'; }
-        $item = '<Description>'.$s->name.'</Description><ProductType>Register</ProductType><Quantity>'.$s->years.'</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>8.95</AmountPaid><ExpiryDateTime>'.$expiry.'</ExpiryDateTime>';
+        $item = '<Description>'.($s->fault === 'history-zero' ? 'unrelated.example.com' : $s->name).'</Description><ProductType>Register</ProductType><Quantity>'.$s->years.'</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>8.95</AmountPaid><ExpiryDateTime>'.$expiry.'</ExpiryDateTime>';
         $data = match ($command) {
             ReadCommand::Info => '<GetDomainInfo><DomainName DomainNameID="456">'.$s->name.'</DomainName><Status><Belongs-To>'.($s->fault==='owner'?'another-account':'account-enom').'</Belongs-To><Expiration>'.$expiry.'</Expiration></Status></GetDomainInfo>',
             ReadCommand::Expiry => '<ExpirationDate>'.$expiry.'</ExpirationDate>',
             ReadCommand::Renewal => '<RenewName>0</RenewName>', ReadCommand::Lock => '<Reg-Lock>1</Reg-Lock>',
             ReadCommand::Privacy => '<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
-            ReadCommand::Order => '<Order><OrderID>'.$s->reference.'</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>'.$s->billDate.'</BillDate><OrderDetail>'.$item.'</OrderDetail>'.($s->fault === 'multiple' ? '<OrderDetail>'.$item.'</OrderDetail>' : '').'</Order>',
-            ReadCommand::Orders => '<OrderCount>1</OrderCount><OrderList><Order><OrderID>'.$s->reference.'</OrderID></Order></OrderList>',
+            ReadCommand::Order => '<Order><OrderID>'.($s->fault === 'history-multiple' ? $parameters['OrderID'] : $s->reference).'</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>'.$s->billDate.'</BillDate><OrderDetail>'.$item.'</OrderDetail>'.($s->fault === 'multiple' ? '<OrderDetail>'.$item.'</OrderDetail>' : '').'</Order>',
+            ReadCommand::Orders => '<OrderCount>'.($s->fault === 'history-multiple' ? '2' : '1').'</OrderCount><OrderList><Order><OrderID>'.$s->reference.'</OrderID></Order>'
+                    .($s->fault === 'history-multiple' ? '<Order><OrderID>9002</OrderID></Order>' : '').'</OrderList>',
             default => '',
         };
         if ($s->fault === 'zero' && $command === ReadCommand::Order) { $data = ''; }

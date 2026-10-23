@@ -123,6 +123,41 @@ same('accepted_history', $result->attempt['reconciliation']['source'], 'Completi
 same('9001', $result->provider_order_id, 'Unique history supplies the missing order reference');
 same($writes, $writer->calls, 'Null-reference history recovery never replays a write');
 same($money, $nativeMoney(), 'Null-reference history recovery preserves native finance');
+// Null-reference acceptance never substitutes for a covering, unique history proof.
+foreach (['no-acceptance', 'window', 'zero', 'multiple'] as $fault) {
+    [$op, $binding] = $prepare(reservedFixtureName('null-history-'.$fault.'.example.com'), 'absent');
+    $op = $claims->finish($op, new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
+        new Evidence(registration: new RegistrationEvidence(\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op, $op->domain),
+            null, new DateEvidence('2027-10-18', ExpiryPrecision::Date, 'synthetic_purchase'), null, []))));
+    App\Models\Server::findOrFail($binding->serverId)->settings()->where('key', HistoryAcceptances::KEY)->delete();
+    if ($fault !== 'no-acceptance') {
+        HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', $fault === 'window' ? 600 : 0, 86400, 'enom_registration_v1'));
+    }
+    $clock->instant = new DateTimeImmutable('2026-10-18T12:06:01Z');
+    $attempt = ReconciliationEvidence::attempt($op, $op->domain, $binding);
+    expect($attempt->executionFacts !== null && $attempt->providerReference === null, 'Negative retains accepted null-reference execution: '.$fault);
+    same(!in_array($fault, ['no-acceptance', 'window'], true), $attempt->historyAcceptance?->covers($attempt, $clock->now()) ?? false,
+        'Negative history acceptance coverage: '.$fault);
+    $money = $nativeMoney(); $calls = [$preflight->calls, $writer->calls];
+    if (in_array($fault, ['zero', 'multiple'], true)) {
+        $observation->fault = 'history-'.$fault;
+        $context = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,
+            \Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background, $clock->now()->modify('+250 seconds'),
+            new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(25), $clock);
+        $facts = $readBindings->reader($binding->serverId)->reconcile($attempt, $context)->result()->evidence();
+        same([true, $fault === 'zero' ? 0 : 2], [$facts->historyComplete, count($facts->candidates)], 'Negative has complete empty or competing history: '.$fault);
+        $observation->calls = [];
+    }
+    $result = $reconcile->run($op->id); $engine->execute($op->id); $result = $result->fresh();
+    same('pending', $result->state, 'Null-reference history refuses completion: '.$fault);
+    same([null, null, null, null, $op->domain->domain], [$result->cost['actual'] ?? null, $result->confirmed_expires_at,
+        $result->domain->provider_expires_at, $result->domain->renewal_policy['billing_anchor'] ?? null,
+        $result->domain->reservation_name], 'Refused history retains reservation without charge or expiry anchor: '.$fault);
+    same($calls, [$preflight->calls, $writer->calls], 'Refused history and execution never replay a write: '.$fault);
+    same($money, $nativeMoney(), 'Refused history leaves native money unchanged: '.$fault);
+    same(in_array($fault, ['zero', 'multiple'], true), in_array(ReadCommand::Orders, $observation->calls, true), 'Only accepted covering history reaches discovery: '.$fault);
+    if (in_array($fault, ['no-acceptance', 'window'], true)) { same([], $observation->calls, 'Unaccepted history makes no provider reads: '.$fault); }
+}
 [$op] = $prepare(reservedFixtureName('timestamp-boundary.example.com'));
 $beforeUpdate = Illuminate\Support\Carbon::parse($op->getRawOriginal('updated_at'));
 // Eloquent samples time for the model, then again for the UPDATE when the first
