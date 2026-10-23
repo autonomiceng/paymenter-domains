@@ -12,6 +12,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_SUFFIXES = {'.php', '.json', '.css', '.js', '.svg'}
+# The owner help page renders this Markdown. No other Markdown ships.
+HELP_FILES = {'resources/help/owner-help.md'}
 MAX_FILE_BYTES = 1_048_576
 MAX_ARCHIVE_BYTES = 10_000_000
 MAX_TOTAL_BYTES = 32 * MAX_FILE_BYTES
@@ -141,7 +143,7 @@ def validate_runtime(members):
         safe_name(name)
         if name not in LEGAL | {'Domains.php'} and ('/' not in name or name.split('/')[0] not in roots):
             raise ValueError('Member is outside the extension runtime layout')
-        if name not in LEGAL and Path(name).suffix not in ALLOWED_SUFFIXES:
+        if name not in LEGAL | HELP_FILES and Path(name).suffix not in ALLOWED_SUFFIXES:
             raise ValueError('Unexpected runtime file type: ' + name)
     if 'Domains.php' not in relative or 'LICENSE' not in relative:
         raise ValueError('The extension entry point and MIT license are required')

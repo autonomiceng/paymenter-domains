@@ -9,6 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
 final readonly class OwnedDomains
 {
+    /** Enom's default nameservers, shown when an owner chooses them. The request itself sends UseDNS=default. */
+    public const DEFAULT_NAMESERVERS=['dns1.name-services.com','dns2.name-services.com','dns3.name-services.com','dns4.name-services.com','dns5.name-services.com'];
     public const STATUSES = ['adoption_pending'=>'Being set up','active'=>'Active','registration_pending'=>'Registration in progress','transfer_pending'=>'Transfer in progress',
         'registration_rejected'=>'Needs attention','transfer_rejected'=>'Needs attention','needs_review'=>'Needs attention',
         'expired'=>'Expired','grace'=>'Expired','redemption'=>'In redemption','cancelled'=>'Order cancelled'];
@@ -90,9 +92,9 @@ final readonly class OwnedDomains
             $label=['nameservers'=>'Nameservers','contacts'=>'Domain contacts','contact_profile'=>'Contact details','lock'=>'Transfer lock',
                 'privacy_enable'=>'Domain privacy','privacy_disable'=>'Domain privacy','privacy_purchase'=>'Domain privacy','privacy_renew'=>'Domain privacy',
                 'auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code','dns'=>'DNS records','srv'=>'SRV records',
-                'ds_add'=>'DNSSEC','ds_delete'=>'DNSSEC','glue_add'=>'Child nameservers','glue_update'=>'Child nameservers','glue_delete'=>'Child nameservers'][$entry->action]??null;
+                'ds_add'=>'DNSSEC','ds_delete'=>'DNSSEC','glue_add'=>'Glue records','glue_update'=>'Glue records','glue_delete'=>'Glue records'][$entry->action]??null;
             if (!$label) { continue; }
-            $state=match($entry->state) { 'awaiting_payment'=>'Awaiting payment','queued'=>'Queued — not sent yet','running','pending'=>'In progress',default=>'Unresolved' };
+            $state=match($entry->state) { 'awaiting_payment'=>'Awaiting payment','queued'=>'Queued, not sent yet','running','pending'=>'In progress',default=>'Unresolved' };
             if ($entry->state==='succeeded' && ManagementEvidence::resolved($entry,$d)) { $state=$entry->action==='auth_code_email'?'Email requested':'Confirmed'; }
             if (($entry->state==='rejected'||$entry->state==='held'&&$entry->safe_code==='enom_test_management_call_cap') && ManagementEvidence::resolved($entry,$d)) { $state='Not applied'; }
             $progress[]=['label'=>$label,'state'=>$state];
@@ -104,7 +106,7 @@ final readonly class OwnedDomains
         if ($caps) { $setup['maxNameservers']=$d->registrar_key==='enom'?12:13; }
         if ($forms) {
             $labels=['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'Domain privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code'];
-            if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Child nameservers']; }
+            if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Glue records']; }
             foreach ($labels as $cap=>$label) {
                 if ($d->status==='active' && $service?->status==='active' && !RenewalStop::blocksExisting($renewalState) && !($d->renewal_policy['automatic_spend_paused']??false) && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
             }
@@ -112,7 +114,11 @@ final readonly class OwnedDomains
                 $retail=\App\Models\Server::find($d->server_id)?->settings()->where('key','domains_privacy_price')->value('value');
                 try { $management['privacy']['price']=PricingRule::minor($retail)>0?Storefront::money(RetailLine::decimal($retail)):null; } catch(\Throwable) { $management['privacy']['price']=null; } }
             if ($caps) {
-                if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $management['nameservers']['defaults']=$d->registrar_key==='enom'; }
+                if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $management['nameservers']['defaults']=$d->registrar_key==='enom';
+                    $management['nameservers']['defaultServers']=$d->registrar_key==='enom'?self::DEFAULT_NAMESERVERS:[];
+                    // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
+                    $current=$obs['sections']['nameservers']['facts']['nameservers']??null;
+                    $management['nameservers']['current']=is_array($current)&&$current&&array_is_list($current)&&count(array_filter($current,'is_string'))===count($current)?$current:null; }
                 if (isset($management['contacts'])) { $management['contacts']['staged']=$d->registrar_key==='namesilo'; $management['contacts']['limits']=ContactDetails::limits($d->registrar_key); }
                 if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'domain’s administrative contact':'domain owner'; }
             }
@@ -123,7 +129,7 @@ final readonly class OwnedDomains
                 if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
             }
         }
-        $renewal=$d->status==='active'?(RenewalStop::stopped($renewalState)?'Off':'On'):'—'; $price=null;
+        $renewal=$d->status==='active'?(RenewalStop::stopped($renewalState)?'Off':'On'):''; $price=null;
         try { if($service?->currency_code==='USD'){$price=Storefront::money(RetailLine::decimal($service->price));} } catch(\Throwable){}
         foreach ($management as $key=>&$section) {
             $section['url']=route('domains.domains.manage',[$d->id,$key]); $section['actions']=[];
@@ -168,10 +174,9 @@ final readonly class OwnedDomains
             $invoiceIds = \Paymenter\Extensions\Servers\Domains\Models\HistoryLink::where('domain_id', $d->id)->where('user_id', $d->user_id)->pluck('invoice_id');
             $history = Invoice::whereKey($invoiceIds)->where('user_id', $d->user_id)->orderBy('id')->get()->map(fn ($i) => ['number' => $i->number ?? (string) $i->id, 'status' => ucfirst($i->status), 'url' => route('invoices.show', $i)])->all();
         }
-        $badge = $adopted ? \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company(config('settings.company_name')).' Registration' : null;
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';
         return new OwnedDomain($d->domain,$status,$tone,$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
-            $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, registrationBadge:$badge, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
+            $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
             renewNow:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[]);

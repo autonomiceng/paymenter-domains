@@ -57,8 +57,7 @@ final readonly class OwnerActionController
                 // The fixed-field draft uses these same raw records after validation errors.
                 $request->request->set('records',$p['records']??[]);
             }
-            if (($p['confirmed']??null)!=='1') { throw new \DomainException; }
-            if (in_array($action,['dns','srv'],true)&&!isset(\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::forDomain($d)[$action])) { throw new \DomainException('Current records required.'); }
+            $current=in_array($action,['dns','srv'],true)?(\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::forDomain($d)[$action]??throw new \DomainException('Current records required.')):null;
             $payload=match($action) {
                 'nameservers'=>($p['use_default']??null)==='1' && $d->registrar_key==='enom'
                     ? ['nameservers'=>[],'use_default'=>true] : ['nameservers'=>self::servers(is_string($p['nameservers']??null)?$p['nameservers']:'')],
@@ -72,6 +71,14 @@ final readonly class OwnerActionController
                 try { $this->ports->forDomain($d)->validate($action,$payload,$d->domain); }
                 catch (\Throwable) { throw new \Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation(['nameservers']); }
             }
+            // Actions that can take a site offline or move the domain need the confirm step's field; plain edits do not.
+            $risky=match($action) {
+                'nameservers','auth_code_email','auto_renew_off','ds_delete','glue_delete'=>true,
+                'lock'=>$payload['locked']===false,
+                'dns','srv'=>count($payload['records'])<count($current),
+                default=>false,
+            };
+            if ($risky&&($p['confirmed']??null)!=='1') { throw new \Paymenter\Extensions\Servers\Domains\Services\OwnerConfirmRequired; }
             \Paymenter\Extensions\Servers\Domains\Services\Runtime::management($d,$this->management)->request($request->user(),$domain,$action,$payload,$nonce,$this->ports->forDomain($d),recordIdentity:in_array($action,['dns','srv'],true)?\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d):null);
         },'Change requested. Check Activity for updates.');
     }
@@ -80,7 +87,12 @@ final readonly class OwnerActionController
         $this->owners->owned($request->user(),$domain); $context='owner:'.$domain.':'.$action;
         $nonce=FormKeys::verify($request,$context); FormKeys::consume($request,$context);
         try { $work($nonce); return redirect()->route('domains.domains.show',$domain)->with('domains_status',$message); }
-        catch (\Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation $error) {
+        catch (\Paymenter\Extensions\Servers\Domains\Services\OwnerConfirmRequired) {
+            // Without script the confirm step renders inline on the same page, with the submitted values kept.
+            $view=(new OwnedDomainController($this->owners))->show($request,$domain);
+            $dto=\Paymenter\Extensions\Servers\Domains\Services\OwnerRecordDraft::apply($view->getData()['domain'],$action,$request->request->all(),confirm:true);
+            return response($view->with(['domain'=>$dto]),422)->header('Cache-Control','no-store, private');
+        } catch (\Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation $error) {
             if (in_array($action,['dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'],true)) {
                 $view=(new OwnedDomainController($this->owners))->show($request,$domain);
                 $dto=\Paymenter\Extensions\Servers\Domains\Services\OwnerRecordDraft::apply($view->getData()['domain'],$action,$request->request->all());

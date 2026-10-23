@@ -46,14 +46,15 @@ same(['nameservers'=>"ns1.example.com\ninvalid"],$session->get('_old_input'),'On
 app('view')->share('errors',$session->get('errors'));
 $retry=storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render());
 same("ns1.example.com\ninvalid",$retry->query('//textarea[@name="nameservers"]')->item(0)->textContent,'Nameserver retry retains text');
-$r=$post('lock',['locked'=>'0','confirmed'=>'0','password'=>'PRIVATE-PASSWORD']);$controller->manage($r,$d->id,'lock');
-same(['locked'=>'0'],$session->get('_old_input'),'Lock failure retains only the selected state');
-app('view')->share('errors',$session->get('errors'));
-$retry=storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render());
-same('0',$retry->query('//select[@name="locked"]/option[@selected]')->item(0)?->getAttribute('value'),'Lock state survives failed confirmation');
-same(0,$retry->query('//input[@name="confirmed"][@checked]')->length,'Confirmation is never replayed');
-$r=$post('privacy_disable',['confirmed'=>'0','password'=>'PRIVATE-PASSWORD']);$controller->manage($r,$d->id,'privacy_disable');
-same([],$session->get('_old_input'),'Privacy failures retain no submitted fields');
+$session->forget(['_old_input','domains_failed_form']);app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
+$r=$post('lock',['locked'=>'0','confirmed'=>'0','password'=>'PRIVATE-PASSWORD']);$response=$controller->manage($r,$d->id,'lock');
+same(null,$session->get('_old_input'),'Lock confirm step flashes no submitted fields');
+$retry=storefrontDom($response->getContent());
+same('0',$retry->query('//select[@name="locked"]/option[@selected]')->item(0)?->getAttribute('value'),'Lock state survives the confirm step');
+same(0,$retry->query('//input[@name="confirmed"]')->length,'Confirmation is never replayed');
+expect(!str_contains($response->getContent(),'PRIVATE-PASSWORD'),'Confirm step never echoes unknown fields');
+$r=$post('privacy_disable',['password'=>'PRIVATE-PASSWORD']);$r->request->remove('confirmed');$controller->manage($r,$d->id,'privacy_disable');
+expect(empty($session->get('_old_input')),'Privacy requests retain no submitted fields');
 $session->forget(['_old_input','domains_failed_form']);app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 // Compare the same real holding in both projections, including activity; only form availability differs.
 DB::flushQueryLog();DB::enableQueryLog();$full=$owners->present($d->fresh());$fullQueries=DB::getQueryLog();

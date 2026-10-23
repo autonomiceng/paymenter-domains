@@ -8,7 +8,7 @@ $records=['dns'=>[['name'=>'@','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10],[
     'ds'=>[['key_tag'=>27578,'algorithm'=>13,'digest_type'=>2,'digest'=>str_repeat('A',64)]],
     'glue'=>[['host'=>'ns1.'.placeholderComFixtureName(str_pad('placeholder',63,'a').'.com'),'ip'=>'2606:4700:4700::1111']]];
 $section=static function(string $kind,?array $rows)use($records):array {
-    $s=['label'=>['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Child nameservers'][$kind],'records'=>$rows,'actions'=>[]];
+    $s=['label'=>['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Glue records'][$kind],'records'=>$rows,'actions'=>[]];
     $actions=match($kind){'ds'=>['ds_add','ds_delete'],'glue'=>['glue_add','glue_update','glue_delete'],default=>[$kind]};
     foreach($actions as$a){$s['actions'][$a]='/domains/1/manage/'.$a;}$s['url']=reset($s['actions']);
     if(in_array($kind,['dns','srv'],true)&&$rows!==null){$s['digest']=ManagementPayload::digest($rows,$kind);}return $s;

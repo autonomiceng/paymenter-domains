@@ -14,8 +14,4 @@ final readonly class DomainSummary
     public function tone(string $key): string { return DomainSummaryTones::for($key); }
     /** The index Renewal column says "Renewal off" exactly when this is true. */
     public function renewalOffShown(): bool { return $this->renewalOff && !in_array('adopt.pending',$this->stateKeys,true); }
-    /** Customer list rows: see DomainSummaryBadges. Callers pass the evidence and states their view shows.
-     * A view with a Renewal column passes $renewalColumn, so "Renewal off" is not repeated as a chip. */
-    public function listBadges(array $evidence,array $states,bool $renewalColumn=false): array
-    { return DomainSummaryBadges::compact($evidence,$states,$renewalColumn && $this->renewalOffShown()?['adopt.renewal_off']:[]); }
 }

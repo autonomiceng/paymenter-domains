@@ -29,14 +29,17 @@ $op=$d->operations()->where('action','nameservers')->sole();same('queued',$op->s
 $session->put('domains.form_keys',$stale);
 try{$controller->manage($again,$d->id,'nameservers');expect(false,'Stale session replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Atomic replay guard');}
 same($count+1,Operation::count(),'Replay creates no operation');$session->forget('domains.form_keys');
-$dto=$owners->present($d->fresh());expect(in_array('Queued — not sent yet',array_column($dto->progress,'state'),true),'Queued operation appears without claiming dispatch');
+$dto=$owners->present($d->fresh());expect(in_array('Queued, not sent yet',array_column($dto->progress,'state'),true),'Queued operation appears without claiming dispatch');
 $result=$management->run($op->id,$driver);same('succeeded',$result->state,'Existing engine grants one synthetic write with readback');
 $beforeRead=count($free?$ms->calls:$state->calls);$dto=$owners->present($d->fresh());same($beforeRead,count($free?$ms->calls:$state->calls),'Presentation has no transport');expect(in_array('Confirmed',array_column($dto->progress,'state'),true),'Confirmed engine evidence shown');
 $html=(new OwnedDomainController($owners))->show($r,$d->id)->render();$dom=storefrontDom($html);
 $forms=$dom->query('//form[@method="POST"]');expect($forms->length>=7,'Supported management forms offered');
 same($forms->length,$dom->query('//form/input[@name="_token"]')->length,'Every form has native CSRF');
 same($forms->length,$dom->query('//form/input[@name="_request_key"]')->length,'Every form has single-use intent');
-same($forms->length,$dom->query('//form//input[@name="confirmed"]')->length,'Every management action has explicit confirmation');
+same(0,$dom->query('//form[not(contains(@class,"domains-record-form"))]//input[@type="checkbox"]')->length,'Owner management forms have no acknowledgement checkboxes');
+same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a ticked or hidden confirmation');
+foreach(['nameservers','lock','auth_code_email']as$risky){if(isset($dto->management[$risky])){same(1,$dom->query('//section[@id="'.$risky.'"]//form[@data-confirm]//dialog[not(@open)]//button[@name="confirmed"]')->length,'Risky action has a closed confirm dialog: '.$risky);}}
+foreach(['contacts','privacy']as$plain){if(isset($dto->management[$plain])){same(0,$dom->query('//section[@id="'.$plain.'"]//dialog')->length,'Plain action has no confirm step: '.$plain);}}
 foreach($free?['dns','srv','ds','glue','auth_code_display']:['dns','srv','ds','auth_code_display']as$a){expect(!isset($dto->management[$a]),'Unsupported or disabled advanced/display forms are absent');}
 if($free){expect(!str_contains($html,'privacy_purchase'),'Free privacy offers no paid action');commerceReject(fn()=>$driver->validate('nameservers',['use_default'=>true,'nameservers'=>[]],$d->domain));}
 else {
@@ -49,8 +52,16 @@ else {
     $writes=array_values(array_filter($state->calls,fn($call)=>$call[0]==='ModifyNS'));same('default',end($writes)[1]['UseDNS'],'The grant sends explicit default DNS intent');$state->apply=true;
 }
 require __DIR__.'/owner-input.php';
-$before=Operation::count();$r=$post('lock',['locked'=>'0','confirmed'=>'0']);$controller->manage($r,$d->id,'lock');same($before,Operation::count(),'Missing confirmation creates no request');
-$r=$post('contacts',['role'=>'all','contact'=>[]]);$controller->manage($r,$d->id,'contacts');
+// Risky actions are refused until the confirm step sends its field; without script that step renders inline.
+foreach([['lock',['locked'=>'0','confirmed'=>'0']],['lock',['locked'=>'0']],['nameservers',['nameservers'=>"ns1.example.com\nns2.example.com"]],['auth_code_email',[]]]as[$action,$data]){
+    $before=Operation::count();$r=$post($action,$data);if(!array_key_exists('confirmed',$data)){$r->request->remove('confirmed');}
+    $response=$controller->manage($r,$d->id,$action);same($before,Operation::count(),'Missing confirmation creates no request: '.$action);
+    same(422,$response->getStatusCode(),'Missing confirmation re-renders the page: '.$action);$confirmDom=storefrontDom($response->getContent());
+    same(1,$confirmDom->query('//section[@id="'.$action.'"]//form[@data-confirm]//dialog[@open]//button[@name="confirmed"][@value="1"]')->length,'Inline confirm step without script: '.$action);
+}
+expect(str_contains($response->getContent(),'Email the transfer code?'),'Confirm step names the concrete action');
+// Plain edits need no acknowledgement: this contacts request reaches engine validation.
+$r=$post('contacts',['role'=>'all','contact'=>[]]);$r->request->remove('confirmed');$controller->manage($r,$d->id,'contacts');
 expect($session->get('errors')->has('contact.phone'),'Engine contact paths map to submitted fields');
 app('view')->share('errors',$session->get('errors'));
 $html=(new OwnedDomainController($owners))->show($r,$d->id)->render();$dom=storefrontDom($html);

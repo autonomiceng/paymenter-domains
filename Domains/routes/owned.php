@@ -13,6 +13,7 @@ Route::middleware(['web','auth',MustVerfiyEmail::class,'throttle:60,1,domains.ow
     Route::post('/domains/{domain}/renew',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerRenewalController::class,'renew'])->whereNumber('domain')->name('domains.domains.renew')->block(10,10);
     Route::post('/domains/{domain}/manage/{action}',[Action::class,'manage'])->whereNumber('domain')->where('action',implode('|',Action::ACTIONS))->name('domains.domains.manage')->block(10,10);
     Route::get('/domains',[Owner::class,'index'])->name('domains.domains.index');
+    Route::get('/domains/help',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerHelpController::class,'show'])->name('domains.help');
     Route::get('/domains/watches/{id}/transfer',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchTransferController::class,'show'])->whereNumber('id')->name('domains.watch.transfer');
     Route::post('/domains/watches/{id}/transfer',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchTransferController::class,'check'])->whereNumber('id')->name('domains.watch.transfer-check')->block(10,10);
     Route::get('/domains/transfer',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController::class,'show'])->name('domains.domains.transfer');

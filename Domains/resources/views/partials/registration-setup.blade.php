@@ -13,7 +13,7 @@
 @else<p>Your current nameservers stay the same.</p>@endif
 @if ($domain->setup['privacy'])<label class="domains-checkbox"><input id="setup-privacy" type="checkbox" name="privacy" value="1" @checked(session('domains_failed_form') === $domain->actions['setupSave'] && old('privacy') === '1') @if ($errors->has('privacy')) aria-invalid="true" aria-describedby="setup-privacy-error" @endif><span>Turn on domain privacy at no charge</span></label>@endif
 @if ($errors->has('privacy'))<p id="setup-privacy-error" class="domains-error">{{ $errors->first('privacy') }}</p>@endif
-@include('domains::partials.owner-confirm', ['text' => 'I confirm these settings for my domain.'])
+<label class="domains-checkbox"><input name="confirmed" type="checkbox" value="1" required><span>I confirm these settings for my domain.</span></label>
 <button type="submit" class="domains-btn domains-btn--primary">{{ $domain->setup['defaults'] ? 'Save nameservers' : 'Save domain setup' }}</button></form>
 @else
 <p>Your domain is on hold. Contact support and we’ll sort it out.</p>

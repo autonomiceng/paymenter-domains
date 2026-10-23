@@ -372,5 +372,33 @@
 .domains fieldset{min-width:0}.domains .domains-checkbox{overflow-wrap:anywhere}
 .domains-name-cell{min-width:11rem}.domains-name-cell .domains-domain{display:inline-block}
 @media(max-width:719px){.domains-stackable .domains-name-cell{min-width:0;grid-column:1}.domains-stackable td.domains-cell-wide{grid-column:1/-1}.domains-stackable td.domains-end{grid-column:2;grid-row:1}}
+/* Confirm step: a modal with script, an inline panel without. */
+.domains .domains-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.domains .domains-confirm { width: min(30rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); margin: auto; padding: 1.5rem; border: 1px solid var(--e-line); border-radius: .75rem;
+    background: var(--e-panel); color: var(--e-fg); box-shadow: 0 24px 60px rgb(0 0 0 / .35); overflow: auto; }
+.domains .domains-confirm::backdrop { background: rgb(0 0 0 / .55); }
+.domains .domains-confirm:not(:modal) { position: static; width: auto; max-width: 38rem; margin: .25rem 0 0; box-shadow: none; border-color: var(--e-warn); }
+.domains .domains-confirm > p { margin-top: .75rem; font-size: .875rem; }
+.domains .domains-confirm__facts { display: grid; gap: .625rem; margin-top: .75rem; font-size: .875rem; }
+.domains .domains-confirm__facts dt { font-size: .8125rem; color: var(--e-muted); }
+.domains .domains-confirm__facts dd { margin: .125rem 0 0; }
+.domains .domains-confirm__facts dd span { display: block; font-weight: 600; }
+.domains .domains-confirm .domains-buttons { margin-top: 1.25rem; }
+@media (prefers-reduced-motion: no-preference) { .domains .domains-confirm:modal { animation: domains-confirm-in .15s ease-out; } }
+@keyframes domains-confirm-in { from { opacity: 0; transform: translateY(.5rem); } }
+/* Help popovers and the help page */
+.domains .domains-help-head { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.domains .domains-help-btn { display: inline-grid; place-items: center; inline-size: 1.5rem; block-size: 1.5rem; flex: none; border: 1px solid var(--e-line); border-radius: 999px; background: transparent; color: var(--e-muted); font-size: .8125rem; font-weight: 700; line-height: 1; cursor: help; }
+.domains .domains-help-btn:hover, .domains .domains-help-btn[aria-expanded="true"] { color: var(--e-fg); border-color: var(--e-accent); }
+.domains .domains-help-btn:focus-visible { outline: 2px solid var(--e-accent); outline-offset: 2px; }
+.domains .domains-help-pop { display: none; box-sizing: border-box; position: absolute; z-index: 20; top: 100%; left: 0; margin-top: .375rem; inline-size: max-content; max-inline-size: min(22rem, 100%); padding: .625rem .75rem; border: 1px solid var(--e-line); border-radius: .5rem; background: var(--e-panel); color: var(--e-fg); box-shadow: 0 .5rem 1.5rem rgb(0 0 0 / .25); font-size: .875rem; font-weight: 400; line-height: 1.375rem; }
+.domains .domains-help[data-open] .domains-help-pop, .domains .domains-help:not([data-ready]):is(:hover, :focus-within) .domains-help-pop { display: block; }
+@media (prefers-reduced-motion: no-preference) { .domains .domains-help[data-open] .domains-help-pop { animation: domains-confirm-in .12s ease-out; } }
+.domains .domains-help-toc { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin-top: .5rem; }
+.domains .domains-prose h2 { margin-top: 1.75rem; scroll-margin-top: 5rem; }
+.domains .domains-prose h2:first-child { margin-top: 0; }
+.domains .domains-prose p, .domains .domains-prose ul { margin-top: .625rem; max-width: 42rem; }
+.domains .domains-prose ul { padding-left: 1.25rem; list-style: disc; }
+.domains .domains-prose li + li { margin-top: .25rem; }
 </style>
 @endonce

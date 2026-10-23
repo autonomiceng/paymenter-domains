@@ -14,9 +14,9 @@ final readonly class OwnerAutoRenewController
         FormKeys::verify($request,$context);FormKeys::consume($request,$context);
         $enabled=$request->request->all()['enabled']??null;
         $response=redirect()->route('domains.domains.show',$domain);
-        if(!in_array($enabled,['0','1'],true)||($enabled==='0'&&$request->input('confirmed')!=='1')) {
-            return $response->withErrors(['auto-renew'=>'Confirm your auto-renew choice and try again.']);
-        }
+        if(!in_array($enabled,['0','1'],true)) { return $response->withErrors(['auto-renew'=>'Auto-renew could not be changed. Reload this page and try again.']); }
+        // Turning auto-renew off needs the confirm step's field; without script the step renders inline.
+        if($enabled==='0'&&($request->request->all()['confirmed']??null)!=='1') { return $response->with('domains_confirm','auto-renew'); }
         try{$this->preference->set($request->user(),$domain,$enabled==='1');}
         catch(\Throwable){return $response->withErrors(['auto-renew'=>'Auto-renew could not be changed. Reload this page and try again, or contact support.']);}
         return $response;

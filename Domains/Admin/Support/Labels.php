@@ -43,8 +43,8 @@ final class Labels
             'contacts'=>'Contacts','contact_profile'=>'Contact profile','lock'=>'Transfer lock change','auto_renew_off'=>'Registrar auto-renew off',
             'auth_code_email'=>'Transfer code email','privacy_purchase'=>'Privacy purchase','privacy_renew'=>'Privacy renewal',
             'privacy_enable'=>'Privacy on','privacy_disable'=>'Privacy off','dns'=>'DNS','srv'=>'SRV',
-            'ds_add'=>'Add DS','ds_delete'=>'Remove DS','glue_add'=>'Add child nameserver',
-            'glue_update'=>'Change child nameserver','glue_delete'=>'Remove child nameserver'][$value] ?? 'Other request';
+            'ds_add'=>'Add DS','ds_delete'=>'Remove DS','glue_add'=>'Add glue record',
+            'glue_update'=>'Change glue record','glue_delete'=>'Remove glue record'][$value] ?? 'Other request';
     }
     public static function operationReason(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): string
     {

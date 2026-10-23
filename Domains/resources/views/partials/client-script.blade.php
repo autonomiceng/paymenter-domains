@@ -43,6 +43,67 @@
             if (!refs.some(ref => ref.endsWith('-error'))) field.removeAttribute('aria-invalid');
         });
     });
+    // Risky owner actions: submit opens the confirm dialog; only its button sends the confirmation field.
+    document.querySelectorAll('form[data-confirm]').forEach(form => {
+        const dialog = form.querySelector('[data-confirm-dialog]');
+        if (!dialog || typeof dialog.showModal !== 'function') return;
+        const fill = (slot, lines) => {
+            const dd = dialog.querySelector('[data-confirm-slot="' + slot + '"]');
+            if (!dd) return;
+            dd.replaceChildren(...lines.map(line => { const span = document.createElement('span'); span.className = 'domains-record-value'; span.textContent = line; return span; }));
+            dd.closest('[data-confirm-row]').hidden = !lines.length;
+        };
+        const removed = () => [...form.querySelectorAll('tr[data-record]')].filter(row =>
+            row.querySelector('input[name$="[_delete]"]')?.checked
+            || ![...row.querySelectorAll('input:not([type=hidden]):not([type=checkbox]), select')].some(field => field.value.trim() !== '')
+        ).map(row => row.dataset.record);
+        const needed = () => {
+            if (form.dataset.confirmWhen === 'lock-off') return form.elements.locked?.value === '0';
+            if (form.dataset.confirmWhen === 'records-removed') {
+                const kept = [...form.querySelectorAll('tbody tr')].filter(row => !row.querySelector('input[name$="[_delete]"]')?.checked
+                    && [...row.querySelectorAll('input:not([type=hidden]):not([type=checkbox]), select')].some(field => field.value.trim() !== '')).length;
+                return removed().length > 0 || kept < Number(form.dataset.current || 0);
+            }
+            return true;
+        };
+        const servers = form.elements.nameservers, useDefault = form.querySelector('[data-use-default]');
+        form.querySelector('[data-fill-defaults]')?.addEventListener('click', event => {
+            event.preventDefault();
+            servers.value = form.dataset.defaultServers; useDefault.disabled = false;
+            servers.dispatchEvent(new Event('input', {bubbles: true})); servers.focus();
+            if (live) live.textContent = 'Default nameservers filled in. Save to apply them.';
+        });
+        servers?.addEventListener('input', event => { if (event.isTrusted && useDefault) useDefault.disabled = true; });
+        form.addEventListener('submit', event => {
+            if (event.submitter?.name === 'confirmed' || !needed()) return;
+            event.preventDefault();
+            if (servers) fill('nameservers', servers.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean));
+            if (form.dataset.confirmWhen === 'records-removed') fill('removed', removed());
+            if (dialog.open) dialog.close();
+            dialog.showModal();
+        });
+        dialog.querySelector('[data-confirm-cancel]')?.addEventListener('click', () => dialog.close());
+    });
+    // Help popovers: hover, focus, click or tap opens; Esc, a second click or leaving closes.
+    const helps = [...document.querySelectorAll('[data-help]')];
+    helps.forEach(help => {
+        const button = help.querySelector('button');
+        let pinned = false, refocus = false, timer;
+        help.dataset.ready = '';
+        help.close = () => show(false);
+        const show = open => { clearTimeout(timer); help.toggleAttribute('data-open', open); button.setAttribute('aria-expanded', String(open)); if (!open) pinned = false; };
+        help.addEventListener('mouseenter', () => show(true));
+        help.addEventListener('mouseleave', () => { if (!pinned && !help.contains(document.activeElement)) timer = setTimeout(() => show(false), 150); });
+        button.addEventListener('focus', () => { if (!refocus) show(true); });
+        help.addEventListener('focusout', event => { if (!help.contains(event.relatedTarget)) show(false); });
+        button.addEventListener('click', () => { pinned = !pinned || !help.hasAttribute('data-open'); show(pinned); });
+        help.addEventListener('keydown', event => {
+            if (event.key !== 'Escape' || !help.hasAttribute('data-open')) return;
+            event.stopPropagation(); show(false); refocus = true; button.focus(); refocus = false;
+        });
+    });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') helps.forEach(help => help.close()); });
+    document.addEventListener('click', event => helps.forEach(help => { if (!help.contains(event.target)) help.close(); }));
     document.querySelectorAll('[data-domains-results]').forEach(list => {
         const summary = () => {
             const states = [...list.querySelectorAll('[data-domains-result]')].map(row => row.dataset.state);

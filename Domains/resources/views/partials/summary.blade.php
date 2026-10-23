@@ -1,11 +1,8 @@
 {{-- Pure safe DTO rendering. No model relations or query calls. --}}
 <article class="domains-summary" aria-label="{{ $summary->name }}">
 @if($summary->displayName && $summary->displayName!==$summary->name)<p class="domains-small domains-wrap">{{ $summary->displayName }}</p>@endif
-<div class="domains-row domains-summary-badges">
-@php($summaryEvidence=[...(array_intersect(['adopt.pending','watch.not_registered'],$summary->stateKeys)?[]:[$summary->registrationKey]),...$summary->dnsKeys])
-@php($summaryStates=array_values(array_diff($summary->stateKeys,['watch.not_registered','watch.no_coverage'],($summaryOnManaged??false)?['adopt.pending','adopt.provenance']:[])))
-@foreach(($summaryCompact??false)?$summary->listBadges($summaryEvidence,$summaryStates):[...$summaryEvidence,...$summaryStates] as $label)<span class="domains-badge domains-tone-{{ $summary->tone($label) }}">{{ $summary->labels[$label]??'Details unavailable' }}</span>@endforeach
-</div>
+{{-- One status pill at most. The managed page header already shows it; evidence lives in the check details below. --}}
+@unless($summaryOnManaged??false)@include('domains::partials.status-pill',['pill'=>\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::summary($summary)])@endunless
 @foreach(array_intersect($summary->stateKeys,['watch.not_registered','watch.no_coverage']) as $key)<p class="domains-notice"><span>{{ $summary->labels[$key] }}</span></p>@endforeach
 @if(in_array('adopt.pending',$summary->stateKeys,true))@unless($summaryOnManaged??false)<p class="domains-notice">{{ $summary->labels['adopt.pending_notice'] }}</p>@endunless@if($summary->urls['invoiceHistory']??null)<p><a class="domains-a" href="{{ $summary->urls['invoiceHistory'] }}">View invoice history</a></p>@endif@endif
 @if(in_array('watch.ns_changed',$summary->stateKeys,true))
@@ -19,17 +16,25 @@
 </dl>
 @if($summary->renewalOff && !in_array('adopt.pending',$summary->stateKeys,true))<p>@if($summary->renewalReminderOff)No renewal invoices or renewal reminders are scheduled.@else Future renewal invoices are stopped. Existing renewal invoices keep their own payment and reminder rules.@endif@if($summary->expiry) Registration is shown until @include('domains::partials.date',['date'=>$summary->expiry]).@endif</p>@endif
 @endif
-@if($summary->kind==='watch' && !($summaryCompact??false) && !in_array('watch.not_registered',$summary->stateKeys,true))<p class="domains-small">Public registry dates may not show recent changes. Contact your registration provider {{ array_intersect(['watch.expired','watch.redemption','domain.expired','domain.redemption'],$summary->stateKeys)?'to check its status.':'about renewal.' }}</p>@endif
+@if($summary->kind==='watch' && !($summaryCompact??false) && array_intersect(['watch.expired','watch.redemption','domain.expired','domain.redemption'],$summary->stateKeys))<p class="domains-small">Registry dates can lag behind a recent renewal. Contact your registration provider to check its status.</p>@endif
 @if($summary->relatedServices)<div class="domains-summary-links"><strong>Related services</strong><ul>@foreach(array_slice($summary->relatedServices,0,3) as $service)<li><a class="domains-a" href="{{ $service['url'] }}">{{ $service['label'] }}</a></li>@endforeach</ul>@if($summary->relatedOverflow)<span class="domains-small">And more related services</span>@endif</div>@endif
 @if($summary->hostnames)<p class="domains-small domains-wrap">Primary hostnames: {{ implode(', ',array_slice($summary->hostnames,0,3)) }}</p>@endif
 @if($summary->urls['compareTransfer']??null)<p><a class="{{ ($summaryCompact??false)?'domains-btn domains-btn--secondary domains-btn--sm':'domains-a' }}" href="{{ $summary->urls['compareTransfer'] }}">Compare transfer price</a></p>@endif
 @if(!($summaryCompact??false) && !($summaryOnChecks??false) && ($summary->urls['preferences']??null))<p><a class="domains-a" href="{{ $summary->urls['preferences'] }}">Domain check notifications</a></p>@endif
-@if(!($summaryCompact??false))<details class="domains-checks"><summary>Check details and timestamps</summary><dl class="domains-facts">
-@foreach($summary->freshness as $family=>$fact)<div class="domains-fact"><dt>{{ ['delegation'=>'Nameservers','points'=>'Website / email pointers','registry'=>'Public registry'][$family] }}</dt><dd>{{ !$fact['checkedAt']?'Not checked yet':($fact['stale']?'Checks are out of date':($fact['partial']?'Checks partly complete':'Current')) }}
-@if($fact['checkedAt'])<span class="domains-small">Last checked {{ \Carbon\CarbonImmutable::createFromTimestampUTC($fact['checkedAt'])->format('M j, Y, H:i') }} UTC</span>@endif
+@if(!($summaryCompact??false))
+@php($checked=array_filter($summary->freshness,fn($f)=>(bool)$f['checkedAt']))
+@php($lastKnown=array_filter($summary->lastKnown,fn($f)=>($f['inScope']??false) && ($f['stale']??false) && $f['value']!==null))
+@if(!$checked && !$lastKnown)<p class="domains-small">No DNS check results yet.</p>
+@else<details class="domains-checks"><summary>Check details and timestamps</summary><dl class="domains-facts">
+@php($known=array_values(array_diff($summary->dnsKeys,\Paymenter\Extensions\Servers\Domains\Presentation\DomainSummaryBadges::GAPS)))
+@foreach($checked as $family=>$fact)
+@php($evidence=array_map(fn($key)=>$summary->labels[$key],match($family){'delegation'=>array_intersect($known,['domain.dns.platform','domain.dns.external']),'points'=>array_diff($known,['domain.dns.platform','domain.dns.external']),'registry'=>$summary->kind==='watch'?array_diff([$summary->registrationKey],\Paymenter\Extensions\Servers\Domains\Presentation\DomainSummaryBadges::GAPS):[],default=>[]}))
+<div class="domains-fact"><dt>{{ ['delegation'=>'Nameservers','points'=>'Website / email pointers','registry'=>'Public registry'][$family] }}</dt><dd>{{ implode(', ',[...$evidence,...($fact['stale']?['Out of date']:($fact['partial']?['Partly complete']:($evidence?[]:['Checked'])))]) }}
+<span class="domains-small">Last checked {{ \Carbon\CarbonImmutable::createFromTimestampUTC($fact['checkedAt'])->format('M j, Y, H:i') }} UTC</span>
 @if($fact['nextCheck'])<span class="domains-small">Next check {{ \Carbon\CarbonImmutable::createFromTimestampUTC($fact['nextCheck'])->format('M j, Y, H:i') }} UTC</span>@endif</dd></div>@endforeach
 </dl>
-@if(array_filter($summary->lastKnown,fn($f)=>($f['inScope']??false) && ($f['stale']??false) && $f['value']!==null))<h4>Last known details · out of date</h4><p class="domains-small">These earlier checks do not confirm the current settings.</p><dl class="domains-facts">
-@foreach($summary->lastKnown as $axis=>$fact)@if(($fact['inScope']??false) && ($fact['stale']??false) && $fact['value']!==null)<div class="domains-fact"><dt>{{ ['dns'=>'Nameservers','website'=>'Website pointer','email'=>'Email pointer','registry'=>'Public registry expiry'][$axis] }}</dt><dd>@if($axis==='registry')@include('domains::partials.date',['date'=>$fact['value']])@else{{ $axis==='dns'?($summary->labels['domain.dns.'.$fact['value']]??'Details unavailable'):($axis==='registry'?$fact['value']:($fact['value']?'Platform pointer recorded':($fact['partial']?'Not confirmed (partial check)':'No platform pointer recorded'))) }}@endif@if($fact['partial'] && $fact['value']!==false) · Partial check @endif<span class="domains-small">Recorded {{ \Carbon\CarbonImmutable::createFromTimestampUTC($fact['checkedAt'])->format('M j, Y, H:i') }} UTC</span></dd></div>@endif@endforeach
-</dl>@endif</details><p class="domains-small">{{ $summary->labels['domain.points.help'] }}</p>@endif
+@if($lastKnown)<h4>Last known details · out of date</h4><p class="domains-small">These earlier checks do not confirm the current settings.</p><dl class="domains-facts">
+@foreach($lastKnown as $axis=>$fact)<div class="domains-fact"><dt>{{ ['dns'=>'Nameservers','website'=>'Website pointer','email'=>'Email pointer','registry'=>'Public registry expiry'][$axis] }}</dt><dd>@if($axis==='registry')@include('domains::partials.date',['date'=>$fact['value']])@else{{ $axis==='dns'?($summary->labels['domain.dns.'.$fact['value']]??'Details unavailable'):($fact['value']?'Platform pointer recorded':($fact['partial']?'Not confirmed (partial check)':'No platform pointer recorded')) }}@endif@if($fact['partial'] && $fact['value']!==false) · Partial check @endif<span class="domains-small">Recorded {{ \Carbon\CarbonImmutable::createFromTimestampUTC($fact['checkedAt'])->format('M j, Y, H:i') }} UTC</span></dd></div>@endforeach
+</dl>@endif<p class="domains-small">{{ $summary->labels['domain.points.help'] }}</p></details>@endif
+@endif
 </article>

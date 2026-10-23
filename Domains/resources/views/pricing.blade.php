@@ -1,7 +1,7 @@
 @component('layouts.app', ['title' => 'Domain prices', 'sidebar' => !$guest, 'spa' => false, 'description' => 'Registration, renewal and transfer prices for every domain ending we offer.'])
 @php
     $termRange = static function (array $terms): string {
-        if (!$terms) { return '—'; }
+        if (!$terms) { return 'Not offered'; }
         if (count($terms) === 1) { return $terms[0].($terms[0] === 1 ? ' year' : ' years'); }
         if ($terms === range(min($terms), max($terms))) { return min($terms).' to '.max($terms).' years'; }
         $last = array_pop($terms);
@@ -53,9 +53,9 @@
                         @foreach ($rows as $row)
                             <tr>
                                 <th scope="row" class="domains-domain domains-cell-wide">.{{ $row['tld'] }}@if ($row['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</th>
-                                <td class="domains-end domains-num" data-label="Register">{{ $row['register'] ?? '—' }}</td>
-                                <td class="domains-end domains-num" data-label="Renew, per year">{{ $row['renew'] ?: '—' }}</td>
-                                <td class="domains-end domains-num" data-label="Transfer">{{ $row['transfer'] ?? '—' }}</td>
+                                <td class="domains-end domains-num" data-label="Register">{{ $row['register'] ?? 'Not offered' }}</td>
+                                <td class="domains-end domains-num" data-label="Renew, per year">{{ $row['renew'] ?: 'Not offered' }}</td>
+                                <td class="domains-end domains-num" data-label="Transfer">{{ $row['transfer'] ?? 'Not offered' }}</td>
                                 @if ($showTerms)<td class="domains-end" data-label="Register for">{{ $termRange($row['terms']) }}</td>@endif
                             </tr>
                         @endforeach

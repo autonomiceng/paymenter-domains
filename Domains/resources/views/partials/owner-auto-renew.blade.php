@@ -7,12 +7,14 @@
 </div>
 @endif
 @if ($domain->autoRenew)
-<form method="POST" action="{{ $domain->autoRenew['url'] }}" class="domains-owner-form">
+<form method="POST" action="{{ $domain->autoRenew['url'] }}" class="domains-owner-form" @if ($domain->autoRenew['enabled']) data-confirm @endif>
 @include('domains::partials.form-key', ['action' => 'auto-renew'])
 <input type="hidden" name="enabled" value="{{ $domain->autoRenew['enabled'] ? '0' : '1' }}">
+<div class="domains-help-head"><button type="submit" class="domains-btn domains-btn--secondary">{{ $domain->autoRenew['enabled'] ? 'Turn off auto-renew' : 'Turn on auto-renew' }}</button>@include('domains::partials.help', ['id' => 'auto-renew', 'label' => 'Auto-renew'])</div>
 @if ($domain->autoRenew['enabled'])
-@include('domains::partials.owner-confirm', ['text' => 'Turn off auto-renew? This domain will expire on '.\Carbon\CarbonImmutable::parse($domain->expiry)->format('M j, Y').' unless you renew it.'])
+@include('domains::partials.owner-confirm', ['id' => 'auto-renew', 'open' => session('domains_confirm') === 'auto-renew', 'cancel' => $domain->actions['show'], 'title' => 'Turn off auto-renew?', 'button' => 'Turn off auto-renew',
+    'facts' => [['label' => 'Expires', 'value' => \Carbon\CarbonImmutable::parse($domain->expiry)->format('M j, Y')]],
+    'risk' => $domain->name.' will expire on this date unless you renew it.'])
 @endif
-<button type="submit" class="domains-btn domains-btn--secondary">{{ $domain->autoRenew['enabled'] ? 'Turn off auto-renew' : 'Turn on auto-renew' }}</button>
 </form>
 @endif

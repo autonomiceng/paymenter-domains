@@ -37,7 +37,7 @@ $audit=static fn()=>WatchAudit::where('subject_type','domain')->where('subject_i
 $dto=$owners->present($d->fresh());same(['On',null,true],[$dto->renewal,$dto->renewalOff,$dto->autoRenew['enabled']??null],'Legacy absence means On');
 same([],$owners->present($d->fresh(),false)->autoRenew,'Read-only presentation hides switch');
 $save($d,true);same(0,$audit(),'Legacy On is idempotent without a write');
-$html=$page($d);foreach(['Turn off auto-renew','Turn off auto-renew? This domain will expire on Oct 18, 2027 unless you renew it.','name="confirmed"','name="_token"'] as $text){expect(str_contains($html,$text),'Switch renders '.$text);}
+$html=$page($d);foreach(['Turn off auto-renew','Turn off auto-renew?','Oct 18, 2027','will expire on this date unless you renew it.','name="confirmed"','name="_token"'] as $text){expect(str_contains($html,$text),'Switch renders '.$text);}
 $stale=$req($d,['enabled'=>'0','confirmed'=>'1']);$controller->save($stale,$d->id);
 try{$controller->save($stale,$d->id);expect(false,'Replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Consumed key rejected');}
 $save($d,false);same(1,$audit(),'Repeated Off adds no audit');
@@ -62,9 +62,14 @@ commerceReject(fn()=>$preference->set($other,$d->id,true));same(false,$d->fresh(
 try{$controller->save($req($d,['enabled'=>'1'],null,'renew'),$d->id);expect(false,'Wrong intent refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Intent bound to action');}
 [$second]=$holder('owner-other-key-placeholder.com');
 try{$controller->save($req($second,['enabled'=>'1']),$d->id);expect(false,'Other domain key refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Intent bound to domain');}
-foreach([[],['enabled'=>'false'],['enabled'=>['1']],['enabled'=>'0'],['enabled'=>'0','confirmed'=>'0']] as $bad){
-    $session->forget('errors');$controller->save($req($d,$bad),$d->id);expect($session->get('errors')?->has('auto-renew')===true,'Invalid preference or missing confirmation refused');
+foreach([[],['enabled'=>'false'],['enabled'=>['1']]] as $bad){
+    $session->forget('errors');$controller->save($req($d,$bad),$d->id);expect($session->get('errors')?->has('auto-renew')===true,'Invalid preference refused');
 }
+foreach([['enabled'=>'0'],['enabled'=>'0','confirmed'=>'0']] as $bad){
+    $session->forget(['errors','domains_confirm']);$response=$controller->save($req($d,$bad),$d->id);
+    same('auto-renew',$response->getSession()->get('domains_confirm'),'Turning off without the confirm step asks for it inline');
+}
+$session->forget('domains_confirm');
 same(1,$audit(),'Invalid requests add no audit');
 $save($d,true);$save($d,true);same(2,$audit(),'Repeated On adds no audit');
 $save($d,false);

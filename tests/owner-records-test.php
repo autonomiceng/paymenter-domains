@@ -14,7 +14,7 @@ $html=$page();expect(str_contains($html,'Editing isn’t available yet because w
 same(0,storefrontDom($html)->query('//form[contains(@action,"/manage/dns")]')->length,'Held DNS has no replacement form');
 $dom=storefrontDom($html);same(0,$dom->query('//form[contains(@action,"/manage/srv")]')->length,'Held SRV has no replacement form');
 expect(str_contains($html,'Your current DS records can’t be shown right now. You can still add one.'),'Unknown DS list is explicit');same(1,$dom->query('//form[contains(@action,"/manage/ds_add")]')->length,'Unknown DS permits fresh-preflight addition');same(0,$dom->query('//form[contains(@action,"/manage/ds_delete")]')->length,'Unknown DS cannot imply deletable records');
-expect(str_contains($html,'Only child nameservers added or changed here are listed. Others may already exist.'),'Unknown glue is explicitly partial history');same(1,$dom->query('//form[contains(@action,"/manage/glue_add")]')->length,'Unknown glue permits verified additions');same(0,$dom->query('//form[contains(@action,"/manage/glue_update")]')->length,'Unknown glue never fabricates editable hosts');
+expect(str_contains($html,'Register your own nameservers, like ns1.example.com, with their IP addresses.'),'Glue records intro is one sentence');same(1,$dom->query('//form[contains(@action,"/manage/glue_add")]')->length,'Unknown glue permits verified additions');same(0,$dom->query('//form[contains(@action,"/manage/glue_update")]')->length,'Unknown glue never fabricates editable hosts');
 \Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $observer=new \Paymenter\Extensions\Servers\Domains\Services\DomainObservation($readBindings,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),$ports);
 same('refreshed',$observer->run($d->id),'Initial producer proves complete empty records before editing');
@@ -74,9 +74,12 @@ same(50,$dom->query('//section[@id="dns"]//tbody/tr')->length,'Maximum is bounde
 $ids=[];foreach($dom->query('//*[@id]')as$node){expect(!isset($ids[$node->getAttribute('id')]),'Unique field IDs');$ids[$node->getAttribute('id')]=true;}
 foreach($dom->query('//*[@aria-describedby]')as$node){foreach(explode(' ',$node->getAttribute('aria-describedby'))as$id){expect(isset($ids[$id]),'Every description exists');}}
 $forms=$dom->query('//form[@method="POST"]')->length;
-foreach(['_token','_request_key','confirmed']as$key){same($forms,$dom->query('//form//input[@name="'.$key.'"]')->length,'Every form has '.$key);}
+foreach(['_token','_request_key']as$key){same($forms,$dom->query('//form//input[@name="'.$key.'"]')->length,'Every form has '.$key);}
+same(0,$dom->query('//form//input[@type="checkbox"][not(contains(@name,"[_delete]"))]')->length,'Record forms have no acknowledgement checkboxes');
+same($dom->query('//form[@data-confirm]')->length,$dom->query('//form[@data-confirm]//dialog//button[@type="submit"][@name="confirmed"][@value="1"]')->length,'Only the confirm step sends the confirmation field');
+same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a hidden or ticked confirmation');
 foreach(['account_fingerprint','provider_domain_id','old_ip','profile_id','cost']as$private){expect(!str_contains($html,'name="'.$private.'"'),'No private authority serialized');}
-expect(str_contains($html,'DNS records')&&str_contains($html,'SRV records')&&str_contains($html,'DNSSEC')&&str_contains($html,'Child nameservers'),'All supported sections rendered');
+expect(str_contains($html,'DNS records')&&str_contains($html,'SRV records')&&str_contains($html,'DNSSEC')&&str_contains($html,'Glue records')&&!str_contains($html,'Child nameservers'),'All supported sections rendered');
 // SRV whitespace must reach strict validation instead of being silently repaired by middleware.
 $before=Operation::count();$r=$post('srv',['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'0','weight'=>'5','port'=>'443','target'=>' sip.example.com. ']],'preimage_digest'=>ManagementPayload::digest($state->srv,'srv')]);
 $response=$controller->manage($r,$d->id,'srv');same(422,$response->getStatusCode(),'Original SRV target whitespace is invalid');same($before,Operation::count(),'Trimming cannot turn invalid SRV input into a queued change');

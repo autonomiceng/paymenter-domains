@@ -107,7 +107,7 @@ class PackageTests(unittest.TestCase):
                     self.assertFalse(any(p.lower() in {'scripts', 'tests', 'docs', '.github'} or ('conversion' in p.lower() and p != 'ConversionGate.php') for p in Path(name).parts))
                     self.assertNotEqual(Path(name).name.lower(), 'readme.md')
                     self.assertEqual(first['members'][name], hashlib.sha256(package.read(name)).hexdigest())
-                for name in ['Mail/DomainNotice.php', 'Presentation/OwnedDomain.php', 'routes/web.php', 'resources/views/search.blade.php', 'database/migrations/2026_10_18_000001_create_domains_foundation.php']:
+                for name in ['Mail/DomainNotice.php', 'Presentation/OwnedDomain.php', 'routes/web.php', 'resources/views/search.blade.php', 'resources/help/owner-help.md', 'database/migrations/2026_10_18_000001_create_domains_foundation.php']:
                     self.assertIn('Domains/'+name, package.namelist())
                 self.assertEqual(package.read('Domains/LICENSE'), (ROOT/'LICENSE').read_bytes())
             source = root/'Domains'
@@ -145,7 +145,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='domains-runtime-refusal-') as temp:
             source = Path(temp)/'Domains'
             shutil.copytree(ROOT/'Domains', source)
-            for name in ['scripts/run.php', 'tests/probe.php', 'docs/note.php', '.github/ci.php', 'Services/convert-enom-05.php', 'Services/collect-conversion-evidence.php', 'Services/pin-source.php', 'Services/dev-tool.php', 'Services/conversion.php']:
+            for name in ['scripts/run.php', 'tests/probe.php', 'docs/note.php', '.github/ci.php', 'Services/convert-enom-05.php', 'Services/collect-conversion-evidence.php', 'Services/pin-source.php', 'Services/dev-tool.php', 'Services/conversion.php', 'Services/notes.md', 'resources/help/extra.md']:
                 with self.subTest(name=name):
                     path = source/name
                     self.assertFalse(path.exists(), 'Refusal fixture must not replace a runtime file')
