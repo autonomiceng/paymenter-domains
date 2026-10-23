@@ -32,32 +32,62 @@ foreach([['application/json','{'],['application/json','[]'],['application/json',
     try{RawPost::body(Request::create('/domains/1/manage/srv','POST',[],[],[],['CONTENT_TYPE'=>$type],$raw));expect(false,'Invalid/truncated body escaped');}
     catch(DomainException $e){same('Invalid form body.',$e->getMessage(),'Invalid input has a fixed secret-free refusal');}
 }
-// Instrument the request and stream so a full-body read cannot pass as an oversize refusal.
+// Declared oversize bodies are refused even when the actual body fits the limit.
 foreach (['application/x-www-form-urlencoded', 'application/json'] as $type) {
-    foreach ([1048576, 1048577, 2097152] as $bytes) {
-        $raw = $type === 'application/json' ? '{"value":"'.str_repeat('x', $bytes-12).'"}' : 'value='.str_repeat('x', $bytes-6);
-        same($bytes, strlen($raw), 'Exact request size fixture');
-        $r = new class extends Request {
-            public mixed $stream;
-            public function getContent(bool $asResource = false) {
-                expect($asResource, 'Raw POST must request a stream, never the full body');
-                return $this->stream;
-            }
-        };
-        $r->initialize([], [], [], [], [], ['REQUEST_METHOD'=>'POST', 'CONTENT_TYPE'=>$type]);
-        $r->stream = fopen('php://temp', 'w+');
-        fwrite($r->stream, $raw); rewind($r->stream);
-        try {
+    foreach (['1048577', '0001048577', '999999999999999999999999'] as $length) {
+        foreach ([8, 2097152] as $bytes) {
+            $raw = $type === 'application/json' ? '{"v":"'.str_repeat('x', $bytes-8).'"}' : 'v='.str_repeat('x', $bytes-2);
+            $r = Request::create('/domains/1/manage/dns', 'POST', [], [], [], ['CONTENT_TYPE'=>$type, 'CONTENT_LENGTH'=>$length], $raw);
+            try { RawPost::body($r); expect(false, 'Declared oversize body escaped'); }
+            catch (DomainException $e) { same('Invalid form body.', $e->getMessage(), 'Declared size has a fixed refusal'); }
+        }
+    }
+    $r = new class extends Request {
+        public int $bodyCalls = 0;
+        public function getContent(bool $asResource = false) {
+            ++$this->bodyCalls;
+            throw new RuntimeException('Oversize header must be refused before touching the body');
+        }
+    };
+    $r->initialize([], [], [], [], [], ['REQUEST_METHOD'=>'POST', 'CONTENT_TYPE'=>$type, 'CONTENT_LENGTH'=>'1048577']);
+    try { RawPost::body($r); expect(false, 'Declared oversize body escaped before reading'); }
+    catch (DomainException $e) { same(0, $r->bodyCalls, 'Oversize header never calls either body API'); }
+}
+// Declared JSON can reuse the buffer; unknown lengths need bounded stream reads.
+foreach (['application/x-www-form-urlencoded', 'application/json'] as $type) {
+    foreach ([null, '', 'unknown', '1048577oops', '-1', '1048576'] as $length) {
+        foreach ([2097152, 1048576, 1048577] as $bytes) {
+            $raw = $type === 'application/json' ? '{"value":"'.str_repeat('x', $bytes-12).'"}' : 'value='.str_repeat('x', $bytes-6);
+            same($bytes, strlen($raw), 'Exact request size fixture');
+            $r = new class extends Request {
+                public array $bodyModes = [];
+                public function getContent(bool $asResource = false) {
+                    $this->bodyModes[] = $asResource;
+                    return parent::getContent($asResource);
+                }
+            };
+            $server = ['REQUEST_METHOD'=>'POST', 'CONTENT_TYPE'=>$type];
+            if ($length !== null) { $server['CONTENT_LENGTH'] = $length; }
+            $stream = fopen('php://temp', 'w+');
+            fwrite($stream, $raw); rewind($stream);
+            $cachedJson = $type === 'application/json' && $length === '1048576';
+            $r->initialize([], [], [], [], [], $server, $cachedJson ? $raw : $stream);
+            if ($cachedJson) { $r->json(); $r->bodyModes = []; }
             try {
-                $body = RawPost::body($r);
-                same(1048576, $bytes, 'Only bodies at or below the byte limit are accepted');
-                same($type === 'application/json' ? $bytes-12 : $bytes-6, strlen($body['value']), 'Boundary value remains complete');
-            } catch (DomainException $e) {
-                expect($bytes > 1048576, 'Exact byte limit must remain valid');
-                same('Invalid form body.', $e->getMessage(), 'Oversize refusal remains secret-free');
-            }
-            same(min($bytes, 1048577), ftell($r->stream), 'Read stops after the limit plus one byte');
-        } finally { fclose($r->stream); }
+                try {
+                    $body = RawPost::body($r);
+                    same(1048576, $bytes, 'Only bodies at or below the byte limit are accepted');
+                    same($type === 'application/json' ? $bytes-12 : $bytes-6, strlen($body['value']), 'Boundary value remains complete');
+                } catch (DomainException $e) {
+                    expect($bytes > 1048576, 'Exact byte limit must remain valid');
+                    same('Invalid form body.', $e->getMessage(), 'Oversize refusal remains secret-free');
+                }
+                if (!$cachedJson) {
+                    same(min($bytes, 1048577), ftell($stream), 'Unknown or unusable length never removes the stream read bound');
+                }
+                same([!$cachedJson], $r->bodyModes, 'Declared cached JSON uses the string API; unknown lengths use a stream');
+            } finally { fclose($stream); }
+        }
     }
 }
 require __DIR__.'/Support/invoice-render-failures.php';

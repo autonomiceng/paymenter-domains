@@ -8,8 +8,11 @@ final class RawPost
 {
     public static function body(#[\SensitiveParameter] Request $request): array
     {
-        $raw=stream_get_contents($request->getContent(true),1048577);
-        if (!$request->isMethod('POST') || !is_string($raw) || strlen($raw)>1048576) { throw new \DomainException('Invalid form body.'); }
+        $length=trim((string)$request->header('Content-Length'));
+        if (!$request->isMethod('POST') || (ctype_digit($length) && (int)$length>1048576)) { throw new \DomainException('Invalid form body.'); }
+        // Use the string API for declared JSON; unknown lengths need a bounded stream read.
+        $raw=$request->isJson() && ctype_digit($length) ? substr($request->getContent(),0,1048577) : stream_get_contents($request->getContent(true),1048577);
+        if (!is_string($raw) || strlen($raw)>1048576) { throw new \DomainException('Invalid form body.'); }
         $type=strtolower(trim(explode(';',(string)$request->header('Content-Type'))[0]));
         if ($request->isJson()) {
             try { $body=json_decode($raw,true,32,JSON_THROW_ON_ERROR); }

@@ -80,6 +80,17 @@ supplied-shell override diff. Re-review changed hook/template dependencies and u
 pins only with that reviewed change. A green upstream qualification needs no extension
 release. Runtime activation must never refuse solely because a version string changed.
 
+## Request body limits
+
+Set PHP `post_max_size` and the web server request body limit to bound overall request
+memory. Laravel buffers JSON before owned handlers run. RawPost refuses declared
+bodies over 1 MiB before accessing the body. Without a usable Content-Length, JSON
+and form bodies use a stream read capped at 1 MiB plus one byte. Declared JSON uses
+the string API to avoid copying cached bytes into a stream. Symfony has no public
+cache-status API: requesting a stream can still copy already buffered JSON when the
+length is unusable. The parser limit does not bound framework capture or replace
+deployment body limits.
+
 ## Settings and safe defaults
 
 Set deployment configuration before extension boot; rebuild configuration caches and restart
