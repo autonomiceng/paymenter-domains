@@ -11,6 +11,12 @@ use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,RuntimeP
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 $entry=new Domains([]);$entry->installed();
 foreach(Installation::SCHEMAS as $schema){$schema::verify();}
+$pointerMigration = DB::table('migrations')->where('migration', '2026_10_19_000014_add_holding_adoption')->sole();
+DB::table('migrations')->where('id', $pointerMigration->id)->delete();
+$pointerRefused = false;
+try { $entry->installed(); } catch (DomainException $e) { $pointerRefused = str_contains($e->getMessage(), 'adoption pointer'); }
+expect($pointerRefused, 'Retained adoption pointer without migration history refuses installation');
+DB::table('migrations')->insert((array) $pointerMigration);
 same(7,DB::table('migrations')->where('migration','like','2026_10_18_%')->count(),'All extension migrations recorded');
 $entry->upgraded('0.0.1');$entry->uninstalled();$entry->installed();
 Runtime::register();same(app(RuntimePorts::class),app(RuntimePorts::class),'One port authority');

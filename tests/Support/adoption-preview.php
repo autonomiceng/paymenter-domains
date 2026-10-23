@@ -13,9 +13,9 @@ use Paymenter\Extensions\Servers\Domains\Data\Adoption\{StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AdoptionMapping, AdoptionReader, AdoptionSchema, HoldingProvenanceSchema, PslReviewSchema, WatchSchema, RegistrarRegistry};
-function adoptionFixture(): array
+function adoptionFixture(Environment $environment = Environment::Test): array
 {
-    Queue::fake(); extract(commerceFixture()); AdoptionSchema::install(); HoldingProvenanceSchema::install(); PslReviewSchema::install(); WatchSchema::install();
+    Queue::fake(); extract(commerceFixture(environment: $environment)); AdoptionSchema::install(); HoldingProvenanceSchema::install(); PslReviewSchema::install(); WatchSchema::install();
     $owner = commerceUser(); $other = commerceUser(); $staff = staffUser(['admin.domains.view', 'admin.domains.adopt.preview']);
     $tld = $tlds[0]; $product = $native->product($tld, 'register'); $plan = $native->annualPlan($product);
     $order = Order::create(['user_id' => $owner->id, 'currency_code' => 'USD']);
@@ -29,9 +29,10 @@ function adoptionFixture(): array
         public function verify(Environment $environment, #[SensitiveParameter] array $credentials): string { return $credentials['uid']; }
     }, fn (AccountBinding $b, array $c) => new Driver(new Client($b, $c['uid'], $c['token'], $wire), ['com']));
     $bindings = new AccountBindings($registry);
-    $binding = $bindings->configure($tld->server_id, 'enom', Environment::Test, ['uid' => 'account-enom', 'token' => 'synthetic-secret']);
+    $binding = $bindings->configure($tld->server_id, 'enom', $environment, ['uid' => 'account-enom', 'token' => 'synthetic-secret']);
+    if ($environment === Environment::Live) { $bindings->confirmLiveSite($tld->server_id, rtrim(config('app.url'), '/')); $bindings->setProcessing($tld->server_id, true); }
     $mapping = new AdoptionMapping($native, $prices, $clock); $reader = new AdoptionReader($bindings, $mapping, $clock, $wire);
-    $target = new Target('example.com', $service->id, $owner->id, $tld->server_id, Environment::Test);
+    $target = new Target('example.com', $service->id, $owner->id, $tld->server_id, $environment);
     $context = new StaffContext($staff->id, 'Reviewed synthetic import mapping');
     return compact('owner', 'other', 'staff', 'order', 'service', 'property', 'tld', 'product', 'plan', 'clock', 'wire', 'bindings', 'binding', 'mapping', 'reader', 'target', 'context', 'prices', 'native');
 }

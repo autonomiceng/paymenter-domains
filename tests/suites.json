@@ -150,7 +150,13 @@
     "tests/watch-dns-observer-test.php",
     "tests/native-lifecycle-test.php",
     "tests/staff-holding-test.php",
-    "tests/native-cancellation-audit-test.php"
+    "tests/native-cancellation-audit-test.php",
+    "tests/holding-adoption-test.php",
+    "tests/adopted-renewal-test.php",
+    "tests/adopted-renewal-refusals-test.php",
+    "tests/adopted-test-environment-test.php",
+    "tests/adopted-renewal-history-test.php",
+    "tests/adopted-complimentary-test.php"
   ],
   "ui": [],
   "runner": [

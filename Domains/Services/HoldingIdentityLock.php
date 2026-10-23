@@ -12,7 +12,7 @@ final class HoldingIdentityLock
     private static ?\WeakMap $contexts = null;
     private bool $active = true;
     private function __construct(private readonly \Illuminate\Database\Connection $connection,
-        private readonly int $orderId, private readonly int $serviceId, private readonly int $ownerId) {}
+        private readonly int $orderId, private readonly int $serviceId, private readonly int $ownerId, private readonly array $native) {}
     public function __clone(): void { throw new \LogicException('Identity locks cannot be cloned.'); }
     public function __serialize(): array { throw new \LogicException('Identity locks cannot be persisted.'); }
     public function __debugInfo(): array { return []; }
@@ -42,7 +42,7 @@ final class HoldingIdentityLock
                 });
             }
         }
-        $context = new self(DB::connection(), $orderId, $serviceId, $ownerId);
+        $context = new self(DB::connection(), $orderId, $serviceId, $ownerId, $native);
         self::$contexts[$context] = true; return $context;
     }
 
@@ -59,4 +59,17 @@ final class HoldingIdentityLock
             'order_user_id' => $this->ownerId, 'service_user_id' => $this->ownerId];
     }
 
+    /** Complete the extension prefix before locking a domain or adoption. Native rows are retained. */
+    public function nativeIdentity(\Paymenter\Extensions\Servers\Domains\Models\Domain $domain): array
+    {
+        $this->owners((int) $domain->user_id);
+        if ((int) $domain->service_id !== $this->serviceId) { throw new \DomainException('Holding native authority changed.'); }
+        $server = \App\Models\Server::whereKey($domain->server_id)->lockForUpdate()->firstOrFail();
+        $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $server->id)->lockForUpdate()->firstOrFail();
+        $server->settings()->orderBy('id')->lockForUpdate()->get();
+        $tld = \Paymenter\Extensions\Servers\Domains\Models\Tld::where(['server_id' => $server->id, 'tld' => $domain->tld])->lockForUpdate()->firstOrFail();
+        if ($server->extension !== 'Domains' || $account->registrar_key !== $domain->registrar_key
+            || $account->account_fingerprint !== $domain->account_fingerprint) { throw new \DomainException('Holding account changed.'); }
+        return HoldingNativeIdentity::capture($domain, $this->native, $tld);
+    }
 }

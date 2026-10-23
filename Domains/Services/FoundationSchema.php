@@ -43,6 +43,7 @@ final class FoundationSchema
             $table->timestamps();
             // The additive provenance migration follows the original retained declaration.
             if (Schema::hasColumn('domains_domains', 'provenance')) { $table->string('provenance', 32)->nullable(); }
+            if (Schema::hasColumn('domains_domains', 'adoption_id')) { $table->unsignedBigInteger('adoption_id')->nullable(); }
         });
         self::table('domains_operations', function (Blueprint $table) {
             $table->id();

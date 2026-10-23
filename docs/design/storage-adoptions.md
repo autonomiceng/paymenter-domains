@@ -1,9 +1,9 @@
 # Retained adoption and invoice-history storage
 
-These tables are storage only. No route, staff action, scheduler, billing, management or
-observation consumer reads them. A stored `committed` state is not verified holding authority.
-Holding-anchor validation and integration are deferred until the shared native identity lock
-interface supports adopted holdings. No checkout, funding or operation evidence is fabricated.
+Adoption and invoice-history tables retain their original evidence. Domain attachment and
+renewal consumers validate committed adoption under the shared native identity prefix.
+A stored `committed` state alone is not holding authority. No checkout, funding or acquisition
+operation evidence is fabricated. Confirmation and invoice-history linking remain separate workflows.
 
 | Migration | Table | Retained identity |
 | --- | --- | --- |
@@ -83,3 +83,119 @@ eligible for funding, reconciliation or refunds. No funding/settlement flag is s
 Offline SQLite fixtures cover uniqueness, encryption, frozen intent, append-only history,
 schema drift and retained ciphertext on lifecycle operations. Provider proof, native relation
 validation, concurrent MariaDB lock behavior and adoption activation remain separate gates.
+
+## Holding attachment
+
+Migration `2026_10_19_000014_add_holding_adoption` adds nullable retained
+`domains_domains.adoption_id`. Installation checks its recorded history and complete
+foundation declaration, including when migrations skip. Checkout holdings keep it null.
+
+`Domain::attachAdoption` is a transaction-bound storage method for a future confirmer.
+It requires the live `HoldingIdentityLock`. The extension prefix locks server, account,
+server settings and TLD before the domain and committed adoption. A future confirmer
+must call `nativeIdentity($domain)`, lock the domain, then commit the adoption and
+call attachment in that same outer transaction. Committing the adoption first would
+reverse the lock order. Attachment may re-read rows already locked by that prefix.
+It derives `snapshot.holding` v1 from frozen adoption evidence and the retained native
+prefix; it accepts no caller-supplied holding identity. The committed reverse domain
+link must match. Attachment advances the pending generation exactly once and writes
+pointer, adopted provenance, original identity, revision, expiry and initial billing
+anchor together. Prior and resulting revisions must match the pending revision and
+its immediate successor. Active status records the committed holding; it is not a
+freshness decision. A3 must refuse past-expiry proof before committing. This method
+grants no permissions, does no fresh provider read and
+is not a confirmation workflow. The future confirmer owns those checks.
+
+Ordinary saves cannot attach, replace or clear the pointer or holding snapshot. They
+cannot change provenance or generation. Checkout proof remains frozen and cannot be
+promoted as adoption. Numeric domain updates refuse. Observation metadata, current
+confirmed revision/expiry and current billing anchor may still evolve; the original
+holding snapshot stays byte-for-byte equivalent after decryption. Privileged raw SQL,
+and bulk writes remain outside these guarantees. Quiet saves still pass the
+retained-identity checks in `save()`; event-free creation is not an import API.
+
+## Renewal identity and anchors
+
+`HoldingLocks` uses the shared ordered native prefix for both sources. It captures
+one normalized native identity from current locked owners, all relevant orders and
+services, the annual product/plan, domain property, route and TLD markers. It then
+validates either genuine checkout evidence or `snapshot.holding` plus its committed
+adoption row. The rows, encrypted source and normalized identity enter the repeated
+stamp. Adoption rows follow the domain and precede operations; no earlier native
+row is acquired after either ledger row.
+
+Adopted authority requires both pointer directions, the exact original identity,
+matching live account/registrar/fingerprint, generation, provider ID and evidence
+digest. Matching TEST evidence is still ineligible. Register is the structural
+native route only. Adoption supplies no purchase admission, cost or payment proof.
+The acquisition invoice guard explicitly excludes adopted holdings.
+
+`HoldingAnchor` has two renewal-only branches: `adoption` and
+`completed_operation`. The first starts at the original adoption revision and
+expiry. Later current revisions must be reconstructed from that immutable root
+through each succeeded renewal, in ledger order. Every step requires the previous
+expiry and revision, full original sealed completion evidence and the exact added
+term. The current ledger and billing anchor must equal the resulting revision and
+expiry. Editing current labels together cannot create a confirmed revision.
+
+Retained operations from the previous generation count as resolved history only
+when their complete raw-row hash matches the original adoption evidence and every
+row still has definitely-unsent terminal proof in that generation. They cannot
+supply an acquisition or renewal anchor. Changed historical evidence requires
+staff review. Paid and complimentary renewal paths share these checks.
+
+Observation saves may update observation metadata and synchronization time. They
+do not advance confirmed revision, provider expiry or billing authority. A verified
+renewal completion advances exactly one revision and records a completed-operation
+anchor. Subsequent renewals use that branch while revalidating the original
+adoption and the entire confirmed chain. Original pointer, holding snapshot and
+adoption evidence remain unchanged.
+
+Unreadable adoption evidence fails closed with no checkout fallback. Staff facts
+show an explicit unavailable/staff-review state derived from retained ciphertext;
+no replacement proof or automatic repair is written. Restoring encryption access
+is required before authority can be evaluated again.
+
+The internal attachment and renewal consumers do not supply adoption confirmation,
+permission checks, fresh confirmation reads, cancellation decisions or activation.
+Those remain responsibilities of the future confirmer. NameSilo adoption/provider
+acceptance and the existing native ownership-race activation gates remain open.
+
+## Adoption activation limits
+
+Do-not-renew adoption records do not grant this renewal authority. The stored
+intent must match encrypted evidence, and a false intent must have no cancellation
+ID. Qualification of a committed do-not-renew holding and later resumption remain
+with the confirmation and cancellation workflow.
+
+Before activation, that workflow must also integrate `StaffHoldingReview` resume
+and reprice actions and `NativeCancellation` guards with adoption authority. They
+still use completed/acquisition operation checks and refuse an initial adopted
+holding. This change does not enable a confirmation action. Native cancellation
+creation must occur in the ordered native prefix, before locking domain/adoption;
+creating it after those rows would reverse the lock order.
+
+Shared holding identity also permits existing management and observation consumers
+to inspect an attached live holding. They retain their current permission, feature
+and spend checks. Activation must qualify those paths independently; successful
+renewal fixtures do not qualify management writes or observation scheduling.
+
+The chain deliberately refuses corrected or unusual expiry increments that are
+not exactly the recorded added term, and charge discrepancies remain reviewed
+outcomes. No staff re-anchor or provenance rewrite is provided. A future reviewed
+correction workflow must preserve original evidence and establish new authority.
+
+Original acquisition refunds are not authorized by adoption evidence. Existing
+refund checks require their original generation and genuine checkout/financial
+proof. History linking alone cannot grant that authority or bypass those checks.
+
+NameSilo adopted renewal still refuses at admission: original adoption supplies no
+nonpremium purchase fact, so the NameSilo cost check cannot establish authority.
+Enom uses the fresh provider premium fact. NameSilo needs a separately qualified
+cost/premium source before activation.
+
+Live-environment and do-not-renew checks currently belong to shared holding
+identity validation. They therefore refuse TEST and do-not-renew holdings for all
+holding consumers, including observation, management, refunds, unpaid retirement
+and staff review. Before activation, split structural identity validation from
+renewal eligibility and qualify each consumer's intended policy.
