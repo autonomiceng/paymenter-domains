@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 
 final class FoundationSchema
 {
-    private const TABLES = ['domains_domains', 'domains_operations', 'domains_tlds', 'domains_accounts', 'domains_prices'];
+    private const TABLES = ['domains_domains', 'domains_operations', 'domains_tlds', 'domains_accounts', 'domains_prices', 'domains_staff_review_keys', 'domains_audit_archives'];
 
     public static function install(): void
     {
@@ -17,6 +17,19 @@ final class FoundationSchema
         if ($present !== [] && count($present) !== count(self::TABLES)) {
             throw new \RuntimeException('Partial retained Domains schema; restore and verify history before reinstall.');
         }
+        self::table('domains_staff_review_keys', function (Blueprint $table) {
+            $table->unsignedBigInteger('server_id');
+            $table->string('review_key', 32);
+            $table->unsignedBigInteger('expires_at');
+            $table->primary(['server_id', 'review_key']);
+        });
+        self::table('domains_audit_archives', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('server_id');
+            $table->string('family', 32);
+            $table->text('payload');
+            $table->index(['server_id', 'family', 'id']);
+        });
         self::table('domains_domains', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('service_id')->unique();

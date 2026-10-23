@@ -7,13 +7,15 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,ManagedPublicConfig,Watc
 /** One local relink transaction. Works for acquired and adopted holdings, independent of A3's marker. */
 final class ManagedPublicEnrollment
 {
-    public function reconcile(int $id,int $owner,int $now,?int $defaultProfile=null): ?bool
+    public function reconcile(int $id,int $owner,int $now,?int $defaultProfile=null,bool $transferOnly=false): ?bool
     {
         $seed=Domain::whereKey($id)->where('user_id',$owner)->first();if (!$seed) { return null; }
         $peek=WatchSource::where('user_id',$owner)->where('registrable_name',$seed->domain)->where('state','watch')->orderBy('id')->limit(100)->get();
-        return DB::transaction(function()use($seed,$peek,$id,$owner,$now,$defaultProfile):?bool {
+        if ($transferOnly && $peek->isEmpty() && !WatchName::where('user_id',$owner)->where('canonical_name',$seed->domain)->whereIn('state',['active','paused'])->exists()) { return false; }
+        return DB::transaction(function()use($seed,$peek,$id,$owner,$now,$defaultProfile,$transferOnly):?bool {
             $changed=false;
-            try { $l=HoldingLocks::take($seed,additionalServices:$peek->pluck('service_id')->all());HoldingAnchor::resolve($l); }
+            try { $l=HoldingLocks::take($seed,additionalServices:$peek->pluck('service_id')->all());HoldingAnchor::resolve($l);
+                if ($transferOnly && (!in_array($l['domain']->provenance,[null,'purchased','converted_purchase'],true) || $l['account']->environment!=='live' || !$l['operations']->contains(fn($op)=>$op->action==='transfer' && $op->state==='succeeded' && $op->authority_generation===$l['domain']->authority_generation))) { return null; } }
             catch (\DomainException) { return null; }
             if (!ManagedPublicTarget::valid($l,$now)) { return null; }$d=$l['domain'];
             $maps=WatchProductMap::whereKey($peek->pluck('map_id'))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
@@ -47,13 +49,14 @@ final class ManagedPublicEnrollment
                     'dns_episode'=>$watch?['predecessor_watch_id'=>$watch->id,'predecessor_observation_id'=>$watch->last_observation_id]:null,
                     'reason'=>'managed_enrollment']);
             }
-            if ($watch && in_array($watch->state,['active','paused'],true)) {
+            $watchChanged=$watch && in_array($watch->state,['active','paused'],true);
+            if ($watchChanged) {
                 $changed=true;$before=$watch->revision;
                 $watch->fill(['state'=>'linked','registration'=>'platform','managed_domain_id'=>$id,'notice_preferences'=>[...($watch->notice_preferences??[]),'expiry'=>false],'revision'=>$before+1])->save();
                 WatchAudit::create(['subject_type'=>'watch','subject_id'=>$watch->id,'user_id'=>$owner,'event'=>'registration_managed','reason'=>'registration_managed',
                     'before_revision'=>(string)$before,'after_revision'=>(string)$watch->revision,'data'=>['domain_id'=>$id,'predecessor_observation_id'=>$watch->last_observation_id],'created_at'=>now()]);
             }
-            if ($watch) {
+            if ($watchChanged) {
                 DB::table('domains_watch_work')->where('watch_id',$watch->id)->update(['claim'=>null,'lease_until'=>null,'safe_code'=>'registration_managed']);
                 // W4 owns delivery execution. Suppress only definitely unsent rows if its schema is installed.
                 if (Schema::hasTable('domains_watch_notices')) {
@@ -64,6 +67,7 @@ final class ManagedPublicEnrollment
             }
             $retired=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation','<>',$d->authority_generation)->whereNull('retired_at')->update(['retired_at'=>$now,'claim'=>null,'lease_until'=>null,'safe_code'=>'target_changed']);
             $changed=$changed || $retired>0;
+            if ($transferOnly) { return $changed; } // Relink does not activate public observation.
             foreach(['delegation','points']as$kind) {
                 $q=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)->where('kind',$kind);
                 $inserted=$q->insertOrIgnore(['domain_id'=>$id,'user_id'=>$owner,'generation'=>$d->authority_generation,'account_fingerprint'=>$d->account_fingerprint,'kind'=>$kind,

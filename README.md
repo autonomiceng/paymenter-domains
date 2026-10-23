@@ -54,3 +54,22 @@ Acceptance records encrypted retained audit evidence and does not refresh the do
 [MIT](LICENSE), copyright 2026 Autonomic Engineering. NameSilo and Paymenter are trademarks of their respective owners; this is an independent project.
 
 Staff account balances and renewal forecasts: [Registrar balances](docs/design/registrar-balances.md).
+
+External watch comparisons are also default off (`domains.watch_transfer.enabled`).
+Enable them only in reviewed deployment composition after accepting the seller's annual
+transfer and renewal offers, ending allowlist and lock policy, and qualifying the native
+cart/reservation hooks. Public expiry is not transfer authority. Fresh ordinary-domain
+and registry checks plus customer ownership confirmation are required for the handoff;
+post-checkout transfer-code entry remains separate. No verified current-provider renewal
+price source is supplied, so the customer flow makes no numeric savings claim.
+
+Before enabling adoption, discovery, public DNS/registry checks or watch notices, qualify
+retained ZIP upgrade/reinstall, owner and revision races, provider adapters, shared-database
+locking, delivery acceptance and the supplied site shell. Keep each feature off until its
+own acceptance is complete; a green offline suite does not activate it. Internal moves
+between platform-held accounts remain a separate, unavailable feature.
+
+After a proved LIVE transfer acquisition, local source relinking and external-notice
+suppression run independently of the comparison flag. TEST acquisitions never change
+external watches. This cleanup enables no DNS/registry worker. Deferred relinks appear
+in Registrar setup and the staff alerts; the bounded runtime cursor retries them.

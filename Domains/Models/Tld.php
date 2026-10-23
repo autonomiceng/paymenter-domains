@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Model;
 /** One ending, its pricing rule and the last exact-term wholesale costs. */
 class Tld extends Model
 {
+    use InvalidatesStorefront;
+
     public const MODES = ['fixed', 'markup_amount', 'markup_percent'];
     public const ACTIONS = ['register', 'renew', 'transfer'];
 

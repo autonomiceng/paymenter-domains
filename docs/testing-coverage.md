@@ -768,3 +768,32 @@ checks, expiry window, tones, stopped-watch handling and the filter memo each fa
 Offline only; no installed or live checks.
 
 `staff-watch-findings-test.php` also pins the watch detail header: its flex bases apply only at 40rem and wider. Below that Filament stacks the header as a column, where a flex basis becomes height and left about 800 px of blank space above Findings at 375 px.
+
+External watch transfer comparison: `watch-transfer-test.php` checks a local help-only GET,
+strict annual transfer evidence, the 90–14 day window, status/premium/unknown refusals,
+owner and revision revalidation, explicit authority and the real neutral native cart.
+A second unknown registry read inside cart admission must refuse the handoff. Numeric
+savings require independently verified, matching annual USD/tax-exclusive renewal evidence;
+no such source is supplied to the runtime UI. Transfer completion exercises a failed relink
+audit, atomic rollback, local repair, retained source history and definitely-unsent notice
+suppression while accepted/uncertain deliveries survive. Public workers remain dormant.
+
+Installed watch/adoption gate: repeated same-version native upload/upgrade and reinstall
+retain encrypted
+registry facts, adoption previews, watch source/profile/map rows, outstanding work leases,
+notice episodes, uncertain deliveries and customer opt-outs byte for byte. The fixtures
+prove previews remain unattached and maps/profiles, adoption and comparison activation
+stay off. Repeated native upload, refused server deletion and file removal/reinstall share
+the same retained snapshot. These are SQLite/offline checks; live provider acceptance,
+shared-database races and actual delivery remain separate operator gates.
+Cross-version watch-table retention awaits a previous build containing those tables.
+
+Staff TLD query coverage compares 25/100 rows and repeats each size with extra price
+terms, retaining fresh-grant revocation checks. Settings review coverage measures
+queries and encrypted-setting retrievals with 10/500 audit archives, exercises real
+archive rotation, exact unchanged-stamp replay refusals and transactional key rollback.
+Corrupt acceptance permits narrower terms and a sales pause while still refusing
+widening and restoration. Recent history is bounded independently of retained replay keys.
+The historical installed-package fixture adopts the unreleased review-key/archive
+declaration explicitly; it tests native uploads and additive migrations from that
+baseline, not conversion or automatic repair of superseded missing-table schemas.

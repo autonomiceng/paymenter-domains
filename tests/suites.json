@@ -94,6 +94,7 @@
     "tests/observation-namesilo-test.php",
     "tests/observation-catalogue-test.php",
     "tests/storefront-test.php",
+    "tests/storefront-cache-test.php",
     "tests/owned-pages-test.php",
     "tests/owner-actions-test.php",
     "tests/owner-management-test.php",
@@ -107,6 +108,7 @@
     "tests/owner-records-test.php",
     "tests/owner-record-errors-test.php",
     "tests/staff-tld-reads-test.php",
+    "tests/staff-settings-history-test.php",
     "tests/staff-tld-writes-test.php",
     "tests/staff-tld-actions-test.php",
     "tests/reminders-test.php",
@@ -237,7 +239,8 @@
     "tests/staff-operation-lease-test.php",
     "tests/staff-reason-test.php",
     "tests/staff-watch-findings-test.php",
-    "tests/staff-watch-summary-owners-test.php"
+    "tests/staff-watch-summary-owners-test.php",
+    "tests/watch-transfer-test.php"
   ],
   "ui": [],
   "runner": [

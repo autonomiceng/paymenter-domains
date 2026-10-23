@@ -52,6 +52,7 @@ final class PricingRules
         $server = $this->server($serverId, true);
         $server->settings()->updateOrCreate(['key' => 'domains_pricing_default_rule'],
             ['type' => 'array', 'encrypted' => false, 'value' => PricingRule::validate($rule)]);
+        StorefrontCatalogueCache::invalidateAfterCommit();
     }
 
     private function server(int $id, bool $lock = false, bool $requireEnabled = true): Server

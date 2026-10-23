@@ -27,6 +27,30 @@ foreach(['example','test','invalid'] as $ending){
 $page->call('$refresh')->assertCountTableRecords(4);$many=tldGrantQueries($page);
 same($one,$many,'TLD permission queries do not grow with ending or price count');
 echo 'TLD 1 vs 4 rows: '.json_encode($one).' / '.json_encode($many)." user/role queries\n";
+// Measure complete renders at both staff page sizes, then vary price rows independently.
+function tldListCost($page,int $size): array
+{
+    $page->set('tableRecordsPerPage',$size);
+    DB::enableQueryLog();DB::flushQueryLog();$page->call('$refresh')->assertSuccessful();
+    $q=DB::getQueryLog();DB::disableQueryLog();
+    $count=static fn($table)=>count(array_filter($q,fn($v)=>str_contains($v['query'],'from "'.$table.'"')));
+    return [count($q),$count('users'),$count('roles'),$count('domains_prices')];
+}
+for($n=4;$n<100;$n++){
+    $copy=$t->replicate();$copy->tld='ending'.$n;$copy->save();
+    foreach(Price::where('server_id',$t->server_id)->where('tld',$t->tld)->get() as $price){$row=$price->replicate();$row->tld=$copy->tld;$row->save();}
+}
+$twentyFive=tldListCost($page,25);$hundred=tldListCost($page,100);
+same(array_slice($twentyFive,1,2),array_slice($hundred,1,2),'25 versus 100 rows reload grants a constant number of times');
+same(75,$hundred[3]-$twentyFive[3],'Each additional TLD loads saved prices once');
+expect($hundred[0]-$twentyFive[0]<=75*10,'Table facts use a small fixed query budget per additional row');
+foreach(\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$t->server_id)->get() as $ending){
+    $prototype=Price::where('server_id',$t->server_id)->where('tld',$ending->tld)->where('action','register')->firstOrFail();
+    foreach([2,4,5,6,7,8,9,10] as $term){$row=$prototype->replicate();$row->term=$term;$row->save();}
+}
+same($twentyFive,tldListCost($page,25),'Four versus twelve price rows have identical 25-row query cost');
+same($hundred,tldListCost($page,100),'Four versus twelve price rows have identical 100-row query cost');
+echo 'TLD 25/100 rows: '.json_encode([$twentyFive,$hundred])." total/user/role/price queries\n";
 $page->assertSee('Cost <span',false)->assertSee('8.00 USD');
 expect(!str_contains(json_encode($page->snapshot),'StaffGrants'),'TLD grants never enter public component data');
 DB::table('roles')->where('id',$viewer->role_id)->update(['permissions'=>json_encode([Staff::VIEW])]);

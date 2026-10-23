@@ -30,8 +30,10 @@ function lookup(array $body, ?DateTimeImmutable $now = null, int $created = 60, 
     return $rdap->precheck('example.com', $created, $transferred, $now ?? new DateTimeImmutable('2026-10-17T12:00:00Z'));
 }
 $result = lookup($body);
-verify($result === ['allowed' => true, 'code' => null, 'warning' => null, 'expires_at' => '2027-01-01'], 'Valid lookup failed.');
+verify($result === ['allowed' => true, 'code' => null, 'warning' => null, 'expires_at' => '2027-01-01', 'comparison_allowed' => true], 'Valid lookup failed.');
 verify($requests === ['https://data.iana.org/rdap/dns.json', 'https://rdap.example.com/domain/example.com'], 'Lookup ignored the bootstrap/name endpoint.');
+$candidate = $body; $candidate['status'] = ['unrecognized-status']; $advisory = lookup($candidate);
+verify($advisory['allowed'] && $advisory['comparison_allowed'] === false, 'Unknown status must preserve ordinary advisory admission but refuse a watch comparison.');
 $compound = $body; $compound['ldhName'] = 'example.co.nz';
 $compoundRequests = [];
 $compoundRdap = new Rdap(function ($url) use ($compound, &$compoundRequests) {

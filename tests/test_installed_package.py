@@ -18,8 +18,8 @@ sys.path.insert(0, str(ROOT/'scripts'))
 import build
 
 # Previous local runtime before the additive public-suffix schema; no released
-# older version is implied. Source is pinned, with one explicit unreleased schema
-# fixture adjustment below; this does not exercise upgrade from the old index set.
+# older version is implied. Source is pinned, with explicit unreleased schema
+# fixture adjustments below; superseded declarations have no upgrade path.
 PREVIOUS = 'e7881cf404e934e1cc84931ab9036e84804b8b61'
 
 
@@ -44,6 +44,20 @@ def previous_build(root):
     anchor = "                $t->unsignedBigInteger('due_at')->index(); $t->unsignedInteger('tries')->default(0);\n"
     assert old.count(anchor) == 1, 'Pinned observation fixture changed'
     observation.write_text(old.replace(anchor, anchor + "                $t->index(['server_id','account_fingerprint','due_at'], $t->getTable().'_account_due_index');\n"))
+    # The unreleased foundation baseline also retains review keys and encrypted
+    # archives. Qualify additive migration/upload behavior from that baseline,
+    # never an automatic repair of a historical missing-table schema.
+    foundation = previous_source/'Domains/Services/FoundationSchema.php'
+    old = foundation.read_text()
+    tables = "'domains_prices'];"
+    assert old.count(tables) == 1, 'Pinned foundation table list changed'
+    old = old.replace(tables, "'domains_prices', 'domains_staff_review_keys', 'domains_audit_archives'];")
+    anchor = "        self::table('domains_domains', function (Blueprint $table) {"
+    current = (ROOT/'Domains/Services/FoundationSchema.php').read_text()
+    start = current.index("        self::table('domains_staff_review_keys',")
+    end = current.index(anchor, start)
+    assert old.count(anchor) == 1, 'Pinned foundation declaration changed'
+    foundation.write_text(old.replace(anchor, current[start:end] + anchor))
     return build.build(previous_source/'Domains', root/'previous')
 
 
@@ -106,7 +120,7 @@ def main(scenario):
             previous = previous_build(root)
             assert previous['archive_sha256'] != current['archive_sha256'], 'Upgrade must replace different runtime bytes'
             evidence.update(previous_revision=PREVIOUS,
-                            previous_fixture_adjustments=['observation_account_due_index'],
+                            previous_fixture_adjustments=['observation_account_due_index', 'foundation_review_keys_and_archives'],
                             previous_zip_sha256=previous['archive_sha256'])
         current_migrations = len(list((ROOT/'Domains/database/migrations').glob('*.php')))
         first, count = ('previous', 7) if scenario == 'upgrade' else ('current', current_migrations)
@@ -136,6 +150,9 @@ def main(scenario):
             phase('upload', 'current')
             env['PACKAGE_MIGRATIONS'] = str(current_migrations)
             phase('verify')
+            phase('watch-seed')
+            phase('verify')
+            evidence.update(watch_adoption_retained=True, activation_default_off=True)
             # The native upgrade is now running current classes and migration history.
             phase('upload', 'current')
             phase('verify')

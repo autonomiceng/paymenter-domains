@@ -46,7 +46,7 @@ final class OperationReconciliation
             }
         } catch (\Throwable) {} // Safe retained alert; transport/contract failures do not manufacture facts.
         if (!$covered) { return Operation::findOrFail($id); }
-        return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $transfer, $transferConflict, $chargeChecked): Operation {
+        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $transfer, $transferConflict, $chargeChecked): Operation {
             if (!$this->eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
@@ -96,6 +96,11 @@ final class OperationReconciliation
                 'observation' => ObservationProjection::acquired($domain, $op->operation_key), 'last_synced_at' => $this->clock->now()]);
             return $op;
         });
+        if ($completed->action === 'transfer' && $completed->state === 'succeeded') {
+            try { (new TransferWatchEnrollment())->repair((int)$completed->domain_id,(int)$completed->domain->user_id,$this->clock->now()->getTimestamp()); }
+            catch (\Throwable $e) { logger()->warning('Transfer watch repair deferred.',['exception_class'=>$e::class]); } // Runtime cursor retries.
+        }
+        return $completed;
     }
     /** Internal audited resume seam; staff authorization/route belongs to36. No send authority. */
     public function resume(int $id, string $reason, ?StaffOperationReview $review = null): Operation

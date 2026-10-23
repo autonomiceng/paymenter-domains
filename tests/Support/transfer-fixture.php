@@ -11,10 +11,11 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, Cos
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmission, CatalogueAcceptances, CheckoutEligibility, ContactProfileSchema, DomainOperations, InvoiceBinding, OperationClaims, Rdap, Refunds, RegistrarRegistry, RegistrationProfiles, TransferInputs, TransferPrecheck, TransferPreflight, WriteAcceptance, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\{FakeClock, FakeRegistrar};
-extract(commerceFixture(true)); $clock = new FakeClock($now);
+if (($transferEnvironment??Environment::Test)===Environment::Live) { config(['app.url'=>'https://domains-tests.invalid']); }
+extract(commerceFixture(true,environment:$transferEnvironment??Environment::Test)); $clock = new FakeClock($now);
 $guard=new Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices),$clock); $guard->boot();
 Carbon\Carbon::setTestNow($now); Carbon\CarbonImmutable::setTestNow($now); ContactProfileSchema::install();
-$state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false,'createShape'=>'nested'];
+$state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false,'createShape'=>'nested','enomOrigin'=>($transferEnvironment??Environment::Test)===Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'];
 foreach ($tlds as $tld) { App\Models\Server::find($tld->server_id)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']); }
 $rdap = new Rdap(static function ($url) use ($state): array {
     same(0, DB::transactionLevel(), 'RDAP outside financial locks'); $state->rdap++;
@@ -60,7 +61,7 @@ $exchange = static function ($origin,$command,$p,$timeout) use ($state): string 
         if ($state->mode === 'lost') { throw new RuntimeException('Synthetic response loss'); }
         if ($state->mode === 'malformed') { return '{}'; }
         if ($command === 'TP_CreateOrder') {
-            same('https://resellertest.enom.com/interface.asp',$origin,'Fixed Enom route');
+            same($state->enomOrigin,$origin,'Fixed Enom route');
             same([1,0,1,0,'no'],[$p['DomainCount'],$p['PreConfig'],$p['Lock'],$p['Renew'],$p['UseCreditCard']],'Frozen external-transfer flags');
             expect(isset($p['AuthInfo1'],$p['RegistrantEmailAddress'],$p['AuxBillingEmailAddress']),'Frozen input and four roles mapped');
             // Documented nested ID, top-only compatibility, agreeing IDs and conflicting IDs.

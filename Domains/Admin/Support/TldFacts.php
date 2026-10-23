@@ -25,12 +25,16 @@ final class TldFacts
         return !$p?->server_id?'No seller':self::registrar((string)$p->registrar_key).' · account #'.$p->server_id.' · revision '.$p->revision;
     }
     public static function prices(Tld $tld, ?StaffGrants $grants = null): array
+    {return self::snapshot($tld,$grants)['prices'];}
+    /** One server-only snapshot per row/render; never retain across requests or use as write authority. */
+    public static function snapshot(Tld $tld, ?StaffGrants $grants = null): array
     {
         $grants ??= Staff::requireView();
         $out=[];
-        try{$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding(Account::where('server_id',$tld->server_id)->firstOrFail()))->revision;}catch(\Throwable){$accepted=null;}
+        try{$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding(Account::where('server_id',$tld->server_id)->firstOrFail()));}catch(\Throwable){$accepted=null;}
         try{$ruleHash=hash('sha256',json_encode((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($tld),JSON_THROW_ON_ERROR));}catch(\Throwable){$ruleHash=null;}
-        foreach(Price::where(['server_id'=>$tld->server_id,'account_fingerprint'=>$tld->account_fingerprint,'tld'=>$tld->tld])->orderBy('action')->orderBy('term')->get() as $p){
+        $saved=Price::where(['server_id'=>$tld->server_id,'account_fingerprint'=>$tld->account_fingerprint,'tld'=>$tld->tld])->orderBy('action')->orderBy('term')->get();
+        foreach($saved as $p){
             $fresh=$p->observed_at<=now()&&$p->fresh_until&&$p->fresh_until>now();
             $row=['action'=>['register'=>'Registration','renew'=>'Renewal','transfer'=>'Transfer'][$p->action]??'Unavailable',
                 'term'=>$p->term.' '.($p->term===1?'year':'years'),'retail'=>self::money($p->retail),
@@ -42,7 +46,7 @@ final class TldFacts
             ];
             if($p->wholesale===null){$row['warning']='Cost unknown · '.($p->action==='renew'?'retained retail; staff alert':'held');}
             if(($p->eligibility['price_unavailable']??false)===true){$row['warning']='Price unavailable · '.($p->action==='renew'?'retained renewal retail':'off');if($p->action!=='renew'){$row['retail']='Price unavailable';}}
-            if($p->action!=='renew'&&($accepted===null||($p->eligibility['catalogue_revision']??null)!==$accepted)){$row['warning'].=' · Account acceptance changed; new sales held pending import';}
+            if($p->action!=='renew'&&($accepted===null||($p->eligibility['catalogue_revision']??null)!==$accepted->revision)){$row['warning'].=' · Account acceptance changed; new sales held pending import';}
             if($ruleHash===null||($p->eligibility['rule_hash']??null)!==$ruleHash){$row['warning'].=' · Rule changed · publish required';}
             $row['warning']=trim(str_replace('None · ','',$row['warning']));
             if($grants->costs){
@@ -54,7 +58,7 @@ final class TldFacts
             }
             $out[]=$row;
         }
-        return $out;
+        return ['prices'=>$out,'sales'=>self::saleStatus($tld,$saved,$accepted,$ruleHash,$out)];
     }
     public static function rule(Tld $t): string
     {try{$r=(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($t);return match($r['mode']){'fixed'=>'Fixed annual retail','markup_amount'=>$r['markup'].' USD markup',default=>$r['markup'].'% markup'}.' · rounding: '.str_replace('_',' ',$r['round_up']);}catch(\Throwable){return 'Unavailable · publication held';}}
@@ -62,10 +66,10 @@ final class TldFacts
     { return $value===null?'Unknown':($places===4?self::exactMoney(PriceCatalogue::cost($value)):PriceCatalogue::retail($value).' USD'); }
     private static function exactMoney(string $value): string
     { return preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$value).' USD'; }
-    public static function table(Tld $tld): HtmlString
+    public static function table(Tld $tld, ?StaffGrants $grants = null, ?array $rows = null): HtmlString
     {
-        $grants=Staff::requireView();
-        $rows=self::prices($tld,$grants); if(!$rows){return new HtmlString('No saved prices. Unknown cost is never zero.');}
+        $grants??=Staff::requireView();
+        $rows??=self::prices($tld,$grants); if(!$rows){return new HtmlString('No saved prices. Unknown cost is never zero.');}
         $head=['action'=>'Action','term'=>'Term','retail'=>'Your price','revision'=>'Revision'];
         $html='<div style="max-width:100%;overflow-x:auto"><table style="width:100%;border-collapse:collapse"><caption style="text-align:left;padding:8px">Term totals before tax. Cost and retail use the same term.</caption><thead><tr>';
         foreach($head as $label){$html.='<th scope="col" style="padding:8px;text-align:left;white-space:nowrap">'.e($label).'</th>';}$html.='</tr></thead><tbody>';
@@ -86,19 +90,25 @@ final class TldFacts
         catch(\Throwable){return 'Unavailable · new sales held';}
     }
     public static function salesState(Tld $t, ?StaffGrants $grants = null): string
+    {return self::snapshot($t,$grants)['sales'];}
+    private static function saleStatus(Tld $t, $saved, ?\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, ?string $ruleHash, array $rows): string
     {
-        if(Price::where(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint,'tld'=>$t->tld])->get()->contains(fn($p)=>($p->eligibility['price_unavailable']??false)===true)){return 'Price unavailable · registration and transfer off';}
+        if($saved->contains(fn($p)=>($p->eligibility['price_unavailable']??false)===true)){return 'Price unavailable · registration and transfer off';}
         if(!$t->enabled||(!$t->register_enabled&&!$t->transfer_enabled)){return 'New sales paused';}
         if(!$t->renew_enabled){return 'New sales held · renewal is turned off. Enable Annual renewal catalogue support to sell this ending.';}
         $action=$t->register_enabled?'register':'transfer';$term=$action==='register'?$t->min_years:1;
-        try{\Paymenter\Extensions\Servers\Domains\Services\PublicationEligibility::require($t,$action,$term);}catch(\Throwable){return 'New sales held · pending import or acceptance';}
+        $price=static fn($kind,$years)=>$saved->first(fn($p)=>$p->action===$kind&&$p->term===$years&&$p->currency==='USD');
+        $renew=$price('renew',1);$sale=$price($action,$term);
+        try{if(!$accepted||$accepted->binding->serverId!==$t->server_id||$accepted->binding->registrarKey!==$t->registrar_key
+                ||$accepted->binding->fingerprint!==$t->account_fingerprint){throw new \DomainException;}
+            \Paymenter\Extensions\Servers\Domains\Services\PublicationEligibility::requireEvidence($t,$action,$term,$accepted,$renew,$sale);
+        }catch(\Throwable){return 'New sales held · pending import or acceptance';}
         try{
-            $engine=new PriceCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules);
-            $engine->current((int)$t->server_id,$t->account_fingerprint,$t->tld,'renew',1,'USD',now()->toDateTimeImmutable());
-            $engine->current((int)$t->server_id,$t->account_fingerprint,$t->tld,$action,$term,'USD',now()->toDateTimeImmutable());
+            $now=now()->toDateTimeImmutable();
+            PriceCatalogue::currentEvidence($renew,$ruleHash,$now);PriceCatalogue::currentEvidence($sale,$ruleHash,$now);
             return 'Price eligible · check selected seller';
         }catch(\Throwable){
-            $rows=self::prices($t,$grants);$text=implode(' ',array_column($rows,'warning'));
+            $text=implode(' ',array_column($rows,'warning'));
             if(str_contains($text,'Rule changed')){return 'New sales held · rule changed, publish required';}
             if(collect($rows)->contains(fn($r)=>str_contains($r['warning'],'Cost unknown'))){return 'New sales held · cost unknown';}
             if(collect($rows)->contains(fn($r)=>$r['freshness']==='Stale')){return 'New sales held · cost stale';}

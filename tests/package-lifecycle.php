@@ -65,6 +65,10 @@ if($phase==='server-delete'){
     }else{assertRetained($receipt);echo "Native upload retained all recorded data (".$phase.").\n";}
 }elseif($phase==='held'){
     require __DIR__.'/Support/registration-held.php';
+}elseif($phase==='watch-seed'){
+    assertRetained($receipt);require __DIR__.'/Support/installed-watch.php';seedInstalledWatch();
+    file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
+    echo "Installed watch observations, notices and adoption preview seeded with all gates off.\n";
 }elseif($phase==='seed'){
     require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';
     expect(!is_link(base_path('extensions/Servers/Domains')),'Runtime is installed files, never a source link');
@@ -89,7 +93,8 @@ if($phase==='server-delete'){
 }elseif($phase==='verify'){
     assertBooted(); // Native provider discovery must supply these before any manual boot.
     // Prove the upload-time upgrade succeeded before any second upgrade can repair it.
-    app(Installation::class)->verify();assertRetained($receipt);
+    app(Installation::class)->verify();
+    require_once __DIR__.'/Support/installed-watch.php';assertInstalledWatchGates();assertRetained($receipt);
     $before=json_decode(file_get_contents((string)getenv('PACKAGE_MIGRATION_RECEIPT')),true,512,JSON_THROW_ON_ERROR);
     $after=DB::table('migrations')->orderBy('id')->get()->map(fn($r)=>(array)$r)->all();
     same($before,array_slice($after,0,count($before)),'Original migration history unchanged');

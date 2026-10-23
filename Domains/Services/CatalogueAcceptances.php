@@ -52,6 +52,7 @@ final class CatalogueAcceptances
         if (strlen($encoded) > 32768) { throw new \DomainException('Acceptance exceeds encrypted settings capacity.'); }
         $setting = $server->settings()->where('key', self::KEY)->lockForUpdate()->first() ?? $server->settings()->make(['key' => self::KEY]);
         $setting->encrypted = true; $setting->type = 'string'; $setting->value = $encoded; $setting->save();
+        StorefrontCatalogueCache::invalidateAfterCommit();
     }
     public static function binding(Account $account): AccountBinding
     {

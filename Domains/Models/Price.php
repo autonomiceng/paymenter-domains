@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Price extends Model
 {
+    use InvalidatesStorefront;
+
     use HasAccountBinding;
 
     protected $table = 'domains_prices';

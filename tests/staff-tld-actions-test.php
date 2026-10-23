@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\SalesPolicy;
-use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Data\{Capabilities,Disposition,DriverResult,Evidence,ResultReason,SendState};
 extract(commerceFixture(true));\Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();tldPanel();Carbon\Carbon::setTestNow($now);$t=$tlds[0];
 // Staff actions read the engine clock; pin it so fixture price freshness never depends on the wall clock.
@@ -47,9 +47,9 @@ foreach($inputs as $action=>$input){
     if($action==='configure'){same('enom',$defaults['registrar'],'Bound registrar prefilled');same('test',$defaults['environment'],'Bound environment prefilled');expect(empty($defaults['token'])&&empty($defaults['uid']),'Credentials never prefilled');}
     $page->setActionData([...$input,'reason'=>'Confirm native action with saved facts'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded')->assertSet('mountedActions',[]);
     $review=new Review($u->id,$t->server_id,$ending,$action,$key,'Replay must refuse this native action');
-    commerceReject(fn()=>$writer->run($review,$input,$now));
+    tldRefusal(fn()=>$writer->run($review,$input,$now),in_array($action,['tld_settings','probe'],true)?'Review key used.':'Settings changed. Reload this page.');
     $page=$mount($action);SalesPolicy::where('tld','com')->increment('revision');
-    $page->setActionData([...$input,'reason'=>'Refuse stale native action after change'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change refused')->assertSet('mountedActions',[]);
+    $page->setActionData([...$input,'reason'=>'Refuse stale native action after change'])->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('Change refused')->body('Settings changed. Reload this page.'))->assertSet('mountedActions',[]);
     $key=Review::ticket($u->id,$t->server_id,$ending,$action,Review::stamp($t->server_id,$ending));
     $u->role->update(['permissions'=>array_values(array_diff($permissions,[Review::permission($action)]))]);
     commerceReject(fn()=>$writer->run(new Review($u->id,$t->server_id,$ending,$action,$key,'Permission revoked before submission'),$input,$now));
@@ -57,15 +57,17 @@ foreach($inputs as $action=>$input){
 }
 $rows=Review::historyRows(App\Models\Server::find($t->server_id));
 foreach(array_keys($inputs) as $action){$label=Review::ACTIONS[$action];expect(count(array_filter($rows,fn($r)=>$r['action']===$label))>=1,'Every allowed native action audited');}
+$archives=Illuminate\Support\Facades\DB::table(AuditArchives::TABLE)->where('server_id',$t->server_id)->where('family','staff_settings')->count();
 $rotation=null;
-for($i=0;$i<30&&!App\Models\Server::find($t->server_id)->settings()->where('key','like',Review::KEY.'.%')->exists();$i++){
+for($i=0;$i<30&&Illuminate\Support\Facades\DB::table(AuditArchives::TABLE)->where('server_id',$t->server_id)->where('family','staff_settings')->count()===$archives;$i++){
     $key=Review::ticket($u->id,$t->server_id,$t->id,'default_rule',Review::stamp($t->server_id,$t->id));
     $entry=new Review($u->id,$t->server_id,$t->id,'default_rule',$key,trim(str_repeat('Retain reviewed pricing evidence. ',12)));$rotation??=$entry;
-    $writer->run($entry,$fixed,$now);
+    $entry->local(static fn()=>null);
 }
-expect(App\Models\Server::find($t->server_id)->settings()->where('key','like',Review::KEY.'.%')->exists(),'Encrypted audit rotates without losing replay history');
-expect(!array_diff(array_column($rows,'key'),array_column(Review::historyRows(App\Models\Server::find($t->server_id)),'key')),'All earlier keys retained across archive');
-if($rotation){commerceReject(fn()=>$writer->run($rotation,$fixed,$now));}
+expect(Illuminate\Support\Facades\DB::table(AuditArchives::TABLE)->where('server_id',$t->server_id)->where('family','staff_settings')->count()>$archives,'A new encrypted audit archive is created');
+foreach(array_column($rows,'key') as $used){expect(Illuminate\Support\Facades\DB::table(Review::KEYS)->where('server_id',$t->server_id)->where('review_key',$used)->exists(),'Earlier keys retained independently of audit archives');}
+expect($rotation!==null,'Rollover exercised a successful unchanged-stamp action');
+tldRefusal(fn()=>$rotation->local(static fn()=>null),'Review key used.');
 app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sellers,$bindings));
 foreach(['configure','probe'] as $action){$name=\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content');Livewire::actingAs($u)->test(RegistrarSetup::class)->assertActionDisabled($name);}
 same('9.99',Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('server_id',$t->server_id)->value('amount'),'Existing account probe records its balance');

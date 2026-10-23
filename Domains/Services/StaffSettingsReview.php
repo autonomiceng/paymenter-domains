@@ -9,6 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Price,SalesPolicy,Tld};
 final class StaffSettingsReview
 {
     public const KEY='domains_staff_settings_audit';
+    public const KEYS='domains_staff_review_keys';
+    public const HISTORY_LIMIT=50;
     public const ACTIONS=['default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
         'tld_settings'=>'Review TLD availability','seller'=>'Select seller','publish'=>'Publish prices','acceptance'=>'Review catalogue acceptance','history'=>'Review history acceptance','configure'=>'Save credentials','probe'=>'Test connection','processing'=>'Change processing','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
     private array $verified=[];
@@ -29,7 +31,7 @@ final class StaffSettingsReview
         $policies=$read(SalesPolicy::whereIn('tld',$tlds->pluck('tld'))->orderBy('id'));
         $prices=$read(Price::where('server_id',$serverId)->when($tldId,fn($q)=>$q->whereIn('tld',$tlds->pluck('tld')))->orderBy('id'));
         $settings=$read(DB::table('settings')->where('settingable_type',$s->getMorphClass())->where('settingable_id',$serverId)
-            ->orderBy('id'))->reject(fn($v)=>$v->key===self::KEY||str_starts_with($v->key,self::KEY.'.'))->map(fn($v)=>(array)$v)->all();
+            ->where('key','!=',self::KEY)->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',self::KEY).'.%'])->whereRaw("`key` NOT LIKE ? ESCAPE '!'",['domains!_reminder!_audit.%'])->orderBy('id'))->map(fn($v)=>(array)$v)->all();
         $raw=static fn($rows)=>$rows->map(fn($v)=>$v->getRawOriginal())->all();
         return hash('sha256',json_encode([$s->getRawOriginal(),$a?->getRawOriginal(),$raw($accounts),$settings,$raw($tlds),$raw($prices),$raw($policies),$tldId],JSON_THROW_ON_ERROR));
     }
@@ -59,42 +61,54 @@ final class StaffSettingsReview
         SalesPolicy::whereIn('tld',$endings)->orderBy('id')->lockForUpdate()->get();
         Tld::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereKey($this->tldId))->orderBy('id')->lockForUpdate()->get();
         Price::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereIn('tld',$endings))->orderBy('id')->lockForUpdate()->get();
-        DB::table('settings')->where('settingable_type',$server->getMorphClass())->where('settingable_id',$this->serverId)->orderBy('id')->lockForUpdate()->get();
+        DB::table('settings')->where('settingable_type',$server->getMorphClass())->where('settingable_id',$this->serverId)
+            ->where('key','!=',self::KEY)->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',self::KEY).'.%'])->whereRaw("`key` NOT LIKE ? ESCAPE '!'",['domains!_reminder!_audit.%'])->orderBy('id')->lockForUpdate()->get();
         if($this->tldId&&!Tld::where(['id'=>$this->tldId,'server_id'=>$this->serverId])->lockForUpdate()->first()){throw new \DomainException('TLD account changed.');}
         try{$t=json_decode(Crypt::decryptString($this->ticket),true,8,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Invalid review key.');}
         if(($t['actor']??null)!==$this->actorId||($t['server']??null)!==$this->serverId||($t['tld']??null)!==$this->tldId||($t['action']??null)!==$this->action
-            ||!is_int($t['until']??null)||$t['until']<=time()||!is_string($t['key']??null)||!is_string($t['stamp']??null)
+            ||!is_int($t['until']??null)||$t['until']<=time()||!is_string($t['key']??null)||!preg_match('/^[a-f0-9]{32}$/D',$t['key'])||!is_string($t['stamp']??null)
             ||!hash_equals($t['stamp'],self::stamp($this->serverId,$this->tldId,true))){throw new \DomainException('Settings changed. Reload this page.');}
-        $history=$this->history($server);if((!$inFlight||$this->verified!==$t)&&array_filter($history,fn($r)=>$r['key']===$t['key'])){throw new \DomainException('Review key used or history full.');}
+        // The account mutex serializes checks; the primary key also prevents duplicate claims.
+        $keys=DB::table(self::KEYS)->where('server_id',$this->serverId)->where('review_key',$t['key']);
+        $used=(clone $keys)->lockForUpdate()->exists();
+        if($inFlight&&(!$used||$this->verified!==$t)){throw new \DomainException('Verified in-flight review required.');}
+        if($used&&!$inFlight){throw new \DomainException('Review key used.');}
+        if(!$used){DB::table(self::KEYS)->insert(['server_id'=>$this->serverId,'review_key'=>$t['key'],'expires_at'=>$t['until']]);}
         $this->verified=$t;$this->before=$this->state($this->serverId,$this->tldId);
     }
+    /** Recent display only: current batch and one archive, at most 50 entries. Never replay authority. */
     public static function historyRows(Server $s,bool $lock=false): array
     {
-        $query=$s->settings()->orderBy('id');if($lock){$query->lockForUpdate();}
-        $settings=$query->get()->filter(fn($v)=>$v->key===self::KEY||str_starts_with($v->key,self::KEY.'.'))
-            ->sortBy(fn($v)=>$v->key===self::KEY?PHP_INT_MAX:$v->id);
-        $all=[];
-        foreach($settings as $setting){
-            try{$rows=$setting->encrypted?json_decode($setting->value,true,16,JSON_THROW_ON_ERROR):null;
-                if(!is_array($rows)||!array_is_list($rows)){throw new \DomainException;}
-                foreach($rows as $r){if(!is_array($r)||!is_string($r['key']??null)){throw new \DomainException;}}$all=[...$all,...$rows];
-            }catch(\Throwable){throw new \DomainException('Audit unavailable. Changes held.');}
-        }
-        return $all;
+        $query=$s->settings()->where('key',self::KEY);if($lock){$query->lockForUpdate();}
+        $current=$query->first();
+        $archive=AuditArchives::latest((int)$s->id,'staff_settings',$lock);
+        return array_slice([...($archive!==null?self::decode($archive):[]),...($current?self::batch($current):[])],-self::HISTORY_LIMIT);
     }
-    private function history(Server $s): array {return self::historyRows($s,true);}
+    private static function batch($setting): array
+    {
+        if(!$setting->encrypted){throw new \DomainException('Audit unavailable. Changes held.');}
+        return self::decode($setting->value);
+    }
+    private static function decode(string $json): array
+    {
+        try{$rows=json_decode($json,true,16,JSON_THROW_ON_ERROR);
+            if(!is_array($rows)||!array_is_list($rows)){throw new \DomainException;}
+            foreach($rows as $r){if(!is_array($r)||!is_string($r['key']??null)){throw new \DomainException;}}
+            return $rows;
+        }catch(\Throwable){throw new \DomainException('Audit unavailable. Changes held.');}
+    }
     public function record(string $phase='completed'): void
     {
         if(!$this->verified||DB::transactionLevel()!==1){throw new \LogicException('Locked review required.');}
-        $s=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();$this->history($s);
+        $s=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();
         $setting=$s->settings()->where('key',self::KEY)->lockForUpdate()->first()??$s->settings()->make(['key'=>self::KEY]);
-        $rows=$setting->exists?json_decode($setting->value,true,16,JSON_THROW_ON_ERROR):[];
+        $rows=$setting->exists?self::batch($setting):[];
         $rows[]=['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
             'reason'=>$this->reason,'phase'=>$phase,'input'=>$this->input,'tld_id'=>$this->action==='default_rule'?null:$this->tldId,'before'=>$this->before,'after'=>$this->state($this->serverId,$this->tldId)];
         $json=json_encode($rows,JSON_THROW_ON_ERROR);
         if(strlen(Crypt::encryptString($json))>64000){
             $last=array_pop($rows);if(!$rows){throw new \DomainException('Audit entry too large. Changes held.');}
-            $archive=$s->settings()->make(['key'=>self::KEY.'.'.bin2hex(random_bytes(16))]);$archive->encrypted=true;$archive->type='string';$archive->value=json_encode($rows,JSON_THROW_ON_ERROR);$archive->save();
+            AuditArchives::append((int)$s->id,'staff_settings',json_encode($rows,JSON_THROW_ON_ERROR));
             $json=json_encode([$last],JSON_THROW_ON_ERROR);if(strlen(Crypt::encryptString($json))>64000){throw new \DomainException('Audit entry too large. Changes held.');}
         }
         $setting->encrypted=true;$setting->type='string';$setting->value=$json;$setting->save();
