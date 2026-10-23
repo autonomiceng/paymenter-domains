@@ -252,7 +252,7 @@ final class NativeDomainGuard
         });
     }
 
-    private static function gross(string $retail, \App\Models\TaxRate|int $tax): string
+    public static function gross(string $retail, \App\Models\TaxRate|int $tax): string
     {
         $price = new \App\Classes\Price(['price' => $retail, 'currency' => \App\Models\Currency::where('code', 'USD')->sole()],
             apply_exclusive_tax: true, tax: $tax);

@@ -783,3 +783,16 @@ For Option E these rules supersede the legacy fresh-retail native-price acceptan
 four-command adoption vocabulary, every excluded general read and modeled mutation
 individually, injected parameters, ownership/ID/expiry parsing, renewal and hold
 refusals, six-request budget, deadline and per-wire bounds. No account calls occur.
+
+## Fresh adoption preview
+
+The native adoption preview suites cover exact customer/order/annual registration mapping, pending identity/expiry,
+current permission and site/environment guards, unlocked-read changes, encrypted evidence, proof-aware operation
+history, unchanged invoices/cancellations and shared retail/calendar rules. The staff suite exercises the stock
+Filament page, every safe refusal, TEST/live badges, escaped HTML and disabled confirmation; it proves no activation.
+
+DNS reader coverage uses only injected native callables and a fake `DnsReader`. Empty/failed
+native answers remain unknown: PHP empty arrays are ambiguous (including type-filtered CNAME gaps). The shared
+45-second context admits at most ten queries and rejects late results; it cannot interrupt
+a blocking system resolver call. DoH adapter for proven empty answers is a follow-up;
+proven NODATA/NXDOMAIN is supported without relaxing native unknowns. Worker isolation is deferred.

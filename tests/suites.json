@@ -12,7 +12,8 @@
     "tests/transfer-rdap-test.php",
     "tests/transfer-status-test.php",
     "tests/psl-transport-test.php",
-    "tests/adoption-enom-test.php"
+    "tests/adoption-enom-test.php",
+    "tests/dns-reader-test.php"
   ],
   "contracts": [
     "tests/ote-reconciliation-test.php",
@@ -140,7 +141,10 @@
     "tests/native-identity-readiness-test.php",
     "tests/native-identity-orphans-test.php",
     "tests/native-identity-cascade-test.php",
-    "tests/native-projection-test.php"
+    "tests/native-projection-test.php",
+    "tests/adoption-preview-test.php",
+    "tests/adoption-preview-guards-test.php",
+    "tests/staff-adoption-test.php"
   ],
   "ui": [],
   "runner": [
