@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final class RenewalFunding
 {
     /** Read-only obligation eligibility; does not require payment or grant execution. */
-    public static function requireAuthority(Operation $op,array $l):void
+    public static function requireAuthority(Operation $op,array $l,bool $sent=false):void
     {
         FinancialAdjustments::requireHistory($op, $l);
         $d = $l['domain']; $s = $l['service']; $r = $op->policy['renewal'] ?? [];
@@ -23,8 +23,10 @@ final class RenewalFunding
             || ($r['confirmed_revision'] ?? null) !== $d->confirmed_revision || ($r['provider_domain_id'] ?? null) !== $d->provider_domain_id
             || ($r['term'] ?? null) !== (int) $op->term || ($r['product_id'] ?? null) !== (int) $s->product_id
             || ($r['annual_plan_id'] ?? null) !== (int) $s->plan_id || ($r['user_id'] ?? null) !== (int) $s->user_id
-            || ($r['order_id'] ?? null) !== (int) $s->order_id || $s->status !== 'active'
-            || !in_array($d->status, ['active', 'expired', 'grace'], true) || $l['cancel']->contains('service_id', $s->id)
+            || ($r['order_id'] ?? null) !== (int) $s->order_id
+            // Original sent-attempt reconciliation retains identity/funding checks, not send eligibility.
+            || !in_array($d->status, ['active', 'expired', 'grace'], true)
+            || (!$sent && ($s->status !== 'active' || RenewalStop::blocksExisting($l)))
             || !$prior || !RenewalAuthority::completed($prior, $d, $binding)
             || ($d->renewal_policy['billing_anchor']['expiry'] ?? null) !== $d->provider_expires_at?->format('Y-m-d')
             || $l['operations']->contains(fn ($other) => $other->id !== $op->id && !RenewalAuthority::resolved($other, $d, $binding))
@@ -36,7 +38,7 @@ final class RenewalFunding
     }
     public static function requireCurrent(Operation $op, array $l, bool $sent = false): array
     {
-        self::requireAuthority($op,$l);$d=$l['domain'];$r=$op->policy['renewal']??[];
+        self::requireAuthority($op,$l,$sent);$d=$l['domain'];$r=$op->policy['renewal']??[];
         if ($op->funding_basis === 'complimentary') {
             $a = $op->policy['complimentary'] ?? []; $current = $d->renewal_policy['complimentary'] ?? [];
             if ($op->invoice_id !== null || $op->invoice_item_id !== null || PricingRule::minor($op->amount) !== 0

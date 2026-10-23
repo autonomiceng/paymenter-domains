@@ -27,7 +27,7 @@ final class OperationReconciliation
             } catch (\Throwable) { return null; }
         });
         if (!$capture) { return Operation::findOrFail($id); }
-        [$attempt, $stamp, $contract] = $capture; $proof = null; $covered = false; $transferConflict = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
+        [$attempt, $stamp, $contract] = $capture; $proof = null; $covered = false; $transferConflict = false; $chargeChecked = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
         try {
             $context = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $context);
@@ -39,12 +39,14 @@ final class OperationReconciliation
                 $transfer = $facts->transfer;
                 $transferConflict = in_array($transfer, [\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected, \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::NeedsAction], true)
                     && ($facts->domain?->owned === true || count($facts->candidates) > 0);
+                // A rejection is final only when charges were actually read; otherwise "no candidates" proves nothing.
+                $chargeChecked = $facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null);
                 if ($attempt->query->action->value === 'transfer' && $transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown) { $covered = true; }
                 $proof = ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
             }
         } catch (\Throwable) {} // Safe retained alert; transport/contract failures do not manufacture facts.
         if (!$covered) { return Operation::findOrFail($id); }
-        return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $transfer, $transferConflict): Operation {
+        return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $transfer, $transferConflict, $chargeChecked): Operation {
             if (!$this->eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
@@ -62,6 +64,10 @@ final class OperationReconciliation
                 if ($transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::NeedsAction) {
                     $policy['reconciliation']['reason'] = 'transfer_needs_action';
                     $op->update(['state' => 'held', 'safe_code' => 'transfer_needs_action', 'policy' => $policy]); return $op;
+                }
+                if ($transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected && !$chargeChecked) {
+                    $policy['reconciliation']['reason'] = 'transfer_rejection_unreconciled';
+                    $op->update(['policy' => $policy]); return $op;
                 }
                 if ($transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected) {
                     $op->update(['state' => 'rejected', 'safe_code' => 'transfer_provider_rejected', 'policy' => $policy, 'completed_at' => $this->clock->now(),

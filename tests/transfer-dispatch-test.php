@@ -58,4 +58,10 @@ foreach (['premium','unknown','funds','changed','reverse','rules','profile','rda
 }
 $op=$newTransfer('rdap-unchecked.com'); $makeTransfer(); $state->rdapUnknown=true; $r=$engine->execute($op->id);
 same(true,$r->attempt['transfer_admission']['rdap_unchecked'],'Explicit unchecked provenance'); same(null,$r->attempt['transfer_admission']['base_expiry'],'Missing baseline never inferred');
+// Enom TP_CreateOrder: the documented nested ID and an agreeing top-level ID are retained; disagreeing IDs retain none.
+foreach (['nested'=>'7001','top'=>'7001','conflict'=>null] as $shape=>$expected) {
+    $state->mode='ok'; $state->rdapUnknown=false; $state->createShape=$shape; $state->calls=[]; $state->reads=0; $op=$newTransfer('shape-'.$shape.'.com'); $makeTransfer();
+    $r=$engine->execute($op->id); same($expected,$r->attempt['evidence']['transferReference']??null,'Transfer order ID read from the '.$shape.' shape');
+}
+$state->createShape='nested';
 echo "Dual transfer one-use dispatch, fresh admission, negative proof and uncertainty passed.\n"; $nativeSuccessful=true;

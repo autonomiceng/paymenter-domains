@@ -48,7 +48,7 @@ foreach([Order::class,Service::class,Property::class,ServiceConfig::class,Produc
 }
 function identityReject(callable $attempt,string $label):void {
     global $checkingIdentityMutation;$checkingIdentityMutation=true;$refused=false;
-    try{$attempt();}catch(DomainException $e){same('This change affects managed domain identity and was refused.',$e->getMessage(),$label.' safe refusal');$refused=true;}finally{$checkingIdentityMutation=false;}
+    try{$attempt();}catch(DomainException $e){same(str_contains($label,'expiry')?\Paymenter\Extensions\Servers\Domains\Services\NativeExpiry::NUMERIC_MESSAGE:'This change affects managed domain identity and was refused.',$e->getMessage(),$label.' safe refusal');$refused=true;}finally{$checkingIdentityMutation=false;}
     expect($refused,$label.' refused before mutation');
 }
 // Uncast native booleans retain their SQL meaning on fresh and retrieved catalogue saves.

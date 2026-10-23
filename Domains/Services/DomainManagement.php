@@ -248,7 +248,7 @@ final class DomainManagement
         if($advisory){$this->bindings->requireProcessing($b);}
         elseif ($processing) { $this->bindings->requireProcessingLocked($l['server'], $l['account']); }
         else { $this->bindings->requireReadableLocked($l['server'], $l['account']); }
-        if ((($d->status !== 'active' || $l['service']->status !== 'active') && !ManagementCorrections::pending($l, $action, $correction)) || $l['cancel']->contains('service_id', $d->service_id)
+        if ((($d->status !== 'active' || $l['service']->status !== 'active') && !ManagementCorrections::pending($l, $action, $correction)) || RenewalStop::blocksExisting($l)
             || ($d->renewal_policy['automatic_spend_paused'] ?? false)) { throw new \DomainException('Management lifecycle held.'); }
         if (in_array($action, ['dns', 'srv', 'ds_add', 'ds_delete'], true)
             && !filter_var($l['settings']->firstWhere('key', 'domains_dns_tools')?->value ?? false, FILTER_VALIDATE_BOOLEAN)) { throw new \DomainException('DNS tools disabled.'); }

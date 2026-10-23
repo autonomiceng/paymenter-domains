@@ -11,7 +11,7 @@ foreach (['unpaid', 'reversed', 'cancelled', 'cost', 'unknown', 'disabled', 'aut
     [$op, $d, $b, $invoice] = $makeRenewal('safety-'.str_replace('_','-',$case).'.com', $case !== 'unpaid');
     [$engine, $writer] = $compose($b, $case !== 'disabled'); $writes = $state->writes;
     if ($case === 'reversed') { InvoiceTransaction::create(['invoice_id' => $invoice->id, 'amount' => '-0.01', 'fee' => '0.00', 'status' => 'succeeded']); }
-    if ($case === 'cancelled') { ServiceCancellation::create(['service_id' => $d->service_id, 'type' => 'end_of_period', 'reason' => 'Synthetic']); }
+    if ($case === 'cancelled') { ServiceCancellation::create(['service_id' => $d->service_id, 'type' => 'immediate', 'reason' => 'Synthetic']); }
     if ($case === 'cost') { $state->price = '8.01'; }
     if ($case === 'unknown') { $state->price = '?'; }
     if ($case === 'authority') { $state->during = static fn () => $d->update(['confirmed_revision' => 2]); }

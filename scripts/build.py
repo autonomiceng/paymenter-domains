@@ -43,10 +43,13 @@ def extension_version(source):
     if not source.lstrip().startswith(b'<?php'):
         raise ValueError('The extension entry point must start with PHP')
     # Keep quoted strings atomic; comments cannot supply an attribute or argument.
-    pattern = rb'''\s+|//[^\r\n]*|/\*.*?\*/|\#(?!\[)[^\r\n]*|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\#\[|[A-Za-z_\\][A-Za-z0-9_\\]*|<<<|\?>|.'''
+    pattern = rb'''\s+|//[^\r\n]*|/\*.*?\*/|/\*|\#(?!\[)[^\r\n]*|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\#\[|[A-Za-z_\\][A-Za-z0-9_\\]*|<<<|\?>|.'''
     tokens = []
     for match in re.finditer(pattern, source, re.DOTALL):
         token = match.group()
+        # An unterminated comment or string would otherwise fall back to single characters and expose its text.
+        if token in (b'/*', b"'", b'"', b'`'):
+            raise ValueError('Unterminated comment or string in the extension entry point')
         if token == b'?>' or (token.startswith((b'//', b'#')) and b'?>' in token):
             raise ValueError('Inline HTML is unsupported in the extension entry point')
         if token.startswith((b'"', b'`')) and b'$' in token:

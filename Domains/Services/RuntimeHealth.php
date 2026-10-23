@@ -19,6 +19,7 @@ final class RuntimeHealth
         $identity=DB::table('domains_obligation_alerts as a')->join('domains_domains as d','d.id','=','a.domain_id')->where('d.server_id',$server)->where('a.code','native_identity_missing')->whereNull('a.resolved_at')->orderBy('a.id')->limit(10)->get(['a.id','d.domain']);
         $unsafe=collect(app('router')->getRoutes()->getRoutes())->contains(fn($r)=>in_array(explode('@',$r->getActionName())[0],[\App\Admin\Resources\ServerResource\Pages\CreateServer::class,\App\Admin\Resources\ServerResource\Pages\EditServer::class,\App\Admin\Resources\ServiceResource\Pages\EditService::class],true));
         return ['Missing Paymenter records'=>$identity->isEmpty()?'None recorded':$identity->pluck('domain')->implode(', ').' — '.ObligationAlerts::LABELS['native_identity_missing'],
+            'Domain editor notice'=>($missing=\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::missing())===null?'Available':'Paused · missing '.$missing,
             'Native editors'=>$unsafe?'Refresh the native route cache; unsafe editors are refused':'Protected',
             'Runtime account'=>$row?($row->account_fingerprint===$binding?'Current binding':'On hold · restore the original account binding'):'Waiting for first scheduler enrollment',
             'Last worker turn'=>$row&&$row->finished_at?gmdate('M j, Y H:i \U\T\C',(int)$row->finished_at):'Not completed',

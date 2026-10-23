@@ -199,3 +199,17 @@ DNS signal tests cover exact complete NS sets, proven NODATA/NXDOMAIN through a 
 null MX, mixed overlap, bounded CNAME chains, omitted hosts and failed-read empty-label refusal.
 TTL/order changes preserve the routing digest; source/profile changes discard in-flight results.
 The native reader stays conservative; see `docs/design/watch-dns.md` for activation limits.
+
+`native-lifecycle-test.php` covers both guard boot orders, numeric expiry refusal and numeric
+updates without expiry extras, native paid Active/null saves, explicit idempotent legacy-date
+cleanup, scoped editor notice, unpaid native cancellation/status, terminal-proof refusal and
+acceptance, and the creating-check/INSERT payment race. Fake transport only; committed intent
+prevents any claim in that gap and survives a later native callback failure. SQLite scheduling
+is diagnostic evidence, not InnoDB concurrency or installed-theme acceptance.
+
+### Owned holding changes
+
+`staff-holding-test.php` exercises audited reprice/stop/resume, current permission and stale/reused/expired review refusals, native end-of-period resume and retained intent refusal. It renders real owned modals and proves issued debt stays unchanged and a later paid renewal executes/completes through a future-only stop. Synthetic event schedules and SQLite do not establish InnoDB concurrency acceptance.
+
+Renewal credit cases cover global on/off/unset, ignored retained server settings, exact/insufficient balances,
+native credit transactions and remaining-only settlement after partial, full or excess earlier payment.

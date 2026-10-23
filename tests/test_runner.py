@@ -100,8 +100,12 @@ class RunnerTests(unittest.TestCase):
         child = Path('/proc')/pid/'stat'
         deadline = time.monotonic() + 3
         while True:
-            try: state = child.read_text().split()[2]
-            except (FileNotFoundError, ProcessLookupError): state = None
+            if Path('/proc/self/stat').exists():
+                try: state = child.read_text().split()[2]
+                except (FileNotFoundError, ProcessLookupError): state = None
+            else:
+                try: os.kill(int(pid), 0); state = 'R'
+                except ProcessLookupError: state = None
             if state in [None, 'Z', 'X'] or time.monotonic() >= deadline: break
             time.sleep(0.05)
         self.assertIn(state, [None, 'Z', 'X'], 'Nested child is still running')

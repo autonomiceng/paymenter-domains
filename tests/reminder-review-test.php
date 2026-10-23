@@ -34,10 +34,14 @@ $clock->instant=new DateTimeImmutable('2027-10-21T12:00:00Z');expect($reminders-
 expect(DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','renewal_unpaid')->exists(),'Retired unpaid debt has an accurate label');
 [$d]=$make('overdue-reminder.com');$clock->instant=new DateTimeImmutable('2027-10-17T12:00:00Z');expect($reminders->remind($d->id),'Overdue invoice still has safe notice');
 expect(\Illuminate\Support\Facades\Mail::queued(\Paymenter\Extensions\Servers\Domains\Mail\DomainNotice::class)->last()->data['overdue'],'One-day notice never asks customer to meet a past due date');
+// Future-only stop preserves the existing invoice reminder and its original execution path.
+[$d]=$make('issued-stop-reminder.com');ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Stop future cycles']);
+expect($reminders->remind($d->id),'Issued debt reminder continues under end-of-period stop');
+same(true,\Illuminate\Support\Facades\Mail::queued(\Paymenter\Extensions\Servers\Domains\Mail\DomainNotice::class)->last()->data['invoice'],'Stopped holding reminder still links retained debt');
 // An existing invoice must not promise a renewal that current authority refuses.
 foreach(['cancelled','paused','anchor','revision'] as $case){
     [$d]=$make('invoice-authority-'.$case.'.com');
-    if($case==='cancelled'){ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Synthetic request']);}
+    if($case==='cancelled'){ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'immediate','reason'=>'Synthetic request']);}
     if($case==='paused'){$d->update(['renewal_policy'=>[...$d->renewal_policy,'automatic_spend_paused'=>true]]);}
     if($case==='anchor'){$p=$d->renewal_policy;unset($p['billing_anchor']);$d->update(['renewal_policy'=>$p]);}
     if($case==='revision'){$d->update(['confirmed_revision'=>$d->confirmed_revision+1]);}

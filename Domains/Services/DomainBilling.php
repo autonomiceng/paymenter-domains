@@ -27,7 +27,7 @@ final class DomainBilling
             $l = HoldingLocks::take($seed); $d = $l['domain']; $s = $l['service'];
             if ($actor && (int) $actor->id !== (int) $l['user']->id) { throw new \DomainException('Domain renewal is unavailable.'); }
             // A native cancellation disables scheduled billing without touching retained debts.
-            if ($actor === null && $l['cancel']->contains('service_id', $s->id)) { return null; }
+            if ($actor === null && RenewalStop::stopped($l)) { return null; }
             if (!$d->provider_expires_at) { throw new \DomainException('Confirmed expiry required.'); }
             $key = RenewalCycles::key($d);
             // Issued debt keeps its calendar, term and amount through later configuration changes.
@@ -66,12 +66,13 @@ final class DomainBilling
                 $d->update(['observation' => [...($d->observation ?? []), 'renewal_price_alert' => ['operation_key' => $key,
                     'code' => $price['staff_alert'] ?? 'unknown_margin', 'at' => $this->clock->now()->format(DATE_ATOM)]]]);
             }
-            // Source parity: full native account credit only; never create an extension settlement row.
+            // Match native renewal credit policy; HoldingLocks already locked the invoice-currency credit row.
             $credit = $l['credit'];
-            if (self::enabled($settings->get('credits_auto_use', false)) && self::enabled(config('settings.credits_auto_use', false))
-                && $credit && PricingRule::minor($credit->amount) >= PricingRule::minor($amount)) {
-                $credit->amount = PricingRule::decimal(PricingRule::minor($credit->amount) - PricingRule::minor($amount)); $credit->save();
-                \App\Helpers\ExtensionHelper::addPayment($invoice, null, $amount, isCreditTransaction: true);
+            $remaining = PricingRule::minor($invoice->fresh()->remaining);
+            if (config('settings.credits_auto_use', true) && $remaining > 0
+                && $credit && PricingRule::minor($credit->amount) >= $remaining) {
+                $credit->amount = PricingRule::decimal(PricingRule::minor($credit->amount) - $remaining); $credit->save();
+                \App\Helpers\ExtensionHelper::addPayment($invoice->id, null, amount: PricingRule::decimal($remaining), isCreditTransaction: true);
             }
             return $invoice->fresh();
         });
@@ -92,7 +93,7 @@ final class DomainBilling
         $bindings->requireProcessingLocked($l['server'],$l['account']);
         if($d->renewal_policy['automatic_spend_paused']??false){throw new \DomainException('Renewal spending requires review.');}
         if ($s->status !== 'active' || !in_array($d->status, ['active', 'expired', 'grace'], true)
-            || $l['cancel']->contains('service_id', $s->id) || $d->price_mode !== 'standard') { throw new \DomainException('Renewal billing lifecycle requires review.'); }
+            || RenewalStop::stopped($l) || $d->price_mode !== 'standard') { throw new \DomainException('Renewal billing lifecycle requires review.'); }
         $anchor = $d->renewal_policy['billing_anchor'] ?? [];
         $prior = $l['operations']->firstWhere('operation_key', $anchor['operation_key'] ?? null);
         if (($anchor['expiry'] ?? null) !== $d->provider_expires_at?->format('Y-m-d') || !$prior

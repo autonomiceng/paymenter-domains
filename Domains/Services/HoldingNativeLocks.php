@@ -37,6 +37,7 @@ final class HoldingNativeLocks
         $service = $services->firstWhere('id', $serviceId) ?? throw new \DomainException('Missing holding service.');
         $product = $products->firstWhere('id', $service->product_id); $plan = $plans->firstWhere('id', $service->plan_id);
         $cancel = ServiceCancellation::whereIn('service_id', $serviceIds)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $cancel = NativeCancellation::withIntents($cancel, $serviceIds->all(), $advisory);
         $configs = $service->configs()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $properties = $service->properties()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         if (!$product || !$plan) { throw new \DomainException('Missing holding route.'); }

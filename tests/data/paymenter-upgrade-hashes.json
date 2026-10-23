@@ -237,6 +237,39 @@
           "config/database.php": "6864dd7490e095490e91d2e115af31293c07140f3fce00f876bc5a1971eeb5e0",
           "vendor/laravel/framework/src/Illuminate/Cache/DatabaseLock.php": "05257b67976a203d0b45d8bf871671c8d4166f5a3e599326ce1f4ac0c9991ff8"
         }
+      },
+      "native-lifecycle": {
+        "consumers": [
+          "Domains/Services/NativeExpiry.php",
+          "Domains/Services/NativeCancellation.php",
+          "Domains/Admin/Support/NativeEditorNotice.php"
+        ],
+        "review": "Re-review numeric extras after updating, cancellation creating before native effects, paid Active saves and scoped Filament hook/form validation paths.",
+        "files": {
+          "vendor/laravel/framework/src/Illuminate/Database/Eloquent/Model.php": "c4c2a8e8755df5e912ec941f8881dcc515ff3802211855874e6b839469ddc3dc",
+          "vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php": "807b1ec61c5649b9e11d4418cc11162b59312d77564aeca65361fcaac97e333c",
+          "vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php": "812f717ba4aa895f020b319c4fce4116dca8cab74eda36830d2c2f02b58aaed6",
+          "vendor/filament/support/src/View/ViewManager.php": "ecf4f0602d93c14ea440e0e793f2785a925206494ece852d68a1297c8d3935be",
+          "vendor/filament/filament/src/Pages/Page.php": "56197a6c90a635f776ef44035ba12465cfae341e9522b496aaa7eea71d7c5ad1",
+          "vendor/filament/filament/src/Resources/Pages/EditRecord.php": "369fce445119a7042aa7fff2b324ec4d11a65f4da5c482dd98f5f09feeee2221",
+          "app/Observers/ServiceCancellationObserver.php": "abb269a032901b848ce1d7bd89a67179eb2e13f33bcc3b413592baf0d86830df",
+          "app/Listeners/CancellationCreatedListener.php": "364decc929ba15a3f7c82ee80573548f5a4b5bdc1902b5394edc78a9f4761ed9",
+          "app/Admin/Resources/ServiceResource/Pages/EditService.php": "19ff63c0287738a9d89d58f2cc0d5c0799453493818ac04395549103d12a13e5",
+          "app/Admin/Resources/ServiceResource.php": "5addbba443f72f96716b9b2aad3737e3f6d6e5fa4622bc7a2d5cd78ea6d39816"
+        }
+      },
+      "native-cancellation-audit": {
+        "consumers": [
+          "Domains/Services/StaffHoldingReview.php"
+        ],
+        "review": "Native cancellation create/update/delete use upstream audit by default; disabling audit is privileged installation configuration. Owned holding history is independent.",
+        "files": {
+          "app/Models/ServiceCancellation.php": "38b60cf9f786129d4c03e63534d6443d3cf5ddb65b7c0cb02a5c3afeb428de49",
+          "app/Models/Traits/Auditable.php": "89aa4f176335e7d6586e32e4209521b82c271465ec3d3a6347b2592523ce2ced",
+          "config/audit.php": "d9c811e69f95e2c24f6fcbbe37e31eb835deee134fb87c481a35a10bd5bb607a",
+          "vendor/owen-it/laravel-auditing/src/Auditable.php": "288b285ffa8f2b8e01beffd5405e34fca76bd91d684e813261deac63f5bc198f",
+          "vendor/owen-it/laravel-auditing/src/AuditableObserver.php": "c6d54f831887ca330ddb89323898bd95f4ef826ef7f5d77577d59f94b5233501"
+        }
       }
     },
     "watch": {

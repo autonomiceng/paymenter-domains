@@ -43,6 +43,7 @@ their Service references. Owned renewal items retain their separate null-referen
 RenewServiceService queues CreateJob for Pending or UnsuspendJob for Suspended, then calculates
 expiry, sets Active and saves (`P/app/Services/Service/RenewServiceService.php:18–28`).
 The managed expiry observer must neutralize that calculated date before SQL.
+Renewal credit follows Paymenter's global 'Use credits automatically' setting, mirroring CronJob::payInvoiceWithCredits.
 
 Domains create/unsuspend only wake existing eligible work; suspend/terminate are no-ops
 (`D/Domains/Domains.php:28–32`). Never create a new obligation, release a hold, replay a seal or
@@ -65,7 +66,23 @@ expiry and account-credit notices keep their independent evidence rules.
 ## Null expiry and the reduced native editor
 
 On **updating**, silently map every managed native `expires_at` write to null, staff included.
-The existing registration and null assignment are `D/Domains/Services/NativeDomainGuard.php:37,120–129`.
+The guard also normalizes ordinary saving. Active exact-object grants are checked before route
+queries and already plan a null expiry.
+Exception: unsupported instance increment/decrement with non-null expiry extras is refused
+and logged. Eloquent passes the original extras straight to its query builder **after** the
+updating event, so changing model attributes cannot clear those SQL values. No native Service
+numeric caller exists in the qualified upstream; numeric updates without expiry extras continue.
+Do not replace this narrow refusal with post-SQL compensation or global interception.
+
+Unsupported privileged installed-PHP limits: slice 2 does not authorize instance numeric price
+extras, and numeric ServiceCancellation identity reassignment is outside the guarded contract.
+Eloquent passes the extras to SQL after the model events fire, so those events cannot reliably
+identify an arithmetic reassignment destination. Native Paymenter has no numeric Service or
+ServiceCancellation caller; its numeric writes affect stock, credit, affiliate counters and rate
+limiting. Cancellation creation and ordinary reassignment remain guarded. No interception is added.
+
+The scoped saving/updating implementation is `D/Domains/Services/NativeExpiry.php`;
+`NativeDomainGuard::boot` and `NativeIdentity::boot` register it before their own save guards.
 Scope original and proposed native identities/routes before applying the guard; native writes
 must not escape by changing an ID or parent. Validate and clear pre-existing non-null managed
 dates during qualification. SQL date comparisons do not select null, excluding these services
@@ -87,11 +104,12 @@ a typed date can pass validation and is discarded on update. This is an accepted
 editing capability, not a promise of normal native lifecycle editing. Native Recalculate Price
 still derives an acquisition-plan price (`P/app/Admin/Resources/ServiceResource.php:124–150`),
 so use owned audited **reprice holding**, **stop/resume renewal** and **retire unpaid acquisition**
-actions. These actions are planned, not implemented here; there is no owner-change action.
-The current price guard permits a fresh matching manual price under an outer transaction
-(`D/Domains/Services/NativeDomainGuard.php:129–138`), and SecureEditService supplies that transaction
-and modifies expiry form fields (`D/Domains/Admin/SecureEditService.php:11–26`). Replacement
-projection authority and owned repricing must pass before that class is deleted.
+actions. Update renewal price and stop/resume renewal are implemented below. Unpaid acquisition retirement remains deferred; there is no owner-change action.
+Since slice 2, every ordinary native price change requires an owned audited transition, even
+when its amount equals current retail (`D/Domains/Services/NativeDomainGuard.php:130–131`).
+Private exact-object projection authority selects the locked Service and planned values.
+SecureEditService still supplies a transaction and modifies expiry form fields
+(`D/Domains/Admin/SecureEditService.php:11–26`); its removal remains a separate gate.
 
 ## Publication, cancellation and money after closure
 
@@ -198,3 +216,55 @@ All replacement slices above remain planned at this base. Owned credential-stora
 slices 6–7 are dropped. Global TrimStrings exceptions have already been replaced by owned raw
 POST decoding (`D/Domains/routes/owned.php:7–12`); do not reintroduce them. Passing current
 offline suites is not Option E cutover, provider, installed UI or database-concurrency acceptance.
+
+## Lifecycle guard qualification and cutover
+
+Run `php artisan domains:native-expiry` to validate retained managed native dates. A nonzero
+exit means dates remain; it changes nothing. With processing paused and native workers drained,
+run `php artisan domains:native-expiry --clear`, then validate again before restarting workers.
+The explicit command reclassifies each locked service, logs each cleared ID, leaves hosting
+and provider-confirmed dates untouched, and is idempotent. Privileged raw/quiet/bulk writes can
+still reintroduce dates; repeat validation after maintenance. Installation never silently repairs data.
+
+Cancellation protection uses a retained owned intent before an allowed unpaid native write.
+This closes payment/claim admission between creating and the native INSERT. A failed native
+INSERT can leave the service safely held; no timeout or resume acknowledgement clears that
+intent. Paid and attempted acquisitions require original terminal proof; a succeeded/rejected
+label alone is insufficient. Missing protection schema refuses only lifecycle mutation, with a
+clear upgrade message. Active native paid-loop saves remain available. See
+[native intent storage](native-intent-storage.md). Owned renewal controls are described below.
+For converted holdings with no acquisition row, only the current billing anchor's complete
+authenticated proof permits cancellation: converter-sealed history or a later original renewal
+completion. A terminal label or invalid conversion MAC cannot authorize cancellation.
+
+## Owned holding controls
+
+Domains staff with Manage domain operations and the specific holding permission can reprice,
+stop or resume one holding. Each reviewed action requires a one-line reason, checks a 15-minute
+actor/domain/action snapshot under the ordered holding locks and appends encrypted before/after
+evidence. A stale, replayed or revoked review refuses; 100 retained entries pause further changes
+until a reviewed retention mechanism is available. No audit entry or cancellation intent is erased.
+
+Reprice applies the current published annual renewal retail, including applicable tax, through
+the exact-object projection capability. It does not publish prices or rewrite issued invoices.
+Future invoices still use retail current at issuance, including the existing retained-price rules.
+Stop prevents new paid and complimentary renewal obligations; issued debts remain payable and
+issued paid and complimentary obligations keep their existing evidence-based execution path,
+including registrar spending. Hold an unsent request before stopping to prevent that spending.
+Stop controls domain-expiry renewal billing; separately requested privacy purchases and renewals
+remain available. Native end-of-period rows
+have the same future-only meaning. Resume may delete only reviewed end-of-period rows; immediate
+cancellation and retained acquisition intent require review and cannot be cleared here. Neither
+action sends a registrar request, deletes a registration or changes registrar auto-renew.
+
+Owner change, native subscription/billing-agreement enrollment, upgrades and unpaid acquisition
+retirement remain deferred. These controls do not complete the later Option E removal gates.
+
+Native cancellation edits/deletions keep Paymenter auditing when native auditing is enabled;
+owned actions additionally require their retained review reason. Disabling native auditing is
+a privileged installation choice. Original sent renewal reconciliation ignores later native billing lifecycle
+changes while retaining original identity and full-funding checks. An unsent paid obligation
+with immediate cancellation stays held for its existing evidence-based refund/review path;
+no automatic refund or registrar request is inferred. Management readback already bypasses send
+eligibility while retaining its original binding checks. Existing-debt reminders continue;
+month-out notices promise no new invoice while future renewals are stopped.
