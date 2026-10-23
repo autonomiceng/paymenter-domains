@@ -32,7 +32,7 @@ $wire = new class($observation) implements Transport {
 };
 $registry = new RegistrarRegistry;
 $verify = new class implements AccountVerifier { public function verify(Environment $e, array $c): string { return $c['token']; } };
-$registry->register('enom', ['token'], $verify, fn ($binding, $c) => new Driver(new Client($binding, 'account-enom', $c['token'], $wire), ['com']));
+$registry->register('enom', ['token'], $verify, fn ($binding, $c) => new Driver(new Client($binding, 'account-enom', $c['token'], $wire), [$fixtureEnding ?? 'com']));
 $readBindings = new AccountBindings($registry); $reconcile = new OperationReconciliation($claims, $readBindings, $clock);
 $prepare = static function (string $name, string $mode = 'accepted') use ($new, $claims, $preflight, $clock, $observation) {
     $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');

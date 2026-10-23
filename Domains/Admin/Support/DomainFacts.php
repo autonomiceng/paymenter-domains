@@ -55,6 +55,7 @@ final class DomainFacts
         $reviews=PaidUncertainty::reviews($d); if($reviews){$result['Paid outcome review']=$reviews;}
         $activity=\Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::activity($d);if($activity){$result['Refunded debt review']=$activity;}
         try{$renewal=RenewalStop::read($d);$result['Future renewals']=match(true){
+            RenewalStop::adopted($renewal)=>'Off: original adoption requested no renewal.',
             RenewalStop::blocksExisting($renewal)=>'Stopped: service cancellation pending review.',
             (bool)($d->renewal_policy['renewals_stopped']??false)=>'Stopped by staff. Issued invoices stay payable.',
             RenewalStop::stopped($renewal)=>'Stops at end of current period (service cancellation).',default=>'On'};
@@ -70,7 +71,10 @@ final class DomainFacts
         if ($d->provenance !== 'adopted') { return []; }
         try {
             $review = $d->observation['adoption_review'] ?? []; $notes = [];
-            if (($review['near_due'] ?? false) === true) { $notes[] = 'The renewal billing cutoff was reached at adoption. Review this registration; no new automatic invoice can be promised.'; }
+            $renewal = RenewalStop::read($d);
+            if (RenewalStop::adopted($renewal)) { $notes[] = 'Renewal is off. No renewal invoices or renewal reminders are scheduled.'; }
+            elseif (RenewalStop::stopped($renewal)) { $notes[] = 'Future renewal billing is stopped. Existing issued invoices and their reminders retain their own rules.'; }
+            elseif (($review['near_due'] ?? false) === true) { $notes[] = 'The renewal billing cutoff was reached at adoption. Review this registration; no new automatic invoice can be promised.'; }
             elseif (($review['inside_issue_window'] ?? false) === true) { $notes[] = 'This registration was inside its billing window at adoption. Ordinary billing may issue an invoice and apply available credit immediately when its gates pass.'; }
             if (($review['price'] ?? null) !== null) { $notes[] = \Paymenter\Extensions\Servers\Domains\Data\Adoption\Review::priceNotice($review['price']); }
             return $notes;

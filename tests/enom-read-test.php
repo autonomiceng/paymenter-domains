@@ -72,8 +72,29 @@ foreach (['required' => $field, 'child' => str_replace('<IsChild>0', '<IsChild>1
     'text' => str_replace('<UserDefined>false', '<UserDefined>true', $optional),
     'options' => str_replace('<Value>citizen', '<Value>resident', $optional)] as $conflict => $duplicate) {
     try { $parseFields($optional.$duplicate.$child); throw new LogicException('Expected duplicate '.$conflict.' refusal'); }
-    catch (InvalidArgumentException) {}
+    catch (InvalidArgumentException $e) { same($conflict === 'options' ? 'Conflicting registry field options.' : 'Conflicting registry field flags.', $e->getMessage(), 'Exact safe duplicate '.$conflict.' message'); }
 }
+$secondOption = '<Option><Value>resident</Value><Title>Resident</Title><Description>Second choice</Description></Option>';
+$twoOptions = str_replace('</Options>', $secondOption.'</Options>', $field);
+$firstOption = substr($twoOptions, strpos($twoOptions, '<Option>'), strpos($twoOptions, '</Option>') + strlen('</Option>') - strpos($twoOptions, '<Option>'));
+// Every pair differs in exactly one normalized option dimension; flags/dependencies agree.
+foreach ([
+    'order' => str_replace($firstOption.$secondOption, $secondOption.$firstOption, $twoOptions),
+    'title' => str_replace('<Title> Citizen </Title>', '<Title>Citizen prime</Title>', $twoOptions),
+    'description' => str_replace('<Description>Second choice</Description>', '<Description>Changed choice</Description>', $twoOptions),
+] as $conflict => $duplicate) {
+    try { $parseFields($twoOptions.$duplicate.$child); throw new LogicException('Expected duplicate option '.$conflict.' refusal'); }
+    catch (InvalidArgumentException $e) { same('Conflicting registry field options.', $e->getMessage(), 'Exact safe option '.$conflict.' conflict message'); }
+    $wire->payloads['Attributes'] = '<Attributes>'.$twoOptions.$duplicate.$child.'</Attributes>';
+    $unavailable = $driver->registrySchema('com', $context());
+    same('unknown', $unavailable->status, 'Duplicate option '.$conflict.' closes the neutral schema');
+    same([], $unavailable->facts(), 'Duplicate option '.$conflict.' exposes no provider schema or exception');
+}
+$expectedOptions = $parseFields($twoOptions.$child);
+same($expectedOptions, $parseFields($twoOptions.$twoOptions.$child), 'Identical ordered option lists collapse');
+same(['citizen', 'resident'], array_column($expectedOptions[0]['options'], 'value'), 'Provider option order retained');
+same('Citizen', $expectedOptions[0]['options'][0]['label'], 'Option title normalized');
+same('Second choice', $expectedOptions[0]['options'][1]['description'], 'Option description retained');
 $expectedFields = $parseFields($field.$child);
 same($expectedFields, $parseFields($field.$field.$child), 'Identical registry duplicates collapse');
 $withoutOptions = preg_replace('#<Options>.*?</Options>#', '', $field);
@@ -83,7 +104,7 @@ foreach (['required' => str_replace('<Required>1', '<Required>0', $withoutOption
     'child' => str_replace('<IsChild>0', '<IsChild>1', $withoutOptions),
     'text' => str_replace('<UserDefined>false', '<UserDefined>true', $withoutOptions)] as $conflict => $first) {
     try { $parseFields($first.$field.$child); throw new LogicException('Expected option-fill '.$conflict.' refusal'); }
-    catch (InvalidArgumentException) {}
+    catch (InvalidArgumentException $e) { same('Conflicting registry field flags.', $e->getMessage(), 'Exact safe flags-before-fill '.$conflict.' message'); }
 }
 $wire->payloads['Attributes'] = '<Attributes/>'; same([], $driver->registrySchema('com', $context())->facts()['fields'], 'Explicit no registry requirements retained');
 foreach (['register' => 10, 'renew' => 16, 'transfer' => 19] as $action => $type) {

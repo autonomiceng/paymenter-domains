@@ -476,7 +476,8 @@ Runtime source targets PHP 8.3 and 8.4, matching Paymenter 1.5.9. The existing o
 runner retains its hash-pinned PHP 8.4.26 runtime. A separate CI job parses every shipped
 PHP file on PHP 8.3 and runs `tests/php83-compatibility-test.php`.
 The token guard also runs with offline lint and the registered runner suite. It rejects
-known PHP 8.4 function calls, asymmetric visibility, property hooks and unparenthesized
+40 PHP 8.4 global functions from PHP NEWS (including Intl, OPcache, PCNTL, PgSQL and
+Sodium additions), asymmetric visibility, property hooks and unparenthesized
 `new` dereferences, with synthetic accepted/rejected fixtures. Namespaced user functions
 and imports are resolved without executing source. This targeted check is not exhaustive:
 dynamic function names, extension availability and untested runtime behavior remain

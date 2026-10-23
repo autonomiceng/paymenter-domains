@@ -8,5 +8,5 @@ final readonly class OwnedDomain
     public function __construct(public string $name, public string $status, public string $tone,
         public ?string $expiry, public string $renewal, public ?string $renewalPrice,
         public array $actions, public array $progress, public array $setup, public array $transfer,
-        public array $management, public bool $testEnvironment, public bool $changesUnavailable = false, public ?string $renewalDue = null, public bool $setupPending = false) {}
+        public array $management, public bool $testEnvironment, public bool $changesUnavailable = false, public ?string $renewalDue = null, public bool $setupPending = false, public ?string $registrationBadge = null, public bool $adopted = false, public ?string $plannedRenewalDue = null, public array $history = [], public array $renewalInvoice = [], public bool $originalDoNotRenew = false) {}
 }

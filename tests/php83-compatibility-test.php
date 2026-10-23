@@ -12,7 +12,16 @@ $functions = [
     'array_find', 'array_find_key', 'array_any', 'array_all', 'mb_trim', 'mb_ltrim', 'mb_rtrim',
     'mb_ucfirst', 'mb_lcfirst', 'bcdivmod', 'bcround', 'bcceil', 'bcfloor', 'request_parse_body',
     'http_get_last_response_headers', 'http_clear_last_response_headers', 'fpow',
+    'grapheme_str_split', 'intltz_get_iana_id', 'opcache_jit_blacklist',
+    'pcntl_getcpu', 'pcntl_getcpuaffinity', 'pcntl_setcpuaffinity', 'pcntl_setns',
+    'pcntl_getqos_class', 'pcntl_setqos_class', 'pcntl_waitid',
+    'pg_change_password', 'pg_jit', 'pg_put_copy_data', 'pg_put_copy_end',
+    'pg_result_memory_size', 'pg_set_chunked_rows_size', 'pg_socket_poll',
+    'sodium_crypto_aead_aegis128l_decrypt', 'sodium_crypto_aead_aegis128l_encrypt', 'sodium_crypto_aead_aegis128l_keygen',
+    'sodium_crypto_aead_aegis256_decrypt', 'sodium_crypto_aead_aegis256_encrypt', 'sodium_crypto_aead_aegis256_keygen',
 ];
+compatibilityCheck((new ReflectionClass(Php83Compatibility::class))->getConstant('FUNCTIONS') === $functions,
+    'Guard and planted regression matrix must cover the same PHP 8.4 functions');
 foreach ($functions as $function) {
     foreach ([$function, '\\'.strtoupper($function)] as $call) {
         $source = "<?php\nnamespace App;\n".$call.'([]);';

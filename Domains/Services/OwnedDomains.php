@@ -37,6 +37,7 @@ final readonly class OwnedDomains
         $actions=['show'=>route('domains.domains.show',$d->id),'setupSave'=>route('domains.domains.setup-save',$d->id),'contactsSave'=>route('domains.domains.contacts-save',$d->id),'codeSave'=>route('domains.domains.code-save',$d->id)]; $management=[]; $caps=null;
         try { $caps=$this->ports->forDomain($d)->capabilities(); } catch (\Throwable) {}
         $status=self::STATUSES[$d->status]??'Needs attention'; $tone=$d->status==='active'?'ok':'muted';
+        if ($d->provenance === 'adopted' && $d->provider_expires_at !== null && $this->clock->now() >= $d->provider_expires_at) { $status = 'Registry expiry reached'; $tone = 'muted'; }
         if ($op && in_array($op->state,['held','uncertain'],true)) { $status=$op->action==='register'?'Processing':'Needs attention'; $tone='muted'; }
         if ($op?->state==='awaiting_payment') { $status='Awaiting payment'; }
         $setup=['contacts'=>false,'required'=>false,'nameservers'=>false,'privacy'=>false,'defaults'=>$d->registrar_key==='enom'];
@@ -75,7 +76,7 @@ final readonly class OwnedDomains
             $transfer['unchecked']=($op->attempt['transfer_admission']['rdap_unchecked']??null)===true;
             $actions['code']=route('domains.domains.code',$d->id);
         }
-        $progress=[];
+        $progress=$d->provenance === 'adopted' ? [['label' => 'Registration adopted', 'state' => 'Confirmed']] : [];
         foreach ($d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(100)->get() as $entry) {
             if (!isset($entry->policy['management']) || isset($entry->policy['management']['correction'])) { continue; }
             $label=['nameservers'=>'Nameservers','contacts'=>'Domain contacts','contact_profile'=>'Contact details','lock'=>'Transfer lock',
@@ -137,8 +138,37 @@ final readonly class OwnedDomains
             try{if($item&&(string)$item->quantity==='1'&&PricingRule::minor((string)$item->price)===PricingRule::minor((string)$debt->amount)
                 &&$invoice->due_at?->format('Y-m-d')===($debt->policy['calendar']['due']??null)){$renewalDue=$invoice->due_at->format('Y-m-d');}}catch(\Throwable){}
         }
+        $adopted = $d->provenance === 'adopted'; $plannedDue = null; $history = []; $renewalInvoice = [];
+        if ($adopted) {
+            $cycle = $d->operations()->where('action', 'renew')->where('authority_generation', $d->authority_generation)->where('account_fingerprint', $d->account_fingerprint)
+                ->where('base_expires_at', $d->provider_expires_at)->orderByDesc('id')->first();
+            if ($cycle) {
+                // A retained obligation, including a paid/held one, never becomes a projected new invoice.
+                $renewalInvoice = ['state' => 'review'];
+                $invoice = Invoice::whereKey($cycle->invoice_id)->where('user_id', $d->user_id)->whereIn('status', ['pending', 'paid'])->where('currency_code', $cycle->currency)->first();
+                $item = $invoice?->items()->whereKey($cycle->invoice_item_id)->whereNull('reference_id')->whereNull('reference_type')->first();
+                try { if ($cycle->service_id === $d->service_id && $cycle->server_id === $d->server_id && $cycle->registrar_key === $d->registrar_key
+                    && $item && (string) $item->quantity === '1' && PricingRule::minor((string) $item->price) === PricingRule::minor((string) $cycle->amount)
+                    && $invoice->due_at?->format('Y-m-d') === ($cycle->policy['calendar']['due'] ?? null)) {
+                    $renewalInvoice = ['state' => $invoice->status, 'due' => $invoice->due_at->format('Y-m-d')];
+                } } catch (\Throwable) {}
+            }
+        }
+        if ($adopted && $renewal === 'On' && $renewalInvoice === [] && $d->provider_expires_at) {
+            try {
+                $timing = BillingCalendar::timing(\App\Models\Server::findOrFail($d->server_id)->settings);
+                $due = BillingCalendar::dates($d->provider_expires_at->toDateTimeImmutable(), $timing['issue'], $timing['due'])['due'];
+                if ($this->clock->now()->format('Y-m-d') >= $due) { $renewalInvoice = ['state' => 'review']; }
+                else { $plannedDue = $due; }
+            } catch (\Throwable) { $renewalInvoice = ['state' => 'review']; }
+        }
+        if ($adopted) {
+            $invoiceIds = \Paymenter\Extensions\Servers\Domains\Models\HistoryLink::where('domain_id', $d->id)->where('user_id', $d->user_id)->pluck('invoice_id');
+            $history = Invoice::whereKey($invoiceIds)->where('user_id', $d->user_id)->orderBy('id')->get()->map(fn ($i) => ['number' => $i->number ?? (string) $i->id, 'status' => ucfirst($i->status), 'url' => route('invoices.show', $i)])->all();
+        }
+        $badge = $adopted ? \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company(config('settings.company_name')).' Registration' : null;
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';
         return new OwnedDomain($d->domain,$status,$tone,$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
-            $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue);
+            $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, registrationBadge:$badge, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState));
     }
 }

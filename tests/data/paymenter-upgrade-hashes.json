@@ -41,7 +41,8 @@
           "Domains/Services/InvoiceFunding.php",
           "Domains/Services/HoldingLocks.php",
           "Domains/Services/DomainBilling.php",
-          "Domains/Services/Refunds.php"
+          "Domains/Services/Refunds.php",
+          "Domains/Services/OwnedDomains.php"
         ],
         "review": "Re-review paid-after-commit timing, signed full-invoice funding, native renewal bypass, credit/refund once and null expiry.",
         "files": {
@@ -169,7 +170,8 @@
           "Domains/Services/Runtime.php",
           "Domains/Services/AccountBindings.php",
           "Domains/Services/RegistrarBalances.php",
-          "tests/native-server-settings-test.php"
+          "tests/native-server-settings-test.php",
+          "Domains/Admin/Resources/DomainResource/Pages/AdoptDomain.php"
         ],
         "review": "Re-review native server creation, permissions, accepted decrypted settings exposure, declared-option-only persistence and unchanged saves; qualify credential/digest holds and fingerprint-keyed balance hiding with remaps and mount/hydrate interception disabled. Re-review remaining editor/write paths, field traversal and save transactions; containment does not authorize global hooks.",
         "files": {

@@ -1,0 +1,53 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/Support/adoption-confirm.php';
+require __DIR__.'/Support/storefront.php';
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext;
+use Paymenter\Extensions\Servers\Domains\Models\Adoption;
+use Paymenter\Extensions\Servers\Domains\Services\{OwnedDomains, OwnerPorts};
+extract(adoptionCommitFixture()); require dirname(__DIR__).'/Domains/routes/owned.php'; storefrontViews();
+$old=App\Models\Invoice::create(['user_id'=>$owner->id,'currency_code'=>'USD','status'=>'paid','number'=>'H-100']);
+$old->items()->create(['reference_type'=>$service->getMorphClass(),'reference_id'=>$service->id,'description'=>'Historical registration','quantity'=>1,'price'=>'13.00']);
+DB::table('invoices')->where('id',$old->id)->update(['number'=>'H-100']);
+$collision=App\Models\Invoice::create(['user_id'=>$owner->id,'currency_code'=>'USD','status'=>'paid']);DB::table('invoices')->where('id',$collision->id)->update(['number'=>(string)$old->id]);
+$r=$reader->preview($target,new StaffContext($staff->id,'Verified original customer',true));$a=Adoption::findOrFail($r->previewId);$d=$commit->confirm($a->request_key,$a->request_digest,$staff);
+config(['settings.company_name'=>' <Synthetic & Company> ']);
+$owners=new OwnedDomains($clock,new OwnerPorts());$dto=$owners->present($d,false);
+same('<Synthetic & Company> Registration',$dto->registrationBadge,'Trimmed configured company badge');same('Off',$dto->renewal,'DNR badge');same('Registration adopted',$dto->progress[0]['label'],'Adoption activity');same($old->fresh()->number,$dto->history[0]['number'],'Batch native invoice number');same('Paid',$dto->history[0]['status'],'Historical invoice label');same(null,$dto->plannedRenewalDue,'No future due CTA for DNR');
+same(route('invoices.show',$old->fresh()),$dto->history[0]['url'],'Historical URL uses native number route key despite numeric ID collision');
+$html=view('domains::show',['domain'=>$dto])->render();
+expect(str_contains($html,'&lt;Synthetic &amp; Company&gt; Registration'),'Company escaped in actual customer Blade');expect(str_contains($html,'No renewal invoices or renewal reminders are scheduled.'),'Pinned renewal-off copy');expect(str_contains($html,'Registration adopted'),'Adoption visible in activity');
+$text=strip_tags(preg_replace('~<(script|style)\b[^>]*>.*?</\1>~si','',$html));foreach(['Enom','NameSilo','account-enom','synthetic-secret','provider_domain_id','account_fingerprint']as$private){expect(!str_contains($text,$private),'Customer excludes registrar/private identity');}
+$money=scenarioMoney();$clock->time=new DateTimeImmutable('2027-10-21T00:00:00Z');$expired=$owners->present($d,false);same('Registry expiry reached',$expired->status,'Read-only expired display');same($dto->history,$expired->history,'Expired history remains accessible');same('example.com',$d->fresh()->reservation_name,'Expired name stays reserved');same($money,scenarioMoney(),'Presentation never rewrites finances');
+try{$owners->owned($other,$d->id);expect(false,'Cross-owner detail must refuse');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}
+config(['settings.company_name'=>' ']);same('us Registration',$owners->present($d,false)->registrationBadge,'Safe company fallback');
+// Separate serialized renewal-on adoption, retaining the same native service and history.
+DB::table('domains_domains')->where('id',$d->id)->delete();DB::table('domains_adoptions')->where('id',$a->id)->delete();
+DB::table('service_cancellations')->where('service_id',$service->id)->delete();$clock->time=new DateTimeImmutable('2026-10-19T00:00:00Z');
+$r=$reader->preview($target,$context);same('ready',$r->code,'Fresh renewal-on customer fixture');$a=Adoption::findOrFail($r->previewId);$d=$commit->confirm($a->request_key,$a->request_digest,$staff);
+foreach (['2027-10-12'=>'2027-10-13','2027-10-13'=>null,'2027-10-14'=>null] as $today=>$due) {
+ $clock->time=new DateTimeImmutable($today.'T00:00:00Z');$projected=$owners->present($d->fresh(),false);
+ same($due,$projected->plannedRenewalDue,'Unissued renewal projection respects cutoff '.$today);
+ $projectionHtml=view('domains::show',['domain'=>$projected])->render();
+ if($due===null){same('review',$projected->renewalInvoice['state'],'Cutoff requires support review');expect(!str_contains($projectionHtml,'An invoice will be issued'),'Cutoff never promises unissuable debt');}
+}
+foreach (['2027-10-13T00:30:00+05:30'=>null,'2027-10-12T23:30:00-07:00'=>'2027-10-13'] as $local=>$due) {
+ $clock->time=new DateTimeImmutable($local);$projected=$owners->present($d->fresh(),false);
+ same($due,$projected->plannedRenewalDue,'Presentation uses actual billing clock date '.$local);
+}
+$clock->time=new DateTimeImmutable('2027-09-25T00:00:00Z');$invoice=App\Models\Invoice::create(['user_id'=>$owner->id,'currency_code'=>'USD','status'=>'pending','due_at'=>'2027-10-13']);
+$item=$invoice->items()->create(['reference_type'=>null,'reference_id'=>null,'description'=>'Issued renewal','quantity'=>1,'price'=>'10.00']);
+\Paymenter\Extensions\Servers\Domains\Models\Operation::create(['domain_id'=>$d->id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,'account_fingerprint'=>$d->account_fingerprint,
+ 'authority_generation'=>$d->authority_generation,'base_expires_at'=>$d->provider_expires_at,'operation_key'=>'presentation-issued','invoice_id'=>$invoice->id,'invoice_item_id'=>$item->id,'action'=>'renew','term'=>1,'state'=>'awaiting_payment','currency'=>'USD','amount'=>'10.00','policy'=>['calendar'=>['due'=>'2027-10-13']]]);
+$product->server->settings()->updateOrCreate(['key'=>'domains_due_days'],['value'=>10,'type'=>'string']);
+$issued=$owners->present($d->fresh(),false);same('2027-10-13',$issued->renewalDue,'Issued due remains frozen after setting edit');same(null,$issued->plannedRenewalDue,'Issued debt hides projected replacement date');
+$issuedHtml=view('domains::show',['domain'=>$issued])->render();expect(str_contains($issuedHtml,'Renewal invoice issued'),'Actual issued-debt label');expect(!str_contains($issuedHtml,'An invoice will be issued'),'Issued debt never promises a second invoice');
+$c=App\Models\ServiceCancellation::create(['service_id'=>$service->id,'type'=>'end_of_period','reason'=>'Stop the next renewal after issued debt']);
+$stopped=$owners->present($d->fresh(),false);same('Off',$stopped->renewal,'Later stop turns future renewal off');same(false,$stopped->originalDoNotRenew,'Later stop is distinct from original DNR');same('pending',$stopped->renewalInvoice['state'],'Issued debt remains visible after later stop');
+$stoppedHtml=view('domains::show',['domain'=>$stopped])->render();expect(str_contains($stoppedHtml,'Existing renewal invoices keep their own payment and reminder rules.'),'Later stop qualifies issued invoice reminders');expect(!str_contains($stoppedHtml,'No renewal invoices or renewal reminders are scheduled.'),'Later stop never promises suppression of issued reminders');
+DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
+$paid=$owners->present($d->fresh(),false);same(null,$paid->plannedRenewalDue,'Paid issued cycle never projects a new invoice');same('paid',$paid->renewalInvoice['state'],'Paid debt presented distinctly');
+$paidHtml=view('domains::show',['domain'=>$paid])->render();expect(str_contains($paidHtml,'Renewal payment received'),'Actual paid renewal label');expect(!str_contains($paidHtml,'An invoice will be issued'),'Paid cycle never promises another invoice');
+$nativeSuccessful=true;echo "Adopted customer badge, original invoices, renewal-off, expiry and safe escaped Blade passed\n";

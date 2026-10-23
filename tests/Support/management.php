@@ -2,6 +2,7 @@
 // Synthetic Enom 444f31c management fixtures; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/reconciliation-fixture.php';
+require_once __DIR__.'/reserved-fixtures.php';
 use Illuminate\Support\Facades\{Cache,DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,HolderPricing,NativeDomainGuard,WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management;
@@ -11,7 +12,8 @@ $management=new DomainManagement($bindings,$clock,new WriteFeatures(management:t
 $state=(object)['name'=>'','calls'=>[],'ns'=>['ns1.example.com','ns2.example.com'],'locked'=>true,'renew'=>false,'privacy'=>false,'enabled'=>false,'expiry'=>'2027-10-18',
     'cost'=>'8.00','balance'=>'100.00','dns'=>[],'srv'=>[],'ds'=>[],'glue'=>[],'contacts'=>[],'fault'=>'','afterWrite'=>null,'during'=>null,'apply'=>true];
 $xml=static fn(string $cmd,string $body='')=>'<interface-response><Command>'.$cmd.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';
-$exchange=static function(string $origin,string $command,array $p,int $timeout)use($state,$xml,$clock):string{
+$wrongDomain = reservedFixtureName('example.net');
+$exchange=static function(string $origin,string $command,array $p,int $timeout)use($state,$xml,$clock,$wrongDomain):string{
     same(0,DB::transactionLevel(),'Management network outside transaction');same('https://resellertest.enom.com/interface.asp',$origin,'Fixed test origin');expect($timeout>0&&$timeout<=25000,'Bounded timeout');
     $state->calls[]=[$command,$p];if($state->during){$hook=$state->during;$state->during=null;$hook($command);}
     $read=str_starts_with($command,'Get')||$command==='CheckNSStatus';
@@ -34,7 +36,7 @@ $exchange=static function(string $origin,string $command,array $p,int $timeout)u
     }
     $body=match($command){
         'GetDomainInfo'=>'<GetDomainInfo><DomainName DomainNameID="456">'.$state->name.'</DomainName><Status><Belongs-To>'.($state->fault==='owner'?'another-account':'account-enom').'</Belongs-To></Status></GetDomainInfo>',
-        'GetOrderDetail'=>'<Order><OrderID>'.($state->fault==='order_id'?'7002':$p['OrderID']).'</OrderID><Result>true</Result><OrderDetail><Description>'.($state->fault==='order_domain'?'other.com':$state->name).'</Description><Status>'.($state->fault==='order_pending'?'pending':'successful').'</Status><OrderStatus>closed</OrderStatus><Quantity>'.($state->fault==='order_term'?'2':'1').'</Quantity></OrderDetail></Order>',
+        'GetOrderDetail'=>'<Order><OrderID>'.($state->fault==='order_id'?'7002':$p['OrderID']).'</OrderID><Result>true</Result><OrderDetail><Description>'.($state->fault==='order_domain'?$wrongDomain:$state->name).'</Description><Status>'.($state->fault==='order_pending'?'pending':'successful').'</Status><OrderStatus>closed</OrderStatus><Quantity>'.($state->fault==='order_term'?'2':'1').'</Quantity></OrderDetail></Order>',
         'GetRegLock'=>'<Reg-Lock>'.(int)$state->locked.'</Reg-Lock>', 'GetRenew'=>'<RenewName>'.(int)$state->renew.'</RenewName>',
         'GetWPPSInfo'=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>'.(int)$state->privacy.'</WPPSExists><WPPSEnabled>'.(int)$state->enabled.'</WPPSEnabled><WPPSAutoRenew>0</WPPSAutoRenew><WPPSExpDate>'.$state->expiry.'</WPPSExpDate><WPPSPrice>'.$state->cost.'</WPPSPrice></GetWPPSInfo>',
         'GetBalance'=>'<AvailableBalance>'.$state->balance.'</AvailableBalance>',default=>''};
@@ -49,7 +51,8 @@ $exchange=static function(string $origin,string $command,array $p,int $timeout)u
         if($state->fault==='empty_ack'){$body='';}}
     return $xml($command,$body);
 };
-$holding=static function(string $name)use($prepare,$reconcile,$state,$exchange){
+$holding=static function(string $name)use($prepare,$reconcile,$state,$exchange,$wrongDomain){
+    expect($name !== $wrongDomain, 'Wrong-domain response remains distinct from the holding');
     [$original,$binding]=$prepare($name);same('succeeded',$reconcile->run($original->id)->state,'Real uniquely completed registration anchor');$d=$original->domain()->firstOrFail();
     $state->name=$name;$state->locked=true;$state->dns=[];$state->srv=[];$state->ds=[];$state->glue=[];$state->contacts=[];$state->calls=[];$state->fault='';$state->afterWrite=null;$state->during=null;$state->apply=true;Cache::flush();
     return [$d,new Management($binding,$exchange),$original];

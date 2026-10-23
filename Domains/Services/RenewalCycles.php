@@ -59,7 +59,7 @@ final readonly class RenewalCycles
             $d = $l['domain']; $s = $l['service']; $binding = CatalogueAcceptances::binding($l['account']);
             $this->bindings->requireProcessingLocked($l['server'], $l['account']);
             if ($years < 1 || $years > 10 || $d->provider_expires_at?->addYearsNoOverflow($years) > $this->clock->now()->modify('+10 years')
-                || $s->status !== 'active' || RenewalStop::blocksExisting($l) || ($d->renewal_policy['automatic_spend_paused'] ?? false)) { throw new \DomainException('Complimentary lifecycle unavailable.'); }
+                || $s->status !== 'active' || RenewalStop::blocksRenewal($l) || ($d->renewal_policy['automatic_spend_paused'] ?? false)) { throw new \DomainException('Complimentary lifecycle unavailable.'); }
             $anchor = HoldingAnchor::resolve($l);
             if ($anchor->operation) { RenewalAuthority::requireCostAnchor($anchor->operation); }
             $key = self::key($d); $existing = $l['operations']->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();

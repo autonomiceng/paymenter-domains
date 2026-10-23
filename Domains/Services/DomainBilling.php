@@ -27,6 +27,10 @@ final class DomainBilling
             $l = HoldingLocks::take($seed); $d = $l['domain']; $s = $l['service'];
             if ($l['identity_source']['kind'] === 'adoption') { HoldingAnchor::resolve($l); }
             if ($actor && (int) $actor->id !== (int) $l['user']->id) { throw new \DomainException('Domain renewal is unavailable.'); }
+            if (RenewalStop::adopted($l)) {
+                if ($actor) { throw new \DomainException('Renewal is off for this adopted registration.'); }
+                return null;
+            }
             // A native cancellation disables scheduled billing without touching retained debts.
             if ($actor === null && RenewalStop::stopped($l)) { return null; }
             if (!$d->provider_expires_at) { throw new \DomainException('Confirmed expiry required.'); }

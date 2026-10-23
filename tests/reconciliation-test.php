@@ -1,13 +1,15 @@
 <?php
 // Enom 444f31c reconciliation-registration/provider-disposition/automatic-refresh; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureEnding = 'example.com';
 require __DIR__.'/Support/reconciliation-fixture.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, Disposition, DriverResult, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances, ReconciliationEvidence};
 // A sealed unknown attempt is otherwise eligible; current native funding must refuse before any read.
 foreach (['pending', 'paid'] as $invoiceStatus) {
-    [$op, $binding] = $prepare('initially-unfunded-'.$invoiceStatus.'.com', 'null');
+    [$op, $binding] = $prepare(reservedFixtureName('initially-unfunded-'.$invoiceStatus.'.example.com'), 'null');
     HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 0, 86400, 'enom_registration_v1'));
     $clock->instant = new DateTimeImmutable('2026-10-18T12:06:01Z');
     $attempt = ReconciliationEvidence::attempt($op, $op->domain, $binding);
@@ -23,7 +25,7 @@ foreach (['pending', 'paid'] as $invoiceStatus) {
             $result->domain->renewal_policy['billing_anchor'] ?? null], 'M9 '.$invoiceStatus.' remains unresolved and reserved');
     same($money, $nativeMoney(), 'M9 '.$invoiceStatus.' preserves invoices, items, transactions, credits and jobs');
 }
-[$op] = $prepare('unique-completion.com');
+[$op] = $prepare(reservedFixtureName('unique-completion.example.com'));
 same('registration_correction_required', $op->safe_code, 'Correction selector retained');
 $result = $reconcile->run($op->id);
 same('succeeded', $result->state, 'Unique original ID and actual charge complete');
@@ -38,14 +40,14 @@ same('authorization_required', $result->attempt['corrections']['nameservers']['s
 $before = $observation->calls; $reconcile->run($op->id); same($before, $observation->calls, 'Completed operation repeats without provider calls');
 commerceReject(fn () => $result->update(['cost' => [...$result->cost, 'actual' => ['amount' => '0.00', 'currency' => 'USD']]]));
 foreach (['zero', 'multiple', 'term'] as $fault) {
-    [$op] = $prepare('unresolved-'.$fault.'.com'); $observation->fault = $fault;
+    [$op] = $prepare(reservedFixtureName('unresolved-'.$fault.'.example.com')); $observation->fault = $fault;
     $result = $reconcile->run($op->id); same('pending', $result->state, 'Missing/ambiguous/wrong-term evidence stays pending');
     same(null, $result->cost['actual'] ?? null, 'No manufactured actual charge');
     same(null, $result->domain->provider_expires_at, 'No anchor from provider observation alone');
     same(true, $result->policy['reconciliation']['staff_alert'], 'Durable unresolved alert');
 }
 foreach (['late', 'absent', 'null'] as $mode) {
-    [$op, $binding] = $prepare('recover-'.$mode.'.com', $mode);
+    [$op, $binding] = $prepare(reservedFixtureName('recover-'.$mode.'.example.com'), $mode);
     $clock->instant = new DateTimeImmutable('2026-10-18T12:06:01Z');
     if ($mode !== 'late') { HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 0, 86400, 'enom_registration_v1')); }
     $result = $reconcile->run($op->id); same('succeeded', $result->state, 'Late facts/read-only provider history recover original unique attempt');
@@ -65,7 +67,7 @@ foreach (['late', 'absent', 'null'] as $mode) {
     }
 }
 // Captured acceptance can retain execution facts without an order reference; history must still run.
-[$op, $binding] = $prepare('example-history.com', 'absent');
+[$op, $binding] = $prepare(reservedFixtureName('history.example.com'), 'absent');
 $op = $claims->finish($op, new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
     new Evidence(registration: new RegistrationEvidence(\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op, $op->domain),
         null, new DateEvidence('2027-10-18', ExpiryPrecision::Date, 'synthetic_purchase'), null, []))));
@@ -84,7 +86,7 @@ same('accepted_history', $result->attempt['reconciliation']['source'], 'Completi
 same('9001', $result->provider_order_id, 'Unique history supplies the missing order reference');
 same($writes, $writer->calls, 'Null-reference history recovery never replays a write');
 same($money, $nativeMoney(), 'Null-reference history recovery preserves native finance');
-[$op] = $prepare('timestamp-boundary.com');
+[$op] = $prepare(reservedFixtureName('timestamp-boundary.example.com'));
 $beforeUpdate = Illuminate\Support\Carbon::parse($op->getRawOriginal('updated_at'));
 // Eloquent samples time for the model, then again for the UPDATE when the first
 // timestamp equals the original and is omitted from the dirty attributes.

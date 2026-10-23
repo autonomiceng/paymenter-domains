@@ -14,10 +14,10 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainOperations, InvoiceBinding, OperationClaims};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
-extract(commerceFixture(true,$fixtureActivation??null)); $clock = new FakeClock($now);
+extract(commerceFixture(true, $fixtureActivation ?? null, ending: $fixtureEnding ?? 'com')); $clock = new FakeClock($now);
 $transfers = new \Paymenter\Extensions\Servers\Domains\Services\TransferInputs($clock, new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock));
 $transferCheck = new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck(new \Paymenter\Extensions\Servers\Domains\Services\Rdap(static fn () => throw new RuntimeException('Synthetic offline RDAP')));
-App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
+App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => $fixtureEnding ?? 'com']);
 $admission = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock, $transferCheck), $clock); $admission->boot();
 $invoiceBinding = new InvoiceBinding($admission, $native, $prices, $clock); $invoiceBinding->boot();
 if(app()->bound(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)){app()->instance(InvoiceBinding::class,$invoiceBinding);}

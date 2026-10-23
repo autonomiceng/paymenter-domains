@@ -10,7 +10,7 @@ final class RenewalReminders
     {
         $d=$l['domain'];$s=$l['service'];$at=$now->getTimestamp();
         $alert=static function(string $code,?int $op=null)use(&$alerts,$d,$at):void {$alerts[]=ObligationAlerts::record($d,$code,$at,$op);};
-        if($d->adoptionPending()){return null;}
+        if($d->adoptionPending()||RenewalStop::adopted($l)){return null;}
         if($s->status!=='active'||!in_array($d->status,['active','grace','expired'],true)){return null;}
         if(!$d->provider_expires_at){$alert('unknown_expiry');return null;}
         $day=CarbonImmutable::instance($now)->utc()->startOfDay();$expiry=$d->provider_expires_at->utc()->startOfDay();
@@ -38,7 +38,7 @@ final class RenewalReminders
             'invoice_on'=>null,'overdue'=>false,'complimentary'=>$complimentary&&$renewOn,'years'=>1,'amount'=>null,'invoice_url'=>null,'domain_url'=>url('/domains/'.$d->id)];
         if(!$expired&&$op){
             try{$bindings->requireProcessingLocked($l['server'],$l['account']);
-                if(RenewalStop::blocksExisting($l)||($d->renewal_policy['automatic_spend_paused']??false)){throw new \DomainException('Renewal paused.');}
+                if(RenewalStop::blocksRenewal($l)||($d->renewal_policy['automatic_spend_paused']??false)){throw new \DomainException('Renewal paused.');}
                 RenewalFunding::requireAuthority($op,$l);
             }catch(\Throwable){$alert('held_obligation',(int)$op->id);return null;}
             try{RefundPayment::requireLine($op,$l);}catch(\Throwable){$alert('invalid_invoice',(int)$op->id);return null;}

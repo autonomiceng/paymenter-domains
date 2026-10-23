@@ -2,6 +2,7 @@
 // Native saved-fact and secrecy regressions. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
+require __DIR__.'/Support/staff-tld-filter-lookalikes.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
@@ -57,6 +58,7 @@ $t->update(['register_enabled'=>true,'transfer_enabled'=>true,'renew_enabled'=>t
 same($healthy,TldFacts::salesState($t->fresh()),'Restored renewal-enabled contrast is price eligible');
 same(['com'],array_column($store->endings(),'tld'),'Renewal-enabled contrast restores public sales');
 same($retained,$savedPrices(),'Switch changes preserve all saved prices');
+$calls=$reads->calls;staffTldFilterLookalikes($u,$tlds);same($calls,$reads->calls,'TLD selectors use saved facts only');
 foreach (['12.0000'=>'12.00 USD','12.3000'=>'12.30 USD','12.3450'=>'12.345 USD','12.3456'=>'12.3456 USD','0.0000'=>'0.00 USD'] as $amount=>$label) { same($label,TldFacts::money($amount,4),'Wholesale precision stays exact while redundant zeros are trimmed'); }
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;
 $rules->saveDefaultRule($t->server_id,['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],$prices->republish(...));

@@ -36,7 +36,7 @@ final readonly class RenewalAuthority
                 // A named issued obligation keeps its original authority through a future-only stop.
                 $issued=$l['operations']->contains(fn($op)=>self::expected($op,$request));
                 if (!in_array($domain->status, ['active', 'expired', 'grace'], true) || $l['service']->status !== 'active'
-                    || ($issued?RenewalStop::blocksExisting($l):RenewalStop::stopped($l))) { throw new RenewalRefused(RenewalCode::Authority); }
+                    || ($issued?RenewalStop::blocksRenewal($l):RenewalStop::stopped($l))) { throw new RenewalRefused(RenewalCode::Authority); }
                 $all = $l['operations']; $prices = $l['prices'];
                 if ($domain->authority_generation !== $request->generation || $domain->confirmed_revision !== $request->revision
                     || $domain->provider_expires_at?->format('Y-m-d') !== $request->expiry || $domain->provider_domain_id !== $request->providerId

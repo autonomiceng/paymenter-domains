@@ -9,7 +9,7 @@ use Filament\Tables\Filters\{Filter, SelectFilter};
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\{Builder, Model};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainQueries, Labels, Staff};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{AdoptionPreview, ListDomains, ViewDomain};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{AdoptDomain, AdoptionPreview, ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
 class DomainResource extends Resource
@@ -64,5 +64,5 @@ class DomainResource extends Resource
             ->emptyStateHeading('No domains yet')->emptyStateDescription('Domains appear here when customers order them.');
     }
     public static function getRelations(): array { return [RequestsRelationManager::class]; }
-    public static function getPages(): array { return ['index'=>ListDomains::route('/'),'view'=>ViewDomain::route('/{record}'),'adoption'=>AdoptionPreview::route('/{record}/adoption')]; }
+    public static function getPages(): array { return ['index'=>ListDomains::route('/'),'adopt'=>AdoptDomain::route('/adopt'),'view'=>ViewDomain::route('/{record}'),'adoption'=>AdoptionPreview::route('/{record}/adoption')]; }
 }

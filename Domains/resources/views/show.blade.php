@@ -3,9 +3,10 @@
 @include('domains::partials.styles')
 @include('domains::partials.test-banner', ['test' => $domain->testEnvironment])
 <a class="domains-back" href="{{ route('domains.domains.index') }}">Domains</a>
-<div class="domains-dhead"><div><h1 class="domains-title domains-record-value" tabindex="0">{{ $domain->name }}</h1><div class="domains-dhead__meta"><span class="domains-badge domains-tone-{{ $domain->tone }}">{{ $domain->status }}</span>@if ($domain->expiry)<span>Expires <strong>@include('domains::partials.date', ['date' => $domain->expiry])</strong></span>@endif</div></div></div>
+<div class="domains-dhead"><div><h1 class="domains-title domains-record-value" tabindex="0">{{ $domain->name }}</h1><div class="domains-dhead__meta">@if ($domain->registrationBadge)<span class="domains-badge">{{ $domain->registrationBadge }}</span>@endif<span class="domains-badge domains-tone-{{ $domain->tone }}">{{ $domain->status }}</span>@if ($domain->expiry)<span>Expires <strong>@include('domains::partials.date', ['date' => $domain->expiry])</strong></span>@endif</div></div></div>
 @include('domains::partials.notices', ['fieldKeys'=>['nameservers','contact','dns','srv','ds','glue']])
 @if ($domain->setupPending)<div class="domains-notice" role="status">Our team will confirm this domain’s registration. Renewals and changes are paused until then. If your domain expires soon or you need a change, contact support.</div>@endif
+@if ($domain->adopted && $domain->renewal === 'Off')<div class="domains-notice" role="status"><div><strong>Renewal off</strong><p>@if ($domain->originalDoNotRenew)No renewal invoices or renewal reminders are scheduled.@else Future renewal invoices are stopped. Existing renewal invoices keep their own payment and reminder rules. Contact support to review an existing invoice.@endif Registration is shown until @include('domains::partials.date', ['date' => $domain->expiry]).</p></div></div>@endif
 @if ($domain->changesUnavailable)<div class="domains-notice" role="status">You can’t change this domain’s settings right now. Try again later, or contact support if this continues.</div>@endif
 @if (isset($domain->actions['setup']))
 @if (($domain->transfer['phase'] ?? null) === 'cutoff' && $domain->setup['contacts'])
@@ -19,6 +20,12 @@
 <nav class="domains-tabs" aria-label="Domain settings"><a class="domains-tab" href="#overview">Overview</a>@foreach ($domain->management as $cap => $section)<a class="domains-tab" href="#{{ $cap }}">{{ $section['label'] }}</a>@endforeach<a class="domains-tab" href="#domains-activity">Activity</a></nav>
 @endif
 <section id="overview" class="domains-panel domains-section"><h2 class="domains-h2">Overview</h2><dl class="domains-facts"><div class="domains-fact"><dt>Auto-renew</dt><dd>{{ $domain->renewal }}</dd></div>@if ($domain->renewalPrice)<div class="domains-fact"><dt>Renewal price</dt><dd>{{ $domain->renewalPrice }}/yr</dd></div>@endif</dl></section>
+@if ($domain->renewalInvoice)<section class="domains-panel domains-section">
+@if ($domain->renewalInvoice['state'] === 'pending')<h2 class="domains-h2">Renewal invoice issued</h2><p>Payment due @include('domains::partials.date', ['date' => $domain->renewalInvoice['due']]). See your invoice for payment details.</p>
+@elseif ($domain->renewalInvoice['state'] === 'paid')<h2 class="domains-h2">Renewal payment received</h2><p>Renewal is awaiting confirmation. The confirmed expiry above will update when it completes.</p>
+@else<h2 class="domains-h2">Renewal under review</h2><p>Contact support if you need an update on this renewal.</p>@endif</section>
+@elseif ($domain->plannedRenewalDue)<section class="domains-panel domains-section"><h2 class="domains-h2">Next renewal</h2><p>Renewal due @include('domains::partials.date', ['date' => $domain->plannedRenewalDue]). An invoice will be issued when billing checks pass.</p></section>@endif
+@if ($domain->history)<section class="domains-panel domains-section"><h2 class="domains-h2">Historical invoices</h2><ul>@foreach ($domain->history as $invoice)<li><a href="{{ $invoice['url'] }}">Invoice {{ $invoice['number'] }}</a> · {{ $invoice['status'] }}</li>@endforeach</ul></section>@endif
 @include('domains::partials.owner-management')
 @unless ($domain->setupPending)
 @include('domains::partials.activity')
