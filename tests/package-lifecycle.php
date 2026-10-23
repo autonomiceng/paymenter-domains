@@ -3,10 +3,13 @@
 declare(strict_types=1);
 require __DIR__.'/Support/installed-app.php';
 require __DIR__.'/Support/installed-upgrade.php';
+require_once __DIR__.'/Support/reminder-defaults.php';
 use Illuminate\Support\Facades\{Artisan,DB,Event,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,AccountBindings,NativeCatalogue,PriceCatalogue,SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 $phase=(string)getenv('PACKAGE_PHASE');$receipt=(string)getenv('PACKAGE_RETAINED');
+const TEMPLATE_UPGRADE_AT='2026-10-23 12:00:00';
+const TEMPLATE_BEFORE_AT='2026-10-22 12:00:00';
 function retained(): array
 {
     $tables=array_filter(Schema::getTableListing(null,false),fn($t)=>str_starts_with($t,'domains_')||in_array($t,['users','orders','services','invoices','invoice_items','invoice_transactions','credits','settings','email_templates','notification_templates'],true));
@@ -20,8 +23,21 @@ function assertRetained(string $receipt): void
     $before=json_decode(file_get_contents($receipt),true,512,JSON_THROW_ON_ERROR);$after=retained();
     foreach($before as $table=>$rows){
         expect(array_key_exists($table,$after),'Retained table exists: '.$table);
-        // Additive migrations may append columns or template/default rows. Every
-        // original row must survive with all its original raw values unchanged.
+        // Only the two exact historical defaults may change, with the save timestamp.
+        // Every other raw value, row identity and multiplicity must survive.
+        foreach($rows as &$row){
+            if($table==='notification_templates' && ($row['key']??null)==='domains_domain_expiring'){
+                $changed=false;
+                foreach(previousReminderDefaults() as $field=>$previous){
+                    if($row[$field]===$previous){
+                        $row[$field]=Paymenter\Extensions\Servers\Domains\Services\ReminderTemplates::definitions()['domains_domain_expiring'][$field];
+                        $changed=true;
+                    }
+                }
+                if($changed){$row['updated_at']=TEMPLATE_UPGRADE_AT;}
+            }
+        }
+        unset($row);
         $columns=array_fill_keys(array_keys($rows[0]??[]),true);
         $counts=array_count_values(array_map(fn($row)=>json_encode(array_intersect_key($row,$columns),JSON_THROW_ON_ERROR),$after[$table]));
         foreach($rows as $row){$key=json_encode($row,JSON_THROW_ON_ERROR);expect(($counts[$key]??0)>0,'Retained raw rows unchanged: '.$table);$counts[$key]--;}
@@ -59,6 +75,7 @@ if($phase==='server-delete'){
     App\Helpers\ExtensionHelper::call($server,'uninstalled',mayFail:true);assertRetained($receipt);
     echo "Native disabled/delete refused and uninstall hook retained data.\n";
 }elseif(in_array($phase,['install','upload','reinstall'],true)){
+    Illuminate\Support\Carbon::setTestNow(TEMPLATE_UPGRADE_AT);
     if(in_array($phase,['install','reinstall'],true)){expect(!is_dir(base_path('extensions/Servers/Domains')),'Native Install branch requires absent runtime files');}
     $zip=(string)getenv('PACKAGE_ZIP');expect(is_file($zip),'Verified upload copy exists');
     same('server',app(App\Services\Extensions\UploadExtensionService::class)->handle($zip),'Native uploader classifies and installs server extension');
@@ -129,6 +146,9 @@ if($phase==='server-delete'){
     same($before,retained(),'Reinstalled page projection changes no retained data');
     expect(Account::where('processing_enabled',true)->doesntExist(),'Reinstall preserves processing off');
     echo "Installed catalogue, prices, seller and one-use audit survive reinstall.\n";
+}elseif($phase==='template-defaults'){
+    same(1,DB::table('notification_templates')->where('key','domains_domain_expiring')->update([...previousReminderDefaults(),'updated_at'=>TEMPLATE_BEFORE_AT]),'Seed both exact previous defaults');
+    file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
 }elseif($phase==='watch-seed'){
     assertRetained($receipt);require __DIR__.'/Support/installed-watch.php';seedInstalledWatch();
     file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
@@ -166,7 +186,13 @@ if($phase==='server-delete'){
     foreach($tlds as $t){$bindings->setProcessing($t->server_id,false);}
     expect(Account::where('processing_enabled',true)->doesntExist(),'Processing parked for retained acceptance');
     seedPsl();
-    same(1,DB::table('notification_templates')->where('key','domains_domain_expiring')->update(['subject'=>'Retained synthetic operator subject','body'=>'Retained synthetic operator content.']),'Seed customized notification template');
+    same(1,DB::table('notification_templates')->where('key','domains_domain_expiring')->update([
+        'subject'=>'Retained synthetic operator subject','body'=>'Retained synthetic operator content.',
+        'in_app_body'=>previousReminderDefaults()['in_app_body'],'updated_at'=>TEMPLATE_BEFORE_AT,
+        'enabled'=>false,'mail_enabled'=>'never',
+        'in_app_enabled'=>'never','in_app_title'=>'Retained title','in_app_url'=>'/retained','edit_preference_message'=>'Retained preference',
+    ]),'Seed custom email with exact previous in-app default');
+    same(1,DB::table('notification_templates')->where('key','domains_domain_expired')->update(previousReminderDefaults()),'Other template keeps matching historical text as custom content');
     if(getenv('PACKAGE_STANDING_UPGRADE')){seedInstalledUpgrade();}
     file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
     file_put_contents((string)getenv('PACKAGE_MIGRATION_RECEIPT'),json_encode(DB::table('migrations')->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),JSON_THROW_ON_ERROR));
@@ -203,8 +229,10 @@ if($phase==='server-delete'){
     }
     if(getenv('PACKAGE_STANDING_UPGRADE')){assertInstalledUpgradeAudit();assertInstalledUpgradePages();assertRetained($receipt);}
     // A second native command is solely an idempotency check, after proving upload.
+    $rawBefore=retained();
     Artisan::call(App\Console\Commands\Extension\Upgrade::class,['type'=>'server','name'=>'Domains','oldVersion'=>'0.1.0']);
     same($after,DB::table('migrations')->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),'Repeated native upgrade changes no migration history');
+    same($rawBefore,retained(),'Repeated native upgrade changes no raw retained rows');
     assertRetained($receipt);
     seedPsl();file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
     file_put_contents((string)getenv('PACKAGE_MIGRATION_RECEIPT'),json_encode($after,JSON_THROW_ON_ERROR));

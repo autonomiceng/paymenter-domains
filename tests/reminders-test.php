@@ -15,9 +15,39 @@ Mail::assertQueued(DomainNotice::class,fn($mail)=>$mail->data['years']===3&&$mai
 same(false,$reminders->remind((int)$d->id),'One notice per domain/generation/expiry/window');
 $clock->instant=$clock->now()->modify('+2 days');same(false,$reminders->remind((int)$d->id),'No duplicate catch-up');
 $marker=DB::table('domains_reminder_deliveries')->sole();same('accepted',$marker->state,'Queue acceptance distinct from delivery');
-// Create-only template upgrades and schedule enrollment retain staff edits and history.
+// Template upgrades and schedule enrollment retain staff edits and history.
 $template=NotificationTemplate::where('key','domains_domain_expiring')->sole();$template->update(['subject'=>'Customized {{ $domain }}']);
 ReminderTemplates::ensure();same('Customized {{ $domain }}',$template->fresh()->subject,'Custom template survives upgrade');
+// Only exact previous defaults change; each content field and staff setting is independent.
+require_once __DIR__.'/Support/reminder-defaults.php';
+$previous=previousReminderDefaults();
+$current=ReminderTemplates::definitions()['domains_domain_expiring'];
+foreach(['defaults','custom-body','custom-app','near-default'] as $case){
+    $values=$previous;
+    if($case==='custom-body'){$values['body']='Custom email';}
+    if($case==='custom-app'){$values['in_app_body']='Custom app';}
+    if($case==='near-default'){$values=array_map(fn($value)=>$value."\n",$values);}
+    $template->forceFill([...$values,'subject'=>'Custom subject','enabled'=>false,
+        'mail_enabled'=>'never','in_app_enabled'=>'never','in_app_title'=>'Custom title','in_app_url'=>'/custom',
+        'edit_preference_message'=>'Custom preference'])->save();
+    $before=$template->fresh()->getAttributes();
+    ReminderTemplates::ensure();$after=$template->fresh()->getAttributes();
+    foreach(['body','in_app_body'] as $field){
+        same($values[$field]===$previous[$field]?$current[$field]:$values[$field],$after[$field],$case.' preserves or updates '.$field);
+        unset($before[$field],$after[$field]);
+    }
+    unset($before['updated_at'],$after['updated_at']);
+    same($before,$after,'Template upgrade retains every other attribute: '.$case);
+    $stable=NotificationTemplate::orderBy('id')->get()->map->getAttributes()->all();
+    ReminderTemplates::ensure();
+    same($stable,NotificationTemplate::orderBy('id')->get()->map->getAttributes()->all(),'Repeated template upgrade is unchanged: '.$case);
+}
+$template->forceFill(array_intersect_key($current,$template->getAttributes()))->save();
+$siblings=NotificationTemplate::where('key','!=','domains_domain_expiring')->orderBy('id')->get();
+foreach($siblings as $sibling){$sibling->update(['body'=>'Custom sibling email','in_app_body'=>'Custom sibling app']);}
+$before=$siblings->map(fn($row)=>$row->fresh()->getAttributes())->all();ReminderTemplates::ensure();
+same($before,$siblings->map(fn($row)=>$row->fresh()->getAttributes())->all(),'Other managed templates retain custom content and settings');
+
 $row=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->first();ReminderSchedules::enroll((int)$d->server_id);
 same((array)$row,(array)DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->first(),'Custom schedule survives upgrade');
 same(1,count(decrypt($row->audit)),'Schedule change has retained actor/reason/before/after audit');
