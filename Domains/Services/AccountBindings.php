@@ -135,7 +135,7 @@ final class AccountBindings
         $account = Account::where('server_id', $expected->serverId)->firstOrFail();
         $expected->requireMatch($this->binding($account));
         $this->configuration($account, true);
-        if (!$account->processing_enabled) { throw new \DomainException('Registrar processing is disabled.'); }
+        if (!$account->processing_enabled) { throw new RuntimeIneligible(RuntimeReason::ProcessingOff); }
     }
 
     /** Caller holds these server/account rows in its checkout/claim transaction; never re-query a snapshot. */
@@ -147,7 +147,7 @@ final class AccountBindings
         }
         $this->binding($account);
         $this->configuration($account, true, $server, $advisory);
-        if (!$account->processing_enabled) { throw new \DomainException('Registrar processing is disabled.'); }
+        if (!$account->processing_enabled) { throw new RuntimeIneligible(RuntimeReason::ProcessingOff); }
     }
 
     /** Local sync commit recheck against current locked credentials, independent of spending pause. */

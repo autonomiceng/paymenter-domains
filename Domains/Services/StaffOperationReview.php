@@ -66,7 +66,7 @@ final class StaffOperationReview
             ||!is_string($t['stamp']??null)||!is_string($t['key']??null)){throw new StaffReviewRefused('Review key expired or changed. Reload this page.');}
         return $t;
     }
-    public function record(array $l,string $phase='completed'): void
+    public function record(array $l,string $phase='completed',?\Throwable $failure=null): void
     {
         if(!$this->before||DB::transactionLevel()!==1){throw new \LogicException('Missing locked review.');}
         $op=$l['operations']->firstWhere('id',$this->operationId)->fresh(); $d=$l['domain']->fresh(); $t=$this->verifiedTicket;
@@ -74,7 +74,7 @@ final class StaffOperationReview
         $history=$op->policy['staff_actions']??[];
         $history[]=['key'=>$t['key'],'action'=>$this->action,'phase'=>$phase,'actor_id'=>$this->actorId,'reason'=>$this->reason,
             'at'=>$this->clock->now()->format(DATE_ATOM),'operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,
-            'before'=>$this->before,'after'=>self::state($op,$d)];
+            'before'=>$this->before,'after'=>self::state($op,$d),...($failure?['safe_code'=>OperationFailure::code($failure)]:[])];
         $op->update(['policy'=>[...($op->policy??[]),'staff_actions'=>$history]]);
     }
     public function local(\Closure $write): mixed
@@ -86,10 +86,12 @@ final class StaffOperationReview
     public function read(\Closure $read): mixed
     {
         $this->local(fn()=>null); // Durable request audit and key consumption before provider I/O; no locks over reads.
+        $failure=null;
         try { return $read(); }
+        catch(\Throwable $error){$failure=$error;throw $error;}
         finally {
-            DB::transaction(function(){ $d=Domain::whereKey($this->domainId)->lockForUpdate()->firstOrFail();
-                $l=['domain'=>$d,'operations'=>$d->operations()->orderBy('id')->lockForUpdate()->get()];$this->record($l,'read_finished'); });
+            DB::transaction(function()use($failure){ $d=Domain::whereKey($this->domainId)->lockForUpdate()->firstOrFail();
+                $l=['domain'=>$d,'operations'=>$d->operations()->orderBy('id')->lockForUpdate()->get()];$this->record($l,$failure?'read_failed':'read_finished',$failure); });
         }
     }
     private static function state(Operation $op,Domain $d): array

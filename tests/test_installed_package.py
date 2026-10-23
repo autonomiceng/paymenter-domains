@@ -44,20 +44,6 @@ def previous_build(root):
     anchor = "                $t->unsignedBigInteger('due_at')->index(); $t->unsignedInteger('tries')->default(0);\n"
     assert old.count(anchor) == 1, 'Pinned observation fixture changed'
     observation.write_text(old.replace(anchor, anchor + "                $t->index(['server_id','account_fingerprint','due_at'], $t->getTable().'_account_due_index');\n"))
-    # The unreleased foundation baseline also retains review keys and encrypted
-    # archives. Qualify additive migration/upload behavior from that baseline,
-    # never an automatic repair of a historical missing-table schema.
-    foundation = previous_source/'Domains/Services/FoundationSchema.php'
-    old = foundation.read_text()
-    tables = "'domains_prices'];"
-    assert old.count(tables) == 1, 'Pinned foundation table list changed'
-    old = old.replace(tables, "'domains_prices', 'domains_staff_review_keys', 'domains_audit_archives'];")
-    anchor = "        self::table('domains_domains', function (Blueprint $table) {"
-    current = (ROOT/'Domains/Services/FoundationSchema.php').read_text()
-    start = current.index("        self::table('domains_staff_review_keys',")
-    end = current.index(anchor, start)
-    assert old.count(anchor) == 1, 'Pinned foundation declaration changed'
-    foundation.write_text(old.replace(anchor, current[start:end] + anchor))
     return build.build(previous_source/'Domains', root/'previous')
 
 
@@ -120,7 +106,7 @@ def main(scenario):
             previous = previous_build(root)
             assert previous['archive_sha256'] != current['archive_sha256'], 'Upgrade must replace different runtime bytes'
             evidence.update(previous_revision=PREVIOUS,
-                            previous_fixture_adjustments=['observation_account_due_index', 'foundation_review_keys_and_archives'],
+                            previous_fixture_adjustments=['observation_account_due_index'],
                             previous_zip_sha256=previous['archive_sha256'])
         current_migrations = len(list((ROOT/'Domains/database/migrations').glob('*.php')))
         first, count = ('previous', 7) if scenario == 'upgrade' else ('current', current_migrations)

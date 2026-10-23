@@ -22,7 +22,7 @@ final class ReminderFacts
         $days=static function($v,bool $before=false):string {
             $values=json_decode($v,true,8,JSON_THROW_ON_ERROR);
             if($before){rsort($values,SORT_NUMERIC);}else{sort($values,SORT_NUMERIC);}
-            return implode(', ',$values)?:'None';
+            return $values===[]?'None':implode(', ',$values);
         };
         $hold=Schema::hasTable('domains_observation_queues')?DB::table('domains_observation_queues')->where('server_id',$server)->value('catalogue_hold'):null;
         $binding=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server)->value('account_fingerprint');

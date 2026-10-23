@@ -18,7 +18,7 @@ final class RefundPayment
             || (int) $invoice->user_id !== (int) $d->user_id || $invoice->currency_code !== 'USD'
             || (int) $item->invoice_id !== (int) $invoice->id || (string) $item->quantity !== '1'
             || PricingRule::minor($op->amount) <= 0 || PricingRule::minor($item->price) !== PricingRule::minor($op->amount)) {
-            throw new \DomainException('No exact eligible paid native line.');
+            throw new OperationRefused(OperationFailure::NoPaidLine);
         }
         if (in_array($op->action, ['register', 'transfer'], true)) { InvoiceBinding::requireIdentity($op, $d, $s, $invoice, $item, $l['product']); }
         elseif ($op->action === 'renew') {

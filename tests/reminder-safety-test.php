@@ -6,7 +6,15 @@ use App\Models\{NotificationTemplate,ServiceCancellation};
 use Illuminate\Support\Facades\{Auth,DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Services\{ReminderSchedules,ReminderSchema};
-$enable();
+// Expiry-day zero and an empty schedule have distinct staff-facing labels.
+Auth::login($staff);$enable(0,'0','');
+$facts=\Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule($tlds[0]->server_id);
+same('0',$facts['Days before expiry'],'Expiry-day schedule displays zero');
+same('None',$facts['Days after expiry'],'Empty schedule displays None');
+$enable(0,'','0');$facts=\Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule($tlds[0]->server_id);
+same('None',$facts['Days before expiry'],'Empty before schedule displays None');
+same('0',$facts['Days after expiry'],'Expiry-day after schedule displays zero');
+Auth::logout();$enable();
 [$d,$invoice,$op]=$make('changed-invoice.com');DB::table('invoice_items')->where('id',$invoice->items()->sole()->id)->update(['price'=>'99.00']);
 same(false,$reminders->remind($d->id),'Changed invoice is never a payment instruction');
 expect(DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','invalid_invoice')->exists(),'Invalid invoice staff alert');

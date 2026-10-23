@@ -2,6 +2,7 @@
 // Native notification integration adapted from Enom444f31c Reminders/TransferNotifications; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use App\Enums\NotificationEnabledStatus;
 use App\Helpers\NotificationHelper;
 use App\Models\{EmailLog,NotificationTemplate,User};
 use Illuminate\Support\Facades\{DB,Mail};
@@ -21,7 +22,7 @@ final class ReminderDelivery
         $wantedEmail=$template->enabled&&$template->isEnabledForPreference($pref,'mail');
         $email=$wantedEmail&&!config('settings.mail_disable');
         $inApp=$template?->enabled&&$template->isEnabledForPreference($pref,'app');
-        if($wantedEmail&&!$email&&!$inApp){throw new \DomainException('Mail channel temporarily unavailable.');}
+        if($wantedEmail&&!$email&&($template->mail_enabled===NotificationEnabledStatus::Force||!$inApp)){throw new \DomainException('Mail channel temporarily unavailable.');}
         $mail=$email?new DomainNotice($template,$data):null;
         // Template/render errors happen BEFORE a send claim and remain safely retryable.
         if($mail){$mail->envelope();$mail->render();view('domains::mail-text',$mail->content()->with)->render();}

@@ -17,7 +17,7 @@ final class RefundProof
             || array_diff(array_keys($f), ['claim', 'seal', 'refund_authorization', 'refund', 'financial_adjustments'])
             || array_key_exists('dispatch_attempted_at', $op->policy ?? [])) { throw new \DomainException('Refund lacks definitely-unsent proof.'); }
         if (in_array($op->action, ['register', 'transfer'], true) && ($d->provider_domain_id !== null || $d->provider_order_id !== null || $d->provider_expires_at !== null
-            || !in_array($d->status, $op->action === 'transfer' ? ['transfer_pending', 'transfer_rejected'] : ['registration_pending', 'registration_rejected'], true))) { throw new \DomainException('Acquisition already has provider evidence.'); }
+            || !in_array($d->status, $op->action === 'transfer' ? ['transfer_pending', 'transfer_rejected'] : ['registration_pending', 'registration_rejected'], true))) { throw new OperationRefused(OperationFailure::ProviderEvidence); }
         if (array_key_exists('financial_adjustments', $f) && (!is_array($f['financial_adjustments']) || !array_is_list($f['financial_adjustments']))) {
             throw new \DomainException('Unknown adjustment evidence.');
         }

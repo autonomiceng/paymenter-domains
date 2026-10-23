@@ -5,10 +5,10 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Hidden,Textarea};
 use Filament\Notifications\Notification;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations,StaffReviewRefused,TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Services\{OperationFailure,StaffOperationReview,StaffOperations,StaffReviewRefused,TransferInputs};
 final class OperationActions
 {
     public static function make(Operation $op,string $stamp): array
@@ -27,8 +27,12 @@ final class OperationActions
                         app(StaffOperations::class)->run($actor,(int)$op->domain_id,(int)$op->id,$name,(string)($data['review_key']??''),trim((string)($data['reason']??'')));
                         Notification::make()->success()->title('Review recorded')->body('Reload this page to see the current request.')->send();
                     }catch(StaffReviewRefused $error){Notification::make()->danger()->title('Review refused')->body($error->getMessage())->send();
-                    }catch(\Throwable){Notification::make()->danger()->title('Review refused')->body('Reload this page and review current permissions, funding and retained evidence.'
-                            .(in_array($name,['refund','credit'],true)?' A credit decision may be retained; check the ledger before retrying.':''))->send();}
+                    }catch(\Throwable $error){
+                        $code=OperationFailure::code($error);
+                        Log::warning('Domains staff operation refused.',['reason'=>$code,'action'=>$name,'operation_id'=>(int)$op->id]);
+                        $message=(OperationFailure::known($error)?->message() ?? 'Reload this page and review current permissions, funding and retained evidence. Reference: '.$name.'/'.$op->id.'/'.$code.'.')
+                            .(in_array($name,['refund','credit'],true)?' A credit decision may be retained; check the ledger before retrying.':'');
+                        Notification::make()->danger()->title('Review refused')->body($message)->send();}
                 });
         }
         return $out;

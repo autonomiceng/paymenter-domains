@@ -29,3 +29,12 @@ Advisory owner forms inspect at most 100 domain operations and 100 related payme
 Initial DNS/SRV inventories unlock editing only after a complete current-identity check. Ordinary active checks run daily after acquisition follow-up; failed record discovery is held until an audited staff resume. The staff domain view shows the current hold reason. Customer DNS/SRV lists use numeric name order, with SRV source indexes restored in that same order; canonical evidence digests are unchanged.
 
 The native producer seam is owned at registration and logs both domain facts and record discovery as `initial_managed_records`; deployment code registers account port factories, not another producer. Port factories must be pure and perform no I/O: acceptance is checked within both locked observation windows. Customer recovery notes and staff alerts also recognize stopped current-generation/current-phase scheduled jobs; stale jobs do not hold the current domain. Staff alerts link to the bound registrar request and name its existing Resume scheduled reads action, with administrator guidance when no current request exists.
+
+Activation status in the Domains staff group is read-only and uses saved local facts only.
+It names closed account gates and deployment reviews without constructing provider readers or
+executors. Registration, transfer, renewal and management acceptance remain independent.
+Runtime diagnostics use bounded reasons and numeric locators. Expected ineligibility uses an
+atomic per-producer/reason UTC-day slot on supported shared cache stores; local or unavailable
+stores keep these notices quiet. Unexpected failures remain warnings. Candidate filters exclude
+offline or invoice-less display work from billing, transfer payment and timeout guards; retained
+reconciliation and refund selection remain independent, including recovery after invoice loss.

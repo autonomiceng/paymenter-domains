@@ -43,7 +43,7 @@ same(null,$op->domain->fresh()->reservation_name,'Proven unsent registration rel
 // A failed native credit keeps the audited rejection; the separately permitted UI retry succeeds once.
 $retry=$held('staff-credit-retry.com'); $before=$credit();
 DB::unprepared("CREATE TRIGGER staff_credit_fail BEFORE UPDATE ON credits BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END");
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled unsent order'])->assertHasNoActionErrors()->assertNotified(Notification::make()->danger()->title('Review refused')->body('Reload this page and review current permissions, funding and retained evidence. A credit decision may be retained; check the ledger before retrying.'));
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled unsent order'])->assertHasNoActionErrors()->assertNotified(Notification::make()->danger()->title('Review refused')->body('Reload this page and review current permissions, funding and retained evidence. Reference: refund/'.$retry->id.'/database_failure. A credit decision may be retained; check the ledger before retrying.'));
 echo "Failed credit retained.\n";
 DB::unprepared('DROP TRIGGER staff_credit_fail'); same('rejected',$retry->fresh()->state,'Decision survives failed credit');same($before,$credit(),'Failed credit atomic');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('credit')->callAction('credit',['reason'=>'Retry verified retained credit'])->assertHasNoActionErrors()->assertNotified('Review recorded');

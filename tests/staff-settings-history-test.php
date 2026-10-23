@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use App\Models\{Server,Setting};
 use Illuminate\Support\Facades\{Auth,Crypt,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
-use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,FoundationSchema,StaffSettingsReview as Review};
+use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,StaffAuditSchema,StaffSettingsReview as Review};
 extract(commerceFixture());Carbon\Carbon::setTestNow($now);$t=$tlds[0];
 $u=staffUser([Staff::VIEW,Staff::POLICY,Review::permission('default_rule')]);Auth::setUser($u);
 $review=static fn(?string $ticket=null)=>new Review($u->id,$t->server_id,$t->id,'default_rule',$ticket??Review::ticket($u->id,$t->server_id,$t->id,'default_rule',Review::stamp($t->server_id,$t->id)),'Retain synthetic audit evidence');
@@ -54,17 +54,17 @@ expect(count(Review::historyRows($server))<=Review::HISTORY_LIMIT,'History displ
 same($stamp,Review::stamp($t->server_id,$t->id),'Audit growth leaves the reviewed state unchanged');
 tldRefusal(fn()=>$first->local(static fn()=>null),'Review key used.');
 $keyRows=DB::table(Review::KEYS)->get()->toJson();$archiveRows=DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson();
-$migration=require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000001_create_domains_foundation.php';
-$migration->down();$migration->up();FoundationSchema::verify();
+$migration=require dirname(__DIR__).'/Domains/database/migrations/2026_10_21_000034_create_staff_audit_storage.php';
+$migration->down();$migration->up();StaffAuditSchema::verify();
 same($keyRows,DB::table(Review::KEYS)->get()->toJson(),'Reinstall retains used keys');
 same($archiveRows,DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson(),'Reinstall retains encrypted archive bytes');
 foreach([Review::KEYS,AuditArchives::TABLE] as $table){
     Schema::rename($table,'retained_audit_fixture');
-    try{FoundationSchema::install();expect(false,'Missing retained audit table accepted');}
-    catch(RuntimeException $e){same('Partial retained Domains schema; restore and verify history before reinstall.',$e->getMessage(),'Missing audit storage refuses reinstall');}
+    try{StaffAuditSchema::install();expect(false,'Missing retained audit table accepted');}
+    catch(RuntimeException $e){expect(str_contains($e->getMessage(),'schema mismatch'),'Missing audit storage refuses reinstall');}
     finally{Schema::rename('retained_audit_fixture',$table);}
 }
-FoundationSchema::verify();
+StaffAuditSchema::verify();
 $used=DB::table(Review::KEYS)->first();
 try{DB::table(Review::KEYS)->insert((array)$used);expect(false,'Duplicate key accepted');}
 catch(Illuminate\Database\QueryException){}

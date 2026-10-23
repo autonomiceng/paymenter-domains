@@ -15,6 +15,7 @@ final class RuntimePorts
         if(!preg_match('/^[a-f0-9]{64}$/D',$fingerprint)||isset($this->factories[$fingerprint])){throw new \DomainException('Duplicate or invalid runtime binding.');}
         $this->factories[$fingerprint]=$factory;
     }
+    public function registered(Account $account): bool {return isset($this->factories[$account->account_fingerprint]);}
     private function composition(Account $account): array
     {
         $factory=$this->factories[$account->account_fingerprint]??throw new \DomainException('Runtime provider acceptance is required.');

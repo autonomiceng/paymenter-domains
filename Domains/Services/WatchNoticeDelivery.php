@@ -2,6 +2,7 @@
 // Native queue integration adapted from Enom 444f31c; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use App\Enums\NotificationEnabledStatus;
 use App\Models\{User,NotificationTemplate,EmailLog,Notification};
 use Illuminate\Support\Facades\{DB,Mail};
 use Illuminate\View\Compilers\BladeCompiler;
@@ -23,6 +24,9 @@ final class WatchNoticeDelivery
     {
         $template=NotificationTemplate::where('key','domains_watch_'.$n->kind)->first();
         if (!$template || !$template->enabled) { return null; }
+        if ($channel==='mail' && $template->mail_enabled===NotificationEnabledStatus::Force && config('settings.mail_disable')) {
+            throw new \DomainException('Mail channel temporarily unavailable.');
+        }
         $preference=$user->notificationsPreferences()->where('notification_template_id',$template->id)->first();
         if (!$template->isEnabledForPreference($preference,$channel) || ($channel==='mail' && config('settings.mail_disable'))) { return null; }
         $data=self::data($n);$stamp=hash('sha256',serialize($template->getRawOriginal()));$email=$user->email;

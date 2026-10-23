@@ -8,6 +8,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
 use Paymenter\Extensions\Servers\Domains\Services\StaffOperations;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffReason};
+use Illuminate\Support\Facades\{DB,Event};
+use Illuminate\Log\Events\MessageLogged;
+$logs=[];Event::listen(MessageLogged::class,static function($e)use(&$logs):void{$logs[]=['level'=>$e->level,'message'=>$e->message,'context'=>$e->context];});
 $op=$held('staff-unicode-reason.com');
 $write=fn(string $reason)=>$service->run($staff,$op->domain_id,$op->id,'release',$ticket($op->fresh(),'release'),$reason);
 foreach([str_repeat('é',4),str_repeat('é',501),"abcde\xff","line\nbreak"] as $bad){
@@ -24,16 +27,49 @@ catch(DomainException $e){same('Enter a one-line reason between 5 and 500 charac
 $action=collect(OperationActions::make($op->fresh(),StaffOperationReview::stamp($op->fresh(),$op->domain->fresh())))->first(fn($a)=>$a->getName()==='release');
 ($action->getActionFunction())(['review_key'=>$ticket($op,'release'),'reason'=>'éééé']);
 Notification::assertNotified(Notification::make()->danger()->title('Review refused')->body('Enter a one-line reason between 5 and 500 characters.'));
-foreach([new DomainException('PRIVATE-PROVIDER-SENTINEL'),new RuntimeException('PRIVATE-RUNTIME-SENTINEL')] as $error){
+same([],$logs,'Expected staff validation remains quiet');
+// Exercise the actual source guards through the staff action, without provider traffic.
+$refuse=static function($op,string $name,string $code,string $message)use(&$logs,$ticket,$staff):string{
+    \Illuminate\Support\Facades\Auth::setUser($staff);$logs=[];
+    $action=collect(OperationActions::make($op,StaffOperationReview::stamp($op,$op->domain->fresh())))->first(fn($a)=>$a->getName()===$name);
+    $key=$ticket($op,$name);($action->getActionFunction())(['review_key'=>$key,'reason'=>'Reviewed original evidence']);
+    Notification::assertNotified(Notification::make()->danger()->title('Review refused')->body($message));
+    same([['level'=>'warning','message'=>'Domains staff operation refused.','context'=>['reason'=>$code,'action'=>$name,'operation_id'=>(int)$op->id]]],$logs,'Exactly one warning with only safe diagnostic fields');
+    return $key;
+};
+$evidence=$held('staff-provider-evidence.com');$evidence->domain->update(['provider_domain_id'=>'synthetic-private-id']);
+$refuse($evidence,'refund','acquisition_provider_evidence','This domain has registrar evidence or its status has changed, so this request cannot be treated as unsent. A credit decision may be retained; check the ledger before retrying.');
+$line=$held('staff-no-paid-line.com');DB::table('domains_operations')->where('id',$line->id)->update(['funding_basis'=>'offline_demo']);$line->refresh();
+$refuse($line,'release','no_eligible_paid_line','This request has no eligible paid invoice line.');
+$missing=$held('staff-missing-invoice.com');DB::table('domains_operations')->where('id',$missing->id)->update(['invoice_id'=>999999]);$missing->refresh();
+$before=[$missing->attempt,$missing->funding,$missing->domain->fresh()->getRawOriginal(),$credit(),count($observation->calls),$state->writes];
+$key=$refuse($missing,'recheck','original_invoice_missing','The original invoice for this request could not be found.');
+$history=$missing->fresh()->policy['staff_actions'];
+same(['read_requested','read_failed'],array_column($history,'phase'),'Failed read never claims to have finished');
+same('original_invoice_missing',$history[1]['safe_code'],'Failed read retains its bounded reason');
+same($before,[$missing->fresh()->attempt,$missing->fresh()->funding,$missing->domain->fresh()->getRawOriginal(),$credit(),count($observation->calls),$state->writes],'Failed recheck preserves evidence, money and transport counts');
+commerceReject(fn()=>$service->run($staff,$missing->domain_id,$missing->id,'recheck',$key,'Reviewed original evidence'));
+same(2,count($missing->fresh()->policy['staff_actions']),'Consumed failed-read key cannot be reused');
+foreach([new DomainException('PRIVATE-PROVIDER-SENTINEL'),new RuntimeException('PRIVATE-RUNTIME-SENTINEL'),
+    (new Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(App\Models\User::class,['PRIVATE-CUSTOMER'])] as $error){
     app()->instance(StaffOperations::class,new class($error){
         public function __construct(private Throwable $error){}
         public function run(...$args):void{throw $this->error;}
     });
-    ($action->getActionFunction())(['review_key'=>$ticket($op,'release'),'reason'=>'Reviewed original evidence']);
-    Notification::assertNotified(Notification::make()->danger()->title('Review refused')->body('Reload this page and review current permissions, funding and retained evidence.'));
+    $code=$error instanceof DomainException?'guard_refused':($error instanceof Illuminate\Database\Eloquent\ModelNotFoundException?'native_record_missing':'producer_failed');
+    $refuse($op,'release',$code,'Reload this page and review current permissions, funding and retained evidence. Reference: release/'.$op->id.'/'.$code.'.');
+    expect(!str_contains(json_encode($logs),'PRIVATE-')&&!str_contains(json_encode($logs),$error::class),'No exception message or class logged');
     expect(!str_contains(json_encode(session()->get('filament.notifications',[])),'PRIVATE-'),'Raw exception text never shown');
 }
 app()->instance(StaffOperations::class,$service);
+$unknown=$held('staff-read-unknown.com');$error=new RuntimeException('PRIVATE-READ-SENTINEL');
+$review=new StaffOperationReview($staff->id,$unknown->domain_id,$unknown->id,'recheck',$ticket($unknown,'recheck'),'Reviewed original evidence',$clock);
+try{$review->read(fn()=>throw $error);expect(false,'Unknown read must propagate');}
+catch(RuntimeException $caught){same($error,$caught,'Read propagates the original throwable');}
+$history=$unknown->fresh()->policy['staff_actions'];
+same(['read_requested','read_failed'],array_column($history,'phase'),'Unknown failed read never claims success');
+same('producer_failed',$history[1]['safe_code'],'Unknown failed read uses a closed reason');
+expect(!str_contains(json_encode($history),'PRIVATE-')&&!str_contains(json_encode($history),RuntimeException::class),'Read audit contains no raw exception');
 // Shared validator preserves the distinct max-only adoption/PSL and ten-character resend rules.
 foreach([1,5,10] as $min){
     StaffReason::require(str_repeat('é',$min),$min,500);
