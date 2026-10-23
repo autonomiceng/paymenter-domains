@@ -11,6 +11,7 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
  * renewal: On or Off for an active domain's local renewal preference; otherwise empty. This does not describe the registrar's auto-renew setting.
  * renewalOff: cancellation|staff|adopted|owner, in that precedence; null when renewal is On.
  * autoRenew: owner switch url and enabled boolean, or empty when unavailable.
+ * testEnvironment: registered through a registrar account in test mode. demo: seeded demo data (DemoData::is); views show Demo over Test.
  * plannedRenewalDue: projected future due date for an adopted domain, separate from renewalDue.
  * renewNow: eligible owner renewal request: url, terms and last request date
  * (order_by, Y-m-d), or only invoice for this cycle's issued pending invoice, or only status
@@ -21,5 +22,5 @@ final readonly class OwnedDomain
     public function __construct(public string $name, public string $status, public string $tone,
         public ?string $expiry, public string $renewal, public ?string $renewalPrice,
         public array $actions, public array $progress, public array $setup, public array $transfer,
-        public array $management, public bool $testEnvironment, public bool $changesUnavailable = false, public ?string $renewalDue = null, public bool $setupPending = false, public bool $adopted = false, public ?string $plannedRenewalDue = null, public array $history = [], public array $renewalInvoice = [], public bool $originalDoNotRenew = false, public array $renewNow = [], public ?string $renewalOff = null, public array $autoRenew = []) {}
+        public array $management, public bool $testEnvironment, public bool $changesUnavailable = false, public ?string $renewalDue = null, public bool $setupPending = false, public bool $adopted = false, public ?string $plannedRenewalDue = null, public array $history = [], public array $renewalInvoice = [], public bool $originalDoNotRenew = false, public array $renewNow = [], public ?string $renewalOff = null, public array $autoRenew = [], public bool $demo = false) {}
 }

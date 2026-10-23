@@ -7,6 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{PrivacyMode, Support};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
+use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 final readonly class OwnedDomains
 {
     /** Enom's default nameservers, shown when an owner chooses them. The request itself sends UseDNS=default. */
@@ -32,7 +33,7 @@ final readonly class OwnedDomains
         if ($d->adoptionPending()) {
             return new OwnedDomain($d->domain, 'Being set up', 'info', null, 'Paused during setup', null,
                 ['show'=>route('domains.domains.show',$d->id)], [], ['required'=>false,'contacts'=>false], [], [],
-                Account::where('server_id',$d->server_id)->value('environment')==='test', setupPending:true);
+                Account::where('server_id',$d->server_id)->value('environment')==='test', setupPending:true, demo:DemoData::is($d));
         }
         $op=$this->operation($d); $obs=$d->observation??[]; $service=$d->service;
         $renewalState=RenewalStop::read($d);
@@ -179,7 +180,8 @@ final readonly class OwnedDomains
             $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
             renewNow:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
-            autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[]);
+            autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
+            demo:DemoData::is($d));
     }
     /** Existing cycle visibility is independent of eligibility to request a new invoice. */
     private function renewNow(Domain $d, bool $forms): array

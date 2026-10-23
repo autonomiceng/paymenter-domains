@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, ManagedPublicC
 final class DemoData
 {
     public const TOOLTIP = 'Demo data. Seeded for testing. Nothing is sent to a registrar and no money moves.';
+    public const TEST_TOOLTIP = 'Test registration. Made in the registrar\'s test environment. It is not a real domain and no money moves.';
     public const BANNER = 'Test system. Records tagged Demo are seeded examples.';
     public const ACCOUNTS = ['enom' => 'beco-demo-enom', 'namesilo' => 'beco-demo-namesilo'];
     private const MARKER = 'offline_demo';
@@ -28,8 +29,13 @@ final class DemoData
     {
         return Account::query()->whereIn('registrar_key', array_keys(self::ACCOUNTS))->get()->contains(static fn (Account $a): bool => self::is($a));
     }
-    public static function tag(bool $inline = false): HtmlString
+    public static function tag(bool $inline = false, bool $test = false): HtmlString
     {
-        return new HtmlString(view('domains::partials.demo-tag', ['inline' => $inline])->render());
+        return new HtmlString(view('domains::partials.demo-tag', ['inline' => $inline, 'test' => $test])->render());
+    }
+    /** Tag after a customer domain name: Demo for seeded data, else Test for a registrar test-mode registration, else nothing. */
+    public static function label(bool $demo, bool $test, bool $inline = false): HtmlString
+    {
+        return $demo || $test ? self::tag($inline, !$demo) : new HtmlString('');
     }
 }

@@ -48,7 +48,7 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
         $html = view('domains::index', ['domains' => $paginator])->render(); $dom = storefrontDom($html);
         $tests = count(array_filter($flags));
         same(0, $dom->query('//*[@class="domains-testbar"]')->length, 'Owned list has no test banner');
-        same(0, $dom->query('//tbody/tr/td/span[normalize-space()="Test"]')->length, 'Owned list has no Test pill');
+        same($tests, $dom->query('//tbody/tr/td/span[contains(@class,"domains-demo-tag--test")]')->length, 'Owned list tags each test registration');
         same(0, substr_count($html, $strings0['domain.registration.platform']), 'Owned list has no registration badge');
     }
     $emptyFiltered = view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator([], 50, 25)])->render();

@@ -25,7 +25,7 @@ foreach ([0,1] as $i) {
     foreach(['fingerprint','server_id','provider_order','profile_id','wholesale','syntheticonly']as$secret){expect(!str_contains($serialized,$secret),'Safe owner DTO: '.$secret);}
     foreach(['show','setup','code']as$page){
         if ($page==='setup' && !$i) { try { $controller->setup($request($user),$d->id); expect(false,'No empty transfer setup step'); } catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(404,$e->getStatusCode(),'No-op setup has no page'); } }
-        else { $html=$controller->$page($request($user),$d->id)->render();expect(str_contains($html,$d->domain),'Native controller real Blade page '.$page); same($page!=='show',str_contains($html,'This page uses a test system. Nothing here is registered for real.'),'D7 setup and code pages keep the test notice; the domain detail page has none'); }
+        else { $html=$controller->$page($request($user),$d->id)->render();expect(str_contains($html,$d->domain),'Native controller real Blade page '.$page); same($page!=='show',str_contains($html,'This page uses a test system. Nothing here is registered for real.'),'D7 setup and code pages keep the test notice; the domain detail page has none'); expect(storefrontDom($html)->query('//span[contains(@class,"domains-demo-tag--test")]')->length>0,'Test-mode domain carries the Test tag: '.$page); }
         foreach([$d->id,999999]as$id){try{$controller->$page($request($other),$id);expect(false,'Foreign and missing locator refused');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}}
     }
     $d->update(['status'=>'active']); $d->service->update(['status'=>'active']); $active=$owners->present($d->fresh());
@@ -47,7 +47,6 @@ foreach ([0,1] as $i) {
 }
 $index=$controller->index($request($user))->render();same(2,storefrontDom($index)->query('//tbody/tr')->length,'Only current native and ledger owner records');
 expect(!str_contains($index,'This page uses a test system.'),'Owned domain list has no test notice');
-same(0,storefrontDom($index)->query('//tbody/tr/td/span[normalize-space()="Test"]')->length,'Owned domain list has no Test tags');
 expect(str_contains($index,'domains-tone-warn'),'D3 real summary index actionable status tone');
 $r=$request($user);$r->query->add(['q'=>'other','sort'=>'-name','status'=>'pending']);$page=$controller->index($r);
 same(1,$page->getData()['domains']->total(),'Owner search and status filter retain the native/ledger predicate');same(2,$page->getData()['filterCounts'][''],'Counts cover only current owner');
@@ -58,8 +57,8 @@ foreach ([[$tlds[0]->server_id], []] as $testServers) {
     Illuminate\Support\Facades\DB::table('domains_accounts')->update(['environment'=>'live']);
     Illuminate\Support\Facades\DB::table('domains_accounts')->whereIn('server_id',$testServers)->update(['environment'=>'test']);
     $mixed=$controller->index($request($user))->render();
-    // Test registrations stay a staff-only fact; the customer list shows neither a tag nor a notice.
-    same(0,storefrontDom($mixed)->query('//tbody/tr/td/span[normalize-space()="Test"]')->length,'Owned domain list has no Test tags: '.count($testServers));
+    // Each test registration carries its own Test tag; the list has no page banner.
+    same(count($testServers),storefrontDom($mixed)->query('//tbody/tr/td/span[contains(@class,"domains-demo-tag--test")]')->length,'Owned domain list tags test registrations: '.count($testServers));
     same(0,storefrontDom($mixed)->query('//*[@class="domains-testbar"]')->length,'Owned domain list has no test notice: '.count($testServers));
 }
 Illuminate\Support\Facades\DB::table('domains_accounts')->update(['environment'=>'test']);

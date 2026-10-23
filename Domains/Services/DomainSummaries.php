@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName,WatchDnsObservation,ManagedPublicObservation,WatchRegistryObservation,Adoption,Operation,Account};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary;
+use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Batched local projection. No transport, writes, locks, lazy model relations or actor cache. */
 final class DomainSummaries
 {
@@ -114,7 +115,7 @@ final class DomainSummaries
                     if ($expiry && $factsCurrent && substr($expiry,0,10)<=gmdate('Y-m-d',$now)) { $states[]='watch.expired'; }
                     if ($factsCurrent && array_intersect($r->facts['status']??[],['redemption period','pending delete','redemptionPeriod','pendingDelete'])) { $states[]='watch.redemption'; }
                     $registration='domain.registration.'.($t->registration==='external' && !in_array('watch.not_registered',$states,true)?'external':'unknown');
-                    $url=route('domains.checks.show',['kind'=>'watch','id'=>$id]);
+                    $url=route('domains.checks.show',['kind'=>'watch','id'=>$id]);$t->setRelation('registry',$r);
                 } else {
                     $pending=$t->adoptionPending();$registration='domain.registration.'.($pending?'unknown':(in_array($t->status,['active','expired','grace','redemption'],true)?'platform':'unknown'));
                     $states[]=$pending?'adopt.pending':match($t->status){'active'=>$t->provider_expires_at===null?'domain.review':($t->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d',$now)?'watch.expired':'domain.active'),'expired','grace'=>'domain.expired','redemption'=>'domain.redemption','registration_pending'=>'domain.pending','transfer_pending'=>'domain.transfer','cancelled'=>'domain.cancelled',default=>'domain.review'};
@@ -148,7 +149,7 @@ final class DomainSummaries
                 $related=[];$hosts=[];
                 foreach ($c->related($kind,$id) as $s) { if (!$c->validSource($s)) { continue; }$h=$c->services[$s->service_id];$p=$c->products[$h->product_id];
                     $related[]=['id'=>(int)$h->id,'label'=>$p->name,'url'=>route('services.show',$h->id)];$hosts[]=$s->hostname; }
-                $out[$kind.':'.$id]=new DomainSummary($kind==='watch'?$t->canonical_name:$t->domain,$kind==='watch'?$t->display_name:null,$kind,$registration,$keys,$signals['website']['value'],$signals['email']['value'],array_values(array_unique($states)),DomainSummaryStrings::all(),$expiry,$precision,$source,$fresh,$due,$price,$related,array_values(array_unique($hosts)),['detail'=>$url,'preferences'=>($kind==='watch' && $t->state==='active' && $stamp)||($kind==='managed' && !$pending && isset($c->configs[$id]) && $c->services[$t->service_id]->status==='active' && $expiry>gmdate('Y-m-d',$now))?route('domains.checks.show',['kind'=>$kind,'id'=>$id]):null,'invoiceHistory'=>$kind==='managed' && $pending?route('invoices'):null,'compareTransfer'=>config('domains.watch_transfer.enabled',false) && $kind==='watch' && $t->state==='active' && $t->registration==='external' && $factsCurrent && WatchTransferPolicy::window(substr($expiry??'',0,10),$now) && !in_array('watch.redemption',$states,true) && array_filter($transferEndings,fn($ending)=>str_ends_with($t->canonical_name,'.'.$ending))?route('domains.watch.transfer',$id):null,'support'=>route('tickets.create')],$off,$lastKnown,max(0,count($c->related($kind,$id))-3),$noticeKeys,$noticeDates,$reminderOff,$projected,$kind==='managed' && in_array($t->server_id,$testServers),$nameserverFact?->toArray());
+                $out[$kind.':'.$id]=new DomainSummary($kind==='watch'?$t->canonical_name:$t->domain,$kind==='watch'?$t->display_name:null,$kind,$registration,$keys,$signals['website']['value'],$signals['email']['value'],array_values(array_unique($states)),DomainSummaryStrings::all(),$expiry,$precision,$source,$fresh,$due,$price,$related,array_values(array_unique($hosts)),['detail'=>$url,'preferences'=>($kind==='watch' && $t->state==='active' && $stamp)||($kind==='managed' && !$pending && isset($c->configs[$id]) && $c->services[$t->service_id]->status==='active' && $expiry>gmdate('Y-m-d',$now))?route('domains.checks.show',['kind'=>$kind,'id'=>$id]):null,'invoiceHistory'=>$kind==='managed' && $pending?route('invoices'):null,'compareTransfer'=>config('domains.watch_transfer.enabled',false) && $kind==='watch' && $t->state==='active' && $t->registration==='external' && $factsCurrent && WatchTransferPolicy::window(substr($expiry??'',0,10),$now) && !in_array('watch.redemption',$states,true) && array_filter($transferEndings,fn($ending)=>str_ends_with($t->canonical_name,'.'.$ending))?route('domains.watch.transfer',$id):null,'support'=>route('tickets.create')],$off,$lastKnown,max(0,count($c->related($kind,$id))-3),$noticeKeys,$noticeDates,$reminderOff,$projected,$kind==='managed' && in_array($t->server_id,$testServers),$nameserverFact?->toArray(),DemoData::is($t));
             }
         }
         return $out;

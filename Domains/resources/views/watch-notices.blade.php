@@ -2,7 +2,7 @@
 <div class="container mt-14 mb-10"><div class="domains">
 @include('domains::partials.styles')
 <a class="domains-back" href="{{ route('domains.domains.index') }}">Domains</a>
-<h1 class="domains-title domains-wrap">{{ $name }}</h1><p class="domains-lede">Public domain checks · Dates are UTC</p>
+<h1 class="domains-title domains-wrap">{{ $name }}@isset($summary){{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($summary->demo, $summary->testEnvironment) }}@endisset</h1><p class="domains-lede">Public domain checks · Dates are UTC</p>
 @php($noticeKinds=array_column($notices,'kind'))
 @php($noticesBelow=array_keys(array_filter(['ns_changed'=>in_array('ns_changed',$noticeKinds,true)||in_array('ns_changed',$portal,true),'expired'=>in_array('expired',$noticeKinds,true)||in_array('registry_expiry_reached',$portal,true)])))
 @isset($summary)<section class="domains-panel domains-section" aria-label="Domain details">@include('domains::partials.summary',['summaryFinancials'=>$kind!=='managed','summaryOnChecks'=>true,'summaryNoticesBelow'=>$noticesBelow])@if($kind==='managed')<p><a class="domains-a" href="{{ $summary->urls['detail'] }}">View registration details and billing</a></p>@endif</section>@endisset
