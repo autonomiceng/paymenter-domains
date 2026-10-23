@@ -18,7 +18,7 @@
 @endif
 <button type="submit" class="domains-btn domains-btn--secondary">{{ $label }}</button>
 @if ($action === 'glue_delete')
-@include('domains::partials.owner-confirm', ['id'=>'glue-'.$index, 'open'=>$match && ($retry['confirm'] ?? false), 'cancel'=>$domain->actions['show'].'#glue', 'title'=>'Delete glue record?', 'button'=>'Delete',
+@include('domains::partials.owner-confirm', ['id'=>'glue-'.$index, 'open'=>$match && ($retry['confirm'] ?? false), 'cancel'=>$domain->actions['show'].'?edit=glue#edit-glue', 'title'=>'Delete glue record?', 'button'=>'Delete',
     'facts'=>[['label'=>'Nameserver','value'=>$host['host']], ['label'=>'IP address','value'=>$host['ip']]],
     'risk'=>'Domains that use this nameserver can stop resolving.'])
 @endif

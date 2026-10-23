@@ -22,7 +22,7 @@ $billing=new DomainBilling($bindings,$guard,$clock);$owners=new OwnedDomains($cl
 same('Off',$dto->renewal,'DNR badge');same(['label'=>'Imported','state'=>'Completed'],$dto->progress[0],'Adoption activity');same($old->fresh()->number,$dto->history[0]['number'],'Batch native invoice number');same('Paid',$dto->history[0]['status'],'Historical invoice label');same(null,$dto->plannedRenewalDue,'No future due CTA for DNR');
 same(route('invoices.show',$old->fresh()),$dto->history[0]['url'],'Historical URL uses native number route key despite numeric ID collision');
 $html=view('domains::show',['domain'=>$dto])->render();
-expect(!str_contains($html,'Company&gt; Registration')&&!str_contains($html,'<Synthetic & Company>'),'Detail has no registration badge and never renders the company unescaped');expect(str_contains($html,'This domain is set to cancel when it expires on'),'Approved cancellation copy');expect(str_contains($html,'<td>Imported</td><td>Completed</td>'),'Adoption visible in activity');
+expect(!str_contains($html,'Company&gt; Registration')&&!str_contains($html,'<Synthetic & Company>'),'Detail has no registration badge and never renders the company unescaped');expect(str_contains($html,'<span class="domains-sub">Cancels ')&&preg_match('~<dt>Auto-renew .*?</dt><dd>Off <a class="domains-a" href="[^"]+">Contact support</a></dd>~s',$html)===1,'Approved cancellation copy');expect(str_contains($html,'<td>Imported</td> <td>Completed</td>'),'Adoption visible in activity');
 same('cancellation',$dto->renewalOff,'Native cancellation takes precedence over adopted stop');
 DB::transaction(function()use($d,$bindings):void {
 $l=\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d);$l['cancel']=collect();
@@ -61,13 +61,13 @@ $product->server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_en
 $invoice=$billing->invoice($d->id,$owner);$op=Operation::where('invoice_id',$invoice->id)->sole();
 $product->server->settings()->updateOrCreate(['key'=>'domains_due_days'],['value'=>10,'type'=>'string']);
 $issued=$owners->present($d->fresh(),false);same('2027-10-13',$issued->renewalDue,'Issued due remains frozen after setting edit');same(null,$issued->plannedRenewalDue,'Issued debt hides projected replacement date');
-$issuedHtml=view('domains::show',['domain'=>$issued])->render();expect(str_contains($issuedHtml,'Renewal invoice issued'),'Actual issued-debt label');expect(!str_contains($issuedHtml,'An invoice will be issued'),'Issued debt never promises a second invoice');
+$issuedHtml=view('domains::show',['domain'=>$issued])->render();expect(str_contains($issuedHtml,'<dt>Next invoice</dt><dd>Due Oct 13, 2027 <a class="domains-a" href="'.route('invoices.show',$invoice).'">Pay invoice</a>'),'Actual issued-debt label');expect(!str_contains($issuedHtml,'An invoice will be issued'),'Issued debt never promises a second invoice');
 $c=App\Models\ServiceCancellation::create(['service_id'=>$service->id,'type'=>'end_of_period','reason'=>'Stop the next renewal after issued debt']);
 $stopped=$owners->present($d->fresh(),false);same('Off',$stopped->renewal,'Later stop turns future renewal off');same(false,$stopped->originalDoNotRenew,'Later stop is distinct from original DNR');same('pending',$stopped->renewalInvoice['state'],'Issued debt remains visible after later stop');
-$stoppedHtml=view('domains::show',['domain'=>$stopped])->render();expect(str_contains($stoppedHtml,'Contact support to keep it.'),'Later stop asks for support');expect(!str_contains($stoppedHtml,'No renewal invoices or renewal reminders are scheduled.'),'Later stop never promises suppression of issued reminders');
+$stoppedHtml=view('domains::show',['domain'=>$stopped])->render();expect(preg_match('~<dt>Auto-renew .*?</dt><dd>Off <a class="domains-a" href="[^"]+">Contact support</a></dd>~s',$stoppedHtml)===1&&str_contains($stoppedHtml,'>Pay invoice</a>'),'Later stop asks for support');expect(!str_contains($stoppedHtml,'No renewal invoices or renewal reminders are scheduled.'),'Later stop never promises suppression of issued reminders');
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
 $paid=$owners->present($d->fresh(),false);same(null,$paid->plannedRenewalDue,'Paid issued cycle never projects a new invoice');same('paid',$paid->renewalInvoice['state'],'Paid debt presented distinctly');
-$paidHtml=view('domains::show',['domain'=>$paid])->render();expect(str_contains($paidHtml,'Renewal payment received'),'Actual paid renewal label');expect(!str_contains($paidHtml,'An invoice will be issued'),'Paid cycle never promises another invoice');
+$paidHtml=view('domains::show',['domain'=>$paid])->render();expect(str_contains($paidHtml,'<dt>Next invoice</dt><dd>Paid')&&str_contains($paidHtml,'<span class="domains-sub">Updates when the renewal completes</span>'),'Actual paid renewal label');expect(!str_contains($paidHtml,'An invoice will be issued'),'Paid cycle never promises another invoice');
 // The adopted page uses the current cycle for both retained debt and replacement requests.
 foreach(['WatchDnsSchema','ManagedPublicWorkSchema','ManagedPublicSchema','WatchScheduleSchema','WatchNoticeSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
 $c->delete();$session=app('request')->session();$controller=new OwnerRenewalController($owners,$billing);
@@ -85,18 +85,18 @@ config(['settings.credits_auto_use'=>false]);
 foreach(['unpaid','refund'] as $replacementCase){
     $before=$debt();$dto=$owners->present($d->fresh());$html=$page();
     same([],$dto->renewalInvoice,'Adopted replaceable cycle does not suppress form: '.$replacementCase);
-    expect(isset($dto->renewNow['url'])&&str_contains($html,'Create renewal invoice'),'Adopted replacement request visible: '.$replacementCase);
-    expect(!str_contains($html,'Renewal under review')&&!str_contains($html,'Renewal invoice cancelled'),'Adopted replacement page has no stale cycle status: '.$replacementCase);
+    expect(isset($dto->renewNow['url'])&&str_contains($html,'>Create invoice<'),'Adopted replacement request visible: '.$replacementCase);
+    expect(!str_contains($html,'Renewal being checked')&&!str_contains($html,'Invoice cancelled'),'Adopted replacement page has no stale cycle status: '.$replacementCase);
     same($before,$debt(),'Adopted replacement page is read-only: '.$replacementCase);
     $response=$post();$replacement=Operation::where('domain_id',$d->id)->where('action','renew')->orderByDesc('id')->firstOrFail();
     same($op->operation_key.':replacement:'.($replacementCase==='unpaid'?1:2),$replacement->operation_key,'Adopted replacement has its own cycle key: '.$replacementCase);
     same(route('invoices.show',$replacement->invoice_id),$response->getTargetUrl(),'Adopted POST returns replacement invoice: '.$replacementCase);
     $after=$debt();same($response->getTargetUrl(),$post()->getTargetUrl(),'Adopted replacement POST retry returns same invoice: '.$replacementCase);same($after,$debt(),'Adopted retry creates no duplicate debt: '.$replacementCase);
-    $html=$page();same(1,substr_count($html,'>Renewal invoice issued<'),'One adopted pending cycle panel: '.$replacementCase);
-    expect(str_contains($html,'View renewal invoice')&&!str_contains($html,'Create renewal invoice'),'Adopted current debt replaces request form: '.$replacementCase);
+    $html=$page();same(1,substr_count($html,'>Pay invoice</a>'),'One adopted pending cycle panel: '.$replacementCase);
+    expect(str_contains($html,'>Pay invoice</a>')&&!str_contains($html,'>Create invoice<'),'Adopted current debt replaces request form: '.$replacementCase);
     $item=App\Models\InvoiceItem::findOrFail($replacement->invoice_item_id);$rawItem=$item->getRawOriginal();
     DB::table('invoice_items')->where('id',$item->id)->update(['price'=>'0.01']);$html=$page();
-    expect(str_contains($html,'Renewal under review')&&!str_contains($html,'View renewal invoice')&&!str_contains($html,'Create renewal invoice'),'Adopted invalid retained item shows review: '.$replacementCase);
+    expect(str_contains($html,'Renewal being checked')&&!str_contains($html,'>Pay invoice</a>')&&!str_contains($html,'>Create invoice<'),'Adopted invalid retained item shows review: '.$replacementCase);
     DB::table('invoice_items')->where('id',$item->id)->update($rawItem);
 
     if($replacementCase==='refund'){break;}

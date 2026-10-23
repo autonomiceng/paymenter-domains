@@ -47,7 +47,7 @@ foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     $list=storefrontDom($controller->index($request())->render());
     $row=$list->query('//tbody/tr')->item(0);
     $show=storefrontDom($controller->show($request(),$d->id)->render());
-    $header=$show->query('//div[@class="domains-dhead__meta"]')->item(0);
+    $header=$show->query('//div[@class="domains-ph"]/span[@class="domains-pill"]')->item(0);
     $card=storefrontDom(view('domains::service',['domain'=>$owners->present($d->fresh())])->render());
     $native=app()->make(NativePresenter::class,['owned'=>$owners])->service($user,(int)$d->service_id);
     $seen=['list'=>$text($list,'domains-status',$row),'detail'=>$text($show,'domains-status',$header),'service card'=>$text($card,'domains-status'),'services page'=>[$native?->status]];

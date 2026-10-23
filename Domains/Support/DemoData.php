@@ -29,6 +29,14 @@ final class DemoData
     {
         return Account::query()->whereIn('registrar_key', array_keys(self::ACCOUNTS))->get()->contains(static fn (Account $a): bool => self::is($a));
     }
+    /** A demo domain on the demo Enom account, while that account is off and a real Enom account runs in test mode: nothing syncs. */
+    public static function syncPaused(Domain $domain): bool
+    {
+        if (!self::is($domain)) { return false; }
+        $account = Account::where('server_id', $domain->server_id)->first();
+        return $account !== null && $account->registrar_key === 'enom' && self::is($account) && !$account->processing_enabled
+            && Account::query()->where('registrar_key', 'enom')->where('environment', 'test')->get()->contains(static fn (Account $a): bool => !self::is($a));
+    }
     public static function tag(bool $inline = false, bool $test = false): HtmlString
     {
         return new HtmlString(view('domains::partials.demo-tag', ['inline' => $inline, 'test' => $test])->render());

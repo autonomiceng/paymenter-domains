@@ -49,7 +49,7 @@ $management=['nameservers'=>$section('Nameservers',['max'=>12,'defaults'=>false,
 $domain=new OwnedDomain('example.com','Active','ok','2027-01-15','On','$14.00',['show'=>'/domains/1'],[],
     ['contacts'=>false,'required'=>false,'nameservers'=>true,'privacy'=>false,'defaults'=>true,'maxNameservers'=>12],[],$management,false,autoRenew:['url'=>'/domains/1/auto-renew','enabled'=>true]);
 $dom=storefrontDom(view('domains::show',['domain'=>$domain])->render());
-same(1,$dom->query('//a[normalize-space()="Domain help"][@href="'.route('domains.help').'"]')->length,'Manage page header links to Domain help once');
+same(0,$dom->query('//a[normalize-space()="Domain help"]')->length,'Help is said once, in each row popover, not again in the header');
 $buttons=$dom->query('//*[@data-help]/button');
 same(count($management)+1,$buttons->length,'Each section and auto-renew have one help button');
 foreach ($buttons as $button) {
@@ -62,5 +62,5 @@ foreach ($buttons as $button) {
     same(route('domains.help'),$path,'Learn more opens the help page');
     expect(array_key_exists($anchor,OwnerHelp::ANCHORS),'Learn more points to an existing anchor: '.$anchor);
 }
-foreach (array_keys($management) as $cap) { same(1,$dom->query('//section[@id="'.$cap.'"]//*[@data-help]/button[@aria-controls="help-'.$cap.'"]')->length,'Help button next to the title: '.$cap); }
+foreach (array_keys($management) as $cap) { same(1,$dom->query('//li[@id="'.$cap.'"]/span[@class="domains-row__l"]//*[@data-help]/button[@aria-controls="help-'.$cap.'"]')->length,'Help button next to the title: '.$cap); }
 $nativeSuccessful=true;echo "Owner help checks passed.\n";

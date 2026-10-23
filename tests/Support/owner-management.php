@@ -38,13 +38,13 @@ same($forms->length,$dom->query('//form/input[@name="_token"]')->length,'Every f
 same($forms->length,$dom->query('//form/input[@name="_request_key"]')->length,'Every form has single-use intent');
 same(0,$dom->query('//form[not(contains(@class,"domains-record-form"))]//input[@type="checkbox"]')->length,'Owner management forms have no acknowledgement checkboxes');
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a ticked or hidden confirmation');
-foreach(['nameservers','lock','auth_code_email']as$risky){if(isset($dto->management[$risky])){same(1,$dom->query('//section[@id="'.$risky.'"]//form[@data-confirm]//dialog[not(@open)]//button[@name="confirmed"]')->length,'Risky action has a closed confirm dialog: '.$risky);}}
-foreach(['contacts','privacy']as$plain){if(isset($dto->management[$plain])){same(0,$dom->query('//section[@id="'.$plain.'"]//dialog')->length,'Plain action has no confirm step: '.$plain);}}
+foreach(['nameservers','lock','auth_code_email']as$risky){if(isset($dto->management[$risky])&&!($risky==='lock'&&($dto->management['lock']['state']??null)===false)){same(1,$dom->query('//li[@id="'.$risky.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][not(@open)]//button[@name="confirmed"]')->length,'Risky action has a closed confirm dialog: '.$risky);}}
+foreach(['contacts','privacy']as$plain){if(isset($dto->management[$plain])){same(1,$dom->query('//li[@id="'.$plain.'"]')->length,'Plain action row rendered: '.$plain);same(0,$dom->query('//li[@id="'.$plain.'"]//dialog[@data-confirm-dialog]|//li[@id="'.$plain.'"]//form[@data-confirm]')->length,'Plain action has no confirm step: '.$plain);}}
 foreach($free?['dns','srv','ds','glue','auth_code_display']:['dns','srv','ds','auth_code_display']as$a){expect(!isset($dto->management[$a]),'Unsupported or disabled advanced/display forms are absent');}
 if($free){expect(!str_contains($html,'privacy_purchase'),'Free privacy offers no paid action');commerceReject(fn()=>$driver->validate('nameservers',['use_default'=>true,'nameservers'=>[]],$d->domain));}
 else {
     commerceReject(fn()=>$driver->validate('nameservers',['nameservers'=>[]],$d->domain));
-    expect(str_contains($html,'Use default nameservers'),'Explicit reset is distinct from custom nameservers');
+    expect(str_contains($html,'Use Beco nameservers'),'Explicit reset is distinct from custom nameservers');
     $r=$post('nameservers',['use_default'=>'1']);$controller->manage($r,$d->id,'nameservers');$reset=$d->operations()->where('action','nameservers')->orderByDesc('id')->firstOrFail();
     same(['nameservers'=>[],'use_default'=>true],$reset->payload,'Named reset intent is frozen through the engine');
     $state->ns=['dns1.name-services.com','dns2.name-services.com'];$state->apply=false;Illuminate\Support\Facades\Cache::forget('domains-write-slot:'.$d->account_fingerprint);
@@ -57,16 +57,16 @@ foreach([['lock',['locked'=>'0','confirmed'=>'0']],['lock',['locked'=>'0']],['na
     $before=Operation::count();$r=$post($action,$data);if(!array_key_exists('confirmed',$data)){$r->request->remove('confirmed');}
     $response=$controller->manage($r,$d->id,$action);same($before,Operation::count(),'Missing confirmation creates no request: '.$action);
     same(422,$response->getStatusCode(),'Missing confirmation re-renders the page: '.$action);$confirmDom=storefrontDom($response->getContent());
-    same(1,$confirmDom->query('//section[@id="'.$action.'"]//form[@data-confirm]//dialog[@open]//button[@name="confirmed"][@value="1"]')->length,'Inline confirm step without script: '.$action);
+    same(1,$confirmDom->query('//li[@id="'.$action.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][@open][not(ancestor::dialog[not(@open)])]//button[@name="confirmed"][@value="1"]')->length,'Inline confirm step without script: '.$action);
 }
-expect(str_contains($response->getContent(),'Email the transfer code?'),'Confirm step names the concrete action');
+expect(str_contains($response->getContent(),'Email the auth code?'),'Confirm step names the concrete action');
 // Plain edits need no acknowledgement: this contacts request reaches engine validation.
 $r=$post('contacts',['role'=>'all','contact'=>[]]);$r->request->remove('confirmed');$controller->manage($r,$d->id,'contacts');
 expect($session->get('errors')->has('contact.phone'),'Engine contact paths map to submitted fields');
 app('view')->share('errors',$session->get('errors'));
 $html=(new OwnedDomainController($owners))->show($r,$d->id)->render();$dom=storefrontDom($html);
 expect($dom->query('//input[@name="contact[phone]"][@aria-invalid="true"]')->length>0,'Real Blade identifies the invalid contact field');
-expect($dom->query('//input[@name="contact[phone]"][@aria-invalid="true"]/ancestor::details[@open]')->length>0,'Invalid contact forms open without script');
+expect($dom->query('//input[@name="contact[phone]"][@aria-invalid="true"]/ancestor::dialog[@open]')->length>0,'Invalid contact forms open without script');
 expect(str_contains($html,'Check this contact detail.'),'Fixed contact error copy is rendered without submitted values');
 $r=$post('auth_code_email');$controller->manage($r,$d->id,'auth_code_email');
 $dto=$owners->present($d->fresh());expect(!isset($dto->management['auth_code_email']),'Email cooldown removes the unavailable action');

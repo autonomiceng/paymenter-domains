@@ -119,6 +119,7 @@
     "tests/status-pill-test.php",
     "tests/status-pages-test.php",
     "tests/domains-list-test.php",
+    "tests/domain-page-test.php",
     "tests/missing-test.php",
     "tests/demo-data-test.php",
     "tests/customer-tags-test.php",

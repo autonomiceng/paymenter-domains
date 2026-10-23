@@ -33,16 +33,16 @@ same(1,$dom->query('//dialog[@id="confirm-nameservers"]//div[dt="Current"][@hidd
 // Defaults fill the textarea with script; without script the same button submits the server-side defaults path.
 same(implode("\n",OwnedDomains::DEFAULT_NAMESERVERS),$dom->query('//form[@data-default-servers]')->item(0)?->getAttribute('data-default-servers'),'Default list ready to fill the textarea');
 $fill=$dom->query('//button[@data-fill-defaults]')->item(0);
-same(['submit','use_default','1'],[$fill->getAttribute('type'),$fill->getAttribute('name'),$fill->getAttribute('value')],'Use default nameservers falls back to the defaults path without script');
+same(['submit','use_default','1'],[$fill->getAttribute('type'),$fill->getAttribute('name'),$fill->getAttribute('value')],'Use Beco nameservers falls back to the defaults path without script');
 expect($fill->hasAttribute('formnovalidate')&&str_contains($fill->getAttribute('class'),'domains-btn--ghost'),'Defaults is a secondary button that skips the empty-field check');
-same(1,$dom->query('//section[@id="nameservers"]//button[contains(@class,"domains-btn--primary")][not(ancestor::dialog)]')->length,'One primary Save button');
+same(1,$dom->query('//li[@id="nameservers"]//dialog[@id="edit-nameservers"]//button[contains(@class,"domains-btn--primary")][not(ancestor::dialog[@data-confirm-dialog])]')->length,'One primary Save button');
 same(1,$dom->query('//input[@data-use-default][@disabled]')->length,'Defaults flag stays off until defaults are chosen');
 
 // No acknowledgement checkboxes; risky actions get one closed confirm dialog, plain actions none.
 same(0,$dom->query('//input[@type="checkbox"]')->length,'No checkbox inputs in owner management views');
-foreach(['nameservers','lock','glue'] as $cap){same(1,$dom->query('//section[@id="'.$cap.'"]//form[@data-confirm]//dialog[not(@open)]//button[@type="submit"][@name="confirmed"][@value="1"]')->length,'Risky action confirms in a dialog: '.$cap);}
-same(1,$dom->query('//section[@id="auth_code_email"]//dialog')->length,'Transfer code confirms in a dialog');
-same(0,$dom->query('//section[@id="privacy"]//dialog')->length,'Privacy has no confirm step');
+foreach(['nameservers','lock','glue'] as $cap){same(1,$dom->query('//li[@id="'.$cap.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][not(@open)]//button[@type="submit"][@name="confirmed"][@value="1"]')->length,'Risky action confirms in a dialog: '.$cap);}
+same(1,$dom->query('//li[@id="auth_code_email"]//form[@data-confirm]//dialog[@data-confirm-dialog]')->length,'Auth code email confirms in a dialog');
+same(1,$dom->query('//li[@id="privacy"]')->length,'Privacy row rendered');same(0,$dom->query('//li[@id="privacy"]//dialog')->length,'Privacy has no confirm step');
 same(0,$dom->query('//form[@action="/a"]//dialog')->length,'Adding a glue record has no confirm step');
 same(['Nameserver','ns1.example.com','IP address','192.0.2.53'],array_values(array_filter(array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//dialog[@id="confirm-glue-0"]//dl/div/*'))))),'Glue delete names the concrete record');
 
@@ -52,7 +52,7 @@ $dom=$render($step);
 same(implode("\n",OwnedDomains::DEFAULT_NAMESERVERS),$dom->query('//textarea[@name="nameservers"]')->item(0)->textContent,'Defaults confirm step shows the default list');
 same(1,$dom->query('//input[@data-use-default][not(@disabled)]')->length,'Defaults confirm step keeps the defaults path');
 same(1,$dom->query('//dialog[@id="confirm-nameservers"][@open]')->length,'Confirm step renders inline without script');
-same('/domains/1#nameservers',$dom->query('//dialog[@open]//a[normalize-space()="Cancel"]')->item(0)?->getAttribute('href'),'Inline step cancels back to the form');
+same('/domains/1?edit=nameservers#edit-nameservers',$dom->query('//dialog[@id="confirm-nameservers"][@open]//a[normalize-space()="Cancel"]')->item(0)?->getAttribute('href'),'Inline step cancels back to the form');same(1,$dom->query('//dialog[@id="edit-nameservers"][@open]')->length,'The editor stays open around the confirm step');
 same(5,$dom->query('//dialog[@open]//div[dt="New"]//span')->length,'Confirm step lists the new nameservers');
 $dom=$render(OwnerRecordDraft::apply($dto($management(null)),'glue_delete',['host'=>'ns1.example.com'],confirm:true));
 same(1,$dom->query('//dialog[@id="confirm-glue-0"][@open]')->length,'Glue delete confirm step opens for the chosen record');

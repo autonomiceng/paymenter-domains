@@ -37,22 +37,22 @@ $audit=static fn()=>WatchAudit::where('subject_type','domain')->where('subject_i
 $dto=$owners->present($d->fresh());same(['On',null,true],[$dto->renewal,$dto->renewalOff,$dto->autoRenew['enabled']??null],'Legacy absence means On');
 same([],$owners->present($d->fresh(),false)->autoRenew,'Read-only presentation hides switch');
 $save($d,true);same(0,$audit(),'Legacy On is idempotent without a write');
-$html=$page($d);foreach(['Turn off auto-renew','Turn off auto-renew?','Oct 18, 2027','will expire on this date unless you renew it.','name="confirmed"','name="_token"'] as $text){expect(str_contains($html,$text),'Switch renders '.$text);}
+$html=$page($d);foreach(['form="form-auto-renew" class="domains-a domains-linkbtn">Turn off</button>','Turn off auto-renew?','>Turn off auto-renew<',$d->domain.' expires on Oct 18, 2027 unless you renew it.','name="confirmed"','name="_token"'] as $text){expect(str_contains($html,$text),'Switch renders '.$text);}
 $stale=$req($d,['enabled'=>'0','confirmed'=>'1']);$controller->save($stale,$d->id);
 try{$controller->save($stale,$d->id);expect(false,'Replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Consumed key rejected');}
 $save($d,false);same(1,$audit(),'Repeated Off adds no audit');
 $dto=$owners->present($d->fresh());same(['Off','owner',false],[$dto->renewal,$dto->renewalOff,$dto->autoRenew['enabled']??null],'Owner Off is distinct and reversible');
 expect(isset($dto->renewNow['url']),'Owner Off still offers manual renewal');
-$html=$page($d);expect(str_contains($html,'Auto-renew is off. This domain expires on <time datetime="2027-10-18">Oct 18, 2027</time>. Renew it now or turn auto-renew back on.'),'Exact owner notice');
-expect(str_contains($html,'Turn on auto-renew'),'Off shows On switch');
+$html=$page($d);expect(str_contains($html,'<span class="domains-sub">Cancels Oct 18, 2027</span>')&&str_contains($html,'>Renew now</a>')&&!str_contains($html,'Auto-renew is off'),'Off shows the cancel date and Renew now, with no notice');
+expect(str_contains($html,'form="form-auto-renew" class="domains-a domains-linkbtn">Turn on</button>')&&!str_contains($html,'Turn off auto-renew?'),'Off shows On switch');
 // The owner notice offers renewal through the day before expiry.
 $clock->instant=new DateTimeImmutable('2027-10-17T12:00:00Z');
 expect(isset($owners->present($d->fresh())->renewNow['url']),'Owner Off offers renewal one day before expiry');
-expect(str_contains($page($d),'Renew it now or turn auto-renew back on.'),'Late owner notice offers renewal');
+expect(str_contains($page($d),'>Renew now</a>'),'Late owner page offers renewal');
 $clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');$late=$page($d);
 expect(!isset($owners->present($d->fresh())->renewNow['url']),'Cutoff hides manual renewal');
-expect(str_contains($late,'Auto-renew is off. This domain expires on <time datetime="2027-10-18">Oct 18, 2027</time>. Contact support if you want to keep it.'),'Owner notice after cutoff');
-expect(!str_contains($late,'Renew it now'),'No renewal promise after cutoff');
+expect(str_contains($late,'<span class="domains-date domains-tone-text-bad"><time datetime="2027-10-18">Oct 18, 2027</time></span> <span class="domains-sub">Cancels Oct 18, 2027</span>'),'Owner page after cutoff shows the cancel date in danger colour');
+expect(!str_contains($late,'Renew now'),'No renewal promise after cutoff');
 $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
 $summary=(new DomainSummaries)->one($user,'managed',$d->id);expect($summary->renewalOff,'List summary also shows Off');
 $before=Invoice::count();same(null,$billing->invoice($d->id),'Off skips scheduled invoice');same($before,Invoice::count(),'Off creates no invoice');
@@ -102,8 +102,8 @@ foreach(['staff','cancellation'] as $stop){
     $session->forget('errors');$controller->save($req($held,['enabled'=>'1']),$held->id);
     expect($session->get('errors')?->has('auto-renew')===true,'Hard stop returns safe HTTP error');
     same(false,$held->fresh()->renewal_policy['owner_auto_renew'],'Refused HTTP toggle changes nothing');
-    $html=$page($held);expect(!str_contains($html,'Turn on auto-renew')&&!str_contains($html,'Turn off auto-renew'),'Hard stop hides switch HTML: '.$stop);
-    expect(str_contains($html,$stop==='cancellation'?'This domain is set to cancel when it expires on':'Renewals are paused for this domain. Contact support to keep it.'),'Hard stop explains support action');
+    $html=$page($held);expect(!str_contains($html,'form-auto-renew')&&!str_contains($html,'Turn off auto-renew'),'Hard stop hides switch HTML: '.$stop);
+    expect(preg_match('~<dt>Auto-renew .*?</dt><dd>Off <a class="domains-a" href="[^"]+">Contact support</a></dd>~s',$html)===1&&str_contains($html,'<span class="domains-sub">Cancels '),'Hard stop shows Off with Contact support and the cancel date: '.$stop);
     $cancel?->delete();
 }
 // All switch lifecycle refusals are checked at the write, independently of presentation.

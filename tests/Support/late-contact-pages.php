@@ -26,7 +26,7 @@ foreach([0,1]as$i){
         $late->fresh()->update(['attempt'=>$attempt]);$heldBefore=$late->fresh()->getRawOriginal();
         foreach(['show','code']as$page){
             $html=$controller->$page($request($user),$late->domain_id)->render();
-            expect(!str_contains($html,'Use updated account details')&&!str_contains($html,'Update details for review'),'Unknown or sent attempt hides contact recovery');
+            expect(!str_contains($html,'Use updated account details')&&!str_contains($html,'Update your details so we can finish the transfer.'),'Unknown or sent attempt hides contact recovery');
         }
         $session->forget('errors');$r=$request($user);$r->setMethod('POST');
         $r->request->set('_request_key',Paymenter\Extensions\Servers\Domains\Http\FormKeys::issue($r,'owner:'.$late->domain_id.':recovery'));
@@ -40,7 +40,7 @@ foreach([0,1]as$i){
     foreach(['show','setup','code']as$page){
         $html=$controller->$page($request($user),$late->domain_id)->render();
         same(0,storefrontDom($html)->query('//input[@name="transfer_code"]')->length,'Late contact page never reopens code entry');
-        expect(str_contains($html,$page==='show'?'Update details for review':'Use updated account details'),'Late contact fix remains available');
+        expect(str_contains($html,$page==='show'?'Update your details so we can finish the transfer.':'Use updated account details'),'Late contact fix remains available');
         expect(!str_contains($html,'before we continue'),'Late overview makes no continuation promise');
     }
     $r=$request($user);$r->setMethod('POST');$r->request->set('_request_key',Paymenter\Extensions\Servers\Domains\Http\FormKeys::issue($r,'owner:'.$late->domain_id.':recovery'));

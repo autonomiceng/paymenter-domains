@@ -263,15 +263,6 @@
 .domains-dhead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem 2rem; }
 .domains .domains-dhead__meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-top: .5rem; font-size: .875rem; color: var(--e-muted); }
 .domains .domains-dhead__meta strong { color: var(--e-fg); font-weight: 600; }
-.domains .domains-tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--e-line); overflow-x: auto; scrollbar-width: none; }
-.domains .domains-tabs::-webkit-scrollbar { display: none; }
-.domains .domains-tab { display: inline-flex; align-items: center; gap: .375rem; padding: .75rem .875rem; font-size: .875rem; font-weight: 600; color: var(--e-muted);
-    border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
-.domains .domains-tab:hover { color: var(--e-fg); }
-.domains .domains-tab[aria-selected="true"] { color: var(--e-fg); border-bottom-color: var(--e-accent); }
-.domains .domains-tab .domains-dot { width: .4375rem; height: .4375rem; border-radius: 50%; background: var(--e-warn); }
-.domains .domains-tabpanel + .domains-tabpanel { margin-top: 1.5rem; }
-.domains.domains-js .domains-tabpanel { margin-top: 1.25rem; }
 .domains .domains-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
 .domains .domains-facts { padding-block: .5rem; }
 .domains .domains-facts:not(:last-child) { border-bottom: 1px solid var(--e-line); }
@@ -424,5 +415,43 @@
 .domains .domains-prose p, .domains .domains-prose ul { margin-top: .625rem; max-width: 42rem; }
 .domains .domains-prose ul { padding-left: 1.25rem; list-style: disc; }
 .domains .domains-prose li + li { margin-top: .25rem; }
+/* ---------- Domain page ---------- */
+.domains .domains-crumb { font-size: .8125rem; color: var(--e-muted); margin-bottom: .5rem; }
+.domains .domains-crumb a { color: var(--e-muted); }
+.domains .domains-crumb a:hover { color: var(--e-fg); }
+.domains .domains-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.domains .domains-ph { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-bottom: 1.5rem; }
+.domains h1.domains-mono { font-size: 1.75rem; line-height: 1.2; font-weight: 600; overflow-wrap: anywhere; }
+.domains .domains-ph ~ .domains-notice { align-items: center; margin-bottom: 1.5rem; }
+.domains .domains-notice__tx { flex: 1; }
+.domains .domains-cols { display: grid; grid-template-columns: minmax(0, 760px) 320px; gap: 1.5rem; align-items: start; }
+.domains .domains-cols > * > .domains-panel + .domains-panel { margin-top: 1.5rem; }
+.domains .domains-panel__h { padding: 1rem 1.25rem; border-bottom: 1px solid var(--e-line); }
+.domains .domains-panel__h h2, .domains .domains-card, .domains .domains-card dd { margin: 0; }
+.domains .domains-rows { list-style: none; margin: 0; padding: 0; }
+.domains .domains-panel__b { padding: 1rem 1.25rem; }
+.domains .domains-rows > .domains-row { display: grid; grid-template-columns: 11.25rem minmax(0, 1fr) auto; gap: 1rem; align-items: center; padding: .875rem 1.25rem; border-bottom: 1px solid var(--e-line); }
+.domains .domains-rows > .domains-row:last-child { border-bottom: 0; }
+.domains .domains-row > form { display: contents; }
+.domains .domains-row > dialog, .domains .domains-row > form > dialog { grid-column: 1 / -1; }
+.domains .domains-row__l { display: inline-flex; align-items: center; gap: .375rem; font-size: .8125rem; font-weight: 500; color: var(--e-muted); }
+.domains .domains-row__v { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.domains .domains-row__a { display: flex; flex-wrap: wrap; gap: .75rem; font-size: .8125rem; font-weight: 600; }
+.domains .domains-sub { display: block; margin-top: .1875rem; font-size: .75rem; font-weight: 400; color: var(--e-muted); }
+.domains .domains-linkbtn { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.domains .domains-inline { display: inline; margin: 0; }
+.domains .domains-card > div { display: flex; justify-content: space-between; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid var(--e-line); }
+.domains .domains-card > div:last-child { border-bottom: 0; }
+.domains .domains-card dt { display: inline-flex; align-items: center; gap: .375rem; font-size: .8125rem; font-weight: 500; color: var(--e-muted); }
+.domains .domains-card dd { text-align: right; font-weight: 500; }
+.domains .domains-btn--block { display: flex; justify-content: center; box-sizing: border-box; width: 100%; margin-top: 1rem; }
+.domains .domains-edit { width: min(40rem, calc(100vw - 2rem)); }
+.domains .domains-edit:not(:modal) { max-width: none; }
+.domains .domains-edit__close { display: flex; justify-content: flex-end; margin-top: .75rem; }
+@media (max-width: 900px) {
+    .domains .domains-cols { grid-template-columns: minmax(0, 1fr); }
+    .domains .domains-rows > .domains-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .domains .domains-row__l { grid-column: 1 / -1; }
+}
 </style>
 @endonce

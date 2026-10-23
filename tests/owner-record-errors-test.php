@@ -35,7 +35,7 @@ foreach(['dns'=>['records'=>[['name'=>'bad host','type'=>'A','address'=>'secret-
     if($action!=='nameservers'){expect(!str_contains($html,'value="'.$nonce.'"'),'Direct retry issues fresh intent keys');}
     foreach($invalid as$field){expect($field->hasAttribute('aria-describedby'),'Field error is described');}
     if($action==='dns'){expect(str_contains($html,'value="secret-invalid-value"'),'Public DNS draft is retained only in direct escaped response');}
-    if($action==='glue_update'){same(1,$invalid->length,'Only the submitted host IP is invalid');same('glue-0-ip',$invalid->item(0)->getAttribute('id'),'Error targets matching host');same(1,$dom->query('//section[@id="glue"]/details[@open]')->length,'Only submitted editor opens');}
+    if($action==='glue_update'){same(1,$invalid->length,'Only the submitted host IP is invalid');same('glue-0-ip',$invalid->item(0)->getAttribute('id'),'Error targets matching host');same(['edit-glue'],array_map(fn($n)=>$n->getAttribute('id'),iterator_to_array($dom->query('//dialog[contains(@class,"domains-edit")][@open]'))),'Only submitted editor opens');}
     if($action==='ds_add'){expect(str_contains($html,'value="secret-invalid-value"'),'Public DS draft retained');}
 
 }

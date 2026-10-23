@@ -93,7 +93,7 @@ final readonly class OwnedDomains
                 $entry->state==='held' && $entry->safe_code==='enom_test_management_call_cap' && $resolved => 'Failed',
                 default => RequestStatus::for($entry->state)['label'],
             };
-            $progress[]=['label'=>$label,'state'=>$state];
+            $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->format('Y-m-d')];
         }
         foreach (array_slice($obs['corrections']??[],0,100) as $row) {
             $label=['contacts'=>'Contacts','nameservers'=>'Nameservers','privacy'=>'WHOIS privacy','auto_renew'=>'Auto-renew'][$row['section']??'']??null;
@@ -101,7 +101,7 @@ final readonly class OwnedDomains
         }
         if ($caps) { $setup['maxNameservers']=$d->registrar_key==='enom'?12:13; }
         if ($forms) {
-            $labels=['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'Domain privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code'];
+            $labels=['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Auth code'];
             if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Glue records']; }
             foreach ($labels as $cap=>$label) {
                 if ($d->status==='active' && $service?->status==='active' && !RenewalStop::blocksExisting($renewalState) && !($d->renewal_policy['automatic_spend_paused']??false) && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
@@ -116,7 +116,9 @@ final readonly class OwnedDomains
                     $current=$obs['sections']['nameservers']['facts']['nameservers']??null;
                     $management['nameservers']['current']=is_array($current)&&$current&&array_is_list($current)&&count(array_filter($current,'is_string'))===count($current)?$current:null; }
                 if (isset($management['contacts'])) { $management['contacts']['staged']=$d->registrar_key==='namesilo'; $management['contacts']['limits']=ContactDetails::limits($d->registrar_key); }
-                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'domain’s administrative contact':'domain owner'; }
+                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'admin contact':'registrant'; }
+                // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
+                foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $value=$obs['sections'][$cap]['facts'][$fact]??$obs['facts'][$fact]??null; $management[$cap]['state']=is_bool($value)?$value:null; } }
             }
             $records=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?OwnerRecords::forDomain($d):[];
             $recordCheckHeld=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?ObservationRecords::stopped($d):false;
@@ -176,7 +178,8 @@ final readonly class OwnedDomains
             renewNow:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
-            statusReason:$pill['reason'], demo:DemoData::is($d));
+            statusReason:$pill['reason'], demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d),
+            daysLeft:$d->provider_expires_at?(int)\Carbon\CarbonImmutable::parse($this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),'UTC')->diffInDays(\Carbon\CarbonImmutable::parse($d->provider_expires_at->format('Y-m-d'),'UTC'),false):null);
     }
     /** Existing cycle visibility is independent of eligibility to request a new invoice. */
     private function renewNow(Domain $d, bool $forms): array

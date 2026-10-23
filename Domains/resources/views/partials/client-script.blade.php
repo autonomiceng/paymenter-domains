@@ -71,7 +71,7 @@
             event.preventDefault();
             servers.value = form.dataset.defaultServers; useDefault.disabled = false;
             servers.dispatchEvent(new Event('input', {bubbles: true})); servers.focus();
-            if (live) live.textContent = 'Default nameservers filled in. Save to apply them.';
+            if (live) live.textContent = 'Beco nameservers filled in. Save to apply them.';
         });
         servers?.addEventListener('input', event => { if (event.isTrusted && useDefault) useDefault.disabled = true; });
         form.addEventListener('submit', event => {
@@ -83,6 +83,17 @@
             dialog.showModal();
         });
         dialog.querySelector('[data-confirm-cancel]')?.addEventListener('click', () => dialog.close());
+    });
+    // Page editors: the row link opens its dialog as a modal; without script the link reloads with the editor open.
+    document.querySelectorAll('a[data-dialog-open]').forEach(link => {
+        const dialog = document.getElementById(link.hash.slice(1));
+        if (!dialog || typeof dialog.showModal !== 'function') return;
+        link.addEventListener('click', event => { event.preventDefault(); if (dialog.open) dialog.close(); dialog.showModal(); });
+    });
+    document.querySelectorAll('[data-dialog-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog')?.close()));
+    document.querySelectorAll('dialog.domains-edit[open]').forEach(dialog => {
+        if (typeof dialog.showModal !== 'function' || dialog.querySelector('dialog[open]')) return;
+        dialog.close(); dialog.showModal();
     });
     // List filters apply on change; the search box submits on Enter.
     document.querySelectorAll('form[data-domains-autosubmit]').forEach(form => {

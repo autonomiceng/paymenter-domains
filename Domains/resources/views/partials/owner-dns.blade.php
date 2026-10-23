@@ -6,16 +6,6 @@
     $describe = static fn (array $r): string => trim($isDns ? ($r['name'] ?? '').' '.($r['type'] ?? '').' '.($r['address'] ?? '') : '_'.($r['service'] ?? '').'._'.($r['protocol'] ?? '').' '.($r['target'] ?? '').' port '.($r['port'] ?? ''));
     $types = [''=>'Type','A'=>'A (IPv4)','AAAA'=>'AAAA (IPv6)','CNAME'=>'CNAME (alias)','MX'=>'MX (mail)','MXE'=>'MXE (mail IP)','TXT'=>'TXT (text)','URL'=>'URL (redirect)','FRAME'=>'FRAME (masked redirect)'];
 @endphp
-@if ($section['records'] === null)
-<p class="domains-hint">Editing isn’t available yet because we haven’t confirmed your current records.
-@if ($section['recordCheckHeld'] ?? false)
-Editing returns after our team resumes record checks and a check confirms the current list.
-@else
-Editing returns after a successful record check. Checks normally run daily.
-@endif
-</p>
-@else
-@if ($isDns)<p>Used only while the domain uses the registrar’s nameservers.</p>@endif
 <p class="domains-hint">{{ $isDns ? 'Use @ for the domain itself. Alias and mail targets end with a dot.' : 'Enter the service without the leading underscore, such as sip. The target ends with a dot.' }}</p>
 <form method="POST" action="{{ $section['actions'][$cap] }}" class="domains-owner-form domains-record-form" data-confirm data-confirm-when="records-removed" data-current="{{ count($section['records']) }}">
 @include('domains::partials.form-key', ['action' => $cap])
@@ -23,8 +13,7 @@ Editing returns after a successful record check. Checks normally run daily.
 @foreach ($errors->keys() as $errorKey)
 @if (preg_match('/^'.$cap.'\.records(?:\.(?:count|preimage|[0-9]+))?$/D', $errorKey))<p class="domains-error" role="alert">{{ $errors->first($errorKey) }}</p>@endif
 @endforeach
-<p class="domains-hint domains-scroll-hint" id="{{ $cap }}-scroll-hint">Scroll sideways to see all columns.</p>
-<div class="domains-tablewrap" tabindex="0" role="region" aria-label="{{ $section['label'] }}" aria-describedby="{{ $cap }}-scroll-hint">
+<div class="domains-tablewrap" tabindex="0" role="region" aria-label="{{ $section['label'] }}">
 <table class="domains-tbl domains-records"><caption class="domains-sr">{{ $section['label'] }}. Blank rows add records.</caption>
 <thead><tr>@foreach ($fields as $fieldLabel)<th scope="col">{{ $fieldLabel }}</th>@endforeach<th scope="col">Delete</th></tr></thead>
 <tbody>
@@ -41,11 +30,10 @@ Editing returns after a successful record check. Checks normally run daily.
 </tr>
 @endforeach
 </tbody></table></div>
-<p class="domains-hint">{{ count($draft['records'] ?? $section['records']) === 50 ? '50 records is the maximum. To add one, edit or delete an existing record. Saving replaces the whole list. Keep at least one record.' : 'Up to 50 records. Fill a blank row to add one. Saving replaces the whole list. Keep at least one record.' }}</p>
-<button type="submit" class="domains-btn domains-btn--primary">Save {{ $section['label'] }}</button>
+<p class="domains-hint">{{ count($draft['records'] ?? $section['records']) === 50 ? 'Up to 50 records. Saving replaces the list. To add one, edit or delete a record first.' : 'Up to 50 records. Saving replaces the list. Fill a blank row to add one.' }}</p>
+<button type="submit" class="domains-btn domains-btn--primary">Save</button>
 @php($confirmOpen = ($section['retry']['confirm'] ?? false) && $section['retry']['action'] === $cap)
-@include('domains::partials.owner-confirm', ['id'=>$cap, 'open'=>$confirmOpen, 'cancel'=>$domain->actions['show'].'#'.$cap, 'title'=>'Delete records?', 'button'=>'Save and delete',
+@include('domains::partials.owner-confirm', ['id'=>$cap, 'open'=>$confirmOpen, 'cancel'=>$domain->actions['show'].'?edit='.$cap.'#edit-'.$cap, 'title'=>'Delete records?', 'button'=>'Save and delete',
     'facts'=>[['label'=>'Records to delete', 'slot'=>'removed', 'value'=>$confirmOpen ? collect($draft['records'] ?? [])->keys()->filter(fn ($i) => ($draft['records'][$i]['_delete'] ?? '') === '1' && isset($section['records'][$i]))->map(fn ($i) => $describe($section['records'][$i]))->values()->all() : []]],
     'risk'=>'Anything that uses these records, like your website or email, can stop working.'])
 </form>
-@endif

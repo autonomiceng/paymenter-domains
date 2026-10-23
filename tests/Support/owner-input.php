@@ -27,7 +27,7 @@ foreach($free?['contact_profile','contacts']:['contacts']as$intent){
         $node=$nodes->item(0);
         same($value,$node->tagName==='select'?$retry->query('option[@selected]',$node)->item(0)?->getAttribute('value'):$node->getAttribute('value'),'Typed contact survives redirect/render: '.$field);
     }
-    same(1,$retry->query('//details[@open]')->length,'Only the failed contact details open');
+    same(1,$retry->query('//dialog[contains(@class,"domains-edit")][@open]')->length,'Only the failed contact details open');
     same(1,$retry->query('//input[@name="contact[phone]"][@aria-invalid="true"]')->length,'Only the failed contact has its field error');
     same('tech',$retry->query('//form[contains(@action,"/manage/'.$intent.'")]//select[@name="role"]/option[@selected]')->item(0)?->getAttribute('value'),'Contact role survives');
     expect(!str_contains($html,'<contact>')&&!str_contains($html,'PRIVATE-'),'Retained contact HTML is escaped and secrets are absent');
@@ -36,7 +36,7 @@ foreach($free?['contact_profile','contacts']:['contacts']as$intent){
     // Simulate a different domain form during the same flash lifetime.
     $session->put('domains_failed_form',route('domains.domains.manage',[$d->id+100,$intent]));
     $otherPage=storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render());
-    same(0,$otherPage->query('//details[@open]')->length,'Another domain marker cannot open this form');
+    same(0,$otherPage->query('//dialog[contains(@class,"domains-edit")][@open]')->length,'Another domain marker cannot open this form');
     same('',$otherPage->query('//input[@name="contact[first_name]"]')->item(0)->getAttribute('value'),'Another domain marker cannot replay contact data');
 }
 $session->forget(['_old_input','domains_failed_form']);app('view')->share('errors',new Illuminate\Support\ViewErrorBag);

@@ -44,7 +44,7 @@ same(0,substr_count($text($page(['watch.expired'],[],['registry_expiry_reached']
 same(1,substr_count($text($page(['watch.expired'],$row('expired'),[])),'Registry dates can lag behind a recent renewal.'),'Summary keeps the registry lag caveat');
 same(1,substr_count($text($page(['watch.redemption'],[],[],false)),$provider),'Summary keeps the provider sentence when Latest notices does not state it');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain($data['name'],'Active','ok','2027-01-15','On','$14.00',['show'=>'/domains/1'],[],['contacts'=>false,'required'=>false],[],[],true);
-same(1,$moved(view('domains::show',['domain'=>$owned,'summary'=>$state(['domain.active','watch.ns_changed'],'managed'),'keys'=>[]])->render()),'Domain detail page states a nameserver change once');
+same(1,substr_count($text(view('domains::show',['domain'=>$owned,'summary'=>$state(['domain.active','watch.ns_changed'],'managed'),'keys'=>[]])->render()),'stopped using Beco nameservers'),'Domain detail page states a nameserver change once');
 require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
 foreach(['show','save']as$action){$route=app('router')->getRoutes()->getByName('domains.checks.'.$action);expect(in_array('web',$route->gatherMiddleware(),true)&&in_array('auth',$route->gatherMiddleware(),true),'Native web auth guards preferences');}
 $nativeSuccessful=true;echo "Owner-safe preference detail, CSRF/session key, stale revision, escaping and query-free Blade passed.\n";

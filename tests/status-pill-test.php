@@ -59,7 +59,7 @@ foreach ($cases as $state=>[$states,$extra,$resolved,$expected,$reason]) {
     $detail=storefrontDom(view('domains::show',['domain'=>$owned,'summary'=>$s])->render());
     same([$expected],$pills($detail),'Detail page shows exactly one status pill: '.$state);
     same([$pill['tone']],$tones($detail),'Detail pill keeps its tone: '.$state);
-    same(1,$detail->query('//div[@class="domains-dhead__meta"]/span[contains(concat(" ",@class," ")," domains-status ")]')->length,'The pill sits in the detail header: '.$state);
+    same(1,$detail->query('//div[@class="domains-ph"]/span[@class="domains-pill"]/span[contains(concat(" ",@class," ")," domains-status ")]')->length,'The pill sits in the detail header: '.$state);
     $card=storefrontDom(view('domains::service',['domain'=>$owned])->render());
     same([[$expected],$reason===null?[]:[$reason]],[$pills($card),$reasons($card)],'Service card shows the same pill and reason: '.$state);
 }

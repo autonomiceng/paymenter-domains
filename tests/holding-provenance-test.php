@@ -44,7 +44,7 @@ foreach ([['status'=>'adoption_pending','provenance'=>null],['status'=>'active',
     same('superseded',DB::table('domains_observation_work')->where('domain_id',$d->id)->value('safe_code'),'Already scheduled pending work cannot be claimed');same($calls,count($observation->calls),'Pending scheduled work performs no provider reads');
     $dto=$owners->present($d);same(['Under review','Import not confirmed'],[$dto->status,$dto->statusReason],'Neutral pending label');same(null,$dto->expiry,'No confirmed expiry shown');same(null,$dto->renewalPrice,'No renewal quote');same([],$dto->management,'No management forms');expect($dto->setupPending,'Pending notice shown');
     storefrontViews();$html=view('domains::show',['domain'=>$dto,'keys'=>[]])->render();
-    expect(str_contains($html,'Our team will confirm this domain’s registration.'),'Customer knows next step');
+    expect(str_contains($html,'<span class="domains-notice__tx">We’re confirming this domain. Changes and renewals start after that. Contact support if it expires soon.</span>'),'Customer knows next step');
     $visible=strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$html));
     foreach(['Enom','NameSilo','unmanaged'] as $text){expect(!str_contains($visible,$text),'Neutral held page: '.$text);}
     Illuminate\Support\Facades\Auth::setUser($staff);expect(str_contains(DomainFacts::for($d)['Setup reason'],'purchase evidence'),'Staff see reason');

@@ -43,7 +43,7 @@ foreach([0,1]as$i){
         $r=Request::create('/domains/'.$committed->domain_id,'GET');$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
         $view=$controller->$page($r,$committed->domain_id);$html=$view->render();$dto=$view->getData()['domain'];
         expect(!str_contains($html,$sentinel),'Committed code absent from real owner markup');
-        if($page!=='code'){expect($dto->setup['contacts']&&str_contains($html,$page==='show'?'Complete your domain setup':'Use updated account details'),'Customer render includes the committed contact hold');}
+        if($page!=='code'){expect($dto->setup['contacts']&&str_contains($html,$page==='show'?'Finish setup to start registration.':'Use updated account details'),'Customer render includes the committed contact hold');}
         $dom=storefrontDom($html);
         foreach($dom->query('//@*')as$attribute){expect(!str_contains(html_entity_decode($attribute->value,ENT_QUOTES|ENT_HTML5),$sentinel),'Committed code absent from DOM attributes');}
         foreach($dom->query('//input[@name="transfer_code"]')as$input){
