@@ -28,3 +28,7 @@ A routed service without a ledger can also retain intent; later adoption must tr
 held input, never discard it. End-of-period cancellation of an unpaid acquisition can therefore
 leave later payment held for late-money review. Native callbacks in a transaction nested deeper
 than the outer level fail closed at the existing lock seam; no qualified native caller uses it.
+
+Unpaid Pending managed cancellation creation/update now normalizes end-of-period to immediate
+before persistence. This supersedes the end-of-period unpaid example above. Retirement retains
+intent and uses the separate locked unfunded proof described in `acquisition-retirement.md`.

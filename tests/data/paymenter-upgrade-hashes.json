@@ -271,6 +271,24 @@
           "vendor/owen-it/laravel-auditing/src/Auditable.php": "288b285ffa8f2b8e01beffd5405e34fca76bd91d684e813261deac63f5bc198f",
           "vendor/owen-it/laravel-auditing/src/AuditableObserver.php": "c6d54f831887ca330ddb89323898bd95f4ef826ef7f5d77577d59f94b5233501"
         }
+      },
+      "native-acquisition-retirement": {
+        "consumers": [
+          "Domains/Services/NativeStock.php",
+          "Domains/Services/NativeCancellation.php",
+          "Domains/Services/AcquisitionRetirement.php",
+          "Domains/Services/UnpaidAcquisitionProof.php"
+        ],
+        "review": "Re-review all-null stock arithmetic and model events, old pending cron whole-invoice bulk cancellation, immediate unpaid cancellation writes, after-commit wakes and locked unfunded retirement.",
+        "files": {
+          "app/Console/Commands/CronJob.php": "70dc75e5a98771704f7964ed12b1ebab704b3de47699c0b115aa76dd0c6f0640",
+          "app/Livewire/Services/Cancel.php": "96713dace26883691e4303a2968534584935f74793b8981db3b55bd2c2f1fdf5",
+          "app/Listeners/CancellationCreatedListener.php": "364decc929ba15a3f7c82ee80573548f5a4b5bdc1902b5394edc78a9f4761ed9",
+          "app/Models/Product.php": "ec0684f739b859536e24283fa4ed7f8e06d9085565123f07082c1047d1082ad0",
+          "app/Models/Service.php": "4841f017fcddb3a79c83ca36249b510485a7323b3108c5fd50269c232e286e3e",
+          "app/Models/ServiceCancellation.php": "38b60cf9f786129d4c03e63534d6443d3cf5ddb65b7c0cb02a5c3afeb428de49",
+          "vendor/laravel/framework/src/Illuminate/Database/Eloquent/Model.php": "c4c2a8e8755df5e912ec941f8881dcc515ff3802211855874e6b839469ddc3dc"
+        }
       }
     },
     "watch": {

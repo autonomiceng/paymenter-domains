@@ -137,7 +137,7 @@ final class CartAdmission
     {
         $plan = $item->plan()->firstOrFail(); $mapping = $this->native->mapping($product, $plan);
         if (!$mapping || (string) $item->quantity !== '1' || !empty($item->config_options) || $product->configOptions()->exists()
-            || $item->cart?->currency_code !== 'USD' || $product->stock === 0) { throw new \DomainException('Domain line requires one name, no options and USD.'); }
+            || $item->cart?->currency_code !== 'USD' || $product->stock !== null) { throw new \DomainException('Domain line requires one name, no options and USD.'); }
         return $mapping;
     }
     private function name(CartItem $item, array $mapping): string

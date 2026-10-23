@@ -30,13 +30,13 @@ same($enom->server_id, $registration->fresh()->server_id, 'Old product server ne
 commerceReject(static fn () => $native->mapping($registration, $native->annualPlan($transfer)));
 commerceReject(static fn () => DB::transaction(static fn () => $native->publish($enom->id, $now)));
 $enom->update(['enabled' => false]); $native->publish($enom->id, $now);
-expect($registration->fresh()->stock === 0, 'Disabled TLD withdraws native acquisition');
+expect($registration->fresh()->stock === null, 'Disabled TLD keeps unlimited stock');
 same(0, $registration->plans()->where('billing_period', 3)->sole()->prices()->count(), 'Withdrawn term price removed');
 same($annual->id, $native->annualPlan($registration)->id, 'Annual holding identity survives withdrawal');
 same(103, $registration->plans()->where('billing_period', 3)->sole()->sort, 'Withdrawn plan sorts after priced plans');
 $enom->update(['enabled' => true]); $native->publish($enom->id, $now);
 $native->publish($enom->id, $now->modify('+2 days'));
-expect($registration->fresh()->stock === 0, 'Stale price disables native sale');
+expect($registration->fresh()->stock === null, 'Stale prices keep unlimited stock');
 $native->publish($enom->id, $now);
 $registration->settings()->where('key', 'domains_registrar')->update(['value' => 'namesilo']);
 commerceReject(static fn () => $native->mapping($registration));

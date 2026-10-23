@@ -14,7 +14,7 @@ final class NativeIdentity
     private const MARKERS=['domains_catalogue','domains_tld_id','domains_action','domains_registrar'];
     public static function boot(): void
     {
-        static $booted=false;if($booted){return;}$booted=true;NativeExpiry::boot();
+        static $booted=false;if($booted){return;}$booted=true;NativeExpiry::boot();NativeStock::boot();
         Order::updating(static function(Order $o):void {
             if(self::dirty($o,['id','user_id','currency_code'])){self::order($o);}
         });
@@ -104,7 +104,7 @@ final class NativeIdentity
         return false;
     }
     /** Any route signal protects malformed rows too; protection never depends on ledger presence. */
-    private static function productRows(array $rows): bool
+    public static function productRows(array $rows): bool
     {
         foreach($rows as $r){
             if(isset($r['server_id'])&&\App\Models\Server::whereKey($r['server_id'])->where('extension','Domains')->exists()){return true;}

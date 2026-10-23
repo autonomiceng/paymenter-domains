@@ -268,3 +268,8 @@ with immediate cancellation stays held for its existing evidence-based refund/re
 no automatic refund or registrar request is inferred. Management readback already bypasses send
 eligibility while retaining its original binding checks. Existing-debt reminders continue;
 month-out notices promise no new invoice while future renewals are stopped.
+
+Unpaid acquisition retirement is now implemented separately from holding changes; see
+[acquisition retirement](acquisition-retirement.md) for its locked proof, audit and late-money
+rules. This supersedes the unpaid-retirement deferral above. Managed stock is always null;
+withdrawal removes acquisition prices. Unpaid Pending native cancellations normalize to immediate.

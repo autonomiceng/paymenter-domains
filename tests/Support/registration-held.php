@@ -24,16 +24,22 @@ $account=Account::where('server_id',$server->id)->sole();same(false,$account->pr
 $tld=Tld::create(['server_id'=>$server->id,'registrar_key'=>'namesilo','account_fingerprint'=>$binding->fingerprint,'tld'=>'com']);
 $native=app(NativeCatalogue::class);$native->publish($tld->id,new DateTimeImmutable);
 $sellers=app(SellerPolicies::class);$sellers->initialize('com');
-$product=$native->product($tld,'register');same(0,$product->stock,'Fresh registration product is withdrawn');
+$product=$native->product($tld,'register');same(null,$product->stock,'Fresh withdrawn registration product has unlimited stock');
 same([],app(Storefront::class)->endings(),'Configured identity alone publishes no offer');
 commerceReject(fn()=>app(Storefront::class)->offer('com','register',1));
 commerceReject(fn()=>CatalogueAcceptances::load($binding));
 // A guessed native product/plan and forged positive stock/price cannot admit checkout.
-$product->update(['stock'=>10]);$plan=$product->plans()->sole();$plan->prices()->updateOrCreate(['currency_code'=>'USD'],['price'=>'20.00','setup_fee'=>'0.00']);
+$stockRefused=false;try{$product->update(['stock'=>10]);}catch(Illuminate\Validation\ValidationException $e){$stockRefused=true;expect(isset($e->errors()['stock']),'Installed finite stock refusal names the staff field');}
+expect($stockRefused,'Installed package refuses finite managed stock');
+DB::table('products')->where('id',$product->id)->update(['stock'=>10]);$product->refresh();$plan=$product->plans()->sole();$plan->prices()->updateOrCreate(['currency_code'=>'USD'],['price'=>'20.00','setup_fee'=>'0.00']);
 $user=commerceUser();$cart=commerceCart($user);
 commerceReject(fn()=>commerceAdd($cart,$product,'default-held.com'));
 App\Models\CartItem::withoutEvents(fn()=>commerceAdd($cart,$product,'default-held.com'));
 same(1,$cart->items()->count(),'Adversarial cart contains a real native line');
+// Native checkout saves forged finite stock before Order Creating; its generic error still rolls back.
+commerceCheckout($user,$cart)->assertDispatched('notify',fn($event,$params)=>$params[0]['message']==='An error occurred while processing your order. Please try again later.');
+same(0,App\Models\Order::count(),'Finite corruption cannot create an order');same(10,$product->fresh()->stock,'Native finite save rolled back');
+DB::table('products')->where('id',$product->id)->update(['stock'=>null]);
 commerceCheckout($user,$cart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Your domain offer changed or expired. Remove this line from your cart and search again for a current offer.','type'=>'error']);
 same(0,App\Models\Order::count(),'Held checkout rolls back the native order');same(0,DB::transactionLevel(),'Held checkout closes its transaction');
 same(0,Operation::count(),'Held checkout creates no registration');

@@ -59,6 +59,7 @@ final class ResponseParser
     private function refused(ManagementCommand $command, #[\SensitiveParameter] array $d): bool
     {
         foreach(['orderid','transferorderid','registryexpdate'] as $k){if(isset($d[$k])&&$d[$k]!==''){return false;}}
+        if(isset($d['transferorder']['transferorderid'])&&$d['transferorder']['transferorderid']!==''){return false;}
         foreach(['domaininfo','reactivatedomainname'] as $k){if(isset($d[$k])&&$d[$k]!==''&&(!is_array($d[$k])||array_is_list($d[$k])||isset($d[$k]['registryexpdate'])||isset($d[$k]['orderid']))){return false;}}
         $top=$d['nssuccess']??null;$nested=$d[strtolower($command->value)]['nssuccess']??null;
         if($top!==null&&$nested!==null&&$top!==$nested){return false;}

@@ -62,8 +62,9 @@ $exchange = static function ($origin,$command,$p,$timeout) use ($state): string 
             same('https://resellertest.enom.com/interface.asp',$origin,'Fixed Enom route');
             same([1,0,1,0,'no'],[$p['DomainCount'],$p['PreConfig'],$p['Lock'],$p['Renew'],$p['UseCreditCard']],'Frozen external-transfer flags');
             expect(isset($p['AuthInfo1'],$p['RegistrantEmailAddress'],$p['AuxBillingEmailAddress']),'Frozen input and four roles mapped');
-            // Documented shape nests the ID under <transferorder>; 'top' and 'conflict' cover a top-level ID.
+            // Documented nested ID, top-only compatibility, agreeing IDs and conflicting IDs.
             $id=['nested'=>'<transferorder><transferorderid>7001</transferorderid><statusid>5</statusid></transferorder>','top'=>'<TransferOrderID>7001</TransferOrderID>',
+                'agree'=>'<transferorder><transferorderid>7001</transferorderid></transferorder><TransferOrderID>7001</TransferOrderID>',
                 'conflict'=>'<transferorder><transferorderid>7001</transferorderid></transferorder><TransferOrderID>7002</TransferOrderID>'][$state->createShape];
             return '<interface-response><Command>TP_CreateOrder</Command><ErrCount>0</ErrCount><Done>true</Done>'.$id.'</interface-response>';
         }

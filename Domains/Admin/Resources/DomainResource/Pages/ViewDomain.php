@@ -18,6 +18,7 @@ class ViewDomain extends ViewRecord
     protected function getHeaderActions(): array
     { return [\Filament\Actions\Action::make('adoptionPreview')->label('Preview adoption')->visible(fn () => Staff::can(Staff::ADOPT_PREVIEW) && $this->getRecord()->adoptionPending())
         ->url(fn () => DomainResource::getUrl('adoption', ['record' => $this->getRecord()->id])),
+        ...\Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionActions::make($this->getRecord()),
         ...\Paymenter\Extensions\Servers\Domains\Admin\Support\HoldingActions::make($this->getRecord())]; }
     // ViewRecord otherwise fills public form data with the entire model's attributes.
     protected function fillForm(): void { $this->data=[]; }

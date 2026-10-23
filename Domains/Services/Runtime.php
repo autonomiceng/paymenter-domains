@@ -53,7 +53,7 @@ final class Runtime
         require dirname(__DIR__).'/routes/web.php';require dirname(__DIR__).'/routes/owned.php';
         app()->booted(self::secureNativeRoutes(...));
         app(NativeServerGuard::class)->boot();app(NativeDomainGuard::class)->boot();
-        NativeCancellation::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::boot();
+        NativeCancellation::boot();AcquisitionRetirement::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::boot();
         \Illuminate\Console\Application::starting(static fn($console)=>$console->resolve(\Paymenter\Extensions\Servers\Domains\Console\ClearNativeExpiry::class));
         app(CartAdmission::class)->boot();app(InvoiceBinding::class)->boot();
         Event::listen('permissions',fn()=>Staff::permissions());

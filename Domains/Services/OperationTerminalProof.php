@@ -10,7 +10,7 @@ final class OperationTerminalProof
     {
         return $claims->locked($id, static function ($op, $domain, $all): Operation {
             $a = $op->attempt ?? [];
-            if ($op->state !== 'held' || !in_array($op->safe_code, ['pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required'], true)
+            if ($op->state !== 'held' || !in_array($op->safe_code, ['pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required'], true)
                 || !isset($a['claim_key']) || ($a['seal'] ?? null) !== 'absent' || ($a['send_state'] ?? null) !== 'definitely_unsent'
                 || array_diff(array_keys($a), ['claim_key', 'seal', 'send_state']) || $op->lease_expires_at !== null
                 || $op->provider_order_id !== null || $op->confirmed_expires_at !== null || array_key_exists('actual', $op->cost ?? [])
@@ -36,6 +36,7 @@ final class OperationTerminalProof
     public static function safe(Operation $op, Domain $domain): bool
     {
         $a = $op->attempt ?? [];
+        if($op->safe_code===UnpaidAcquisitionProof::CODE){return UnpaidAcquisitionProof::terminal($op,$domain);}
         return $op->authority_generation > 0 && is_string($op->account_fingerprint) && $op->state === 'rejected' && in_array($op->action, ['register', 'renew', 'transfer'], true) && $op->account_fingerprint === $domain->account_fingerprint
             && $op->registrar_key === $domain->registrar_key && $op->server_id === $domain->server_id && $op->service_id === $domain->service_id
             && $op->authority_generation === $domain->authority_generation && $op->confirmed_expires_at === null && $op->provider_order_id === null
