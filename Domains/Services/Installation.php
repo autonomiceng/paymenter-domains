@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
 {
-    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class];
+    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class];
     public static function legacy(): void
     {
         foreach(Server::where('extension','Enom')->get() as $server){
@@ -26,7 +26,7 @@ final class Installation
             foreach(['domains_domains','domains_operations','domains_tlds','domains_prices','domains_contact_profiles','domains_sales_policies','domains_read_budgets','domains_observation_queues','domains_observation_work','domains_reminder_schedules','domains_reminder_deliveries','domains_obligation_alerts','domains_runtime_turns','domains_runtime_operations','domains_psl_snapshots','domains_psl_status','domains_psl_candidates','domains_watch_audit','domains_watch_product_maps','domains_watch_names','domains_watch_sources'] as $table){
                 if(!$present&&Schema::hasTable($table)){throw new \DomainException('Partial retained Domains schema. Restore its installation history before reinstalling.');}
             }
-            foreach(['domains_adoptions','domains_history_links'] as $table){
+            foreach(['domains_adoptions','domains_history_links','domains_watch_profiles','domains_watch_observations','domains_watch_work'] as $table){
                 if(!$present&&Schema::hasTable($table)){throw new \DomainException('Partial retained Domains schema. Restore its installation history before reinstalling.');}
             }
             $ran=app(Migrator::class)->getRepository()->getRan();$recorded=in_array('2026_10_18_000001_create_domains_foundation',$ran,true);
@@ -58,6 +58,10 @@ final class Installation
                 if(Schema::hasTable($table)&&!$recorded){throw new \DomainException('Retained holding storage has no installation record.');}
                 if($recorded){$schema::verify();} // Refuse lost/drifted tables before any migration can fill gaps.
             }
+            $dnsPresent = array_map(Schema::hasTable(...), WatchDnsSchema::tables());
+            $dnsRecorded = in_array('2026_10_19_000012_create_watch_dns', $ran, true);
+            if (in_array(true, $dnsPresent, true) && !$dnsRecorded) { throw new \DomainException('Retained DNS history has no installation record.'); }
+            if ($dnsRecorded) { WatchDnsSchema::verify(); }
             app(Migrator::class)->run([dirname(__DIR__).'/database/migrations'],['force'=>true]);
             $this->verify(); // Required even when every migration was skipped.
             ReminderTemplates::ensure();
