@@ -15,4 +15,8 @@ Route::middleware(['web','auth',MustVerfiyEmail::class,'throttle:60,1,domains.ow
     Route::get('/domains/{domain}',[Owner::class,'show'])->whereNumber('domain')->name('domains.domains.show');
     Route::get('/domains/{domain}/setup',[Owner::class,'setup'])->whereNumber('domain')->name('domains.domains.setup');
     Route::get('/domains/{domain}/transfer-code',[Owner::class,'code'])->whereNumber('domain')->name('domains.domains.code');
+    Route::get('/domains/checks/{kind}/{id}',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchNoticeController::class,'show'])->where('kind','watch|managed')->whereNumber('id')->name('domains.checks.show');
+    Route::post('/domains/checks/{kind}/{id}',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchNoticeController::class,'save'])->where('kind','watch|managed')->whereNumber('id')->name('domains.checks.save')->block(10,10);
+    Route::get('/domains/check-notices/deliveries/{delivery}',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchNoticeReviewController::class,'show'])->whereNumber('delivery')->name('domains.checks.review');
+    Route::post('/domains/check-notices/deliveries/{delivery}',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchNoticeReviewController::class,'resend'])->whereNumber('delivery')->name('domains.checks.resend')->block(10,10);
 });

@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Adoption,WatchProfile,WatchName
 use Paymenter\Extensions\Servers\Domains\Services\{WatchDnsSchema,ManagedPublicWorkSchema,ManagedPublicSchema,ManagedPublicSignals};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader;
 use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer,DnsQuery};
-function managedFixture(bool $doNotRenew=false,bool $hosting=true,bool $skipA3=false): array
+function managedFixture(bool $doNotRenew=false,bool $hosting=true,bool $skipA3=false,?Closure $beforeConfirm=null): array
 {
     $f=adoptionCommitFixture();extract($f);WatchDnsSchema::install();ManagedPublicWorkSchema::install();ManagedPublicSchema::install();
     $profile=DB::transaction(fn()=>WatchProfile::create(['name'=>'Synthetic managed defaults','nameservers'=>['ns.platform.test'],
@@ -34,6 +34,7 @@ function managedFixture(bool $doNotRenew=false,bool $hosting=true,bool $skipA3=f
         expect($checks->enroll($watch->id,$owner->id,$old),'Prior watch enrolled');$ticket=$checks->begin($watch->id,$owner->id,'delegation',$old);
         expect($checks->finish($ticket,new Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','external'),$old+1),'Prior watch facts retained');
     }
+    if ($beforeConfirm) { $beforeConfirm([...$f,...compact('watch','source','profile','host','map')]); }
     $failA3=$skipA3;
     Paymenter\Extensions\Servers\Domains\Models\WatchAudit::creating(static function($audit)use(&$failA3){if($failA3 && $audit->event==='registration_adopted'){throw new DomainException('Synthetic lost A3 enrollment');}});
     $context=new Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext($staff->id,'Synthetic managed fixture',$doNotRenew);

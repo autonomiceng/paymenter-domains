@@ -106,7 +106,9 @@
           "Domains/Services/AccountBindings.php",
           "Domains/Services/NativeCatalogue.php",
           "Domains/Services/Installation.php",
-          "Domains/Domains.php"
+          "Domains/Domains.php",
+          "Domains/Services/WatchNoticeReview.php",
+          "Domains/Services/WatchNoticeDelivery.php"
         ],
         "review": "Re-review encrypted settings, immutable identities, lifecycle/discovery, retained migrations and source upload validation.",
         "files": {
@@ -143,7 +145,10 @@
         "consumers": [
           "Domains/Mail/DomainNotice.php",
           "Domains/Services/ReminderDelivery.php",
-          "Domains/Services/ReminderTemplates.php"
+          "Domains/Services/ReminderTemplates.php",
+          "Domains/Mail/WatchNotice.php",
+          "Domains/Services/WatchNoticeDelivery.php",
+          "Domains/Services/WatchNoticeTemplates.php"
         ],
         "review": "Re-review inherited data, customized HTML/text, preferences, disabled mail, log ownership and queue serialization.",
         "files": {
