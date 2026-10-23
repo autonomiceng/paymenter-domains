@@ -36,13 +36,13 @@ final class WatchSchema
     public static function tables(): array { return ['domains_watch_product_maps', 'domains_watch_names', 'domains_watch_sources']; }
     public static function install(): void
     {
-        PslReviewSchema::verify(); // The shared append-only audit was installed with suffix review.
+        EvidenceDatesSchema::verify(PslReviewSchema::class); // The shared append-only audit was installed with suffix review.
         $present = array_map(Schema::hasTable(...), self::tables());
         if (in_array(true, $present, true) && in_array(false, $present, true)) { throw new \RuntimeException('Partial retained watch schema.'); }
         if (!$present[0]) {
             Schema::create(self::tables()[0], self::maps(...)); Schema::create(self::tables()[1], self::names(...)); Schema::create(self::tables()[2], self::sources(...));
         }
-        self::verify();
+        EvidenceDatesSchema::verify(self::class);
     }
     public static function verify(bool $legacyDates = false): void
     {

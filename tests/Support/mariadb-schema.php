@@ -3,9 +3,11 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/mariadb-bootstrap.php';
+use Illuminate\Database\Migrations\Migrator;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{Artisan,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Domains;
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,Installation,SchemaVerifier};
+use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema,EvidenceDatesSchema,Installation,PslReviewSchema,SchemaVerifier,WatchSchema};
 
 same(getenv('DB_SOCKET'), DB::connection()->getConfig('unix_socket'), 'Resolved socket belongs to this disposable fixture');
 same(getenv('DB_DATABASE'), DB::connection()->getDatabaseName(), 'Resolved database belongs to this disposable fixture');
@@ -78,10 +80,56 @@ Schema::drop('domains_freshness_guard');$guardServer->newQuery()->whereKey($guar
 $evidenceDatesBootstrapped = true;
 require dirname(__DIR__).'/evidence-dates-upgrade-test.php';
 $nativeSuccessful = false;
+// Upgrade the shipped suffix-review schema before watch storage was installed.
+$migrator = app(Migrator::class);
+$files = $migrator->getMigrationFiles([dirname(__DIR__, 2).'/Domains/database/migrations']);
+$reviewMigration = '2026_10_19_000008_create_psl_reviews';
+$watchMigration = '2026_10_19_000009_create_watch_storage';
+$earlyFiles = array_filter($files, static fn ($name) => $name <= $reviewMigration, ARRAY_FILTER_USE_KEY);
+foreach ([0, 1] as $defaults) {
+    foreach (array_reverse($owned) as $physical) { Schema::drop(substr($physical, strlen($prefix))); }
+    DB::table('migrations')->whereIn('migration', array_keys($files))->delete();
+    DB::statement('SET SESSION explicit_defaults_for_timestamp = '.$defaults);
+    $migrator->run(array_values($earlyFiles), ['force' => true]);
+    Schema::drop('domains_watch_audit');
+    Schema::create('domains_watch_audit', static function (Blueprint $t): void {
+        (new ReflectionMethod(PslReviewSchema::class, 'audit'))->invoke(null, $t, true);
+    });
+    $audit = ['subject_type' => 'synthetic', 'subject_id' => 800, 'event' => 'review',
+        'after_revision' => str_repeat('e', 64), 'data' => 'retained ciphertext', 'created_at' => '2026-10-18 01:02:03'];
+    DB::table('domains_watch_audit')->insert($audit);
+    $auditBefore = DB::table('domains_watch_audit')->get()->toJson();
+    $history = DB::table('migrations')->orderBy('id')->get()->toJson();
+    expect(DB::table('migrations')->where('migration', $reviewMigration)->exists(), 'Suffix review migration is recorded');
+    foreach ([$watchMigration, EvidenceDatesSchema::MIGRATION] as $pending) {
+        expect(!DB::table('migrations')->where('migration', $pending)->exists(), 'Later migration is not recorded: '.$pending);
+    }
+    foreach (WatchSchema::tables() as $table) { expect(!Schema::hasTable($table), 'Watch storage is not installed: '.$table); }
+    $columns = array_column(Schema::getColumns('domains_watch_audit'), null, 'name');
+    same('timestamp', $columns['created_at']['type_name'], 'Early audit has the real legacy MariaDB type');
+    DB::statement('SET SESSION explicit_defaults_for_timestamp = '.(1 - $defaults));
+    $entry->upgraded('0.0.1');
+    (new Installation)->verify();
+    same($history, DB::table('migrations')->whereNotIn('migration', array_diff(array_keys($files), array_keys($earlyFiles)))->orderBy('id')->get()->toJson(), 'Early upgrade preserves prior migration records');
+    same($auditBefore, DB::table('domains_watch_audit')->get()->toJson(), 'Early upgrade preserves suffix review evidence');
+    foreach (array_keys($files) as $name) {
+        expect(DB::table('migrations')->where('migration', $name)->exists(), 'Early upgrade runs every current migration: '.$name);
+    }
+    $columns = array_column(Schema::getColumns('domains_watch_audit'), null, 'name');
+    same('datetime', $columns['created_at']['type_name'], 'Early upgrade converts the audit to explicit datetime');
+    same(1 - $defaults, (int) DB::selectOne('SELECT @@session.explicit_defaults_for_timestamp AS value')->value, 'Early upgrade restores session defaults');
+    // A recorded date migration must never accept the legacy audit again.
+    Schema::drop('domains_watch_audit');
+    Schema::create('domains_watch_audit', static function (Blueprint $t): void {
+        (new ReflectionMethod(PslReviewSchema::class, 'audit'))->invoke(null, $t, true);
+    });
+    try { WatchSchema::install(); throw new LogicException('Recorded upgrade accepted a legacy watch audit'); }
+    catch (RuntimeException $error) { same('Retained Domains schema mismatch: domains_watch_audit', $error->getMessage(), 'Recorded upgrade keeps strict audit verification'); }
+}
 $version = DB::selectOne('SELECT VERSION() AS version')->version;
 expect(str_starts_with($version, '11.4.5-MariaDB'), 'Pinned real MariaDB version');
 echo json_encode(['complete' => true, 'server_version' => $version, 'prefix' => $prefix,
     'retained_tables' => count($owned), 'verified_tables' => count($verified), 'reference_creates' => count($references),
-    'implicit_timestamp_defaults_off' => true, 'evidence_dates_upgrade' => true,
+    'implicit_timestamp_defaults_off' => true, 'evidence_dates_upgrade' => true, 'psl_only_upgrade_defaults' => [0, 1],
     'fresh' => true, 'reinstall' => true, 'upgrade' => true, 'cleanup_success_and_failure' => true])."\n";
 $nativeSuccessful = true;
