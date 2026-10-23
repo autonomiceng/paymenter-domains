@@ -31,12 +31,15 @@ final class PublicSuffixList
     { $at = $this->status()->last_network_fetch_at; return $at === null ? null : (int) $at + 86400; }
     public function source(): string
     { return Setting::whereNull('settingable_type')->where('key', self::SETTING)->value('value') ?? self::SOURCE; }
-    public function tick(): void
+    public function scheduledAttemptDue(): bool
     {
-        if (!Schema::hasTable('domains_psl_status')) { return; }
-        $at = $this->status()->last_attempt_at;
-        if ($at === null || $this->clock->now()->getTimestamp() >= (int) $at + 7 * 86400) { $this->update(true); }
+        if (!Schema::hasTable('domains_psl_status')) { return false; }
+        $s = $this->status(); $now = $this->clock->now()->getTimestamp();
+        return ($s->last_attempt_at === null || $now >= (int) $s->last_attempt_at + 7 * 86400)
+            && ($s->last_network_fetch_at === null || $now >= (int) $s->last_network_fetch_at + 86400);
     }
+    public function tick(): void
+    { if ($this->scheduledAttemptDue()) { $this->update(true); } }
     public function update(bool $scheduled = false): string
     {
         OperationClaims::outside(); $now = $this->clock->now()->getTimestamp();

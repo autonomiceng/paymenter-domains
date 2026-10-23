@@ -509,7 +509,9 @@ No list download, discovery/resolver or provider acceptance is established.
 
 `psl-staff-test.php` mounts the installed native page, submits source/update actions,
 revokes permissions after mount, checks all age states and exercises weekly runtime work
-without accounts. Native fixture defaults inject a failing PSL transport so incidental ticks
+without accounts. It runs the registered scheduler callback with a frozen clock: fresh installs
+queue on the next minute, recent and failed attempts queue nothing over 1,440 minutes,
+weekly and daily network boundaries remain exact, and a missing status table queues nothing. Native fixture defaults inject a failing PSL transport so incidental ticks
 can never resolve DNS or download data.
 
 ### Runtime archive verification

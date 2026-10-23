@@ -86,6 +86,8 @@ final class Runtime
             \Illuminate\Support\Facades\DB::afterCommit(fn()=>app(WatchDiscoveryWork::class)->hint($product));
         });
         Schedule::call(static function():void {\Paymenter\Extensions\Servers\Domains\Jobs\RunRuntime::dispatch();})->name('domains-runtime')->everyMinute()->withoutOverlapping(15)->onOneServer();
-        Schedule::call(static function():void {\Paymenter\Extensions\Servers\Domains\Jobs\UpdatePublicSuffixList::dispatch();})->name('domains-public-suffix-list')->daily()->withoutOverlapping(15)->onOneServer();
+        Schedule::call(static function():void {
+            if(app(PublicSuffixList::class)->scheduledAttemptDue()){\Paymenter\Extensions\Servers\Domains\Jobs\UpdatePublicSuffixList::dispatch();}
+        })->name('domains-public-suffix-list')->everyMinute()->withoutOverlapping(15)->onOneServer();
     }
 }
