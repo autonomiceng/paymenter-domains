@@ -50,7 +50,7 @@ foreach ([['status'=>'adoption_pending','provenance'=>null],['status'=>'active',
     Illuminate\Support\Facades\Auth::setUser($staff);expect(str_contains(DomainFacts::for($d)['Setup reason'],'purchase evidence'),'Staff see reason');
     expect(str_contains(implode(' ',DomainFacts::for($d)['Open domain invoices']),'payable'),'Staff sees retained payable renewal');
     $registration=$d->operations()->where('action','register')->sole();DB::table('invoices')->where('id',$registration->invoice_id)->update(['status'=>'pending']);
-    expect(in_array('#'.$registration->invoice_id.' — payable; review before collecting',DomainFacts::for($d)['Open domain invoices'],true),'Open registration invoice also visible');
+    expect(in_array('#'.$registration->invoice_id.': payable; review before collecting',DomainFacts::for($d)['Open domain invoices'],true),'Open registration invoice also visible');
     DB::table('invoices')->where('id',$registration->invoice_id)->update(['status'=>'paid']);
     DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->delete();
     DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);

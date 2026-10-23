@@ -36,7 +36,7 @@ final class DomainFacts
             $result['Processing']='Held for this domain';
             $result['Last recorded expiry (unverified)']=$d->provider_expires_at?->format('Y-m-d') ?? 'Unknown';
             try { $result['Last recorded expiry (unverified)']=$d->provider_expires_at?->format('Y-m-d') ?? ($d->renewal_policy['conversion_source_expiry']??'Unknown'); } catch (\Throwable) {}
-            $result['Open domain invoices']=DB::table('domains_operations as o')->join('invoices as i','i.id','=','o.invoice_id')->where('o.domain_id',$d->id)->where('i.status','pending')->distinct()->pluck('i.id')->map(fn($id)=>'#'.$id.' — payable; review before collecting')->all() ?: ['None'];
+            $result['Open domain invoices']=DB::table('domains_operations as o')->join('invoices as i','i.id','=','o.invoice_id')->where('o.domain_id',$d->id)->where('i.status','pending')->distinct()->pluck('i.id')->map(fn($id)=>'#'.$id.': payable; review before collecting')->all() ?: ['None'];
             $result['Setup reason']='Converted as pending: purchase evidence was not verified, or renewal billing was not managed. Renewals stay paused until adoption is available. Retained requests and invoices need review.';
         }
         try {

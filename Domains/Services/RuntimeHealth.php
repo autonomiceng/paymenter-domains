@@ -30,8 +30,8 @@ final class RuntimeHealth
         $failures=DB::table('domains_obligation_alerts as a')->join('domains_domains as d','d.id','=','a.domain_id')->where('d.server_id',$server)->whereNull('a.resolved_at')->whereIn('a.code',['template_failed','reminder_failed'])->orderBy('a.id')->limit(10)->get(['a.id','a.code','d.domain']);
         $identity=DB::table('domains_obligation_alerts as a')->join('domains_domains as d','d.id','=','a.domain_id')->where('d.server_id',$server)->where('a.code','native_identity_missing')->whereNull('a.resolved_at')->orderBy('a.id')->limit(10)->get(['a.id','d.domain']);
         $relinks=DB::table('domains_obligation_alerts as a')->join('domains_domains as d','d.id','=','a.domain_id')->where('d.server_id',$server)->where('a.code','transfer_watch_relink')->whereNull('a.resolved_at')->orderBy('a.id')->limit(10)->pluck('d.domain');
-        return ['Transfer watch relinks'=>$relinks->isEmpty()?'None recorded':$relinks->implode(', ').' — '.ObligationAlerts::LABELS['transfer_watch_relink'],
-            'Missing Paymenter records'=>$identity->isEmpty()?'None recorded':$identity->pluck('domain')->implode(', ').' — '.ObligationAlerts::LABELS['native_identity_missing'],
+        return ['Transfer watch relinks'=>$relinks->isEmpty()?'None recorded':$relinks->implode(', ').' ('.ObligationAlerts::LABELS['transfer_watch_relink'].')',
+            'Missing Paymenter records'=>$identity->isEmpty()?'None recorded':$identity->pluck('domain')->implode(', ').' ('.ObligationAlerts::LABELS['native_identity_missing'].')',
             'Registrar configuration'=>match(app(AccountBindings::class)->configurationStatus($server)){
                 'matched'=>$sandbox?'Matches immutable OTE enrollment; account ownership unconfirmed':($namesilo?'NameSilo account ownership unconfirmed · no OTE enrollment':'Matches verified account'),
                 'not_configured'=>'Not configured',

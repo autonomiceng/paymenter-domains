@@ -36,11 +36,11 @@ class AdoptDomain extends Page
         return Action::make('choose')->label($this->target ? 'Change selection' : 'Choose customer and service')
             ->modalHeading('1. Choose the registration service')->modalSubmitActionLabel('Use selection')->schema([
                 Select::make('customer')->label('Customer')->required()->searchable()->live()
-                    ->getSearchResultsUsing(fn (string $search) => User::where(fn ($q) => $q->where('first_name', 'like', '%'.$search.'%')->orWhere('last_name', 'like', '%'.$search.'%'))->orderBy('id')->limit(25)->get()->mapWithKeys(fn ($u) => [$u->id => 'Customer #'.$u->id.' — '.$u->name])->all())
+                    ->getSearchResultsUsing(fn (string $search) => User::where(fn ($q) => $q->where('first_name', 'like', '%'.$search.'%')->orWhere('last_name', 'like', '%'.$search.'%'))->orderBy('id')->limit(25)->get()->mapWithKeys(fn ($u) => [$u->id => 'Customer #'.$u->id.' ('.$u->name.')'])->all())
                     ->getOptionLabelUsing(fn ($value) => User::find($value)?->name),
                 Select::make('service')->label('Dedicated domain service')->required()->searchable()
                     ->options(fn ($get) => Service::where('user_id', $get('customer'))->whereHas('product.server', fn ($q) => $q->where('extension', 'Domains'))
-                        ->orderBy('id')->limit(100)->get()->mapWithKeys(fn ($s) => [$s->id => 'Service #'.$s->id.' — '.($s->properties()->where('key', 'domain')->value('value') ?? 'Unconfirmed name')])->all()),
+                        ->orderBy('id')->limit(100)->get()->mapWithKeys(fn ($s) => [$s->id => 'Service #'.$s->id.' ('.($s->properties()->where('key', 'domain')->value('value') ?? 'Unconfirmed name').')'])->all()),
                 Select::make('account')->label('Registrar account')->required()->options(fn () => Account::where('registrar_key', 'enom')->orderBy('server_id')->get()
                     ->mapWithKeys(fn ($a) => [$a->server_id => 'Account #'.$a->server_id.' · '.($a->environment === 'test' ? 'TEST' : 'Live')])->all()),
             ])->action(function (array $data): void {
@@ -156,13 +156,13 @@ class AdoptDomain extends Page
         if ($this->refusal) { $sections[] = Section::make('Confirmation not completed')->description($this->refusal)->schema([]); }
         if ($this->review && $this->adoptedId === null) {
             $details = $this->review['details'] ?? []; $a = $this->previewId ? Adoption::whereKey($this->previewId)->where('actor_id', Auth::id())->first() : null;
-            $facts = ['Result' => ($this->review['code'] ?? '') === 'ready' ? (($details['test_only'] ?? false) ? 'TEST rehearsal only — no live authority' : 'Verified preview') : $this->review['message'],
-                'Expiry' => self::when($details['expiry'] ?? null), 'Renewal due' => ($details['do_not_renew'] ?? false) ? 'No renewal — renewal off' : self::when($details['renewal_due'] ?? null),
+            $facts = ['Result' => ($this->review['code'] ?? '') === 'ready' ? (($details['test_only'] ?? false) ? 'TEST rehearsal only. No live authority.' : 'Verified preview') : $this->review['message'],
+                'Expiry' => self::when($details['expiry'] ?? null), 'Renewal due' => ($details['do_not_renew'] ?? false) ? 'No renewal (renewal off)' : self::when($details['renewal_due'] ?? null),
                 'Annual charge' => isset($details['annual_charge']) ? $details['annual_charge'].' USD (including applicable tax)' : 'Unconfirmed',
                 'Price review' => Review::priceNotice($details['price_notice'] ?? null),
-                'Historical invoices' => array_map(fn ($i) => 'Invoice #'.$i['invoice_id'].' — '.ucfirst($i['status']), $details['history'] ?? []) ?: ['No verified historical invoices.'],
+                'Historical invoices' => array_map(fn ($i) => 'Invoice #'.$i['invoice_id'].' ('.ucfirst($i['status']).')', $details['history'] ?? []) ?: ['No verified historical invoices.'],
                 'Renewal intent' => ($details['test_only'] ?? false) ? 'Rehearsal only. No invoice, charge or live renewal authority is created.' : (($details['do_not_renew'] ?? false) ? 'Do not renew. End-of-period cancellation will be retained.' : 'Renewal on. An invoice may be issued immediately if the registration is already inside its billing window. Future admission and billing gates still apply.'),
-                'Reason' => $this->reason, 'Preview valid until' => $a?->valid_until ? $a->valid_until->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i:s').' UTC' : 'Expired — read again'];
+                'Reason' => $this->reason, 'Preview valid until' => $a?->valid_until ? $a->valid_until->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i:s').' UTC' : 'Expired. Read again.'];
             $entries = []; foreach ($facts as $label => $value) { $entries[] = TextEntry::make('review_'.count($entries))->label($label)->state($value)->listWithLineBreaks(); }
             if ($why = $this->unavailable()) { $entries[] = TextEntry::make('unavailable')->label('Why confirmation is unavailable')->hiddenLabel()->state($why)->columnSpanFull(); }
             $sections[] = Section::make('3. Review verified facts')->columns(2)->schema([...$entries, Actions::make([$this->confirmAction()])->columnSpanFull()]);

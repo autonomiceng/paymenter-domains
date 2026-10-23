@@ -85,7 +85,7 @@ if ($out !== null) {
     }
     file_put_contents($out.'/capture-index.json', json_encode(['capture_status' => 'rendered HTML; PNG capture pending', 'records' => $index], JSON_PRETTY_PRINT));
     file_put_contents($out.'/rendered-strings.json', json_encode($strings, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-    file_put_contents($out.'/strings.json', json_encode(['labels' => Review::LABELS, 'confirm' => AdoptionPreview::UNAVAILABLE, 'test' => 'TEST — rehearsal only', 'test_ready' => (new Review('ready', ['test_only' => true]))->jsonSerialize()['message'], 'capture_status' => 'rendered HTML; PNG capture pending'], JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
+    file_put_contents($out.'/strings.json', json_encode(['labels' => Review::LABELS, 'confirm' => AdoptionPreview::UNAVAILABLE, 'test' => 'TEST (rehearsal only)', 'test_ready' => (new Review('ready', ['test_only' => true]))->jsonSerialize()['message'], 'capture_status' => 'rendered HTML; PNG capture pending'], JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 }
 $roleBefore = $staff->role->permissions;
 $bindingRow = DB::table('domains_accounts')->where('server_id', $binding->serverId)->first();

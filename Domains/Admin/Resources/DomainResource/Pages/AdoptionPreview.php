@@ -64,21 +64,21 @@ class AdoptionPreview extends ViewRecord
         $source = $details['source_expiry'] ?? ($d->renewal_policy['conversion_source_expiry'] ?? $d->provider_expires_at?->format('Y-m-d'));
         try { new \Paymenter\Extensions\Servers\Domains\Data\DateEvidence($source ?? '', \Paymenter\Extensions\Servers\Domains\Data\ExpiryPrecision::Date, 'conversion_source'); }
         catch (\Throwable) { $source = null; }
-        return ['Name' => $d->domain, 'Customer' => 'Customer #'.$d->user_id.' — '.(\App\Models\User::find($d->user_id)?->name ?? 'Unconfirmed'), 'Service' => 'Service #'.$d->service_id,
+        return ['Name' => $d->domain, 'Customer' => 'Customer #'.$d->user_id.' ('.(\App\Models\User::find($d->user_id)?->name ?? 'Unconfirmed').')', 'Service' => 'Service #'.$d->service_id,
             'Result' => ($this->review['code'] ?? null) === 'ready' && ($details['test_only'] ?? false) ? 'Rehearsal checks passed. A TEST account cannot verify a live registration.' : ($this->review['message'] ?? 'No fresh preview yet.'),
             'Expiry' => AdoptDomain::when($details['expiry'] ?? null), 'Expiry on file' => AdoptDomain::when($source),
             'Renewal due' => ($details['do_not_renew'] ?? false) ? 'None shown because do not renew was requested' : AdoptDomain::when($details['renewal_due'] ?? null),
             'Current annual charge' => isset($details['annual_charge']) ? $details['annual_charge'].' USD (including applicable tax)' : 'Unconfirmed',
             'Price review' => isset($details['annual_charge']) ? Review::priceNotice($details['price_notice'] ?? null) : 'Unconfirmed',
             'Historical invoices' => empty($details['history']) ? 'No verified historical invoices in this preview.'
-                : array_map(fn ($i) => 'Invoice #'.$i['invoice_id'].' — '.ucfirst($i['status']), $details['history']),
+                : array_map(fn ($i) => 'Invoice #'.$i['invoice_id'].' ('.ucfirst($i['status']).')', $details['history']),
             'Do not renew' => ($details['existing_do_not_renew'] ?? false) ? 'Already set to cancel at the end of the period; this preview leaves that unchanged.' : (($details['do_not_renew'] ?? false) ? 'Requested for review; no cancellation has been created.' : 'Not requested.'),
             'Reason' => $this->reviewReason !== '' ? $this->reviewReason : 'Required when reading a fresh preview.'];
     }
     private function environmentLabel(): string
     {
         $environment = $this->review['details']['environment'] ?? Account::where('server_id', $this->getRecord()->server_id)->value('environment');
-        return $environment === 'test' ? 'TEST — rehearsal only' : ($environment === 'live' ? 'Live' : 'Unconfirmed');
+        return $environment === 'test' ? 'TEST (rehearsal only)' : ($environment === 'live' ? 'Live' : 'Unconfirmed');
     }
     public function infolist(Schema $schema): Schema
     {

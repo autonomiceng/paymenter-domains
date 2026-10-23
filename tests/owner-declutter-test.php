@@ -57,12 +57,22 @@ same(5,$dom->query('//dialog[@open]//div[dt="New"]//span')->length,'Confirm step
 $dom=$render(OwnerRecordDraft::apply($dto($management(null)),'glue_delete',['host'=>'ns1.example.com'],confirm:true));
 same(1,$dom->query('//dialog[@id="confirm-glue-0"][@open]')->length,'Glue delete confirm step opens for the chosen record');
 
-// Customer copy: one term for glue records and no em dashes in any customer view.
+// Copy: one term for glue records in customer views and no em dashes in any customer or staff view.
+$dash=static fn(string $text): bool => str_contains($text,'—')||stripos($text,'&mdash;')!==false||stripos($text,'&#8212;')!==false;
 foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__.'/../Domains/resources/views',FilesystemIterator::SKIP_DOTS)) as $file) {
-    if (preg_match('~/(admin|staff)/~',$file->getPathname())) { continue; }
     $text=preg_replace('/\{\{--.*?--\}\}/s','',file_get_contents($file->getPathname()));
-    expect(!str_contains($text,'—'),'No em dash in customer view '.$file->getFilename());
+    expect(!$dash($text),'No em dash in view '.$file->getFilename());
+    if (preg_match('~/(admin|staff)/~',$file->getPathname())) { continue; }
     expect(stripos($text,'child nameserver')===false,'No "child nameservers" in customer view '.$file->getFilename());
+}
+// String literals in runtime code feed staff tables, facts, notices and mail; comments are skipped.
+foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__.'/../Domains',FilesystemIterator::SKIP_DOTS)) as $file) {
+    if (!str_ends_with($file->getFilename(),'.php')||str_ends_with($file->getFilename(),'.blade.php')) { continue; }
+    foreach (token_get_all(file_get_contents($file->getPathname())) as $token) {
+        if (is_array($token)&&in_array($token[0],[T_CONSTANT_ENCAPSED_STRING,T_ENCAPSED_AND_WHITESPACE,T_INLINE_HTML],true)) {
+            expect(!$dash($token[1])&&stripos($token[1],'\u{2014}')===false,'No em dash in string at '.$file->getFilename().':'.$token[2]);
+        }
+    }
 }
 expect(!str_contains(json_encode(\Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings::all(),JSON_UNESCAPED_UNICODE),'—'),'Summary strings have no em dash');
 $nativeSuccessful=true;echo "Owner declutter checks passed.\n";

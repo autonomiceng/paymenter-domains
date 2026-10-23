@@ -27,7 +27,7 @@ foreach (['held'=>[], 'unresolved'=>[$ops[0]], 'failed_transfer'=>[$ops[2]], 'pa
     $p->set('tableDeferredFilters',$p->get('tableFilters'))->call('applyTableFilters')->assertCanSeeTableRecords($yes)->assertCountTableRecords(count($yes));
 }
 Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$ops[2]->id])->assertSuccessful()
-    ->assertSee('Registrar refund is manual — request it from registrar support')->assertSee('No staff release or credit is available.');
+    ->assertSee('Registrar refund is manual; request it from registrar support')->assertSee('No staff release or credit is available.');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Account spending holds')->assertSee('Request #'.$ops[2]->id);
 expect(str_contains(implode(' ',PaidUncertainty::for($held)),' · since '),'Account-wide hold includes age');
 same(null,RequestFacts::for($ops[1])['reason'],'Absent reason remains absent');

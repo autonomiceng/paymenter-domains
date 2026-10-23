@@ -38,7 +38,7 @@ final class RequestFacts
                 && (in_array($op->safe_code,['transfer_provider_rejected','transfer_needs_action'],true)
                     || in_array($p['reconciliation']['transfer_status']??null,['rejected','needs_action'],true))) {
                 $rejected=$op->safe_code==='transfer_provider_rejected' || ($p['reconciliation']['transfer_status']??null)==='rejected';
-                $out['registrar_refund']=$rejected ? 'Registrar refund is manual — request it from registrar support'
+                $out['registrar_refund']=$rejected ? 'Registrar refund is manual; request it from registrar support'
                     : 'If this transfer is abandoned, request any registrar refund manually via registrar support.';
             }
             if (isset($out['cutoff']) && $out['refund']==='Customer credit: not assessed') { $out['refund']='Customer credit: not yet assessed'; }

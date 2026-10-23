@@ -41,7 +41,7 @@ final class StaffReviewHistory
             $lines[]=implode(' · ',$parts);
         }
         $older=max(0,count($history)-$limit);
-        if ($older) { $lines[]=$older.' older staff review '.($older===1?'entry':'entries').' not shown'.($detail?'':' — open request for details'); }
+        if ($older) { $lines[]=$older.' older staff review '.($older===1?'entry':'entries').' not shown'.($detail?'':'; open request for details'); }
         return $lines;
     }
 }

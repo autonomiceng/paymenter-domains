@@ -30,7 +30,7 @@ $read->read(static function()use($activity,$reason){
 });
 $cell=$activity()->assertSee('Released ·')->assertSee('Recheck requested ·')->assertSee('Recheck finished ·')->assertSee('Read current evidence');
 expect(strpos($cell->html(),'Recheck requested ·')<strpos($cell->html(),'Recheck finished ·'),'Recheck phases retain recorded order');
-$cell->assertDontSee($reason)->assertSee('1 older staff review entry not shown — open request for details');
+$cell->assertDontSee($reason)->assertSee('1 older staff review entry not shown; open request for details');
 $detail=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('Held ·');
 expect(str_contains($detail->html(),'&lt;script&gt;alert(&quot;review&quot;)&lt;/script&gt;'),'Detail escapes script reason');
 expect(!str_contains($detail->html(),$reason),'Detail never emits raw script reason');
@@ -47,7 +47,7 @@ for($i=4;$i<25;$i++){$history[]=['action'=>'recheck','phase'=>'read_failed','at'
 $history[24]['reason']=str_repeat('長',170).'CELL-TAIL';$history[24]['actor_name']='<b>Stored staff</b>';
 $op->refresh()->update(['policy'=>[...$op->policy,'staff_actions'=>$history]]);
 $cell=$activity()->assertSee('Recheck failed ·')->assertSee('History reason 22')->assertSee('History reason 23')
-    ->assertSee('22 older staff review entries not shown — open request for details')->assertDontSee('History reason 21')->assertDontSee('CELL-TAIL');
+    ->assertSee('22 older staff review entries not shown; open request for details')->assertDontSee('History reason 21')->assertDontSee('CELL-TAIL');
 expect(str_contains($cell->html(),'…'),'Long cell reason visibly truncates');
 expect(str_contains($cell->html(),'&lt;b&gt;Stored staff&lt;/b&gt;'),'Stored actor display name is escaped');
 $detail=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee(str_repeat('長',170).'CELL-TAIL')
