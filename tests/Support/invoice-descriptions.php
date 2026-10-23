@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Services\InvoiceDescription as Lines;
 
 $issue = new DateTimeImmutable('2026-10-19T00:30:00+02:00');
@@ -13,10 +14,10 @@ $invoiceLineExamples = [
     'renew-multi' => Lines::renewal('example.com', $issue, 3),
     'privacy-purchase' => Lines::privacy('example.com', null, $issue),
     'privacy-renew' => Lines::privacy('example.com', '2027-04-09', $issue),
-    'register-leap' => Lines::acquisition('leap-placeholder.com', 'register', 1, $leap),
-    'renew-leap' => Lines::renewal('leap-placeholder.com', $leap, 1),
-    'privacy-leap' => Lines::privacy('leap-placeholder.com', '2028-02-29', $issue),
-    'idn' => Lines::renewal('xn--bcher-kva.de', $issue, 1),
+    'register-leap' => Lines::acquisition(reservedFixtureName('leap.example.com'), 'register', 1, $leap),
+    'renew-leap' => Lines::renewal(reservedFixtureName('leap.example.com'), $leap, 1),
+    'privacy-leap' => Lines::privacy(reservedFixtureName('leap.example.com'), '2028-02-29', $issue),
+    'idn' => Lines::renewal('xn--bcher-kva.example.com', $issue, 1),
 ];
 same('Register example.com: 1 year (Oct 19, 2026 - Oct 19, 2027, from registration)', $invoiceLineExamples['register'], 'Engine issue day and singular registration wording');
 same('Register example.com: 3 years (Oct 19, 2026 - Oct 19, 2029, from registration)', $invoiceLineExamples['register-multi'], 'Fixed multi-year registration');
@@ -26,11 +27,11 @@ same('Renew example.com: Oct 19, 2026 - Oct 19, 2027', $invoiceLineExamples['ren
 same('Renew example.com: Oct 19, 2026 - Oct 19, 2029', $invoiceLineExamples['renew-multi'], 'Multi-year renewal range');
 same('Domain privacy example.com: Oct 19, 2026 - Oct 19, 2027 (from purchase)', $invoiceLineExamples['privacy-purchase'], 'Independent privacy purchase year');
 same('Domain privacy example.com: Apr 09, 2027 - Apr 09, 2028', $invoiceLineExamples['privacy-renew'], 'Privacy expiry, not domain expiry or issue date');
-same('Register leap-placeholder.com: 1 year (Feb 29, 2028 - Feb 28, 2029, from registration)', $invoiceLineExamples['register-leap'], 'Registration leap-day clamp');
-same('Renew leap-placeholder.com: Feb 29, 2028 - Feb 28, 2029', $invoiceLineExamples['renew-leap'], 'Renewal leap-day clamp');
-same('Renew leap-placeholder.com: Feb 29, 2028 - Feb 29, 2032', Lines::renewal('leap-placeholder.com', $leap, 4), 'Multi-year leap anniversary');
-same('Domain privacy leap-placeholder.com: Feb 29, 2028 - Feb 28, 2029', $invoiceLineExamples['privacy-leap'], 'Privacy leap-day clamp');
-same('Renew bücher.de: Oct 19, 2026 - Oct 19, 2027', $invoiceLineExamples['idn'], 'Retained IDN displays Unicode only');
+same('Register leap.example.com: 1 year (Feb 29, 2028 - Feb 28, 2029, from registration)', $invoiceLineExamples['register-leap'], 'Registration leap-day clamp');
+same('Renew leap.example.com: Feb 29, 2028 - Feb 28, 2029', $invoiceLineExamples['renew-leap'], 'Renewal leap-day clamp');
+same('Renew leap.example.com: Feb 29, 2028 - Feb 29, 2032', Lines::renewal(reservedFixtureName('leap.example.com'), $leap, 4), 'Multi-year leap anniversary');
+same('Domain privacy leap.example.com: Feb 29, 2028 - Feb 28, 2029', $invoiceLineExamples['privacy-leap'], 'Privacy leap-day clamp');
+same('Renew bücher.example.com: Oct 19, 2026 - Oct 19, 2027', $invoiceLineExamples['idn'], 'Retained IDN displays Unicode only');
 $longName = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 63).'.'.str_repeat('d', 61);
 same(253, strlen($longName), 'Maximum canonical DNS name fixture');
 foreach (['register', 'transfer', 'renew', 'privacy'] as $kind) {
@@ -49,7 +50,7 @@ foreach (['register', 'transfer', 'renew', 'privacy'] as $kind) {
     }), 'Every date and qualifier survives truncation '.$kind);
     $invoiceLineExamples[$kind.'-long'] = $short;
 }
-$unicodeLong = str_repeat('é', 250).'.de';
+$unicodeLong = str_repeat('é', 250).'.test';
 $unicodeLine = Lines::renewal($unicodeLong, $issue, 1);
 same(255, mb_strlen($unicodeLine, 'UTF-8'), 'Unicode character rather than byte bound');
 expect(mb_check_encoding($unicodeLine, 'UTF-8'), 'Truncation preserves valid UTF-8');

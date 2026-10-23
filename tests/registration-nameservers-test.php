@@ -18,10 +18,10 @@ foreach (['enom', 'namesilo'] as $index => $registrar) {
     $fresh = new RegistrationPreflight($freshBindings, new WriteFeatures(registration: true), $acceptance);
     // The synthetic writer reaches preflight independently of the bridge's earlier owner-setup guard.
     $engine = new DomainOperations($claims, $fresh, $writer, $clock); $writer->engine = $engine;
-    $cases = ['empty-host' => ['', 'ns2.provider-placeholder.net'],
-        'too-many' => array_map(static fn ($i) => 'ns'.$i.'.provider-placeholder.net', range(1, 14)),
-        'bad-ldh' => ['ns_1.provider-placeholder.net', 'ns2.provider-placeholder.net'],
-        'valid' => ['ns1.provider-placeholder.net', 'ns2.provider-placeholder.net']];
+    $cases = ['empty-host' => ['', 'ns2.example.net'],
+        'too-many' => array_map(static fn ($i) => 'ns'.$i.'.example.net', range(1, 14)),
+        'bad-ldh' => ['ns_1.example.net', 'ns2.example.net'],
+        'valid' => ['ns1.example.net', 'ns2.example.net']];
     if ($registrar === 'enom') { $cases['privacy-first'] = $cases['bad-ldh']; }
     foreach ($cases as $case => $servers) {
         $name = placeholderComFixtureName($registrar.'-nameservers-'.$case.'-placeholder.com');

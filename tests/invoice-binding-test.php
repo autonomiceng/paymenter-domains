@@ -59,7 +59,7 @@ foreach (['policy' => ['checkout', 'price', 'seller_revision'], 'cost' => ['esti
 $snapshot = $domain->fresh()->snapshot;
 foreach (['change', 'remove'] as $mutation) {
     $changed = $snapshot;
-    if ($mutation === 'remove') { unset($changed['checkout']); } else { $changed['checkout'] = ['name' => 'changed-placeholder.com']; }
+    if ($mutation === 'remove') { unset($changed['checkout']); } else { $changed['checkout'] = ['name' => reservedFixtureName('changed.example.com')]; }
     commerceReject(static fn () => $domain->fresh()->fill(['snapshot' => $changed])->save());
     same($snapshot, $domain->fresh()->snapshot, 'Refused domain checkout evidence stays unchanged');
 }

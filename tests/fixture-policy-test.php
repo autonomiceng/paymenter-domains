@@ -23,3 +23,13 @@ foreach (['ordinary.com', 'example.com', 'two.labels-placeholder.com', 'not-plac
     expect($rejected, 'Placeholder .com fixture policy must reject '.$name);
 }
 echo "Explicit synthetic fixture policy passed; no domain availability lookup.\n";
+
+// Scan domain literals in the commerce fixtures that also exercise presentation.
+foreach (['invoice-binding-test.php', 'management-privacy-test.php', 'owner-actions-test.php',
+    'registration-nameservers-test.php', 'Support/invoice-descriptions.php'] as $fixture) {
+    preg_match_all('/(?:[a-z0-9_-]+\.)+(?:com|net|org|de)\b/i', file_get_contents(__DIR__.'/'.$fixture), $names);
+    foreach (array_unique($names[0]) as $name) {
+        expect(preg_match('/(?:^|\.)example\.(?:com|net|org)$/', $name) === 1
+            || str_ends_with($name, '-placeholder.com'), $fixture.' uses a reserved or explicit placeholder name: '.$name);
+    }
+}
