@@ -79,6 +79,7 @@
 .domains .domains-badge { display: inline-flex; align-items: center; gap: .375rem; padding: .125rem .625rem; border-radius: 999px; font-size: .75rem;
     font-weight: 700; line-height: 1.25rem; white-space: nowrap; color: var(--e-quiet); background: color-mix(in srgb, currentColor 13%, transparent); }
 .domains .domains-badge::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: currentColor; }
+.domains .domains-pill-reason { display: block; margin-top: .25rem; font-size: .75rem; line-height: 1rem; color: var(--e-muted); }
 .domains .domains-tone-ok { color: var(--e-ok); }
 .domains .domains-tone-info { color: var(--e-info); }
 .domains .domains-tone-warn { color: var(--e-warn); }

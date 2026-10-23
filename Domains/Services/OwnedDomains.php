@@ -6,15 +6,17 @@ use App\Models\{Invoice, User};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{PrivacyMode, Support};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
+use Paymenter\Extensions\Servers\Domains\Presentation\{OwnedDomain, RequestStatus, StatusPill};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 final readonly class OwnedDomains
 {
     /** Enom's default nameservers, shown when an owner chooses them. The request itself sends UseDNS=default. */
     public const DEFAULT_NAMESERVERS=['dns1.name-services.com','dns2.name-services.com','dns3.name-services.com','dns4.name-services.com','dns5.name-services.com'];
-    public const STATUSES = ['adoption_pending'=>'Being set up','active'=>'Active','registration_pending'=>'Registration in progress','transfer_pending'=>'Transfer in progress',
-        'registration_rejected'=>'Needs attention','transfer_rejected'=>'Needs attention','needs_review'=>'Needs attention',
-        'expired'=>'Expired','grace'=>'Expired','redemption'=>'In redemption','cancelled'=>'Order cancelled'];
+    /** History change label for each management request action. */
+    private const CHANGES = ['nameservers'=>'Nameservers','contacts'=>'Contacts','contact_profile'=>'Contacts','lock'=>'Transfer lock',
+        'privacy_enable'=>'WHOIS privacy','privacy_disable'=>'WHOIS privacy','privacy_purchase'=>'WHOIS privacy','privacy_renew'=>'WHOIS privacy',
+        'auto_renew_off'=>'Auto-renew','auth_code_email'=>'Auth code','dns'=>'DNS records','srv'=>'DNS records',
+        'ds_add'=>'DNSSEC','ds_delete'=>'DNSSEC','glue_add'=>'Glue records','glue_update'=>'Glue records','glue_delete'=>'Glue records'];
     public function __construct(private Clock $clock, private OwnerPorts $ports, private ?DomainManagement $engine = null, private ?DomainBilling $billing = null) {}
     /** Always query current native AND ledger ownership; IDs are locators, never authority. */
     public function owned(User $user, int $id): Domain
@@ -31,23 +33,16 @@ final readonly class OwnedDomains
     public function present(Domain $d, bool $forms = true): OwnedDomain
     {
         if ($d->adoptionPending()) {
-            return new OwnedDomain($d->domain, 'Being set up', 'info', null, 'Paused during setup', null,
+            $pill=StatusPill::of('adoption_pending');
+            return new OwnedDomain($d->domain, $pill['label'], $pill['tone'], null, 'Paused during setup', null,
                 ['show'=>route('domains.domains.show',$d->id)], [], ['required'=>false,'contacts'=>false], [], [],
-                Account::where('server_id',$d->server_id)->value('environment')==='test', setupPending:true, demo:DemoData::is($d));
+                Account::where('server_id',$d->server_id)->value('environment')==='test', setupPending:true, statusReason:$pill['reason'], demo:DemoData::is($d));
         }
         $op=$this->operation($d); $obs=$d->observation??[]; $service=$d->service;
         $renewalState=RenewalStop::read($d);
         $actions=['show'=>route('domains.domains.show',$d->id),'setupSave'=>route('domains.domains.setup-save',$d->id),'contactsSave'=>route('domains.domains.contacts-save',$d->id),'codeSave'=>route('domains.domains.code-save',$d->id)]; $management=[]; $caps=null;
         try { $caps=$this->ports->forDomain($d)->capabilities(); } catch (\Throwable) {}
-        $status=self::STATUSES[$d->status]??'Needs attention';
-        $tone=match ($d->status) {
-            'active'=>'ok', 'adoption_pending','registration_pending','transfer_pending'=>'info',
-            'awaiting_payment','registration_rejected','transfer_rejected','needs_review'=>'warn',
-            'expired','grace','redemption'=>'bad', default=>'muted',
-        };
-        if ($d->provenance === 'adopted' && $d->provider_expires_at !== null && $this->clock->now() >= $d->provider_expires_at) { $status = 'Registry expiry reached'; $tone = 'warn'; }
-        if ($op && in_array($op->state,['held','uncertain'],true)) { $status=$op->action==='register'?'Processing':'Needs attention'; $tone=$op->action==='register'?'info':'warn'; }
-        if ($op?->state==='awaiting_payment') { $status='Awaiting payment'; $tone='warn'; }
+        $pill=StatusPill::of(...DomainStates::managed($d,$op,$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),RenewalStop::stopped($renewalState)));
         $setup=['contacts'=>false,'required'=>false,'nameservers'=>false,'privacy'=>false,'defaults'=>$d->registrar_key==='enom'];
         if ($caps && $op && ($op->state!=='held'||in_array($op->safe_code,['contact_details_required','transfer_setup_review_required','nameservers_required'],true))
             && in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true) && ($op->attempt??[])===[]
@@ -61,7 +56,7 @@ final readonly class OwnedDomains
         if ($caps && $op?->state==='held' && $op->safe_code==='contact_details_required' && ContactRecovery::provenUnsent($op)
             && in_array($service?->status,['pending','active'],true) && !$service->cancellation
             && in_array($d->status,['registration_pending','transfer_pending'],true)) { $setup['contacts']=true; }
-        if ($setup['required']||$setup['contacts']) { if($status==='Processing'){$status='Needs attention';} $actions['setup']=route('domains.domains.setup',$d->id); }
+        if ($setup['required']||$setup['contacts']) { $actions['setup']=route('domains.domains.setup',$d->id); }
         $transfer=['open'=>false,'received'=>false,'paid'=>false,'deadline'=>null,'held'=>false,'unchecked'=>false,'phase'=>'held'];
         if ($op?->action==='transfer' && $d->status==='transfer_pending') {
             $transfer['received']=TransferInputs::validCode($op->payload['epp']??null);
@@ -86,23 +81,23 @@ final readonly class OwnedDomains
             $transfer['unchecked']=($op->attempt['transfer_admission']['rdap_unchecked']??null)===true;
             $actions['code']=route('domains.domains.code',$d->id);
         }
-        if ($setup['required'] || $setup['contacts']) { $tone='warn'; }
-        $progress=$d->provenance === 'adopted' ? [['label' => 'Registration adopted', 'state' => 'Confirmed']] : [];
+        $progress=$d->provenance === 'adopted' ? [['label' => 'Imported', 'state' => 'Completed']] : [];
         foreach ($d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(100)->get() as $entry) {
             if (!isset($entry->policy['management']) || isset($entry->policy['management']['correction'])) { continue; }
-            $label=['nameservers'=>'Nameservers','contacts'=>'Domain contacts','contact_profile'=>'Contact details','lock'=>'Transfer lock',
-                'privacy_enable'=>'Domain privacy','privacy_disable'=>'Domain privacy','privacy_purchase'=>'Domain privacy','privacy_renew'=>'Domain privacy',
-                'auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code','dns'=>'DNS records','srv'=>'SRV records',
-                'ds_add'=>'DNSSEC','ds_delete'=>'DNSSEC','glue_add'=>'Glue records','glue_update'=>'Glue records','glue_delete'=>'Glue records'][$entry->action]??null;
+            $label=self::CHANGES[$entry->action]??null;
             if (!$label) { continue; }
-            $state=match($entry->state) { 'awaiting_payment'=>'Awaiting payment','queued'=>'Queued, not sent yet','running','pending'=>'In progress',default=>'Unresolved' };
-            if ($entry->state==='succeeded' && ManagementEvidence::resolved($entry,$d)) { $state=$entry->action==='auth_code_email'?'Email requested':'Confirmed'; }
-            if (($entry->state==='rejected'||$entry->state==='held'&&$entry->safe_code==='enom_test_management_call_cap') && ManagementEvidence::resolved($entry,$d)) { $state='Not applied'; }
+            // Request status labels; a result counts only once the registrar's readback confirms it.
+            $resolved=ManagementEvidence::resolved($entry,$d);
+            $state=match (true) {
+                in_array($entry->state,['succeeded','rejected'],true) && !$resolved => 'Under review',
+                $entry->state==='held' && $entry->safe_code==='enom_test_management_call_cap' && $resolved => 'Failed',
+                default => RequestStatus::for($entry->state)['label'],
+            };
             $progress[]=['label'=>$label,'state'=>$state];
         }
         foreach (array_slice($obs['corrections']??[],0,100) as $row) {
-            $label=['contacts'=>'Domain contacts','nameservers'=>'Nameservers','privacy'=>'Domain privacy','auto_renew'=>'Renewal settings'][$row['section']??'']??null;
-            if ($label) { $progress[]=['label'=>$label,'state'=>($row['state']??null)==='readback_confirmed_awaiting_review'?'Awaiting review':'Unresolved']; }
+            $label=['contacts'=>'Contacts','nameservers'=>'Nameservers','privacy'=>'WHOIS privacy','auto_renew'=>'Auto-renew'][$row['section']??'']??null;
+            if ($label) { $progress[]=['label'=>$label,'state'=>'Under review']; }
         }
         if ($caps) { $setup['maxNameservers']=$d->registrar_key==='enom'?12:13; }
         if ($forms) {
@@ -176,12 +171,12 @@ final readonly class OwnedDomains
             $history = Invoice::whereKey($invoiceIds)->where('user_id', $d->user_id)->orderBy('id')->get()->map(fn ($i) => ['number' => $i->number ?? (string) $i->id, 'status' => ucfirst($i->status), 'url' => route('invoices.show', $i)])->all();
         }
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';
-        return new OwnedDomain($d->domain,$status,$tone,$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
+        return new OwnedDomain($d->domain,$pill['label'],$pill['tone'],$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
             $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
             renewNow:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
-            demo:DemoData::is($d));
+            statusReason:$pill['reason'], demo:DemoData::is($d));
     }
     /** Existing cycle visibility is independent of eligibility to request a new invoice. */
     private function renewNow(Domain $d, bool $forms): array

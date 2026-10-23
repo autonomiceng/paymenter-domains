@@ -14,12 +14,13 @@ final class DomainStatus
         'redemption' => ['Redemption', 'danger'], 'failed' => ['Failed', 'danger'], 'cancelled' => ['Cancelled', 'gray'],
     ];
     /** Internal state => [status key, default reason line]. Domain status column values, request states seen on a domain,
-     * watch findings, and two derived states: renewal_off_expiring (auto-renew off, expiry within 30 days)
-     * and active_no_expiry (active without a confirmed expiry). */
+     * watch findings, and derived states: renewal_off_expiring (auto-renew off, expiry within 30 days),
+     * active_no_expiry (active without a confirmed expiry) and setup_required (held until the customer finishes setup). */
     public const STATES = [
         'active' => ['active', null], 'registration_pending' => ['pending_registration', null], 'transfer_pending' => ['pending_transfer', null],
         'awaiting_payment' => ['action_required', 'Invoice not paid'], 'awaiting_code' => ['action_required', 'Auth code needed'],
         'renewal_off_expiring' => ['action_required', 'Auto-renew off'], 'watch.ns_changed' => ['action_required', 'Nameservers changed'],
+        'setup_required' => ['action_required', 'Finish setup'], 'watch.not_registered' => ['action_required', 'Not registered'],
         'needs_review' => ['under_review', null], 'adoption_pending' => ['under_review', 'Import not confirmed'],
         'held' => ['under_review', null], 'uncertain' => ['under_review', null], 'active_no_expiry' => ['under_review', 'Expiry missing'],
         'expired' => ['expired', null], 'grace' => ['expired', 'In grace period'], 'watch.expired' => ['expired', 'Renew at your registrar'],
@@ -30,8 +31,9 @@ final class DomainStatus
     /** @return array{label:string,tone:string,reason:?string} */
     public static function for(?string $state, ?string $reason = null): array
     {
-        [$key, $default] = self::STATES[$state] ?? ['under_review', 'Status missing'];
-        [$label, $tone] = self::SET[$key];
-        return ['label' => $label, 'tone' => $tone, 'reason' => $reason ?? $default];
+        [$label, $tone] = self::SET[self::key($state)];
+        return ['label' => $label, 'tone' => $tone, 'reason' => $reason ?? (self::STATES[$state] ?? [null, 'Status missing'])[1]];
     }
+    /** The SET key a state belongs to; unknown states count as under_review. */
+    public static function key(?string $state): string { return (self::STATES[$state] ?? ['under_review'])[0]; }
 }

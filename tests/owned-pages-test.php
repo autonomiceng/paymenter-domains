@@ -16,7 +16,7 @@ foreach ([0,1] as $i) {
     $dto=$owners->present($d);$snapshots[]=$dto;
     $unavailable=(new Paymenter\Extensions\Servers\Domains\Services\OwnedDomains($clock,new Paymenter\Extensions\Servers\Domains\Services\OwnerPorts))->present($d);
     same([],$unavailable->management,'Unavailable capability port grants no management form');expect(!isset($unavailable->actions['setup']),'Unavailable capability port offers no setup form');
-    same('Awaiting payment',$dto->status,'Native unpaid transfer is explicit');
+    same(['Action required','warn','Invoice not paid'],[$dto->status,$dto->tone,$dto->statusReason],'Native unpaid transfer is explicit');
     same(null,$dto->transfer['deadline'],'Unpaid order has no invented UTC cutoff');
     expect($dto->transfer['open'],'Unsent unpaid transfer accepts code');
     same([],$dto->management,'Pending transfers have focused setup, without management forms');
@@ -33,7 +33,7 @@ foreach ([0,1] as $i) {
     $d->update(['status'=>'transfer_pending']);
     $d->update(['observation'=>['corrections'=>[['section'=>'contacts','state'=>'readback_confirmed_awaiting_review','profile_id'=>'PRIVATE'],['section'=>'nameservers','state'=>'closed']]]]);
     $html=$controller->show($request($user),$d->id)->render();
-    expect(str_contains($html,'Awaiting review')&&str_contains($html,'Unresolved'),'Correction readback never closes original');expect(!str_contains($html,'PRIVATE'),'No correction evidence leakage');
+    same([['label'=>'Contacts','state'=>'Under review'],['label'=>'Nameservers','state'=>'Under review']],$owners->present($d->fresh())->progress,'Correction readback never closes original');expect(str_contains($html,'Under review')&&!str_contains($html,'Completed'),'Correction rows render open');expect(!str_contains($html,'PRIVATE'),'No correction evidence leakage');
     $op->update(['state'=>'held','safe_code'=>'contact_details_required']);
     expect(str_contains($controller->setup($request($user),$d->id)->render(),'Use updated account details'),'Held contact recovery affordance');
     expect(str_contains($controller->setup($request($user),$d->id)->render(),'Edit account details</a>'),'Account edit link differs from the recovery heading');
@@ -48,7 +48,7 @@ foreach ([0,1] as $i) {
 $index=$controller->index($request($user))->render();same(2,storefrontDom($index)->query('//tbody/tr')->length,'Only current native and ledger owner records');
 expect(!str_contains($index,'This page uses a test system.'),'Owned domain list has no test notice');
 expect(str_contains($index,'domains-tone-warn'),'D3 real summary index actionable status tone');
-$r=$request($user);$r->query->add(['q'=>'other','sort'=>'-name','status'=>'pending']);$page=$controller->index($r);
+$r=$request($user);$r->query->add(['q'=>'other','sort'=>'-name','status'=>'under_review']);$page=$controller->index($r);
 same(1,$page->getData()['domains']->total(),'Owner search and status filter retain the native/ledger predicate');same(2,$page->getData()['filterCounts'][''],'Counts cover only current owner');
 $r->query->set('q','%');same(0,$controller->index($r)->getData()['domains']->total(),'Search wildcard is literal');expect(str_contains($controller->index($r)->render(),'Show all domains'),'Filtered empty state has an escape');
 same(0,storefrontDom($controller->index($request($other))->render())->query('//tbody/tr')->length,'Cross-owner index empty');

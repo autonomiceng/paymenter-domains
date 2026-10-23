@@ -27,7 +27,8 @@
     "tests/ote-renewal-probe-test.php",
     "tests/conversion-app-policy-test.php",
     "tests/watch-notice-plan-test.php",
-    "tests/status-sets-test.php"
+    "tests/status-sets-test.php",
+    "tests/status-tones-test.php"
   ],
   "native": [
     "tests/enom-curl-test.php",
@@ -116,6 +117,7 @@
     "tests/owner-declutter-test.php",
     "tests/owner-help-test.php",
     "tests/status-pill-test.php",
+    "tests/status-pages-test.php",
     "tests/missing-test.php",
     "tests/demo-data-test.php",
     "tests/customer-tags-test.php",

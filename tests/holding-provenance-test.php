@@ -42,7 +42,7 @@ foreach ([['status'=>'adoption_pending','provenance'=>null],['status'=>'active',
     $f=$d->observation['followup']??[];$phase=isset($f['operation_key'])&&($f['generation']??null)===$d->authority_generation?hash('sha256',$f['operation_key']):'holding';
     DB::table('domains_observation_work')->insert(['domain_id'=>$d->id,'server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'generation'=>$d->authority_generation,'phase'=>$phase,'due_at'=>0]);$work->tick();
     same('superseded',DB::table('domains_observation_work')->where('domain_id',$d->id)->value('safe_code'),'Already scheduled pending work cannot be claimed');same($calls,count($observation->calls),'Pending scheduled work performs no provider reads');
-    $dto=$owners->present($d);same('Being set up',$dto->status,'Neutral pending label');same(null,$dto->expiry,'No confirmed expiry shown');same(null,$dto->renewalPrice,'No renewal quote');same([],$dto->management,'No management forms');expect($dto->setupPending,'Pending notice shown');
+    $dto=$owners->present($d);same(['Under review','Import not confirmed'],[$dto->status,$dto->statusReason],'Neutral pending label');same(null,$dto->expiry,'No confirmed expiry shown');same(null,$dto->renewalPrice,'No renewal quote');same([],$dto->management,'No management forms');expect($dto->setupPending,'Pending notice shown');
     storefrontViews();$html=view('domains::show',['domain'=>$dto,'keys'=>[]])->render();
     expect(str_contains($html,'Our team will confirm this domain’s registration.'),'Customer knows next step');
     $visible=strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$html));

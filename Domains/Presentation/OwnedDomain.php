@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 /**
  * Customer data only. No models, binding, operation keys, provider IDs or financial evidence.
- * tone: ok|info|warn|bad|muted; status is the customer-facing label.
+ * status, tone, statusReason: the DomainStatus label, client tone and reason line (see StatusPill).
  * expiry: registrar-reported registration expiry (Y-m-d), null when unconfirmed.
  * renewalDue: due date (Y-m-d) of the exact retained pending renewal invoice, not expiry
  * or a projected renewal date; null when no matching issued invoice is confirmed.
@@ -22,5 +22,5 @@ final readonly class OwnedDomain
     public function __construct(public string $name, public string $status, public string $tone,
         public ?string $expiry, public string $renewal, public ?string $renewalPrice,
         public array $actions, public array $progress, public array $setup, public array $transfer,
-        public array $management, public bool $testEnvironment, public bool $changesUnavailable = false, public ?string $renewalDue = null, public bool $setupPending = false, public bool $adopted = false, public ?string $plannedRenewalDue = null, public array $history = [], public array $renewalInvoice = [], public bool $originalDoNotRenew = false, public array $renewNow = [], public ?string $renewalOff = null, public array $autoRenew = [], public bool $demo = false) {}
+        public array $management, public bool $testEnvironment, public bool $changesUnavailable = false, public ?string $renewalDue = null, public bool $setupPending = false, public bool $adopted = false, public ?string $plannedRenewalDue = null, public array $history = [], public array $renewalInvoice = [], public bool $originalDoNotRenew = false, public array $renewNow = [], public ?string $renewalOff = null, public array $autoRenew = [], public ?string $statusReason = null, public bool $demo = false) {}
 }

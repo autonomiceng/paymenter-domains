@@ -19,10 +19,10 @@ $collision=App\Models\Invoice::create(['user_id'=>$owner->id,'currency_code'=>'U
 $r=$reader->preview($target,new StaffContext($staff->id,'Verified original customer',true));$a=Adoption::findOrFail($r->previewId);$d=$commit->confirm($a->request_key,$a->request_digest,$staff);
 config(['settings.company_name'=>' <Synthetic & Company> ']);
 $billing=new DomainBilling($bindings,$guard,$clock);$owners=new OwnedDomains($clock,new OwnerPorts(),billing:$billing);$dto=$owners->present($d,false);
-same('Off',$dto->renewal,'DNR badge');same('Registration adopted',$dto->progress[0]['label'],'Adoption activity');same($old->fresh()->number,$dto->history[0]['number'],'Batch native invoice number');same('Paid',$dto->history[0]['status'],'Historical invoice label');same(null,$dto->plannedRenewalDue,'No future due CTA for DNR');
+same('Off',$dto->renewal,'DNR badge');same(['label'=>'Imported','state'=>'Completed'],$dto->progress[0],'Adoption activity');same($old->fresh()->number,$dto->history[0]['number'],'Batch native invoice number');same('Paid',$dto->history[0]['status'],'Historical invoice label');same(null,$dto->plannedRenewalDue,'No future due CTA for DNR');
 same(route('invoices.show',$old->fresh()),$dto->history[0]['url'],'Historical URL uses native number route key despite numeric ID collision');
 $html=view('domains::show',['domain'=>$dto])->render();
-expect(!str_contains($html,'Company&gt; Registration')&&!str_contains($html,'<Synthetic & Company>'),'Detail has no registration badge and never renders the company unescaped');expect(str_contains($html,'This domain is set to cancel when it expires on'),'Approved cancellation copy');expect(str_contains($html,'Registration adopted'),'Adoption visible in activity');
+expect(!str_contains($html,'Company&gt; Registration')&&!str_contains($html,'<Synthetic & Company>'),'Detail has no registration badge and never renders the company unescaped');expect(str_contains($html,'This domain is set to cancel when it expires on'),'Approved cancellation copy');expect(str_contains($html,'<td>Imported</td><td>Completed</td>'),'Adoption visible in activity');
 same('cancellation',$dto->renewalOff,'Native cancellation takes precedence over adopted stop');
 DB::transaction(function()use($d,$bindings):void {
 $l=\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d);$l['cancel']=collect();
@@ -39,7 +39,7 @@ $preference=new \Paymenter\Extensions\Servers\Domains\Services\OwnerAutoRenew($c
 $refused=false;try{$preference->set($owner,$d->id,true);}catch(DomainException){$refused=true;}expect($refused,'Adopted DNR switch cannot be toggled');
 same([],$owners->present($d)->autoRenew,'Adopted hard stop hides switch');same([],$owners->present($d)->renewNow,'Adopted hard stop hides manual request');
 $text=strip_tags(preg_replace('~<(script|style)\b[^>]*>.*?</\1>~si','',$html));foreach(['Enom','NameSilo','account-enom','synthetic-secret','provider_domain_id','account_fingerprint']as$private){expect(!str_contains($text,$private),'Customer excludes registrar/private identity');}
-$money=scenarioMoney();$clock->time=new DateTimeImmutable('2027-10-21T00:00:00Z');$expired=$owners->present($d,false);same('Registry expiry reached',$expired->status,'Read-only expired display');same($dto->history,$expired->history,'Expired history remains accessible');same('example.com',$d->fresh()->reservation_name,'Expired name stays reserved');same($money,scenarioMoney(),'Presentation never rewrites finances');
+$money=scenarioMoney();$clock->time=new DateTimeImmutable('2027-10-21T00:00:00Z');$expired=$owners->present($d,false);same(['Expired','bad'],[$expired->status,$expired->tone],'Read-only expired display');same($dto->history,$expired->history,'Expired history remains accessible');same('example.com',$d->fresh()->reservation_name,'Expired name stays reserved');same($money,scenarioMoney(),'Presentation never rewrites finances');
 try{$owners->owned($other,$d->id);expect(false,'Cross-owner detail must refuse');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}
 config(['settings.company_name'=>' ']);
 // Separate serialized renewal-on adoption, retaining the same native service and history.

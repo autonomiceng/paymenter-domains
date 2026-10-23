@@ -55,19 +55,22 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     same(0, storefrontDom($emptyFiltered)->query('//*[@class="domains-testbar"]')->length, 'D7 empty visible page ignores hidden totals');
     // One status pill per domain. Registration, DNS, renewal and check state are plain text in their own sections.
     $strings = DomainSummaryStrings::all();
-    $dto = static fn (string $name, string $kind, string $registration, array $dnsKeys, array $states) => new DomainSummary($name, null, $kind,
-        $registration, $dnsKeys, null, null, $states, $strings, null, null, null, [], null, null, [], [], ['detail' => '/domains/'.$name], renewalOff: in_array('adopt.renewal_off', $states, true));
+    // Managed rows carry the resolved state; a monitored row resolves from its findings, as DomainSummaries does.
+    $dto = static fn (string $name, string $kind, string $registration, array $dnsKeys, array $states, ?string $state = null) => new DomainSummary($name, null, $kind,
+        $registration, $dnsKeys, null, null, $states, $strings, null, null, null, [], null, null, [], [], ['detail' => '/domains/'.$name], renewalOff: in_array('adopt.renewal_off', $states, true),
+        statusState: $kind === 'watch' ? (\Paymenter\Extensions\Servers\Domains\Services\DomainStates::watch($states, null, false)[0] ?? null) : $state);
     $unknown = DnsSignalLabels::keys(null, null, null);
     $rows = [
-        'active-unchecked' => ['domain.registration.platform', $unknown, ['domain.active', 'watch.not_checked'], 'Active'],
-        'renewal-off' => ['domain.registration.platform', $unknown, ['domain.active', 'adopt.renewal_off', 'watch.not_checked'], 'Active'],
-        'held' => ['domain.registration.unknown', $unknown, ['domain.review', 'watch.not_checked'], 'Needs action'],
-        'stale' => ['domain.registration.platform', DnsSignalLabels::keys(null, null, null, partial: true), ['domain.active', 'watch.stale', 'watch.partial'], 'Active'],
-        'known' => ['domain.registration.platform', DnsSignalLabels::keys('platform', false, false), ['domain.active', 'adopt.provenance'], 'Active'],
-        'moved' => ['domain.registration.platform', DnsSignalLabels::keys('external', false, false), ['domain.active', 'watch.ns_changed'], 'Needs action'],
+        'active-unchecked' => ['domain.registration.platform', $unknown, ['domain.active', 'watch.not_checked'], 'Active', 'active'],
+        'renewal-off' => ['domain.registration.platform', $unknown, ['domain.active', 'adopt.renewal_off', 'watch.not_checked'], 'Active', 'active'],
+        'held' => ['domain.registration.unknown', $unknown, ['domain.review', 'watch.not_checked'], 'Under review', 'needs_review'],
+        'stale' => ['domain.registration.platform', DnsSignalLabels::keys(null, null, null, partial: true), ['domain.active', 'watch.stale', 'watch.partial'], 'Active', 'active'],
+        'known' => ['domain.registration.platform', DnsSignalLabels::keys('platform', false, false), ['domain.active', 'adopt.provenance'], 'Active', 'active'],
+        // A managed domain's nameserver change is a notice on its page, not its status.
+        'moved' => ['domain.registration.platform', DnsSignalLabels::keys('external', false, false), ['domain.active', 'watch.ns_changed'], 'Active', 'active'],
     ];
-    $summaries = array_map(fn ($name) => $dto($name.'.example', 'managed', ...array_slice($rows[$name], 0, 3)), array_keys($rows));
-    $watches = [$dto('watch-unchecked.example', 'watch', 'domain.registration.unknown', $unknown, ['watch.not_checked']), $dto('watch-known.example', 'watch', 'domain.registration.external', DnsSignalLabels::keys('external', false, false), []), $dto('related-off.example', 'managed', 'domain.registration.platform', DnsSignalLabels::keys('platform', false, false), ['domain.active', 'adopt.renewal_off'])];
+    $summaries = array_map(fn ($name) => $dto($name.'.example', 'managed', ...[...array_slice($rows[$name], 0, 3), $rows[$name][4]]), array_keys($rows));
+    $watches = [$dto('watch-unchecked.example', 'watch', 'domain.registration.unknown', $unknown, ['watch.not_checked']), $dto('watch-known.example', 'watch', 'domain.registration.external', DnsSignalLabels::keys('external', false, false), []), $dto('related-off.example', 'managed', 'domain.registration.platform', DnsSignalLabels::keys('platform', false, false), ['domain.active', 'adopt.renewal_off'], 'active')];
     $html = view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator($summaries, count($summaries), 25), 'watches' => new \Illuminate\Pagination\LengthAwarePaginator($watches, count($watches), 25)])->render();
     $dom = storefrontDom($html);
     $pills = static fn ($dom, $context = null) => array_map(fn ($span) => trim($span->textContent), iterator_to_array($dom->query('.//span[contains(@class,"domains-badge")]', $context ?? $dom->document->documentElement)));
@@ -75,7 +78,7 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
         same([$rows[$name][3]], $pills($dom, $dom->query('//tbody/tr['.($i + 1).']')->item(0)), 'List row has one status pill: '.$name);
     }
     same('Status', trim($dom->query('//thead/tr/th[2]')->item(0)->textContent), 'List column is Status');
-    $evidence = array_map(fn ($key) => $strings[$key], [...array_keys(DnsSignalLabels::strings('Example Hosting')), 'domain.registration.platform', 'domain.registration.external', 'domain.registration.unknown', 'domain.details.partial', 'watch.not_checked', 'watch.stale', 'watch.partial', 'adopt.provenance', 'adopt.renewal_off']);
+    $evidence = [...array_map(fn ($key) => $strings[$key], [...array_keys(DnsSignalLabels::strings('Example Hosting')), 'domain.registration.platform', 'domain.registration.external', 'domain.registration.unknown', 'domain.details.partial', 'watch.not_checked', 'watch.stale', 'watch.partial']), 'Adopted registration', 'Renewal off'];
     same([], array_intersect($pills($dom), $evidence), 'No registration, DNS, renewal or check pills on the list');
     $related = $dom->query('//section[@class="domains-related"]/section');
     same([[], [], ['Active']], array_map(fn ($node) => $pills($dom, $node), iterator_to_array($related)), 'Related rows: no pill without current registry facts; managed row shows Active');
@@ -90,7 +93,7 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     same(['Out of date Last checked Dec 31, 2025, 00:00 UTC'], $facts, 'Detail disclosure lists only checked families, with real timestamps');
     // DNS evidence moved from chips into the check details as plain values.
     $checked = ['delegation' => ['checkedAt' => 1767139200, 'stale' => false, 'partial' => false, 'nextCheck' => null], 'points' => ['checkedAt' => 1767139200, 'stale' => false, 'partial' => false, 'nextCheck' => null], 'registry' => ['checkedAt' => 1767139200, 'stale' => false, 'partial' => false, 'nextCheck' => null]];
-    $watchDom = storefrontDom(view('domains::partials.summary', ['summary' => new DomainSummary('watch-known.example', null, 'watch', 'domain.registration.external', DnsSignalLabels::keys('external', false, false), false, false, [], $strings, '2099-01-01', 'date', 'Public registry', $checked, null, null, [], [], [])])->render());
+    $watchDom = storefrontDom(view('domains::partials.summary', ['summary' => new DomainSummary('watch-known.example', null, 'watch', 'domain.registration.external', DnsSignalLabels::keys('external', false, false), false, false, [], $strings, '2099-01-01', 'date', 'Public registry', $checked, null, null, [], [], [], statusState: 'active')])->render());
     same(['Active'], $pills($watchDom), 'Watch detail with current registry facts shows Active only');
     $facts = array_map(fn ($node) => preg_replace('/\s+/', ' ', trim($node->textContent)), iterator_to_array($watchDom->query('//details[@class="domains-checks"]//dd')));
     expect(str_starts_with($facts[0], $strings['domain.dns.external']) && str_starts_with($facts[1], $strings['domain.points.external_empty']) && str_starts_with($facts[2], $strings['domain.registration.external']), 'Check details show DNS, pointer and registration values as text');
@@ -98,11 +101,11 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     $compact = static fn (DomainSummary $summary, array $with = []) => storefrontDom(view('domains::partials.summary', ['summary' => $summary, 'summaryCompact' => true, ...$with])->render());
     foreach (['watch.not_registered' => 'domain.registration.unknown', 'watch.no_coverage' => 'domain.registration.external'] as $state => $registration) {
         $notice = $compact($dto('notice.example', 'watch', $registration, $unknown, [$state]));
-        same([], $pills($notice), 'Related row has no pill: '.$state);
+        same($state === 'watch.not_registered' ? ['Action required'] : [], $pills($notice), 'Related row pill: '.$state);
         same([$strings[$state]], array_map(fn ($node) => trim($node->textContent), iterator_to_array($notice->query('//p[@class="domains-notice"]'))), 'Related row keeps notice: '.$state);
     }
-    $adopting = $dto('adopting.example', 'managed', 'domain.registration.platform', DnsSignalLabels::keys('platform', true, true), ['adopt.pending', 'adopt.provenance', 'domain.active']);
-    same(['Pending'], $pills($compact($adopting)), 'Pending outranks active');
+    $adopting = $dto('adopting.example', 'managed', 'domain.registration.platform', DnsSignalLabels::keys('platform', true, true), ['adopt.pending', 'adopt.provenance', 'domain.active'], 'adoption_pending');
+    same(['Under review'], $pills($compact($adopting)), 'Pending outranks active');
     same([], $pills($compact($adopting, ['summaryOnManaged' => true])), 'Managed context leaves the pill to the page header');
     $offRow = $dom->query('//tbody/tr[td/a[normalize-space()="renewal-off.example"]]')->item(0);
     same('Renewal off', trim($dom->query('td[@data-label="Renewal"]', $offRow)->item(0)->textContent), 'Renewal column says renewal off');

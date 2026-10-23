@@ -30,13 +30,14 @@ expect(str_contains($long,'&lt;script&gt;unsafe&lt;/script&gt;') && !str_contain
 $text=static fn(string $html)=>preg_replace('/\s+/',' ',strip_tags($html));
 $moved=static fn(string $html)=>substr_count($text($html),'no longer uses the')+substr_count($text($html),'has not used the nameservers');
 $provider='Contact your registration provider to check its status.';
-$state=static fn(array $states,string $kind='watch')=>new Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(...[...get_object_vars($data['summary']),'kind'=>$kind,'stateKeys'=>$states,'noticeDates'=>['dns'=>1800000000]]);
+$state=static function(array $states,string $kind='watch')use($data){$status=Paymenter\Extensions\Servers\Domains\Services\DomainStates::watch($states,'2027-01-15',true);
+    return new Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(...[...get_object_vars($data['summary']),'kind'=>$kind,'stateKeys'=>$states,'noticeDates'=>['dns'=>1800000000],'statusState'=>$status[0]??null,'statusReason'=>$status[1]??null]);};
 $page=static fn(array $states,array $notices,array $portal,bool $editable=true)=>view('domains::watch-notices',[...$data,'summary'=>$state($states),'notices'=>$notices,'portal'=>$portal,'editable'=>$editable])->render();
 $row=static fn(string $kind)=>[['kind'=>$kind,'company'=>'Example Hosting','date'=>'January 15, 2027']];
 same(1,$moved($page(['watch.ns_changed'],$row('ns_changed'),['ns_changed'])),'Checks page states a nameserver change once with an open notice');
 same(1,$moved($page(['watch.ns_changed'],[],['ns_changed'])),'Checks page states a nameserver change once from the portal fallback');
 same(1,$moved($page(['watch.ns_changed'],[],[],false)),'Summary keeps the nameserver change when Latest notices does not state it');
-expect(str_contains($page(['watch.ns_changed'],$row('ns_changed'),['ns_changed']),'Needs action'),'Summary keeps the status pill');
+expect(str_contains($page(['watch.ns_changed'],$row('ns_changed'),['ns_changed']),'>Action required<'),'Summary keeps the status pill');
 same(1,substr_count($text($page(['watch.expired'],$row('expired'),['registry_expiry_reached'])),$provider),'Checks page asks to contact the registration provider once with an open notice');
 same(1,substr_count($text($page(['watch.expired'],[],['registry_expiry_reached'])),'with your registration provider'),'Portal fallback states the expiry once');
 same(0,substr_count($text($page(['watch.expired'],[],['registry_expiry_reached'])),$provider),'Summary drops the provider sentence when the fallback states it');

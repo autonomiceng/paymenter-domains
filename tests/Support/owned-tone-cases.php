@@ -8,34 +8,31 @@ declare(strict_types=1);
     // Persist only synthetic operation inputs. Domain variants stay in memory so no lifecycle runs.
     \Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $op->id)->update(['state' => 'succeeded']);
     $cases = [
-        'active' => ['Active', 'ok'], 'adoption_pending' => ['Being set up', 'info'],
-        'registration_pending' => ['Registration in progress', 'info'], 'transfer_pending' => ['Transfer in progress', 'info'],
-        'registration_rejected' => ['Needs attention', 'warn'], 'transfer_rejected' => ['Needs attention', 'warn'],
-        'needs_review' => ['Needs attention', 'warn'], 'expired' => ['Expired', 'bad'], 'grace' => ['Expired', 'bad'],
-        'redemption' => ['In redemption', 'bad'], 'cancelled' => ['Order cancelled', 'muted'],
-        'unknown_status' => ['Needs attention', 'muted'],
+        'active' => ['Active', 'ok', null], 'adoption_pending' => ['Under review', 'warn', 'Import not confirmed'],
+        'registration_pending' => ['Pending registration', 'info', null], 'transfer_pending' => ['Pending transfer', 'info', null],
+        'registration_rejected' => ['Failed', 'bad', 'Registration rejected'], 'transfer_rejected' => ['Failed', 'bad', 'Transfer rejected'],
+        'needs_review' => ['Under review', 'warn', null], 'expired' => ['Expired', 'bad', null], 'grace' => ['Expired', 'bad', 'In grace period'],
+        'redemption' => ['Redemption', 'bad', null], 'cancelled' => ['Cancelled', 'muted', null],
+        'unknown_status' => ['Under review', 'warn', 'Status missing'],
     ];
     foreach ($cases as $state => $expected) {
-        $d = $base->fresh(); $d->status = $state;
+        $d = $base->fresh(); $d->status = $state; $d->provider_expires_at = $clock->now()->modify('+200 days');
         $dto = $quiet->present($d, false);
-        same($expected, [$dto->status, $dto->tone], 'D3 status label/tone: '.$state);
-        $keys = ['active'=>'domain.active','adoption_pending'=>'adopt.pending','registration_pending'=>'domain.pending',
-            'transfer_pending'=>'domain.transfer','registration_rejected'=>'domain.review','transfer_rejected'=>'domain.review',
-            'needs_review'=>'domain.review','expired'=>'domain.expired','grace'=>'domain.expired','redemption'=>'domain.redemption',
-            'cancelled'=>'domain.cancelled','unknown_status'=>'future.unknown'];
-        same($dto->tone, \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummaryTones::for($keys[$state]), 'D3 retained OwnedDomain and summary tone vocabulary: '.$state);
+        same($expected, [$dto->status, $dto->tone, $dto->statusReason], 'D3 status label/tone: '.$state);
+        same(array_values(\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::of($state)), [$dto->status, $dto->tone, $dto->statusReason], 'OwnedDomain uses the shared status pill: '.$state);
     }
     $d = $base->fresh(); $d->provenance = 'adoption_pending'; $d->status = 'active';
     $dto = $quiet->present($d, false);
-    same(['Being set up', 'info'], [$dto->status, $dto->tone], 'D3 adoptionPending provenance takes precedence');
+    same(['Under review', 'warn', 'Import not confirmed'], [$dto->status, $dto->tone, $dto->statusReason], 'D3 adoptionPending provenance takes precedence');
     foreach (['register', 'transfer'] as $action) {
         foreach (['held', 'uncertain', 'awaiting_payment'] as $state) {
             \Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $op->id)->update(['action' => $action, 'state' => $state]);
             $d = $base->fresh(); $d->status = 'needs_review';
-            $expected = $state === 'awaiting_payment' ? ['Awaiting payment', 'warn']
-                : ($action === 'register' ? ['Processing', 'info'] : ['Needs attention', 'warn']);
+            $expected = $state === 'awaiting_payment' ? ['Action required', 'warn', 'Invoice not paid']
+                : ($action === 'register' ? ['Pending registration', 'info', null]
+                : ['Under review', 'warn', $state === 'held' ? 'Transfer on hold' : 'Transfer not confirmed']);
             $dto = $quiet->present($d, false);
-            same($expected, [$dto->status, $dto->tone], 'D3 operation label/tone: '.$action.' '.$state);
+            same($expected, [$dto->status, $dto->tone, $dto->statusReason], 'D3 operation label/tone: '.$action.' '.$state);
         }
     }
     foreach (['contact_details_required', 'nameservers_required'] as $reason) {
@@ -43,14 +40,15 @@ declare(strict_types=1);
         $d = $base->fresh(); $d->status = 'registration_pending';
         $dto = $owners->present($d, false);
         expect($dto->setup['required'] || $dto->setup['contacts'], 'Actionable setup fixture: '.$reason);
-        same(['Needs attention', 'warn'], [$dto->status, $dto->tone], 'D3 setup overrides processing tone: '.$reason);
+        same(['Action required', 'warn', 'Finish setup'], [$dto->status, $dto->tone, $dto->statusReason], 'D3 setup overrides processing tone: '.$reason);
     }
     // Adoption expiry is a warning at the boundary, without asserting the registrar's outcome.
     \Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $op->id)->delete();
     \Paymenter\Extensions\Servers\Domains\Services\AdoptionSchema::install();
     \Paymenter\Extensions\Servers\Domains\Services\HistoryLinkSchema::install();
     $instant = $clock->now(); $expiry = $instant->setTime(0, 0)->modify('+1 day');
-    foreach (['-1 second' => ['Active', 'ok'], 'now' => ['Registry expiry reached', 'warn'], '+1 second' => ['Registry expiry reached', 'warn']] as $offset => $expected) {
+    // An adoption without a record keeps renewal off, so the day before expiry asks the customer to act.
+    foreach (['-1 second' => ['Action required', 'warn'], 'now' => ['Expired', 'bad'], '+1 second' => ['Expired', 'bad']] as $offset => $expected) {
         $clock->instant = $expiry->modify($offset);
         $d = $base->fresh(); $d->status = 'active'; $d->provenance = 'adopted'; $d->provider_expires_at = $expiry;
         $dto = $quiet->present($d, false);

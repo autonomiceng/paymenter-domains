@@ -4,40 +4,35 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Http\Controllers;
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName};
+use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
 use Paymenter\Extensions\Servers\Domains\Services\DomainSummaries;
 use Paymenter\Extensions\Servers\Domains\Services\OwnedDomains;
 /** Owner pages; creation and writes have distinct controllers. Dormant until39. */
 final readonly class OwnedDomainController
 {
-    public const FILTERS=['active'=>['Active',['active']], 'pending'=>['In progress',['registration_pending','transfer_pending']],
-        'expiring'=>['Expiring soon',['active']], 'expired'=>['Expired',['expired','grace','redemption']],
-        'attention'=>['Needs attention',['registration_rejected','transfer_rejected','needs_review']]];
     public function __construct(private OwnedDomains $owners) {}
     public function index(Request $request)
     {
         $base=Domain::where('user_id',$request->user()->id)->whereHas('service',fn($q)=>$q->where('user_id',$request->user()->id)->whereHas('order',fn($q)=>$q->where('user_id',$request->user()->id)));
         $raw=$request->query('q');$search=is_string($raw)?trim(substr($raw,0,253)):'';
-        $raw=$request->query('status');$filter=is_string($raw)&&isset(self::FILTERS[$raw])?$raw:'';
+        $raw=$request->query('status');$filter=is_string($raw)&&isset(DomainStatus::SET[$raw])?$raw:'';
         $sort=in_array($request->query('sort'),['expiry','-expiry','name','-name'],true)?$request->query('sort'):'expiry';
+        // Status depends on the order, renewal stops and expiry, not only the status column, so chips count resolved rows.
+        $summaries=new DomainSummaries();$now=now('UTC')->getTimestamp();$dtos=[];$keys=[];
+        foreach ((clone $base)->pluck('id')->chunk(250) as $ids) { $dtos+=$summaries->batch($request->user(),$ids->all(),[],$now); }
+        foreach ($dtos as $key=>$dto) { if ($dto->statusState!==null) { $keys[(int)substr($key,8)]=DomainStatus::key($dto->statusState); } }
         $query=clone $base;
         if ($search!=='') { $query->where('domain','like','%'.addcslashes(strtolower($search),'%_\\').'%'); }
-        if ($filter!=='') { $query->whereIn('status',self::FILTERS[$filter][1]); }
-        $range=[now('UTC')->startOfDay(),now('UTC')->addDays(30)->endOfDay()];
-        if ($filter==='expiring') { $query->whereBetween('provider_expires_at',$range); }
+        if ($filter!=='') { $query->whereIn('id',array_keys($keys,$filter,true)); }
         if (str_contains($sort,'expiry')) { $query->orderByRaw('provider_expires_at IS NULL')->orderBy('provider_expires_at',$sort[0]==='-'?'desc':'asc'); }
         $query->orderBy('domain',$sort==='-name'?'desc':'asc');
         $domains=$query->paginate(25)->appends(array_filter(['q'=>$search,'status'=>$filter,'sort'=>$sort],fn($v)=>$v!==''));
-        $summaries=new DomainSummaries();$rows=$domains->getCollection();
-        $dtos=$summaries->batch($request->user(),$rows->pluck('id')->all(),[]);
-        $domains->setCollection($rows->map(fn($d)=>$dtos['managed:'.$d->id]??null)->filter()->values());
+        $domains->setCollection($domains->getCollection()->map(fn($d)=>$dtos['managed:'.$d->id]??null)->filter()->values());
+        $filterCounts=[''=>count($dtos),...array_count_values($keys)];
         $watches=WatchName::where('user_id',$request->user()->id)->whereNull('managed_domain_id')->whereIn('state',['active','paused','retired'])
             ->whereNotIn('canonical_name',(clone $base)->select('domain'))->orderBy('canonical_name')->paginate(25,['*'],'related_page')->withQueryString();
         $dtos=$summaries->batch($request->user(),[],$watches->getCollection()->pluck('id')->all());
         $watches->setCollection($watches->getCollection()->map(fn($w)=>$dtos['watch:'.$w->id]??null)->filter()->values());
-        $counts=(clone $base)->selectRaw('status, count(*) as total')->groupBy('status')->pluck('total','status');
-        $filterCounts=[''=>(int)$counts->sum()];
-        foreach (self::FILTERS as $key=>[, $statuses]) { $filterCounts[$key]=(int)$counts->only($statuses)->sum(); }
-        $filterCounts['expiring']=(clone $base)->where('status','active')->whereBetween('provider_expires_at',$range)->count();
         return view('domains::index',compact('domains','watches','search','filter','sort','filterCounts'));
     }
     public function show(Request $request,int $domain) { return $this->page($request,$domain,'show'); }
@@ -46,7 +41,7 @@ final readonly class OwnedDomainController
     private function page(Request $request,int $id,string $page)
     {
         $holding=$this->owners->owned($request->user(),$id);
-        $summary=$page==='show'?(new DomainSummaries())->one($request->user(),'managed',$id):null;
+        $summary=$page==='show'?(new DomainSummaries())->one($request->user(),'managed',$id,now('UTC')->getTimestamp()):null;
         $domain=$this->owners->present($holding);
         abort_if($page==='code'&&!isset($domain->actions['code']),404);
         abort_if($page==='setup'&&!isset($domain->actions['setup']),404);

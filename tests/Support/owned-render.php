@@ -24,10 +24,10 @@ $make=static function(bool $free=false,bool $setup=false,bool $held=false):Owned
     $management['auth_code_email']['recipient']=$free?'domain’s administrative contact':'domain owner';
     foreach($free?['contact_profile','contacts']:['contacts']as$a){$management['contacts']['actions'][$a]='/domains/1/manage/'.$a;}
     foreach(['privacy_enable','privacy_disable',...($free?[]:['privacy_purchase','privacy_renew'])]as$a){$management['privacy']['actions'][$a]='/domains/1/manage/'.$a;}
-    return new OwnedDomain(placeholderComFixtureName(str_pad('placeholder',63,'a').'.com'),$setup?'Needs attention':'Active',$setup?'muted':'ok','2027-10-18','On','$14.00',$actions,
-        [['label'=>'Domain contacts','state'=>'Awaiting review'],['label'=>'Nameservers','state'=>'Unresolved']],
+    return new OwnedDomain(placeholderComFixtureName(str_pad('placeholder',63,'a').'.com'),$setup?'Action required':'Active',$setup?'warn':'ok','2027-10-18','On','$14.00',$actions,
+        [['label'=>'Contacts','state'=>'Under review'],['label'=>'Nameservers','state'=>'Under review']],
         ['contacts'=>$held,'required'=>$setup,'nameservers'=>true,'privacy'=>$free,'defaults'=>!$free,'maxNameservers'=>$free?13:12],
-        ['open'=>!$held,'received'=>false,'paid'=>true,'deadline'=>'Nov 17, 2026, 12:00 UTC','held'=>$held,'unchecked'=>false,'phase'=>$held?'held':'editing'],$setup?[]:$management,false);
+        ['open'=>!$held,'received'=>false,'paid'=>true,'deadline'=>'Nov 17, 2026, 12:00 UTC','held'=>$held,'unchecked'=>false,'phase'=>$held?'held':'editing'],$setup?[]:$management,false,statusReason:$setup?'Finish setup':null);
 };
 $enom=$make();$ns=$make(true);$setup=$make(true,true);$held=$make(false,true,true);
 $summary=static fn(OwnedDomain $d)=>new \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(name:$d->name,displayName:null,kind:'managed',registrationKey:'domain.registration.platform',dnsKeys:[],website:null,email:null,stateKeys:[],labels:\Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings::all(),expiry:$d->expiry,expiryPrecision:'date',expirySource:'Confirmed registration',freshness:[],renewalDueAt:null,renewalPrice:$d->renewalPrice,relatedServices:[],hostnames:[],urls:['detail'=>$d->actions['show'],'preferences'=>null]);

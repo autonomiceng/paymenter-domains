@@ -3,7 +3,7 @@
 @if($summary->displayName && $summary->displayName!==$summary->name)<p class="domains-small domains-wrap">{{ $summary->displayName }}</p>@endif
 {{-- One status pill at most. The managed page header already shows it; evidence lives in the check details below. --}}
 @unless($summaryOnManaged??false)@include('domains::partials.status-pill',['pill'=>\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::summary($summary)])@endunless
-@foreach(array_intersect($summary->stateKeys,['watch.not_registered','watch.no_coverage']) as $key)<p class="domains-notice"><span>{{ $summary->labels[$key] }}</span></p>@endforeach
+@foreach(array_intersect($summary->stateKeys,['watch.paused','watch.retired','watch.not_registered','watch.no_coverage']) as $key)<p class="domains-notice"><span>{{ $summary->labels[$key] }}</span></p>@endforeach
 @if(in_array('adopt.pending',$summary->stateKeys,true))@unless($summaryOnManaged??false)<p class="domains-notice">{{ $summary->labels['adopt.pending_notice'] }}</p>@endunless@if($summary->urls['invoiceHistory']??null)<p><a class="domains-a" href="{{ $summary->urls['invoiceHistory'] }}">View invoice history</a></p>@endif@endif
 {{-- summaryNoticesBelow: notice kinds the page already states below (domain checks page). Say each fact once. --}}
 @if(in_array('watch.ns_changed',$summary->stateKeys,true) && !in_array('ns_changed',$summaryNoticesBelow??[],true))

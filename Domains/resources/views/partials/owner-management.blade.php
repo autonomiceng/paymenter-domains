@@ -25,7 +25,7 @@
 @foreach ($section['staged'] ? ['contact_profile' => 'Prepare contact', 'contacts' => 'Save contact'] : ['contacts' => 'Save contact'] as $action => $label)
 @php($contactFailed = session('domains_failed_form') === $section['actions'][$action])
 <details class="domains-more" @if ($contactFailed) open @endif><summary>{{ $section['staged'] ? ($action === 'contact_profile' ? 'Step 1: Prepare new details' : 'Step 2: Apply the new details') : 'Change contact details' }}</summary>
-@if ($section['staged'])<p>{{ $action === 'contact_profile' ? 'Enter the new details. When Activity shows Contact details as Confirmed, go to step 2.' : 'Choose the same contact and enter exactly the same details as in step 1. We apply them only after step 1 is confirmed.' }}</p>@endif
+@if ($section['staged'])<p>{{ $action === 'contact_profile' ? 'Enter the new details. When History shows Contacts as Completed, go to step 2.' : 'Choose the same contact and enter exactly the same details as in step 1. We apply them only after step 1 is confirmed.' }}</p>@endif
 <form method="POST" action="{{ $section['actions'][$action] }}" class="domains-owner-form">
 @include('domains::partials.form-key')
 <label class="domains-label" for="role-{{ $action }}">Contact</label><select id="role-{{ $action }}" class="domains-input" name="role">@foreach (['all'=>'All contacts','registrant'=>'Domain owner','admin'=>'Administrative','tech'=>'Technical','auxbilling'=>'Billing'] as $role => $roleLabel)<option value="{{ $role }}" @selected($contactFailed && old('role', 'all') === $role)>{{ $roleLabel }}</option>@endforeach</select>

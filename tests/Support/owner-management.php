@@ -29,9 +29,9 @@ $op=$d->operations()->where('action','nameservers')->sole();same('queued',$op->s
 $session->put('domains.form_keys',$stale);
 try{$controller->manage($again,$d->id,'nameservers');expect(false,'Stale session replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Atomic replay guard');}
 same($count+1,Operation::count(),'Replay creates no operation');$session->forget('domains.form_keys');
-$dto=$owners->present($d->fresh());expect(in_array('Queued, not sent yet',array_column($dto->progress,'state'),true),'Queued operation appears without claiming dispatch');
+$dto=$owners->present($d->fresh());expect(in_array('In progress',array_column($dto->progress,'state'),true)&&!in_array('Completed',array_column($dto->progress,'state'),true),'Queued operation appears without claiming dispatch');
 $result=$management->run($op->id,$driver);same('succeeded',$result->state,'Existing engine grants one synthetic write with readback');
-$beforeRead=count($free?$ms->calls:$state->calls);$dto=$owners->present($d->fresh());same($beforeRead,count($free?$ms->calls:$state->calls),'Presentation has no transport');expect(in_array('Confirmed',array_column($dto->progress,'state'),true),'Confirmed engine evidence shown');
+$beforeRead=count($free?$ms->calls:$state->calls);$dto=$owners->present($d->fresh());same($beforeRead,count($free?$ms->calls:$state->calls),'Presentation has no transport');expect(in_array('Completed',array_column($dto->progress,'state'),true),'Confirmed engine evidence shown');
 $html=(new OwnedDomainController($owners))->show($r,$d->id)->render();$dom=storefrontDom($html);
 $forms=$dom->query('//form[@method="POST"]');expect($forms->length>=7,'Supported management forms offered');
 same($forms->length,$dom->query('//form/input[@name="_token"]')->length,'Every form has native CSRF');

@@ -79,7 +79,7 @@ $clock->time = new DateTimeImmutable('2027-10-21T00:00:00Z');
 same(null, RenewalReminders::plan($l, $schedule, $clock->now(), $alerts, $bindings), 'Adopted renewal-off suppresses expired renewal reminders');
 $ports = new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts();
 $presenter = new \Paymenter\Extensions\Servers\Domains\Services\OwnedDomains($clock, $ports);
-same('Registry expiry reached', $presenter->present($d, false)->status, 'Null-native-expiry adopted display becomes expired without writes');
+same('Expired', $presenter->present($d, false)->status, 'Null-native-expiry adopted display becomes expired without writes');
 same('active', $d->fresh()->status, 'Expired display never terminates ledger holding'); same('example.com', $d->fresh()->reservation_name, 'Expired holding retains name');
 same($money, scenarioMoney(), 'Every renewal-off entry leaves all financial history unchanged'); same(0, Operation::count(), 'No manual or complimentary operation');
 // A fully funded synthetic externally inserted issued row must not bypass the stop.

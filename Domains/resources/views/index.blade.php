@@ -16,7 +16,7 @@
 <p class="domains-small">Already own a domain elsewhere? <a class="domains-a" href="{{ route('domains.domains.transfer') }}">Transfer it here</a></p></div>
 @else
 <div class="domains-toolbar"><nav class="domains-chips" aria-label="Filter by status"><a class="domains-chip" href="{{ $url(['status'=>null,'page'=>null]) }}" @if ($filter === '') aria-current="true" @endif>All <small>{{ $total }}</small></a>
-@foreach (\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController::FILTERS as $key => [$label])
+@foreach (\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::SET as $key => [$label])
 @if (($filterCounts[$key]??0)>0 || $filter === $key)<a class="domains-chip" href="{{ $url(['status'=>$key,'page'=>null]) }}" @if ($filter === $key) aria-current="true" @endif>{{ $label }} <small>{{ $filterCounts[$key]??0 }}</small></a>@endif
 @endforeach</nav>
 <form method="GET" action="{{ route('domains.domains.index') }}" class="domains-filter" role="search">@if ($filter !== '')<input type="hidden" name="status" value="{{ $filter }}">@endif
