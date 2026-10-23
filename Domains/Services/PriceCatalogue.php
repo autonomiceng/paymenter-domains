@@ -46,13 +46,14 @@ final class PriceCatalogue
 
     /** Shared batch import; no native product locks/writes here. */
     public function import(\Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry $entry,
-        \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, \Closure $recheck, \DateTimeImmutable $now): void
+        \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, \Closure $recheck, \DateTimeImmutable $now, ?StaffSettingsReview $review = null): void
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Import owns its locks.'); }
         $accepted->binding->requireMatch($entry->binding);
         $tld = new Tld(['server_id' => $entry->binding->serverId, 'registrar_key' => $entry->binding->registrarKey,
             'account_fingerprint' => $entry->binding->fingerprint, 'tld' => $entry->tld]);
-        $this->locked($tld, function (Tld $locked, Server $server, Account $account) use ($entry, $accepted, $recheck, $now): void {
+        $this->locked($tld, function (Tld $locked, Server $server, Account $account) use ($entry, $accepted, $recheck, $now, $review): void {
+            $prior = $review && !$locked->wasRecentlyCreated ? [$locked->register_enabled, $locked->transfer_enabled, $locked->renew_enabled] : null;
             $recheck($server, $account); $row = $accepted->endings[$entry->tld];
             $rates = array_filter($entry->rates, static fn (CatalogueRate $rate): bool => $rate->action !== 'register'
                 || ($rate->term >= $locked->min_years && $rate->term <= $locked->max_years));
@@ -82,8 +83,9 @@ final class PriceCatalogue
                 }
             }
             $locked->transfer_enabled = $registry && $annual && in_array(1, $row['transfer'], true) && $eligible('transfer', 1);
+            if ($prior !== null) { $locked->register_enabled = $locked->register_enabled && $prior[0]; $locked->transfer_enabled = $locked->transfer_enabled && $prior[1]; $locked->renew_enabled = $locked->renew_enabled && $prior[2]; }
             $locked->save();
-        });
+        }, $review);
     }
 
     public function republish(Tld $tld): void
@@ -202,9 +204,13 @@ final class PriceCatalogue
             $price->observed_at->toDateTimeImmutable(), $price->fresh_until->toDateTimeImmutable(), $price->eligibility['staff_alert'] ?? null);
     }
 
-    private function locked(Tld $tld, \Closure $write): void
+    private function locked(Tld $tld, \Closure $write, ?StaffSettingsReview $review = null): void
     {
-        DB::transaction(function () use ($tld, $write): void {
+        DB::transaction(function () use ($tld, $write, $review): void {
+            if ($review) {
+                if ($review->action !== 'import' || $review->serverId !== (int)$tld->server_id || $review->tldId !== null) { throw new \DomainException('Import review mismatch.'); }
+                $review->lockActor(); $review->lockAccounts(); $review->check(true);
+            }
             $server = Server::whereKey($tld->server_id)->lockForUpdate()->firstOrFail();
             $account = Account::where('server_id', $server->id)->lockForUpdate()->firstOrFail();
             if (!$server->enabled || $server->extension !== 'Domains' || $account->account_fingerprint !== $tld->account_fingerprint) {
@@ -217,6 +223,7 @@ final class PriceCatalogue
                 throw new \DomainException('Catalogue account mismatch.');
             }
             $write($locked, $server, $account);
+            $review?->record('catalogue_imported');
         });
     }
 

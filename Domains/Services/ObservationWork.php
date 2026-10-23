@@ -147,7 +147,7 @@ final class ObservationWork
     }
     private function catalogue(object $queue): void
     {
-        $a=Account::where('server_id',$queue->server_id)->firstOrFail(); $b=CatalogueAcceptances::binding($a); $accepted=CatalogueAcceptances::load($b); $keys=array_keys($accepted->endings);
+        $a=Account::where('server_id',$queue->server_id)->firstOrFail(); $b=CatalogueAcceptances::binding($a); if (TestCatalogue::testDeployment($b)) { return; } $accepted=CatalogueAcceptances::load($b); $keys=array_keys($accepted->endings);
         if (!$keys) { return; } $fresh=new CatalogueFreshness; $now=$this->clock->now()->getTimestamp();
         $claim=DB::transaction(function () use ($queue,$now): ?object {
             $q=DB::table('domains_observation_queues')->where('id',$queue->id); $row=(clone $q)->lockForUpdate()->firstOrFail();

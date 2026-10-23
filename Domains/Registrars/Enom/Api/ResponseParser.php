@@ -30,6 +30,11 @@ final class ResponseParser
             || !is_string($data['done'] ?? null) || strtolower($data['done']) !== 'true') {
             return new ProtocolResult('unknown', 'invalid_envelope');
         }
+        if ($command === ReadCommand::Balance && $data['errcount'] === '1'
+            && (($data['errors']['err1'] ?? null) === 'Bad User name or Password'
+                || ($data['responses']['response']['responsenumber'] ?? null) === '304155')) {
+            return new ProtocolResult('rejected', 'identity_credentials_refused');
+        }
         $code = $data['rrpcode'] ?? $data['responsecode'] ?? null;
         $code = is_string($code) && preg_match('/^[0-9]{1,6}$/D', $code) ? $code : null;
         if ($command === ReadCommand::HostStatus && $data['errcount'] === '1' && ($data['errors']??null) === ['err1'=>'Error 545 - Name server does not exist']

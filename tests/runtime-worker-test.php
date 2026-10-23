@@ -25,7 +25,16 @@ foreach(Domain::orderBy('id')->get() as $i=>$d){
     $writer=new FakeWriter($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Unknown,SendState::PossiblySent,ResultReason::Unresolved));$engine=new DomainOperations($claims,$preflight,$writer,$clock);
     $authority=new RenewalAuthority($bindings,$clock);$accept=new RenewalAcceptance($b,true,true,25);$renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$accept,$clock),$accept,$features,$clock);
     $protocolClass='Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($b->registrarKey==='enom'?'Enom':'NameSilo').'\\Management';$protocol=new $protocolClass($b,static fn()=>throw new LogicException('No management transport in lifecycle acceptance'));
-    $composition=['acquisition'=>$engine,'reconciliation'=>$reconcile,'renewal'=>$renewal,'renewal_writer'=>new RenewalWriter($b,$features,$accept,fn()=>$renewal,static fn()=>throw new LogicException('No renewal transport')),'renewal_completion'=>new RenewalCompletion($bindings,$clock),'management'=>new DomainManagement($bindings,$clock,$features,true),'management_protocol'=>$protocol];
+    $noExchange=static fn()=>throw new LogicException('No acquisition exchange in reconciliation fixture');
+    $profiles=new \Paymenter\Extensions\Servers\Domains\Services\RegistrationProfiles($b,$claims,$clock,$noExchange);
+    $writeAccept=new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($b,true,true,25,$profiles);
+    $namespace='Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($b->registrarKey==='enom'?'Enom':'NameSilo').'\\';
+    $registration=$b->registrarKey==='enom'?new ($namespace.'Registration')($b,$noExchange):new ($namespace.'Registration')($b,$profiles,$noExchange);
+    $transfer=$b->registrarKey==='enom'?new ($namespace.'Transfer')($b,$noExchange):new ($namespace.'Transfer')($b,$profiles,$noExchange);
+    $composition=\Paymenter\Extensions\Servers\Domains\Services\RuntimeComposition::make($b,$bindings,$clock,$features,$writeAccept,$accept,
+        new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck(new \Paymenter\Extensions\Servers\Domains\Services\Rdap($noExchange)),
+        $registration,$transfer,$noExchange,$protocol,true,$profiles);
+    $composition['reconciliation']=$reconcile;
     $ports->register($b->fingerprint,fn()=>$composition);expect($ports->accepted($a),'Complete synthetic composition accepted');same($composition['management'],Runtime::management($d,null),'Owner actions use accepted current engine');
     $ports->operation($op);same('awaiting_payment',$op->fresh()->state,'Unpaid job cannot permanently hold acquisition');
     $settingWriter=new StaffSettingsWrites($native,$sellers,$bindings);$bindings->setProcessing($a->server_id,false);

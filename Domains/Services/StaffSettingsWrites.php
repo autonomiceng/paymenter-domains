@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,SalesPolicy,Tld};
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueAcceptance,Environment,RequestBudget,RequestContext,RequestOrigin};
-/** Dormant local writers. Inject a test-only seam explicitly; default setup/probes cannot perform I/O. */
+/** Local reviews and deliberately composed account reads; connection access defaults off. */
 final class StaffSettingsWrites
 {
     public function __construct(private readonly NativeCatalogue $native,private readonly SellerPolicies $sellers,
@@ -55,6 +55,7 @@ final class StaffSettingsWrites
                 });
             });return;
         }
+        if($r->action==='import'){TestCatalogue::import($r,$data,$this->bindings,$clock);return;}
         if($r->action==='publish'){$this->native->publish($r->tldId??0,$now,$r);return;}
         if($r->action==='seller'){
             $t=Tld::findOrFail($r->tldId);$p=SalesPolicy::where('tld',$t->tld)->firstOrFail();
@@ -71,7 +72,7 @@ final class StaffSettingsWrites
             HistoryAcceptances::save(new \Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance($binding,(string)($data['timezone']??''),$lag,$retention,$vocabulary),$r);return;
         }
         if(in_array($r->action,['configure','probe'],true)){
-            // This slice has no production transport. Gate39 must deliberately supply its reviewed integration.
+            // Production boot explicitly opts into connection reads; processing remains independent.
             if(!$this->allowInjectedProbes){$r->local(fn()=>throw new \DomainException('Connection checks are unavailable.'));return;}
             if($r->action==='configure'){
                 $registrar=(string)($data['registrar']??'');
@@ -80,7 +81,7 @@ final class StaffSettingsWrites
             }
             $r->local(fn()=>null,'connection_requested');$phase='connection_refused';
             try{
-                $driver=$this->bindings->reader($r->serverId);$binding=$driver->binding();
+                $driver=$this->bindings->reader($r->serverId, true);$binding=$driver->binding();
                 $result=BalanceReads::read($driver,new RequestContext($binding,RequestOrigin::Interactive,$now->modify('+10 seconds'),new RequestBudget(1),$clock,Runtime::limiter()),'manual');
                 $binding->requireMatch($result->binding);
                 \Illuminate\Support\Facades\DB::transaction(function()use($r,$result){$r->lockActor();$r->lockAccounts();$r->check(true);
@@ -122,7 +123,7 @@ final class StaffSettingsWrites
                     }
                     $t->{$action.'_enabled'}=$enable;
                 }
-                $t->save();return;
+                $t->save();TestCatalogue::withdrawCarts(CatalogueAcceptances::binding($a),$t->tld,true);return;
             }
             if($r->action!=='acceptance'){throw new \DomainException('Unsupported settings action.');}
             $binding=CatalogueAcceptances::binding($a);
@@ -150,6 +151,7 @@ final class StaffSettingsWrites
             foreach(Tld::where('server_id',$s->id)->orderBy('id')->lockForUpdate()->get() as $row){$accepted=$next->endings[$row->tld]??null;
                 $row->register_enabled=$row->register_enabled&&($accepted['registry']??false)&&!empty($accepted['register']);
                 $row->transfer_enabled=$row->transfer_enabled&&($accepted['registry']??false)&&!empty($accepted['transfer']);$row->save();}
+            TestCatalogue::withdrawCarts($binding);
         });
     }
 }

@@ -35,8 +35,11 @@ final class Runtime
                 } catch (\Throwable) { return false; }
             }));
         $app->make(RuntimePorts::class)->registerInitialManagedRecordObservations(fn()=>$app->make(ObservationWork::class)->tick(1));
-        // No positive provider identity verifier or accepted write sender is inferred at install.
-        // Trusted deployment composition may register reviewed factories before boot.
+        if (RegistrarFactories::bootstrap($app->make(RegistrarRegistry::class))) {
+            $app->singleton(StaffSettingsWrites::class, fn($a)=>new StaffSettingsWrites($a->make(NativeCatalogue::class),
+                $a->make(SellerPolicies::class), $a->make(AccountBindings::class), true));
+        }
+        // Identity reads do not install accepted runtime ports or write senders.
         app(NativeServerGuard::class)->boot();
         $app->singleton(DomainManagement::class,fn($a)=>new DomainManagement($a->make(AccountBindings::class),$a->make(Clock::class)));
     }

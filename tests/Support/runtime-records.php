@@ -7,6 +7,7 @@ $fixtureActivation=static fn()=>null;
 require __DIR__.'/owner-records.php';
 require __DIR__.'/installed.php';
 require_once __DIR__.'/staff-panel.php';
+require_once __DIR__.'/offline-acquisition.php';
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,RuntimePorts,NativeCatalogue,PriceCatalogue,SellerPolicies,RenewalAuthority,RenewalAcceptance,RenewalAdmission,RenewalExecution,RenewalWriter,RenewalCompletion,WriteFeatures,CatalogueAcceptances};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
@@ -20,7 +21,7 @@ $runtimePorts=app(RuntimePorts::class);$compositionReady=true;
 $registerRecords=static function()use($runtimePorts,$b,$bindings,$clock,$engine,$reconcile,$management,&$driver,&$compositionReady):void {
     $features=new WriteFeatures(true,true,true,true);$authority=new RenewalAuthority($bindings,$clock);$accept=new RenewalAcceptance($b,true,true,25);
     $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$accept,$clock),$accept,$features,$clock);
-    $composition=['acquisition'=>$engine,'reconciliation'=>$reconcile,'renewal'=>$renewal,
+    $composition=['acquisition'=>offlineAcquisition($b,$bindings,$clock,$features,static fn()=>throw new LogicException('No acquisition exchange')),'reconciliation'=>$reconcile,'renewal'=>$renewal,
         'renewal_writer'=>new RenewalWriter($b,$features,$accept,fn()=>$renewal,static fn()=>throw new LogicException('No renewal transport')),
         'renewal_completion'=>new RenewalCompletion($bindings,$clock),'management'=>$management,'management_protocol'=>$driver];
     $runtimePorts->register($b->fingerprint,static function()use($composition,&$compositionReady){return $compositionReady?$composition:[];});

@@ -10,7 +10,7 @@ final class RegistrarRegistry
 {
     private array $entries = [];
 
-    public function register(string $key, array $credentialKeys, AccountVerifier $verifier, \Closure $readerFactory): void
+    public function register(string $key, array $credentialKeys, AccountVerifier $verifier, \Closure $readerFactory, ?\Closure $balanceFactory = null, bool $accountReadsOnly = false): void
     {
         if (!in_array($key, ['enom', 'namesilo'], true) || isset($this->entries[$key]) || $credentialKeys === []) {
             throw new \InvalidArgumentException('Unsupported or duplicate registrar.');
@@ -22,10 +22,14 @@ final class RegistrarRegistry
             }
             $keys[$name] = true;
         }
-        $this->entries[$key] = [array_keys($keys), $verifier, $readerFactory];
+        $this->entries[$key] = [array_keys($keys), $verifier, $readerFactory, $balanceFactory, $accountReadsOnly];
     }
 
     public function keys(): array { return array_keys($this->entries); }
+
+    /** Direct domain-reader factories must honor identity-only deployment composition too. */
+    public function requireDomainReads(string $key): void
+    { if ($this->entry($key)[4]) { throw new \DomainException('Domain reads require separate deployment composition.'); } }
 
     public function credentialKeys(string $key): array { return $this->entry($key)[0]; }
 
@@ -47,14 +51,17 @@ final class RegistrarRegistry
     {
         $credentials = $this->credentials($key, $credentials);
         try { $identity = AccountBinding::canonicalIdentity($key, $this->entry($key)[1]->verify($environment, $credentials)); }
+        catch (IdentityRefused $error) { throw new IdentityRefused($error->reason); }
         catch (\Throwable) { throw new \RuntimeException('Registrar account ownership could not be verified.'); }
         return [new AccountBinding($key, $serverId, $environment, $identity), $identity];
     }
 
     /** Reader factories cannot expose writer interfaces through this registry. */
-    public function reader(AccountBinding $binding, #[\SensitiveParameter] array $credentials): RegistrarDriver
+    public function reader(AccountBinding $binding, #[\SensitiveParameter] array $credentials, bool $balanceOnly = false): RegistrarDriver
     {
-        try { $driver = ($this->entry($binding->registrarKey)[2])($binding, $this->credentials($binding->registrarKey, $credentials)); }
+        try { $entry = $this->entry($binding->registrarKey);
+            $driver = ($balanceOnly ? ($entry[3] ?? $entry[2]) : $entry[2])($binding, $this->credentials($binding->registrarKey, $credentials)); }
+        catch (IdentityRefused $error) { throw new IdentityRefused($error->reason); }
         catch (\Throwable) { throw new \RuntimeException('Registrar reader could not be created.'); }
         if (!$driver instanceof RegistrarDriver || $driver instanceof \Paymenter\Extensions\Servers\Domains\Contracts\AdmittedRegistrarDriver) {
             throw new \RuntimeException('Registrar reader factory returned an invalid handle.');
@@ -65,6 +72,7 @@ final class RegistrarRegistry
 
     private function entry(string $key): array
     {
+        if ($key === 'namesilo' && !isset($this->entries[$key])) { throw new IdentityRefused('namesilo_identity_unavailable'); }
         return $this->entries[$key] ?? throw new \InvalidArgumentException('Registrar is not configured.');
     }
 }

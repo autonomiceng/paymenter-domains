@@ -34,7 +34,7 @@ final class AccountBindings
                     $review?->lockActor(); $review?->lockAccounts(); $review?->check(true);
                     $this->server($serverId, true);
                     $account = Account::where('server_id', $serverId)->lockForUpdate()->first();
-                    if ($account) { $binding->requireMatch($this->binding($account)); }
+                    if ($account) { if (!$binding->matches($this->binding($account))) { throw new IdentityRefused('identity_account_changed'); } }
                     else {
                         $account = Account::withVerifiedBindingWrite(static fn () => Account::create(['server_id' => $serverId, 'registrar_key' => $binding->registrarKey,
                             'environment' => $binding->environment->value, 'stable_identity' => $identity,
@@ -48,7 +48,7 @@ final class AccountBindings
                     $review?->record('verified_and_saved');
                     return $binding;
                 });
-            } catch (\Throwable) {
+            } catch (IdentityRefused $error) { throw new IdentityRefused($error->reason); } catch (\Throwable) {
                 // The native transaction callback captures plaintext: never retain its exception trace.
                 throw new \DomainException('Registrar account configuration could not be saved.');
             }
@@ -83,11 +83,11 @@ final class AccountBindings
         });
     }
 
-    public function reader(int $serverId): RegistrarDriver
+    public function reader(int $serverId, bool $balanceOnly = false): RegistrarDriver
     {
         $this->server($serverId);
         $account = Account::where('server_id', $serverId)->firstOrFail();
-        return $this->registry->reader($this->binding($account), $this->configuration($account, true));
+        return $this->registry->reader($this->binding($account), $this->configuration($account, true), $balanceOnly);
     }
 
     /** Local credential/site validation only; never resolves a provider reader or sends a request. */
@@ -120,6 +120,7 @@ final class AccountBindings
         \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport $wire): \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader
     {
         if (DB::transactionLevel() !== 0 || $expected->registrarKey !== 'enom') { throw new \DomainException('Adoption read unavailable.'); }
+        $this->registry->requireDomainReads($expected->registrarKey);
         $this->server($expected->serverId);
         $account = Account::where('server_id', $expected->serverId)->sole();
         $expected->requireMatch($this->binding($account));

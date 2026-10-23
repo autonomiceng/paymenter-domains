@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 final class RuntimePorts
 {
     private array $factories=[];
-    public const TYPES=['acquisition'=>DomainOperations::class,'reconciliation'=>OperationReconciliation::class,
+    public const TYPES=['acquisition'=>AcquisitionPorts::class,'reconciliation'=>OperationReconciliation::class,
         'renewal'=>RenewalExecution::class,'renewal_writer'=>RenewalWriter::class,'renewal_completion'=>RenewalCompletion::class,
         'management'=>DomainManagement::class,'management_protocol'=>\Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol::class];
     public function register(string $fingerprint,\Closure $factory): void
@@ -21,10 +21,17 @@ final class RuntimePorts
         $factory=$this->factories[$account->account_fingerprint]??throw new \DomainException('Runtime provider acceptance is required.');
         $ports=$factory(CatalogueAcceptances::binding($account));
         foreach(self::TYPES as $key=>$type){if(!($ports[$key]??null) instanceof $type){throw new \DomainException('Incomplete runtime composition.');}}
+        $ports['acquisition']->requireBinding(CatalogueAcceptances::binding($account));
         if(!$ports['management_protocol']->bindsTo(CatalogueAcceptances::binding($account))){throw new \DomainException('Runtime management binding changed.');}
         return $ports;
     }
     public function accepted(Account $account): bool {try{$this->composition($account);return true;}catch(\Throwable){return false;}}
+    /** Local composition and feature facts only; these never confer processing or provider acceptance. */
+    public function acquisitionGates(Account $account): array
+    {
+        try { return $this->composition($account)['acquisition']->gates(); }
+        catch (\Throwable) { return ['register'=>null,'transfer'=>null]; }
+    }
     public function management(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): \Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol
     { $a=Account::where('server_id',$binding->serverId)->firstOrFail();$binding->requireMatch(CatalogueAcceptances::binding($a));return $this->composition($a)['management_protocol']; }
     public function managementEngine(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): DomainManagement

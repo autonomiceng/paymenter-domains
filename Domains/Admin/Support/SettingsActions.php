@@ -20,17 +20,18 @@ final class SettingsActions
             'override'=>'Changes this TLD only. Publish prices next. Registration and transfer below cost are held; renewals below cost are billed. Both alert staff.',
             'remove_override'=>'Uses this account’s default rule. Publish prices next. Existing invoices keep their prices.',
             'publish'=>'Creates price revisions from saved costs and the current rule. It does not refresh costs or reprice issued invoices.',
-            'tld_settings'=>'Narrow term bounds or pause new sales. Widening and restoring sales require explicit verification and current acceptance. Retained holders require annual renewal support.',
-            'seller'=>'Selects the registrar for new sales only. Existing domains and renewal obligations keep their holding registrar. No automatic fallback.',
-            'acceptance'=>'Accept only independently verified exact terms. Any change holds new sales for every TLD on this account until a new import. Retained holders keep accepted annual renewal support.',
+            'tld_settings'=>'Narrow term bounds or pause new sales. Widening and restoring sales require explicit verification and current acceptance. Retained holders require annual renewal support. For Enom TEST, ineligible cart lines are removed.',
+            'seller'=>'Selects the registrar for new sales only. Existing domains and renewal obligations keep their holding registrar. No automatic fallback. For Enom TEST, previous seller cart lines for this ending are removed.',
+            'import'=>'Reads one accepted TEST ending from Enom and imports current costs and registry requirements. Publish prices and select a seller separately. Processing stays off; withdrawn registration, transfer and renewal support stay off. Costs expire 60 minutes after the read; re-import before continuing preview. An annual registration and renewal baseline takes five reads; each additional accepted term or transfer adds up to one. Existing TEST cart lines for this ending are removed.',
+            'acceptance'=>'Accept only independently verified exact terms. Any change holds new sales for every TLD on this account until a new import and removes its TEST cart lines. Retained holders keep accepted annual renewal support.',
             'history'=>'Accept only a verified complete USD history contract for this action. Revocation stops new reconciliation reads; saved attempts and financial evidence stay retained.',
-            'configure'=>'Verifies the supplied credentials before saving them encrypted. An existing account keeps its identity. Processing stays off. Connection checks are currently unavailable.',
-            'probe'=>'Checks the bound account without authorizing purchases or new sales. Connection checks are currently unavailable.',
+            'configure'=>'Sends one account read to check the supplied credentials, then saves them encrypted. The verified account cannot change. Saving pauses processing until it is re-enabled.',
+            'probe'=>'Reads the verified account balance once and saves it to Registrar balances. Does not enable processing, purchases or new sales.',
         };
     }
     public static function make(int $server,?int $tld,string $stamp,bool $setup=false): array
     {
-        $out=[];$names=$setup?['configure','probe','acceptance','history','processing','delivery_review','alert_review']:['default_rule','override','remove_override','tld_settings','seller','publish'];
+        $out=[];$names=$setup?['configure','probe','acceptance','import','history','processing','delivery_review','alert_review']:['default_rule','override','remove_override','tld_settings','seller','publish'];
         $target=fn()=>\App\Models\Server::find($server)?->name ?? 'Server #'.$server;
         foreach($names as $name){
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp))];
@@ -52,6 +53,7 @@ final class SettingsActions
                 $fields[]=Select::make('seller')->label('Seller account')->options(fn()=>Account::orderBy('server_id')->get()->mapWithKeys(fn($a)=>[$a->server_id=>TldFacts::registrar($a->registrar_key).' · account #'.$a->server_id])->all())->placeholder('No seller')->default(fn()=>$policy()?->server_id);
                 $fields[]=Checkbox::make('register')->label('Allow registrations')->default(fn()=>$policy()?->register_enabled??false);$fields[]=Checkbox::make('transfer')->label('Allow transfers')->default(fn()=>$policy()?->transfer_enabled??false);
             }
+            if($name==='import'){$fields[]=TextInput::make('ending')->label('Accepted TLD without leading dot')->required()->maxLength(63);}
             if($name==='acceptance'){
                 $fields[]=TextInput::make('ending')->label('TLD without leading dot')->required()->maxLength(63);
                 $fields[]=Checkbox::make('accept')->label('Accept this TLD (clear to revoke new sales)');
@@ -75,7 +77,7 @@ final class SettingsActions
             }
             if($name==='configure'){
                 $fields[]=Select::make('registrar')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo'])->default(fn()=>Account::where('server_id',$server)->value('registrar_key'))->live()->required();
-                $fields[]=Select::make('environment')->label('Environment')->options(['test'=>'Test','live'=>'Live'])->default(fn()=>Account::where('server_id',$server)->value('environment')??'test')->required();
+                $fields[]=Select::make('environment')->label('Environment')->options(['test'=>'TEST','live'=>'Live'])->default(fn()=>Account::where('server_id',$server)->value('environment')??'test')->required();
                 foreach(['uid'=>'Enom user ID','token'=>'Enom API token','api_key'=>'NameSilo API key'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->password()->autocomplete('new-password')->maxLength(4096)->visible(fn($get)=>$get('registrar')===($key==='api_key'?'namesilo':'enom'))->required();}
             }
             $fields[]=Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:/\A[^\x00-\x1f\x7f]*\z/'])->helperText('Use one line. Do not include credentials.');
@@ -90,7 +92,7 @@ final class SettingsActions
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($name,$server,$tld,$target){
                     try{$r=new Review((int)Auth::id(),$server,$tld,$name,(string)($data['review_key']??''),trim((string)($data['reason']??'')));
                         app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
-                        Notification::make()->success()->title($name==='processing'?($account->processing_enabled?'Processing enabled':'Processing paused').' for '.$target():'Change recorded')->body($name==='processing'?null:'Reload this page before another change.')->send();
+                        Notification::make()->success()->title($name==='processing'?($account->processing_enabled?'Processing enabled':'Processing paused').' for '.$target():'Change recorded')->body($name==='processing'?null:($name==='probe'?'Balance read saved. See Registrar balances.':'Reload this page before another change.'))->send();
                         if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl());}
                     }catch(\Throwable $error){
                         $message=match($error->getMessage()){'Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',
@@ -98,7 +100,16 @@ final class SettingsActions
                             'Current staff permissions required.'=>'Your permission changed. Reload this page.',
                             'Runtime acceptance and shared workers are required.'=>'Provider acceptance and shared cache, sessions and queue workers are required before enabling processing.',
                             'Pause processing on every legacy Enom server before installing or enabling Domains.'=>'Pause processing on every legacy Enom server first.',
+                            'TEST catalogue reads are unavailable.'=>'TEST catalogue import is available only for Enom TEST accounts on a deployment that enables it. No provider call was made.',
+                            'Catalogue ending is not accepted.'=>'Accept this TLD before importing. No provider call was made.',
+                            'Catalogue import unavailable.'=>'Import did not complete. No prices changed; Enom TEST reads may have been made. Reload and check acceptance and permissions.',
                             'Connection checks are unavailable.'=>'Connection checks are unavailable. No provider call was made.',
+                            'identity_credentials_refused'=>'Enom refused the user ID or API token. Check both for the selected environment.',
+                            'identity_unavailable'=>'Enom did not confirm this account. Nothing was saved. Try again later.',
+                            'Connection not verified.'=>'Enom did not confirm the balance. The last saved balance was kept.',
+                            'identity_environment_refused'=>'This environment is not enabled for Enom account reads on this site. No provider call was made.',
+                            'identity_account_changed'=>'These credentials belong to a different account. The saved account was kept.',
+                            'namesilo_identity_unavailable'=>'NameSilo identity verification is unavailable. This account cannot be connected.',
                             'Review key used.'=>'This confirmation was already used. Reload this page.',
                             default=>'Reload and check current permissions, saved facts and acceptance.'};
                         if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains staff setting failed.',['action'=>$name,'exception_class'=>$error::class]);}
