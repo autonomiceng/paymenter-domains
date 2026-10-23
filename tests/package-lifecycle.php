@@ -1,9 +1,19 @@
 <?php
 // Native upload, boot and retained-data acceptance; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$lifecycleStarted=hrtime(true);
+$bootStarted=$lifecycleStarted;
 require __DIR__.'/Support/installed-app.php';
+$bootSeconds=(hrtime(true)-$bootStarted)/1e9;
 require __DIR__.'/Support/installed-upgrade.php';
 require_once __DIR__.'/Support/reminder-defaults.php';
+$traceTiming=static function(string $stage,int $started)use($lifecycleStarted,$bootSeconds):void {
+    if(getenv('PACKAGE_TIMINGS')==='1'){
+        fwrite(STDERR,json_encode(['timing'=>'package_lifecycle','phase'=>(string)getenv('PACKAGE_PHASE'),
+            'stage'=>$stage,'seconds'=>round((hrtime(true)-$started)/1e9,3),
+            'boot_seconds'=>round($bootSeconds,3),'total_seconds'=>round((hrtime(true)-$lifecycleStarted)/1e9,3)],JSON_THROW_ON_ERROR)."\n");
+    }
+};
 use Illuminate\Support\Facades\{Artisan,DB,Event,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,AccountBindings,NativeCatalogue,PriceCatalogue,SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
@@ -74,14 +84,16 @@ if($phase==='server-delete'){
     // The extension's separate uninstall hook also promises retained history.
     App\Helpers\ExtensionHelper::call($server,'uninstalled',mayFail:true);assertRetained($receipt);
     echo "Native disabled/delete refused and uninstall hook retained data.\n";
-}elseif(in_array($phase,['install','upload','reinstall'],true)){
+}elseif(in_array($phase,['install','install-enom-test-management','upload','reinstall'],true)){
     Illuminate\Support\Carbon::setTestNow(TEMPLATE_UPGRADE_AT);
-    if(in_array($phase,['install','reinstall'],true)){expect(!is_dir(base_path('extensions/Servers/Domains')),'Native Install branch requires absent runtime files');}
+    if(in_array($phase,['install','install-enom-test-management','reinstall'],true)){expect(!is_dir(base_path('extensions/Servers/Domains')),'Native Install branch requires absent runtime files');}
     $zip=(string)getenv('PACKAGE_ZIP');expect(is_file($zip),'Verified upload copy exists');
+    $installStarted=hrtime(true);
     same('server',app(App\Services\Extensions\UploadExtensionService::class)->handle($zip),'Native uploader classifies and installs server extension');
+    $traceTiming('zip_install',$installStarted);
     expect(!file_exists($zip),'Native uploader consumed upload');
     expect(is_file(base_path('extensions/Servers/Domains/manifest.json')),'Native extraction retained embedded manifest');
-    if($phase==='install'){
+    if(in_array($phase,['install','install-enom-test-management'],true)){
         // Upstream commands catch exceptions: assert schema and migration history directly.
         app(Installation::class)->verify();
         same((int)getenv('PACKAGE_MIGRATIONS'),count(glob(base_path('extensions/Servers/Domains/database/migrations/*.php'))),'Installed migration inventory');
@@ -89,6 +101,14 @@ if($phase==='server-delete'){
         assertInstalledMigrationOrder();
         same(0,Account::count(),'Fresh package creates no activated accounts');
         echo "Native upload/extract/Install branch passed.\n";
+        if($phase==='install-enom-test-management'){
+            $setupStarted=hrtime(true);
+            require __DIR__.'/Support/enom-test-management-fixture.php';
+            $traceTiming('management_fixture_setup',$setupStarted);
+            $managementStarted=hrtime(true);
+            require __DIR__.'/Support/enom-test-management.php';
+            $traceTiming('management_assertions',$managementStarted);
+        }
     }elseif($phase==='reinstall'){
         app(Installation::class)->verify();
         same(1,DB::table('migrations')->where('migration',Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::MIGRATION)->count(),'Reinstall retains the TEST counter migration record');
@@ -102,8 +122,12 @@ if($phase==='server-delete'){
 }elseif($phase==='enom-test-transfer-restart'){
     require __DIR__.'/Support/enom-transfer-restart.php';
 }elseif($phase==='enom-test-management'){
-    require __DIR__.'/Support/enom-test-registration.php';
+    $setupStarted=hrtime(true);
+    require __DIR__.'/Support/enom-test-management-fixture.php';
+    $traceTiming('management_fixture_setup',$setupStarted);
+    $managementStarted=hrtime(true);
     require __DIR__.'/Support/enom-test-management.php';
+    $traceTiming('management_assertions',$managementStarted);
 }elseif($phase==='enom-test-management-restart'){
     require __DIR__.'/Support/enom-management-restart.php';
 }elseif($phase==='enom-test-renewal'){

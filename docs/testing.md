@@ -229,9 +229,10 @@ All exchanges are injected; no provider or installed-extension acceptance is cla
 
 `management-refusal-test` covers documented/system/contradictory provider refusals and the binding no-sent-credit boundary.
 
-Runner timeout correction: native offline suites have a 120-second per-process deadline on shared,
-nice/ionice-limited hosts. The 60-second summary above applies to other categories.
-Provider request deadlines remain independent.
+Native offline suites have a 120-second per-process deadline on shared, nice/ionice-limited hosts.
+Installed-package lifecycle commands have a 300-second outer deadline because they run multiple
+individually bounded PHP phases. Their 45- or 120-second phase deadlines remain in force. The
+60-second summary above applies to other categories. Provider request deadlines remain independent.
 
 NameSilo management: `management-namesilo-test`, `management-namesilo-contacts-test` and
 `management-namesilo-boundary-test` cover free capabilities, bounded routes/readback, separate

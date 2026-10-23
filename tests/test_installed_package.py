@@ -75,9 +75,13 @@ def main(scenario):
     if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'enom-live', 'acquisition', 'enom-exchange', 'enom-test-registration', 'enom-test-renewal', 'enom-test-management', 'enom-test-transfer', 'namesilo-registration', 'namesilo-renewal', 'namesilo-enrollment'):
         raise ValueError('Unknown installed package scenario')
     began = time.monotonic()
+    # Keep scenario limits above the measured identity and management costs.
+    scenario_timeout = 110 if scenario == 'held' else 60 if scenario == 'enom-test-management' else None
+    scenario_deadline = began + scenario_timeout if scenario_timeout is not None else None
     fixture = Path(os.environ['PAYMENTER_TEST_FIXTURE'])
     if not (fixture/'.domains-fixture.json').is_file():
         raise ValueError('Runner-created pristine copy required')
+    memory_wait_started = time.monotonic()
     for attempt in range(7):
         available = int(next(line.split()[1] for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:')))
         if available >= 1_572_864:
@@ -85,8 +89,11 @@ def main(scenario):
         if attempt == 6:
             raise RuntimeError('At least 1.5 GiB MemAvailable is required for installed package acceptance')
         time.sleep(10)
+    print(json.dumps({'timing': 'memory_wait', 'scenario': scenario,
+                      'seconds': round(time.monotonic() - memory_wait_started, 3)}), flush=True)
     print(f'Installed fixture MemAvailable: {available} kB', flush=True)
     with tempfile.TemporaryDirectory(prefix=f'domains-installed-{scenario}-', dir=fixture.parent) as temporary:
+        setup_started = time.monotonic()
         root = Path(temporary)
         app = root/'paymenter'
         shutil.copytree(fixture, app, ignore=shutil.ignore_patterns('*.sqlite', 'domains-editor-routes.php'))
@@ -98,6 +105,8 @@ def main(scenario):
         for path in (app/'bootstrap/cache').glob('*.php'):
             path.unlink()
         current = build.build(ROOT/'Domains', root/'current')
+        print(json.dumps({'timing': 'fixture_setup', 'scenario': scenario,
+                          'seconds': round(time.monotonic() - setup_started, 3)}), flush=True)
         evidence = {'installed_package': True, 'scenario': scenario,
                     'zip_sha256': current['archive_sha256'], 'real_provider_calls': 0}
         previous = None
@@ -133,10 +142,15 @@ def main(scenario):
                    PACKAGE_RETAINED=str(retained), PACKAGE_MIGRATION_RECEIPT=str(migrations), PACKAGE_MIGRATIONS=str(count),
                    PACKAGE_STANDING_UPGRADE='1' if scenario == 'previous' else '')
         def phase(name, package=None, worker=None):
+            phase_started = time.monotonic()
+            package_seconds = 0.0
+            print(json.dumps({'timing': 'phase_start', 'scenario': scenario, 'phase': name}), flush=True)
             run_env = dict(env, PACKAGE_PHASE=name)
+            run_env['PACKAGE_TIMINGS'] = '1'
             if worker is not None:
                 run_env['PACKAGE_RACE_WORKER'] = str(worker)
             if package:
+                package_started = time.monotonic()
                 receipt = current if package == 'current' else previous
                 original = root/package/receipt['archive']
                 build.verify(original, receipt)
@@ -144,8 +158,23 @@ def main(scenario):
                 shutil.copyfile(original, upload)
                 build.verify(upload, receipt)
                 run_env['PACKAGE_ZIP'] = str(upload)
-            subprocess.run([str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')], cwd=ROOT, env=run_env, check=True, timeout=120 if name in ['enom-test-renewal','enom-live'] else 45)
-        phase('install', first)
+                package_seconds = time.monotonic() - package_started
+            timeout = (max(0.001, scenario_deadline - time.monotonic()) if scenario_deadline is not None
+                       else 120 if name in ['enom-test-renewal','enom-live'] else 45)
+            try:
+                subprocess.run([str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')], cwd=ROOT, env=run_env, check=True, timeout=timeout)
+            except subprocess.TimeoutExpired as error:
+                if scenario_deadline is not None:
+                    raise TimeoutError(f'Installed package {scenario} phase {name} exhausted the {scenario_timeout}-second scenario deadline') from error
+                raise TimeoutError(f'Installed package {scenario} phase {name} exceeded {timeout} seconds') from error
+            finally:
+                print(json.dumps({'timing': 'phase_finish', 'scenario': scenario, 'phase': name,
+                                  'seconds': round(time.monotonic() - phase_started, 3),
+                                  'package_seconds': round(package_seconds, 3)}), flush=True)
+        if scenario == 'enom-test-management':
+            phase('install-enom-test-management', first)
+        else:
+            phase('install', first)
         if scenario == 'held':
             phase('held')
             phase('identity')
@@ -162,7 +191,6 @@ def main(scenario):
             phase('enom-test-transfer-restart')
             evidence['test_transfer_paid_code_cap_history_restart_timeout'] = True
         elif scenario == 'enom-test-management':
-            phase(scenario)
             phase('enom-test-management-restart')
             evidence['test_management_readback_and_restart'] = True
         elif scenario == 'enom-test-renewal':
@@ -231,6 +259,8 @@ def main(scenario):
                             retained_install_branch=True, uninstall_hook_retained=True)
             evidence['fresh_install' if scenario == 'fresh' else 'upgrade'] = True
         print(json.dumps(evidence))
+        print(json.dumps({'timing': 'scenario', 'scenario': scenario,
+                          'seconds': round(time.monotonic() - began, 3)}), flush=True)
 
 
 if __name__ == '__main__':

@@ -92,7 +92,10 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     def command(index, worker):
         kind, argv = commands[index]
         started = time.monotonic()
-        stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=workers[worker] if workers else env, timeout=3000 if kind == 'mariadb' else (120 if kind == 'native' else 60), graceful=60 if kind == 'mariadb' else 0)
+        installed_package = Path(argv[-1]).name.startswith('test_installed_')
+        timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and installed_package
+                   else 120 if kind == 'native' else 60)
+        stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=workers[worker] if workers else env, timeout=timeout, graceful=60 if kind == 'mariadb' else 0)
         seconds = time.monotonic() - started
         if code:
             with scheduling:
