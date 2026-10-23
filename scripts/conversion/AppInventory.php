@@ -12,18 +12,17 @@ final class AppInventory
     public static function collect(string $app): array
     {
         QuietWindow::primary(DB::connection());
+        $queue=self::queue();
         $parked=true;foreach(['Enom','Domains']as$name){$p=$app.'/extensions/Servers/'.$name;if(file_exists($p)||is_link($p)){$parked=false;}}
         $cron=self::cron();$processes=self::processes($app);
+        return [...$cron,...$processes,...$queue,'parked'=>$parked,'maintenance'=>self::read($app.'/storage/framework/down'),
+            'web_fence'=>self::webFence($app),'maintenance_active'=>config('app.maintenance.driver','file')==='file'&&app()->isDownForMaintenance()];
+    }
+    public static function queue(): array
+    {
         $driver=config('queue.connections.'.config('queue.default').'.driver');
-        if($driver==='database'){
-            $q=config('queue.connections.'.config('queue.default'));
-            if(($q['connection']??DB::getDefaultConnection())!==DB::getDefaultConnection()||($q['table']??null)!=='jobs'||!Schema::hasTable('jobs')){
-                throw new \DomainException('Only native default database jobs queue is supported.');
-            }
-        }
-        return [...$cron,...$processes,'parked'=>$parked,'maintenance'=>self::read($app.'/storage/framework/down'),
-            'web_fence'=>self::webFence($app),'maintenance_active'=>config('app.maintenance.driver','file')==='file'&&app()->isDownForMaintenance(),
-            'queue_driver'=>$driver,'jobs'=>Schema::hasTable('jobs')?DB::table('jobs')->pluck('payload')->all():[]];
+        if($driver==='database'){Inputs::databaseQueue();}
+        return ['queue_driver'=>$driver,'jobs'=>Schema::hasTable('jobs')?DB::table('jobs')->pluck('payload')->all():[]];
     }
     public const INDEX_SHA256='e1ad0c43365cdef3ee38738ea7140804e90eaeb0a11102884e97cbd0848c26af';
     public const FENCE_SHA256='a8dc7e2db39e3e41b20ccb5709ce726679ef69d7a4c78de4a7d63b6665e08289';

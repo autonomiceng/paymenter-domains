@@ -67,6 +67,14 @@ final class Inputs
             foreach(['operations_enabled','domains_billing_enabled','domains_observations_enabled']as$key){if(filter_var($s->settings->firstWhere('key',$key)?->value,FILTER_VALIDATE_BOOLEAN)){throw new \DomainException('Registrar dispatch/billing/observations must be off.');}}}
         if(\Illuminate\Support\Facades\Schema::hasTable('domains_accounts')&&DB::table('domains_accounts')->where('processing_enabled',true)->exists()){throw new \DomainException('Neutral processing must be off.');}
     }
+    public static function databaseQueue(): void
+    {
+        $queue=config('queue.connections.'.config('queue.default'));$connection=DB::getDefaultConnection();
+        if(!is_array($queue)||($queue['driver']??null)!=='database'||($queue['connection']??$connection)!==$connection
+            ||($queue['table']??null)!=='jobs'||!\Illuminate\Support\Facades\Schema::hasTable('jobs')){
+            throw new \DomainException('Only native default database jobs queue is supported.');
+        }
+    }
     public static function refusal(\Throwable $error): string
     {return $error instanceof \DomainException?$error->getMessage():'Review source/schema, offline evidence, maintenance and backup prerequisites.';}
     public static function decrypt(?string $value): array { return $value===null?[]:json_decode(decrypt($value,false),true,128,JSON_THROW_ON_ERROR); }

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/Support/conversion.php';
 foreach(['AppInventory','QuietWindow','AppHost']as$class){require dirname(__DIR__).'/scripts/conversion/'.$class.'.php';}
-use DomainsConversion\{QuietWindow,Inputs,Converter,AppInventory};
+use DomainsConversion\{QuietWindow,Inputs,Converter,AppInventory,Mapper,Planner};
 use Illuminate\Support\Facades\{DB,Cache};
 Illuminate\Support\Facades\Schema::create('cache',function($t){$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration');});
 Illuminate\Support\Facades\Schema::create('cache_locks',function($t){$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
@@ -98,8 +98,34 @@ file_put_contents($cache.'/unreadable','9999999999value');chmod($cache.'/unreada
 conversionRefuses(fn()=>QuietWindow::snapshot(),'Unreadable required cache refuses','Required app inventory');chmod($cache.'/unreadable',0600);unlink($cache.'/unreadable');
 config(['cache.stores.conversion_file.path'=>$temporary.'/missing']);Cache::forgetDriver('conversion_file');conversionRefuses(fn()=>QuietWindow::snapshot(),'Missing cache directory refuses','File cache inventory');
 config(['queue.default'=>'sync','queue.connections.sync'=>['driver'=>'sync']]);
-$appConverter=new Converter($evidence,$maintenance,'app');expect($appConverter->run()['dry_run'],'App supports sync queue');
+$appConverter=new Converter($evidence,$maintenance,'app');
+conversionRefuses(fn()=>$appConverter->run(),'App mapper refuses sync queue','Only native default database');
 conversionRefuses(fn()=>(new Converter($evidence,$maintenance))->run(),'Dedicated queue policy unchanged','Only native default database');
+foreach([null,[],['driver'=>'sync','connection'=>DB::getDefaultConnection(),'table'=>'jobs'],['driver'=>'redis','connection'=>DB::getDefaultConnection(),'table'=>'jobs']]as$queue){
+    config(['queue.connections.sync'=>$queue]);
+    conversionRefuses(fn()=>Mapper::jobs(new Planner($evidence)),'Mapper refuses every non-database queue','Only native default database');
+}
+$default=['driver'=>'database','connection'=>DB::getDefaultConnection(),'table'=>'jobs'];
+config(['queue.default'=>'database','queue.connections.database'=>$default]);
+same('database',AppInventory::queue()['queue_driver'],'Database inventory driver retained');
+$payload='{"data":{"commandName":"App\\\\Jobs\\\\NativeJob"}}';
+$job=DB::table('jobs')->insertGetId(['queue'=>'default','payload'=>$payload,'attempts'=>0,'reserved_at'=>null,'available_at'=>0,'created_at'=>0]);
+same([$payload],AppInventory::queue()['jobs'],'Database payloads inventoried directly');DB::table('jobs')->where('id',$job)->delete();
+foreach([['connection'=>'other'],['table'=>'other_jobs']]as$override){
+    config(['queue.connections.database'=>array_replace($default,$override)]);
+    conversionRefuses(fn()=>AppInventory::collect($fixture),'App collector rejects unsupported database queue before OS inspection','Only native default database');
+    conversionRefuses(fn()=>Mapper::jobs(new Planner($evidence)),'Mapper shares database shape guard','Only native default database');
+}
+config(['queue.connections.database'=>$default]);
+foreach([null,[]]as$override){
+    $queue=$default;if($override===null){$queue['connection']=null;}else{unset($queue['connection']);}
+    config(['queue.connections.database'=>$queue]);same('database',AppInventory::queue()['queue_driver'],'Implicit default queue connection accepted');
+}
+config(['queue.connections.database'=>$default]);
+DB::statement('ALTER TABLE jobs RENAME TO parked_jobs');
+conversionRefuses(fn()=>AppInventory::collect($fixture),'App collector requires native jobs table','Only native default database');
+conversionRefuses(fn()=>Mapper::jobs(new Planner($evidence)),'Mapper requires native jobs table','Only native default database');
+DB::statement('ALTER TABLE parked_jobs RENAME TO jobs');
 // Remove only the disposable filesystem fixture created here.
 foreach([$cache,$locks,$other]as$dir){$iterator=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST);
     foreach($iterator as$f){$f->isDir()?rmdir($f->getPathname()):unlink($f->getPathname());}rmdir($dir);}
