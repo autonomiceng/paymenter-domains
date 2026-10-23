@@ -37,14 +37,13 @@
       "funding-renewal": {
         "consumers": [
           "Domains/Services/NativeDomainGuard.php",
-          "Domains/Services/ManagedPaidInvoice.php",
           "Domains/Services/InvoiceFunding.php",
           "Domains/Services/HoldingLocks.php",
           "Domains/Services/DomainBilling.php",
           "Domains/Services/Refunds.php",
           "Domains/Services/OwnedDomains.php"
         ],
-        "review": "Re-review paid-after-commit timing, signed full-invoice funding, native renewal bypass, credit/refund once and null expiry.",
+        "review": "Re-review paid-after-commit timing, signed full-invoice funding, null-reference owned renewal invoices, credit/refund once and null expiry.",
         "files": {
           "app/Classes/Price.php": "54daeefa22976856f27f715993124d50ea001645e09530ce99788b5f890e1528",
           "app/Classes/Settings.php": "a16805568210ed23663565c5d3a80b3ddeb69c0b4a3e2e64f22106249e095119",
@@ -304,7 +303,7 @@
           "Domains/Services/AcquisitionRetirement.php",
           "Domains/Services/NativeActivationInformation.php"
         ],
-        "review": "Re-qualify baseline and unbound native paid matrices: mixed Credit/hosting, jobs before Service save, duplicate wakes, terminal refunds/reactivation, Paid after-commit recovery, model-event capability checks and product information mail rendering.",
+        "review": "Re-qualify the native paid matrix: mixed Credit/hosting, jobs before Service save, duplicate wakes, terminal refunds/reactivation, Paid after-commit recovery, model-event capability checks and product information mail rendering.",
         "files": {
           "app/Services/Invoice/ProcessPaidInvoiceService.php": "e98b4a6c3aba5612d0c448c138034926fa2030cabd2ccb81cfcb1d9511f171e3",
           "app/Services/Service/RenewServiceService.php": "9cfa9654cbc2fcb19f18464bb8f2b95f35acd3324c82086903fce72db9f6b5f5",

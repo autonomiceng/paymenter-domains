@@ -10,10 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 foreach([Paymenter\Extensions\Servers\Domains\Contracts\Clock::class=>$clock,AccountBindings::class=>$bindings,
     NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers,CartAdmission::class=>$admission,InvoiceBinding::class=>$invoiceBinding]as$class=>$object){app()->instance($class,$object);}
 $entry->boot();installedPanel();
-if($nativePaidCandidate??false){
-    // Qualification only. Runtime retains its baseline binding until the later removal slice.
-    app()->bind(App\Services\Invoice\ProcessPaidInvoiceService::class,App\Services\Invoice\ProcessPaidInvoiceService::class);
-}
+expect(!app()->bound(App\Services\Invoice\ProcessPaidInvoiceService::class),'Native paid processor has no extension binding');
+same(App\Services\Invoice\ProcessPaidInvoiceService::class,get_class(app(App\Services\Invoice\ProcessPaidInvoiceService::class)),'Resolve the native paid processor');
 $ports=app(RuntimePorts::class);$work=app(RuntimeWork::class);$preflight->cost='6.00';
 $a=Account::where('server_id',$tlds[0]->server_id)->sole();$b=CatalogueAcceptances::binding($a);
 $features=new WriteFeatures(true,true,true,true);$authority=new RenewalAuthority($bindings,$clock);$accept=new RenewalAcceptance($b,true,true,25);

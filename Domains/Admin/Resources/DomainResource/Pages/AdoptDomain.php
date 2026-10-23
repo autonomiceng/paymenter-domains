@@ -13,9 +13,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, Environment};
-use Paymenter\Extensions\Servers\Domains\Data\Adoption\{Review, StaffContext, Target};
+use Paymenter\Extensions\Servers\Domains\Data\Adoption\{RefusalCode, Review, StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, AdoptionReader};
+use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, AdoptionReader, AdoptionRefused};
 /** Native staff wizard. Request keys, digests and private evidence never leave the server. */
 class AdoptDomain extends Page
 {
@@ -108,11 +108,11 @@ class AdoptDomain extends Page
     /** Fixed refusal sentences; exception text never reaches the browser. Mapped refusals are thrown before the attempt commits; anything else may follow a commit, so its outcome is reported as uncertain. */
     private static function refused(\Throwable $e): string
     {
-        return match ($e instanceof \DomainException ? $e->getMessage() : null) {
-            'Verification details changed or expired. Verify again.', 'Adoption request changed. Verify again.' => 'Confirmation was refused because the preview expired or a detail changed; this attempt changed and charged nothing, so read a fresh preview to try again.',
-            'You do not have permission to adopt registrations.' => 'Confirmation was refused because your role is missing a permission adoption needs; this attempt changed and charged nothing, so ask the site administrator to check your role.',
-            'Adoption result needs staff review.', 'Registration identity needs staff review.', 'Adoption holding requires review.' => 'Confirmation was refused because existing records for this name do not match this preview; this attempt changed and charged nothing, so check the registration before trying again.',
-            'Adoption is not enabled yet.' => 'Confirmation was refused because adoption is switched off on this site; this attempt changed and charged nothing, so ask the site administrator whether adoption should be switched on.',
+        return match ($e instanceof AdoptionRefused ? $e->reason : null) {
+            RefusalCode::VerificationChanged, RefusalCode::RequestChanged => 'Confirmation was refused because the preview expired or a detail changed; this attempt changed and charged nothing, so read a fresh preview to try again.',
+            RefusalCode::Permission => 'Confirmation was refused because your role is missing a permission adoption needs; this attempt changed and charged nothing, so ask the site administrator to check your role.',
+            RefusalCode::ResultReview, RefusalCode::IdentityReview, RefusalCode::HoldingReview => 'Confirmation was refused because existing records for this name do not match this preview; this attempt changed and charged nothing, so check the registration before trying again.',
+            RefusalCode::Disabled => 'Confirmation was refused because adoption is switched off on this site; this attempt changed and charged nothing, so ask the site administrator whether adoption should be switched on.',
             default => 'Confirmation could not be completed and its outcome is unknown; check whether this name now appears as an adopted registration before reading a fresh preview.',
         };
     }

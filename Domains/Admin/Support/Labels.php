@@ -70,6 +70,8 @@ final class Labels
             'target_changed'=>'Check target changed','term'=>'Term needs review','balance'=>'Registrar balance needs review',
             'acquisition_cancelled_unpaid'=>'Unpaid order retired','registration_adopted'=>'Registration adopted',
             'registration_managed'=>'Registration managed','ready'=>'Ready for check',
+            'expiry_unknown'=>'Registry expiry unknown','no_coverage'=>'Public registry coverage unavailable',
+            'not_registered'=>'No registry record found',
             'awaiting_acceptance'=>'Awaiting feature acceptance'][$value] ?? 'Review retained evidence';
     }
     public static function flag(mixed $value): string { return match ($value) { true=>'Yes', false=>'No', default=>'Unknown' }; }

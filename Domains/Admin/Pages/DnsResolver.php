@@ -56,12 +56,12 @@ class DnsResolver extends Page
         abort_unless(self::canAccess(), 403);
         return $schema->components([
             Section::make(fn() => app(DnsResolverSettings::class)->configuration()[0] ? 'DNS-over-HTTPS configured' : "Using the server's resolver")
-                ->description(fn() => app(DnsResolverSettings::class)->configuration()[1] ?? 'DNS-over-HTTPS is tried first. Connection and response failures use the server’s resolver. Valid DNS error responses stay unknown.')
+                ->description(fn() => app(DnsResolverSettings::class)->configuration()[1] ?? "Domain checks ask DNS-over-HTTPS first. If it cannot be reached or its reply cannot be read, that query is retried once with the server's resolver if time remains; after two such failures, the rest of that domain check run uses the server's resolver. A \"no such name\" or \"no records\" answer is final, and other DNS errors such as SERVFAIL are recorded as unknown; neither is retried.")
                 ->schema([TextEntry::make('endpoint')->label('Endpoint')->state(fn() => app(DnsResolverSettings::class)->configuration()[0]?->url ?? 'Not configured'),
                     TextEntry::make('bootstrap')->label('Public bootstrap IP address')->state(fn() => app(DnsResolverSettings::class)->configuration()[0]?->ip ?? 'Not configured')])->columns(2),
-            Section::make('Resolver check')->description('Check DNS resolver makes one query for example.com. A failed check does not query the server’s resolver.')
+            Section::make('Resolver check')->description("When DNS-over-HTTPS is configured, Check DNS resolver sends one query to it for example.com; otherwise it sends nothing. It never tries the server's resolver, even when it fails; the result says what domain checks would do with the same answer.")
                 ->schema([TextEntry::make('result')->label('Last check this visit')->state(fn() => $this->lastCheck['message'] ?? 'Not checked this visit'),
-                    TextEntry::make('privacy')->label('Query privacy')->state('Checked domain names are sent to the configured resolver.')]),
+                    TextEntry::make('privacy')->label('Query privacy')->state("Checked domain names are sent to the configured DNS-over-HTTPS resolver. They go to the server's resolver instead when DNS-over-HTTPS is not configured, when a failed query is retried there, and for the rest of a domain check run after two failures.")]),
         ]);
     }
 }

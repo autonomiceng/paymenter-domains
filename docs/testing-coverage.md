@@ -520,3 +520,32 @@ Existing acquisition alerts distinguish new payment activity and expose a staff 
 permission-aware invoice/request links. Ordinary completed cancellation and retained refunded
 payments stay quiet. Publication initializes approved product mail once and preserves later
 staff changes, including null and blank. Native paid-loop dependencies are test-only tripwires.
+
+## Seller-switch lifecycle command budget
+
+Seller-switch lifecycle runs one native command per registrar/acquisition action through
+`Support/seller-switch-lifecycle.php`; the original command keeps the two native checkout
+transaction guards. Each original register/transfer schedule still runs once for each
+registrar: stale carts after switching back, canonical contention, unpaid funding, fresh
+reads, durable seals and unknown workers. Native checkout, funding and retained-byte
+assertions are unchanged. Independent processes bound accumulated commerce rows. These
+synthetic SQLite checks do not establish provider or concurrent-database acceptance.
+
+## Acquisition retirement command budget
+
+Acquisition retirement runs as independent native commands for cron/wake-up/cancellation
+(`acquisition-retirement-test.php`), uncertain money/send/sibling/age refusals
+(`acquisition-retirement-refusals-test.php`) and staff review/audit/late-money/modals
+(`acquisition-retirement-staff-test.php`). `Support/acquisition-retirement.php` shares
+unchanged native setup. Related released-name and shared-invoice scenarios stay together;
+real native checkout, cron, cancellation listener, paid activation and Filament actions
+remain exercised. These synthetic SQLite checks do not establish provider or concurrent
+shared-database acceptance.
+
+
+## Native paid processing after override removal
+
+Both historically named baseline/candidate entrypoints now run the same native-only matrix.
+The test switch and self-rebinding are gone; composition asserts the processor is unbound
+and resolves to the native class. Existing paid/cron, cancellation, identity and projection
+coverage qualifies the removal together. No upstream hashes were changed.

@@ -623,3 +623,8 @@ Console output prints each command's block as it completes; receipts keep manife
 Receipts add `jobs` and command `seconds` for concurrency and timing.
 The first failure stops new work; running commands finish. Runs that include MariaDB run serially.
 In parallel runs, writes to `Domains/`, even when restored, fail.
+
+Public registry expiry tests use synthetic bootstrap/HTTP bodies, endpoint DNS and clocks.
+They retain date/instant precision, reject ambiguous expiry and unsafe endpoints, and
+share the transfer client's strict selected-endpoint 404 classifier. No WHOIS fallback,
+registrar operation, live RDAP acceptance or customer notification is exercised.

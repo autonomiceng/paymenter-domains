@@ -21,7 +21,7 @@ Paymenter must take new upstream releases without an extension release. Ship an 
 - **Qualify releases in CI.** New Paymenter releases run the full suites, the tripwire and the override-template diff. A green run needs no extension release.
 - **Exceptions are architecture decisions.** A change that cannot follow these rules states why in its pull request and adds a tripwire before merge.
 
-Known exceptions, being removed: the paid-invoice service rebinding (`Domains/Services/NativeDomainGuard.php`, `Domains/Services/ManagedPaidInvoice.php`), the native Server and Service route remaps and Livewire guard (`Domains/Services/Runtime.php` `secureNativeRoutes()`, `Domains/Services/NativeServerGuard.php`) and the `TrimStrings` hooks (`Domains/Services/Runtime.php`, `Domains/routes/owned.php`). Do not add more.
+Known exceptions, being removed: the native Server and Service route remaps and Livewire guard (`Domains/Services/Runtime.php` `secureNativeRoutes()`, `Domains/Services/NativeServerGuard.php`) and the `TrimStrings` hooks (`Domains/Services/Runtime.php`, `Domains/routes/owned.php`). Do not add more.
 
 ## Ownership and spending
 

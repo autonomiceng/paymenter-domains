@@ -1,5 +1,5 @@
 <?php
-// Baseline and unbound candidate execute the same assertions. MIT, Copyright (c) 2026 Autonomic Engineering.
+// Native paid processing executes without an extension binding. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-paid-fixture.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Service};
@@ -27,8 +27,7 @@ $early=[];Service::updating(static function($s)use(&$early,$mixed,$writer):void 
 (new App\Jobs\Server\UnsuspendJob($mixed->domain->service))->handle();$manual($mixed);same(0,$writer->calls,'Unpaid early job cannot send');$paid($mixed);
 same('active',$host->fresh()->status,'Hosting sibling activates');expect($host->fresh()->expires_at!==null,'Hosting keeps native expiry');same('3.00',number_format((float)$user->credits()->sole()->amount,2,'.',''),'Native Credit sibling processed');
 same(1,$writer->calls,'Native sync/Paid wakes send once');same('uncertain',$mixed->fresh()->state,'Owned status does not become active on payment');same(null,$mixed->domain->service->fresh()->expires_at,'Managed expiry stays null');same(null,$mixed->domain->fresh()->provider_expires_at,'No fabricated registrar expiry');
-if($nativePaidCandidate){expect(count($early)>0&&$early[0]===['stored'=>'pending','writes'=>1],'Synchronous CreateJob sends before native Active save');}
-else{same([],$early,'Baseline filters only managed Service activation');}
+expect(count($early)>0&&$early[0]===['stored'=>'pending','writes'=>1],'Synchronous CreateJob sends before native Active save');
 $count=Operation::count();$attempt=$mixed->fresh()->attempt;
 for($n=0;$n<2;$n++){event(new App\Events\Invoice\Paid($invoice->fresh()));$manual($mixed);$work->operation($mixed->id);}
 same(1,$writer->calls,'Duplicate Paid/manual CreateJob never resend sealed work');same($count,Operation::count(),'No duplicate operation admission');same($attempt,$mixed->fresh()->attempt,'Sealed evidence retained');same('3.00',number_format((float)$user->credits()->sole()->amount,2,'.',''),'Duplicate Paid wake never processes Credit again');
@@ -57,12 +56,12 @@ same('rejected',$failed->fresh()->state,'Refund terminalizes request');same('can
 $retirement=app(AcquisitionRetirement::class);$retirement->inspect($failed->domain_id);same(0,$alerts($failed)->count(),'Retained original refunded payment is not late money');
 $credit=number_format((float)$user->credits()->sole()->amount,2,'.','');$before=$writer->calls;$manual($failed);unserialize($delayedCreate)->handle();unserialize($delayedUnsuspend)->handle();$staleCreate->handle();event(new App\Events\Invoice\Paid(Invoice::find($failed->invoice_id)));$work->operation($failed->id);$refunds->creditRejected($failed->id);
 same($before,$writer->calls,'Late job after refund cannot spend');same($credit,number_format((float)$user->credits()->sole()->amount,2,'.',''),'Late wake never credits twice');
-// Re-paying the same invoice reactivates native Service in candidate, never the owned request.
+// Re-paying the same invoice reactivates native Service, never the owned request.
 DB::table('invoices')->where('id',$failed->invoice_id)->update(['status'=>'pending']);$paid($failed);
 same('rejected',$failed->fresh()->state,'Re-paid refunded acquisition stays terminal');same($credit,number_format((float)$user->credits()->sole()->amount,2,'.',''),'Re-payment is not auto-credited');expect($alerts($failed)->count()>=1,'New refunded-invoice money is durable review');
 $versions=$alerts($failed)->count();$retirement->inspect($failed->domain_id);same($versions,$alerts($failed)->count(),'Repeated sweep is one activity');
 InvoiceTransaction::create(['invoice_id'=>$failed->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'processing']);$retirement->inspect($failed->domain_id);same($versions+1,$alerts($failed)->count(),'Second late payment creates visible activity');
-if($nativePaidCandidate){same('active',$failed->domain->service->fresh()->status,'Native unconditional reactivation is tolerated');}
+same('active',$failed->domain->service->fresh()->status,'Native unconditional reactivation is tolerated');
 // A proven unpaid retirement releases its name; late money and native Active never reclaim it.
 $retired=$new('paid-retired.com',paid:false);DB::table('invoices')->where('id',$retired->invoice_id)->update(['status'=>'cancelled']);DB::table('services')->where('id',$retired->service_id)->update(['status'=>'cancelled']);$retirement->inspect($retired->domain_id);
 same(UnpaidAcquisitionProof::CODE,$retired->fresh()->safe_code,'Use existing unpaid proof');$cart=commerceCart($user);commerceAdd($cart,$product,'paid-retired.com');commerceCheckout($user,$cart)->assertHasNoErrors();$replacement=Domain::where('reservation_name','paid-retired.com')->sole()->operations()->sole();$paid($retired);$manual($retired);
@@ -127,4 +126,4 @@ same($before,$writer->calls,'Missing Service hooks pause acquisition send');same
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class)->filterTable('late_payment')->assertCanSeeTableRecords([$failed->domain,$retired->domain])->assertCanNotSeeTableRecords([$mixed->domain]);
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('Paid after order closed')->assertSee('Invoice #'.$failed->invoice_id)->assertSee('Registrar request #'.$failed->id);
 $viewOnly=staffUser(['admin.domains.view']);Livewire\Livewire::actingAs($viewOnly)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('invoice edit access required');
-echo ($nativePaidCandidate?'Candidate':'Baseline')." native paid matrix: mixed/Credit, early sync, duplicates, contacts, transfer, refund, late money, reactivation, recovery and staff review passed.\n";$nativeSuccessful=true;
+echo "Native paid matrix: mixed/Credit, early sync, duplicates, contacts, transfer, refund, late money, reactivation, recovery and staff review passed.\n";$nativeSuccessful=true;
