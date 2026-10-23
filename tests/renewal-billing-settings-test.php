@@ -24,6 +24,11 @@ Livewire::actingAs($u)->test(RegistrarSetup::class)->assertSee('Owner renewal re
 $page=Livewire::actingAs($u)->test(RegistrarSetup::class)->mountAction($name)->assertActionMounted($name);$defaults=$page->get('mountedActions.0.data');$ticket=$defaults['review_key'];
 same([false,false,21,7],[$defaults['scheduled'],$defaults['manual'],(int)$defaults['issue_days'],(int)$defaults['due_days']],'Modal prefills effective defaults');
 
+// Owner requests stay open until the confirmed expiry date (DomainBilling::requireRequest), not the due day.
+$copy=Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::description('renewal_billing');
+expect(str_contains($copy,'Owner requests let a customer ask for a renewal invoice for an active domain at any time before the confirmed expiry date.'),'Owner request copy states the expiry cutoff');
+expect(!str_contains($copy,'before the due day'),'Owner request copy drops the old due-day cutoff');
+
 // Successful native submission writes exactly four plain rows and one audit entry.
 $page->setActionData(['scheduled'=>true,'manual'=>true,'issue_days'=>'30','due_days'=>'10','confirmed'=>true,'reason'=>'Turn on renewal billing after review'])
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded')->assertSet('mountedActions',[]);

@@ -14,9 +14,9 @@ Clearing it stops new writes; retained attempts still reconcile while the
 deployment opt-in stays on. Turning off the deployment opt-in pauses confirmation. It never permits resend or automatic credit.
 
 Renewal billing and owner requests remain independent native server settings:
-`domains_billing_enabled` and `domains_manual_renewals_enabled`. There is no staff
-editor for them in this release. A deployment must explicitly set the desired
-boolean settings on its Domains server; neither acceptance nor processing sets them.
+`domains_billing_enabled` and `domains_manual_renewals_enabled`. Staff set them in
+Registrar setup → **Review renewal billing** (see below); neither acceptance nor
+processing sets them.
 A manual owner request creates or retrieves the native invoice for the current
 cycle. Scheduled billing uses the saved issue/due calendar. Native payment funds
 one immutable obligation; stopping future renewals preserves already-issued debt.
@@ -118,8 +118,7 @@ concurrency remain unverified.
 
 ## Staff renewal billing and owner requests
 
-Supersedes the note above that there is no staff editor: Registrar setup → **Review renewal
-billing** now sets both switches and the issue/due calendar through an audited staff review
+Registrar setup → **Review renewal billing** sets both switches and the issue/due calendar through an audited staff review
 (`renewal-billing-settings-test.php`). Calendar changes apply to invoices issued afterwards;
 `renewal-billing-test.php` confirms an issued renewal invoice and its operation stay unchanged.
 
