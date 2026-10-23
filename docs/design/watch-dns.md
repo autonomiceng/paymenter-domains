@@ -42,3 +42,32 @@ Native ambiguous empties also prevent confirmed empty labels and their hourly DN
 
 A source window advances only after its primary hostname finishes its permitted query path;
 query-budget omissions retain the source while hostname priority rotates, preventing parity starvation.
+
+
+## DNS-over-HTTPS reader (W2D, supersedes native-first notes above)
+
+Configured checks use the shipped Guzzle cURL client and Cloudflare JSON endpoint by default.
+The native encrypted global setting stores an HTTPS URL and a public bootstrap IPv4 or IPv6 address.
+The configure form offers Cloudflare defaults; missing, invalid or undecryptable settings use native
+DNS with a staff-visible reason, as required by the settings policy. No automatic outbound request
+occurs on save or page load. TLS verifies the URL hostname at the pinned public address; redirects,
+environment proxies and compression are disabled. Responses are capped at 64 KiB and 100 records.
+Connect/total limits are 1/2 seconds, capped by the shared 45-second job deadline.
+
+NOERROR maps matching owner RRsets to positives and complete empty answers to proven NODATA;
+NXDOMAIN is proven negative. Other valid RCODEs remain unknown and never use native DNS.
+CNAME answers require the collector's explicit chain walk; target addresses are not alias-owner proof.
+Malformed envelopes are transport failures; unusable zone content remains DoH unknown.
+Only transport failures use native fallback, whose empty answers remain ambiguous.
+Two transport failures open a context-local circuit for the rest of that job, avoiding repeated
+outage delays while allowing the next job to probe again. Fallback reuses one reserved query slot;
+the ten-query ceiling remains shared across names and chain hops. Sources and fallback reasons are
+stored in answer facts but excluded from routing digests. Native calls have no hard per-call timeout.
+
+The stock staff resolver page uses existing watch view/manage rights. Its check makes one DoH-only
+query for example.com and reports positive, valid DNS error, negative probe or transport failure
+separately. It never starts an unbounded native query. Live resolver/certificate acceptance remains
+an operator check; offline fixtures establish no public resolver availability or DNSSEC guarantee.
+
+Resolver configuration accepts HTTPS port 443 only. SSLKEYLOGFILE disables DoH with a staff
+reason to prevent TLS key export. Oversized valid RRsets remain unknown without native fallback.

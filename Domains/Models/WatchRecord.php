@@ -21,7 +21,7 @@ abstract class WatchRecord extends Model
             if (!$row->exists && $row->revision !== 1) { throw new \DomainException('New watch rows start at revision one.'); }
             if ($row->exists) {
                 foreach ($row->identity as $key) { if ($row->isDirty($key)) { throw new \DomainException('Watch identity is immutable.'); } }
-                $saved = $row->newQuery()->whereKey($row->getRawOriginal('id'))->lockForUpdate()->firstOrFail();
+                $saved = $row->newQuery()->whereKey($row->getRawOriginal($row->getKeyName()))->lockForUpdate()->firstOrFail();
                 if ((int) $saved->revision !== (int) $row->getRawOriginal('revision') || $row->revision !== $saved->revision + 1) {
                     throw new \DomainException('The saved watch revision changed.');
                 }

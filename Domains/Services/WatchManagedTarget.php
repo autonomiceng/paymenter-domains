@@ -8,6 +8,12 @@ final class WatchManagedTarget
 {
     public const MANAGED = ['active', 'grace', 'expired'];
     public const PROGRESS = ['registration_pending', 'transfer_pending'];
+    public static function exists(int $owner, string $name): bool
+    {
+        return Domain::where('user_id',$owner)->where('reservation_name',$name)->whereIn('status',[...self::MANAGED,...self::PROGRESS])
+            ->where(fn($q)=>$q->whereNull('provenance')->orWhere('provenance','<>','adoption_pending'))
+            ->whereHas('service',fn($q)=>$q->where('user_id',$owner))->exists();
+    }
     public static function resolve(int $id, int $userId, string $name): Domain
     {
         $domain = Domain::whereKey($id)->where('user_id', $userId)->where('reservation_name', $name)->first();

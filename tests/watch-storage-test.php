@@ -119,8 +119,11 @@ foreach (['registration_pending','transfer_pending'] as $pending) {
     watchRefused(fn()=>$another->fill(['state'=>'linked','managed_domain_id'=>$domain->id,'registration'=>'platform','revision'=>$another->revision+1])->save(),'Pending acquisition cannot claim platform registration');
     $another->refresh();DB::transaction(fn()=>$another->fill(['state'=>'linked','managed_domain_id'=>$domain->id,'registration'=>null,'revision'=>$another->revision+1])->save());
     same(null,$another->fresh()->registration,'Pending acquisition keeps read-only progress without platform attribution');
-    DB::transaction(fn()=>$another->fill(['state'=>'active','managed_domain_id'=>null,'revision'=>$another->revision+1])->save());
+    watchRefused(fn()=>$another->fill(['state'=>'active','managed_domain_id'=>null,'revision'=>$another->revision+1])->save(),'Pending managed acquisition cannot restart an external watch');$another->refresh();
 }
+DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>'registration_rejected']);
+DB::transaction(fn()=>$another->fill(['state'=>'active','managed_domain_id'=>null,'registration'=>null,'revision'=>$another->revision+1])->save());
+same('active',$another->fresh()->state,'Failed acquisition permits external watching again');
 DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>'active']);
 DB::transaction(fn()=>$another->fill(['state'=>'linked','managed_domain_id'=>$domain->id,'registration'=>'platform','revision'=>$another->revision+1])->save());same('linked',$another->fresh()->state,'Existing watch becomes retained linked tombstone');
 foreach (['grace','expired'] as $managedStatus) {

@@ -124,6 +124,8 @@
     "tests/conversion-guards-test.php",
     "tests/psl-test.php",
     "tests/psl-staff-test.php",
+    "tests/doh-settings-test.php",
+    "tests/doh-reader-test.php",
     "tests/registrable-name-test.php",
     "tests/psl-rebaseline-test.php",
     "tests/psl-review-staff-test.php",
@@ -179,7 +181,11 @@
     "tests/adoption-renewal-intent-test.php",
     "tests/staff-adopt-commit-test.php",
     "tests/adoption-enrollment-test.php",
-    "tests/adoption-customer-test.php"
+    "tests/adoption-customer-test.php",
+    "tests/transfer-dispatch-namesilo-test.php",
+    "tests/transfer-dispatch-refusals-test.php",
+    "tests/managed-public-storage-test.php",
+    "tests/managed-public-upgrade-test.php"
   ],
   "ui": [],
   "runner": [

@@ -5,11 +5,11 @@ namespace Paymenter\Extensions\Servers\Domains\Dns;
 /** Complete RRsets, positively proven absence, or unknown. TTL is diagnostic, never an identity. */
 final readonly class DnsAnswer
 {
-    private function __construct(public DnsQuery $query, public string $state, public array $records, public string $code, public ?int $negativeTtl = null) {}
+    private function __construct(public DnsQuery $query, public string $state, public array $records, public string $code, public ?int $negativeTtl = null, public ?string $source = null, public ?string $fallbackReason = null) {}
     public static function unknown(DnsQuery $query, string $code = 'read_unavailable'): self
     {
-        $allowed = ['read_unavailable','budget_exhausted','deadline','resolver_failed','invalid_answer','ambiguous_empty'];
-        return new self($query, 'unknown', [], in_array($code, $allowed, true) ? $code : 'read_unavailable');
+        $allowed = ['read_unavailable','budget_exhausted','deadline','resolver_failed','invalid_answer','ambiguous_empty','transport_failed','cname_requires_walk','transport_timeout','transport_connect','transport_tls','transport_http_status','transport_too_large','transport_malformed','transport_unavailable'];
+        return new self($query, 'unknown', [], (in_array($code, $allowed, true) || preg_match('/\Adns_rcode_[1-9][0-9]{0,3}\z/D', $code)) ? $code : 'read_unavailable');
     }
     /** Only adapters with explicit complete negative evidence may use this. Native empty arrays cannot. */
     public static function negative(DnsQuery $query, int $ttl = 0, string $reason = 'nodata'): self
@@ -50,7 +50,13 @@ final readonly class DnsAnswer
             return new self($query, 'rrset', $records, 'records');
         } catch (\Throwable) { return self::unknown($query, 'invalid_answer'); }
     }
+    public function withSource(string $source, ?string $reason = null): self
+    {
+        if (!in_array($source, ['doh', 'native_fallback'], true)) { throw new \InvalidArgumentException('Invalid DNS source.'); }
+        if ($reason !== null && !in_array($reason, ['timeout','connect','tls','http_status','too_large','malformed','unavailable','breaker_open','doh_unconfigured'], true)) { throw new \InvalidArgumentException('Invalid fallback reason.'); }
+        return new self($this->query, $this->state, $this->records, $this->code, $this->negativeTtl, $source, $reason);
+    }
     public function known(): bool { return $this->state !== 'unknown'; }
     public function values(): array { return array_values(array_unique(array_column($this->records, 'value'))); }
-    public function facts(): array { return ['name' => $this->query->name, 'type' => $this->query->type, 'state' => $this->state, 'records' => $this->records, 'code' => $this->code, 'negative_ttl' => $this->negativeTtl]; }
+    public function facts(): array { return ['name' => $this->query->name, 'type' => $this->query->type, 'state' => $this->state, 'records' => $this->records, 'code' => $this->code, 'negative_ttl' => $this->negativeTtl, 'source' => $this->source, 'fallback_reason' => $this->fallbackReason]; }
 }

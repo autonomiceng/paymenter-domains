@@ -1,0 +1,72 @@
+<?php
+// Native encrypted settings and stock Filament, fake HTTPS only. MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/native-app.php'; require __DIR__.'/Support/staff-panel.php';
+use App\Models\Setting;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\Psr7\Response;
+use Illuminate\Support\Facades\{Auth,DB,Route};
+use Filament\Facades\Filament;
+use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{DnsResolver as Page,PublicSuffixList};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Contracts\DnsReader;
+use Paymenter\Extensions\Servers\Domains\Dns\{DohEndpoint,DohTransport,NativeDnsReader,DnsQuery,DnsContext};
+use Paymenter\Extensions\Servers\Domains\Services\{DnsResolverSettings,Runtime};
+$calls = $nativeCalls = 0; $response = ['status' => 200, 'body' => '{"Status":0,"Question":[{"name":"example.com","type":1}],"Answer":[{"name":"example.com","type":1,"TTL":60,"data":"192.0.2.1"}]}'];
+$transport = new DohTransport(function ($request, $options) use (&$calls, &$response) { $calls++; if ($response instanceof Throwable) { throw $response; } return (new MockHandler([new Response($response['status'], [], $response['body'])]))($request, $options); });
+$settings = new DnsResolverSettings($transport, new NativeDnsReader(function () use (&$nativeCalls) { $nativeCalls++; return []; }));
+app()->instance(DnsResolverSettings::class, $settings);
+Runtime::register();
+same(null, $settings->configuration()[0], 'Missing settings native only');
+same('native_fallback', app(DnsReader::class)->read(new DnsQuery('example.com', 'A'), new DnsContext)->source, 'Default binding uses settings composition');
+same(0, $calls, 'Missing config starts no HTTPS');
+$settings->save(DohEndpoint::URL, DohEndpoint::IP);
+$row = Setting::where('key', DnsResolverSettings::KEY)->sole(); expect($row->encrypted, 'First save encrypted');
+expect(!str_contains($row->getRawOriginal('value'), 'cloudflare'), 'Endpoint encrypted at rest');
+same(DohEndpoint::URL, $settings->configuration()[0]->url, 'Native decrypt readback');
+same(0, $calls, 'Saving no query');
+$row->value = '{'; $row->save(); same(null, $settings->configuration()[0], 'Invalid setting native only');
+expect(str_contains($settings->configuration()[1], 'invalid'), 'Invalid reason visible');
+$settings->save(DohEndpoint::URL, DohEndpoint::IP);
+$row = Setting::where('key', DnsResolverSettings::KEY)->sole(); $row->encrypted = false; $row->save();
+same(null, $settings->configuration()[0], 'Unencrypted setting refused'); $settings->save(DohEndpoint::URL, DohEndpoint::IP);
+try { $settings->save('http://example.com', '1.1.1.1'); expect(false, 'Invalid setting refused at write'); } catch (InvalidArgumentException) {}
+same(DohEndpoint::URL, $settings->configuration()[0]->url, 'Invalid save preserves setting');
+staffPanel(); $panel = Filament::getCurrentPanel(); $panel->pages([Page::class]);
+Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(fn() => Route::middleware($panel->getAuthMiddleware())->group(fn() => Page::registerRoutes($panel)));
+app('router')->getRoutes()->refreshNameLookups(); app('router')->getRoutes()->refreshActionLookups();
+$rights = [Staff::VIEW, PublicSuffixList::VIEW, PublicSuffixList::MANAGE]; $staff = staffUser($rights); Auth::setUser($staff);
+$setRights = function ($permissions) use ($staff) { $staff->role()->first()->update(['permissions' => $permissions]); };
+$setRights([]); Livewire::actingAs($staff)->test(Page::class)->assertForbidden();
+$setRights([Staff::VIEW, PublicSuffixList::MANAGE]); same(false, Page::canAccess(), 'Manage alone cannot view');
+$setRights([Staff::VIEW, PublicSuffixList::VIEW]);
+Livewire::actingAs($staff)->test(Page::class)->assertSee('DNS-over-HTTPS configured')->assertActionHidden('configure')->assertActionHidden('check');
+same(0, $calls, 'Rendering no query'); $setRights($rights);
+$page = Livewire::actingAs($staff)->test(Page::class); $cachedCheck = $page->instance()->getCachedHeaderActions()[1]->getActionFunction();
+$cachedSave = $page->instance()->getCachedHeaderActions()[0]->getActionFunction();
+$setRights([Staff::VIEW, PublicSuffixList::VIEW]);
+foreach ([fn() => $cachedCheck(), fn() => $cachedSave(['url' => DohEndpoint::URL, 'ip' => DohEndpoint::IP])] as $callback) {
+    try { $callback(); expect(false, 'Revoked action denied'); } catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(403, $e->getStatusCode(), 'Fresh permission check'); }
+}
+same(0, $calls, 'Revocation starts no query'); $setRights($rights);
+Livewire::actingAs($staff)->test(Page::class)->mountAction('configure')->setActionData(['url' => 'http://resolver.org', 'ip' => '127.0.0.1'])->callMountedAction()->assertHasActionErrors(['url', 'ip']);
+Livewire::actingAs($staff)->test(Page::class)->mountAction('configure')->setActionData(['url' => DohEndpoint::URL, 'ip' => DohEndpoint::IP])->callMountedAction()->assertHasNoActionErrors()->assertNotified('DNS resolver settings saved');
+$nativeBefore = $nativeCalls;
+$page = Livewire::actingAs($staff)->test(Page::class)->callAction('check')->assertSee('DNS-over-HTTPS working (cloudflare-dns.com,');
+same(1, $calls, 'Check is exactly one query');
+$response = new RuntimeException('PRIVATE-DETAIL');
+$page->callAction('check')->assertSee("DNS-over-HTTPS failed: using the server's resolver (could not connect)")->assertDontSee('PRIVATE-DETAIL');
+same(2, $calls, 'Failed check once'); same($nativeBefore, $nativeCalls, 'Bounded check never calls native');
+foreach ([2 => 'SERVFAIL', 5 => 'REFUSED'] as $code => $label) {
+    $response = ['status' => 200, 'body' => '{"Status":'.$code.',"Question":[{"name":"example.com","type":1}]}'];
+    $page->callAction('check')->assertSee('resolver answered '.$label)->assertSee("do not use the server's resolver");
+}
+$response = ['status' => 200, 'body' => '{"Status":3,"Question":[{"name":"example.com","type":1}]}']; $page->callAction('check')->assertSee('example.com has no address');
+Setting::where('key', DnsResolverSettings::KEY)->delete();
+$before = $calls; Livewire::actingAs($staff)->test(Page::class)->assertSee('Resolver settings are missing')->callAction('check')->assertSee("DNS-over-HTTPS not configured: using the server's resolver.");
+same($before, $calls, 'Missing settings check no network');
+putenv('SSLKEYLOGFILE=/synthetic-disabled');
+expect(str_contains($settings->configuration()[1], 'TLS key logging'), 'TLS logging has a visible native-only reason');
+putenv('SSLKEYLOGFILE');
+echo "Encrypted resolver settings, native binding, staff permissions, validation and bounded check states passed.\n"; $nativeSuccessful = true;

@@ -452,3 +452,45 @@ The PHP 8.3 scanner and planted-call matrix cover the same 40 PHP 8.4 global fun
 including optional Intl, OPcache, PCNTL, PgSQL and Sodium functions. Every name is tested
 as an unqualified fallback and an uppercase fully qualified call, and as a user-defined
 namespaced function. This remains a targeted static guard, not full runtime qualification.
+
+
+W2D: `doh-reader-test.php` exercises strict DNS JSON/Question validation, RCODE mapping,
+CNAME owner semantics, transport-only fallback, source/reason facts, per-job breaker reset,
+ten shared slots, public bootstrap validation and remaining-deadline limits through injected
+Guzzle handlers. `doh-settings-test.php` checks native encrypted first save/readback, invalid
+configuration, stock staff permissions/revocation, form validation and bounded diagnostic states.
+All exchanges are fake. `doh-render.php` renders stock native staff states for both-theme review.
+Mutation checks target NXDOMAIN/SERVFAIL fallback, false native-empty proof, missing breaker,
+ignored deadline and zone-content fallback. Native fallback still cannot impose a per-call timeout.
+
+### Account observation claim index and budget refusals
+
+`schema-test.php` pins the physical `(server_id, account_fingerprint, due_at)`
+observation-work index and checks that retained verification rejects its loss even
+when native migration history skips creation. Restoring it permits install/verify.
+The installed-package test explicitly aligns its pinned older local fixture's
+creation baseline with this unreleased index; it still tests retained native
+upload/reinstall and additive migrations, not upgrade from the obsolete index set.
+`observation-budget-test.php` accepts only `ReadDeferred` for durable quota and
+concurrency refusals; a planted binding-change `DomainException` must escape that
+assertion. Existing runtime-worker headroom/ceiling assertions already use the
+specific refusal. These are synthetic offline SQLite checks; they do not establish
+MariaDB query plans, concurrent locking or provider acceptance.
+
+## Transfer dispatch command budget
+
+Transfer dispatch scenarios run as three independent native commands: Enom sends/RDAP/order
+references (`transfer-dispatch-test.php`), NameSilo sends (`transfer-dispatch-namesilo-test.php`)
+and input/feature/pre-seal refusals (`transfer-dispatch-refusals-test.php`). The shared
+`Support/transfer-dispatch-fixture.php` retains the original native checkout, funding and
+five-mode dispatch assertions once per registrar. Splitting bounds cumulative fixture rows
+without replacing native checkout or weakening replay, refund, admission or uncertainty checks.
+These are offline synthetic SQLite scenarios; provider and concurrent-database acceptance remain separate.
+
+## Managed public DNS storage
+
+`managed-public-storage-test.php` covers the target union, separate encrypted immutable
+facts, no managed watch creation, dormant defaults, retention and missing-history refusal.
+`managed-public-upgrade-test.php` upgrades original 000018 enrollment rows in place,
+preserving IDs, continuity/profile pointers and awaiting-acceptance state. Partial retained
+upgrades refuse repair. These serialized SQLite tests make no DNS or registrar calls.

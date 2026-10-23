@@ -18,7 +18,8 @@ sys.path.insert(0, str(ROOT/'scripts'))
 import build
 
 # Previous local runtime before the additive public-suffix schema; no released
-# older version is implied. Its source bytes are immutable git objects.
+# older version is implied. Source is pinned, with one explicit unreleased schema
+# fixture adjustment below; this does not exercise upgrade from the old index set.
 PREVIOUS = 'e7881cf404e934e1cc84931ab9036e84804b8b61'
 
 
@@ -58,6 +59,14 @@ def main():
                     path.write_bytes(source.extractfile(member).read())
                 else:
                     raise ValueError('Unsafe previous source member')
+        # The unreleased observation creation baseline now includes this index.
+        # Keep the historical runtime/additive migrations, without claiming an
+        # upgrade path from its superseded synthetic index set.
+        observation = previous_source/'Domains/Services/ObservationSchema.php'
+        old = observation.read_text()
+        anchor = "                $t->unsignedBigInteger('due_at')->index(); $t->unsignedInteger('tries')->default(0);\n"
+        assert old.count(anchor) == 1, 'Pinned observation fixture changed'
+        observation.write_text(old.replace(anchor, anchor + "                $t->index(['server_id','account_fingerprint','due_at'], $t->getTable().'_account_due_index');\n"))
         # Refuse before native upload, which executes extension PHP and has no
         # knowledge of our release manifest. Neither refusal consumes an upload.
         for name, reason in [(build.MANIFEST, 'Embedded manifest'), ('Domains/Mail/DomainNotice.php', 'Embedded manifest'), ('Domains/scripts/conversion/Converter.php', 'Development or private')]:
@@ -119,6 +128,7 @@ def main():
             phase('reinstall', 'current')
             phase('verify')
         print(json.dumps({'installed_package': True, 'previous_revision': PREVIOUS,
+                          'previous_fixture_adjustments': ['observation_account_due_index'],
                           'previous_zip_sha256': previous['archive_sha256'], 'zip_sha256': current['archive_sha256'],
                           'fresh_installed_registration_held': True, 'fresh_install': True, 'same_zip_reinstall': True, 'upgrade': True, 'native_delete_refused': True, 'retained_install_branch': True, 'uninstall_hook_retained': True,
                           'real_provider_calls': 0}))
