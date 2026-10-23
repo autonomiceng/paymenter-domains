@@ -46,10 +46,10 @@ final class DomainObservation
             if (!$recordEnabled || $seed->status!=='active') { throw $e; }
             $snapshot=null; $transfer=TransferStatus::Unknown; $failed=true;
         }
-        // Record failures must not erase a successful ownership/expiry/drift read.
-        if ($recordEnabled && $seed->status==='active' && !$recordOverflow && !$recordHeld) {
+        // A failed primary read retains inventory; record failures retain successful domain facts.
+        if (!$failed && $recordEnabled && $seed->status==='active' && !$recordOverflow && !$recordHeld) {
             $records=['glue'=>['state'=>'partial','records'=>$knownGlue]];
-            if (!$failed && $snapshot?->owned===true) {
+            if ($snapshot?->owned===true) {
                 try {
                     $port=$this->records->forDomain($seed);
                     $r=new \Paymenter\Extensions\Servers\Domains\Data\ManagementRequest($binding,'observation:'.$seed->id,$seed->domain,'discovery',[],$seed->provider_domain_id);
@@ -72,7 +72,7 @@ final class DomainObservation
             if ($recordEnabled && !$recordHeld && ($recordOverflow || $recordFailed || ($records['glue']['read_failed']??false) || $incomplete)) {
                 ObservationRecords::hold($l['domain'],$recordOverflow?'history_limit':($snapshot?->owned===false?'ownership_drift':'records_unavailable'),$this->clock->now());
             }
-            if ($failed) { return 'read_unavailable'; }
+            if ($failed) { ObservationRecords::failPrimary($l['domain'],$this->clock->now()); return 'read_unavailable'; }
             if ($deferred) { return 'read_deferred'; }
             return $l['domain']->status==='transfer_pending'&&$transfer===TransferStatus::Pending?'healthy_pending':($l['domain']->status==='active'&&!($l['domain']->observation['drift']??true)?'refreshed':'unresolved');
         });

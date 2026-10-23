@@ -2,6 +2,7 @@
 // Enom 444f31c privacy native invoice/readback/refund parity; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/management.php';
+\Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
 use App\Models\{Invoice,InvoiceItem,InvoiceTransaction,Role};
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementEvidence,Refunds};
@@ -30,4 +31,4 @@ $clock->instant=new \DateTimeImmutable('2026-10-18T12:00:00Z');
 [$d,$driver]=$holding('manage-privacy-free-peer.com');$state->privacy=false;$op=$submit($d,$driver,'privacy_purchase');$pay($op);same('succeeded',$management->run($op->id,$driver)->state,'Unrelated free uncertainty never blocks reseller spending');
 [$d,$driver]=$holding('manage-privacy-unknown.com');$state->cost='8.00';$state->privacy=false;$op=$submit($d,$driver,'privacy_purchase');$pay($op);$state->fault='PurchaseServices';same('uncertain',$management->run($op->id,$driver)->state,'Unknown paid write quarantined');commerceReject(fn()=>$refunds->refundHeld($staff,$op->id,'privacy_unavailable'));$count=count($state->calls);$management->run($op->id,$driver);same($count,count($state->calls),'Unknown paid privacy no retry');
 $state->fault='';$state->privacy=true;$state->enabled=true;$state->expiry='2027-10-18';same('uncertain',$management->reconcile($op->id,$driver)->state,'Readback alone cannot invent missing original paid acknowledgement');
-$nativeSuccessful=true;echo "management privacy passed\n";
+expect(Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('source','preflight')->exists(),'Existing balance path records without extra reads'); $nativeSuccessful=true;echo "management privacy passed\n";

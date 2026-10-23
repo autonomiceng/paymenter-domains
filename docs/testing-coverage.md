@@ -243,3 +243,33 @@ and makes no provider calls. Shared-database concurrency and activation remain o
   shared union; an unverified current revision cannot reuse complimentary authority.
 - The existing Eloquent Model upgrade hash also covers the Domain save boundary;
   its contract names attachment savepoints and checks after public model callbacks.
+
+Registrar balance coverage (`registrar-balances-test.php`) uses fake readers and renders
+its Filament page. It checks the earlier known renewal due/expiry date, missing dates and
+costs, overdue unsent renewals, issued obligations through future-only stops, cancelled
+invoices and lifecycle exclusions, exact shortfall boundaries, account isolation, current
+permissions, refresh cooldown and daily wire spacing.
+See [Registrar balances](design/registrar-balances.md) for storage and forecast rules.
+
+### Failed primary observations
+
+`observation-records-test.php` covers ordinary complete nonempty DNS/SRV/DS inventories, known child hosts
+and saved nameservers under current identity, without overflow or an existing hold. Malformed and transport
+failures on the first primary read preserve the exact inventory, watermark and successful fact timestamps;
+separate current failure/hold evidence stops work and blocks stale DNS/SRV forms and POSTs, including
+between staff resume and successful record confirmation. A primary failure under an existing partial-record
+hold also preserves evidence and blocks the previously healthy family. Healthy-primary partial-record
+refreshes still save healthy facts and explicit complete/unknown families. The older 51-host overflow case
+alone did not establish ordinary all-failed retention. Fixtures use synthetic transports and native SQLite.
+
+Management deadline coverage uses synthetic transports and native SQLite. Entry claim waits
+and slow preparation share the 270-second background finish cap; interactive dispatch,
+privacy billing and explicit reconciliation use a 250-second entry budget. Tests cover exact
+25-second headroom, subsecond refusal before seal, blocked late physical reads, retained
+privacy response IDs and unchanged native finance. No provider or concurrency acceptance.
+
+Renewal deadline coverage reuses the monotonic entry scope before capture waits. Both complete
+admission passes inherit entry+270 and the stricter 250-second and quote limits; seal/consume
+requires a full 25-second wire. The same matrix covers checkout, original adoption and later
+completed-renewal anchors, late physical reads, response retention and unchanged native finance.
+Completion capture waits consume its entry+250 read budget; original adoption proof is retained.

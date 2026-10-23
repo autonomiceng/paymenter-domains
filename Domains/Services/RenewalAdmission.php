@@ -11,21 +11,27 @@ final readonly class RenewalAdmission
     public const READ_SECONDS = 250;
     public function __construct(private RenewalAuthority $authority, private AccountBindings $bindings,
         private RenewalAcceptance $accepted, private Clock $clock) {}
-    public function check(RenewalRequest $request): RenewalDecision
+    public function check(RenewalRequest $request, ?\DateTimeImmutable $finishCap = null): RenewalDecision
     {
-        return $this->assess($request, true);
+        return $this->entered($request, true, $finishCap);
     }
     /** Final executor refresh carries the original reservation; no transferable grant is returned. */
-    public function refresh(RenewalRequest $request): RenewalDecision { return $this->assess($request, false); }
-    private function assess(RenewalRequest $request, bool $reserve): RenewalDecision
+    public function refresh(RenewalRequest $request, ?\DateTimeImmutable $finishCap = null): RenewalDecision
+    { return $this->entered($request, false, $finishCap); }
+    private function entered(RenewalRequest $request, bool $reserve, ?\DateTimeImmutable $finishCap): RenewalDecision
+    {
+        return $finishCap !== null ? $this->assess($request, $reserve, $finishCap)
+            : EntryDeadline::run($this->clock, fn ($deadline) => $this->assess($request, $reserve, $deadline), self::READ_SECONDS);
+    }
+    private function assess(RenewalRequest $request, bool $reserve, \DateTimeImmutable $finishCap): RenewalDecision
     {
         OperationClaims::outside(); $status = RenewalStatus::Unknown;
         try {
             [$binding, $name, $stamp, $retail, $nonpremium] = $this->authority->capture($request);
             if ($reserve) { $this->accepted->reserve($binding); } else { $this->accepted->requireCurrent($binding); }
             $reader = $this->bindings->reader($binding->serverId); $binding->requireMatch($reader->binding());
-            $started = $this->clock->now();
-            $context = new RequestContext($binding, RequestOrigin::Background, $started->modify('+'.self::READ_SECONDS.' seconds'), new RequestBudget(self::MAX_READS), $this->clock, Runtime::limiter());
+            $started = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
+            $context = new RequestContext($binding, RequestOrigin::Background, min($finishCap, $started->modify('+'.self::READ_SECONDS.' seconds')), new RequestBudget(self::MAX_READS), $this->clock, Runtime::limiter());
             $query = new Query($name, Action::Renew, $request->years);
             $assessment = $reader->renewalAssessment($query, $context); $binding->requireMatch($assessment->binding);
             $facts = $assessment->evidence(); $status = $facts->renewal;
@@ -49,7 +55,7 @@ final readonly class RenewalAdmission
             if ($binding->registrarKey === 'namesilo' && $flags->evidence()->domain->active !== true) { throw new RenewalRefused(RenewalCode::State); }
             if ($flags->evidence()->domain->expiry != $facts->domain->expiry) { throw new RenewalRefused(RenewalCode::Anchor); }
             if ($flags->evidence()->domain->providerAutoRenew !== false) { throw new RenewalRefused(RenewalCode::AutoRenew); }
-            $balance = $reader->balance($context); $binding->requireMatch($balance->binding);
+            $balance = BalanceReads::read($reader, $context, 'renewal'); $binding->requireMatch($balance->binding);
             if ($balance->disposition !== Disposition::Accepted || !WriteMoney::sufficient($balance->evidence()->balance, $cost)) {
                 throw new RenewalRefused(RenewalCode::Balance);
             }

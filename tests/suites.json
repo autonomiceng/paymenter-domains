@@ -156,7 +156,11 @@
     "tests/adopted-renewal-refusals-test.php",
     "tests/adopted-test-environment-test.php",
     "tests/adopted-renewal-history-test.php",
-    "tests/adopted-complimentary-test.php"
+    "tests/adopted-complimentary-test.php",
+    "tests/registrar-balances-test.php",
+    "tests/management-deadline-test.php",
+    "tests/renewal-deadline-test.php",
+    "tests/adopted-renewal-deadline-test.php"
   ],
   "ui": [],
   "runner": [

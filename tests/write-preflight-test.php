@@ -2,6 +2,7 @@
 // Fresh evidence regressions adapted from Enom 444f31c; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/write-fixture.php';
+\Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CostUnit, Disposition, DriverResult, Environment, Evidence, Money, Query, QuoteEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, SendState};
@@ -49,4 +50,4 @@ $production = new RegistrarRegistry; RegistrarFactories::install($production, $v
 same(['uid', 'token'], $production->credentialKeys('enom'), 'Production Enom schema'); same(['api_key'], $production->credentialKeys('namesilo'), 'Production NameSilo schema');
 [$verified] = $production->verify('namesilo', 999, Environment::Test, ['api_key' => 'synthetic']);
 same('namesilo', $verified->registrarKey, 'Positive verifier required; no credential identity fallback');
-echo "Fresh registration preflight, precision and seal acceptance checks passed\n"; $nativeSuccessful = true;
+echo "Fresh registration preflight, precision and seal acceptance checks passed\n"; expect(Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('source','preflight')->exists(),'Existing balance path records without extra reads'); $nativeSuccessful = true;

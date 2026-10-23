@@ -15,6 +15,10 @@ final class RenewalExecution
         private readonly WriteFeatures $features, private readonly Clock $clock) { $this->grants = new \WeakMap; }
     public function run(int $id, RenewalWriter $writer): Operation
     {
+        return EntryDeadline::run($this->clock, fn ($finishCap) => $this->runEntered($id, $writer, $finishCap));
+    }
+    private function runEntered(int $id, RenewalWriter $writer, \DateTimeImmutable $finishCap): Operation
+    {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $capture = DB::transaction(function () use ($seed, $id) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
@@ -35,13 +39,13 @@ final class RenewalExecution
         if (!$capture) { return Operation::findOrFail($id); }
         [$capture, $admissionClaim] = $capture;
         // The account slot is reserved once. The second complete assessment refreshes every provider fact.
-        $deadline = $this->clock->now()->modify('+250 seconds');
-        $first = $this->admission->check($capture);
+        $deadline = min($finishCap, $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+250 seconds'));
+        $first = $this->admission->check($capture, $deadline);
         $descriptor = null; $context = null;$reservedContext=null;
         try {
             if ($first->code !== RenewalCode::Admitted) { throw new RenewalRefused($first->code); }
             [$binding, $name, $stamp] = $this->authority->capture($capture);
-            $ready = $this->admission->refresh($capture);
+            $ready = $this->admission->refresh($capture, $deadline);
             if ($ready->code !== RenewalCode::Admitted || !$ready->cost || !$ready->validUntil) { throw new RenewalRefused($ready->code); }
             $until = min($deadline, $first->validUntil, $ready->validUntil);
             $reservedContext=new RequestContext($binding,RequestOrigin::Background,$until,new RequestBudget(1),$this->clock,Runtime::limiter());
@@ -56,7 +60,7 @@ final class RenewalExecution
                     $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => true]]);
                     $this->hold($op, 'renewal_cost_overrun'); return [null, null];
                 }
-                if ($until < $this->clock->now()->modify('+25 seconds')) { throw new \DomainException('Renewal admission expired.'); }
+                if ($until < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')) { throw new \DomainException('Renewal admission expired.'); }
                 $reservedContext->requireReservedCapacity();$claim = bin2hex(random_bytes(16)); $digest = hash('sha256', json_encode([$op->operation_key, $op->policy['renewal'], $op->payload], JSON_THROW_ON_ERROR));
                 $op->update(['state' => 'running', 'started_at' => $this->clock->now(), 'lease_expires_at' => $this->clock->now()->modify('+360 seconds'),
                     'request_fingerprint' => $digest, 'funding' => [...($op->funding ?? []), 'claim' => $funding, 'seal' => $funding],
@@ -110,7 +114,7 @@ final class RenewalExecution
             if ($l['stamp'] !== $grant[1] || $row->state !== 'running' || ($row->attempt['seal'] ?? null) !== 'sealed'
                 || $row->funding['seal'] !== $funding || $row->attempt['claim_key'] !== $op->claimKey
                 || $row->request_fingerprint !== $op->desiredStateDigest || $row->lease_expires_at <= $this->clock->now()
-                || $context->deadline < $this->clock->now()->modify('+25 seconds')) { throw new \DomainException('Sealed renewal authority changed.'); }
+                || $context->deadline < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')) { throw new \DomainException('Sealed renewal authority changed.'); }
             return $grant[3];
         }); } catch (\Throwable $error) { throw new RenewalUnsent('Live renewal refused before the wire.', previous: $error); }
     }

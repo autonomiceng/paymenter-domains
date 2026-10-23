@@ -41,6 +41,7 @@ final readonly class RuntimeWork
             });if(!$row){break;}
             $a=Account::where('server_id',$row->server_id)->first();
             if(!$a||$a->account_fingerprint!==$row->account_fingerprint){continue;}
+            $this->attempt('registrar_balance',fn()=>app(RegistrarBalances::class)->daily($a));
             $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->where('id','>',$row->operation_cursor)
                 ->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])->orderBy('id')->limit(25)->get();
             foreach($ops as $op){if($op->action==='transfer'){$this->attempt('transfer_payment',fn()=>app(TransferInputs::class)->paymentAccepted((int)$op->id));}$this->attempt('operation',fn()=>$this->enqueue((int)$op->id));}

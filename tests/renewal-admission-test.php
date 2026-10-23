@@ -2,6 +2,7 @@
 // Enom 444f31c renewal-admission/observation-integration scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/reconciliation-fixture.php';
+\Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RenewalCode, RenewalRequest, RenewalStatus};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
@@ -139,4 +140,4 @@ expect(!$check()->allowed(), 'Expired bounded read window refuses');
 $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');
 $domain->refresh()->update(['renewal_policy' => [...$domain->renewal_policy, 'automatic_spend_paused' => true]]);
 same(RenewalCode::Paused, $check()->code, 'Automatic-spend pause respected'); same([], $state->calls, 'Paused admission performs no reads');
-echo "Renewal admission ordinary/grace/restore, exact costs and locked authority passed\n"; $nativeSuccessful = true;
+echo "Renewal admission ordinary/grace/restore, exact costs and locked authority passed\n"; expect(Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('source','renewal')->exists(),'Existing balance path records without extra reads'); $nativeSuccessful = true;

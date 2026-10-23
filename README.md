@@ -52,3 +52,5 @@ Acceptance records encrypted retained audit evidence and does not refresh the do
 ## License
 
 [MIT](LICENSE), copyright 2026 Autonomic Engineering. NameSilo and Paymenter are trademarks of their respective owners; this is an independent project.
+
+Staff account balances and renewal forecasts: [Registrar balances](docs/design/registrar-balances.md).

@@ -2,6 +2,7 @@
 // Enom 444f31c request-gates/provider-disposition/transfer-codes; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/transfer-fixture.php';
+\Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
 use Paymenter\Extensions\Servers\Domains\Services\{OperationTerminalProof, RefundProof};
 foreach ([0,1] as $i) {
     foreach (['ok','301','302','lost','malformed'] as $mode) {
@@ -64,4 +65,5 @@ foreach (['nested'=>'7001','top'=>'7001','conflict'=>null] as $shape=>$expected)
     $r=$engine->execute($op->id); same($expected,$r->attempt['evidence']['transferReference']??null,'Transfer order ID read from the '.$shape.' shape');
 }
 $state->createShape='nested';
+expect(Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('source','preflight')->exists(),'Existing balance path records without extra reads');
 echo "Dual transfer one-use dispatch, fresh admission, negative proof and uncertainty passed.\n"; $nativeSuccessful=true;

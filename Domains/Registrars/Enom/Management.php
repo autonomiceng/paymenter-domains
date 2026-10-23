@@ -22,7 +22,21 @@ final class Management extends ManagementProtocol
     private function parts(ManagementRequest $r): array
     { $p=CanonicalName::parse($r->name,[substr($r->name,strpos($r->name,'.')+1)]); return ['SLD'=>$p['sld'],'TLD'=>$p['tld']]; }
     private function get(ManagementRequest $r, RequestContext $c, R $cmd, ?array $p=null): ProtocolResult
-    { return (new ResponseParser)->parse($cmd,$this->read($r,$c,$cmd->value,$p??$this->parts($r))); }
+    {
+        try { $reply=(new ResponseParser)->parse($cmd,$this->read($r,$c,$cmd->value,$p??$this->parts($r))); }
+        catch (\Throwable $e) {
+            if($cmd===R::Balance&&!$e instanceof \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred){\Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($this->binding,null,$c->now(),'preflight','read_failed');}
+            throw $e;
+        }
+        if($cmd===R::Balance){
+            $value=$reply->value('availablebalance');$money=null;
+            if($reply->status==='success'&&is_string($value)&&preg_match('/^(?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\.[0-9]{1,2})?$/D',$value)){
+                try{$money=new \Paymenter\Extensions\Servers\Domains\Data\Money(str_replace(',','',$value).(str_contains($value,'.')?'':'.00'),'USD');}catch(\InvalidArgumentException){}
+            }
+            \Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($this->binding,$money,$c->now(),'preflight',$money?null:'read_failed');
+        }
+        return $reply;
+    }
     private function owned(ManagementRequest $r, RequestContext $c): void
     {
         $v=$this->get($r,$c,R::Info); $d=$v->value('getdomaininfo.domainname'); $s=$v->value('getdomaininfo.status');
