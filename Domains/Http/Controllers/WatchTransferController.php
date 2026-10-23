@@ -27,7 +27,7 @@ final class WatchTransferController
         if ($request->input('revision')!==(string)$current['watch']->revision || ($confirm && (!is_array($review)
             || ($review['owner']??null)!==(int)$request->user()->id || ($review['stamp']??null)!==$current['stamp']
             || ($review['expires']??0)<=$this->clock->now()->getTimestamp()))) { return $this->page($request,$id,$current,'changed'); }
-        if ($confirm && $request->input('authority')!=='1') { $request->session()->put('domains.watch-transfer.'.$id,$review);return $this->page($request,$id,$current,'eligible',true); }
+        if ($confirm && $request->input('authority')!=='1') { $request->session()->put('domains.watch-transfer.'.$id,$review);return $this->page($request,$id,$current,'eligible'); }
         if (!$current['offer'] || RateLimiter::hit('domains.watch-transfer:'.$request->user()->id,60)>10) { return $this->page($request,$id,$current,'unavailable'); }
         try {
             $this->eligibility->observe($current['watch']->canonical_name,$current['offer']['selection'],['watch'=>(int)$id,'owner'=>(int)$request->user()->id],true);
@@ -53,11 +53,11 @@ final class WatchTransferController
             'expires'=>$this->clock->now()->getTimestamp()+300]);
         return $this->page($request,$id,$after,'eligible');
     }
-    private function page(Request $request,int $id,array $current,string $state,bool $ownerError=false)
+    private function page(Request $request,int $id,array $current,string $state)
     {
         return view('domains::watch-transfer',['id'=>$id,'name'=>$current['watch']->canonical_name,'revision'=>(string)$current['watch']->revision,
-            'state'=>$state,'ownerError'=>$ownerError,'canCheck'=>(bool)$current['offer'],'price'=>$state==='eligible'?$current['offer']['price']:null,
-            'renew'=>$state==='eligible'?$current['offer']['renew']:null,'saving'=>null,'strings'=>WatchTransferStrings::all(),
+            'state'=>$state,'canCheck'=>(bool)$current['offer'],'price'=>$state==='eligible'?$current['offer']['price']:null,
+            'renew'=>$state==='eligible'?$current['offer']['renew']:null,'strings'=>WatchTransferStrings::all(),
             'key'=>FormKeys::issue($request,'watch-transfer:'.$id)]);
     }
 }

@@ -170,7 +170,10 @@ final readonly class OwnedDomains
         }
         if ($adopted) {
             $invoiceIds = \Paymenter\Extensions\Servers\Domains\Models\HistoryLink::where('domain_id', $d->id)->where('user_id', $d->user_id)->pluck('invoice_id');
-            $history = Invoice::whereKey($invoiceIds)->where('user_id', $d->user_id)->orderBy('id')->get()->map(fn ($i) => ['number' => $i->number ?? (string) $i->id, 'status' => ucfirst($i->status), 'url' => route('invoices.show', $i)])->all();
+            // Dated by the last successful payment for a paid invoice, else by its issue date.
+            $history = Invoice::whereKey($invoiceIds)->where('user_id', $d->user_id)->withMax(['transactions as succeeded_at' => fn ($q) => $q->where('status', 'succeeded')], 'created_at')->orderBy('id')->get()
+                ->map(fn ($i) => ['number' => $i->number ?? (string) $i->id, 'status' => ucfirst($i->status), 'url' => route('invoices.show', $i),
+                    'date' => substr((string) ($i->status === 'paid' && $i->succeeded_at ? $i->succeeded_at : $i->created_at), 0, 10)])->all();
         }
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';
         return new OwnedDomain($d->domain,$pill['label'],$pill['tone'],$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
@@ -178,8 +181,20 @@ final readonly class OwnedDomains
             renewNow:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
-            statusReason:$pill['reason'], demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d),
+            statusReason:$pill['reason'], demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:$forms?self::owner($d,$op):null,
             daysLeft:$d->provider_expires_at?(int)\Carbon\CarbonImmutable::parse($this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),'UTC')->diffInDays(\Carbon\CarbonImmutable::parse($d->provider_expires_at->format('Y-m-d'),'UTC'),false):null);
+    }
+    /** The registrant as last stored: a confirmed contact change for the registrant (among the latest ten), else the registration request. */
+    private static function owner(Domain $d, ?Operation $op): ?array
+    {
+        try {
+            $change = $d->operations()->where('action', 'contacts')->where('state', 'succeeded')->where('authority_generation', $d->authority_generation)->where('account_fingerprint', $d->account_fingerprint)
+                ->orderByDesc('id')->limit(10)->get()->first(fn ($o) => in_array($o->payload['role'] ?? null, ['all', 'registrant'], true));
+            $contact = $change?->payload['contact'] ?? $op?->payload['contacts']['registrant'] ?? null;
+        } catch (\Throwable) { return null; }
+        if (!is_array($contact) || !filled($contact['email_address'] ?? null)) { return null; }
+        $name = trim(($contact['first_name'] ?? '').' '.($contact['last_name'] ?? ''));
+        return ['name' => $name !== '' ? $name : (string) ($contact['organization_name'] ?? ''), 'email' => (string) $contact['email_address']];
     }
     /** Existing cycle visibility is independent of eligibility to request a new invoice. */
     private function renewNow(Domain $d, bool $forms): array

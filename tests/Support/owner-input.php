@@ -63,7 +63,7 @@ $settingsReads=static fn($queries)=>array_values(array_filter($queries,fn($q)=>s
 expect(count($settingsReads($fullQueries))>0,'Full management projection reads native settings');
 same([],$settingsReads($rowQueries),'List projection does not read server settings');
 same([],$row->management,'List rows contain no management forms');
-same([...get_object_vars($full),'management'=>[],'changesUnavailable'=>false],get_object_vars($row),'Other row facts remain identical');
+same([...get_object_vars($full),'management'=>[],'changesUnavailable'=>false,'owner'=>null],get_object_vars($row),'Other row facts remain identical');
 $list=storefrontDom((new OwnedDomainController($owners))->index($r)->render());
 same(1,$list->query('//tbody/tr')->length,'Index retains the owned row');
 expect(str_contains($list->query('//tbody/tr')->item(0)->textContent,$full->name),'Index retains domain name');

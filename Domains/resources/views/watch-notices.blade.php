@@ -1,41 +1,55 @@
-@component('layouts.app', ['title' => 'Domain details', 'sidebar' => true])
+@component('layouts.app', ['title' => $name, 'sidebar' => true])
 <div class="container mt-14 mb-10"><div class="domains">
 @include('domains::partials.styles')
-<a class="domains-back" href="{{ route('domains.domains.index') }}">Domains</a>
-<h1 class="domains-title domains-wrap">{{ $name }}@isset($summary){{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($summary->demo, $summary->testEnvironment) }}@endisset</h1><p class="domains-lede">Public domain checks · Dates are UTC</p>
-@php($noticeKinds=array_column($notices,'kind'))
-@php($noticesBelow=array_keys(array_filter(['ns_changed'=>in_array('ns_changed',$noticeKinds,true)||in_array('ns_changed',$portal,true),'expired'=>in_array('expired',$noticeKinds,true)||in_array('registry_expiry_reached',$portal,true)])))
-@isset($summary)<section class="domains-panel domains-section" aria-label="Domain details">@include('domains::partials.summary',['summaryFinancials'=>$kind!=='managed','summaryOnChecks'=>true,'summaryNoticesBelow'=>$noticesBelow])@if($kind==='managed')<p><a class="domains-a" href="{{ $summary->urls['detail'] }}">View registration details and billing</a></p>@endif</section>@endisset
-
-@if(session('watch_saved'))<div class="domains-notice" role="status">{{ session('watch_saved') }}</div>@endif
-@error('preferences')<div class="domains-notice" role="alert">{{ $message }}</div>@enderror
-<section class="domains-panel domains-section" aria-labelledby="watch-notice-heading"><h2 id="watch-notice-heading" class="domains-h2">Latest notices</h2>
-@foreach($notices as $notice)<div class="domains-notice"><p>
-@if($notice['kind']==='expiring')The public registry lists {{ $notice['date'] }} as the expiry date for {{ $name }}. Public registry dates may not show recent changes. Check renewal with your registration provider.
-@elseif($notice['kind']==='expired')The public registry expiry date for {{ $name }} was reached on {{ $notice['date'] }}. Contact your registration provider to check its status. Whether it can still be renewed depends on your registration provider and the registry.
-@elseif($notice['kind']==='ns_changed')As of {{ $notice['date'] }}, {{ $name }} no longer uses the nameservers provided by {{ $notice['company'] }}. If you did not expect this, contact support.
-@else As of {{ $notice['date'] }}, {{ $name }} uses the nameservers provided by {{ $notice['company'] }} again.
-@endif</p></div>@endforeach
-@if(in_array('registry_expiry_reached',$portal,true) && !in_array('expired',$noticeKinds,true))<p>The last recorded public registry expiry date for {{ $name }} was {{ $expiryDate }}. Check its registration status with your registration provider.</p>@endif
-@if(in_array('ns_changed',$portal,true) && !in_array('ns_changed',$noticeKinds,true))<p>Since {{ $episodeDate }}, {{ $name }} has not used the nameservers provided by {{ $company }}. If you did not expect this, contact support.</p>@endif
-@if(in_array('ns_pending',$portal,true))<p>As of {{ $statusDate }}, we are checking a possible nameserver change for {{ $name }}. We will check again to confirm it. No action is needed yet.</p>@endif
-@if(in_array('expiry_unavailable',$portal,true))<p>As of {{ $statusDate }}, we cannot read current public registration details for {{ $name }}, so expiry notices are paused until a check succeeds. We will keep trying. Previous notices remain visible.</p>@endif
-@if(in_array('dns_unavailable',$portal,true))<p>As of {{ $statusDate }}, we cannot read current DNS details for {{ $name }}, so nameserver notices are paused until a check succeeds. We will keep trying. Previous notices remain visible.</p>@endif
-@if(!$notices && !$portal)<p>No public domain check notices for {{ $name }}.</p>@endif
-@if($checked)<p>Latest check: <time datetime="{{ gmdate('c',$checked) }}">{{ \Carbon\CarbonImmutable::createFromTimestampUTC($checked)->format('M j, Y, H:i') }} UTC</time>.</p>@endif
-<p><a class="domains-a" href="{{ route('tickets.create') }}">Contact support</a>. These checks show public registration and DNS details. They do not test website or email availability.</p></section>
-<section class="domains-panel domains-section" aria-labelledby="watch-preference-heading"><h2 id="watch-preference-heading" class="domains-h2">Domain check notifications</h2>
-@if(!$preferences['account']['enabled'])<p class="domains-notice">Public domain check notices are off for all your domains, including {{ $name }}. Checks continue and results appear here.</p>
-@elseif(!$preferences['target']['enabled'])<p class="domains-notice">Notices about {{ $name }} are paused. Checks continue and results appear here.</p>@endif
-@if($editable??true)
-<form method="POST" action="{{ url('/domains/checks/'.$kind.'/'.$id) }}" class="domains-form domains-stack">
-@csrf<input type="hidden" name="_request_key" value="{{ $key }}"><input type="hidden" name="account_revision" value="{{ $preferences['account']['revision'] }}"><input type="hidden" name="target_revision" value="{{ $preferences['target']['revision'] }}">
-<fieldset class="domains-stack-sm"><legend class="domains-label">All domains</legend><input type="hidden" name="email" value="0"><label class="domains-checkbox"><input type="checkbox" name="email" value="1" @checked($preferences['account']['enabled']) aria-describedby="watch-account-help"> Send public domain check notices</label>
-<p id="watch-account-help">Covers email and in-app notices for every domain we check. Your <a class="domains-a" href="{{ route('account.notifications') }}">notification settings</a> decide which of these you get.</p>
-</fieldset><fieldset class="domains-stack-sm"><legend class="domains-label">This domain</legend><input type="hidden" name="notices" value="0"><label class="domains-checkbox"><input type="checkbox" name="notices" value="1" @checked($preferences['target']['enabled']) aria-describedby="watch-target-help"> Send notices about {{ $name }}</label>
-<p id="watch-target-help">Turn this off to pause notices about this domain. We still check it and show results on this page.</p>
-</fieldset><p>These settings do not affect invoices or renewal reminders for domains registered with {{ $company }}.</p>
-<button type="submit" class="domains-btn domains-btn--primary">Save preferences</button>
-</form>
-@else<p>Notification preferences are unavailable while this domain is paused, ended, expired or being set up. Saved details remain visible.</p>@endif</section></div></div>
+@php
+    $page = \Paymenter\Extensions\Servers\Domains\Presentation\WatchPage::class;
+    $notice = $page::notice($summary, $notices, $portal);
+    $expires = $page::expires($summary, $portal);
+    $nameservers = $page::nameservers($summary);
+    $history = $page::history($notices);
+    $monitored = $editable && !array_intersect(['watch.paused', 'watch.retired'], $summary->stateKeys);
+    $settings = \Illuminate\Support\Facades\Route::has('account.notifications') ? route('account.notifications') : null;
+@endphp
+<nav class="domains-crumb" aria-label="Breadcrumb"><a href="{{ route('domains.domains.index') }}">Domains</a> / {{ $name }}</nav>
+<div class="domains-ph"><h1 class="domains-mono">{{ $name }}{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($summary->demo, $summary->testEnvironment) }}</h1>@if ($pill = \Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::summary($summary))<span class="domains-pill">@include('domains::partials.status-pill', ['pill' => $notice ? [...$pill, 'reason' => null] : $pill])@include('domains::partials.help', ['id' => 'status', 'label' => 'Status', 'helpText' => 'We check the public registry and nameservers daily.'])</span>@endif
+@if ($summary->relatedServices)<p class="domains-ph__sub">Hosting: <a class="domains-a" href="{{ $summary->relatedServices[0]['url'] }}">{{ $summary->relatedServices[0]['label'] }}</a>@if (($more = count($summary->relatedServices) - 1 + $summary->relatedOverflow) > 0) and {{ $more }} more @endif</p>@endif</div>
+@if (session('watch_saved'))<div class="domains-notice domains-notice--ok" role="status"><span class="domains-notice__tx">{{ session('watch_saved') }}</span></div>@endif
+@error('preferences')<div class="domains-notice domains-notice--bad" role="alert"><span class="domains-notice__tx">{{ $message }}</span></div>@enderror
+@if ($notice)
+<div class="domains-notice domains-notice--{{ $notice['tone'] }}" role="status"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4M12 16h.01"/><circle cx="12" cy="12" r="10"/></svg><span class="domains-notice__tx">{{ $notice['text'] }}@isset($notice['link']) @if ($notice['link']['url'])<a class="domains-a" href="{{ $notice['link']['url'] }}">{{ $notice['link']['label'] }}</a>@else{{ $notice['link']['label'] }}@endif.@endisset</span></div>
+@endif
+<div class="domains-cols"><div>
+<section class="domains-panel" aria-labelledby="heading-dns"><div class="domains-panel__h"><h2 id="heading-dns" class="domains-h2">DNS</h2></div>
+<ul class="domains-rows"><li class="domains-row" id="nameservers"><span class="domains-row__l">Nameservers</span>
+<span class="domains-row__v">@if ($nameservers['missing'])@include('domains::partials.missing', ['cause' => $nameservers['cause'], 'fix' => null, 'stack' => true])@else<span @class(['domains-mono' => $nameservers['mono']])>{{ $nameservers['values'][0] }}</span>@foreach (array_slice($nameservers['values'], 1) as $server) <span class="domains-sub domains-mono">{{ $server }}</span>@endforeach @if ($nameservers['sub']) <span class="domains-sub">{{ $nameservers['sub'] }}</span>@endif @endif</span></li></ul></section>
+@if ($monitored)
+<section class="domains-panel" aria-labelledby="heading-alerts"><div class="domains-panel__h"><h2 id="heading-alerts" class="domains-h2">Alerts</h2></div>
+<ul class="domains-rows"><li class="domains-row" id="alerts"><span class="domains-row__l">Monitoring alerts</span>
+@if (!$preferences['account']['enabled'])
+<span class="domains-row__v">Off for all domains</span>@if ($settings)<span class="domains-row__a"><a class="domains-a" href="{{ $settings }}">Notification settings</a></span>@endif
+@else
+<span class="domains-row__v">{{ $preferences['target']['enabled'] ? 'On' : 'Off' }}</span><span class="domains-row__a"><button type="submit" form="form-alerts" class="domains-a domains-linkbtn">{{ $preferences['target']['enabled'] ? 'Turn off' : 'Turn on' }}</button></span>
+<form id="form-alerts" method="POST" action="{{ url('/domains/checks/'.$kind.'/'.$id) }}" hidden>@csrf<input type="hidden" name="_request_key" value="{{ $key }}"><input type="hidden" name="account_revision" value="{{ $preferences['account']['revision'] }}"><input type="hidden" name="target_revision" value="{{ $preferences['target']['revision'] }}"><input type="hidden" name="email" value="1"><input type="hidden" name="notices" value="{{ $preferences['target']['enabled'] ? 0 : 1 }}"></form>
+@endif
+</li></ul></section>
+@endif
+<section class="domains-panel" id="history" aria-labelledby="heading-history"><div class="domains-panel__h"><h2 id="heading-history" class="domains-h2">History</h2></div>
+@if (!$history)<div class="domains-panel__b"><p class="domains-muted">No changes yet.</p></div>@else
+<div class="domains-tablewrap"><table class="domains-tbl"><thead><tr><th scope="col">Change</th><th scope="col">Date</th></tr></thead><tbody>
+@foreach ($history as $row)<tr><td>{{ $row['label'] }}</td> <td>@if ($row['date'])@include('domains::partials.date', ['date' => $row['date']])@endif</td></tr>@endforeach
+</tbody></table></div>
+@endif
+</section>
+</div><aside>
+<section class="domains-panel" id="renewal" aria-labelledby="heading-renewal"><div class="domains-panel__h"><h2 id="heading-renewal" class="domains-h2">Renewal</h2></div><div class="domains-panel__b">
+<dl class="domains-card">
+<div><dt>Expires @include('domains::partials.help', ['id' => 'expires', 'label' => 'Expires', 'helpText' => 'From the public registry. It can lag a few days after a renewal.'])</dt><dd>@if ($expires['missing'])@include('domains::partials.missing', ['cause' => $expires['cause'], 'fix' => null, 'stack' => true])@else<span class="domains-date{{ $expires['tone'] ? ' domains-tone-text-'.$expires['tone'] : '' }}">@include('domains::partials.date', ['date' => $summary->expiry])</span>@if ($expires['sub']) <span class="domains-sub">{{ $expires['sub'] }}</span>@endif @endif</dd></div>
+@if ($kind === 'watch')<div><dt>Renewal</dt><dd>At your registrar</dd></div>@endif
+</dl>
+@if ($kind === 'watch' && ($summary->urls['compareTransfer'] ?? null))<a class="domains-btn domains-btn--primary domains-btn--block" href="{{ $summary->urls['compareTransfer'] }}">Transfer to Beco</a>
+@elseif ($kind === 'managed' && ($summary->urls['detail'] ?? null))<a class="domains-btn domains-btn--ghost domains-btn--block" href="{{ $summary->urls['detail'] }}">Open domain</a>@endif
+</div></section>
+</aside></div>
+@include('domains::partials.client-script')
+</div></div>
 @endcomponent

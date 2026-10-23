@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Services\ManagementPayload;
 $server=App\Models\Server::findOrFail($d->server_id);$server->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $dto=$owners->present($d->fresh());same(null,$dto->management['dns']['records'],'Unknown DNS is held, never an empty authoritative list');
 expect(!$dto->changesUnavailable,'Available DS/child-host additions suppress the settings-unavailable notice');
-$html=$page();same(['Missing',($dto->management['dns']['recordCheckHeld']??false)?'Shows when our team resumes record checks':'Shows after the next sync'],array_map(fn($n)=>trim($n->textContent),iterator_to_array(storefrontDom($html)->query('//li[@id="dns"]/span[@class="domains-row__v"]/span[@class="domains-missing" or @class="domains-missing__cause"]'))),'Held DNS shows Missing with its cause');
+$html=$page();same(['Missing',($dto->management['dns']['recordCheckHeld']??false)?'Shows when our team resumes record checks':'Shows after the next sync'],array_map(fn($n)=>trim($n->textContent),iterator_to_array(storefrontDom($html)->query('//li[@id="dns"]/span[@class="domains-row__v"]/span[@class="domains-missing" or @class="domains-sub"]'))),'Held DNS shows Missing with its cause');
 same(0,storefrontDom($html)->query('//form[contains(@action,"/manage/dns")]')->length,'Held DNS has no replacement form');
 $dom=storefrontDom($html);same(0,$dom->query('//form[contains(@action,"/manage/srv")]')->length,'Held SRV has no replacement form');
 same(1,$dom->query('//li[@id="ds"]/span[@class="domains-row__v"]/span[@class="domains-missing"]')->length,'Unknown DS list is Missing');same('Add DS record',trim((string)$dom->query('//li[@id="ds"]/span[@class="domains-row__a"]/a')->item(0)?->textContent),'Unknown DS still offers an addition');same(1,$dom->query('//form[contains(@action,"/manage/ds_add")]')->length,'Unknown DS permits fresh-preflight addition');same(0,$dom->query('//form[contains(@action,"/manage/ds_delete")]')->length,'Unknown DS cannot imply deletable records');
@@ -75,7 +75,7 @@ $ids=[];foreach($dom->query('//*[@id]')as$node){expect(!isset($ids[$node->getAtt
 foreach($dom->query('//*[@aria-describedby]')as$node){foreach(explode(' ',$node->getAttribute('aria-describedby'))as$id){expect(isset($ids[$id]),'Every description exists');}}
 $forms=$dom->query('//form[@method="POST"]')->length;
 foreach(['_token','_request_key']as$key){same($forms,$dom->query('//form//input[@name="'.$key.'"]')->length,'Every form has '.$key);}
-same(0,$dom->query('//form//input[@type="checkbox"][not(contains(@name,"[_delete]"))]')->length,'Record forms have no acknowledgement checkboxes');
+same(0,$dom->query('//form//input[@type="checkbox"]')->length,'Record forms have no checkboxes');
 same($dom->query('//form[@data-confirm]')->length,$dom->query('//form[@data-confirm]//dialog//button[@type="submit"][@name="confirmed"][@value="1"]')->length,'Only the confirm step sends the confirmation field');
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a hidden or ticked confirmation');
 foreach(['account_fingerprint','provider_domain_id','old_ip','profile_id','cost']as$private){expect(!str_contains($html,'name="'.$private.'"'),'No private authority serialized');}

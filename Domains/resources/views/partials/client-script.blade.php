@@ -53,15 +53,15 @@
             dd.replaceChildren(...lines.map(line => { const span = document.createElement('span'); span.className = 'domains-record-value'; span.textContent = line; return span; }));
             dd.closest('[data-confirm-row]').hidden = !lines.length;
         };
-        const removed = () => [...form.querySelectorAll('tr[data-record]')].filter(row =>
-            row.querySelector('input[name$="[_delete]"]')?.checked
-            || ![...row.querySelectorAll('input:not([type=hidden]):not([type=checkbox]), select')].some(field => field.value.trim() !== '')
-        ).map(row => row.dataset.record);
+        // A record row's Delete adds a hidden delete field; Cancel takes it back out.
+        const deleting = row => !!row.querySelector('input[name$="[_delete]"]');
+        const filled = row => [...row.querySelectorAll('input:not([type=hidden]), select')].some(field => field.value.trim() !== '');
+        const removed = () => [...form.querySelectorAll('tr[data-record]')].filter(row => deleting(row) || !filled(row)).map(row => row.dataset.record);
+        let added = [];
         const needed = () => {
             if (form.dataset.confirmWhen === 'lock-off') return form.elements.locked?.value === '0';
             if (form.dataset.confirmWhen === 'records-removed') {
-                const kept = [...form.querySelectorAll('tbody tr')].filter(row => !row.querySelector('input[name$="[_delete]"]')?.checked
-                    && [...row.querySelectorAll('input:not([type=hidden]):not([type=checkbox]), select')].some(field => field.value.trim() !== '')).length;
+                const kept = [...form.querySelectorAll('tbody tr')].filter(row => !deleting(row) && filled(row)).length;
                 return removed().length > 0 || kept < Number(form.dataset.current || 0);
             }
             return true;
@@ -75,14 +75,21 @@
         });
         servers?.addEventListener('input', event => { if (event.isTrusted && useDefault) useDefault.disabled = true; });
         form.addEventListener('submit', event => {
-            if (event.submitter?.name === 'confirmed' || !needed()) return;
+            if (event.submitter?.name === 'confirmed') return;
+            if (event.submitter?.matches('[data-delete-record]')) {
+                const mark = Object.assign(document.createElement('input'), {type: 'hidden', name: event.submitter.name, value: '1'});
+                event.submitter.after(mark); event.submitter.hidden = true; added.push(mark);
+            }
+            if (!needed()) return;
             event.preventDefault();
             if (servers) fill('nameservers', servers.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean));
             if (form.dataset.confirmWhen === 'records-removed') fill('removed', removed());
             if (dialog.open) dialog.close();
             dialog.showModal();
         });
-        dialog.querySelector('[data-confirm-cancel]')?.addEventListener('click', () => dialog.close());
+        const undo = () => { added.forEach(mark => { mark.previousElementSibling.hidden = false; mark.remove(); }); added = []; };
+        dialog.addEventListener('cancel', undo);
+        dialog.querySelector('[data-confirm-cancel]')?.addEventListener('click', () => { undo(); dialog.close(); });
     });
     // Page editors: the row link opens its dialog as a modal; without script the link reloads with the editor open.
     document.querySelectorAll('a[data-dialog-open]').forEach(link => {

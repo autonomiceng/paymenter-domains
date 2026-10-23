@@ -32,11 +32,18 @@ same($count+1,Operation::count(),'Replay creates no operation');$session->forget
 $dto=$owners->present($d->fresh());expect(in_array('In progress',array_column($dto->progress,'state'),true)&&!in_array('Completed',array_column($dto->progress,'state'),true),'Queued operation appears without claiming dispatch');
 $result=$management->run($op->id,$driver);same('succeeded',$result->state,'Existing engine grants one synthetic write with readback');
 $beforeRead=count($free?$ms->calls:$state->calls);$dto=$owners->present($d->fresh());same($beforeRead,count($free?$ms->calls:$state->calls),'Presentation has no transport');expect(in_array('Completed',array_column($dto->progress,'state'),true),'Confirmed engine evidence shown');
+$registrant=$owners->operation($d)->payload['contacts']['registrant']??null;expect(is_array($registrant)&&filled($registrant['email_address']??null),'The registration stores its registrant');
+same(['name'=>trim($registrant['first_name'].' '.$registrant['last_name']),'email'=>$registrant['email_address']],$dto->owner,'Owner row reads the stored registrant');
+$changed=Operation::create(['domain_id'=>$d->id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,'authorized_by'=>(int)$user->id,
+    'operation_key'=>hash('sha256','owner-contact-change'),'action'=>'contacts','term'=>1,'currency'=>'USD','amount'=>'0.00','funding_basis'=>'non_billable_management','state'=>'succeeded','payload'=>['role'=>'registrant','contact'=>[...$registrant,'first_name'=>'Jane','last_name'=>'Doe','email_address'=>'jane@example.com']],'policy'=>[]]);
+same(['name'=>'Jane Doe','email'=>'jane@example.com'],$owners->present($d->fresh())->owner,'A confirmed contact change replaces the stored registrant');
+Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$changed->id)->delete();
 $html=(new OwnedDomainController($owners))->show($r,$d->id)->render();$dom=storefrontDom($html);
 $forms=$dom->query('//form[@method="POST"]');expect($forms->length>=7,'Supported management forms offered');
 same($forms->length,$dom->query('//form/input[@name="_token"]')->length,'Every form has native CSRF');
 same($forms->length,$dom->query('//form/input[@name="_request_key"]')->length,'Every form has single-use intent');
-same(0,$dom->query('//form[not(contains(@class,"domains-record-form"))]//input[@type="checkbox"]')->length,'Owner management forms have no acknowledgement checkboxes');
+same(0,$dom->query('//input[@type="checkbox"]')->length,'Owner management forms have no checkboxes');
+same(1,$dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__v")][contains(.,"'.$registrant['email_address'].'")]')->length,'Owner row shows the registrant email');
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a ticked or hidden confirmation');
 foreach(['nameservers','lock','auth_code_email']as$risky){if(isset($dto->management[$risky])&&!($risky==='lock'&&($dto->management['lock']['state']??null)===false)){same(1,$dom->query('//li[@id="'.$risky.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][not(@open)]//button[@name="confirmed"]')->length,'Risky action has a closed confirm dialog: '.$risky);}}
 foreach(['contacts','privacy']as$plain){if(isset($dto->management[$plain])){same(1,$dom->query('//li[@id="'.$plain.'"]')->length,'Plain action row rendered: '.$plain);same(0,$dom->query('//li[@id="'.$plain.'"]//dialog[@data-confirm-dialog]|//li[@id="'.$plain.'"]//form[@data-confirm]')->length,'Plain action has no confirm step: '.$plain);}}

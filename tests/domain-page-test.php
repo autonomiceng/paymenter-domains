@@ -30,7 +30,7 @@ $management=static function(array $more=[]):array {
 };
 $domain=static fn(array $more=[])=>new OwnedDomain(...[...['name'=>$name,'status'=>'Active','tone'=>'ok','expiry'=>'2027-03-01','renewal'=>'On','renewalPrice'=>'$14.99',
     'actions'=>['show'=>'/domains/1'],'progress'=>[],'setup'=>['required'=>false,'contacts'=>false,'defaults'=>true],'transfer'=>[],'management'=>$management(),'testEnvironment'=>false,
-    'renewNow'=>['url'=>'/domains/1/renew','terms'=>[1,2,3],'order_by'=>'2027-02-28'],'autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>true]],...$more]);
+    'renewNow'=>['url'=>'/domains/1/renew','terms'=>[1,2,3],'order_by'=>'2027-02-28'],'autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>true],'owner'=>['name'=>'Jane Doe','email'=>'jane@example.com']],...$more]);
 $summary=static fn(OwnedDomain $d,array $more=[])=>new DomainSummary($d->name,null,'managed','domain.registration.platform',[],null,null,...['stateKeys'=>[],'labels'=>DomainSummaryStrings::all(),
     'expiry'=>$d->expiry,'expiryPrecision'=>'date','expirySource'=>null,'freshness'=>[],'renewalDueAt'=>null,'renewalPrice'=>$d->renewalPrice,'relatedServices'=>[],'hostnames'=>[],
     'urls'=>['detail'=>'/domains/1','support'=>'/tickets/create'],...$more]);
@@ -55,13 +55,17 @@ same(['Renewal'],array_map($norm,iterator_to_array($dom->query('//div[contains(@
 // Rows: label, value, one action.
 $text=static fn(string $id)=>$norm($dom->query('//li[@id="'.$id.'"]/span[contains(@class,"domains-row__v")]')->item(0));
 $action=static fn(string $id)=>array_map($norm,iterator_to_array($dom->query('//li[@id="'.$id.'"]/*[contains(@class,"domains-row__a")]//*[self::a or self::button]')));
+$row=static fn(DOMXPath $x,string $id)=>[$norm($x->query('//li[@id="'.$id.'"]/span[contains(@class,"domains-row__v")]')->item(0)),array_map($norm,iterator_to_array($x->query('//li[@id="'.$id.'"]/*[contains(@class,"domains-row__a")]//*[self::a or self::button]')))];
 same(['ns1.host.example ns2.host.example',['Change']],[$text('nameservers'),$action('nameservers')],'Nameservers row');
 same(['2 records',['Edit']],[$text('dns'),$action('dns')],'DNS records row');
 same(['No glue records',['Add']],[$text('glue'),$action('glue')],'Glue row');
 same(['Off',['Add DS record']],[$text('ds'),$action('ds')],'DNSSEC row');
 same(['On',['Turn off']],[$text('lock'),$action('lock')],'Transfer lock row');
 same(['Off',['Add · $8.00/yr']],[$text('privacy'),$action('privacy')],'WHOIS privacy row, paid');
-same(['Edit contacts'],$action('contacts'),'Contacts row');
+same(['Jane Doe jane@example.com',['Edit contacts']],[$text('contacts'),$action('contacts')],'Owner row: registrant name and email');
+same('Owner',$norm($dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__l")]/text()')->item(0)),'Owner row label');
+same(0,$dom->query('//*[contains(@class,"domains-row__a")]//*[self::a or self::button][not(contains(@class,"domains-a"))]')->length,'Every row action uses the one link style');
+expect(str_contains($html,'.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: none;'),'Row actions are not underlined');
 same(['Emailed to the registrant',['Email auth code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
 same(0,$dom->query('//li[@id="auto_renew_off"]')->length,'Registrar auto-renew row is staff only');
 foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records','ds'=>'dnssec','lock'=>'transfer-lock','privacy'=>'privacy','auth_code_email'=>'transfer-code']as$id=>$anchor){
@@ -77,7 +81,13 @@ foreach(['Email the auth code?','We’ll email it to the registrant.']as$t){expe
 same(1,$dom->query('//li[@id="auth_code_email"]//dialog//button[@name="confirmed"][normalize-space(.)="Email auth code"]')->length,'Auth code dialog button');
 same(['All contacts','Registrant','Admin','Tech','Billing'],array_map($norm,iterator_to_array($dom->query('//li[@id="contacts"]//select[@name="role"]/option'))),'Contact roles');
 expect(str_contains($html,'Up to 50 records. Saving replaces the list.'),'DNS limit hint');
-same(0,$dom->query('//form[not(contains(@class,"domains-record-form"))]//input[@type="checkbox"]')->length,'No checkboxes outside the record table');
+same(0,$dom->query('//input[@type="checkbox"]')->length,'No checkboxes on the page');
+same(['Delete','Delete'],array_map(fn($b)=>$norm($b->firstChild),iterator_to_array($dom->query('//dialog[@id="edit-dns"]//tbody//button[@data-delete-record][@type="submit"][@value="1"]'))),'Each DNS record has a Delete action');
+same('records[1][_delete]',$dom->query('//dialog[@id="edit-dns"]//tbody//button[@data-delete-record]')->item(1)?->getAttribute('name'),'Delete names its record');
+$retry=$domain(['management'=>$management(['dns'=>['retry'=>['action'=>'dns','confirm'=>true,'values'=>['digest'=>str_repeat('b',64),'records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.1','_delete'=>'1'],['name'=>'www','type'=>'CNAME','address'=>'@']]]]]])]);$x=storefrontDom($render($retry));
+same(['records[0][_delete]'],array_map(fn($i)=>$i->getAttribute('name'),iterator_to_array($x->query('//dialog[@id="edit-dns"]//tbody//input[@type="hidden"][@value="1"][contains(@name,"[_delete]")]'))),'A deletion waiting for confirmation is kept');
+same(['records[1][_delete]'],array_map(fn($b)=>$b->getAttribute('name'),iterator_to_array($x->query('//dialog[@id="edit-dns"]//tbody//button[@data-delete-record]'))),'Only kept records offer Delete');
+same('@ A 192.0.2.1',$norm($x->query('//dialog[@id="edit-dns"]//dialog[@open]//*[@data-confirm-slot="removed"]')->item(0)),'Confirm lists the record to delete');
 request()->query->set('edit','dns');$open=storefrontDom($render($d));request()->query->remove('edit');
 same(1,$open->query('//dialog[@id="edit-dns"][@open]')->length,'?edit opens the editor without script');
 
@@ -101,8 +111,8 @@ $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9']]);
 same('Due Feb 1, 2027 Pay invoice',$card($dom,'Next invoice'),'Due invoice');
 same(0,$dom->query('//a[.="Renew now"]')->length,'No Renew now while an invoice is due');
 same('Paid Updates when the renewal completes',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Next invoice').' '.preg_replace('/^.*2027 /','',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Expires')),'Paid invoice');
-same('Missing Invoice cancelled Contact support',$card(storefrontDom($render($d=$domain(['renewNow'=>['status'=>'cancelled']]),$summary($d))),'Next invoice'),'Cancelled invoice');
-same('Missing Renewal being checked Contact support',$card(storefrontDom($render($d=$domain(['renewal'=>'Off','renewNow'=>['status'=>'review']]),$summary($d))),'Next invoice'),'Invoice under review shows even with auto-renew off');
+same('Missing Contact support Invoice cancelled',$card(storefrontDom($render($d=$domain(['renewNow'=>['status'=>'cancelled']]),$summary($d))),'Next invoice'),'Cancelled invoice');
+same('Missing Contact support Renewal being checked',$card(storefrontDom($render($d=$domain(['renewal'=>'Off','renewNow'=>['status'=>'review']]),$summary($d))),'Next invoice'),'Invoice under review shows even with auto-renew off');
 
 // Auto-renew off by the owner, and stopped by staff.
 $d=$domain(['renewal'=>'Off','renewalOff'=>'owner','autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>false]]);$html=$render($d,$summary($d));$dom=storefrontDom($html);
@@ -113,7 +123,14 @@ $d=$domain(['renewal'=>'Off','renewalOff'=>'staff','autoRenew'=>[],'renewNow'=>[
 same('Off Contact support',$card($dom,'Auto-renew'),'Staff stop');
 
 // Missing expiry; pending transfer; setup; cutoff; import; demo sync paused; test mode.
-$d=$domain(['expiry'=>null]);same('Missing Contact support',$card(storefrontDom($render($d,$summary($d))),'Expires'),'Missing expiry');
+$d=$domain(['expiry'=>null]);$dom=storefrontDom($render($d,$summary($d)));
+same('Missing Contact support Shows after the next sync',$card($dom,'Expires'),'Missing expiry: one fix, then its cause');
+same('Missing Contact support Not issued yet',$card($dom,'Next invoice'),'Missing next invoice: one fix, then its cause');
+same(2,$dom->query('//section[@id="renewal"]//dd/span[contains(@class,"domains-missing")]/following-sibling::*[1][self::a[contains(@class,"domains-missing__fix")]]/following-sibling::*[1][contains(@class,"domains-sub")]')->length,'Fix sits on the Missing line, cause below');
+$d=$domain(['owner'=>null]);$dom=storefrontDom($render($d,$summary($d)));
+same(['Missing No contact details on file',['Edit contacts']],$row($dom,'contacts'),'Owner without stored contact');
+$d=$domain(['management'=>$management(['lock'=>['state'=>null]])]);$dom=storefrontDom($render($d,$summary($d)));
+same(['Missing Shows after the next sync',['Change']],$row($dom,'lock'),'Unknown lock names its cause');
 $pending=$domain(['status'=>'Pending transfer','tone'=>'info','renewal'=>'','expiry'=>null,'management'=>[],'renewNow'=>[],'autoRenew'=>[],'actions'=>['show'=>'/domains/1','code'=>'/domains/1/transfer-code'],
     'transfer'=>['open'=>true,'received'=>false,'phase'=>'editing']]);
 $dom=storefrontDom($render($pending,$summary($pending,['expiryWaits'=>'transfer'])));
@@ -136,7 +153,10 @@ same($name.' stopped using Beco nameservers. Contact support',$norm($dom->query(
 $demo=$domain(['management'=>[],'demo'=>true,'syncPaused'=>true]);$html=$render($demo,$summary($demo,['demo'=>true]));$dom=storefrontDom($html);
 same(1,$dom->query('//div[contains(@class,"domains-notice")]')->length,'One notice');
 same('Sync paused: the demo registrar is off. Nameservers show when it resumes. Contact support',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Demo sync paused notice');
-same('Missing',$text=$norm($dom->query('//li[@id="nameservers"]/span[contains(@class,"domains-row__v")]')->item(0)),'Paused nameservers are Missing, cause in the notice');
+same('Missing',$norm($dom->query('//li[@id="nameservers"]/span[contains(@class,"domains-row__v")]')->item(0)),'Paused nameservers are Missing, cause in the notice');
+$paused=$domain(['demo'=>true,'syncPaused'=>true,'management'=>$management(['dns'=>['records'=>null],'ds'=>['records'=>null],'lock'=>['state'=>null],'privacy'=>['state'=>null]])]);$html=$render($paused,$summary($paused,['demo'=>true]));$dom=storefrontDom($html);
+foreach(['nameservers','dns','glue','ds','lock','privacy']as$id){same(['Missing',[]],$row($dom,$id),'Paused '.$id.' is Missing with no action');}
+same(0,substr_count(strip_tags($html),'Shows after the next sync'),'Paused rows leave the cause to the notice');
 same(1,$dom->query('//h1//span[contains(@class,"domains-demo-tag")][not(contains(@class,"domains-demo-tag--test"))]')->length,'Demo tag');
 $test=$domain(['testEnvironment'=>true]);$dom=storefrontDom($render($test));
 same(1,$dom->query('//h1//span[contains(@class,"domains-demo-tag--test")]')->length,'Test tag');
@@ -144,9 +164,9 @@ same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'Test mod
 same(false,DomainPage::notice($domain())!==null,'No notice for an active domain');
 
 // History: changes with dates and renewal invoices.
-$d=$domain(['progress'=>[['label'=>'Nameservers','state'=>'Done','date'=>'2026-10-20']],'history'=>[['number'=>'INV-7','status'=>'Paid','url'=>'/invoices/7']]]);$dom=storefrontDom($render($d));
+$d=$domain(['progress'=>[['label'=>'Nameservers','state'=>'Done','date'=>'2026-10-20']],'history'=>[['number'=>'INV-7','status'=>'Paid','url'=>'/invoices/7','date'=>'2026-09-30']]]);$dom=storefrontDom($render($d));
 same(['Change','Status','Date'],array_map($norm,iterator_to_array($dom->query('//section[@id="history"]//th'))),'History columns');
-same(['Nameservers Done Oct 20, 2026','Renewal invoice INV-7 Paid'],array_map($norm,iterator_to_array($dom->query('//section[@id="history"]//tbody/tr'))),'History rows');
+same(['Nameservers Done Oct 20, 2026','Renewal invoice INV-7 Paid Sep 30, 2026'],array_map($norm,iterator_to_array($dom->query('//section[@id="history"]//tbody/tr'))),'History rows');
 same(1,$dom->query('//section[@id="history"]//a[@href="/invoices/7"][.="Renewal invoice INV-7"]')->length,'Invoice row links');
 
 // Every help popover the page uses has an anchor.

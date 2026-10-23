@@ -15,7 +15,7 @@
 @endforeach
 <div class="domains-tablewrap" tabindex="0" role="region" aria-label="{{ $section['label'] }}">
 <table class="domains-tbl domains-records"><caption class="domains-sr">{{ $section['label'] }}. Blank rows add records.</caption>
-<thead><tr>@foreach ($fields as $fieldLabel)<th scope="col">{{ $fieldLabel }}</th>@endforeach<th scope="col">Delete</th></tr></thead>
+<thead><tr>@foreach ($fields as $fieldLabel)<th scope="col">{{ $fieldLabel }}</th>@endforeach<th scope="col"><span class="domains-sr">Delete</span></th></tr></thead>
 <tbody>
 @foreach ($draft['records'] ?? array_slice([...$section['records'], [], []], 0, 50) as $index => $record)
 <tr @isset($section['records'][$index]) data-record="{{ $describe($section['records'][$index]) }}" @endisset>
@@ -26,7 +26,7 @@
 @endforeach
 <td>
 @if (!$isDns && (($draft !== null && ($record['_source'] ?? '') !== '') || ($draft === null && $index < count($section['records']))))<input type="hidden" name="records[{{ $index }}][_source]" value="{{ $draft !== null ? $record['_source'] : $index }}">@endif
-<label class="domains-checkbox"><input type="checkbox" name="records[{{ $index }}][_delete]" value="1" @checked(($record['_delete'] ?? '') === '1')><span class="domains-sr">Delete record {{ $index + 1 }}</span></label></td>
+@if (($record['_delete'] ?? '') === '1' && isset($section['records'][$index]))<input type="hidden" name="records[{{ $index }}][_delete]" value="1">@elseif (isset($section['records'][$index]))<button type="submit" name="records[{{ $index }}][_delete]" value="1" formnovalidate class="domains-a domains-linkbtn" data-delete-record>Delete<span class="domains-sr"> record {{ $index + 1 }}</span></button>@endif</td>
 </tr>
 @endforeach
 </tbody></table></div>

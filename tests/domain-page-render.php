@@ -22,10 +22,10 @@ $m['lock']['state']=true;
 $m['privacy']+=['free'=>true,'price'=>null,'state'=>true];$m['privacy']['actions']=['privacy_enable'=>'/domains/1/manage/privacy_enable','privacy_disable'=>'/domains/1/manage/privacy_disable'];
 $m['contacts']+=['staged'=>false,'limits'=>ContactDetails::limits('enom')];
 $m['auth_code_email']['recipient']='registrant';
-$history=[['number'=>'INV-1042','status'=>'Paid','url'=>'/invoices/1042']];
+$history=[['number'=>'INV-1042','status'=>'Paid','url'=>'/invoices/1042','date'=>'2027-01-04']];
 $progress=[['label'=>'Nameservers','state'=>'Done','date'=>'2026-10-20'],['label'=>'Registration','state'=>'Done','date'=>'2026-03-01']];
 $domain=static fn(string $name,array $more=[])=>new OwnedDomain(...[...['name'=>$name,'status'=>'Active','tone'=>'ok','expiry'=>'2027-03-01','renewal'=>'On','renewalPrice'=>'$14.99',
-    'actions'=>['show'=>'/domains/1'],'progress'=>$progress,'setup'=>[],'transfer'=>[],'management'=>$m,'testEnvironment'=>false,'history'=>$history,
+    'actions'=>['show'=>'/domains/1'],'progress'=>$progress,'setup'=>[],'transfer'=>[],'management'=>$m,'testEnvironment'=>false,'history'=>$history,'owner'=>['name'=>'Jane Doe','email'=>'jane@example.com'],
     'renewNow'=>['url'=>'/domains/1/renew','terms'=>[1,2,3],'order_by'=>'2027-02-28'],'autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>true]],...$more]);
 $summary=static fn(OwnedDomain $d,array $more=[])=>new DomainSummary($d->name,null,'managed','domain.registration.platform',[],null,null,[],DomainSummaryStrings::all(),...[
     'expiry'=>$d->expiry,'expiryPrecision'=>'date','expirySource'=>null,'freshness'=>[],'renewalDueAt'=>'2027-02-01','renewalPrice'=>$d->renewalPrice,'relatedServices'=>[],'hostnames'=>[],
@@ -36,7 +36,7 @@ $cases=[
     'auto-renew-off'=>[$domain('renewal-off.example',['renewal'=>'Off','renewalOff'=>'owner','autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>false],'expiry'=>'2027-01-20']),['daysLeft'=>89,'renewalOff'=>true,'renewalDueAt'=>null]],
     'demo-sync-paused'=>[$domain('demo-paused.example',['demo'=>true,'syncPaused'=>true,'management'=>$paused]),['daysLeft'=>129,'demo'=>true]],
     'test-mode'=>[$domain('test-expiring.example',['testEnvironment'=>true,'expiry'=>'2026-11-02']),['daysLeft'=>10,'testEnvironment'=>true,'renewalDueAt'=>null,'renewalInvoiceMissing'=>true,'renewalIssueAt'=>'2026-10-03']],
-    'missing-expiry'=>[$domain('missing-expiry.example',['expiry'=>null,'renewNow'=>[]]),['renewalDueAt'=>null]],
+    'missing-expiry'=>[$domain('missing-expiry.example',['expiry'=>null,'renewNow'=>[],'owner'=>null]),['renewalDueAt'=>null]],
     'pending'=>[$domain('pending-transfer.example',['status'=>'Pending transfer','tone'=>'info','renewal'=>'','expiry'=>null,'management'=>[],'renewNow'=>[],'autoRenew'=>[],'progress'=>[['label'=>'Transfer','state'=>'In progress']],'history'=>[],
         'actions'=>['show'=>'/domains/1','code'=>'/domains/1/transfer-code'],'transfer'=>['open'=>true,'received'=>false,'phase'=>'editing']]),['expiryWaits'=>'transfer','renewalDueAt'=>null]],
 ];
@@ -48,7 +48,7 @@ foreach($cases as $case=>[$d,$more]){
     foreach(['enom','namesilo']as$registrar){expect(!str_contains(strtolower(strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$html))),$registrar),'No registrar names: '.$case);}
     expect(!str_contains($html,'—'),'No em dashes: '.$case);
     foreach(['dark','light']as$mode){
-        $doc=str_replace(['<html>','</head>'],['<html lang="en" class="'.$mode.'">','<style>'.$colors.'body{margin:0;padding:32px;background:hsl(var(--color-background));font:15px/1.5 system-ui}</style></head>'],$html);
+        $doc=str_replace(['<html>','<head>','</head>'],['<html lang="en" class="'.$mode.'">','<head><meta charset="utf-8">','<style>'.$colors.'body{margin:0;padding:32px;background:hsl(var(--color-background));font:15px/1.5 system-ui}</style></head>'],$html);
         writeRenderArtifact($out.'/domain-page-'.$case.'-'.$mode.'.html',$doc);
     }
 }

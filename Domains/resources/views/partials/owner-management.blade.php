@@ -11,15 +11,19 @@
     $editOpen = $section !== null && (request()->query('edit') === $cap || $retry !== null
         || ($failed !== null && in_array($failed, array_filter([$section['url'] ?? null, ...array_values($section['actions'] ?? [])]), true)));
     $records = $section['records'] ?? null;
-    $label = $section['label'] ?? 'Nameservers';
+    $label = $cap === 'contacts' ? 'Owner' : ($section['label'] ?? 'Nameservers');
     $state = $section['state'] ?? null;
-    $waits = ($section['recordCheckHeld'] ?? false) ? 'Shows when our team resumes record checks' : 'Shows after the next sync';
+    $waits = collect($domain->management)->contains(fn ($s) => $s['recordCheckHeld'] ?? false) ? 'Shows when our team resumes record checks' : 'Shows after the next sync';
+    // While the demo registrar is paused, synced values are unknown: Missing with no action; the page notice gives the cause once.
+    $paused = $domain->syncPaused && in_array($cap, ['nameservers', 'dns', 'srv', 'glue', 'ds', 'lock', 'privacy'], true);
 @endphp
 @continue($section === null && !($cap === 'nameservers' && $domain->syncPaused))
 <li class="domains-row" id="{{ $cap }}">
 <span class="domains-row__l">{{ $label }}@if (array_key_exists($cap, \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SECTIONS))@include('domains::partials.help', ['id' => $cap, 'label' => $label])@endif</span>
-@if ($cap === 'nameservers')
-<span class="domains-row__v">@if ($domain->syncPaused || !($section['current'] ?? []))@include('domains::partials.missing', ['cause' => null, 'fix' => null])@else<span class="domains-mono">{{ $section['current'][0] }}</span>@foreach (array_slice($section['current'], 1) as $server) <span class="domains-sub domains-mono">{{ $server }}</span>@endforeach @endif</span>
+@if ($paused)
+<span class="domains-row__v">@include('domains::partials.missing', ['cause' => null, 'fix' => null])</span>
+@elseif ($cap === 'nameservers')
+<span class="domains-row__v">@if (!($section['current'] ?? []))@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else<span class="domains-mono">{{ $section['current'][0] }}</span>@foreach (array_slice($section['current'], 1) as $server) <span class="domains-sub domains-mono">{{ $server }}</span>@endforeach @endif</span>
 @if ($section)
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Change</a></span>
 @php $useDefault = $confirmStep === 'nameservers' && ($retry['values']['use_default'] ?? '') === '1'; @endphp
@@ -40,19 +44,19 @@
 @endcomponent
 @endif
 @elseif (in_array($cap, ['dns', 'srv']))
-<span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null])@else{{ count($records) }} {{ count($records) === 1 ? 'record' : 'records' }}@endif</span>
+<span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ count($records) }} {{ count($records) === 1 ? 'record' : 'records' }}@endif</span>
 @if ($records !== null)
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Edit</a></span>
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])@include('domains::partials.owner-dns')@endcomponent
 @endif
 @elseif (in_array($cap, ['glue', 'ds']))
-<span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null])@elseif (!$records)<span class="domains-muted">{{ $cap === 'glue' ? 'No glue records' : 'Off' }}</span>@elseif ($cap === 'glue'){{ count($records) }} {{ count($records) === 1 ? 'record' : 'records' }}@else On · key tag {{ $records[0]['key_tag'] }}@endif</span>
+<span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@elseif (!$records)<span class="domains-muted">{{ $cap === 'glue' ? 'No glue records' : 'Off' }}</span>@elseif ($cap === 'glue'){{ count($records) }} {{ count($records) === 1 ? 'record' : 'records' }}@else On · key tag {{ $records[0]['key_tag'] }}@endif</span>
 @if ($section['actions'] ?? [])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">{{ $cap === 'glue' ? ($records ? 'Edit' : 'Add') : ($records && isset($section['actions']['ds_delete']) ? 'Remove' : 'Add DS record') }}</a></span>
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])@include('domains::partials.owner-'.$cap)@endcomponent
 @endif
 @elseif ($cap === 'lock')
-<span class="domains-row__v">@if ($state === null)@include('domains::partials.missing', ['cause' => null, 'fix' => null])@else{{ $state ? 'On' : 'Off' }}@endif</span>
+<span class="domains-row__v">@if ($state === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ $state ? 'On' : 'Off' }}@endif</span>
 @if ($state === null)
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Change</a></span>
 @php $lockOff = $confirmStep === 'lock' || ($failed === $section['url'] && old('locked') === '0'); @endphp
@@ -84,12 +88,12 @@
         default => $section['actions'],
     };
 @endphp
-<span class="domains-row__v">@if ($state === null)@include('domains::partials.missing', ['cause' => null, 'fix' => null])@else{{ $state ? 'On' : 'Off' }}@endif</span>
+<span class="domains-row__v">@if ($state === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ $state ? 'On' : 'Off' }}@endif</span>
 @if ($privacyActions)
 <span class="domains-row__a">@foreach ($privacyActions as $action => $url)<form method="POST" action="{{ $url }}" class="domains-owner-form domains-inline">@include('domains::partials.form-key')<button class="domains-a domains-linkbtn" type="submit">{{ $labels[$action] }}</button></form>@endforeach</span>
 @endif
 @elseif ($cap === 'contacts')
-<span class="domains-row__v"></span>
+<span class="domains-row__v">@if ($domain->owner){{ $domain->owner['name'] }} <span class="domains-sub">{{ $domain->owner['email'] }}</span>@else @include('domains::partials.missing', ['cause' => 'No contact details on file', 'fix' => null, 'stack' => true])@endif</span>
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Edit contacts</a></span>
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])
 @foreach ($section['staged'] ? ['contact_profile' => 'Send for approval', 'contacts' => 'Apply details'] : ['contacts' => 'Save'] as $action => $buttonLabel)

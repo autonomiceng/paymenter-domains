@@ -29,7 +29,7 @@ final class DomainPage
     {
         if ($d->expiry === null) {
             $list = $s ? DomainListRow::expires($s) : null;
-            return ['missing' => true, 'cause' => $list['cause'] ?? null, 'fix' => $list ? $list['fix'] : ($support ? ['label' => 'Contact support', 'url' => $support] : null)];
+            return ['missing' => true, 'cause' => $list['cause'] ?? 'Shows after the next sync', 'fix' => $list ? $list['fix'] : ($support ? ['label' => 'Contact support', 'url' => $support] : null)];
         }
         $days = $d->daysLeft ?? $s?->daysLeft ?? (int) CarbonImmutable::now('UTC')->startOfDay()->diffInDays(CarbonImmutable::parse($d->expiry, 'UTC'), false);
         $note = match (true) {
@@ -55,7 +55,7 @@ final class DomainPage
             $d->plannedRenewalDue !== null => ['value' => self::date($d->plannedRenewalDue)],
             $s?->renewalDueAt !== null => ['value' => self::date($s->renewalDueAt)],
             (bool) $s?->renewalInvoiceMissing => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : '')],
-            $d->expiry === null => ['missing' => true, 'fix' => $contact],
+            $d->expiry === null => ['missing' => true, 'cause' => 'Not issued yet', 'fix' => $contact],
             default => null,
         };
     }

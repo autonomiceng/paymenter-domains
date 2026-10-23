@@ -27,9 +27,19 @@ same(false,WatchTransferPolicy::window('2027-02-30',$at),'Invalid date');
 $verified=['verified'=>true,'name'=>'example.com','currency'=>'USD','tax_basis'=>'exclusive','term'=>1,'observed'=>$at,'expires'=>$at+100,'minor'=>'2000'];
 same('$9.00',WatchTransferPolicy::saving($verified,'1100','example.com',$at),'Verified comparable saving');same(null,WatchTransferPolicy::saving(null,'1100','example.com',$at),'No source no savings');
 foreach(['currency'=>'EUR','tax_basis'=>'inclusive','term'=>2,'verified'=>false,'name'=>'foreign-placeholder.com','expires'=>$at,'observed'=>$at+1,'minor'=>'unknown']as$key=>$value){same(null,WatchTransferPolicy::saving([...$verified,$key=>$value],'1100','example.com',$at),'Reject incomparable '.$key);}
-$view=$post();same('eligible',$view->getData()['state'],'Strict evidence offers transfer');$html=$view->render();expect(str_contains($html,WatchTransferStrings::all()['watch.transfer_owner']),'Explicit authority');expect(!str_contains($html,'less than your verified'),'No invented savings');
+$view=$post();same('eligible',$view->getData()['state'],'Strict evidence offers transfer');$html=$view->render();$norm=static fn($n)=>trim(preg_replace('/\s+/',' ',$n?->textContent??''));$dom=storefrontDom($html);
+same([0,1],[$dom->query('//input[@type="checkbox"]')->length,$dom->query('//form//input[@type="hidden" and @name="authority" and @value="1"]')->length],'Add to cart confirms authority without a checkbox');
+same(['Transfer example.com to Beco','Domains / example.com','Price'],[$norm($dom->query('//h1')->item(0)),$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),$norm($dom->query('//h2')->item(0))],'Title, breadcrumb and Price heading');
+same(['Transfer (adds 1 year)','Renewal price'],array_map($norm,iterator_to_array($dom->query('//dt'))),'Price facts');
+expect(str_contains($html,'Plus tax where applicable.')&&str_contains($html,'You’ll enter the auth code after checkout.'),'Tax note and auth code hint');
+foreach(['Compare transfer price','Current transfer offer','Contact support','Check the current transfer price','Final availability','Domain details'] as $old){expect(!str_contains($html,$old),'Old transfer copy removed: '.$old);}
+$state=static fn(string $state,bool $canCheck=true)=>storefrontDom(view('domains::watch-transfer',[...$view->getData(),'state'=>$state,'canCheck'=>$canCheck])->render());
+$changed=$state('changed');same(['The price changed.','Show new price',route('domains.watch.transfer',$id)],[$norm($changed->query('//div[contains(@class,"domains-notice")]')->item(0)),$norm($changed->query('//a[contains(@class,"domains-btn")]')->item(0)),$changed->query('//a[contains(@class,"domains-btn")]/@href')->item(0)?->value],'Changed price: one line and Show new price');
+same(['This domain can’t be transferred to Beco.',0],[$norm($state('unavailable')->query('//div[contains(@class,"domains-notice")]')->item(0)),$state('unavailable')->query('//a[contains(@class,"domains-btn")]')->length],'Unavailable: one line, no action');
+$help=$state('help');same([['Check price'],0],[array_map($norm,iterator_to_array($help->query('//form//button'))),$help->query('//div[contains(concat(" ",@class," ")," domains ")]/p')->length],'Unconfirmed: only a Check price button');
+expect(!str_contains($html,'less than your verified'),'No invented savings');
 foreach(['product_id','account_fingerprint','name="epp"','name="domain"']as$secret){expect(!str_contains($html,$secret),'No client authority '.$secret);}
-$before=$reads->calls;$missing=$post(['step'=>'confirm']);expect($missing instanceof Illuminate\Contracts\View\View,'Authority missing cannot reach cart');same('eligible',$missing->getData()['state'],'Authority required');expect(str_contains($missing->render(),'id="authority-error"'),'Missing authority explained');same($before,$reads->calls,'Missing authority no reads');
+$before=$reads->calls;$missing=$post(['step'=>'confirm']);expect($missing instanceof Illuminate\Contracts\View\View,'Authority missing cannot reach cart');same('eligible',$missing->getData()['state'],'Authority required');same(1,storefrontDom($missing->render())->query('//form//input[@name="authority"][@value="1"]')->length,'Missing authority re-offers the confirm form');same($before,$reads->calls,'Missing authority no reads');
 RateLimiter::clear('domains.watch-transfer:'.$owner->id);
 foreach([['redemptionPeriod'],['pendingDelete'],['clientTransferProhibited'],['futureUnknownStatus']]as$status){$wire->status=$status;same('unavailable',$post()->getData()['state'],'Status fails closed');}$wire->status=['active'];
 $wire->code=503;same('unavailable',$post()->getData()['state'],'Unknown RDAP no purchase');$wire->code=200;$reads->premium=true;same('unavailable',$post()->getData()['state'],'Premium refused');$reads->premium=false;
@@ -70,8 +80,10 @@ DB::table('cart_items')->where('id',$item->id)->delete();$post();$inserted=false
 $wire->during=function()use($wire,$item,&$inserted){$wire->during=function()use($item,&$inserted){DB::table('cart_items')->insert($item->getAttributes());$inserted=true;};};
 $assertInCart($post(['step'=>'confirm','authority'=>'1']),'Final cart read detects concurrent transfer');expect($inserted,'Final-read insertion reached');same(1,App\Models\CartItem::count(),'Final read adds no duplicate');
 app('request')->cookies->remove('cart');
-$summary=(new DomainSummaries)->one($owner,'watch',$id,$at);$compact=view('domains::partials.summary',['summary'=>$summary])->render();
-same(1,storefrontDom($compact)->query('//a[@href="'.$summary->urls['compareTransfer'].'" and normalize-space(.)="Compare transfer price"]')->length,'Watch summary exposes comparison');
+require_once dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
+$watchPage=static fn($summary)=>view('domains::watch-notices',['summary'=>$summary,'name'=>'example.com','kind'=>'watch','id'=>$id,'editable'=>false,'preferences'=>['account'=>['enabled'=>true,'revision'=>1],'target'=>['enabled'=>true,'revision'=>1]],'notices'=>[],'portal'=>[],'key'=>null])->render();
+$summary=(new DomainSummaries)->one($owner,'watch',$id,$at);
+same(1,storefrontDom($watchPage($summary))->query('//a[@href="'.$summary->urls['compareTransfer'].'" and normalize-space(.)="Transfer to Beco"]')->length,'Hosting domain page offers Transfer to Beco');
 config(['domains.watch_transfer.enabled'=>false]);$summary=(new DomainSummaries)->one($owner,'watch',$id,$at);
-expect(!str_contains(view('domains::partials.summary',['summary'=>$summary])->render(),'Compare transfer price'),'Watch summary without URL omits comparison');
+expect(!str_contains($watchPage($summary),'Transfer to Beco'),'Hosting domain page without an offer omits it');
 $nativeSuccessful=true;echo "Watch comparison: pure gates, no invented savings, owner/revision races, strict reads and neutral native cart passed.\n";

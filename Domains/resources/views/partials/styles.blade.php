@@ -31,7 +31,7 @@
 .domains .domains-small { font-size: .8125rem; line-height: 1.25rem; }
 .domains .domains-num { font-variant-numeric: tabular-nums; }
 .domains .domains-nowrap { white-space: nowrap; }
-.domains .domains-a { color: var(--e-accent); font-weight: 600; text-underline-offset: 3px; }
+.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: none; text-underline-offset: 3px; }
 .domains .domains-a:hover { text-decoration: underline; }
 .domains .domains-back { display: inline-flex; align-items: center; gap: .25rem; font-size: .875rem; color: var(--e-muted); min-height: 2rem; }
 .domains .domains-back:hover { color: var(--e-fg); }
@@ -374,7 +374,7 @@
 .domains .domains-badge { white-space:normal; }
 .domains .domains-missing { display:inline-flex; align-items:center; gap:.375rem; color: var(--e-bad); font-weight:600; }
 .domains .domains-missing__cause { margin-inline-start:.5rem; color:var(--e-muted); }
-.domains .domains-missing__fix { margin-inline-start:.5rem; }
+.domains .domains-missing__fix { margin-inline-start:.5rem; white-space:nowrap; }
 /* Demo tag: the only orange on the page. Wraps as one unit after the name. */
 .domains .domains-demo-tag { display: inline-flex; align-items:center; height:18px; padding:0 6px; margin-inline-start:8px; border-radius:4px; border:1px solid rgb(251 146 60 / .55);
     background:rgb(251 146 60 / .10); color:#c2410c; font-size:11px; font-weight:600; line-height:1; letter-spacing:.03em; white-space: nowrap; vertical-align:2px; cursor:help; }
@@ -417,10 +417,12 @@
 .domains .domains-prose li + li { margin-top: .25rem; }
 /* ---------- Domain page ---------- */
 .domains .domains-crumb { font-size: .8125rem; color: var(--e-muted); margin-bottom: .5rem; }
-.domains .domains-crumb a { color: var(--e-muted); }
+.domains .domains-crumb a { color: var(--e-muted); text-decoration: none; }
+.domains .domains-transfer { max-width: 36rem; }
 .domains .domains-crumb a:hover { color: var(--e-fg); }
 .domains .domains-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .domains .domains-ph { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-bottom: 1.5rem; }
+.domains .domains-ph__sub { flex-basis: 100%; margin: -.5rem 0 0; color: var(--e-muted); font-size: .875rem; }
 .domains h1.domains-mono { font-size: 1.75rem; line-height: 1.2; font-weight: 600; overflow-wrap: anywhere; }
 .domains .domains-ph ~ .domains-notice { align-items: center; margin-bottom: 1.5rem; }
 .domains .domains-notice__tx { flex: 1; }
