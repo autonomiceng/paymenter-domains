@@ -27,7 +27,7 @@ $render=static function($test,string $name)use($out,$css){
     $html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);
     $html=preg_replace('~src="https?://[^\"]+"~','src="data:image/svg+xml;base64,'.base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#64748b"/></svg>').'"',$html);
     $html=str_replace('</head>','<style>'.$css.'</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>',$html);
-    expect(!str_contains($html,'PRIVATE-'),'No synthetic secret in fixture');file_put_contents($out.'/'.$name.'.html',$html);
+    expect(!str_contains($html,'PRIVATE-'),'No synthetic secret in fixture');writeRenderArtifact($out.'/'.$name.'.html',$html);
 };
 $render(Livewire::actingAs($user)->test(ListOperations::class)->assertSuccessful(),'queue');
 $render(Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$op->id])->assertSuccessful(),'operation');
@@ -51,5 +51,5 @@ foreach(StaffOperationReview::ACTIONS as $action=>$label){
         expect(str_contains($html,'Review refused')&&!str_contains($html,'A credit decision may be retained'),'Native nonfinancial refusal omits ledger warning');
         $page->setActionData(['reason'=>'no'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);$page->call('$refresh');$render($page,'refusal-reason');}
 }
-file_put_contents($out.'/strings.json',json_encode($rows,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
+writeRenderArtifact($out.'/strings.json',json_encode($rows,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 echo "Native operation queue, view, nine confirmation modals and refusal fixture rendered.\n";$nativeSuccessful=true;

@@ -36,7 +36,7 @@ foreach (['viewer'=>[Staff::VIEW], 'costs'=>[Staff::VIEW,Staff::COSTS,Staff::MET
         $html=preg_replace('~src="https?://[^\"]+"~','src="'.$avatar.'"',$html);
         $html=str_replace('</head>','<style>'.$css.'</style>'.$loadingStyles.'</head>',$html);
         expect(!str_contains($html,'PRIVATE-'),'Synthetic secret must not enter the rendered fixture');
-        file_put_contents($out.'/'.$name.'-'.$role.'.html',$html);
+        writeRenderArtifact($out.'/'.$name.'-'.$role.'.html',$html);
     }
 }
 echo "Native staff list/view fixtures rendered.\n";

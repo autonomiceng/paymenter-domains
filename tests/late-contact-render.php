@@ -30,7 +30,7 @@ $request=static function()use($user,$session){$r=Illuminate\Http\Request::create
 $clock->instant=$now->modify('+30 days');Carbon\Carbon::setTestNow($clock->instant);Carbon\CarbonImmutable::setTestNow($clock->instant);
 $emit=static function($op,string $name)use($out,$shell,$controller,$request):void{
     storefrontViews();app('view')->getFinder()->flush();$html=$controller->code($request(),$op->domain_id)->render();
-    preg_match('#<body>(.*)</body>#s',$html,$body);file_put_contents($out.'/'.$name.'.html',str_replace('@@SLOT@@',$body[1]??$html,$shell));
+    preg_match('#<body>(.*)</body>#s',$html,$body);writeRenderArtifact($out.'/'.$name.'.html',str_replace('@@SLOT@@',$body[1]??$html,$shell));
 };
 $emit($late,'customer-contact-fix');$emit($missing,'customer-no-code');
 $user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);$user->unsetRelation('properties');
@@ -47,8 +47,8 @@ $html=preg_replace('~<script\b[^>]*>.*?</script>~si','',$html);$html=preg_replac
 $html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);
 $html=preg_replace('~src="https?://[^\"]+"~','src="data:image/svg+xml;base64,'.base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#64748b"/></svg>').'"',$html);
 $html=str_replace('</head>','<style>'.$css.'</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>',$html);
-file_put_contents($out.'/staff-contact-review.html',$html);
+writeRenderArtifact($out.'/staff-contact-review.html',$html);
 $strings=[];foreach(glob($out.'/*.html')as$file){$strings[basename($file)]=trim(preg_replace('/\s+/u',' ',strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',file_get_contents($file)))));}
-file_put_contents($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
+writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 same([],$state->calls,'Render and recovery have no provider calls');same(0,$state->reads,'Render and recovery have no provider reads');
 echo "Installed staff gate and actual owner late contact pages rendered.\n";$nativeSuccessful=true;

@@ -8,7 +8,7 @@ final class RawPost
 {
     public static function body(#[\SensitiveParameter] Request $request): array
     {
-        $raw=$request->getContent();
+        $raw=stream_get_contents($request->getContent(true),1048577);
         if (!$request->isMethod('POST') || !is_string($raw) || strlen($raw)>1048576) { throw new \DomainException('Invalid form body.'); }
         $type=strtolower(trim(explode(';',(string)$request->header('Content-Type'))[0]));
         if ($request->isJson()) {

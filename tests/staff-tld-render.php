@@ -31,7 +31,7 @@ $render=static function($test,string $name)use($out,$css){
     $html=str_replace('</head>','<style>'.$css.'</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>',$html);
     $state=$test->get('mountedActions.0.data')??[];unset($state['review_key']);
     $html=str_replace('</body>','<template id="fixture-action-state" data-state="'.e(json_encode($state,JSON_THROW_ON_ERROR)).'"></template></body>',$html);
-    expect(!str_contains($html,'account-enom'),'No synthetic credential');file_put_contents($out.'/'.$name.'.html',$html);
+    expect(!str_contains($html,'account-enom'),'No synthetic credential');writeRenderArtifact($out.'/'.$name.'.html',$html);
 };
 $render(Livewire::actingAs($u)->test(ListTlds::class),'tlds');$render(Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id]),'tld-revisions');
 $render(Livewire::actingAs($u)->test(RegistrarSetup::class),'setup-both');$strings=[];
@@ -45,5 +45,5 @@ app()->instance(StaffSettingsWrites::class,$writer);
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('publish');
 \Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->increment('revision');
 $page->setActionData(['reason'=>'Refuse stale publication after seller change'])->callMountedAction();$render($page,'refusal-offline');
-file_put_contents($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
+writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 echo "Native TLD list/detail/revisions, setup, ten modals and refusal rendered.\n";$nativeSuccessful=true;

@@ -21,7 +21,7 @@ foreach(['expiring','expired','ns_changed','ns_restored','unknown','pending','pa
     elseif(!in_array($state,['saved','save-error'],true)){$data['notices']=[['kind'=>$state,'date'=>'January 15, 2027','company'=>'Example Hosting']];}
     $html=view('domains::watch-notices',$data)->render();preg_match('#<body>(.*)</body>#s',$html,$body);$slot=$body[1]??$html;
     if($shell){$html=str_replace('@@SLOT@@',$slot,file_get_contents($shell));}
-    file_put_contents($out.'/portal-'.$state.'.html',$html);$strings['portal.'.$state]=trim(preg_replace('/\s+/',' ',strip_tags($slot)));
+    writeRenderArtifact($out.'/portal-'.$state.'.html',$html);$strings['portal.'.$state]=trim(preg_replace('/\s+/',' ',strip_tags($slot)));
 }
 foreach(['fallback'=>null,'named'=>'Example Hosting'] as $variant=>$company) {
 config(['settings.company_name'=>$company]);
@@ -29,9 +29,9 @@ foreach(['expiring','expired','ns_changed','ns_restored']as$kind) {
     $n=new WatchNotice(['target_kind'=>'watch','watch_id'=>1,'kind'=>$kind,'data'=>['domain'=>$base['name'],'date'=>'2027-01-15']]);
     $template=NotificationTemplate::where('key','domains_watch_'.$kind)->sole();$mail=new NoticeMail($template,WatchNoticeDelivery::data($n));
     $html=$mail->render();$text=view('domains::mail-text',$mail->content()->with)->render();
-    file_put_contents($out.'/email-'.$variant.'-'.$kind.'.html',$html);file_put_contents($out.'/email-'.$variant.'-'.$kind.'.txt',$text);
+    writeRenderArtifact($out.'/email-'.$variant.'-'.$kind.'.html',$html);writeRenderArtifact($out.'/email-'.$variant.'-'.$kind.'.txt',$text);
     $strings['email.'.$variant.'.'.$kind]=['subject'=>$mail->envelope()->subject,'text'=>$text];
 }
 }
-file_put_contents($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES));
+writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES));
 $nativeSuccessful=true;echo "Real public notice Blade and all four native HTML/text emails rendered.\n";

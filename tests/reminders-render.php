@@ -32,8 +32,8 @@ foreach($cases as $name=>[$key,$values]){
     $html=$mail->render();$text=view('domains::mail-text',$mail->content()->with)->render();
     $strings['emails'][$name]=['template'=>$key,'subject'=>$mail->envelope()->subject,'text'=>$text];
     // Holding identity never enters scalar customer data. Both route cases are byte-identical.
-    foreach(['enom','namesilo'] as $holder){file_put_contents($out.'/'.$name.'-'.$holder.'.html',$html);file_put_contents($out.'/'.$name.'-'.$holder.'.txt',$text);}
-    file_put_contents($out.'/'.$name.'-text.html','<!doctype html><html><meta name="viewport" content="width=device-width"><title>Plain text part</title><body style="margin:24px"><pre style="font:16px/1.6 monospace;white-space:pre-wrap;overflow-wrap:anywhere">'.e($text).'</pre></body></html>');
+    foreach(['enom','namesilo'] as $holder){writeRenderArtifact($out.'/'.$name.'-'.$holder.'.html',$html);writeRenderArtifact($out.'/'.$name.'-'.$holder.'.txt',$text);}
+    writeRenderArtifact($out.'/'.$name.'-text.html','<!doctype html><html><meta name="viewport" content="width=device-width"><title>Plain text part</title><body style="margin:24px"><pre style="font:16px/1.6 monospace;white-space:pre-wrap;overflow-wrap:anywhere">'.e($text).'</pre></body></html>');
     expect(!preg_match('/enom|namesilo|PRIVATE-/i',$html.$text),'Neutral customer parts');
 }
 [$d,$bill,$op]=$make(placeholderComFixtureName('staff-held-renewal-placeholder.com'));$op->update(['state'=>'held']);$enable();$reminders->remind($d->id);
@@ -47,8 +47,8 @@ foreach(['staff-held'=>[ViewDomain::class,['record'=>$d->id]],'staff-unknown'=>[
     $html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);
     $html=preg_replace('~src="https?://[^\"]+"~','src="data:image/svg+xml;base64,'.base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#64748b"/></svg>').'"',$html);
     $html=str_replace('</head>','<style>'.$css.'</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>',$html);
-    expect(!str_contains($html,'PRIVATE-')&&!str_contains($html,'account-enom'),'Staff fixture protects private facts');file_put_contents($out.'/'.$name.'.html',$html);
+    expect(!str_contains($html,'PRIVATE-')&&!str_contains($html,'account-enom'),'Staff fixture protects private facts');writeRenderArtifact($out.'/'.$name.'.html',$html);
 }
 $strings['staff']=ObligationAlerts::LABELS;$strings['setup']=\Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule($d->server_id);
-file_put_contents($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
+writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 echo "Ten native customer cases HTML/text both holders and three native staff surfaces rendered.\n";$nativeSuccessful=true;

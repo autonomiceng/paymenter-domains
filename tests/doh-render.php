@@ -28,7 +28,7 @@ $emit = static function (string $name, bool $check = false, ?string $modal = nul
     $html = preg_replace('~src="https?://[^\"]+"~', 'src="data:image/svg+xml;base64,'.base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#64748b"/></svg>').'"', $html);
     $policy = '<meta http-equiv="Content-Security-Policy" content="default-src \'self\' data:; style-src \'self\' \'unsafe-inline\'; font-src \'self\' data:; img-src \'self\' data:; script-src \'none\'; connect-src \'none\'; form-action \'none\'">';
     $html = str_replace('</head>', $policy.'<style>'.$css.'</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>', $html);
-    file_put_contents($out.'/staff-'.$name.'.html', $html);
+    writeRenderArtifact($out.'/staff-'.$name.'.html', $html);
 };
 $emit('missing'); $emit('missing-checked', true); $emit('configure', false, 'configure'); $emit('configure-invalid', false, 'invalid'); $settings->save(\Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint::URL, \Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint::IP);
 $emit('configured');

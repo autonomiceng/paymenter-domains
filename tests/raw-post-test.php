@@ -32,4 +32,34 @@ foreach([['application/json','{'],['application/json','[]'],['application/json',
     try{RawPost::body(Request::create('/domains/1/manage/srv','POST',[],[],[],['CONTENT_TYPE'=>$type],$raw));expect(false,'Invalid/truncated body escaped');}
     catch(DomainException $e){same('Invalid form body.',$e->getMessage(),'Invalid input has a fixed secret-free refusal');}
 }
+// Instrument the request and stream so a full-body read cannot pass as an oversize refusal.
+foreach (['application/x-www-form-urlencoded', 'application/json'] as $type) {
+    foreach ([1048576, 1048577, 2097152] as $bytes) {
+        $raw = $type === 'application/json' ? '{"value":"'.str_repeat('x', $bytes-12).'"}' : 'value='.str_repeat('x', $bytes-6);
+        same($bytes, strlen($raw), 'Exact request size fixture');
+        $r = new class extends Request {
+            public mixed $stream;
+            public function getContent(bool $asResource = false) {
+                expect($asResource, 'Raw POST must request a stream, never the full body');
+                return $this->stream;
+            }
+        };
+        $r->initialize([], [], [], [], [], ['REQUEST_METHOD'=>'POST', 'CONTENT_TYPE'=>$type]);
+        $r->stream = fopen('php://temp', 'w+');
+        fwrite($r->stream, $raw); rewind($r->stream);
+        try {
+            try {
+                $body = RawPost::body($r);
+                same(1048576, $bytes, 'Only bodies at or below the byte limit are accepted');
+                same($type === 'application/json' ? $bytes-12 : $bytes-6, strlen($body['value']), 'Boundary value remains complete');
+            } catch (DomainException $e) {
+                expect($bytes > 1048576, 'Exact byte limit must remain valid');
+                same('Invalid form body.', $e->getMessage(), 'Oversize refusal remains secret-free');
+            }
+            same(min($bytes, 1048577), ftell($r->stream), 'Read stops after the limit plus one byte');
+        } finally { fclose($r->stream); }
+    }
+}
+require __DIR__.'/Support/invoice-render-failures.php';
+invoiceRenderFailures();
 $nativeSuccessful=true;echo "Raw form/JSON whitespace, empty, multibyte, plus/percent and native trim isolation passed.\n";

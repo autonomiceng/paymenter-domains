@@ -19,7 +19,7 @@ $emit=static function(string $stateName)use(&$d,$owners,$out,$shell):void {
   $copy=new OwnedDomain(...[...get_object_vars($dto),'management'=>[$kind=>$dto->management[$kind]]]);
   $html=view('domains::show',['domain'=>$copy,'keys'=>array_fill_keys(\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS,str_repeat('a',64))])->render();
   preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;
-  file_put_contents($out.'/'.$kind.'-'.$stateName.'.html',str_replace('@@SLOT@@',$content,$shell));
+  writeRenderArtifact($out.'/'.$kind.'-'.$stateName.'.html',str_replace('@@SLOT@@',$content,$shell));
  }
 };
 $observer->run($d->id);

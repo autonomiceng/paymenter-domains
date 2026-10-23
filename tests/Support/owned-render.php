@@ -61,5 +61,5 @@ app('view')->share('errors',(new Illuminate\Support\ViewErrorBag)->put('default'
 $pages['setup-errors']=view('domains::setup',['domain'=>$setup])->render();
 $copy=new OwnedDomain(...[...get_object_vars($setup),'testEnvironment'=>true]);$pages['test-mode']=view('domains::setup',['domain'=>$copy])->render();
 if (getenv('OWNER_RECORDS')==='1') { require __DIR__.'/owner-record-render.php'; }
-foreach($pages as$name=>$html){preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;if(getenv('OWNER_RECORDS')!=='1'){$content=preg_replace('#<script\b[^>]*>.*?</script>#s','',$content);}file_put_contents(getenv('OWNER_OUTPUT').'/'.$name.'.html',str_replace('@@SLOT@@',$content,$shell));}
+foreach($pages as$name=>$html){preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;if(getenv('OWNER_RECORDS')!=='1'){$content=preg_replace('#<script\b[^>]*>.*?</script>#s','',$content);}writeRenderArtifact(getenv('OWNER_OUTPUT').'/'.$name.'.html',str_replace('@@SLOT@@',$content,$shell));}
 $nativeSuccessful=true;echo "Real Blade owner pages rendered.\n";

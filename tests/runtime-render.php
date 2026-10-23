@@ -19,12 +19,12 @@ $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixtur
 $render=static function($test,string $name)use($out,$css){
     $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',
         ['page'=>$test->instance(),'body'=>$test->html().($test->effects['partials']['action-modals.0']??'')]);
-    $state=$test->get('mountedActions');file_put_contents($out.'/'.$name.'.state.json',json_encode($state));
+    $state=$test->get('mountedActions');writeRenderArtifact($out.'/'.$name.'.state.json',json_encode($state));
     $html=preg_replace('~<script\b[^>]*>.*?</script>~si','',$html);$html=preg_replace('~<link\b[^>]*>~si','',$html);
     $html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);
     $html=preg_replace('~src="https?://[^\"]+"~','src="data:image/svg+xml;base64,'.base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#64748b"/></svg>').'"',$html);
     $html=str_replace('</head>','<style>'.$css.'</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>',$html);
-    expect(!str_contains($html,'account-enom')&&!str_contains($html,'account-namesilo'),'No credential in rendered HTML');file_put_contents($out.'/'.$name.'.html',$html);
+    expect(!str_contains($html,'account-enom')&&!str_contains($html,'account-namesilo'),'No credential in rendered HTML');writeRenderArtifact($out.'/'.$name.'.html',$html);
 };
 session()->forget(['filament.notifications','filament.claimed_notifications']);
 $d=\Paymenter\Extensions\Servers\Domains\Models\Domain::firstOrFail();$op=$d->operations()->sole();$t=$tlds[1];foreach($tlds as $holding){app(\Paymenter\Extensions\Servers\Domains\Services\NativeServerGuard::class)->pause($holding->server_id);}
@@ -59,7 +59,7 @@ foreach(\Paymenter\Extensions\Servers\Domains\Models\Domain::orderBy('id')->get(
     $pages['customer-checkout-'.$i]=view('domains::checkout-line',['domain'=>$checkoutLines[$i]])->render();
 }
 $pages['customer-list-pending']=$controller->index($request)->render();
-foreach($pages as $name=>$html){preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;$content=preg_replace('#<script\b[^>]*>.*?</script>#s','',$content);file_put_contents($out.'/'.$name.'.html',str_replace('@@SLOT@@',$content,$shell));}
+foreach($pages as $name=>$html){preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;$content=preg_replace('#<script\b[^>]*>.*?</script>#s','',$content);writeRenderArtifact($out.'/'.$name.'.html',str_replace('@@SLOT@@',$content,$shell));}
 $strings=[];foreach(glob($out.'/*.html') as $file){$strings[basename($file)]=trim(preg_replace('/\s+/u',' ',strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',file_get_contents($file)))));}
-file_put_contents($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
+writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 echo "Installed staff discovery, processing/refusal and paired customer pages rendered.\n";$nativeSuccessful=true;
