@@ -9,6 +9,7 @@ final class NativeIdentityParents
 {
     public static function boot(): void
     {
+        if(!HookRegistration::claim(Service::getEventDispatcher(),self::class)){return;}
         NativeUserDeletion::boot();
         foreach([\App\Models\Server::class,Extension::class] as $class){foreach(['updating','deleting'] as $event){
             $class::$event(static function($s)use($event):void {

@@ -9,7 +9,7 @@ final class NativeExpiry
     public const NUMERIC_MESSAGE="Increment or decrement cannot set a managed domain's expiry. Save the service normally; Domains manages domain expiry.";
     public static function boot(): void
     {
-        static $booted=false;if($booted){return;}$booted=true;
+        if(!HookRegistration::claim(Service::getEventDispatcher(),self::class)){return;}
         $normalized=new \WeakMap;
         Service::saving(static function(Service $s)use($normalized):void {
             // Validate an active exact-object grant before querying through mutable model metadata.

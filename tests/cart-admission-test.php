@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, RetailLine};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 extract(commerceFixture(true)); $clock = new FakeClock($now);
+$diverge = false;
+Illuminate\Support\Facades\Event::listen(App\Events\Order\Creating::class, static function () use (&$diverge): void {
+    if ($diverge) { App\Classes\Cart::get()->items->first()->plan->prices->first()->price = '1.00'; }
+});
 $adapter = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock), $clock); $adapter->boot(); $adapter->boot();
 $user = commerceUser(); $cart = commerceCart($user); $product = $native->product($tlds[0], 'register');
 same('domain', $adapter->fields($product)[0]['name'], 'Neutral native domain checkout field');
@@ -53,13 +57,7 @@ commerceCheckout($user, $cart); same(2, Order::count(), 'Receipt cannot be reuse
 $cart = commerceCart($user); commerceAdd($cart, $product, placeholderComFixtureName('free-placeholder.com')); $coupon->update(['value' => 100]); $cart->update(['coupon_id' => $coupon->id]);
 commerceCheckout($user, $cart); same(2, Order::count(), 'Zero domain net rejects checkout');
 // An earlier native listener simulates a price relation cached before publication.
-$diverge = false;
-Illuminate\Support\Facades\Event::listen(App\Events\Order\Creating::class, static function () use (&$diverge): void {
-    if ($diverge) { App\Classes\Cart::get()->items->first()->plan->prices->first()->price = '1.00'; }
-});
-// This separate adapter registers after the mutation listener; its batch must reject cached input.
-$guard = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock), $clock);
-$guard->boot(); $diverge = true;
+$diverge = true;
 $cart = commerceCart($user); commerceAdd($cart, $product, placeholderComFixtureName('cached-price-placeholder.com')); commerceCheckout($user, $cart);
 same(2, Order::count(), 'Cached native list mismatch rolls back all checkout writes');
 $diverge = false;

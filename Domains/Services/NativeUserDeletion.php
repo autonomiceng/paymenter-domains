@@ -13,7 +13,7 @@ final class NativeUserDeletion
     public const PENDING='Domain checkout is unavailable because deletion was requested for this customer. Contact support to finish the deletion.';
     public static function boot(): void
     {
-        static $booted=false;if($booted){return;}$booted=true;
+        if(!HookRegistration::claim(User::getEventDispatcher(),self::class)){return;}
         User::deleting(self::deleting(...));
     }
     /** Caller already holds native users, before any holding or reservation locks. */

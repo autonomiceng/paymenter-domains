@@ -9,7 +9,7 @@ final class NativePaidHooks
 {
     public static function boot(): void
     {
-        if(class_exists(\App\Events\Invoice\Paid::class)){
+        if(class_exists(\App\Events\Invoice\Paid::class)&&HookRegistration::claim(Event::getFacadeRoot(),self::class)){
             Event::listen(\App\Events\Invoice\Paid::class,[self::class,'paid']);
         }
     }

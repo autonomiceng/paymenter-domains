@@ -36,6 +36,8 @@ def main():
                 raise AssertionError(f'{name}/{mode} failed ({result.returncode}): {result.stderr}')
 
         phase('seed')
+        phase('rebuilt')
+        phase('duplicate')
         for mode in ('console', 'http'):
             phase('healthy', mode)
             database = mode+'.sqlite'

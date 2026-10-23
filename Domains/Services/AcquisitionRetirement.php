@@ -132,7 +132,7 @@ final readonly class AcquisitionRetirement
     }
     public static function boot(): void
     {
-        static $booted=false;if($booted){return;}$booted=true;
+        if(!HookRegistration::claim(Service::getEventDispatcher(),self::class)){return;}
         Service::updated(static function(Service $s):void {
             if(!$s->wasChanged('status')){return;}$id=(int)$s->id;
             DB::afterCommit(static function()use($id):void {

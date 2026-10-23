@@ -13,7 +13,7 @@ final class NativeCancellation
     public const MESSAGE="This domain can't be cancelled or suspended while its registration or transfer is still being processed. Check its status on the Domains page.";
     public static function boot(): void
     {
-        static $booted=false;if($booted){return;}$booted=true;
+        if(!HookRegistration::claim(Service::getEventDispatcher(),self::class)){return;}
         // Creation and ordinary reassignment are guarded. Privileged numeric reassignment is
         // unsupported: Eloquent passes extras to SQL after events, concealing arithmetic targets.
         foreach(['creating','updating']as$event){ServiceCancellation::$event(static function(ServiceCancellation $c):void {

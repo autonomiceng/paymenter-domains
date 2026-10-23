@@ -12,7 +12,6 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation, Tld};
 /** Synchronous native hooks, dormant until 39. No jobs, provider calls or spending grants. */
 final class InvoiceBinding
 {
-    private bool $booted = false;
     private \WeakMap $creating;
     private array $prepared = [];
     private array $services = [];
@@ -21,7 +20,7 @@ final class InvoiceBinding
 
     public function boot(): void
     {
-        if ($this->booted) { return; } $this->booted = true;
+        if(!HookRegistration::claim(Event::getFacadeRoot(),self::class)){return;}
         Event::listen(\App\Events\Order\Creating::class, fn ($e) => $this->prepare($e->order));
         Service::creating(function (Service $service): void {
             if (!$this->native->mapping($service->product, $service->plan)) { return; }

@@ -127,6 +127,7 @@ config(['app.release'=>null]);putenv('RELEASE_ID=release-fallback');
 same('release-fallback',HookDiagnostics::context([])['release'],'Optional RELEASE_ID fallback');
 putenv('RELEASE_ID');expect(!isset(HookDiagnostics::context([])['release']),'Absent release omitted');
 config(['app.release'=>'hook-test-f1e670c']);
+if(in_array($phase,['rebuilt','duplicate'],true)){require __DIR__.'/hook-dispatcher.php';$nativeSuccessful=true;return;}
 if($phase==='healthy'){echo "Healthy full $mode provider boot: no warning.\n";$nativeSuccessful=true;return;}
 
 // Use the same genuine action bridges as both native-paid matrices, with no network sender.

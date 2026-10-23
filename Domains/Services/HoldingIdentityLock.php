@@ -30,8 +30,8 @@ final class HoldingIdentityLock
             || (int) $order->user_id !== $ownerId || (int) $native['user']->id !== $ownerId) {
             throw new \DomainException('Holding native authority changed.');
         }
-        if (self::$contexts === null) {
-            self::$contexts = new \WeakMap;
+        self::$contexts ??= new \WeakMap;
+        if (HookRegistration::claim(Event::getFacadeRoot(),self::class)) {
             foreach ([\Illuminate\Database\Events\TransactionBeginning::class, \Illuminate\Database\Events\TransactionCommitted::class, \Illuminate\Database\Events\TransactionRolledBack::class] as $event) {
                 Event::listen($event, static function ($e): void {
                     foreach (self::$contexts as $context => $_) {

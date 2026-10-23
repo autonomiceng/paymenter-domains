@@ -29,8 +29,8 @@ final class InvoiceFunding
     public static function lock(int $invoiceId): self
     {
         if (DB::transactionLevel() !== 1) { throw new \LogicException('Funding joins the outer claim transaction.'); }
-        if (self::$contexts === null) {
-            self::$contexts = new \WeakMap;
+        self::$contexts ??= new \WeakMap;
+        if (HookRegistration::claim(Event::getFacadeRoot(),self::class)) {
             foreach ([\Illuminate\Database\Events\TransactionBeginning::class, \Illuminate\Database\Events\TransactionCommitted::class, \Illuminate\Database\Events\TransactionRolledBack::class] as $event) {
                 Event::listen($event, static function ($e): void {
                     foreach (self::$contexts as $context => $_) {

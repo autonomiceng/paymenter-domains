@@ -11,14 +11,13 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Dormant native adapters; boot once in 39, before checkout/binding. No financial/provider execution. */
 final class NativeDomainGuard
 {
-    private bool $booted = false;
     /** Exact-object, synchronous grants; never exposed to native forms or persisted. */
     private static ?\WeakMap $projections = null;
     public function __construct(private readonly HolderPricing $pricing, private readonly Clock $clock) {}
 
     public function boot(): void
     {
-        if ($this->booted) { return; } $this->booted = true; NativeExpiry::boot(); NativeUserDeletion::boot();
+        if(!HookRegistration::claim(Service::getEventDispatcher(),self::class)){return;} NativeExpiry::boot(); NativeUserDeletion::boot();
         Domain::updating(static function (Domain $d): void {
             if ($d->isDirty('price_mode') || (!$d->attachingAdoption() && $d->isDirty('billing_managed'))) { throw new \DomainException('Managed pricing authority requires a dedicated audited transition.'); }
         });
@@ -216,8 +215,8 @@ final class NativeDomainGuard
         if (DB::transactionLevel() !== 1 || !$service->exists || $service->getRawOriginal() !== $before) {
             throw new \LogicException('Projection requires holding locks.');
         }
-        if (self::$projections === null) {
-            self::$projections = new \WeakMap;
+        self::$projections ??= new \WeakMap;
+        if (HookRegistration::claim(Service::getEventDispatcher(),self::class.'::persist')) {
             Service::saving(static function (Service $row): void {
                 if (!isset(self::$projections[$row])) { return; }
                 self::matchProjection($row); $grant = self::$projections[$row];

@@ -7,7 +7,6 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 final class NativeServerGuard
 {
-    private bool $booted=false;
     public function pause(int $id): void
     {
         if(!Schema::hasTable('domains_accounts')){return;}
@@ -37,7 +36,7 @@ final class NativeServerGuard
     }
     public function boot(): void
     {
-        if($this->booted){return;}$this->booted=true;
+        if(!HookRegistration::claim(Server::getEventDispatcher(),self::class)){return;}
         foreach([Server::class,Extension::class] as $model){
             $model::creating(function($s):void {if($s->extension==='Domains'){
                 try{app(Installation::class)->install();}catch(\DomainException|\RuntimeException|\Illuminate\Contracts\Cache\LockTimeoutException $e){

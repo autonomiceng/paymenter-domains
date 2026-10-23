@@ -14,7 +14,7 @@ final class NativeIdentity
     private const MARKERS=['domains_catalogue','domains_tld_id','domains_action','domains_registrar'];
     public static function boot(): void
     {
-        static $booted=false;if($booted){return;}$booted=true;NativeExpiry::boot();NativeStock::boot();
+        if(!HookRegistration::claim(Service::getEventDispatcher(),self::class)){return;}NativeExpiry::boot();NativeStock::boot();
         Order::updating(static function(Order $o):void {
             if(self::dirty($o,['id','user_id','currency_code'])){self::order($o);}
         });

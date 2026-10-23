@@ -12,7 +12,6 @@ use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
 /** One batch in native Order Creating, after ALL native user/coupon/product locks. Dormant until slice 39. */
 final class CartAdmission
 {
-    private bool $booted = false;
     private ?Order $order = null;
     private array $lines = [];
     public function __construct(private readonly NativeCatalogue $native, private readonly SellerPolicies $sellers,
@@ -20,7 +19,7 @@ final class CartAdmission
 
     public function boot(): void
     {
-        if ($this->booted) { return; } $this->booted = true;
+        if(!HookRegistration::claim(Event::getFacadeRoot(),self::class)){return;}
         foreach ([\App\Events\CartItem\Creating::class, \App\Events\CartItem\Updating::class] as $event) {
             Event::listen($event, fn ($e) => $this->prepare($e->cartItem));
         }

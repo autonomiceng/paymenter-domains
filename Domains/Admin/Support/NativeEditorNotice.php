@@ -7,14 +7,14 @@ use Filament\Support\Facades\FilamentView;
 use Filament\View\PanelsRenderHook;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\NativeIdentity;
+use Paymenter\Extensions\Servers\Domains\Services\{HookRegistration,NativeIdentity};
 /** Public, page-scoped render hook. Native controls and routes are untouched. */
 final class NativeEditorNotice
 {
     public static function boot(): void
     {
-        static $booted=false;if($booted){return;}$booted=true;
         if(($missing=self::missing())!==null){logger()->warning('Domain editor notice paused: '.$missing);return;}
+        if(!HookRegistration::claim(FilamentView::getFacadeRoot(),self::class)){return;}
         $scopes=[\App\Admin\Resources\ServiceResource\Pages\EditService::class];
         $view='App\\Admin\\Resources\\ServiceResource\\Pages\\ViewService';if(class_exists($view)){$scopes[]=$view;}
         FilamentView::registerRenderHook(PanelsRenderHook::PAGE_START,static function()use($scopes):string {

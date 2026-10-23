@@ -8,10 +8,9 @@ use Illuminate\Support\HtmlString;
 /** Exact native service view adapter. No global view hook or native component mutation. */
 final class HostingDomainRow
 {
-    private static bool $booted=false;
     public static function boot(): void
     {
-        if(self::$booted){return;}self::$booted=true;
+        if(!HookRegistration::claim(View::getDispatcher(),self::class)){return;}
         View::composer('services.show',static function($view):void {
             $data=$view->getData();$service=$data['service']??null;$owner=Auth::user();
             if(!$service instanceof Service || !$owner instanceof User){return;}

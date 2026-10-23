@@ -11,6 +11,7 @@ final class NativeIdentityDiscrepancies
 {
     public static function boot(): void
     {
+        if(!HookRegistration::claim(Service::getEventDispatcher(),self::class)){return;}
         foreach([User::class=>'user_id',Service::class=>'service_id'] as $class=>$column){
             $class::deleted(static function($row)use($column):void {
                 try {

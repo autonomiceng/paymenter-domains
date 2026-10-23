@@ -8,7 +8,7 @@ final class NativeStock
 {
     public static function boot(): void
     {
-        static $booted=false;if($booted){return;}$booted=true;
+        if(!HookRegistration::claim(Product::getEventDispatcher(),self::class)){return;}
         Product::saving(static function(Product $p):void {
             if(!NativeIdentity::productRows(NativeIdentity::rows($p))){return;}
             foreach($p->getAttributes()as$key=>$value){$parts=explode('.',explode('->',$key,2)[0]);
