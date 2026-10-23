@@ -71,7 +71,7 @@ final class Labels
             'acquisition_cancelled_unpaid'=>'Unpaid order retired','registration_adopted'=>'Registration adopted',
             'registration_managed'=>'Registration managed','ready'=>'Ready for check',
             'expiry_unknown'=>'Registry expiry unknown','no_coverage'=>'Public registry coverage unavailable',
-            'not_registered'=>'No registry record found',
+            'not_registered'=>'No registry record found','deadline'=>'Public check deadline passed',
             'awaiting_acceptance'=>'Awaiting feature acceptance'][$value] ?? 'Review retained evidence';
     }
     public static function flag(mixed $value): string { return match ($value) { true=>'Yes', false=>'No', default=>'Unknown' }; }

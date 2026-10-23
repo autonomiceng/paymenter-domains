@@ -51,7 +51,7 @@ same($count,WatchDnsObservation::count(),'No false drift on profile edit');
 expect($projection->read($watch->id,$owner->id,$now+8)['website']['stale'],'Profile edit makes prior evidence stale');
 $work = DB::table('domains_watch_work')->where('kind','delegation')->first();
 $ticket = $checks->begin($watch->id,$owner->id,'delegation',(int)$work->due_at);
-$next = $checks->begin($watch->id,$owner->id,'delegation',$ticket->startedAt+120);expect($next !== null,'Expired lease admits fresh worker');
+$next = $checks->begin($watch->id,$owner->id,'delegation',$ticket->startedAt+120);same(null,$next,'Expired DNS lease enters backoff');$retry=(int)DB::table('domains_watch_work')->where('kind','delegation')->value('due_at');expect($retry>=$ticket->startedAt+1020,'Abandoned DNS read cannot monopolize owner');$next=$checks->begin($watch->id,$owner->id,'delegation',$retry);expect($next!==null,'Fresh worker admitted after lease and backoff');
 expect(!$checks->finish($ticket,new DnsReading('delegation','external'),$ticket->startedAt+121),'Old claim cannot overwrite replacement');
 expect($checks->finish($next,new DnsReading('delegation','platform'),$next->startedAt+1),'Replacement worker succeeds');
 DB::table('domains_watch_work')->where('kind','delegation')->update(['due_at'=>$next->startedAt+2]);

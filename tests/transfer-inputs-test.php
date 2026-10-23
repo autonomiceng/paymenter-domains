@@ -11,7 +11,10 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $op=$new('transfer-input.com'); $inputs->paymentAccepted($op->id);
 same('Transfer transfer-input.com: adds 1 year to the current expiry', App\Models\InvoiceItem::findOrFail($op->invoice_item_id)->description, 'Transfer promises an added year without guessing an unknown expiry');
 $paid=$op->fresh()->policy['paid_at']; same('awaiting_code',$op->fresh()->state,'Paid code missing');
+$nativeBeforeReplay=nativeFinancialSnapshot($op);$operationBeforeReplay=$op->fresh()->getRawOriginal();
 $inputs->paymentAccepted($op->id); same($paid,$op->fresh()->policy['paid_at'],'Payment replay preserves cutoff');
+same($operationBeforeReplay,$op->fresh()->getRawOriginal(),'Payment replay preserves operation bytes');
+same($nativeBeforeReplay,nativeFinancialSnapshot($op),'Payment replay preserves native/financial state');
 foreach(['',str_repeat('x',513),"bad\nvalue",[1],"bad\x7fvalue"] as $invalid){commerceReject(fn()=>$inputs->submitCode($post($user,$invalid),$op->id));}
 foreach([[$other,'POST',false],[$user,'GET',false],[$user,'POST',true]] as [$actor,$method,$query]){
     commerceReject(fn()=>$inputs->submitCode($post($actor,'synthetic',$method,$query),$op->id));

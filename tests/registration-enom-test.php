@@ -55,7 +55,9 @@ foreach (['clean', 'lost', 'mismatch', 'unknown', 'authority', 'finishfailure', 
         same('registration_authority_changed', $result->safe_code, 'Specific completion authority refusal');
     }
     else { $assertRetained($result, $mode === 'clean' ? [] : ['nameservers']); same('1234', $result->attempt['registration']['order_reference'], 'Original order retained'); }
+    $nativeBeforeReplay = nativeFinancialSnapshot($result);
     $before = $registration->calls; $engine->execute($result->id); same($before, $registration->calls, 'No replay of accepted/unknown attempt');
+    same($nativeBeforeReplay, nativeFinancialSnapshot($result), 'Replay preserves native/financial state');
 }
 expect($completionFailures >= 2, 'Transient completion retried with original acceptance and correction evidence');
 same(['NS1' => 'ns1.child.com', 'NS2' => 'ns2.child.com'], \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers(['NS1.Child.com.', 'ns2.child.com']), 'Enom source accepts normalized child hosts');

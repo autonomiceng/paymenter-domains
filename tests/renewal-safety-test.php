@@ -35,7 +35,9 @@ $descriptor = new AdmittedOperation($b, new Query($d->domain, Action::Renew, 1),
 $ctx = new RequestContext($b, RequestOrigin::Background, $clock->now()->modify('+120 seconds'), new RequestBudget(1), $clock);
 commerceReject(fn () => $writer->renew($descriptor, $ctx)); commerceReject(fn () => $writer->renew(clone $descriptor, $ctx));
 $state->lost = true; $writes = $state->writes; same('uncertain', $engine->run($op->id, $writer)->state, 'Lost response retains uncertainty');
+$nativeBeforeReplay = nativeFinancialSnapshot($op);
 $engine->run($op->id, $writer); same($writes + 1, $state->writes, 'Lost response never replays');
+same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
 $state->lost = false;
 foreach (['term', 'charge', 'owner', 'id', 'drift', 'expiry_race'] as $case) {
     [$op, $d, $b] = $makeRenewal('completion-'.str_replace('_','-',$case).'.com'); [$engine, $writer, $completion] = $compose($b);

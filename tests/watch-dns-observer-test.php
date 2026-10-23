@@ -16,7 +16,7 @@ $checks=new WatchDnsChecks(true);expect($checks->enroll($watch->id,$owner->id,$n
 $q=new DnsQuery('example.com','NS');$ns=DnsAnswer::rrset($q,array_map(fn($target)=>['host'=>'example.com','class'=>'IN','type'=>'NS','ttl'=>300,'target'=>$target],$profile->nameservers));
 $fake->answers[$q->key()]=function()use($ns){same(0,DB::transactionLevel(),'DNS executes outside transactions');return $ns;};
 $observer=new WatchDnsObserver($checks,$fake,fn()=>$now);
-expect(!$observer->observe($watch->id,$other->id,'delegation'),'Foreign owner cannot observe');same([],$fake->calls,'No foreign DNS');
+$before=(array)DB::table('domains_watch_work')->where('kind','delegation')->sole();expect(!$observer->observe($watch->id,$other->id,'delegation'),'Foreign owner cannot observe');same([],$fake->calls,'No foreign DNS');same($before,(array)DB::table('domains_watch_work')->where('kind','delegation')->sole(),'Foreign owner cannot postpone or alter work');
 expect($observer->observe($watch->id,$owner->id,'delegation'),'Claim/collect/commit delegation');
 same('platform',WatchDnsObservation::firstOrFail()->dns,'Complete exact delegation saved');
 foreach(['example.com','www.example.com'] as $host){foreach(['CNAME','A','AAAA'] as $type){$q=new DnsQuery($host,$type);$fake->answers[$q->key()]=DnsAnswer::negative($q,60,'nodata');}}

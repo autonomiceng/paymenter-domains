@@ -202,7 +202,14 @@
     "tests/seller-switch-lifecycle-namesilo-register-test.php",
     "tests/seller-switch-lifecycle-namesilo-transfer-test.php",
     "tests/acquisition-retirement-refusals-test.php",
-    "tests/acquisition-retirement-staff-test.php"
+    "tests/acquisition-retirement-staff-test.php",
+    "tests/watch-registry-work-test.php",
+    "tests/watch-registry-observer-test.php",
+    "tests/rdap-quota-test.php",
+    "tests/watch-dns-confirmation-test.php",
+    "tests/watch-scheduler-test.php",
+    "tests/watch-discovery-work-test.php",
+    "tests/watch-maintenance-test.php"
   ],
   "ui": [],
   "runner": [

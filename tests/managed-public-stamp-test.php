@@ -24,7 +24,7 @@ foreach([
     DB::table($table)->where($field,$key)->update($restore);
 }
 managedDue($id,$now);$first=$signals->begin($id,$uid,'delegation',$now);expect($first!==null,'First synthetic claim');
-$second=$signals->begin($id,$uid,'delegation',$now+121);expect($second!==null,'Expired lease reclaimed');
+$second=$signals->begin($id,$uid,'delegation',$now+121);same(null,$second,'Abandoned managed read enters backoff');$retry=(int)DB::table('domains_managed_public_work')->where('domain_id',$id)->where('kind','delegation')->value('due_at');expect($retry>=$now+1021,'Abandoned managed read yields owner turn');$now=$retry-121;$second=$signals->begin($id,$uid,'delegation',$retry);expect($second!==null,'Expired lease reclaimed after backoff');
 expect(!$signals->finish($first,new DnsReading('delegation','external'),$now+122),'Old claim cannot overwrite replacement');
 expect($signals->finish($second,new DnsReading('delegation','platform'),$now+122),'Replacement exact claim commits');
 managedDue($id,$now+122);$late=$signals->begin($id,$uid,'delegation',$now+122);expect($late!==null,'Deadline fixture');

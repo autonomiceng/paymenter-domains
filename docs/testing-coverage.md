@@ -549,3 +549,17 @@ Both historically named baseline/candidate entrypoints now run the same native-o
 The test switch and self-rebinding are gone; composition asserts the processor is unbound
 and resolves to the native class. Existing paid/cron, cancellation, identity and projection
 coverage qualifies the removal together. No upstream hashes were changed.
+
+## Native editor removal
+
+Native server/settings, lifecycle, presenter and fresh-boot fixtures qualify unchanged
+Create Server, Edit Server and Edit Service routes, real `route:cache`, and native pages
+opened before a compiled-route change and hydrated afterwards. Scoped guards still
+refuse unsafe identity and lifecycle writes; ordinary saves and paid hooks continue.
+Native Edit Server Delete is exercised for both registrars: refusal is handled with a
+staff notice, preserves settings/binding/server, and retains the native processing pause.
+An unrelated native server still deletes. Direct model deletions still throw.
+The upgrade tripwire pins native delete dispatch and Filament's handled Halt behavior.
+The runner hygiene suite requires the conventions exceptions section to be empty.
+Old Secure-class snapshots and caches require drained deployment, cache rebuild and page
+reload; offline native fixtures do not establish installed-theme or provider acceptance.

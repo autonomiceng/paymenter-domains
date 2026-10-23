@@ -4,6 +4,7 @@ declare(strict_types=1);
 require dirname(__DIR__).'/native-app.php';
 require __DIR__.'/commerce.php';
 require __DIR__.'/native-commerce.php';
+require_once __DIR__.'/native-financial-snapshot.php';
 use App\Models\{Credit, InvoiceTransaction, Service};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;

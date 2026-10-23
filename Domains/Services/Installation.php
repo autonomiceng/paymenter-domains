@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
 {
-    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class];
+    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class];
     public static function legacy(): void
     {
         foreach(Server::where('extension','Enom')->get() as $server){
@@ -26,7 +26,7 @@ final class Installation
             foreach(['domains_domains','domains_operations','domains_tlds','domains_prices','domains_contact_profiles','domains_sales_policies','domains_read_budgets','domains_observation_queues','domains_observation_work','domains_reminder_schedules','domains_reminder_deliveries','domains_obligation_alerts','domains_runtime_turns','domains_runtime_operations','domains_psl_snapshots','domains_psl_status','domains_psl_candidates','domains_watch_audit','domains_watch_product_maps','domains_watch_names','domains_watch_sources'] as $table){
                 if(!$present&&Schema::hasTable($table)){throw new \DomainException('Partial retained Domains schema. Restore its installation history before reinstalling.');}
             }
-            foreach(['domains_adoptions','domains_history_links','domains_watch_profiles','domains_watch_observations','domains_watch_work','domains_native_intents','domains_registrar_balances','domains_managed_public_work',...ManagedPublicSchema::tables()] as $table){
+            foreach(['domains_adoptions','domains_history_links','domains_watch_profiles','domains_watch_observations','domains_watch_work','domains_native_intents','domains_registrar_balances','domains_managed_public_work',...ManagedPublicSchema::tables(),...WatchScheduleSchema::tables()] as $table){
                 if(!$present&&Schema::hasTable($table)){throw new \DomainException('Partial retained Domains schema. Restore its installation history before reinstalling.');}
             }
             $ran=app(Migrator::class)->getRepository()->getRan();$recorded=in_array('2026_10_18_000001_create_domains_foundation',$ran,true);
@@ -67,6 +67,10 @@ final class Installation
                 throw new \DomainException('Retained managed public history has no installation record.');
             }
             if ($publicRecorded) { ManagedPublicSchema::verify(); }
+            $watchScheduleRecorded=in_array(WatchScheduleSchema::MIGRATION,$ran,true);
+            $watchSchedulePresent=array_filter(array_map(Schema::hasTable(...),WatchScheduleSchema::tables()));
+            if ($watchSchedulePresent && !$watchScheduleRecorded) { throw new \DomainException('Retained watch schedule has no installation record.'); }
+            if ($watchScheduleRecorded) { WatchScheduleSchema::verify(); }
             $adoptionRecorded = in_array('2026_10_19_000014_add_holding_adoption', $ran, true);
             if (Schema::hasColumn('domains_domains', 'adoption_id') && !$adoptionRecorded) { throw new \DomainException('Retained adoption pointer has no installation record.'); }
             if ($adoptionRecorded) { HoldingAdoptionSchema::verify(); }

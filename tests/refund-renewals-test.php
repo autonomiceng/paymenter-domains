@@ -28,7 +28,9 @@ foreach(['null_history','unknown_fact','foreign_transaction'] as $case){
 [$engine,$writer,$completion]=$compose($b); $writes=$state->writes;
 same('pending',$engine->run($corrected->id,$writer)->state,'Restored renewal executes');
 same($writes+1,$state->writes,'Corrected funding permits exactly one send'); same($history,$corrected->fresh()->funding['financial_adjustments'],'Seal preserves correction audit');
+$nativeBeforeReplay = nativeFinancialSnapshot($corrected);
 $engine->run($corrected->id,$writer); same($writes+1,$state->writes,'Corrected renewal never replays');
+same($nativeBeforeReplay, nativeFinancialSnapshot($corrected), 'Replay preserves native/financial state');
 $state->expiry='2028-10-18'; $state->charge='8.00'; same('succeeded',$completion->run($corrected->id)->state,'Corrected renewal completes');
 same($history,$corrected->fresh()->funding['financial_adjustments'],'Completion retains audit');
 // Unsuitable fixed multiyear grace, with full native payment: refund retains holding and expiry.

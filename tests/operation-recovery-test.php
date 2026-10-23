@@ -14,7 +14,9 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 // Active duplicate worker cannot claim; expired workers enter reconciliation, including definitely-unsealed ones.
 foreach ([false, true] as $seal) {
     $op = $new($seal ? 'stale-sealed.com' : 'stale-unsealed.com'); [$claimed, $domain, $binding] = $claims->claim($op->id);
+    $nativeBeforeDuplicate = nativeFinancialSnapshot($op);
     $assertNoSend($op, 'running');
+    same($nativeBeforeDuplicate, nativeFinancialSnapshot($op), 'Active duplicate worker preserves native/financial state');
     if ($seal) { $ready = $preflight->inspect($claimed, $domain, new RequestContext($binding, Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background, $now->modify('+300 seconds'), new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(10), $clock)); $claims->seal($claimed, $ready, $clock->now()); }
     $clock->instant = $clock->instant->modify('+361 seconds'); $result = $assertNoSend($op, 'uncertain'); same('stale_claim', $result->safe_code, 'Expired worker requires reconciliation');
     $clock->instant = $clock->instant->modify('-361 seconds');

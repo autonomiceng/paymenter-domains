@@ -17,19 +17,24 @@ final class PublicRegistryReader
     }
     public function revision(): string { return hash('sha256', json_encode($this->bootstrap, JSON_THROW_ON_ERROR)); }
     public function snapshot(): ?array { return $this->bootstrap; }
+    /** Refreshing metadata must never discard the last validated registry routes. */
+    public function refresh(RegistryContext $context): bool
+    {
+        try {
+            $snapshot=$this->request(self::BOOTSTRAP,$context);
+            if ($snapshot===null) { return false; }
+            $this->bootstrap=$snapshot; return true;
+        } catch (\Throwable) { return false; }
+    }
     public function read(string $name, RegistryContext $context): array
     {
         $unknown = ['result'=>'unknown','reason'=>'no_expiry','safe_code'=>'expiry_unknown','expiry'=>null,'precision'=>null,'source'=>null,'status'=>[]];
         try {
             if (DnsQuery::hostname($name) !== $name || !str_contains($name, '.')) { return $unknown; }
             $bootstrap = $this->bootstrap ?? $this->request(self::BOOTSTRAP, $context) ?? throw new \RuntimeException();
-            if (!is_array($bootstrap['services'] ?? null) || !array_is_list($bootstrap['services']) || !$bootstrap['services']) { throw new \RuntimeException(); }
+            $services=self::services($bootstrap);
             $ending = substr($name, strrpos($name, '.') + 1); $endpoint = null; $matches = 0;
-            foreach ($bootstrap['services'] as $service) {
-                if (!is_array($service) || count($service) !== 2 || !is_array($service[0] ?? null) || !is_array($service[1] ?? null)
-                    || !array_is_list($service[0]) || !array_is_list($service[1]) || !$service[0] || !$service[1]) { throw new \RuntimeException(); }
-                foreach ($service[0] as $suffix) { if (!is_string($suffix) || !preg_match('/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/D',$suffix)) { throw new \RuntimeException(); } }
-                foreach ($service[1] as $url) { if (!is_string($url)) { throw new \RuntimeException(); } }
+            foreach ($services as $service) {
                 if (!in_array($ending, $service[0], true)) { continue; }
                 $matches++;
                 foreach ($service[1] as $candidate) {
@@ -57,6 +62,21 @@ final class PublicRegistryReader
             return ['result'=>'facts','reason'=>'facts','safe_code'=>null,'expiry'=>$expiry,'precision'=>$precision,'source'=>$endpoint,'status'=>$statuses];
         } catch (RegistryDeferred) { return array_replace($unknown, ['reason'=>'deferred','safe_code'=>'budget_exhausted']); }
         catch (\Throwable) { return array_replace($unknown, ['reason'=>'endpoint_failed']); }
+    }
+    private static function services(array $bootstrap): array
+    {
+        $services=$bootstrap['services']??null;$seen=[];
+        if (!is_array($services) || !array_is_list($services) || !$services) { throw new \RuntimeException(); }
+        foreach($services as$service) {
+            if (!is_array($service) || count($service)!==2 || !is_array($service[0]??null) || !is_array($service[1]??null)
+                || !array_is_list($service[0]) || !array_is_list($service[1]) || !$service[0] || !$service[1]) { throw new \RuntimeException(); }
+            foreach($service[0]as$suffix) {
+                if (!is_string($suffix) || !preg_match('/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/D',$suffix) || isset($seen[$suffix])) { throw new \RuntimeException(); }
+                $seen[$suffix]=true;
+            }
+            foreach($service[1]as$url) { if (!is_string($url)) { throw new \RuntimeException(); } }
+        }
+        return $services;
     }
     private static function expiration(mixed $value): array
     {
@@ -122,12 +142,14 @@ final class PublicRegistryReader
             }
             $data = json_decode($response['body'], true, 32, JSON_THROW_ON_ERROR);
             if (!is_array($data)) { throw new \RuntimeException(); }
+            if (!$domain) { self::services($data); }
             return $data;
         } catch (\Throwable $e) {
             if ($e instanceof RegistryDeferred || !$context->dns->live()) { $response = ['deferred'=>true]; throw new RegistryDeferred(); }
+            if (is_array($response)) { $response['failed']=true; }
             throw $e;
         } finally {
-            if ($reserved) { $context->completed($url, is_array($response) ? ['status'=>$response['status'] ?? null,'retry_after'=>$response['retry_after'] ?? null,'deferred'=>$response['deferred'] ?? false] : null); }
+            if ($reserved) { $context->completed($url, is_array($response) ? ['status'=>$response['status'] ?? null,'retry_after'=>$response['retry_after'] ?? null,'deferred'=>$response['deferred'] ?? false,'failed'=>$response['failed'] ?? false] : null); }
         }
     }
 }

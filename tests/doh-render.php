@@ -35,4 +35,17 @@ $emit('configured');
 $response = ['status' => 200, 'body' => '{"Status":0,"Question":[{"name":"example.com","type":1}],"Answer":[{"name":"example.com","type":1,"TTL":60,"data":"192.0.2.1"}]}']; $emit('working', true);
 $response = new \Paymenter\Extensions\Servers\Domains\Dns\DohFailure('timeout'); $emit('failed', true);
 $response = ['status' => 200, 'body' => '{"Status":2,"Question":[{"name":"example.com","type":1}]}']; $emit('servfail', true);
-echo "Eight stock staff resolver states rendered.\n"; $nativeSuccessful = true;
+// The public-check status shares this stock page; no request or queue execution on render.
+(new \Paymenter\Extensions\Servers\Domains\Domains([]))->installed();
+$emit('public-disabled');
+$clock=(object)['now'=>1800000000];
+$work=new \Paymenter\Extensions\Servers\Domains\Services\WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true,fn()=>$clock->now);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,$work);$emit('public-queue-configuration');
+config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>180]);$emit('public-waiting');
+\Illuminate\Support\Facades\DB::table('domains_watch_schedule')->insert(['scope'=>'dispatch','due_at'=>$clock->now,'progress_at'=>$clock->now-600,'data'=>json_encode(['started_at'=>$clock->now-86400])]);$emit('public-overdue');
+\Illuminate\Support\Facades\DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['progress_at'=>$clock->now]);
+$id=\Illuminate\Support\Facades\DB::table('domains_watch_names')->insertGetId(['user_id'=>$staff->id,'canonical_name'=>'example.com','psl_revision'=>str_repeat('a',64),'state'=>'active','notice_preferences'=>'{}']);
+\Illuminate\Support\Facades\DB::table('domains_watch_work')->insert(['watch_id'=>$id,'kind'=>'expiry','due_at'=>$clock->now,'attempts'=>1,'watch_revision'=>1]);
+\Illuminate\Support\Facades\DB::table('domains_watch_schedule')->insert(['scope'=>'health_registry','cursor'=>$clock->now-86400]);$emit('public-failing');
+\Illuminate\Support\Facades\DB::table('domains_watch_work')->update(['attempts'=>0,'due_at'=>$clock->now+86400]);$emit('public-current');
+echo "Stock resolver and public-check status states rendered.\n"; $nativeSuccessful = true;

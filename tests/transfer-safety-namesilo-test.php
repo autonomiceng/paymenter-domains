@@ -11,7 +11,9 @@ foreach (['Missing Authorization Code','Incorrect Authorization Code','Domain is
     if ($i===5) { commerceReject(fn()=>$refunds->creditRejected($r->id)); } else { same(null,$refunds->creditRejected($r->id),'Held transfers are ineligible for credit'); }
     commerceReject(fn()=>Paymenter\Extensions\Servers\Domains\Services\DomainReservations::releaseTerminal($r->domain->domain));
     same(null,$r->fresh()->funding['refund']??null,'Sent outcomes never credit'); same($r->domain->domain,$r->domain->fresh()->reservation_name,'Reservation retained');
+    $nativeBeforeReplay = nativeFinancialSnapshot($r);
     $calls=$state->calls; $engine->execute($r->id); same($calls,$state->calls,'Sent needs-action never replays');
+    same($nativeBeforeReplay, nativeFinancialSnapshot($r), 'Replay preserves native/financial state');
     if ($i!==5) {
         $observe->status='unknown'; $r=$reconcile->run($r->id); same('transfer_needs_action',$r->policy['reconciliation']['reason'],'Uncovered read retains held reason');
         same(null,$r->completed_at,'Needs-action remains nonterminal'); $observe->fault=''; $observe->status='Transfer Completed';

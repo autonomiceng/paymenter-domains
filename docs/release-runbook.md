@@ -40,8 +40,10 @@ Keep credentials, contact data, transfer codes and raw provider replies out of t
    result changes nothing. Run the explicit `php artisan domains:native-expiry --clear`
    cleanup, then validate again before restarting any worker. Installation does not
    repair these dates. Preserve provider-confirmed expiry and hosting dates. Repeat
-   validation after privileged maintenance. Refresh route caches and restart PHP/queue
-   workers only after that check passes. Check the
+   validation after privileged maintenance. Rebuild route caches and restart PHP/queue
+   workers only after that check passes. Upgrades from a build with Secure editor
+   remaps must rebuild caches before serving requests; reload every open admin editor
+   tab because its saved component class no longer exists. Check the
    native staff setup, owned pages, cart/checkout and invoice DTOs with the supplied
    site shell. Cover engine absent, Enom-only, NameSilo-only and both holders; inspect
    long names, keyboard access, narrow layouts, errors and distinct renewal due/expiry

@@ -628,3 +628,13 @@ Public registry expiry tests use synthetic bootstrap/HTTP bodies, endpoint DNS a
 They retain date/instant precision, reject ambiguous expiry and unsafe endpoints, and
 share the transfer client's strict selected-endpoint 404 classifier. No WHOIS fallback,
 registrar operation, live RDAP acceptance or customer notification is exercised.
+
+Registry work tests cover default-off/profile-independent enrollment, owner and native stamp
+rechecks, exact claims, crash recovery, independent retry/circuit/429 policies and urgent
+freshness transitions. RDAP and DNS reservations precede wire attempts; local deferral preserves
+fresh facts. Delegation tests cover TTL-spaced classification confirmation and overflow cohorts.
+
+Watch scheduling tests use synthetic local discovery and dispatch callbacks, an injected clock
+and an asynchronous queue configuration. They cover five-minute turns, bounded product/owner
+rotation, duplicate hints, queue timeouts, outage deduplication, and 90-day evidence retention.
+Activation and live/concurrent resolver/queue acceptance remain separate operator gates.

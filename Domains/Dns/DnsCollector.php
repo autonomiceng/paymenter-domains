@@ -20,7 +20,7 @@ final class DnsCollector
         };
         if ($ticket->kind === 'delegation') {
             $read($hosts[0], 'NS');
-            return [DnsSignals::delegation($hosts[0], $profile, $answers), $ticket->cursor, ($ticket instanceof ManagedDnsTicket) ? $ticket->sourceCursor : ($ticket->sourceOverflow ? $ticket->nextSourceCursor : $ticket->sourceCursor)];
+            return [DnsSignals::delegation($hosts[0], $profile, $answers), $ticket->cursor, $ticket->sourceCursor];
         }
         // Email gets an independent opportunity before any long website chain can exhaust the job.
         $mx = $read($hosts[0], 'MX');

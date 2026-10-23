@@ -29,7 +29,9 @@ foreach (['register', 'transfer'] as $action) {
                 [$attempt['seal'] ?? null, array_key_exists('execution', $attempt), array_key_exists('refund', $result->funding ?? []), $result->completed_at],
                 'M7 '.$scenario.' has no seal, execution, credit or terminal disposition');
             $beforeRetry = [$preflight->calls, $reads->calls, $writer->calls, $nativeMoney(), $result->getRawOriginal()];
+            $nativeBeforeRetry = nativeFinancialSnapshot($op);
             $engine->execute($op->id);
+            same($nativeBeforeRetry, nativeFinancialSnapshot($op), 'M7 '.$scenario.' retry preserves native/financial state');
             same($beforeRetry, [$preflight->calls, $reads->calls, $writer->calls, $nativeMoney(), $result->fresh()->getRawOriginal()],
                 'M7 '.$scenario.' cannot automatically retry');
         }

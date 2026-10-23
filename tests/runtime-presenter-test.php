@@ -40,38 +40,33 @@ DB::table('domains_operations')->whereIn('id',$extras)->delete();
 same($pairs[0],$pairs[1],'Installed holding surfaces are identical');
 $batch=$presenter->services($user,Domain::pluck('service_id')->all());same(2,count($batch),'Bounded native service batch');
 commerceReject(fn()=>$presenter->services($user,array_fill(0,251,1)));
-$route=app('router')->getRoutes()->getByName('filament.admin.resources.servers.edit');expect(str_contains($route->getActionName(),'SecureEditServer'),'Native generic editor route replaced');
+$route=app('router')->getRoutes()->getByName('filament.admin.resources.servers.edit');same(\App\Admin\Resources\ServerResource\Pages\EditServer::class,explode('@',$route->getActionName())[0],'Native generic editor route unchanged');
 $staff=staffUser([...array_keys(\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()),'admin.servers.viewAny','admin.services.viewAny','admin.servers.view','admin.servers.create','admin.servers.update','admin.services.view','admin.services.update']);
 $server=\App\Models\Server::findOrFail($tlds[0]->server_id);$server->settings()->create(['key'=>'private_synthetic_secret','value'=>'SECRET-NEVER-IN-SNAPSHOT','encrypted'=>true]);
-// Round-trip native cached routes before/after extension registration, then resolve the actual page class.
-$router=app('router');$allRoutes=$router->getRoutes();
-foreach([false,true] as $protected){
-    $cached=new \Illuminate\Routing\RouteCollection;
-    foreach(['servers'=>['server'=>$server->id,'native'=>\App\Admin\Resources\ServerResource\Pages\EditServer::class,'secure'=>\Paymenter\Extensions\Servers\Domains\Admin\SecureEditServer::class],
-        'services'=>['server'=>$d->service_id,'native'=>\App\Admin\Resources\ServiceResource\Pages\EditService::class,'secure'=>\Paymenter\Extensions\Servers\Domains\Admin\SecureEditService::class]] as $kind=>$case){
-        $resource=$kind==='servers'?\App\Admin\Resources\ServerResource::class:\App\Admin\Resources\ServiceResource::class;$routeName=$resource::getRouteBaseName(\Filament\Facades\Filament::getCurrentPanel()).'.edit';$r=clone $allRoutes->getByName($routeName);$r->uses($case[$protected?'secure':'native']);$r->prepareForSerialization();$cached->add($r);
-    }
-    $file=$fixture.'/bootstrap/cache/domains-editor-routes.php';file_put_contents($file,'<?php return '.var_export($cached->compile(),true).';');$router->setCompiledRoutes(require $file);
-    foreach(['servers'=>$server->id,'services'=>$d->service_id] as $kind=>$id){
-        $resource=$kind==='servers'?\App\Admin\Resources\ServerResource::class:\App\Admin\Resources\ServiceResource::class;$routeName=$resource::getRouteBaseName(\Filament\Facades\Filament::getCurrentPanel()).'.edit';$request=\Illuminate\Http\Request::create(route($routeName,['record'=>$id],false));$matched=$router->getRoutes()->match($request);$class=explode('@',$matched->getActionName())[0];
-        if($protected){expect(str_contains($class,'SecureEdit'),'Installed cached route resolves secure editor');}
-        else{\Livewire\Livewire::actingAs($staff)->test($class,['record'=>$id])->assertStatus(503);}
-    }
+// Cached native routes and open pages keep their vanilla classes across hydration.
+$open=[\Livewire\Livewire::actingAs($staff)->test(\App\Admin\Resources\ServerResource\Pages\EditServer::class,['record'=>$server->id]),
+    \Livewire\Livewire::actingAs($staff)->test(\App\Admin\Resources\ServiceResource\Pages\EditService::class,['record'=>$d->service_id])];
+$router=app('router');$allRoutes=$router->getRoutes();$cached=new \Illuminate\Routing\RouteCollection;
+foreach($allRoutes as $route){$r=clone $route;$r->prepareForSerialization();$cached->add($r);}
+$file=$fixture.'/bootstrap/cache/domains-editor-routes.php';file_put_contents($file,'<?php return '.var_export($cached->compile(),true).';');$router->setCompiledRoutes(require $file);
+foreach(['servers'=>$server->id,'services'=>$d->service_id] as $kind=>$id){
+    $resource=$kind==='servers'?\App\Admin\Resources\ServerResource::class:\App\Admin\Resources\ServiceResource::class;
+    $routeName=$resource::getRouteBaseName(\Filament\Facades\Filament::getCurrentPanel()).'.edit';$matched=$router->getRoutes()->match(\Illuminate\Http\Request::create(route($routeName,['record'=>$id],false)));
+    $class=explode('@',$matched->getActionName())[0];same($kind==='servers'?\App\Admin\Resources\ServerResource\Pages\EditServer::class:\App\Admin\Resources\ServiceResource\Pages\EditService::class,$class,'Cached route resolves vanilla editor');
+    \Livewire\Livewire::actingAs($staff)->test($class,['record'=>$id])->assertSuccessful()->call('$refresh')->assertSuccessful();
 }
+foreach($open as $page){$page->call('$refresh')->assertSuccessful();} // Pages mounted before the cache change still hydrate.
 $router->setRoutes($allRoutes);app('url')->setRoutes($allRoutes);
 expect($router->getRoutes()->getByName('filament.admin.resources.domains.view')!==null,'Native discovered domain route survives cache fixture');
-// Stale native editor routes refuse before mount can serialize encrypted settings.
-\Livewire\Livewire::actingAs($staff)->test(\App\Admin\Resources\ServerResource\Pages\EditServer::class,['record'=>$server->id])->assertStatus(503);
-
-$edit=\Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\SecureEditServer::class,['record'=>$server->id])->assertSuccessful();
-expect(!str_contains(json_encode($edit->snapshot),'SECRET-NEVER-IN-SNAPSHOT'),'Native server editor never serializes secret');
+$edit=\Livewire\Livewire::actingAs($staff)->test(\App\Admin\Resources\ServerResource\Pages\EditServer::class,['record'=>$server->id])->assertSuccessful();
+expect(str_contains(json_encode($edit->snapshot),'SECRET-NEVER-IN-SNAPSHOT'),'Native server-edit access includes saved credentials');
 $processing=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server->id)->sole()->processing_enabled;
 $edit->fillForm(['name'=>'Reviewed native registrar'])->call('save')->assertHasNoFormErrors();
 same($processing,\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server->id)->sole()->processing_enabled,'Name-only native save preserves processing');
-\Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\SecureCreateServer::class)->fillForm(['name'=>'New installed registrar','extension'=>'Domains'])->call('create')->assertHasNoFormErrors();
+\Livewire\Livewire::actingAs($staff)->test(\App\Admin\Resources\ServerResource\Pages\CreateServer::class)->fillForm(['name'=>'New installed registrar','extension'=>'Domains'])->call('create')->assertHasNoFormErrors();
 expect(\App\Models\Server::where('name','New installed registrar')->exists(),'Native create form installs before persistence');
 $service=Service::findOrFail($d->service_id);$price=$service->getRawOriginal('price');
-\Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\SecureEditService::class,['record'=>$service->id])->call('save')->assertHasNoFormErrors();
+\Livewire\Livewire::actingAs($staff)->test(\App\Admin\Resources\ServiceResource\Pages\EditService::class,['record'=>$service->id])->call('save')->assertHasNoFormErrors();
 same($price,$service->fresh()->getRawOriginal('price'),'Native unchanged price save keeps financial identity');same(null,$service->fresh()->expires_at,'Native expiry remains absent');
 $legacy=\App\Models\Server::create(['name'=>'Paused legacy','type'=>'server','extension'=>'Enom','enabled'=>false]);$setting=$legacy->settings()->create(['key'=>'operations_enabled','type'=>'boolean','value'=>false]);
 $oldRequest=app('request');app()->instance('request',Illuminate\Http\Request::create('/livewire/update','POST'));

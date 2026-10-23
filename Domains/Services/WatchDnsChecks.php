@@ -33,9 +33,10 @@ final class WatchDnsChecks
             $peek = DB::table('domains_watch_work')->where('watch_id',$watchId)->where('kind',$kind)->first();
             if ($peek === null) { return null; }
             $t = $this->target($watchId, $userId, true, (int) $peek->source_cursor);
-            if ($t === null) { return null; }
+            if ($t === null) { DB::table('domains_watch_work')->where('id',$peek->id)->whereIn('watch_id',WatchName::select('id')->where('user_id',$userId))->where(fn($q)=>$q->whereNull('lease_until')->orWhere('lease_until','<=',$now))->update(['due_at'=>$now+900,'safe_code'=>'target_changed']); return null; }
             $work = DB::table('domains_watch_work')->where('watch_id', $watchId)->where('kind', $kind)->lockForUpdate()->first();
             if ($work === null || (int) $work->source_cursor !== (int) $peek->source_cursor || $work->due_at > $now || ($work->backoff_until ?? 0) > $now || ($work->lease_until ?? 0) > $now) { return null; }
+            if ($work->claim!==null) { DB::table('domains_watch_work')->where('id',$work->id)->update(PublicCheckRetry::abandoned($work,$watchId,$kind,$now));return null; }
             $claim = bin2hex(random_bytes(32));
             DB::table('domains_watch_work')->where('id', $work->id)->update(['claim' => $claim, 'lease_until' => $now + 120, 'watch_revision' => $t['watch']->revision]);
             $watch = $t['watch']; $profile = $t['profile'];
@@ -70,6 +71,9 @@ final class WatchDnsChecks
             }
             if ($ticket->sourceOverflow) { $reading = $reading->withOmittedHosts(); }
             $result = $reading->result(); $complete = $result === 'complete'; $facts = $reading->facts();
+            $confirmed=false; $confirmedDelay=$ticket->interval; $early=false;
+            if ($complete && $ticket->kind==='delegation') { [$confirmed,$confirmedDelay,$early]=$this->confirmation($ticket,$reading,$now); }
+            $facts['ns_confirmed']=$confirmed;
             $code = $reading->safeCode(); $rotation = $code === 'rotation'; $budget = $rotation || $code === 'budget_exhausted';
             $valid = $result === 'unknown' ? null : $ticket->startedAt + 2 * $ticket->interval;
             $row = WatchDnsObservation::create(['watch_id' => $ticket->watchId, 'user_id' => $ticket->userId,
@@ -80,11 +84,12 @@ final class WatchDnsChecks
                 'partial' => $result !== 'complete', 'safe_code' => $code, 'facts' => $facts,
                 'digest' => $reading->digest()]);
             $attempts = $complete ? 0 : ($budget ? (int) $work->attempts : min(30, (int) $work->attempts + 1));
-            $delay = ($complete || $rotation) ? $ticket->interval : ($budget ? 60 : [900, 3600, 21600, 86400][min(3, $attempts - 1)]);
+            $delay = ($complete || $rotation) ? $confirmedDelay : ($budget ? 60 : [900, 3600, 21600, 86400][min(3, $attempts - 1)]);
             $jitter = ($complete || $budget) ? 0 : (int) (hexdec(substr(hash('sha256', $ticket->watchId.'|'.$ticket->kind.'|'.$attempts), 0, 6)) % (intdiv($delay, 10) + 1));
             $q->update(['claim' => null, 'lease_until' => null, 'attempts' => $attempts, 'due_at' => $now + $delay + $jitter,
                 'backoff_until' => ($complete || $budget) ? null : $now + $delay + $jitter, 'safe_code' => $code,
                 'last_success_at' => $complete ? $ticket->startedAt : $work->last_success_at, 'cursor' => $nextCursor, 'source_cursor' => $nextSourceCursor ?? $ticket->sourceCursor]);
+            if ($early) { DB::table('domains_watch_work')->where('watch_id',$ticket->watchId)->where('kind','points')->whereNull('claim')->update(['due_at'=>$now]); }
             // Projection pointer changes do not alter watch configuration/revision or freshness.
             DB::table('domains_watch_names')->where('id', $ticket->watchId)->update(['last_observation_id' => $row->id]);
             return true;
@@ -93,14 +98,16 @@ final class WatchDnsChecks
     public function defer(WatchDnsTicket $t,int $now): void
     {
         DB::table('domains_watch_work')->where('watch_id',$t->watchId)->where('kind',$t->kind)->where('claim',$t->claim)
-            ->update(['claim'=>null,'lease_until'=>null,'due_at'=>max($now,$t->startedAt)+60,'safe_code'=>'budget_exhausted']);
+            ->update(['claim'=>null,'lease_until'=>null,'due_at'=>max($now,$t->startedAt)+60,'safe_code'=>DB::raw("COALESCE(safe_code, 'budget_exhausted')")]);
     }
     /** Current read-only identity for projections; never claims work or performs DNS. */
     public function currentStamp(int $watchId, int $userId, int $sourceCursor = 0): ?string
     {
         return $this->target($watchId, $userId, false, $sourceCursor)['stamp'] ?? null;
     }
-    private function target(int $watchId, int $userId, bool $lock = true, int $sourceCursor = 0): ?array
+    public function registryTarget(int $watchId,int $userId,bool $lock=true,int $sourceCursor=0): ?array
+    { return $this->target($watchId,$userId,$lock,$sourceCursor,true); }
+    private function target(int $watchId, int $userId, bool $lock = true, int $sourceCursor = 0, bool $registry = false): ?array
     {
         // Discovery owns source enrollment. Capture a bounded native prefix before watch/work locks.
         $candidate = WatchName::whereKey($watchId)->where('user_id', $userId)->first();
@@ -115,10 +122,10 @@ final class WatchDnsChecks
         $profile = WatchProfile::whereKey($candidate->ns_profile_id)->when($lock, fn($q) => $q->lockForUpdate())->first();
         $watch = WatchName::whereKey($watchId)->where('user_id', $userId)->when($lock, fn($q) => $q->lockForUpdate())->first();
         [$current, $currentOverflow] = $this->sources($watchId, $sourceCursor, $lock);
-        if ($watch === null || $watch->state !== 'active' || $watch->managed_domain_id !== null || $profile === null || !$profile->enabled ||
-            (int) $watch->ns_profile_id !== (int) $profile->id || $currentOverflow !== $overflow || $current->pluck('id')->all() !== $sources->pluck('id')->all()) { return null; }
+        if ($watch === null || WatchManagedTarget::exists($userId,$watch->canonical_name) || $watch->state !== 'active' || $watch->managed_domain_id !== null || ($registry && $watch->registration === 'platform') || (!$registry && ($profile === null || !$profile->enabled ||
+            (int) $watch->ns_profile_id !== (int) $profile->id)) || $currentOverflow !== $overflow || $current->pluck('id')->all() !== $sources->pluck('id')->all()) { return null; }
         // Profile agreement is watch-wide even when hostname/native capture rotates a bounded cohort.
-        if (DB::table('domains_watch_sources as s')->join('domains_watch_product_maps as m','m.id','=','s.map_id')
+        if (!$registry && DB::table('domains_watch_sources as s')->join('domains_watch_product_maps as m','m.id','=','s.map_id')
             ->where('s.watch_id',$watchId)->where('s.state','watch')->whereNotNull('m.expected_ns_profile_id')
             ->where('m.expected_ns_profile_id','<>',$profile->id)->exists()) { return null; }
         $hosts = [$watch->canonical_name]; $evidence = [];
@@ -134,12 +141,12 @@ final class WatchDnsChecks
             $hosts[] = $source->hostname;
             $evidence[] = [$source->only(['id','user_id','service_id','map_id','map_revision','hostname','registrable_name','watch_id','managed_domain_id','state','source_digest','revision']), $order->id, $order->user_id, $service->id, $service->user_id, $service->product_id, $service->status,
                 $map->revision, $map->property_key, $map->expected_ns_profile_id, $values[0], $product->server_id];
-            if ($map->expected_ns_profile_id !== null && (int) $map->expected_ns_profile_id !== (int) $profile->id) { return null; }
+            if (!$registry && $map->expected_ns_profile_id !== null && (int) $map->expected_ns_profile_id !== (int) $profile->id) { return null; }
         }
         $hosts = array_values(array_diff(array_unique($hosts), [$watch->canonical_name])); sort($hosts, SORT_STRING);
         array_unshift($hosts, $watch->canonical_name);
         $stamp = hash('sha256', json_encode([$watch->id, $watch->user_id, $watch->canonical_name, $watch->revision, $watch->psl_revision,
-            $watch->expected_dns, $overflow, $profile->id, $profile->revision, $profile->profile(), $evidence], JSON_THROW_ON_ERROR));
+            $watch->expected_dns, $watch->registration, $overflow, $profile?->id, $profile?->revision, $profile?->profile(), $evidence], JSON_THROW_ON_ERROR));
         return ['watch' => $watch, 'profile' => $profile, 'hosts' => $hosts, 'stamp' => $stamp, 'overflow' => $overflow,
             'next_source_cursor' => $overflow ? (int) $current->first()->id : 0];
     }
@@ -154,4 +161,20 @@ final class WatchDnsChecks
         return [(clone $base)->whereKey($id)->when($lock, fn($q) => $q->lockForUpdate())->get(), true];
     }
 
+    private function confirmation(WatchDnsTicket $t,DnsReading $reading,int $now): array
+    {
+        $prior=WatchDnsObservation::where('watch_id',$t->watchId)->where('check_kind','delegation')->where('source_digest',$t->stamp)
+            ->where('result','complete')->orderByDesc('id')->first();
+        $ttls=[];foreach($prior?->facts['queries']??[]as$q){foreach($q['records']as$r){$ttls[]=$r['ttl'];}}
+        $wait=min(21600,max(900,...($ttls?:[0])));
+        $same=$prior && $prior->dns===$reading->dns;
+        $fresh=$prior && $now>=$prior->started_at && $now<$prior->valid_until;
+        // A candidate may wait longer than badge freshness for its TTL; expired confirmation never carries forward.
+        $candidate=$prior && !($prior->facts['ns_confirmed']??false) && $now>=$prior->started_at
+            && $now<=$prior->started_at+max(2*$t->interval,$wait+$t->interval);
+        $confirmed=$same && ((($prior->facts['ns_confirmed']??false) && $fresh) || ($candidate && $t->startedAt>=$prior->started_at+$wait));
+        $ttls=[];foreach($reading->queries as$q){foreach($q['records']as$r){$ttls[]=$r['ttl'];}}
+        $nextWait=min(21600,max(900,...($ttls?:[0])));
+        return [$confirmed,$confirmed?$t->interval:($same && $candidate?max(1,$prior->started_at+$wait-$now):$nextWait),$confirmed && !($prior->facts['ns_confirmed']??false)];
+    }
 }
