@@ -6,6 +6,7 @@ function identityInventory(string $root,array $manifest): array
 {
     $actual=[];
     foreach($manifest['roots'] as $directory){
+        if(!is_dir($root.'/'.$directory)){continue;} // Pinned members below report missing paths.
         // Do not follow symlinked extension directories; the runner links this extension into its fixture.
         $iterator=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root.'/'.$directory,FilesystemIterator::SKIP_DOTS));
         foreach($iterator as $file){

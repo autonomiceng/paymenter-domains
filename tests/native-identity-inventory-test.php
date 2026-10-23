@@ -12,6 +12,11 @@ foreach($inventory['paths'] as $path=>$disposition){
     expect(isset($inventory['files'][$path]),'Write path must have a pinned hash: '.$path);
     expect(str_starts_with($disposition,'models:')||str_starts_with($disposition,'outside:')||str_starts_with($disposition,'no identity write:'),'Explicit disposition: '.$path);
 }
+// Absent audited roots must still report every pinned member and extra path.
+$empty=base_path('storage/framework/identity-inventory');mkdir($empty,0700);
+try {
+    same(array_map(static fn($path)=>'Missing native path: '.$path,array_keys($inventory['files'])),identityInventory($empty,$inventory),'Absent roots report all pinned files without throwing');
+} finally {rmdir($empty);}
 // The tripwire must identify changed, added and removed files, including a previously unknown writer.
 $path='app/Models/Order.php';$original=file_get_contents(base_path($path));
 try {
