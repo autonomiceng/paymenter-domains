@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 /** Explicit evidence dates cannot acquire implicit timestamp defaults or updates. */
 final class EvidenceDatesSchema
 {
-    public const MIGRATION = '2026_10_22_000037_use_explicit_evidence_dates';
+    public const MIGRATION = '2026_10_22_000038_use_explicit_evidence_dates';
     public const SCHEMAS = [AdoptionSchema::class, PslReviewSchema::class, HistoryLinkSchema::class,
         NativeIntentSchema::class, UserDeletionSchema::class];
     private const COLUMNS = ['domains_adoptions' => ['observed_at', 'valid_until'],
