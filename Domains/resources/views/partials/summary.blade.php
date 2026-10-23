@@ -25,17 +25,19 @@
 @if(!($summaryCompact??false))
 @php($checked=array_filter($summary->freshness,fn($f)=>(bool)$f['checkedAt']))
 @php($lastKnown=array_filter($summary->lastKnown,fn($f)=>($f['inScope']??false) && ($f['stale']??false) && $f['value']!==null))
-@if(!$checked && !$lastKnown)<p class="domains-small">No DNS check results yet.</p>
+@if(!$checked && !$lastKnown)@if(!$summary->nameservers)<p class="domains-small">No DNS check results yet.</p>@endif
 @else<details class="domains-checks"><summary>Check details and timestamps</summary><dl class="domains-facts">
 @php($known=array_values(array_diff($summary->dnsKeys,\Paymenter\Extensions\Servers\Domains\Presentation\DomainSummaryBadges::GAPS)))
 @foreach($checked as $family=>$fact)
 @php($evidence=array_map(fn($key)=>$summary->labels[$key],match($family){'delegation'=>array_intersect($known,['domain.dns.platform','domain.dns.external']),'points'=>array_diff($known,['domain.dns.platform','domain.dns.external']),'registry'=>$summary->kind==='watch'?array_diff([$summary->registrationKey],\Paymenter\Extensions\Servers\Domains\Presentation\DomainSummaryBadges::GAPS):[],default=>[]}))
 <div class="domains-fact"><dt>{{ ['delegation'=>'Nameservers','points'=>'Website / email pointers','registry'=>'Public registry'][$family] }}</dt><dd>{{ implode(', ',[...$evidence,...($fact['stale']?['Out of date']:($fact['partial']?['Partly complete']:($evidence?[]:['Checked'])))]) }}
 <span class="domains-small">Last checked {{ \Carbon\CarbonImmutable::createFromTimestampUTC($fact['checkedAt'])->format('M j, Y, H:i') }} UTC</span>
+@if($family==='delegation' && ($summary->nameservers['source']??null)==='public_dns_check')<span class="domains-small">Observed: {{ implode(', ',$summary->nameservers['nameservers']) }}</span>@endif
 @if($fact['nextCheck'])<span class="domains-small">Next check {{ \Carbon\CarbonImmutable::createFromTimestampUTC($fact['nextCheck'])->format('M j, Y, H:i') }} UTC</span>@endif</dd></div>@endforeach
 </dl>
 @if($lastKnown)<h4>Last known details · out of date</h4><p class="domains-small">These earlier checks do not confirm the current settings.</p><dl class="domains-facts">
 @foreach($lastKnown as $axis=>$fact)<div class="domains-fact"><dt>{{ ['dns'=>'Nameservers','website'=>'Website pointer','email'=>'Email pointer','registry'=>'Public registry expiry'][$axis] }}</dt><dd>@if($axis==='registry')@include('domains::partials.date',['date'=>$fact['value']])@else{{ $axis==='dns'?($summary->labels['domain.dns.'.$fact['value']]??'Details unavailable'):($fact['value']?'Platform pointer recorded':($fact['partial']?'Not confirmed (partial check)':'No platform pointer recorded')) }}@endif@if($fact['partial'] && $fact['value']!==false) · Partial check @endif<span class="domains-small">Recorded {{ \Carbon\CarbonImmutable::createFromTimestampUTC($fact['checkedAt'])->format('M j, Y, H:i') }} UTC</span></dd></div>@endforeach
 </dl>@endif<p class="domains-small">{{ $summary->labels['domain.points.help'] }}</p></details>@endif
+@if($summary->nameservers && (($summary->nameservers['source']??null)!=='public_dns_check' || !array_key_exists('delegation',$checked)))<p class="domains-small">Nameservers {{ $summary->nameservers['state']==='requested'?'requested':'observed' }}: {{ implode(', ',$summary->nameservers['nameservers']) }}</p>@endif
 @endif
 </article>

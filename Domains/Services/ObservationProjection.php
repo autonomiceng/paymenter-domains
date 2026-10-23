@@ -2,14 +2,25 @@
 // Enom444f31c refresh/follow-up semantics; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Data\{DomainSnapshot, TransferStatus};
+use Paymenter\Extensions\Servers\Domains\Data\{DomainSnapshot, NameserverEvidence, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Encrypted facts only. No anchor, operation state, correction closure or financial writer. */
 final class ObservationProjection
 {
-    public static function acquired(Domain $d, string $key): array
+    public static function acquired(Domain $d, string $key, ?NameserverEvidence $nameservers = null): array
     {
-        return [...($d->observation??[]),'followup'=>['operation_key'=>$key,'generation'=>$d->authority_generation,'reads'=>0,'state'=>'pending']];
+        $observation = self::recordNameservers($d, $nameservers);
+        return [...$observation,'followup'=>['operation_key'=>$key,'generation'=>$d->authority_generation,'reads'=>0,'state'=>'pending']];
+    }
+    public static function recordNameservers(Domain $d, ?NameserverEvidence $nameservers): array
+    {
+        $observation = $d->observation ?? [];
+        if ($nameservers) {
+            $observation['nameservers'] = $nameservers->toArray() + [
+                'name' => $d->domain, 'generation' => $d->authority_generation, 'account_fingerprint' => $d->account_fingerprint,
+            ];
+        }
+        return $observation;
     }
     public static function save(Domain $d, ?DomainSnapshot $facts, TransferStatus $transfer, \DateTimeImmutable $now): void
     {

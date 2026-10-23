@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, RegistrarDriver};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, Capabilities, CostUnit, DateEvidence, Disposition,
-    DomainSnapshot, DriverResult, Evidence, ExpiryPrecision, Money, PrivacyMode, Query, QuoteEvidence, ReconciliationResult,
+    DomainSnapshot, DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, PrivacyMode, Query, QuoteEvidence, ReconciliationResult,
     RejectionBasis, RenewalStatus, RequestContext, ResultReason, SendState, SystemClock};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DomainName, Outcome, RegistrarRequest as Request, RegistrarResult};
 
@@ -129,16 +129,24 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     {
         Query::requireName($name); $reply = $this->read(Request::domainInfo($name), $context);
         if ($reply->outcome !== Outcome::Success) { return $this->neutral($reply); }
-        return $this->neutral($reply, new Evidence(domain: $this->snapshot($name, $reply)));
+        return $this->neutral($reply, new Evidence(domain: $this->snapshot($name, $reply, $context->now())));
     }
-    private function snapshot(string $name, RegistrarResult $reply): DomainSnapshot
+    private function snapshot(string $name, RegistrarResult $reply, \DateTimeImmutable $observedAt): DomainSnapshot
     {
         $expiry = null;
         try { $expiry = new DateEvidence($reply->value('expires'), ExpiryPrecision::Date, 'namesilo_domain_info'); }
         catch (\InvalidArgumentException) {}
         // Successful account-scoped getDomainInfo observes ownership, not this attempt's execution.
         return new DomainSnapshot($this->binding(), $name, true, $expiry,
-            $reply->value('auto_renew') === 'Yes', $reply->value('private') === 'Yes', $reply->value('locked') === 'Yes', active: $reply->value('status') === 'Active');
+            $reply->value('auto_renew') === 'Yes', $reply->value('private') === 'Yes', $reply->value('locked') === 'Yes',
+            active: $reply->value('status') === 'Active', nameservers: self::readNameservers($reply->value('nameservers'), $observedAt));
+    }
+    private static function readNameservers(mixed $rows, \DateTimeImmutable $observedAt): ?NameserverEvidence
+    {
+        if (!is_array($rows) || !array_is_list($rows) || count($rows) < 2 || count($rows) > 13
+            || count(array_filter($rows, static fn ($row) => is_array($row) && is_string($row['nameserver'] ?? null))) !== count($rows)) { return null; }
+        try { return NameserverEvidence::observed(array_column($rows, 'nameserver'), 'namesilo_domain_info', $observedAt); }
+        catch (\Throwable) { return null; }
     }
     public function readRenewalDomain(string $name, #[\SensitiveParameter] RequestContext $context): DriverResult
     { return $this->readDomain($name, $context); }
@@ -148,7 +156,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         if ($query->action !== Action::Renew) { return $this->unsent(ResultReason::Unsupported); }
         $reply = $this->read(Request::domainInfo($query->name), $context);
         if ($reply->outcome !== Outcome::Success) { return $this->neutral($reply); }
-        $domain = $this->snapshot($query->name, $reply);
+        $domain = $this->snapshot($query->name, $reply, $context->now());
         $facts = new Evidence(domain: $domain);
         // Only exact Active plus a safely future UTC calendar date excludes grace/restoration.
         $today = $context->now()->setTimezone(new \DateTimeZone('UTC'))->setTime(0, 0);

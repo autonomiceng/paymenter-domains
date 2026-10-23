@@ -179,8 +179,8 @@ $before=count($GLOBALS['enomWire']['forms']);app(Paymenter\Extensions\Servers\Do
 same('queued',$usdHold->fresh()->state,'Fresh USD evidence allows the unclaimed hold to be released');same($before,count($GLOBALS['enomWire']['forms']),'USD hold release itself makes no Enom request');
 $op=$new(placeholderComFixtureName('paid-test-placeholder.com'));$before=count($GLOBALS['enomWire']['forms']);$usedBeforePurchasePath=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');$GLOBALS['advanceDuringPreflight']=true;$worker->operation($op->id);
 $purchaseCommands=array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command');
-same(['Check','PE_GetProductPrice','GetBalance','Purchase'],$purchaseCommands,'Three preflights then one sealed Purchase: '.json_encode([$purchaseCommands,$op->fresh()->state,$op->fresh()->safe_code,DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->first()]));same('pending',$op->fresh()->state,'ACK remains Processing');
-same($usedBeforePurchasePath+4,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'Preflight plus Purchase reserve four call units');
+same(['Check','PE_GetProductPrice','GetBalance','Purchase'],$purchaseCommands,'Three preflights then one sealed Purchase; no reconciliation read before completion proof: '.json_encode([$purchaseCommands,$op->fresh()->state,$op->fresh()->safe_code,DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->first()]));same('pending',$op->fresh()->state,'ACK remains Processing');
+same($usedBeforePurchasePath+4,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'Only preflight and Purchase reserve four call units before completion proof');
 $before=count($GLOBALS['enomWire']['forms']);$GLOBALS['testRegisteredName']=$op->domain->domain;
 $offlinePsl=static fn():never=>throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,new Paymenter\Extensions\Servers\Domains\Services\PslTransport($offlinePsl));
@@ -192,8 +192,9 @@ Cache::flush();Queue::fake();app(RuntimeWork::class)->tick();
 Queue::assertPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,static fn($job)=>$job->operationId===$op->id);
 same($before,count($GLOBALS['enomWire']['forms']),'Scheduler queues captured-order reconciliation without making reads in the scheduler turn');
 (new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same('succeeded',$op->fresh()->state,'Restarted worker reconciles captured OrderID with history closed');
-same(7,count($GLOBALS['enomWire']['forms'])-$before,'Captured OrderID exactly seven reads');$d=$op->domain->fresh();
+same(8,count($GLOBALS['enomWire']['forms'])-$before,'Captured OrderID uses seven proof reads and one post-proof nameserver read: '.json_encode(array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command')));$d=$op->domain->fresh();
 same('active',$d->status,'Ownership confirmed');same('10.00',$op->fresh()->cost['actual']['amount'],'Actual charge');expect(isset($d->renewal_policy['billing_anchor']),'Billing anchor established');same(null,$d->service->expires_at,'Native expiry stays null');
+same(['ns1.provider.example','ns2.provider.example'],$d->observation['nameservers']['nameservers']??null,'Confirmed TEST registration stores provider nameservers as observed');
 $before=count($GLOBALS['enomWire']['forms']);$worker->operation($op->id);same($before,count($GLOBALS['enomWire']['forms']),'Completed duplicate no calls');unset($GLOBALS['testRegisteredName']);
 same('registration_pending',$paused->domain->fresh()->status,'Processing-off paid TEST reservation remains registration pending');
 same('active',$op->domain->fresh()->status,'Captured-order registration completes to active before scheduler check');
@@ -224,7 +225,7 @@ same(['held','contact_details_required'],[$contactOp->fresh()->state,$contactOp-
 foreach(['address'=>'1 Corrected Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$incompleteUser->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
 \Paymenter\Extensions\Servers\Domains\Services\ContactRecovery::replace($incompleteUser,$contactOp->id,'Owner corrected missing address and phone');
 same('queued',$contactOp->fresh()->state,'Contact correction queues the unsent registration');$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$before=count($GLOBALS['enomWire']['forms']);$worker->operation($contactOp->id);
-same(['Check','PE_GetProductPrice','GetBalance','Purchase'],array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),'Corrected contact order resumes through one Purchase');
+same(['Check','PE_GetProductPrice','GetBalance','Purchase'],array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),'Corrected contact order resumes through one Purchase without pre-proof nameserver reads');
 // Exhaust after preflight, before seal: safe cap evidence remains staff-retryable.
 $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$capOp=$new(placeholderComFixtureName('cap-held-placeholder.com'));
 expect(EnomTestRegistration::applies($capOp),'TEST deployment opts in only Enom registration operations');
@@ -255,13 +256,13 @@ $clock->at=$clock->at->modify('+300 seconds');
 $releaseTicket=Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket((int)$staff->id,(int)$capDomain->id,(int)$capOp->id,'release',
     Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($capOp->fresh(),$capDomain),$clock);
 app(Paymenter\Extensions\Servers\Domains\Services\StaffOperations::class)->run($staff,(int)$capDomain->id,(int)$capOp->id,'release',$releaseTicket,'Registry availability will be rechecked after a delayed safe readmission');
-$used=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');config(['domains.enom_test_daily_call_cap'=>$used+4]);
+$used=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');config(['domains.enom_test_daily_call_cap'=>$used+5]);
 $runtimeTurn=DB::table('domains_runtime_turns')->where('server_id',$server->id)->first();if($runtimeTurn){DB::table('domains_runtime_turns')->where('id',$runtimeTurn->id)->update(['operation_cursor'=>0,'due_at'=>0]);}
 DB::table('domains_runtime_operations')->insertOrIgnore(['operation_id'=>$capOp->id]);DB::table('domains_runtime_operations')->where('operation_id',$capOp->id)->update(['due_at'=>0]);
 $before=count($GLOBALS['enomWire']['forms']);Cache::flush();Queue::fake();app(RuntimeWork::class)->tick();
 Queue::assertPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,static fn($job)=>$job->operationId===$capOp->id);
 $worker->operation($capOp->id);
-same(['Check','PE_GetProductPrice','GetBalance','Purchase'],array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),'Released retry performs fresh admission and one Purchase: '.json_encode([array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),$capOp->fresh()->state,$capOp->fresh()->safe_code,$capOp->fresh()->attempt]));
+same(['Check','PE_GetProductPrice','GetBalance','Purchase'],array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),'Released retry performs fresh admission and one Purchase without pre-proof nameserver reads: '.json_encode([array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),$capOp->fresh()->state,$capOp->fresh()->safe_code,$capOp->fresh()->attempt]));
 same('pending',$capOp->fresh()->state,'Recovered operation has one acknowledged Purchase');
 $clock->at=$clock->at->modify('+61 seconds');Cache::flush();
 config(['domains.enom_test_daily_call_cap'=>500]);$refundOp=$new(placeholderComFixtureName('cap-refund-placeholder.com'));$used=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');config(['domains.enom_test_daily_call_cap'=>$used+3]);
@@ -305,7 +306,7 @@ $GLOBALS['enomWire']['execFail']=true;$before=count($GLOBALS['enomWire']['forms'
 expect(count($GLOBALS['enomWire']['forms'])>$before,'Unrelated reconciliation failure consumes its reserved reads');
 same('reconciliation_required',$reconcileCapOp->fresh()->safe_code,'A later non-cap read failure clears the stale cap safe code');
 same('reconciliation_required',$reconcileCapOp->fresh()->policy['reconciliation']['reason'],'A later non-cap read failure updates its reconciliation reason');
-config(['domains.enom_test_daily_call_cap'=>(int)DB::table(EnomTestCallSchema::TABLE)->value('used')+7]);Cache::flush();
+config(['domains.enom_test_daily_call_cap'=>(int)DB::table(EnomTestCallSchema::TABLE)->value('used')+8]);Cache::flush();
 $runtimeTurn=DB::table('domains_runtime_turns')->where('server_id',$server->id)->first();
 if($runtimeTurn){DB::table('domains_runtime_turns')->where('id',$runtimeTurn->id)->update(['operation_cursor'=>0,'due_at'=>0]);}
 DB::table('domains_runtime_operations')->insertOrIgnore(['operation_id'=>$reconcileCapOp->id]);
@@ -314,7 +315,7 @@ $before=count($GLOBALS['enomWire']['forms']);Cache::flush();Queue::fake();(new R
 Queue::assertPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,static fn($job)=>$job->operationId===$reconcileCapOp->id);
 same($before,count($GLOBALS['enomWire']['forms']),'Runtime scheduler queues paused reconciliation without provider traffic');
 Queue::pushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,static fn($job)=>$job->operationId===$reconcileCapOp->id)->sole()->handle(new RuntimeWork($clock,new RuntimePorts));
-$resumeCommands=array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command');same(['GetDomainInfo','GetRenew','GetRegLock','GetWPPSInfo','GetDomainInfo','GetDomainExp','GetOrderDetail'],$resumeCommands,'Raised cap resumes all seven paused captured-order reads');same('succeeded',$reconcileCapOp->fresh()->state,'Resumed reconciliation completes without a new Purchase: '.json_encode([$resumeCommands,$reconcileCapOp->fresh()->safe_code,$reconcileCapOp->fresh()->policy['reconciliation']??null]));unset($GLOBALS['testRegisteredName']);
+$resumeCommands=array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command');same(['GetDomainInfo','GetRenew','GetRegLock','GetWPPSInfo','GetDomainInfo','GetDomainExp','GetOrderDetail','GetDNS'],$resumeCommands,'Raised cap resumes bounded proof and post-proof nameserver reads: '.json_encode($resumeCommands));same('succeeded',$reconcileCapOp->fresh()->state,'Resumed reconciliation completes without a new Purchase: '.json_encode([$resumeCommands,$reconcileCapOp->fresh()->safe_code,$reconcileCapOp->fresh()->policy['reconciliation']??null]));same(['ns1.provider.example','ns2.provider.example'],$reconcileCapOp->domain->fresh()->observation['nameservers']['nameservers']??null,'Resumed reconciliation stores observed nameservers');unset($GLOBALS['testRegisteredName']);
 config(['domains.enom_test_daily_call_cap'=>500]);$beforeCalls=count($GLOBALS['enomWire']['forms']);$beforeUsed=(int)DB::table(EnomTestCallSchema::TABLE)->value('used');
 try{EnomTestCalls::send($binding,true);throw new LogicException('Purchase requires a worker reservation');}catch(EnomTestCallLimit){}
 same($beforeUsed,(int)DB::table(EnomTestCallSchema::TABLE)->value('used'),'Unreserved Purchase refuses without spending a cap unit');
@@ -417,7 +418,7 @@ config(['domains.enom_test_daily_call_cap'=>500]);$clock->at=new DateTimeImmutab
 DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();$midnightOp=$new(placeholderComFixtureName('preflight-midnight-placeholder.com'));$oldDay=EnomTestCalls::day();$newDayUsed=(int)(DB::table(EnomTestCallSchema::TABLE)->where('day','2026-10-22')->value('used')??0);
 $oldUsed=(int)(DB::table(EnomTestCallSchema::TABLE)->where('day',$oldDay)->value('used')??0);$before=count($GLOBALS['enomWire']['forms']);
 $GLOBALS['advanceDuringPreflight']=true;$worker->operation($midnightOp->id);
-same(['Check','PE_GetProductPrice','GetBalance','Purchase'],array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),'Preflight may cross UTC midnight before reserving Purchase');
+same(['Check','PE_GetProductPrice','GetBalance','Purchase'],array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),'Preflight may cross UTC midnight before reserving Purchase; reconciliation waits for completion proof');
 same('pending',$midnightOp->fresh()->state,'Midnight during preflight does not create a false cap hold');
 same($oldUsed+1,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',$oldDay)->value('used'),'Check stays charged to its send day');
 same($newDayUsed+3,(int)DB::table(EnomTestCallSchema::TABLE)->where('day','2026-10-22')->value('used'),'Other preflights and Purchase reserve on their send day');

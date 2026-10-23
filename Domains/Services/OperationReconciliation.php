@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{NameserverEvidence, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Observation never replays a write. No rejection/refund can be inferred from an empty read. */
 final class OperationReconciliation
@@ -23,11 +23,16 @@ final class OperationReconciliation
                 $attempt = ReconciliationEvidence::attempt($op, $domain, $binding);
                 if ($op->action !== 'transfer' && (!$attempt->executionFacts || $attempt->providerReference === null) && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
                 if (($op->policy['reconciliation']['polls'] ?? 0) >= 5) { return null; }
-                return [$attempt, self::stamp($op, $domain), self::contract($attempt)];
+                $requestedNameservers = null;
+                if ($op->action === 'transfer' && $op->registrar_key === 'namesilo' && ($op->payload['nameservers'] ?? [])) {
+                    try { $requestedNameservers = NameserverEvidence::requested($op->payload['nameservers'], 'transfer_request', new \DateTimeImmutable($op->attempt['dispatch_attempted_at'])); }
+                    catch (\Throwable) { /* Invalid submitted data is not a nameserver fact. */ }
+                }
+                return [$attempt, self::stamp($op, $domain), self::contract($attempt), $requestedNameservers];
             } catch (\Throwable) { return null; }
         });
         if (!$capture) { return Operation::findOrFail($id); }
-        [$attempt, $stamp, $contract] = $capture; $proof = null; $covered = false; $transferConflict = false; $chargeChecked = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
+        [$attempt, $stamp, $contract, $requestedNameservers] = $capture; $proof = null; $nameservers = null; $covered = false; $transferConflict = false; $chargeChecked = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
         $callCapBlocked = false;
         try {
             $context = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock, Runtime::limiter());
@@ -35,6 +40,7 @@ final class OperationReconciliation
             $result->requireAttempt($attempt);
             if ($this->clock->now() < $context->deadline) {
                 $facts = $result->result()->evidence();
+                $nameservers = $facts->domain?->nameservers ?? $requestedNameservers;
                 $covered = $facts->domain?->owned === true && $facts->domain->expiry !== null
                     && ($facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null && count($facts->candidates) > 0));
                 $transfer = $facts->transfer;
@@ -65,7 +71,7 @@ final class OperationReconciliation
                 return $op;
             });
         }
-        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $transfer, $transferConflict, $chargeChecked): Operation {
+        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $chargeChecked): Operation {
             if (!$this->eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
@@ -113,7 +119,7 @@ final class OperationReconciliation
             $domain->update(['status' => 'active', 'provider_expires_at' => $proof['expiry'], 'provider_order_id' => $proof['order_reference'],
                 'provider_domain_id' => $proof['provider_domain_id'], 'confirmed_revision' => $domain->confirmed_revision + 1,
                 'renewal_policy' => [...($domain->renewal_policy ?? []), 'billing_anchor' => ['expiry' => $proof['expiry'], 'operation_key' => $op->operation_key]],
-                'observation' => ObservationProjection::acquired($domain, $op->operation_key), 'last_synced_at' => $this->clock->now()]);
+                'observation' => ObservationProjection::acquired($domain, $op->operation_key, $nameservers), 'last_synced_at' => $this->clock->now()]);
             return $op;
         });
         if ($completed->action === 'transfer' && $completed->state === 'succeeded') {

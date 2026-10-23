@@ -37,6 +37,7 @@ $reply=static function(array $p)use($clock):string {
         'GetTLDList'=>'<TLDList><TLD>com</TLD></TLDList>',
         'GetTLDDetails'=>'<TLDs><TLD><TLD>com</TLD><Registration><Minimum>1</Minimum><Maximum>1</Maximum><Unit>year</Unit><DNSRequired>false</DNSRequired></Registration><ExtAttributes>false</ExtAttributes><Renewal><AutoRenewOnly>false</AutoRenewOnly></Renewal></TLD></TLDs>',
         'GetExtAttributes'=>'<ResponseCount>0</ResponseCount>',
+        'GetDNS'=>'<dns>ns1.provider.example</dns><dns>ns2.provider.example</dns>',
         'PE_GetProductPrice'=>'<ProductPrice><ProductEnabled>true</ProductEnabled><Price>10.0000</Price></ProductPrice>',
         'Check'=>'<Domains><Domain><Name>'.$name.'</Name><RRPCode>'.(($GLOBALS['testTransferQuery']??false)?'211':(($GLOBALS['testNameUnavailable']??false)?'211':'210')).'</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP>'.(($GLOBALS['testTransferQuery']??false)?'<Properties><Transferable>true</Transferable></Properties>':'').'</Domain></Domains>',
         'Purchase'=>'<RRPCode>200</RRPCode><OrderID>1234</OrderID><ExpirationDate>2027-10-21</ExpirationDate>',

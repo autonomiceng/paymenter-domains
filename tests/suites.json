@@ -61,6 +61,7 @@
     "tests/write-preflight-test.php",
     "tests/registration-enom-test.php",
     "tests/registration-namesilo-test.php",
+    "tests/registration-namesilo-profile-test.php",
     "tests/reconciliation-test.php",
     "tests/reconciliation-authority-test.php",
     "tests/terminal-proof-test.php",

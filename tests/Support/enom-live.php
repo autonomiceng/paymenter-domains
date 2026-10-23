@@ -42,6 +42,7 @@ $reply=static function(array $p)use($clock):string {
         'Purchase'=>'<RRPCode>200</RRPCode><OrderID>1234</OrderID><ExpirationDate>2027-10-21</ExpirationDate>',
         'GetDomainInfo'=>'<GetDomainInfo><DomainName DomainNameID="456">'.$name.'</DomainName><Status><Belongs-To>live-uid</Belongs-To><Expiration>2027-10-21</Expiration></Status></GetDomainInfo>',
         'GetDomainExp'=>'<ExpirationDate>2027-10-21</ExpirationDate>',
+        'GetDNS'=>'<dns>ns1.provider.example</dns><dns>ns2.provider.example</dns>',
         'GetRenew'=>'<RenewName>0</RenewName>','GetRegLock'=>'<Reg-Lock>1</Reg-Lock>',
         'GetWPPSInfo'=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
         'GetOrderDetail'=>'<Order><OrderID>1234</OrderID><Result>true</Result><OrderBillAmount>$10.00</OrderBillAmount><BillDate>'.$bill.'</BillDate><OrderDetail><Description>'.$name.'</Description><ProductType>Register</ProductType><Quantity>1</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>10.00</AmountPaid><ExpiryDateTime>2027-10-21</ExpiryDateTime></OrderDetail></Order>',
@@ -154,6 +155,7 @@ $worker->operation($op->id);same('pending',$op->fresh()->state,'Live registratio
 same(['Check','PE_GetProductPrice','GetBalance','Purchase'],array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),'Identical registration preflight and single send');
 $GLOBALS['testRegisteredName']=$op->domain->domain;config(['domains.enom_live.registration'=>false,'domains.enom_live.renewal'=>false,'domains.enom_live.management'=>false]);Cache::flush();$worker->operation($op->id);
 same('succeeded',$op->fresh()->state,'Live registration confirmed by original charge and full-term expiry');
+same(['ns1.provider.example','ns2.provider.example'],$op->domain->fresh()->observation['nameservers']['nameservers']??null,'Nameservers are read during ownership reconciliation');
 same('10.00',$op->fresh()->cost['actual']['amount'],'Live registration actual USD charge');
 $before=count($GLOBALS['enomWire']['forms']);$worker->operation($op->id);same($before,count($GLOBALS['enomWire']['forms']),'Duplicate live registration worker sends nothing');
 expect(!$ports->accepted($a->fresh()),'Finished sealed operations grant no recovery composition');

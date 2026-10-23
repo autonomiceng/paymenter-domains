@@ -13,6 +13,7 @@ $transferReply=static function(array $p)use($transferState,$clock):string {
         'GetBalance'=>'<AvailableBalance>100.00</AvailableBalance>',
         'TP_CreateOrder'=>'<transferorder><transferorderid>7001</transferorderid></transferorder>',
         'GetDomainInfo'=>'<GetDomainInfo><DomainName DomainNameID="456">'.$name.'</DomainName><Status><Belongs-To>'.($transferState->pending?'other-account':'test-uid').'</Belongs-To><Expiration>'.$expiry.'</Expiration></Status></GetDomainInfo>',
+        'GetDNS'=>'<dns>ns1.provider.example</dns><dns>ns2.provider.example</dns>',
         'GetRenew'=>'<RenewName>0</RenewName>','GetRegLock'=>'<Reg-Lock>1</Reg-Lock>',
         'GetWPPSInfo'=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
         'GetDomainExp'=>'<ExpirationDate>'.$expiry.'</ExpirationDate>',

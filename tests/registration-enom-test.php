@@ -4,13 +4,19 @@ declare(strict_types=1);
 $fixtureEnding = 'example.com';
 require __DIR__.'/Support/registration-fixture.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
+require __DIR__.'/Support/owner-pages.php';
+storefrontViews();
 $createOperation = $new;
 $new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1) use ($createOperation) {
     return $createOperation(reservedFixtureName($name), $paid, $setup, $action, $term);
 };
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrationTransport;
-use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, DriverResult, Money, Query, RequestBudget, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations, WriteAcceptance, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, DriverResult, Money, NameserverEvidence, Query, RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations, DomainSummaries, WriteAcceptance, WriteFeatures};
+$ownerPage = static function ($result) use ($user, $clock): string {
+    $summary = (new DomainSummaries)->one($user, 'managed', (int) $result->domain->id, $clock->now()->getTimestamp());
+    return view('domains::partials.summary', ['summary' => $summary, 'summaryOnManaged' => true])->render();
+};
 $binding = $bindingFor(0);
 $completionFailures = 0;
 \Paymenter\Extensions\Servers\Domains\Models\Operation::updating(static function ($op) use ($registration, &$completionFailures): void {
@@ -33,6 +39,7 @@ $exchange = static function ($origin, $command, $parameters, $timeout) use ($reg
         if ($registration->mode === 'unknown') { return '<invalid/>'; }
     }
     if ($command === 'ModifyNS' && in_array($registration->mode, ['lost', 'authority', 'finishfailure'], true)) { throw new RuntimeException('Synthetic lost ancillary response'); }
+    if ($command === 'GetDNS' && in_array($registration->mode, ['lost', 'authority'], true)) { throw new RuntimeException('Synthetic nameserver readback unavailable'); }
     $data = $command === 'Purchase' ? '<OrderID>1234</OrderID><ExpirationDate>2027-10-18</ExpirationDate>' : '';
     if ($command === 'Purchase') {
         if (in_array($registration->mode, ['pending', 'processing', 'queued'], true)) { $data .= '<OrderStatus>'.$registration->mode.'</OrderStatus>'; }
@@ -45,9 +52,11 @@ $exchange = static function ($origin, $command, $parameters, $timeout) use ($reg
     $code = $registration->mode === '1300' ? '1300' : '200';
     return '<interface-response><Command>'.$command.'</Command><ErrCount>0</ErrCount><Done>true</Done><RRPCode>'.$code.'</RRPCode>'.$data.'</interface-response>';
 };
-foreach (['clean', 'lost', 'mismatch', 'unknown', 'authority', 'finishfailure', 'pending', 'processing', 'queued', '1300', 'missingid', 'invalidid', 'missingexpiry', 'invalidexpiry'] as $mode) {
+foreach (['clean', 'defaultdns', 'lost', 'mismatch', 'unknown', 'authority', 'finishfailure', 'pending', 'processing', 'queued', '1300', 'missingid', 'invalidid', 'missingexpiry', 'invalidexpiry'] as $mode) {
     $registration->mode = $mode; $registration->calls = []; $makeEngine($binding, $exchange);
-    $result = $runRegistration($new('enom-'.$mode.'.example.com'));
+    $operation = $new('enom-'.$mode.'.example.com');
+    if ($mode === 'defaultdns') { $operation->update(['payload' => [...$operation->payload, 'nameservers' => []]]); }
+    $result = $runRegistration($operation);
     if (in_array($mode, ['unknown', 'pending', 'processing', 'queued', '1300', 'missingid', 'invalidid', 'missingexpiry', 'invalidexpiry'], true)) {
         same('uncertain', $result->state, 'Incomplete purchase stays unresolved'); same(['Purchase'], $registration->calls, 'No follow-ups on pending/unknown');
         same(in_array($mode, ['pending', 'processing', 'queued', '1300'], true) ? 'pending' : 'unknown', $result->attempt['execution']['disposition'], 'Source Purchase classification');
@@ -58,13 +67,41 @@ foreach (['clean', 'lost', 'mismatch', 'unknown', 'authority', 'finishfailure', 
         same('accepted_with_discrepancy', $result->attempt['execution']['disposition'], 'Authority change retains original accepted execution');
         same('1234', $result->attempt['evidence']['registration']['orderReference'], 'Original acceptance facts survive authority change');
         same(['nameservers'], array_keys($result->attempt['corrections']), 'Authority change retains correction requirements');
+        same(null, $result->domain->fresh()->observation['nameservers'] ?? null, 'Nameserver facts are not saved after authority changes');
         same('registration_authority_changed', $result->safe_code, 'Specific completion authority refusal');
     }
-    else { $assertRetained($result, $mode === 'clean' ? [] : ['nameservers']); same('1234', $result->attempt['registration']['order_reference'], 'Original order retained'); }
+    else {
+        $assertRetained($result, in_array($mode, ['clean', 'defaultdns', 'finishfailure'], true) ? [] : ['nameservers']); same('1234', $result->attempt['registration']['order_reference'], 'Original order retained');
+        $fact = $result->domain->fresh()->observation['nameservers'] ?? null;
+        if (in_array($mode, ['clean', 'finishfailure'], true)) {
+            same(['ns1.provider.example', 'ns2.provider.example'], $fact['nameservers'] ?? null, 'GetDNS values are stored as observed');
+            same('observed', $fact['state'] ?? null, 'GetDNS provenance is explicit');
+            if ($mode === 'clean') {
+                $page = $ownerPage($result);
+                expect(str_contains($page, 'Nameservers observed: ns1.provider.example, ns2.provider.example')
+                    && !str_contains($page, 'No DNS check results yet.'), 'Enom registration nameservers reach the owner detail page');
+            }
+        } elseif ($mode === 'lost') {
+            same(['ns1.provider.example', 'ns2.provider.example'], $fact['nameservers'] ?? null, 'Submitted values are retained when GetDNS is unavailable');
+            same('requested', $fact['state'] ?? null, 'Missing GetDNS is clearly unconfirmed');
+        } elseif ($mode === 'mismatch') {
+            same(['ns1.provider.example', 'ns3.provider.example'], $fact['nameservers'] ?? null, 'A mismatched GetDNS result remains the observed provider value');
+            same('observed', $fact['state'] ?? null, 'Mismatch remains an observed result, not a requested value');
+        }
+        if ($mode === 'defaultdns') {
+            same(null, $fact, 'Purchase has no nameserver values and does not add a registration-path read');
+            same(['Purchase'], $registration->calls, 'Default-DNS registration preserves the single-send request sequence');
+        }
+    }
     $nativeBeforeReplay = nativeFinancialSnapshot($result);
     $before = $registration->calls; $engine->execute($result->id); same($before, $registration->calls, 'No replay of accepted/unknown attempt');
     same($nativeBeforeReplay, nativeFinancialSnapshot($result), 'Replay preserves native/financial state');
 }
+commerceReject(fn () => NameserverEvidence::observed(['ns1.provider.example'], 'registration_request', $clock->now()));
+commerceReject(fn () => NameserverEvidence::requested(['ns1.provider.example'], 'enom_getdns', $clock->now()));
+commerceReject(fn () => NameserverEvidence::observed(['ns1.provider.example', 'ns1.provider.example'], 'enom_getdns', $clock->now()));
+commerceReject(fn () => NameserverEvidence::observed(['invalid nameserver'], 'enom_getdns', $clock->now()));
+same(null, NameserverEvidence::fromArray(['nameservers' => ['ns1.provider.example'], 'state' => 'observed', 'source' => 'enom_getdns', 'at' => 'not-a-time']), 'Malformed stored nameserver timestamps are ignored');
 expect($completionFailures >= 2, 'Transient completion retried with original acceptance and correction evidence');
 same(['NS1' => 'ns1.child.example', 'NS2' => 'ns2.child.example'], \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers(['NS1.Child.example.', 'ns2.child.example']), 'Enom source accepts normalized child hosts');
 commerceReject(fn () => \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers(['ns1.provider.example', 'NS1.provider.example.']));

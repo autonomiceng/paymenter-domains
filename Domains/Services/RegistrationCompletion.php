@@ -15,6 +15,9 @@ final class RegistrationCompletion
             && $op->account_fingerprint === $result->binding->fingerprint && $domain->account_fingerprint === $op->account_fingerprint
             && $domain->authority_generation === $op->authority_generation && $domain->reservation_name === $domain->domain;
         } catch (\Throwable) { $current = false; }
+        if ($current && $facts->nameservers) {
+            $domain->update(['observation' => ObservationProjection::recordNameservers($domain, $facts->nameservers)]);
+        }
         // Persist correction work atomically with acceptance. It has no implicit write authorization.
         $attempt = $op->attempt;
         $attempt['registration'] = ['accepted' => true, 'query' => ['name' => $facts->query->name, 'years' => $facts->query->years],

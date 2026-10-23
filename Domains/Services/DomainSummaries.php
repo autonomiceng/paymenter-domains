@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{User,Service,ServiceCancellation,Server,Invoice,InvoiceItem};
 use Illuminate\Support\Facades\{DB,Crypt};
+use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName,WatchDnsObservation,ManagedPublicObservation,WatchRegistryObservation,Adoption,Operation,Account};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary;
@@ -72,6 +73,18 @@ final class DomainSummaries
         foreach (['managed'=>$c->domains,'watch'=>$c->watches] as $kind=>$targets) {
             foreach ($targets as $id=>$t) {
                 $uid=(int)$t->user_id;$stamp=$c->stamp($kind,$id);$rows=$dns[$kind][$id]??collect();$jobs=$work[$kind][$id]??collect();$fresh=[];$signals=[];$lastKnown=[];
+                $nameserverFact = null;
+                if ($kind === 'managed') {
+                    $nameserverFact = self::checkedNameservers($rows, $jobs, $t, $c->services[$t->service_id], $stamp, $now);
+                    if (!$nameserverFact) {
+                        $stored = $t->observation['nameservers'] ?? null;
+                        if (is_array($stored) && ($stored['name'] ?? null) === $t->domain
+                            && ($stored['generation'] ?? null) === $t->authority_generation
+                            && ($stored['account_fingerprint'] ?? null) === $t->account_fingerprint) {
+                            $nameserverFact = NameserverEvidence::fromArray(array_intersect_key($stored, array_flip(['nameservers', 'state', 'source', 'at'])));
+                        }
+                    }
+                }
                 foreach (['dns'=>'delegation','website'=>'points','email'=>'points'] as $axis=>$family) {
                     $attempt=$rows->firstWhere('check_kind',$family);$row=$rows->first(fn($r)=>$r->check_kind===$family && $r->{$axis}!==null);$job=$jobs->firstWhere('kind',$family);
                     $match=$row && $stamp && hash_equals($stamp,$row->facts['presentation_stamp']??'');
@@ -135,9 +148,36 @@ final class DomainSummaries
                 $related=[];$hosts=[];
                 foreach ($c->related($kind,$id) as $s) { if (!$c->validSource($s)) { continue; }$h=$c->services[$s->service_id];$p=$c->products[$h->product_id];
                     $related[]=['id'=>(int)$h->id,'label'=>$p->name,'url'=>route('services.show',$h->id)];$hosts[]=$s->hostname; }
-                $out[$kind.':'.$id]=new DomainSummary($kind==='watch'?$t->canonical_name:$t->domain,$kind==='watch'?$t->display_name:null,$kind,$registration,$keys,$signals['website']['value'],$signals['email']['value'],array_values(array_unique($states)),DomainSummaryStrings::all(),$expiry,$precision,$source,$fresh,$due,$price,$related,array_values(array_unique($hosts)),['detail'=>$url,'preferences'=>($kind==='watch' && $t->state==='active' && $stamp)||($kind==='managed' && !$pending && isset($c->configs[$id]) && $c->services[$t->service_id]->status==='active' && $expiry>gmdate('Y-m-d',$now))?route('domains.checks.show',['kind'=>$kind,'id'=>$id]):null,'invoiceHistory'=>$kind==='managed' && $pending?route('invoices'):null,'compareTransfer'=>config('domains.watch_transfer.enabled',false) && $kind==='watch' && $t->state==='active' && $t->registration==='external' && $factsCurrent && WatchTransferPolicy::window(substr($expiry??'',0,10),$now) && !in_array('watch.redemption',$states,true) && array_filter($transferEndings,fn($ending)=>str_ends_with($t->canonical_name,'.'.$ending))?route('domains.watch.transfer',$id):null,'support'=>route('tickets.create')],$off,$lastKnown,max(0,count($c->related($kind,$id))-3),$noticeKeys,$noticeDates,$reminderOff,$projected,$kind==='managed' && in_array($t->server_id,$testServers));
+                $out[$kind.':'.$id]=new DomainSummary($kind==='watch'?$t->canonical_name:$t->domain,$kind==='watch'?$t->display_name:null,$kind,$registration,$keys,$signals['website']['value'],$signals['email']['value'],array_values(array_unique($states)),DomainSummaryStrings::all(),$expiry,$precision,$source,$fresh,$due,$price,$related,array_values(array_unique($hosts)),['detail'=>$url,'preferences'=>($kind==='watch' && $t->state==='active' && $stamp)||($kind==='managed' && !$pending && isset($c->configs[$id]) && $c->services[$t->service_id]->status==='active' && $expiry>gmdate('Y-m-d',$now))?route('domains.checks.show',['kind'=>$kind,'id'=>$id]):null,'invoiceHistory'=>$kind==='managed' && $pending?route('invoices'):null,'compareTransfer'=>config('domains.watch_transfer.enabled',false) && $kind==='watch' && $t->state==='active' && $t->registration==='external' && $factsCurrent && WatchTransferPolicy::window(substr($expiry??'',0,10),$now) && !in_array('watch.redemption',$states,true) && array_filter($transferEndings,fn($ending)=>str_ends_with($t->canonical_name,'.'.$ending))?route('domains.watch.transfer',$id):null,'support'=>route('tickets.create')],$off,$lastKnown,max(0,count($c->related($kind,$id))-3),$noticeKeys,$noticeDates,$reminderOff,$projected,$kind==='managed' && in_array($t->server_id,$testServers),$nameserverFact?->toArray());
             }
         }
         return $out;
+    }
+
+    private static function checkedNameservers($rows, $jobs, Domain $domain, Service $service, ?string $stamp, int $now): ?NameserverEvidence
+    {
+        if (!$stamp || !in_array($domain->status, ['active', 'grace'], true) || $service->status !== 'active'
+            || !$domain->provider_expires_at || $domain->provider_expires_at->format('Y-m-d') <= gmdate('Y-m-d', $now)) { return null; }
+        $attempt = $rows->firstWhere('check_kind', 'delegation');
+        $job = $jobs->firstWhere('kind', 'delegation');
+        if (!$job || ($job->retired_at ?? null) !== null || (int) $job->generation !== (int) $domain->authority_generation) { return null; }
+        foreach ($rows as $row) {
+            $workCurrent = in_array($job->safe_code, [null, 'ready', 'rotation', 'budget_exhausted'], true)
+                || ($row->partial && $attempt?->id === $row->id && $job->safe_code === $row->safe_code);
+            if ($row->check_kind !== 'delegation' || !$row->dns || $now < $row->started_at || $now >= $row->valid_until
+                || $row->account_fingerprint !== $domain->account_fingerprint || (int) $row->generation !== (int) $domain->authority_generation
+                || !hash_equals($stamp, $row->facts['presentation_stamp'] ?? '')
+                || !$workCurrent || ($attempt?->dns === null)) { continue; }
+            foreach ($row->facts['queries'] ?? [] as $query) {
+                if (($query['name'] ?? null) !== $domain->domain || ($query['type'] ?? null) !== 'NS'
+                    || ($query['state'] ?? null) !== 'rrset' || !is_array($query['records'] ?? null)) { continue; }
+                $nameservers = array_column($query['records'], 'value');
+                try {
+                    $at = (new \DateTimeImmutable('@'.(int) $row->started_at))->setTimezone(new \DateTimeZone('UTC'));
+                    return NameserverEvidence::observed($nameservers, 'public_dns_check', $at);
+                } catch (\Throwable) { continue; }
+            }
+        }
+        return null;
     }
 }

@@ -5,8 +5,9 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, CanonicalName, Capabilities, CatalogueRate, CostUnit, Discrepancy, Disposition, DomainSnapshot,
-    DriverResult, Evidence, ExpiryPrecision, Money, PrivacyMode, Query, QuoteEvidence, ReconciliationResult, RejectionBasis, RequestContext, ResultReason, SendState};
+    DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, PrivacyMode, Query, QuoteEvidence, ReconciliationResult, RejectionBasis, RequestContext, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand};
+use Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence;
 
 /** Named read adapter only; no admission, charging, persistence or account adoption. */
 final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader
@@ -297,7 +298,8 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             $expiry = $this->expiry($attempt->query->name, $context)->facts();
             $domain = new DomainSnapshot($this->binding(), $attempt->query->name, true,
                 ($expiry['provider_reference'] ?? null) === $domain->providerReference ? ($expiry['expiry'] ?? null) : null,
-                $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference);
+                $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference,
+                active: $domain->active, nameservers: $domain->nameservers);
         }
         $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
         if ($attempt->query->action === Action::Transfer && is_string($attempt->transferReference) && preg_match('/^[1-9][0-9]{0,19}$/D', $attempt->transferReference)) {
@@ -313,7 +315,30 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             $history = new History($this->client);
             $facts = $history->inspect($attempt, $context); $candidates = $facts->candidates; $complete = $facts->historyComplete;
         }
+        $proofFacts = new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete,
+            transfer: $transfer, transferReference: $attempt->transferReference);
+        if (ReconciliationEvidence::completion($attempt, $proofFacts, $context->now()) !== null
+            && ($attempt->query->action === Action::Register
+                || ($attempt->query->action === Action::Transfer && $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Completed))
+            && $domain?->owned === true) {
+            $reply = $this->read(ReadCommand::Nameservers, $this->parts($attempt->query->name), $context);
+            $nameservers = self::readNameservers($reply, $context->now());
+            if ($nameservers) {
+                $domain = new DomainSnapshot($domain->binding, $domain->name, $domain->owned, $domain->expiry,
+                    $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference,
+                    active: $domain->active, nameservers: $nameservers);
+            }
+        }
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown,
             SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference)));
+    }
+    private static function readNameservers(ProtocolResult $reply, \DateTimeImmutable $observedAt): ?NameserverEvidence
+    {
+        if ($reply->status !== 'success') { return null; }
+        $rows = $reply->value('dns');
+        if (is_string($rows)) { $rows = [$rows]; }
+        if (!is_array($rows) || !array_is_list($rows) || count(array_filter($rows, 'is_string')) !== count($rows)) { return null; }
+        try { return NameserverEvidence::observed($rows, 'enom_getdns', $observedAt); }
+        catch (\Throwable) { return null; }
     }
 }

@@ -23,6 +23,7 @@ require_once __DIR__.'/staff-panel.php';
             $body=match($command){
                 ReadCommand::Info=>'<GetDomainInfo><DomainName DomainNameID="456">'.$s->name.'</DomainName><Status><Belongs-To>account-enom</Belongs-To><Expiration>2027-10-18</Expiration></Status></GetDomainInfo>',
                 ReadCommand::Expiry=>'<ExpirationDate>2027-10-18</ExpirationDate>',
+                ReadCommand::Nameservers=>'<dns>ns1.provider.example</dns><dns>ns2.provider.example</dns>',
                 ReadCommand::Renewal=>'<RenewName>0</RenewName>',ReadCommand::Lock=>'<Reg-Lock>1</Reg-Lock>',
                 ReadCommand::Privacy=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
                 ReadCommand::Orders=>'<OrderCount>'.($s->fault==='none'?'0':(in_array($s->fault,['duplicate','ambiguous'],true)?'2':'1')).'</OrderCount><OrderList>'.($s->fault==='none'?'':'<Order><OrderID>901</OrderID></Order>').(in_array($s->fault,['duplicate','ambiguous'],true)?'<Order><OrderID>902</OrderID></Order>':'').'</OrderList>',
@@ -39,7 +40,7 @@ require_once __DIR__.'/staff-panel.php';
     $prepare=static function(string $name,bool $captured=false)use($clock,$auth,$binding,$new,$worker,$reply,$s){
         $auth->setProcessing($binding->serverId,true,static fn()=>null);$clock->at=$clock->at->modify('+61 seconds');Cache::flush();
         $op=$new($name);resetWire($captured?['reply'=>$reply]:['timeout'=>true]);$worker->operation($op->id);$op->refresh();
-        same(1,count($GLOBALS['enomWire']['forms']),'Recovery begins with exactly one monetary send');
+        same(1,count(array_filter($GLOBALS['enomWire']['forms'],static fn($form)=>($form['Command']??null)==='Purchase')),'Recovery begins with exactly one monetary send');
         same($captured?'pending':'uncertain',$op->state,'Only acknowledgement or uncertainty retained after send');
         $s->name=$name;$s->bill=(new DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+1 second')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A');
         $s->fault='unique';$s->calls=[];$clock->at=$clock->at->modify('+301 seconds');
@@ -52,7 +53,7 @@ require_once __DIR__.'/staff-panel.php';
         same('registration_pending',$d->status,$why.' keeps customer processing');same($d->domain,$d->reservation_name,$why.' retains reservation');
         same([null,null,null,null,null],[$op->cost['actual']??null,$op->confirmed_expires_at,$d->provider_expires_at,$d->provider_domain_id,$d->renewal_policy['billing_anchor']??null],$why.' records no financial completion');
         expect(!isset($op->funding['refund']),$why.' grants no refund');expect(!$account->fresh()->processing_enabled,'Read recovery leaves processing paused');
-        same(1,count($GLOBALS['enomWire']['forms']),$why.' never resends Purchase');
+        same(1,count(array_filter($GLOBALS['enomWire']['forms'],static fn($form)=>($form['Command']??null)==='Purchase')),$why.' never resends Purchase');
     };
     $op=$prepare(placeholderComFixtureName('history-uncertain-placeholder.com'));$before=$money();$rebuild()->run($op->id);
     same([],$s->calls,'Missing original OrderID without accepted history makes no provider reads');$unresolved($op,'Closed history gate');
@@ -69,7 +70,7 @@ require_once __DIR__.'/staff-panel.php';
         $ports=new RuntimePorts;$ports->register($binding->fingerprint,$factory);(new RuntimeWork($clock,$ports))->operation($op->id);
         // Enter the reconstructed acquisition engine directly as well as its worker router.
         $factory()['acquisition']->execute($op->id);
-        same(1,count($GLOBALS['enomWire']['forms']),'Reconstructed worker and engine cannot replay uncertain Purchase');
+        same(1,count(array_filter($GLOBALS['enomWire']['forms'],static fn($form)=>($form['Command']??null)==='Purchase')),'Reconstructed worker and engine cannot replay uncertain Purchase');
         $auth->setProcessing($binding->serverId,false);
     }
     // Staff can restart exhausted read polling with read permissions alone.
@@ -95,7 +96,8 @@ require_once __DIR__.'/staff-panel.php';
     DB::transaction(fn()=>HistoryAcceptances::revokeLocked($binding,Action::Register));
     $captured=$prepare(placeholderComFixtureName('captured-charge-placeholder.com'),true);$rebuild()->run($captured->id);$captured->refresh();
     same('succeeded',$captured->state,'Captured order recovers with history closed');same('captured_order',$captured->attempt['reconciliation']['source'],'Captured proof provenance retained');
-    same(7,count($s->calls),'Captured completion uses seven bounded reads');same(1,count(array_filter($s->calls,fn($c)=>$c==='GetOrderDetail')),'Captured original order read exactly once');expect(!in_array('GetOrderList',$s->calls,true),'Captured ID never searches account history');
+    same(8,count($s->calls),'Captured completion uses bounded proof reads and one nameserver read');same(1,count(array_filter($s->calls,fn($c)=>$c==='GetOrderDetail')),'Captured original order read exactly once');same('GetDNS',$s->calls[array_key_last($s->calls)],'Nameservers are read only after completion proof');expect(!in_array('GetOrderList',$s->calls,true),'Captured ID never searches account history');
+    $capturedDomain=$captured->domain()->firstOrFail();same(['ns1.provider.example','ns2.provider.example'],$capturedDomain->observation['nameservers']['nameservers']??null,'Captured completion stores observed nameservers');
     // Funding is checked both before provider reads and again before completion.
     $drift=$prepare(placeholderComFixtureName('funding-charge-placeholder.com'),true);$before=$money();DB::table('invoices')->where('id',$drift->invoice_id)->update(['status'=>'pending']);
     $rebuild()->run($drift->id);same([],$s->calls,'Funding lost before recovery refuses all reads');$unresolved($drift,'Unfunded recovery');
@@ -104,7 +106,7 @@ require_once __DIR__.'/staff-panel.php';
     expect(in_array('GetOrderDetail',$s->calls,true),'Funding drift occurs after charge read');$unresolved($drift,'Funding changed during read');
     DB::table('invoices')->where('id',$drift->invoice_id)->update(['status'=>'paid']);Cache::flush();$rebuild()->run($drift->id);
     same('succeeded',$drift->fresh()->state,'Restored funding permits read-only unique completion');same($before,$money(),'No native money mutation after funding restoration');
-    same(1,count($GLOBALS['enomWire']['forms']),'Funding recovery never repeats monetary send');same(null,HistoryAcceptances::load($binding),'Synthetic history acceptance removed');
+    same(1,count(array_filter($GLOBALS['enomWire']['forms'],static fn($form)=>($form['Command']??null)==='Purchase')),'Funding recovery never repeats monetary send');same(null,HistoryAcceptances::load($binding),'Synthetic history acceptance removed');
     expect(!$account->fresh()->processing_enabled,'All read-only recovery leaves processing off');
     app()->forgetInstance(OperationReconciliation::class);
     echo "Installed Enom reconciliation: closed history, no charge, ambiguity, duplicate charge, staff reads, captured ID, restart and funding drift passed.\n";

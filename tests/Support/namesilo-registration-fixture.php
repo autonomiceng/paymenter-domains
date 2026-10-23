@@ -39,11 +39,13 @@ $exchange = static function ($origin, $command, $parameters, $timeout) use ($reg
         $reply['code'] = in_array($registration->mode, ['301', '302'], true) ? (int) $registration->mode : 300;
     } elseif ($command === 'getDomainInfo') {
         if ($registration->mode === 'lost') { throw new RuntimeException('Synthetic readback loss'); }
+        if ($registration->mode === 'rereadfail' && in_array('removeAutoRenewal', $registration->calls, true)) { throw new RuntimeException('Synthetic follow-up readback loss'); }
         $removed = in_array('removeAutoRenewal', $registration->calls, true);
         $reply += ['created' => '2026-10-18', 'expires' => '2027-10-18', 'status' => 'Active', 'locked' => 'Yes', 'private' => 'No',
-            'auto_renew' => $registration->mode === 'stillon' || ($registration->mode === 'remove' && !$removed) ? 'Yes' : 'No',
+            'auto_renew' => in_array($registration->mode, ['stillon', 'rereadfail'], true) || ($registration->mode === 'remove' && !$removed) ? 'Yes' : 'No',
             'nameservers' => [['nameserver' => 'ns2.provider.example'], ['nameserver' => 'ns1.provider.example']],
             'contact_ids' => array_fill_keys(['billing', 'technical', 'registrant', 'administrative'], (string) $registration->id)];
+        if ($registration->mode === 'badexpiry') { $reply['expires'] = 'not-a-date'; }
         if ($registration->mode === 'mismatch') { $reply['nameservers'][0]['nameserver'] = 'ns3.provider.example'; }
         if ($registration->mode === 'badns') { $reply['nameservers'] = ['nameserver' => 'invalid']; }
     } elseif ($command !== 'removeAutoRenewal') { throw new LogicException('Unexpected protocol command'); }

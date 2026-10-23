@@ -4,17 +4,48 @@ declare(strict_types=1);
 require __DIR__.'/Support/managed-public.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,ManagedPublicWorkSchema};
-use Paymenter\Extensions\Servers\Domains\Dns\DnsReading;
+use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer,DnsQuery,DnsReading};
+use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 $f=managedFixture();extract($f);\Paymenter\Extensions\Servers\Domains\Services\WatchScheduleSchema::install();\Paymenter\Extensions\Servers\Domains\Services\WatchNoticeSchema::install();require dirname(__DIR__).'/Domains/routes/owned.php';require dirname(__DIR__).'/Domains/routes/web.php';app('router')->getRoutes()->refreshNameLookups();
+require_once __DIR__.'/Support/storefront.php';storefrontViews();
 $r=new DomainSummaries();$now=$time->now;expect($signals->enqueue($d->id,$owner->id,$now),'Managed enrollment');
+$storeNameservers=static function(NameserverEvidence $fact)use($d):void{$d->update(['observation'=>['nameservers'=>$fact->toArray()+[
+    'name'=>$d->domain,'generation'=>$d->authority_generation,'account_fingerprint'=>$d->account_fingerprint]]]);};
+$registrarNameservers=NameserverEvidence::observed(['ns1.registration.example','ns2.registration.example'],'namesilo_domain_info',$clock->now());
+$storeNameservers($registrarNameservers);
+$staleFact=$registrarNameservers->toArray()+['name'=>$d->domain,'generation'=>$d->authority_generation-1,'account_fingerprint'=>$d->account_fingerprint];
+$d->update(['observation'=>['nameservers'=>$staleFact]]);$staleSummary=$r->one($owner,'managed',$d->id,$now);
+same(null,$staleSummary->nameservers,'Prior-generation registrar nameservers are hidden');
+$storeNameservers($registrarNameservers);
+$initial=$r->one($owner,'managed',$d->id,$now);$initialHtml=view('domains::partials.summary',['summary'=>$initial,'summaryOnManaged'=>true])->render();
+same(['ns1.registration.example','ns2.registration.example'],$initial->nameservers['nameservers']??null,'Current registration nameservers appear before the first DNS check');
+expect(str_contains($initialHtml,'Nameservers observed: ns1.registration.example, ns2.registration.example')&&!str_contains($initialHtml,'No DNS check results yet.'),'Owner sees current registration nameservers before a DNS check');
+$requested=NameserverEvidence::requested(['ns1.registration.example','ns2.registration.example'],'registration_request',$clock->now());$storeNameservers($requested);
+$requestedSummary=$r->one($owner,'managed',$d->id,$now);$requestedHtml=view('domains::partials.summary',['summary'=>$requestedSummary,'summaryOnManaged'=>true])->render();
+same('requested',$requestedSummary->nameservers['state']??null,'Requested values remain unconfirmed in the owner summary');
+expect(str_contains($requestedHtml,'Nameservers requested: ns1.registration.example, ns2.registration.example'),'Owner labels submitted nameservers as requested');
+$storeNameservers($registrarNameservers);
 foreach(['delegation','points'] as $kind){managedDue($d->id,$now,$kind);$t=$signals->begin($d->id,$owner->id,$kind,$now);expect($t!==null,'Managed ticket');expect($signals->finish($t,$kind==='delegation'?new DnsReading($kind,'platform'):new DnsReading($kind,website:false,email:false),$now+1),'Managed sample');}
 $s=$r->one($owner,'managed',$d->id,$now+2);expect(in_array('domain.points.platform_empty',$s->dnsKeys,true),'Current generation complete DNS only');same('domain.registration.platform',$s->registrationKey,'Adopted managed registration');expect(in_array('adopt.provenance',$s->stateKeys,true),'Adopted activity');expect($s->urls['preferences']!==null,'Managed preferences remain available with hosting links');
-require __DIR__.'/Support/storefront.php';storefrontViews();$markup=view('domains::partials.summary',['summary'=>$s])->render();expect(str_contains($markup,'Domain check notifications')&&str_contains($markup,e($s->urls['preferences'])),'Managed detail exposes notification preferences');
+$markup=view('domains::partials.summary',['summary'=>$s])->render();expect(str_contains($markup,'Domain check notifications')&&str_contains($markup,e($s->urls['preferences'])),'Managed detail exposes notification preferences');
 expect(isset($r->services($owner,[$host->id],$now+2)[$host->id]),'Hosting row receives managed summary');same(null,$r->one($staff,'managed',$d->id,$now+2),'Foreign managed locator');
 // A retired earlier generation must not hide current facts or supply next-attempt dates.
 $old=(array)DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$d->id)->where('kind','points')->first();unset($old['id']);$old['generation']=$d->authority_generation-1;$old['retired_at']=$now-20;$old['due_at']=$now-100;DB::table(ManagedPublicWorkSchema::TABLE)->insert($old);
 $s=$r->one($owner,'managed',$d->id,$now+2);expect(in_array('domain.points.platform_empty',$s->dnsKeys,true),'Old work does not override current generation');
 $boundary=$d->provider_expires_at->startOfDay()->getTimestamp();$s=$r->one($owner,'managed',$d->id,$boundary);expect(!in_array('domain.points.platform_empty',$s->dnsKeys,true),'Expired structural authority cannot claim DNS only');expect(in_array('watch.expired',$s->stateKeys,true),'Expiry day is explicit');same('warn',$s->tone('watch.expired'),'D3 registry expiry does not overclaim a known expired outcome');
+$dnsQuery=new DnsQuery($d->domain,'NS');$answer=DnsAnswer::rrset($dnsQuery,[
+    ['host'=>$d->domain,'class'=>'IN','type'=>'NS','target'=>'ns1.public.example','ttl'=>300],
+    ['host'=>$d->domain,'class'=>'IN','type'=>'NS','target'=>'ns2.public.example','ttl'=>300],
+]);
+managedDue($d->id,$now+10,'delegation');$ticket=$signals->begin($d->id,$owner->id,'delegation',$now+10);expect($ticket!==null,'Later delegation check starts');
+expect($signals->finish($ticket,new DnsReading('delegation','external',queries:[$answer]),$now+11),'Later delegation check completes');
+$checked=$r->one($owner,'managed',$d->id,$now+12);$checkedHtml=view('domains::partials.summary',['summary'=>$checked,'summaryOnManaged'=>true])->render();
+same(['ns1.public.example','ns2.public.example'],$checked->nameservers['nameservers']??null,'Later public DNS check overrides registrar nameservers');
+same('public_dns_check',$checked->nameservers['source']??null,'Owner summary labels public DNS source');
+expect(str_contains($checkedHtml,'Observed: ns1.public.example, ns2.public.example')&&!str_contains($checkedHtml,'ns1.registration.example'),'Owner page displays the later nameserver check');
+$delegationObservation=\Paymenter\Extensions\Servers\Domains\Models\ManagedPublicObservation::where('domain_id',$d->id)->where('check_kind','delegation')->orderByDesc('id')->firstOrFail();
+$stalePublicSummary=$r->one($owner,'managed',$d->id,(int)$delegationObservation->valid_until);
+same(['ns1.registration.example','ns2.registration.example'],$stalePublicSummary->nameservers['nameservers']??null,'Expired public DNS nameservers no longer override registrar facts');
 managedDue($d->id,$now+20,'points');$t=$signals->begin($d->id,$owner->id,'points',$now+20);expect($t!==null,'Unknown ticket');$signals->finish($t,new DnsReading('points'),$now+21);
 $s=$r->one($owner,'managed',$d->id,$now+22);same(false,$s->lastKnown['website']['value'],'Failed attempt retains last value');same($now,$s->lastKnown['website']['checkedAt'],'Failed attempt retains last timestamp');same(true,$s->lastKnown['website']['stale'],'Retained fact is stale');expect(!in_array('domain.points.platform_empty',$s->dnsKeys,true),'Unknown managed points have no empty label');
 $history=view('domains::partials.summary',['summary'=>$s])->render();expect(str_contains($history,'Last known details')&&str_contains($history,'No platform pointer recorded'),'Failed check retains labeled historical facts');

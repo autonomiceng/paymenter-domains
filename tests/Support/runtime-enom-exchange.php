@@ -65,7 +65,11 @@ $new=static function(string $name,string $action='register')use($user,$native,$t
 $worker=new RuntimeWork($clock,$ports);
 $reply=static function($p):string {
     same(0,DB::transactionLevel(),'Authenticated wire outside locks');same('account-enom',$p['UID'],'Current bound UID');same('SYNTHETIC-WIRE-TOKEN',$p['PW'],'Current decrypted token');
-    $body=$p['Command']==='Purchase'?'<RRPCode>200</RRPCode><OrderID>1234</OrderID><ExpirationDate>2027-10-18</ExpirationDate>':'<transferorder><transferorderid>7001</transferorderid></transferorder>';
+    $body=match($p['Command']){
+        'Purchase'=>'<RRPCode>200</RRPCode><OrderID>1234</OrderID><ExpirationDate>2027-10-18</ExpirationDate>',
+        'GetDNS'=>'<dns>ns1.provider.example</dns><dns>ns2.provider.example</dns>',
+        default=>'<transferorder><transferorderid>7001</transferorderid></transferorder>',
+    };
     return '<interface-response><Command>'.$p['Command'].'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';
 };
 echo "Installed exchange composition ready.\n";
@@ -92,14 +96,18 @@ foreach(['register','transfer','register'] as $i=>$action){
         catch(Paymenter\Extensions\Servers\Domains\Services\ReadDeferred){}
         expect(!$entered,'Interactive reader shares physical slot with background write');
     };
-    $worker->operation($op->id);same(1,count($GLOBALS['enomWire']['forms']),'One authenticated monetary send: '.json_encode([
+    $worker->operation($op->id);
+    $monetaryForms = array_filter($GLOBALS['enomWire']['forms'], static fn($form) => in_array($form['Command'] ?? null, ['Purchase', 'TP_CreateOrder', 'Extend'], true));
+    same(1,count($monetaryForms),'One authenticated monetary send: '.json_encode([
         'state'=>$op->fresh()->state,'safe_code'=>$op->fresh()->safe_code,'attempt'=>$op->fresh()->attempt,
         'used'=>DB::table(Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::TABLE)->where('day',Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::day())->value('used'),
+        'commands'=>array_column($GLOBALS['enomWire']['forms'],'Command'),
         'config'=>[config('domains.enom_identity.environment'),config('domains.enom_catalogue.enabled'),config('domains.enom_writes.registration')],
     ]));
+    $formsAfterDispatch = count($GLOBALS['enomWire']['forms']);
     same($action==='register'?'pending':'uncertain',$op->fresh()->state,'Acknowledgement never completes acquisition');same('sealed',$op->fresh()->attempt['seal'],'Actual paid operation sealed');if($action==='register'){$registered=$op->fresh();}
     $freshPorts=new RuntimePorts;$freshPorts->register($binding->fingerprint,$auth->enomRuntimeFactory($binding,$clock,$features,$accepted,$renewalAccepted,$precheck));
-    Cache::flush();(new RuntimeWork($clock,$freshPorts))->operation($op->id);same(1,count($GLOBALS['enomWire']['forms']),'Reconstructed worker never replays');
+    Cache::flush();(new RuntimeWork($clock,$freshPorts))->operation($op->id);same($formsAfterDispatch,count($GLOBALS['enomWire']['forms']),'Reconstructed worker never replays');
     expect(DB::table('domains_read_budgets')->where('server_id',$binding->serverId)->value('used')>=1,'Physical send counted');
 }
 $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new(placeholderComFixtureName('lost-after-send-placeholder.com'));resetWire(['timeout'=>true]);$worker->operation($op->id);
