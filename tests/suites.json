@@ -299,7 +299,8 @@
     "tests/test_hook_attribution.py",
     "tests/staff-renewal-release-test.php",
     "tests/user-deletion-test.php",
-    "tests/lifecycle-policy-test.php"
+    "tests/lifecycle-policy-test.php",
+    "tests/acquisition-binding-test.php"
   ],
   "ui": [],
   "runner": [

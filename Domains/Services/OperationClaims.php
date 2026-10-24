@@ -262,7 +262,7 @@ final class OperationClaims
         if(!isset($a['claim_key'])) {
             $deferrals=$a['capacity_deferrals']??[];
             return !array_diff(array_keys($a),$unclaimedKeys)&&$op->started_at===null&&$op->request_fingerprint===null
-                &&($terminal?($a['seal']==='absent'&&$a['send_state']==='definitely_unsent'):(!array_key_exists('seal',$a)&&!array_key_exists('send_state',$a)))&&!array_key_exists('claim',$f)&&!array_key_exists('seal',$f)
+                &&($terminal?(($a['seal']??null)==='absent'&&($a['send_state']??null)==='definitely_unsent'):(!array_key_exists('seal',$a)&&!array_key_exists('send_state',$a)))&&!array_key_exists('claim',$f)&&!array_key_exists('seal',$f)
                 &&(!array_key_exists('capacity_deferrals',$a)||(is_array($deferrals)&&array_is_list($deferrals)&&count($deferrals)<=5
                     &&!array_filter($deferrals,static fn($at)=>!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/D',$at))));
         }
@@ -340,8 +340,8 @@ final class OperationClaims
     {
         $binding = new AccountBinding($account->registrar_key, (int) $account->server_id, Environment::from($account->environment), $account->stable_identity);
         if ($op->account_fingerprint !== $binding->fingerprint || $domain->account_fingerprint !== $binding->fingerprint
-            || $op->registrar_key !== $binding->registrarKey || $op->server_id !== $binding->serverId
-            || $domain->registrar_key !== $binding->registrarKey || $domain->server_id !== $binding->serverId
+            || $op->registrar_key !== $binding->registrarKey || (int) $op->server_id !== $binding->serverId
+            || $domain->registrar_key !== $binding->registrarKey || (int) $domain->server_id !== $binding->serverId
             || !in_array($op->action, ['register', 'transfer'], true) || $domain->status !== ($op->action === 'transfer' ? 'transfer_pending' : 'registration_pending') || !$domain->billing_managed
             || $domain->reservation_name !== $domain->domain || $domain->provider_domain_id !== null
             || $domain->provider_expires_at !== null || $domain->provider_order_id !== null || $op->provider_order_id !== null

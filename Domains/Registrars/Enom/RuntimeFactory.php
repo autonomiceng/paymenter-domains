@@ -27,15 +27,14 @@ final class RuntimeFactory
             $wire->exchange('renewal'),new Management($binding,$wire->exchange('management')),$managementAccepted,testManagement:$testManagement);
     }
 
-    /** Bind Purchase acceptance to the environment endpoint and shared worker request interval. */
+    /** Environment permission and worker interval only; this is not executed protocol evidence. */
     public static function registrationAcceptance(AccountBinding $binding): array
     {
         $test=$binding->registrarKey==='enom'&&$binding->environment===Environment::Test;
         $route=self::originFor($binding->environment);
         return [
             'route'=>$route,
-            'batch_route'=>($test||\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($binding,'catalogue'))
-                &&RegistrationCommand::Purchase->value==='Purchase',
+            'batch_route'=>$test||\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($binding,'catalogue'),
             'interval_seconds'=>\Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::REQUEST_SECONDS,
         ];
     }

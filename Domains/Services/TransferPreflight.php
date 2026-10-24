@@ -17,7 +17,7 @@ final readonly class TransferPreflight implements SealPreflight
                 || ($this->profiles && $transport->usesProfiles($this->profiles) && $accepted->usesProfiles($this->profiles)));
     }
     private static function selection(Operation $op, Domain $d): SaleSelection
-    { return new SaleSelection($d->tld, $op->server_id, $op->registrar_key, $op->account_fingerprint, 0, $op->action, $op->term, 'USD', 0, 0); }
+    { return new SaleSelection($d->tld, (int) $op->server_id, $op->registrar_key, $op->account_fingerprint, 0, $op->action, $op->term, 'USD', 0, 0); }
     public function inspect(Operation $op, Domain $domain, RequestContext $context): DispatchReadiness
     {
         OperationClaims::outside(); $query = OperationClaims::query($op, $domain); $this->features->requireEnabled(Action::Transfer);

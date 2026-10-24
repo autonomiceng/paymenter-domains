@@ -53,9 +53,9 @@ foreach (['application/x-www-form-urlencoded', 'application/json'] as $type) {
     try { RawPost::body($r); expect(false, 'Declared oversize body escaped before reading'); }
     catch (DomainException $e) { same(0, $r->bodyCalls, 'Oversize header never calls either body API'); }
 }
-// Declared JSON can reuse the buffer; unknown lengths need bounded stream reads.
+// Every body uses bounded stream reads, including understated and middleware-cached JSON.
 foreach (['application/x-www-form-urlencoded', 'application/json'] as $type) {
-    foreach ([null, '', 'unknown', '1048577oops', '-1', '1048576'] as $length) {
+    foreach ([null, '', 'unknown', '1048577oops', '-1', '1', '32', '1048576'] as $length) {
         foreach ([2097152, 1048576, 1048577] as $bytes) {
             $raw = $type === 'application/json' ? '{"value":"'.str_repeat('x', $bytes-12).'"}' : 'value='.str_repeat('x', $bytes-6);
             same($bytes, strlen($raw), 'Exact request size fixture');
@@ -85,7 +85,7 @@ foreach (['application/x-www-form-urlencoded', 'application/json'] as $type) {
                 if (!$cachedJson) {
                     same(min($bytes, 1048577), ftell($stream), 'Unknown or unusable length never removes the stream read bound');
                 }
-                same([!$cachedJson], $r->bodyModes, 'Declared cached JSON uses the string API; unknown lengths use a stream');
+                same([true], $r->bodyModes, 'Every body uses the bounded resource API');
             } finally { fclose($stream); }
         }
     }

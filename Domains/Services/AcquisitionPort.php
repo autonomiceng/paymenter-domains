@@ -54,7 +54,7 @@ final readonly class AcquisitionPort
     public function execute(int $id): Operation
     {
         $op=Operation::findOrFail($id);
-        if ($op->action!==$this->action->value || $op->server_id!==$this->binding->serverId
+        if ($op->action!==$this->action->value || (int)$op->server_id!==$this->binding->serverId
             || $op->registrar_key!==$this->binding->registrarKey || $op->account_fingerprint!==$this->binding->fingerprint) {
             throw new \DomainException('Acquisition operation binding changed.');
         }
