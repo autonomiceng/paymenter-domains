@@ -113,8 +113,7 @@ final readonly class OwnedDomains
                 if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $management['nameservers']['defaults']=$d->registrar_key==='enom';
                     $management['nameservers']['defaultServers']=$d->registrar_key==='enom'?self::DEFAULT_NAMESERVERS:[];
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
-                    $current=$obs['sections']['nameservers']['facts']['nameservers']??null;
-                    $management['nameservers']['current']=is_array($current)&&$current&&array_is_list($current)&&count(array_filter($current,'is_string'))===count($current)?$current:null; }
+                    $management['nameservers']['current']=self::storedNameservers($obs); }
                 if (isset($management['contacts'])) { $management['contacts']['staged']=$d->registrar_key==='namesilo'; $management['contacts']['limits']=ContactDetails::limits($d->registrar_key); }
                 if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'admin contact':'owner'; }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
@@ -211,6 +210,12 @@ final readonly class OwnedDomains
                 return ['url' => route('domains.domains.renew', $d->id), ...$options];
             } catch (\Throwable) { return $retained; }
         } catch (\Throwable) { return ['status' => 'review']; }
+    }
+    /** Nameservers from the last confirmed registrar readback, in order, or null. Shared by the customer and staff domain pages. */
+    public static function storedNameservers(array $observation): ?array
+    {
+        $current=$observation['sections']['nameservers']['facts']['nameservers']??null;
+        return is_array($current)&&$current&&array_is_list($current)&&count(array_filter($current,'is_string'))===count($current)?$current:null;
     }
     /** This cycle as billing sees it: null while a new request is possible, else its pending invoice or an owner status. */
     public static function renewalCycle(Domain $d, bool $retained = false, ?\DateTimeImmutable $now = null): ?array

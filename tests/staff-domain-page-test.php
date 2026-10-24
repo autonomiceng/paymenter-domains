@@ -23,13 +23,26 @@ $sub=static fn(Domain $d,string $label)=>DomainFacts::for($d->fresh())[$label]['
 
 // Registration and Billing: one value per row, Missing as null, rows that do not apply are absent.
 $f=DomainFacts::for($active);
-same(['Expires','Registrar','In registrar account','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'],array_values(array_intersect(array_keys($f),DomainFacts::REGISTRATION)),'Registration rows in order');
+same(['Expires','Registrar','In registrar account','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'],array_values(array_intersect(array_keys($f),DomainFacts::REGISTRATION)),'Registration rows in order');
+expect(count(DomainFacts::REGISTRATION)<=8&&count(DomainFacts::BILLING)<=8,'At most eight facts per section');
 same(today()->addDays(120)->format('M j, Y'),$f['Expires']['value'],'Expires date');
 same(['Synthetic registrar','Enom · Test · orders paused'],[$f['Registrar']['value'],$f['Registrar']['sub']],'New accounts start with orders paused');
 DB::table('domains_accounts')->where('server_id',$active->server_id)->update(['processing_enabled'=>true]);$f=DomainFacts::for($active);
 same(['Synthetic registrar','Enom · Test'],[$f['Registrar']['value'],$f['Registrar']['sub']],'Registrar account name and registrar sub-line');
 same(['Yes','On','Off','Off'],[$f['In registrar account']['value'],$f['Transfer lock']['value'],$f['WHOIS privacy']['value'],$f['Registrar auto-renew']['value']],'Synced registrar facts');
 same([null,'Not synced yet'],[$f['Last sync']['value'],$f['Last sync']['sub']],'Never synced is Missing with its cause');
+// Nameservers: the stored registrar readback the customer page shows, one per line in order. No extra queries.
+$queries=static function(Domain $d):int{DB::enableQueryLog();DB::flushQueryLog();DomainFacts::for($d);$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
+$before=$queries($active->fresh());
+same([null,'Not synced yet'],[$f['Nameservers']['value'],$f['Nameservers']['sub']],'No stored nameservers is Missing with its cause');
+$storeNs=static function(Domain $d,mixed $servers){$p=$d->fresh()->observation;$p['sections']['nameservers']=['operation_key'=>'ns-read','at'=>'2026-10-20T15:05:00Z','facts'=>['nameservers'=>$servers]];$d->fresh()->update(['observation'=>$p]);};
+$storeNs($active,['ns1.example.net','ns2.example.net','ns3.example.net']);
+same(['ns1.example.net','ns2.example.net','ns3.example.net'],$value($active,'Nameservers'),'Stored nameservers in order');
+same(false,DomainFacts::for($active->fresh())['Nameservers']['demo'],'Ordinary nameservers have no Demo tag');
+same($before,$queries($active->fresh()),'Nameservers add no queries');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Nameservers','ns1.example.net','ns2.example.net','ns3.example.net','Transfer lock']);
+foreach([[],['ns1.example.net',7],['a'=>'ns1.example.net'],'ns1.example.net'] as $bad){$storeNs($active,$bad);same(null,$value($active,'Nameservers'),'Unusable stored nameservers are Missing');}
+$storeNs($active,['ns1.example.net','ns2.example.net']);
 // Every Missing carries its cause.
 same([null,'Service #'.$active->service_id.' not found'],[$f['Service']['value'],$f['Service']['sub']],'Deleted service is Missing with its cause');
 same([null,'Needs the linked service'],[$f['Renewal price']['value'],$f['Renewal price']['sub']],'Renewal price without a service names the cause');
@@ -97,6 +110,9 @@ config(['domains.enom_identity.environment'=>'test']);
 same(['Paused','Demo registrar is off while Enom Test mode is on'],[$value($demo,'Last sync'),$sub($demo,'Last sync')],'Demo registrar paused under Enom Test mode');
 same('Enom · Test · orders paused',$sub($demo,'Registrar'),'Registrar sub-line says orders paused');
 same([null,'Sync paused'],[$value($demo,'Registrar auto-renew'),$sub($demo,'Registrar auto-renew')],'Unread registrar facts name the paused sync');
+same([null,'Sync paused',false],[$value($demo,'Nameservers'),$sub($demo,'Nameservers'),DomainFacts::for($demo->fresh())['Nameservers']['demo']],'Demo without stored nameservers names the paused sync, with no Demo tag on Missing');
+$storeNs($demo,['ns1.beco-demo.test','ns2.beco-demo.test']);
+same([['ns1.beco-demo.test','ns2.beco-demo.test'],true],[$value($demo,'Nameservers'),DomainFacts::for($demo->fresh())['Nameservers']['demo']],'Demo nameservers keep the Demo tag');
 config(['domains.enom_identity.environment'=>'live','domains.enom_writes.registration'=>false,'domains.enom_writes.renewal'=>false]);
 same(null,$value($demo,'Last sync'),'Demo registrar runs when Enom Test mode is off');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$demo->id])->assertSee('Demo');
