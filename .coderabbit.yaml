@@ -31,7 +31,8 @@ reviews:
         variants) are allowed where a test needs distinct .com second-level names, as enforced
         by tests/fixture-policy-test.php. Offline tests only; no DNS or availability lookups.
         Public-only network tests may use 8.8.8.8 where non-global addresses are refused, and tests
-        may use production constants the code matches (the IANA bootstrap URL and Enom default nameservers).
+        may use production constants the code matches (the IANA bootstrap URL, Enom default nameservers and
+        registrar API endpoints). Glue fixtures use public addresses because glue refuses documentation ranges.
     - path: "NameSilo/**"
       instructions: |
         Paymenter domain registrar extension (Laravel/PHP) for the NameSilo registrar API. Check
