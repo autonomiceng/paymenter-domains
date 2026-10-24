@@ -57,7 +57,7 @@ foreach([0,1]as$i){
         expect(!str_contains(json_encode($invoiceDtos,JSON_THROW_ON_ERROR),$sentinel),'Native invoice DTO excludes committed code');
         expect(!str_contains(json_encode($session->all(),JSON_THROW_ON_ERROR),$sentinel),'Rendering never flashes code into session');
         if($page==='code'){
-            expect($dto->transfer['received']&&str_contains($html,'Code saved.'),'Real committed-code page acknowledges receipt');
+            expect($dto->transfer['received']&&substr_count($html,\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::CODE_SAVED)===1,'Real committed-code page acknowledges receipt');
             same(1,$dom->query('//input[@name="transfer_code"]')->length,'Unsent before-cutoff code editor is offered without prefill');
         }
     }

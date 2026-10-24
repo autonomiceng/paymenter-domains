@@ -29,7 +29,7 @@ final class InvoiceDescription
         // Privacy is an independent annual subscription. Renewal starts at its frozen expiry;
         // purchase dates are expected from invoice day, while dispatch establishes actual cover.
         $start = $base === null ? $issued : new \DateTimeImmutable($base);
-        return self::line('Domain privacy ', $name, ': '.self::period($start, 1).($base === null ? ' (from purchase)' : ''));
+        return self::line('WHOIS privacy ', $name, ': '.self::period($start, 1).($base === null ? ' (from purchase)' : ''));
     }
 
     private static function period(\DateTimeInterface $start, int $years): string

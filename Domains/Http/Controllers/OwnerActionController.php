@@ -8,6 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, DomainManage
 /** Dormant owner POST boundary. Never calls a driver write or queues a purchase. */
 final readonly class OwnerActionController
 {
+    // Shown on the auth code page once a code is saved, so the redirect carries no flash.
+    public const CODE_SAVED='Auth code saved. The transfer starts once payment is confirmed.';
     public const ACTIONS=['nameservers','contacts','contact_profile','lock','privacy_enable','privacy_disable','privacy_purchase','privacy_renew','auto_renew_off','auth_code_email','dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'];
     public function __construct(private OwnedDomains $owners, private OwnerSetup $setup, private TransferInputs $inputs,
         private DomainManagement $management, private OwnerPorts $ports) {}
@@ -22,23 +24,22 @@ final readonly class OwnerActionController
         $d=$this->owners->owned($request->user(),$domain); $op=$this->owners->operation($d);
         $context='owner:'.$domain.':code'; FormKeys::verify($request,$context);
         if ($query||!TransferInputs::validCode($code)) {
-            return redirect()->route('domains.domains.code',$domain)->withErrors(['transfer_code'=>'Enter a valid transfer code.']);
+            return redirect()->route('domains.domains.code',$domain)->withErrors(['transfer_code'=>'Enter a valid auth code.']);
         }
         FormKeys::consume($request,$context);
         try {
             $body=Request::create('/','POST',['transfer_code'=>$code]); $body->setUserResolver(fn()=>$request->user());
             $this->inputs->submitCode($body,$op?->id??0);
-            return redirect()->route('domains.domains.code',$domain)->with('domains_status','Code received. The transfer starts once payment and your details are confirmed.');
-        } catch (\Throwable) { return redirect()->route('domains.domains.code',$domain)->withErrors(['transfer_code'=>'We couldn’t save the code. Try again.']); }
+            return redirect()->route('domains.domains.code',$domain);
+        } catch (\Throwable) { return redirect()->route('domains.domains.code',$domain)->withErrors(['transfer_code'=>'We couldn’t save the auth code. Try again.']); }
     }
     public function setup(Request $request,int $domain)
     {
         return $this->submit($request,$domain,'setup',function()use($request,$domain):void {
-            if ($request->request->get('confirmed')!=='1') { throw new \DomainException; }
             $servers=$request->request->get('nameservers','');
             if (!is_string($servers)||!in_array($request->request->get('privacy','0'),['0','1'],true)) { throw new \DomainException; }
             $this->setup->save($request->user(),$domain,['nameservers'=>self::servers($servers),'privacy'=>$request->request->get('privacy')==='1']);
-        },'Domain setup saved.');
+        },'Setup saved.');
     }
     public function contacts(Request $request,int $domain)
     {
@@ -80,7 +81,7 @@ final readonly class OwnerActionController
             };
             if ($risky&&($p['confirmed']??null)!=='1') { throw new \Paymenter\Extensions\Servers\Domains\Services\OwnerConfirmRequired; }
             \Paymenter\Extensions\Servers\Domains\Services\Runtime::management($d,$this->management)->request($request->user(),$domain,$action,$payload,$nonce,$this->ports->forDomain($d),recordIdentity:in_array($action,['dns','srv'],true)?\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d):null);
-        },'Change requested. Check Activity for updates.');
+        },'Change requested. Check History for updates.');
     }
     private function submit(Request $request,int $domain,string $action,\Closure $work,string $message)
     {
@@ -103,7 +104,7 @@ final readonly class OwnerActionController
             return $this->failed($request,$domain,$action,$error->messages(''));
         } catch (\Paymenter\Extensions\Servers\Domains\Services\SetupValidation $error) {
             return $this->failed($request,$domain,$action,array_intersect_key([
-                'nameservers'=>'Check the nameservers.','privacy'=>'Domain privacy is not available for this domain.'],array_flip($error->fields)));
+                'nameservers'=>'Check the nameservers.','privacy'=>'WHOIS privacy isn’t available for this domain.'],array_flip($error->fields)));
         } catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation $error) {
             return $this->failed($request,$domain,$action,array_fill_keys(array_unique(array_map(static fn($field)=>preg_replace('/^contacts\\.[^.]+\\./','contact.',$field),$error->fields)),'Check this contact detail.'));
         } catch (\Throwable) { return $this->failed($request,$domain,$action,['owner_action'=>'We couldn’t save this change. Check the details and try again. If it keeps happening, contact support.']); }

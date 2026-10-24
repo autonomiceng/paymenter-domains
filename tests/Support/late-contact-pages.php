@@ -53,7 +53,7 @@ foreach([0,1]as$i){
     Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$late->id)->update($heldRaw);
     $html=$controller->code($request($user),$missing->domain_id)->render();
     expect(!str_contains($html,'Use updated account details'),'No late correction without saved code');
-    expect(str_contains($html,'The time to enter or change this transfer code has passed.'),'Missing-code cutoff guidance');
+    expect(str_contains($html,'The time to enter or change this auth code has passed.'),'Missing-code cutoff guidance');
     $r=$request($user);$r->setMethod('POST');$r->request->set('_request_key',Paymenter\Extensions\Servers\Domains\Http\FormKeys::issue($r,'owner:'.$late->domain_id.':recovery'));
     $before=[$state->calls,$state->reads,$late->fresh()->payload['epp'],$late->fresh()->policy['paid_at']];
     $response=$actions->contacts($r,$late->domain_id);same(302,$response->getStatusCode(),'Real owner recovery POST redirects');

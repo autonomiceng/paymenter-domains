@@ -37,7 +37,7 @@ $pages=['transfer-entry'=>view('domains::transfer',$entry)->render(),'owned-inde
     'setup'=>view('domains::setup',['domain'=>$setup])->render(),'transfer-code'=>view('domains::code',['domain'=>$setup])->render()];
 app('view')->share('errors',(new Illuminate\Support\ViewErrorBag)->put('default',new Illuminate\Support\MessageBag(['owner_action'=>'We couldn’t save this change. Check the details and try again. If it keeps happening, contact support.'])));
 $pages['held-pending-errors']=view('domains::show',['domain'=>$held])->render();
-app('view')->share('errors',(new Illuminate\Support\ViewErrorBag)->put('default',new Illuminate\Support\MessageBag(['transfer_code'=>'Enter a valid transfer code.'])));
+app('view')->share('errors',(new Illuminate\Support\ViewErrorBag)->put('default',new Illuminate\Support\MessageBag(['transfer_code'=>'Enter a valid auth code.'])));
 $pages['transfer-code-errors']=view('domains::code',['domain'=>$setup])->render();
 app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $pages['held-setup']=view('domains::setup',['domain'=>$held])->render();
@@ -57,7 +57,7 @@ foreach (['saved'=>'editing','pending'=>'pending','review'=>'review','cutoff'=>'
     $pages['transfer-'.$name]=view('domains::code',['domain'=>$copy])->render();
 }
 $copy=new OwnedDomain(...[...get_object_vars($enom),'management'=>[],'changesUnavailable'=>true]);$pages['changes-unavailable']=view('domains::show',['domain'=>$copy])->render();
-app('view')->share('errors',(new Illuminate\Support\ViewErrorBag)->put('default',new Illuminate\Support\MessageBag(['nameservers'=>'Check the nameservers.','privacy'=>'Domain privacy is not available for this domain.'])));
+app('view')->share('errors',(new Illuminate\Support\ViewErrorBag)->put('default',new Illuminate\Support\MessageBag(['nameservers'=>'Check the nameservers.','privacy'=>'WHOIS privacy isn’t available for this domain.'])));
 $pages['setup-errors']=view('domains::setup',['domain'=>$setup])->render();
 $copy=new OwnedDomain(...[...get_object_vars($setup),'testEnvironment'=>true]);$pages['test-mode']=view('domains::setup',['domain'=>$copy])->render();
 if (getenv('OWNER_RECORDS')==='1') { require __DIR__.'/owner-record-render.php'; }

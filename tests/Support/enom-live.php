@@ -142,7 +142,7 @@ $new=static function(string $name,bool $pay=true)use($user,$product):Operation {
     return $op->fresh();
 };
 $preview=commerceCart($user);commerceAdd($preview,$product,placeholderComFixtureName('live-preview-placeholder.com'));$orders=App\Models\Order::count();$invoices=App\Models\Invoice::count();config(['domains.enom_live.registration'=>false]);
-commerceCheckout($user,$preview)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Live domain registration is off. No order or payment was created. Remove domain lines to check out other items.','type'=>'error']);
+commerceCheckout($user,$preview)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Remove them to check out.','type'=>'error']);
 same([$orders,$invoices],[App\Models\Order::count(),App\Models\Invoice::count()],'Live preview-only checkout creates no native debt');config(['domains.enom_live.registration'=>true]);
 $unpaid=$new(placeholderComFixtureName('live-unpaid-placeholder.com'),false);$before=count($GLOBALS['enomWire']['forms']);$worker->operation($unpaid->id);
 same($before,count($GLOBALS['enomWire']['forms']),'Live unpaid invoice refuses before send');

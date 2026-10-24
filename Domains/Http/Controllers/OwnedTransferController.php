@@ -18,7 +18,7 @@ final readonly class OwnedTransferController
         $error=$parsed['error'];
         if ($parsed['ending']!==null) {
             if (in_array($parsed['ending'],$names,true)) { $preferred=$parsed['ending']; }
-            else { $error='Choose an ending from the list.'; }
+            else { $error='Choose a TLD from the list.'; }
         }
         $sld=$parsed['sld']; $results=$sld!==null&&$error===null&&$preferred!==null
             ? [['domain'=>$sld.'.'.$preferred,'sld'=>$sld,'tld'=>$preferred,'status'=>'idle','testEnvironment'=>collect($endings)->firstWhere('tld',$preferred)['testEnvironment']]] : [];

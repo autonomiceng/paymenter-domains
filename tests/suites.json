@@ -116,6 +116,7 @@
     "tests/owner-auto-renew-test.php",
     "tests/owner-declutter-test.php",
     "tests/owner-help-test.php",
+    "tests/glossary-sweep-test.php",
     "tests/status-pill-test.php",
     "tests/status-pages-test.php",
     "tests/domains-list-test.php",

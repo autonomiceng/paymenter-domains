@@ -1,7 +1,7 @@
 @component('layouts.app', ['title'=>'Change domain','sidebar'=>true,'spa'=>false])
 <div class="container mt-14 mb-10"><div class="domains">@include('domains::partials.styles')
 <a class="domains-back" href="{{ route('cart') }}">Back to cart</a><h1 class="domains-title">Change domain</h1>
-<p class="domains-lede">Update this cart line. To choose a different ending or registration type, remove the line from your cart and search again.</p>
+<p class="domains-lede">Update this cart line. To choose a different TLD or registration type, remove the line from your cart and search again.</p>
 @include('domains::partials.notices', ['fieldKeys'=>['domain'],'summary'=>false])
 <form class="domains-panel domains-section" method="POST" action="{{ route('domains.cart.update',['item'=>$item->id]) }}">
 @include('domains::partials.form-key',['keys'=>['edit'=>$key],'action'=>'edit'])

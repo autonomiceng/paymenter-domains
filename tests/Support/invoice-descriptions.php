@@ -25,12 +25,12 @@ same('Transfer example.com: adds 1 year to the current expiry', $invoiceLineExam
 same('Transfer example.com: adds 3 years to the current expiry', Lines::acquisition('example.com', 'transfer', 3, $issue), 'Transfer formatter preserves explicit term; admission still owns eligibility');
 same('Renew example.com: Oct 19, 2026 - Oct 19, 2027', $invoiceLineExamples['renew'], 'Locale-independent renewal range');
 same('Renew example.com: Oct 19, 2026 - Oct 19, 2029', $invoiceLineExamples['renew-multi'], 'Multi-year renewal range');
-same('Domain privacy example.com: Oct 19, 2026 - Oct 19, 2027 (from purchase)', $invoiceLineExamples['privacy-purchase'], 'Independent privacy purchase year');
-same('Domain privacy example.com: Apr 09, 2027 - Apr 09, 2028', $invoiceLineExamples['privacy-renew'], 'Privacy expiry, not domain expiry or issue date');
+same('WHOIS privacy example.com: Oct 19, 2026 - Oct 19, 2027 (from purchase)', $invoiceLineExamples['privacy-purchase'], 'Independent privacy purchase year');
+same('WHOIS privacy example.com: Apr 09, 2027 - Apr 09, 2028', $invoiceLineExamples['privacy-renew'], 'Privacy expiry, not domain expiry or issue date');
 same('Register leap.example.com: 1 year (Feb 29, 2028 - Feb 28, 2029, from registration)', $invoiceLineExamples['register-leap'], 'Registration leap-day clamp');
 same('Renew leap.example.com: Feb 29, 2028 - Feb 28, 2029', $invoiceLineExamples['renew-leap'], 'Renewal leap-day clamp');
 same('Renew leap.example.com: Feb 29, 2028 - Feb 29, 2032', Lines::renewal(reservedFixtureName('leap.example.com'), $leap, 4), 'Multi-year leap anniversary');
-same('Domain privacy leap.example.com: Feb 29, 2028 - Feb 28, 2029', $invoiceLineExamples['privacy-leap'], 'Privacy leap-day clamp');
+same('WHOIS privacy leap.example.com: Feb 29, 2028 - Feb 28, 2029', $invoiceLineExamples['privacy-leap'], 'Privacy leap-day clamp');
 same('Renew bücher.example.com: Oct 19, 2026 - Oct 19, 2027', $invoiceLineExamples['idn'], 'Retained IDN displays Unicode only');
 $longName = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 63).'.'.str_repeat('d', 61);
 same(253, strlen($longName), 'Maximum canonical DNS name fixture');
