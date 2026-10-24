@@ -43,7 +43,7 @@ $postWatch = static function (bool $confirm = false) use ($request, $watchContro
 };
 // A page with distinct endings plus an owned native service exercises the shared batch projection.
 $watchIds = [$id];
-foreach ([reservedFixtureName('second.example.test'), 'third-placeholder.net'] as $name) {
+foreach ([reservedFixtureName('second.example.test'), reservedFixtureName('third.example.net')] as $name) {
     $row = (array) DB::table('domains_watch_names')->where('id', $id)->first(); unset($row['id']);
     $watchIds[] = DB::table('domains_watch_names')->insertGetId([...$row, 'canonical_name' => $name]);
 }
@@ -134,7 +134,7 @@ foreach (['name.unknown', 'sub.name.example.test', 'sub.name.test', 'sub.name.un
         $message(fn () => PolicyEndings::parse($input)), 'Unknown/subdomain/syntax refusal parity');
 }
 same(['test'], PolicyEndings::transferEnabled(['second.example.test']), 'Summary keeps any enabled suffix even when the longer policy is disabled');
-same([], PolicyEndings::transferEnabled(['third-placeholder.net']), 'Disabled transfer ending omitted');
+same([], PolicyEndings::transferEnabled([reservedFixtureName('third.example.net')]), 'Disabled transfer ending omitted');
 // Warm display never becomes money authority, including raw changes without cache invalidation.
 $store->endings(); DB::table('domains_sales_policies')->where('tld', 'com')->update(['transfer_enabled' => false]);
 same(null, $transfers->current($owner, $id, $at + 2)['offer'], 'Disabled current transfer policy refuses a warm offer');

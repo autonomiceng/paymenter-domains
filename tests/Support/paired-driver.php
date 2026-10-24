@@ -16,7 +16,7 @@ $scenarioNew = static function (int $i, string $action, string $name, bool $paid
     $cart = commerceCart($user); commerceAdd($cart, $native->product($tlds[$i], 'register'), $name);
     commerceCheckout($user, $cart);
     $op = Domain::where('domain', strtolower(rtrim($name, '.')))->sole()->operations()->sole();
-    $op->update(['payload' => [...$op->payload, 'nameservers' => ['ns1.provider-placeholder.net', 'ns2.provider-placeholder.net'], 'privacy' => false]]);
+    $op->update(['payload' => [...$op->payload, 'nameservers' => ['ns1.provider.example.net', 'ns2.provider.example.net'], 'privacy' => false]]);
     $state->query = Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op, $op->domain);
     return $paid ? scenarioFund($op) : $op->fresh();
 };
@@ -35,7 +35,7 @@ $registrationExchange = static function ($origin, $command, $p, $timeout) use ($
         if ($command === 'Purchase') { same(0, $p['RenewName'], 'Enom renewal off'); same('no', $p['UseCreditCard'], 'No card'); }
         $data = match ($command) {
             'Purchase' => '<OrderID>9001</OrderID><ExpirationDate>2027-10-18</ExpirationDate>',
-            'GetDNS' => '<dns>ns1.provider-placeholder.net</dns><dns>ns2.provider-placeholder.net</dns>', default => '',
+            'GetDNS' => '<dns>ns1.provider.example.net</dns><dns>ns2.provider.example.net</dns>', default => '',
         };
         return '<interface-response><Command>'.$command.'</Command><ErrCount>0</ErrCount><Done>true</Done><RRPCode>200</RRPCode>'.$data.'</interface-response>';
     }
@@ -48,7 +48,7 @@ $registrationExchange = static function ($origin, $command, $p, $timeout) use ($
     } else {
         same('getDomainInfo', $command, 'Only named registration readback');
         $reply += ['created' => '2026-10-18', 'expires' => '2027-10-18', 'status' => 'Active', 'locked' => 'Yes', 'private' => 'No', 'auto_renew' => 'No',
-            'nameservers' => [['nameserver' => 'ns1.provider-placeholder.net'], ['nameserver' => 'ns2.provider-placeholder.net']],
+            'nameservers' => [['nameserver' => 'ns1.provider.example.net'], ['nameserver' => 'ns2.provider.example.net']],
             'contact_ids' => array_fill_keys(['registrant', 'administrative', 'technical', 'billing'], (string) $state->id)];
     }
     return json_encode(['request' => ['operation' => $command], 'reply' => $reply], JSON_THROW_ON_ERROR);

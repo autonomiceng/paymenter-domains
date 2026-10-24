@@ -104,8 +104,8 @@ try { $c->fallback(fn() => (new NativeDnsReader(fn() => []))->read($q, $c)); exp
 foreach ([['http://resolver.example.org/dns-query', '1.1.1.1'], ['https://127.0.0.1/dns-query', '1.1.1.1'],
     ['https://127.1/dns-query', '1.1.1.1'], ['https://0177.0.0.1/dns-query', '1.1.1.1'], ['https://0x7f.0.0.1/dns-query', '1.1.1.1'],
     ['https://resolver.local/dns-query', '1.1.1.1'], ['https://x..org/dns-query', '1.1.1.1'],
-    ['https://user@resolver-placeholder.org/dns-query', '1.1.1.1'], ['https://resolver-placeholder.org/dns-query?x=1', '1.1.1.1'],
-    ['https://resolver-placeholder.org:444/dns-query', '1.1.1.1'], [DohEndpoint::URL, '127.0.0.1'], [DohEndpoint::URL, '192.168.1.1'],
+    ['https://user@resolver.example.org/dns-query', '1.1.1.1'], ['https://resolver.example.org/dns-query?x=1', '1.1.1.1'],
+    ['https://resolver.example.org:444/dns-query', '1.1.1.1'], [DohEndpoint::URL, '127.0.0.1'], [DohEndpoint::URL, '192.168.1.1'],
     [DohEndpoint::URL, '169.254.169.254'], [DohEndpoint::URL, '::1'], [DohEndpoint::URL, 'fd00::1']] as [$url, $ip]) {
     try { new DohEndpoint($url, $ip); expect(false, 'Unsafe endpoint refused'); } catch (InvalidArgumentException) {}
 }

@@ -5,9 +5,12 @@ require __DIR__.'/bootstrap.php';
 require __DIR__.'/Support/reserved-fixtures.php';
 
 foreach (['example.com', 'example.net', 'example.org', 'sealed.example.com', 'child.example.net',
-    'child.example.org', 'fixture.test', 'nested.fixture.test'] as $name) {
+    'child.example.org', 'child-placeholder.example.net', 'child-placeholder.net.test',
+    'child-placeholder.org.example.com', 'fixture.test', 'nested.fixture.test'] as $name) {
     same($name, reservedFixtureName($name), 'Reserved fixture identity is preserved');
 }
+same('child-placeholder.example.net', reservedFixtureName(strtolower('Child-Placeholder.Example.NET')),
+    'Mixed-case reserved fixture names normalize');
 foreach (['rate-queued.com', 'other.com', 'example-sealed.com', 'timestamp-boundary.com',
     'example.com.evil.com', 'notexample.com', 'invalid..example.com'] as $name) {
     $rejected = false;
@@ -22,7 +25,6 @@ foreach (['ordinary.com', 'example.com', 'two.labels-placeholder.com', 'not-plac
     try { placeholderComFixtureName($name); } catch (InvalidArgumentException) { $rejected = true; }
     expect($rejected, 'Placeholder .com fixture policy must reject '.$name);
 }
-echo "Explicit synthetic fixture policy passed; no domain availability lookup.\n";
 
 // Scan domain literals in the commerce fixtures that also exercise presentation.
 foreach (['invoice-binding-test.php', 'management-privacy-test.php', 'owner-actions-test.php',
@@ -43,3 +45,19 @@ foreach (['enom-captured-reads.php', 'enom-captured-renewal.php'] as $fixture) {
         same($name, reservedFixtureName($name), $fixture.' uses reserved nameservers');
     }
 }
+
+// Synthetic .net and .org placeholders must use reserved fixture namespaces.
+foreach ([__DIR__, __DIR__.'/Support'] as $directory) {
+    $files = glob($directory.'/*.php');
+    expect(is_array($files) && $files !== [], 'Fixture policy must scan PHP sources');
+    foreach ($files as $file) {
+        $count = preg_match_all('/\b[a-z0-9.-]*placeholder[a-z0-9.-]*\.[a-z]{2,}\b/i', file_get_contents($file), $names);
+        expect($count !== false, 'Fixture placeholder scan must parse');
+        foreach (array_unique($names[0]) as $name) {
+            $name = strtolower($name);
+            if (!str_ends_with($name, '.net') && !str_ends_with($name, '.org')) { continue; }
+            same($name, reservedFixtureName($name), basename($file).' uses reserved .net and .org fixture names');
+        }
+    }
+}
+echo "Explicit synthetic fixture policy passed; no domain availability lookup.\n";

@@ -2,6 +2,7 @@
 // Synthetic captured replies exercise the public normalizers, not just XML parsing.
 declare(strict_types=1);
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Services\OwnedDomains;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, Environment, Query, RenewalStatus, RequestBudget, RequestContext, RequestOrigin, Support};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, ResponseParser, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{AccountVerifier, Driver, ManagementRead};
@@ -67,9 +68,9 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{AccountVerifier, Drive
     $nameservers = ManagementRead::nameservers($parsed['Nameservers']);
     same(array_map(fn ($n) => 'dns'.$n.'.example.net', range(1, 5)), $nameservers, 'Captured repeated flat dns scalars');
     same(false, ManagementRead::defaultDns($nameservers), 'Reserved fixture names are custom DNS');
-    same(true, ManagementRead::defaultDns(array_map(fn ($n) => 'dns'.$n.'.name-services.com', range(1, 5))),
+    same(true, ManagementRead::defaultDns(OwnedDomains::DEFAULT_NAMESERVERS),
         'Production default DNS suffix remains recognized');
-    same(false, ManagementRead::defaultDns([...$nameservers, 'dns1.name-services.com']),
+    same(false, ManagementRead::defaultDns([...$nameservers, OwnedDomains::DEFAULT_NAMESERVERS[0]]),
         'One production default nameserver does not make a custom list default');
     $hosts = ManagementRead::records($parsed['Hosts'], 'dns');
     same(1, count($hosts), 'Captured singleton host normalized');

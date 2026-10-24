@@ -68,7 +68,7 @@ foreach ([fn() => $cachedCheck(), fn() => $cachedSave(['url' => DohEndpoint::URL
     try { $callback(); expect(false, 'Revoked action denied'); } catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(403, $e->getStatusCode(), 'Fresh permission check'); }
 }
 same(0, $calls, 'Revocation starts no query'); $setRights($rights);
-Livewire::actingAs($staff)->test(Page::class)->mountAction('configure')->setActionData(['url' => 'http://resolver-placeholder.org', 'ip' => '127.0.0.1'])->callMountedAction()->assertHasActionErrors(['url', 'ip']);
+Livewire::actingAs($staff)->test(Page::class)->mountAction('configure')->setActionData(['url' => 'http://resolver.example.org', 'ip' => '127.0.0.1'])->callMountedAction()->assertHasActionErrors(['url', 'ip']);
 foreach (['::ffff:10.0.0.1','::ffff:127.0.0.1','::127.0.0.1','64:ff9b::a00:1','64:ff9b:1::','0064:FF9B:0001:ABCD:0000:0000:0A00:0001'] as $ip) {
     Livewire::actingAs($staff)->test(Page::class)->mountAction('configure')->setActionData(['url'=>DohEndpoint::URL,'ip'=>$ip])->callMountedAction()->assertHasActionErrors(['ip']);
 }

@@ -107,10 +107,10 @@ same(false,$a->fresh()->processing_enabled,'Processing remains off');expect(!app
 try{$product->update(['stock'=>0]);expect(false,'Finite stock save must refuse');}catch(Illuminate\Validation\ValidationException){}
 DB::table('products')->where('id',$product->id)->update(['stock'=>0]);$refuse(fn()=>$front->offer('com','register',1),'Offer unavailable.');DB::table('products')->where('id',$product->id)->update(['stock'=>null]);$product->refresh();
 $nativePrice=$product->plans()->sole()->prices()->sole();$nativePrice->newQuery()->whereKey($nativePrice->id)->update(['price'=>'12.00']);$refuse(fn()=>$front->offer('com','register',1),'Offer changed.');$nativePrice->newQuery()->whereKey($nativePrice->id)->update(['price'=>'13.00']);
-$before=count($GLOBALS['catalogueCalls']);$refuse(fn()=>commerceAdd($cart,$product,'unaccepted-placeholder.net'),'This domain ending is unavailable.');same($before,count($GLOBALS['catalogueCalls']),'Unsupported ending never reaches Check');
+$before=count($GLOBALS['catalogueCalls']);$refuse(fn()=>commerceAdd($cart,$product,'example.net'),'This domain ending is unavailable.');same($before,count($GLOBALS['catalogueCalls']),'Unsupported ending never reaches Check');
 $write('import',['ending'=>'.NET']);$net=Tld::where('server_id',$server->id)->where('tld','net')->sole();
 $write('tld_settings',$availability,$net->id);$write('publish',[],$net->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$net->id);
-commerceAdd($cart,app(NativeCatalogue::class)->product($net,'register'),'retained-cart-placeholder.net');
+commerceAdd($cart,app(NativeCatalogue::class)->product($net,'register'),'example.net');
 $write('tld_settings',$availability,$tld->id);same(2,$cart->items()->count(),'Unchanged TLD settings preserve eligible cart lines');
 $write('seller',['seller'=>'','register'=>false,'transfer'=>false],$tld->id);same(['net'],array_column($front->endings(),'tld'),'Seller withdrawal removes only its storefront ending');same(1,$cart->items()->count(),'Seller withdrawal retains another ending cart');
 $write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id);commerceAdd($cart,$product,placeholderComFixtureName('unpublish-cart-placeholder.com'));

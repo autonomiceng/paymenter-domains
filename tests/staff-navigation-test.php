@@ -52,7 +52,7 @@ $once($tab,'Edit resolver');
 Livewire::actingAs($viewer)->test(MonitoringSettings::class)->assertSuccessful()->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Edit resolver')->assertSee('Missing');
 $edit=\Filament\Actions\Testing\TestAction::make('edit')->schemaComponent('resolver','content');
 $modal=fn($test)=>html_entity_decode($test->html().implode('',$test->effects['partials']??[]),ENT_QUOTES);
-$invalid=Livewire::actingAs($manager)->test(MonitoringSettings::class)->mountAction($edit)->setActionData(['url'=>'http://resolver-placeholder.org','ip'=>'127.0.0.1'])->callMountedAction()->assertHasActionErrors(['url','ip']);
+$invalid=Livewire::actingAs($manager)->test(MonitoringSettings::class)->mountAction($edit)->setActionData(['url'=>'http://resolver.example.org','ip'=>'127.0.0.1'])->callMountedAction()->assertHasActionErrors(['url','ip']);
 foreach(['Use an HTTPS URL with a public hostname.','Use a public IPv4 or IPv6 address.'] as $text){expect(str_contains($modal($invalid),$text),'Field error: '.$text);}
 $form=Livewire::actingAs($manager)->test(MonitoringSettings::class)->mountAction($edit);
 foreach(['Edit resolver','Resolver URL (DNS over HTTPS)','Default: '.DohEndpoint::URL,'Checked domain names are sent to this resolver.','Bootstrap IP','Default: '.DohEndpoint::IP.". The resolver's public IP."] as $text){expect(str_contains($modal($form),$text),'Form copy: '.$text);}
