@@ -29,6 +29,58 @@ try {
         catch(RuntimeException $error){same('OTE order number required.',$error->getMessage(),'Missing order is refused by policy');}
         same(3,count($requests),'Missing order refused before sender');
     } finally { restore_error_handler(); }
+    $dispatch = static function (GuardedTransport $wire, string $entrypoint, array $parameters): void {
+        if ($entrypoint === 'raw') { $wire->raw('https://ote.namesilo.com/api', 'orderDetails', $parameters); return; }
+        // Corrupt mappings test the transport independently of the request factory's validation.
+        $type = new ReflectionClass(RegistrarRequest::class);
+        $request = $type->newInstanceWithoutConstructor();
+        $type->getConstructor()->invoke($request, 'orderDetails', $parameters);
+        if ($entrypoint === 'send') { $wire->send(Environment::Sandbox, RequestContext::Interactive, $request, 'offline-secret-token'); }
+        else { $wire->sendWithin(Environment::Sandbox, RequestContext::Interactive, $request, 'offline-secret-token', 25000); }
+    };
+    $violations = [];
+    foreach (['raw', 'send', 'sendWithin'] as $entrypoint) {
+        $calls = 0;
+        $valid = json_decode(file_get_contents(__DIR__.'/fixtures/synthetic-success.json'), true, 24, JSON_THROW_ON_ERROR)['orderDetails'];
+        $wire = new GuardedTransport('offline-secret-token', false, $output,
+            static function ($command, $parameters) use (&$calls, $valid): TransportResponse {
+                $calls++;
+                $valid['reply']['order_number'] = is_scalar($parameters['order_number'] ?? null) ? (string) $parameters['order_number'] : '901';
+                return new TransportResponse(200, json_encode($valid, JSON_THROW_ON_ERROR));
+            }, $clock);
+        foreach (['901', '902'] as $id) {
+            $dispatch($wire, $entrypoint, ['order_number' => $id]);
+            same((string) $id, $wire->latest('orderDetails')['order_number'] ?? null, 'Scalar ID supplies latest evidence: '.$entrypoint);
+            same((string) $id, $wire->orderDetail((string) $id)['order_number'] ?? null, 'Scalar ID supplies detail evidence: '.$entrypoint);
+        }
+        $details = [$wire->orderDetail('901'), $wire->orderDetail('902')];
+        foreach (['missing' => [], 'null' => ['order_number' => null], 'empty' => ['order_number' => ''],
+            'array' => ['order_number' => []], 'nested' => ['order_number' => ['901']], 'boolean' => ['order_number' => true],
+            'float' => ['order_number' => 901.0], 'object' => ['order_number' => new stdClass]] as $case => $parameters) {
+            $dispatch($wire, $entrypoint, ['order_number' => '901']);
+            $before = $wire->receipt; $beforeCalls = $calls; $error = null;
+            try { $dispatch($wire, $entrypoint, $parameters); } catch (Throwable $caught) { $error = $caught; }
+            $label = $entrypoint.' '.$case;
+            if (!$error instanceof RuntimeException || $error->getMessage() !== 'OTE order number required.') { $violations[] = $label.' policy refusal'; }
+            if ($calls !== $beforeCalls) { $violations[] = $label.' sender advanced'; }
+            if ($wire->receipt !== $before) { $violations[] = $label.' request receipt changed'; }
+            if ($wire->latest('orderDetails') !== []) { $violations[] = $label.' latest evidence retained'; }
+            if ([$wire->orderDetail('901'), $wire->orderDetail('902')] !== $details) { $violations[] = $label.' unrelated detail changed'; }
+            foreach (['', 'Array', '1'] as $invalidId) {
+                if ($wire->orderDetail($invalidId) !== []) { $violations[] = $label.' malformed detail cached'; }
+            }
+        }
+    }
+    same([], $violations, 'Malformed order IDs: '.implode('; ', $violations));
+    foreach (['raw', 'send', 'sendWithin'] as $entrypoint) {
+        $beforeCalls = $calls; $beforeCount = $wire->receipt['request_count'];
+        $dispatch($wire, $entrypoint, ['order_number' => 902]);
+        same($beforeCalls + 1, $calls, 'Integer order reaches sender once: '.$entrypoint);
+        same($beforeCount + 1, $wire->receipt['request_count'], 'Integer order consumes one request: '.$entrypoint);
+        same('902', $wire->orderDetail('902')['order_number'] ?? null, 'Integer order caches validated detail: '.$entrypoint);
+    }
+    $wire->send(Environment::Sandbox, RequestContext::Interactive, RegistrarRequest::orderDetails('901'), 'offline-secret-token');
+    same('901', $wire->latest('orderDetails')['order_number'] ?? null, 'Public request factory retains the valid string path');
     foreach (['throw', 'decode', 'http', 'budget', 'origin', 'environment', 'credential'] as $failureMode) {
         $attempts = 0;
         $cached = new GuardedTransport('offline-secret-token', false, $output,

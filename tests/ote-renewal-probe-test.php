@@ -93,7 +93,7 @@ $probe = static function (string $scenario, string $route = 'background') use ($
             } else { throw new RuntimeException('Unexpected command'); }
             if ($command==='getDomainInfo') {
                 $reply+=['traffic_type'=>'Custom DNS','email_verification_required'=>'No','portfolio'=>'','forward_url'=>'N/A','forward_type'=>'N/A',
-                    'nameservers'=>[['nameserver'=>'ns1.namesilo.com','position'=>1],['nameserver'=>'ns2.namesilo.com','position'=>2]],
+                    'nameservers'=>[['nameserver'=>'ns1.example.test','position'=>1],['nameserver'=>'ns2.example.test','position'=>2]],
                     'contact_ids'=>array_fill_keys(['registrant','administrative','technical','billing'],'101')];
             }
             if ($command === 'getDomainInfo' && $attempted && in_array($scenario, ['shape-renewed', 'shape-not-renewed'], true)) {
