@@ -10,9 +10,10 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Outcome, Purch
 
 $probe = static function (string $scenario): array {
     $out = sys_get_temp_dir().'/ote-evidence-'.bin2hex(random_bytes(6)); mkdir($out, 0700);
-    $wire = null; $calls = []; $saved = null;
+    $wire = null; $calls = []; $saved = null; $infoReads = 0;
+    $domainInfo = json_decode(file_get_contents(__DIR__.'/fixtures/synthetic-success.json'), true, 24, JSON_THROW_ON_ERROR)['getDomainInfo']['reply'];
     try {
-        $fake = static function ($command, $p) use ($out, $scenario, &$wire, &$calls, &$saved): TransportResponse {
+        $fake = static function ($command, $p) use ($out, $scenario, $domainInfo, &$wire, &$calls, &$saved, &$infoReads): TransportResponse {
             $calls[] = $command;
             if ($command === 'registerDomain') {
                 expect(is_file($out.'/attempt-private.json'), 'Private evidence precedes dispatch');
@@ -25,7 +26,7 @@ $probe = static function (string $scenario): array {
                 expect(abs(time() - (new DateTimeImmutable($saved['dispatch_utc']))->getTimestamp()) <= 1, 'Actual dispatch UTC retained');
                 $reply = ['code' => null, 'detail' => null];
             } elseif ($command === 'listOrders') {
-                $reply = ['order' => in_array($scenario, ['registered', 'wrong-name', 'wrong-amount', 'duplicate'], true)
+                $reply = ['order' => (in_array($scenario, ['registered', 'wrong-name', 'wrong-amount', 'duplicate'], true) || str_starts_with($scenario, 'registered-'))
                     ? [['order_number' => '901', 'order_date' => gmdate('Y-m-d H:i:s'), 'total' => '8.95', 'method' => 'Account Funds']] : []];
             } elseif ($command === 'orderDetails') {
                 $item = ['description' => ($scenario === 'wrong-name' ? 'contract-ote-123456789abc.com' : $wire->domain).' - registration',
@@ -33,9 +34,9 @@ $probe = static function (string $scenario): array {
                 $reply = ['order_number' => '901', 'order_date' => gmdate('Y-m-d H:i:s'), 'total' => '8.95', 'method' => 'Account Funds',
                     'order_details' => $scenario === 'duplicate' ? [$item, $item] : [$item]];
             } elseif ($command === 'getDomainInfo') {
-                $reply = in_array($scenario, ['registered', 'wrong-name', 'wrong-amount', 'duplicate', 'owned-no-order'], true)
-                    ? ['created' => gmdate('Y-m-d'), 'expires' => gmdate('Y-m-d', strtotime('+1 year')), 'status' => 'Active',
-                        'locked' => 'Yes', 'private' => 'No', 'auto_renew' => 'No']
+                ++$infoReads;
+                $reply = in_array($scenario, ['registered', 'wrong-name', 'wrong-amount', 'duplicate', 'owned-no-order'], true) || str_starts_with($scenario, 'registered-')
+                    ? array_replace($domainInfo, ['created' => gmdate('Y-m-d'), 'expires' => gmdate('Y-m-d', strtotime('+1 year'))])
                     : ['code' => $scenario === 'unknown-info' ? null : 200, 'detail' => 'synthetic'];
             } elseif ($command === 'checkRegisterAvailability') {
                 $reply = $scenario === 'unavailable' ? ['unavailable' => [['domain' => $wire->domain]]]
@@ -44,8 +45,34 @@ $probe = static function (string $scenario): array {
             if ($command === 'listOrders' && $scenario === 'timeout') { throw new RuntimeException('synthetic'); }
             if ($command === 'listOrders' && $scenario === 'unknown-orders') { $reply['code'] = null; }
             if ($command === 'listOrders' && $scenario === 'null-detail') { $reply['detail'] = null; }
-            return new TransportResponse(200, json_encode(['request' => ['operation' => $command === 'listOrders' && $scenario === 'wrong-operation' ? 'getPrices' : $command],
-                'reply' => $reply + ['code' => 300, 'detail' => 'synthetic']], JSON_THROW_ON_ERROR));
+            $body = ['request' => ['operation' => $command === 'listOrders' && $scenario === 'wrong-operation' ? 'getPrices' : $command,
+                'ip' => '192.0.2.1'], 'reply' => $reply + ['code' => 300, 'detail' => 'synthetic']];
+            if ($command === 'getDomainInfo') {
+                if (str_starts_with($scenario, 'registered-') || str_starts_with($scenario, 'absence-') || str_starts_with($scenario, 'stale-')) {
+                    same($body['reply']['code'] === 200 ? ['reply.code_not_success'] : [],
+                        \OteContract\Shapes::check($command, $body), 'Baseline fixture passes its exact shape contract');
+                }
+                if ($scenario === 'absence-string-code') { $body['reply']['code'] = '200'; }
+                if ($scenario === 'absence-missing-ip' || $scenario === 'registered-missing-ip'
+                    || ($scenario === 'stale-shape' && $infoReads > 1)) { unset($body['request']['ip']); }
+                if ($scenario === 'absence-null-ip') { $body['request']['ip'] = null; }
+                if ($scenario === 'absence-null-detail') { $body['reply']['detail'] = null; }
+                if ($scenario === 'absence-wrong-operation') { $body['request']['operation'] = 'getPrices'; }
+                if ($scenario === 'absence-request-code') { $body['reply']['code'] = 109; }
+                if ($scenario === 'absence-unknown-code') { $body['reply']['code'] = 400; }
+                if ($scenario === 'absence-order-claim') { $body['reply']['order_number'] = null; }
+                if ($scenario === 'absence-domain-claim') { $body['reply']['domain'] = $wire->domain; }
+                if ($scenario === 'absence-extra-reply') { $body['reply']['internal'] = null; }
+                if ($scenario === 'absence-extra-request') { $body['request']['internal'] = null; }
+                if ($scenario === 'absence-extra-envelope') { $body['internal'] = null; }
+                if ($scenario === 'registered-shape') { unset($body['reply']['traffic_type']); }
+                if ($scenario === 'stale-throw' && $infoReads > 1) { throw new RuntimeException('Synthetic read failure'); }
+                if ($scenario === 'absence-decode') { return new TransportResponse(200, '{'); }
+                if ($scenario === 'absence-http') { return new TransportResponse(503, json_encode($body, JSON_THROW_ON_ERROR)); }
+            }
+            if ($scenario === 'registered-history-shape' && $command === 'listOrders') { unset($body['request']['ip']); }
+            if ($scenario === 'registered-detail-shape' && $command === 'orderDetails') { unset($body['request']['ip']); }
+            return new TransportResponse(200, json_encode($body, JSON_THROW_ON_ERROR));
         };
         $wire = new GuardedTransport('offline-secret-token', true, $out, $fake, static fn () => 21, 10);
         $wire->purchaseAuthorization(static fn () => new Money('8.9500', 'USD'));
@@ -67,6 +94,30 @@ $probe = static function (string $scenario): array {
         }
         $binding = new AccountBinding('namesilo', 1, Environment::Test, 'synthetic');
         $category = $wire->purchaseAttempt()->reconcile($wire, new Client($binding, 'offline-secret-token', $wire), $binding, new SystemClock);
+        if (str_starts_with($scenario, 'stale-')) {
+            same('not_registered', $category, 'First reconciliation establishes valid absence');
+            same([], $wire->latest('getDomainInfo'), 'Valid absence never enters the success cache');
+            $offset = $wire->receipt['request_count'];
+            $category = $wire->purchaseAttempt()->reconcile($wire, new Client($binding, 'offline-secret-token', $wire), $binding, new SystemClock);
+            $current = array_slice($wire->receipt['requests'], $offset);
+            expect(count($current) >= 2, 'Second reconciliation attempts fresh history and domain reads');
+            same([], array_values(array_filter($current, static fn ($r) => ($r['absence_validated'] ?? false) === true)),
+                'Current reconciliation cannot reuse a prior absence marker');
+        }
+        $infos = array_values(array_filter($wire->receipt['requests'], static fn ($r) => $r['command'] === 'getDomainInfo'));
+        $info = $infos ? $infos[array_key_last($infos)] : [];
+        if (in_array($scenario, ['absent', 'absence-string-code'], true)) {
+            same(true, $info['absence_validated'] ?? false, 'Documented code 200 validates absence');
+            same(false, $info['read_validated'] ?? false, 'Absence is not a successful read');
+            same([], $wire->latest('getDomainInfo'), 'Rejected absence never enters latest');
+        }
+        if (str_starts_with($scenario, 'absence-') && $scenario !== 'absence-string-code') {
+            same(false, $info['absence_validated'] ?? false, 'Malformed absence has no validated marker: '.$scenario);
+        }
+        if (in_array($scenario, ['registered-shape', 'registered-missing-ip'], true)) {
+            same('Success', $info['read_outcome'], 'Malformed success still passes the production parser');
+            same(false, $info['read_validated'], 'Structural refusal invalidates production facts');
+        }
         same($category, $wire->receipt['reconciliation']['category'], 'Exactly one durable closed category');
         same(false, $wire->receipt['reconciliation']['adopted'], 'No native financial completion or adoption');
         $receipt = file_get_contents($out.'/receipt.json');
@@ -96,7 +147,14 @@ $probe = static function (string $scenario): array {
 foreach (['registered' => 'registered_in_account', 'absent' => 'not_registered', 'wrong-name' => 'ambiguous',
     'wrong-amount' => 'ambiguous', 'duplicate' => 'ambiguous', 'unknown-info' => 'ambiguous', 'unavailable' => 'ambiguous',
     'owned-no-order' => 'ambiguous', 'unknown-orders' => 'ambiguous', 'null-detail' => 'ambiguous', 'wrong-operation' => 'ambiguous', 'timeout' => 'ambiguous', 'tamper-name' => 'ambiguous', 'tamper-amount' => 'ambiguous',
-    'mode-0644' => 'ambiguous', 'symlink' => 'ambiguous'] as $scenario => $expected) {
+    'mode-0644' => 'ambiguous', 'symlink' => 'ambiguous', 'absence-string-code' => 'not_registered',
+    'absence-missing-ip' => 'ambiguous', 'absence-null-ip' => 'ambiguous', 'absence-null-detail' => 'ambiguous',
+    'absence-wrong-operation' => 'ambiguous', 'absence-request-code' => 'ambiguous', 'absence-unknown-code' => 'ambiguous',
+    'absence-order-claim' => 'ambiguous', 'absence-domain-claim' => 'ambiguous', 'absence-extra-reply' => 'ambiguous',
+    'absence-extra-request' => 'ambiguous', 'absence-extra-envelope' => 'ambiguous', 'absence-decode' => 'ambiguous',
+    'absence-http' => 'ambiguous', 'registered-shape' => 'ambiguous', 'registered-missing-ip' => 'ambiguous',
+    'registered-history-shape' => 'ambiguous', 'registered-detail-shape' => 'ambiguous',
+    'stale-shape' => 'ambiguous', 'stale-throw' => 'ambiguous'] as $scenario => $expected) {
     [$category] = $probe($scenario); same($expected, $category, 'Closed category for '.$scenario);
 }
 

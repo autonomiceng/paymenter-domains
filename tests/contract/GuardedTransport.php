@@ -205,6 +205,17 @@ final class GuardedTransport implements DeadlineTransport
             $shapeErrors = Shapes::check($command, $data, $command === 'checkRegisterAvailability' ? explode(',', $parameters['domains']) : []);
             foreach ($shapeErrors as $error) { $this->mismatch($command, $error); }
             if ($response->httpStatus !== 200) { $this->mismatch($command, 'http_status'); $this->save(); throw new \RuntimeException('OTE HTTP response refused.'); }
+            $entry['read_validated'] = $shapeErrors === [] && $readRequest !== null
+                && $parsed->outcome === \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Success;
+            // A documented account-absence reply is separate from successful readback evidence.
+            $entry['absence_validated'] = $command === 'getDomainInfo'
+                && $shapeErrors === ['reply.code_not_success']
+                && $parsed->outcome === \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Rejected
+                && $parsed->code === 200
+                && $parsed->scope === \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\RejectionScope::Domain
+                && array_diff(array_keys($data), ['request', 'reply']) === []
+                && array_diff(array_keys($data['request']), ['operation', 'ip']) === []
+                && array_diff(array_keys($data['reply']), ['code', 'detail']) === [];
             $this->save();
             if ($shapeErrors === [] && ($readRequest === null || $parsed->outcome === \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Success)
                 && is_array($data['reply'] ?? null)) {

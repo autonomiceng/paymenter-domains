@@ -81,7 +81,7 @@ final class RenewalProbe
             $healthy = count($reads) >= 2 && count($reads) <= 22;
             foreach ($reads as $read) {
                 $healthy = $healthy && ($read['http_status'] ?? null) === 200 && ($read['code'] ?? null) === 300
-                    && ($read['read_outcome'] ?? null) === 'Success'
+                    && ($read['read_outcome'] ?? null) === 'Success' && ($read['read_validated'] ?? false) === true
                     && (!in_array($read['command'], ['listOrders', 'orderDetails'], true) || ($read['history_complete'] ?? null) === true) && !($read['transport_failed'] ?? false);
             }
             // Require a fully traversed bounded list, including every detail. No swallowed truncation or failure.

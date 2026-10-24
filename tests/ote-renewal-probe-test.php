@@ -66,12 +66,12 @@ $probe = static function (string $scenario, string $route = 'background') use ($
             } elseif ($command === 'renewDomain') {
                 $attempted = true;
                 same(1, $p['years'], 'Only one annual term'); same(0, $p['auto_renew'], 'Explicit renewal auto-renew off');
-                $renewed = !in_array($scenario, ['absent', 'unchanged-order', 'timeout', 'unknown-orders', 'unknown-info', 'empty-detail', 'partial-history', 'unknown-empty-orders', 'invalid-description', 'uppercase', 'trailing-dot'], true);
+                $renewed = !in_array($scenario, ['absent', 'shape-not-renewed', 'unchanged-order', 'timeout', 'unknown-orders', 'unknown-info', 'empty-detail', 'partial-history', 'unknown-empty-orders', 'invalid-description', 'uppercase', 'trailing-dot'], true);
                 if (in_array($scenario,['success','bad-readback'],true)) { $reply += ['domain' => $wire->domain, 'order_amount' => '8.95']; }
                 else { $reply = ['code' => null, 'detail' => 'private account 123 and cost 8.95']; }
                 if ($scenario === 'timeout') { throw new RuntimeException('synthetic timeout'); }
             } elseif ($command === 'listOrders') {
-                $reply['order'] = in_array($scenario, ['absent', 'expiry-only', 'timeout', 'unknown-empty-orders'], true) ? [] :
+                $reply['order'] = in_array($scenario, ['absent', 'shape-not-renewed', 'expiry-only', 'timeout', 'unknown-empty-orders'], true) ? [] :
                     [['order_number' => '901', 'order_date' => $stamp, 'total' => '8.95', 'method' => 'Account Funds']];
                 if (in_array($scenario, ['unknown-orders', 'unknown-empty-orders'], true)) { $reply['detail'] = null; }
                 if ($scenario === 'overflow') { $reply['order'] = array_fill(0, 21, $reply['order'][0]); }
@@ -95,6 +95,11 @@ $probe = static function (string $scenario, string $route = 'background') use ($
                 $reply+=['traffic_type'=>'Custom DNS','email_verification_required'=>'No','portfolio'=>'','forward_url'=>'N/A','forward_type'=>'N/A',
                     'nameservers'=>[['nameserver'=>'ns1.namesilo.com','position'=>1],['nameserver'=>'ns2.namesilo.com','position'=>2]],
                     'contact_ids'=>array_fill_keys(['registrant','administrative','technical','billing'],'101')];
+            }
+            if ($command === 'getDomainInfo' && $attempted && in_array($scenario, ['shape-renewed', 'shape-not-renewed'], true)) {
+                same([], \OteContract\Shapes::check($command, ['request' => ['operation' => $command, 'ip' => '192.0.2.1'], 'reply' => $reply]),
+                    'Renewal fixture is valid before the one-field structural defect');
+                unset($reply['traffic_type']);
             }
             if ($command==='renewDomain'&&in_array($scenario,['success','bad-readback'],true)) { $reply['message']='synthetic'; }
             return new TransportResponse($scenario === 'http' && $command === 'listOrders' ? 503 : 200,
@@ -124,6 +129,13 @@ $probe = static function (string $scenario, string $route = 'background') use ($
             same(false,RenewalProbe::completed($wire),'Skipped diagnostic cannot complete');return;
         }
         $expected = match ($scenario) { 'renewed' => 'renewed', 'absent', 'timeout' => 'not_renewed', 'success','bad-readback' => null, default => 'ambiguous' };
+        if (in_array($scenario, ['shape-renewed', 'shape-not-renewed'], true)) {
+            $infos = array_values(array_filter($wire->receipt['requests'], static fn ($r) => $r['command'] === 'getDomainInfo'));
+            $info = $infos[array_key_last($infos)];
+            same('Success', $info['read_outcome'], 'Malformed renewal info still passes the production parser');
+            same(false, $info['read_validated'], 'Malformed renewal info is not validated evidence');
+            same([], $wire->latest('getDomainInfo'), 'Malformed renewal info is absent from the success cache');
+        }
         same($expected, $wire->receipt['renewal_reconciliation']['category'] ?? null, 'Exactly one closed renewal category: '.$scenario);
         same(!in_array($scenario, ['success','bad-readback','renewed'], true), $thrown, 'Unknown unresolved stops, success continues');
         if ($expected !== null) {
@@ -159,7 +171,7 @@ $probe = static function (string $scenario, string $route = 'background') use ($
     }
 };
 foreach (['success', 'renewed', 'absent', 'expiry-only', 'unchanged-order', 'wrong-amount', 'wrong-term', 'wrong-name',
-    'empty-detail', 'partial-history', 'unknown-empty-orders', 'invalid-description', 'uppercase', 'trailing-dot', 'old-date', 'duplicate', 'credited', 'unknown-orders', 'unknown-info', 'timeout', 'detail-timeout', 'wrong-operation', 'http', 'overflow','expired','budget','quote-timeout','quote-rejected','quote-missing','quote-no-com','bad-readback'] as $scenario) { $probe($scenario); }
+    'empty-detail', 'partial-history', 'unknown-empty-orders', 'invalid-description', 'uppercase', 'trailing-dot', 'old-date', 'duplicate', 'credited', 'unknown-orders', 'unknown-info', 'timeout', 'detail-timeout', 'wrong-operation', 'http', 'overflow','expired','budget','quote-timeout','quote-rejected','quote-missing','quote-no-com','bad-readback','shape-renewed','shape-not-renewed'] as $scenario) { $probe($scenario); }
 $probe('renewed', 'interactive'); $probe('absent', 'interactive');
 
 $out = sys_get_temp_dir().'/ote-details-'.bin2hex(random_bytes(6)); mkdir($out, 0700);

@@ -105,11 +105,14 @@ final class PurchaseAttempt
                 new RequestBudget($wire->remaining()), $clock);
             $facts = (new Driver($client, ['register'], $clock))->reconcile($attempt, $context)->result()->evidence();
             $reads = array_slice($wire->receipt['requests'], $offset);
-            $healthy = count($reads) >= 2;
+            $healthy = count($reads) >= 2; $info = null;
             foreach ($reads as $read) {
+                if ($read['command'] === 'getDomainInfo') { $info = $read; }
                 $healthy = $healthy && ($read['http_status'] ?? null) === 200 && !($read['transport_failed'] ?? false)
                     && in_array($read['code'] ?? null, $read['command'] === 'getDomainInfo' ? [200, 300] : [300], true)
-                    && ($read['read_outcome'] ?? null) === (($read['code'] ?? null) === 200 ? 'Rejected' : 'Success');
+                    && ($read['read_outcome'] ?? null) === (($read['code'] ?? null) === 200 ? 'Rejected' : 'Success')
+                    && (($read['read_validated'] ?? false) === true
+                        || ($read['command'] === 'getDomainInfo' && ($read['absence_validated'] ?? false) === true));
             }
             // This category authorizes only this sandbox sequence, never financial completion.
             $matches = array_filter($facts->candidates, static fn ($row) => $row->query->matches($attempt->query)
@@ -118,9 +121,8 @@ final class PurchaseAttempt
                 && count($facts->candidates) === 1 && count($matches) === 1) {
                 $category = 'registered_in_account';
             } else {
-                $info = $wire->latest('getDomainInfo'); $orders = $wire->latest('listOrders');
-                $absent = in_array($info['code'] ?? null, [200, '200'], true) && is_string($info['detail'] ?? null)
-                    && !array_intersect(['order_amount', 'order_number', 'order_details'], array_keys($info));
+                $orders = $wire->latest('listOrders');
+                $absent = ($info['absence_validated'] ?? false) === true;
                 // Strict empty history is sufficient here; nonempty/partial history stays ambiguous.
                 $empty = ($orders['order'] ?? null) === [];
                 $available = $client->read(RegistrarRequest::availability([$data['name']], false), $context);
