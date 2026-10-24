@@ -31,6 +31,6 @@ final readonly class AccountBinding
     public function matches(self $other): bool { return hash_equals($this->fingerprint, $other->fingerprint); }
     public function requireMatch(self $other): void
     {
-        if (!$this->matches($other)) { throw new \InvalidArgumentException('Registrar account binding mismatch.'); }
+        if (!$this->matches($other)) { throw new AccountBindingMismatch('Registrar account binding mismatch.'); }
     }
 }
