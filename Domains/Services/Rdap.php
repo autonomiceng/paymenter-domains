@@ -194,7 +194,7 @@ final class Rdap
         try {
             $ok = curl_exec($curl) !== false;
             $status = self::completedStatus($ok, curl_errno($curl), curl_getinfo($curl, CURLINFO_RESPONSE_CODE));
-            if ($status === null || ($pins !== null && !$ok)) { throw new RuntimeException('Lookup response is unavailable.'); }
+            if ($status === null) { throw new RuntimeException('Lookup response is unavailable.'); }
             return ['status' => $status, 'body' => $body, 'retry_after' => $retryAfter];
         } finally { curl_close($curl); }
     }

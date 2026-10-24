@@ -42,6 +42,12 @@ foreach ([''=>true,'{}'=>true,'{"errorCode":404}'=>true,'{"title":"Not found"}'=
     same($missing?'not_registered':'unknown',$rdap->read('example.com',new RegistryContext())['result'],'Strict selected-endpoint 404: '.$reply);
 }
 $rdap=new PublicRegistryReader($dns,null,fn()=>['status'=>404,'body'=>'{}']);same('expiry_unknown',$rdap->read('example.com',new RegistryContext())['safe_code'],'Bootstrap404 is never not registered');
+$completed = []; $retryCalls = 0;
+$ctx = new RegistryContext(fn()=>10.0, null, function($url,$response) use (&$completed) { $completed[] = [$url,$response]; });
+$limited = new PublicRegistryReader($dns,$bootstrap,function() use (&$retryCalls) { $retryCalls++; return ['status'=>429,'body'=>'{}','retry_after'=>'120']; });
+same('unknown',$limited->read('example.com',$ctx)['result'],'429 cannot supply registry facts');
+same(1,$retryCalls,'429 is never retried within a read');
+same([['https://rdap.example.com/domain/example.com',['status'=>429,'retry_after'=>'120','deferred'=>false,'failed'=>true]]],$completed,'Retry-After and completion metadata reach endpoint quota callback');
 foreach ([302,429,500] as $status) { same('unknown',(new PublicRegistryReader($dns,$bootstrap,fn()=>['status'=>$status,'body'=>'{}']))->read('example.com',new RegistryContext())['result'],'No HTTP retry or redirect'); }
 foreach (['http://rdap.example.com','https://127.0.0.1','https://rdap.local','https://rdap.example.com:444','https://a:b@rdap.example.com','https://rdap.example.com/?url=x'] as $url) {
     $count=count($calls);same('no_coverage',(new PublicRegistryReader($dns,['services'=>[[['com'],[$url]]]],$transport))->read('example.com',new RegistryContext())['safe_code'],'Unsafe bootstrap endpoint');same($count,count($calls),'Unsafe endpoint sends nothing');

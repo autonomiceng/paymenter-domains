@@ -69,7 +69,7 @@ same([],Plan::dns($drift['state'],null,$base+1800,false)['portal'],'Retired expe
 same([],Plan::dns($drift['state'],ns($base+1800,'platform',3,['lineage'=>'profile:2']),$base+1800,true)['portal'],'Changed lineage clears predecessor portal');
 $reached=Plan::expiry([],expiry($base,0),$base);same(['registry_expiry_reached'],Plan::expiry($reached['state'],null,$base-1)['portal'],'Reversal across expiry retains reached condition');
 $outage=Plan::expiry([],expiry($base,1),$base);$outage=Plan::expiry($outage['state'],null,$base+86400);$outage=Plan::expiry($outage['state'],null,$base+43200);
-same(['registry_expiry_reached','expiry_unavailable'],array_values(array_unique([...$outage['portal'],'expiry_unavailable'])),'Outage crossing retained across reversal');same('clock_reversal',$outage['health'],'Outage evaluation has high-water mark');
+same(['registry_expiry_reached'],$outage['portal'],'Outage crossing retained across reversal without evaluating reversed freshness');same('clock_reversal',$outage['health'],'Outage evaluation has high-water mark');
 $dnsOutage=Plan::dns($p['state'],null,$base+86400,true);$dnsOutage=Plan::dns($dnsOutage['state'],ns($base+900,'external',2,['ns_confirmed'=>true]),$base+900,true);
 same([],$dnsOutage['notices'],'DNS outage reversal cannot consume episode');same('clock_reversal',$dnsOutage['health'],'DNS evaluation high-water mark detects reversal');
 echo "Watch UTC windows, bounded catch-up, correction keys, clock reversal and DNS episodes passed.\n";

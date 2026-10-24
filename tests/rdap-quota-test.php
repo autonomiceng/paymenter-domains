@@ -18,13 +18,17 @@ DB::table(RdapQuota::TABLE)->delete();$a=new RdapQuota();$b=new RdapQuota();expe
 expect($q->reserve($url,$now+122),'Completed new token releases');$q->complete($url,['deferred'=>true],$now+122);same(0,(int)DB::table(RdapQuota::TABLE)->where('scope',hash('sha256','rdap.example.com'))->value('failures'),'Local DNS budget does not poison endpoint');
 DB::table(RdapQuota::TABLE)->delete();for($i=0;$i<5;$i++){expect($q->reserve($url,$now+$i*60),'Malformed reply admitted');$q->complete($url,['status'=>404,'failed'=>true],$now+$i*60);}expect(!$q->reserve($url,$now+300),'Malformed HTML404 contributes to endpoint circuit');
 DB::table(RdapQuota::TABLE)->delete();
+$bootstrapCalls=0;$bootstrapRequests=[];$bootstrapCompleted=[];
 $dns=new Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader([
-    'data.iana.org|CNAME'=>static fn($q)=>Paymenter\Extensions\Servers\Domains\Dns\DnsAnswer::negative($q,'nodata'),
+    'data.iana.org|CNAME'=>static fn($q)=>Paymenter\Extensions\Servers\Domains\Dns\DnsAnswer::negative($q,0,'nodata'),
     'data.iana.org|A'=>static fn($q)=>Paymenter\Extensions\Servers\Domains\Dns\DnsAnswer::rrset($q,[['host'=>'data.iana.org','class'=>'IN','type'=>'A','ttl'=>60,'ip'=>'8.8.8.8']])]);
 for($i=0;$i<5;$i++) {
-    $at=$now+$i*60;$reader=new Paymenter\Extensions\Servers\Domains\Services\PublicRegistryReader($dns,null,static fn()=>['status'=>200,'body'=>'{}']);
-    $context=new Paymenter\Extensions\Servers\Domains\Dns\RegistryContext(static fn()=>$at,fn($u)=>$q->reserve($u,$at),fn($u,$r)=>$q->complete($u,$r,$at));
+    $at=$now+$i*60;$reader=new Paymenter\Extensions\Servers\Domains\Services\PublicRegistryReader($dns,null,static function($url,$timeout,$pins)use(&$bootstrapCalls,&$bootstrapRequests){$bootstrapCalls++;$bootstrapRequests[]=[$url,$pins];return ['status'=>200,'body'=>'{}'];});
+    $context=new Paymenter\Extensions\Servers\Domains\Dns\RegistryContext(static fn()=>$at,fn($u)=>$q->reserve($u,$at),function($u,$r)use($q,$at,&$bootstrapCompleted){$bootstrapCompleted[]=[$u,$r];$q->complete($u,$r,$at);});
     same('endpoint_failed',$reader->read('example.com',$context)['reason'],'Malformed bootstrap remains unknown');
+    same($i+1,$bootstrapCalls,'Malformed bootstrap reaches HTTP exactly once per admitted probe');
+    same(['https://data.iana.org/rdap/dns.json',['8.8.8.8']],$bootstrapRequests[$i],'Malformed body comes from public bootstrap endpoint');
+    same(['https://data.iana.org/rdap/dns.json',['status'=>200,'retry_after'=>null,'deferred'=>false,'failed'=>true]],$bootstrapCompleted[$i],'Malformed bootstrap200 reaches completion with body failure');
 }
 expect(!$q->reserve('https://data.iana.org/rdap/dns.json',$now+300),'Malformed bootstrap200 opens endpoint circuit');
 $nativeSuccessful=true;echo "Independent RDAP host/global limits, exact leases, circuit, Retry-After and DNS isolation passed.\n";
