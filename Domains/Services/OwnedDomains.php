@@ -230,7 +230,9 @@ final readonly class OwnedDomains
             $invoice = $l['invoices']->firstWhere('id', $cycle->invoice_id);
             if ($invoice?->status === 'cancelled' && (int) $invoice->user_id === (int) $d->user_id) { return ['status' => 'cancelled']; }
             try { $invoice = DomainBilling::existingInvoice($cycle, $l); } catch (\Throwable) { return ['status' => 'review']; }
-            if ($invoice->status === 'pending' && DomainBilling::expired($d, $now ?? app(Clock::class)->now())) { return ['status' => 'cancelled']; }
+            if ($invoice->status === 'pending' && DomainBilling::expired($d, $now ?? app(Clock::class)->now())) {
+                return ['status' => RenewalCycles::canRetireUnpaid($cycle, $l) ? 'cancelled' : 'review'];
+            }
             return match (true) {
                 $cycle->state === 'awaiting_payment' && $invoice->status === 'pending' => ['invoice' => route('invoices.show', $invoice)],
                 $invoice->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => ['status' => 'paid'],

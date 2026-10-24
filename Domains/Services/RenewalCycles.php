@@ -51,7 +51,8 @@ final readonly class RenewalCycles
             }
         });
     }
-    private static function canRetireUnpaid(?Operation $op, array $l): bool
+    /** Read-only eligibility proof, independent of expiry. Writes require the current locked ledger. */
+    public static function canRetireUnpaid(?Operation $op, array $l): bool
     {
         $invoice = $l['invoices']->firstWhere('id', $op?->invoice_id); $item = $l['items']->firstWhere('id', $op?->invoice_item_id);
         return !(!$op || $op->action !== 'renew' || $op->funding_basis !== 'paid_invoice' || !$invoice || !$item

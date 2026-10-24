@@ -176,6 +176,35 @@ foreach(['missing_item','membership','currency','amount','due','missing_due','ba
     DB::table('invoices')->where('id',$invoice->id)->update($rawInvoice);DB::table('domains_operations')->where('id',$op->id)->update($rawOp);
 }
 same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Restored retained invoice is payable');
+// Expiry alone cannot retire an in-flight payment, collection or registrar operation.
+$expiryResults=[];$expiryExpected=[];$savedTime=$clock->instant;
+$clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');
+foreach(['processing','auto_pay_uncertain','pending','uncertain','retireable','cancelled_native','cancelled_native_uncertain'] as $case){
+    $paymentId=null;
+    if($case==='processing'){$paymentId=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$invoice->id,'amount'=>'1.00','fee'=>'0.00','status'=>'processing','created_at'=>now(),'updated_at'=>now()]);}
+    if($case==='auto_pay_uncertain'){
+        $funding=$op->fresh()->funding;
+        same('skipped',$funding['auto_pay']['status'],'Manual renewal starts with definite non-collection');
+        $op->funding=[...$funding,'auto_pay'=>[...$funding['auto_pay'],'status'=>'uncertain','reason'=>null]];
+        DB::table('domains_operations')->where('id',$op->id)->update(['funding'=>$op->getAttributes()['funding']]);
+        same('uncertain',$op->fresh()->funding['auto_pay']['status'],'Uncertain collection evidence is stored');
+    }
+    if(in_array($case,['pending','uncertain','cancelled_native_uncertain'],true)){DB::table('domains_operations')->where('id',$op->id)->update(['state'=>$case==='cancelled_native_uncertain'?'uncertain':$case]);}
+    if(str_starts_with($case,'cancelled_native')){DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'cancelled']);}
+    $expected=$case==='retireable'||str_starts_with($case,'cancelled_native')?'cancelled':'review';$unchanged=$ledger();
+    foreach([1,2] as $pass){
+        $label=$case.':'.$pass;$html=$page($d);
+        $expiryExpected[$label]=[['status'=>$expected],$expected==='cancelled'?1:0,$expected==='review'?1:0];
+        $expiryResults[$label]=[$bounded(fn()=>$owners->present($d->fresh())->renewNow),substr_count($html,'>Invoice cancelled<'),substr_count($html,'>Renewal being checked<')];
+        expect(!str_contains($html,'Pay invoice')&&!str_contains($html,'Create invoice'),'Expired '.$label.' offers no billing action');
+        same($unchanged,$ledger(),'Repeated expired '.$label.' presentation preserves all evidence');
+    }
+    if($paymentId!==null){DB::table('invoice_transactions')->where('id',$paymentId)->delete();}
+    DB::table('invoices')->where('id',$invoice->id)->update($rawInvoice);DB::table('domains_operations')->where('id',$op->id)->update($rawOp);
+}
+$clock->instant=$savedTime;
+same(14,count($expiryResults),'Every expired blocker and control is read twice');
+same($expiryExpected,$expiryResults,'Expired renewal status requires complete unpaid-retirement proof: '.json_encode($expiryResults,JSON_THROW_ON_ERROR));
 foreach(['processing','succeeded','failed'] as $paymentState){
     $id=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$invoice->id,'amount'=>'1.00','fee'=>'0.00','status'=>$paymentState,'created_at'=>now(),'updated_at'=>now()]);
     $unchanged=$ledger();same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Pending invoice remains payable with partial or unsettled payment: '.$paymentState);
@@ -263,6 +292,15 @@ $response=$controller->renew($req($d,['years'=>'1']),$d->id);$replacement=Operat
 $replacementUrl=route('invoices.show',Invoice::findOrFail($replacement->invoice_id));
 same([$op->operation_key.':replacement:1',1,$replacementUrl],[$replacement->operation_key,(int)$replacement->term,$response->getTargetUrl()],'Replacement request lands on its own invoice');
 same(['invoice'=>$replacementUrl],$cycle(),'Replacement cycle links its invoice');
+$savedTime=$clock->instant;$rawReplacement=$replacement->getRawOriginal();
+$clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');
+DB::table('domains_operations')->where('id',$replacement->id)->update(['state'=>'uncertain']);$unchanged=$ledger();
+foreach([1,2] as $pass){
+    same(['status'=>'review'],$bounded(fn()=>$cycle()),'Expired replacement preserves uncertain outcome: '.$pass);
+    same($unchanged,$ledger(),'Repeated replacement read preserves retired and current debt: '.$pass);
+}
+DB::table('domains_operations')->where('id',$replacement->id)->update($rawReplacement);$clock->instant=$savedTime;
+same(['invoice'=>$replacementUrl],$cycle(),'Restored replacement still owns its invoice');
 // Newer history for other cycles cannot hide the current invoice.
 $copies=[];$copyInvoices=[];$copyItems=[];
 for($i=0;$i<105;$i++){
