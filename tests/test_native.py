@@ -19,7 +19,7 @@ import bootstrap
 class BootstrapTests(unittest.TestCase):
     def prepare(self, root, native_mode=False):
         # Reuse only verified local archives; never download for these checks.
-        archives = bootstrap.CACHE
+        archives = os.environ.get('PHP_RUNTIME_ARCHIVE_CACHE', bootstrap.CACHE)
         with mock.patch.object(bootstrap, 'CACHE', root/'runtime-cache'), mock.patch.dict(os.environ, {
                 'PHP_RUNTIME_ARCHIVE_CACHE': str(archives), 'LD_LIBRARY_PATH': str(root)}):
             return bootstrap.prepare(native=native_mode)
