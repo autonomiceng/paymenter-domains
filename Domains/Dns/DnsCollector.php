@@ -14,9 +14,11 @@ final class DnsCollector
         $read = function (string $host, string $type) use (&$answers, $context): DnsAnswer {
             $q = new DnsQuery($host, $type);
             if (isset($answers[$q->key()])) { return $answers[$q->key()]; }
-            if (count($answers) >= DnsContext::MAX_QUERIES || $context->used() >= DnsContext::MAX_QUERIES || !$context->live()) { return DnsAnswer::unknown($q); }
+            if (count($answers) >= DnsContext::MAX_QUERIES || $context->used() >= DnsContext::MAX_QUERIES) { return DnsAnswer::unknown($q, $context->live() ? 'budget_exhausted' : 'deadline'); }
+            if (!$context->live()) { return $answers[$q->key()] = DnsAnswer::unknown($q, 'deadline'); }
             try { $answer = $this->reader->read($q, $context); } catch (\Throwable) { $answer = DnsAnswer::unknown($q); }
-            return $answers[$q->key()] = $context->live() && $answer->query->key() === $q->key() ? $answer : DnsAnswer::unknown($q);
+            return $answers[$q->key()] = !$context->live() ? DnsAnswer::unknown($q, 'deadline') :
+                ($answer->query->key() === $q->key() ? $answer : DnsAnswer::unknown($q));
         };
         if ($ticket->kind === 'delegation') {
             $read($hosts[0], 'NS');

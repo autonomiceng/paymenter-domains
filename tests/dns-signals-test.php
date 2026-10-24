@@ -131,6 +131,26 @@ $brokenReader=new class implements Paymenter\Extensions\Servers\Domains\Contract
 };
 (new DnsCollector($brokenReader))->collect(new WatchDnsTicket(1,1,'points','synthetic',0,'stamp',1,1,'psl',1,$p,$hosts,0,86400),new DnsContext());
 same(10,$brokenReader->calls,'Collector bounds reader invocations even when faulty adapter omits context reservation');
+// A shared deadline must remain diagnosable after reads, exceptions and before I/O.
+foreach (['answer', 'mismatch', 'throw', 'expired'] as $mode) {
+    $clock = (object)['now' => 0.0];
+    $context = new DnsContext(fn() => $clock->now);
+    if ($mode === 'expired') { $clock->now = 45.0; }
+    $late = new class($clock, $mode) implements Paymenter\Extensions\Servers\Domains\Contracts\DnsReader {
+        public int $calls = 0;
+        public function __construct(private object $clock, private string $mode) {}
+        public function read(DnsQuery $query, DnsContext $context): DnsAnswer {
+            $this->calls++; $context->reserve(); $this->clock->now = 45.0;
+            if ($this->mode === 'throw') { throw new RuntimeException('Synthetic resolver failure'); }
+            return DnsAnswer::negative($this->mode === 'mismatch' ? new DnsQuery('other.example.com', 'NS') : $query);
+        }
+    };
+    $ticket = new WatchDnsTicket(1,1,'delegation','synthetic',0,'stamp',1,1,'psl',1,$p,['example.com'],0,21600);
+    [$reading] = (new DnsCollector($late))->collect($ticket, $context);
+    same('unknown', $reading->result(), 'Deadline never preserves usable answer: '.$mode);
+    same('deadline', $reading->safeCode(), 'Collector preserves shared deadline reason: '.$mode);
+    same($mode === 'expired' ? 0 : 1, $late->calls, 'Pre-read deadline prevents resolver I/O');
+}
 $retained=['dns'=>['value'=>'platform','available'=>true,'stale'=>false],'website'=>['value'=>false,'available'=>false,'stale'=>true,'mixed'=>true],
     'email'=>['value'=>false,'available'=>true,'stale'=>true,'mixed'=>false],'partial'=>true];
 $retainedKeys=DnsSignalLabels::projection($retained);expect(in_array('domain.points.unknown',$retainedKeys,true) && !in_array('domain.points.platform_empty',$retainedKeys,true),'Superseded mixed positive across independent rows remains unknown without invalid label axes');
