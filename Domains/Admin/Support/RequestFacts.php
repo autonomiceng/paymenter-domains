@@ -2,92 +2,101 @@
 // Adapted from Enom 444f31c staff activity; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{CorrectionProgress, ManagementEvidence, RenewalCycles, StaffOperationWrites};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Services\{RenewalCycles, RenewalReplacements, StaffOperationWrites};
+/** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
     public static function for(Operation $op, ?StaffGrants $grants = null, ?Domain $domain = null): array
     {
         $grants ??= Staff::requireView();
-        $out = ['reason'=>$op->safe_code===null ? null : Labels::operationReason($op), 'refund'=>'Customer credit: not assessed'];
+        $out=['reason'=>Labels::requestStatus($op)['reason']];
         try {
             $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
-            if (array_key_exists('auto_pay',$f)) { $out['auto_pay']=Labels::autoPay($f['auto_pay_result']??$f['auto_pay'], \App\Models\Invoice::whereKey($op->invoice_id)->value('status')); }
+            $out['invoice']=$op->invoice_id ? 'Invoice #'.$op->invoice_id : null;
+            $out['invoice_sub']=$op->invoice_id ? (array_key_exists('auto_pay',$f) ? Labels::autoPay($f['auto_pay_result']??$f['auto_pay']) : null) : 'No invoice linked';
+            if (array_key_exists('auto_pay',$f)) { $out['auto_pay']=Labels::autoPay($f['auto_pay_result']??$f['auto_pay']); }
             if ($op->state==='held' && $op->safe_code==='transfer_setup_review_required' && ($op->attempt??[])===[] && OperationActions::transferCutoff($op)) {
                 try {
                     \Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($op,$op->domain);
-                    $out['cutoff']='Code deadline passed. Release is unavailable; review account credit with funding and unsent proof.';
-                } catch (\DomainException) { /* Sent or unknown outcomes retain their original evidence guidance. */ }
+                    $out['cutoff']='Auth code deadline passed.';
+                } catch (\DomainException) { /* Sent or unknown outcomes keep the unconfirmed notice. */ }
             }
             $admissionHold=$op->state==='held'&&RenewalCycles::registrarVirgin($op)&&StaffOperationWrites::renewalAdmissionHold($op);
-            if($admissionHold){$out['admission']='After correcting the cause, choose Release unsent hold. The renewal engine repeats every admission check before any send and holds the renewal again if a check still fails.';}
+            if ($admissionHold) { $out['admission']='Fix the cause, then release the hold.'; }
             if ($op->registrar_key==='namesilo' && $op->action==='renew' && ($admissionHold || $a!==[])
                 && (($p['renewal_execution']['reason']??null)==='provider_auto_renew_unconfirmed'
                     || $op->safe_code==='provider_auto_renew_unconfirmed')) {
-                $out['auto_renew']=$admissionHold
-                    ? 'Check auto-renew for this domain at NameSilo and turn it off if it is on. Then choose Release unsent hold; the renewal engine will check it again before sending.'
-                    : (($p['renewal_polls']??0)>=5 ? Labels::reason('poll_limit_reached').'. ' : '').'Check auto-renew for this domain at NameSilo and turn it off if it is on. Then choose Re-check now, or Resume reconciliation reads if the read limit is reached. Completion requires a fresh check confirming auto-renew is off.';
+                $out['auto_renew']='Turn off auto-renew at NameSilo, then '.($admissionHold ? 'release the hold.' : 'check status.');
+                unset($out['admission']);
             }
-            if($admissionHold&&isset($out['auto_renew'])){unset($out['admission']);}
-            $out['refund']=array_key_exists('refund',$f) ? 'Credit marker retained; review ledger'
-                : (RefundCandidates::matches($op,$f) || ($p['renewal_execution']['refundable_later']??false)===true
-                    ? 'Customer credit review candidate; funding and unsent proof required'
-                    : ($op->state==='rejected' && $op->funding_basis!=='paid_invoice'
-                        ? 'Paid invoice basis not recorded; no credit inferred' : 'Customer credit: not assessed'));
-            if ($op->registrar_key==='namesilo' && $op->action==='transfer'
-                && (in_array($op->safe_code,['transfer_provider_rejected','transfer_needs_action'],true)
-                    || in_array($p['reconciliation']['transfer_status']??null,['rejected','needs_action'],true))) {
-                $rejected=$op->safe_code==='transfer_provider_rejected' || ($p['reconciliation']['transfer_status']??null)==='rejected';
-                $out['registrar_refund']=$rejected ? 'Registrar refund is manual; request it from registrar support'
-                    : 'If this transfer is abandoned, request any registrar refund manually via registrar support.';
+            // The refund row appears once money is in question: a refund was recorded, one is possible, or a paid request ended.
+            $closed=in_array($op->state,['rejected','disposed'],true);
+            if (array_key_exists('refund',$f)) { [$out['refund'],$out['refund_sub']]=['Refunded','Check the account credit']; }
+            elseif (RefundCandidates::matches($op,$f) || ($p['renewal_execution']['refundable_later']??false)===true) {
+                $out['refund']='Not refunded'; $out['refund_fix']=$op->state==='held' ? 'refund' : 'credit';
             }
-            if (isset($out['cutoff']) && $out['refund']==='Customer credit: not assessed') { $out['refund']='Customer credit: not yet assessed'; }
-            $out['outcome']=match(true) {
-                $op->state==='succeeded'=>$a===[] ? null : (array_key_exists('execution',$a) && $a['execution']===null
-                    ? 'Original send response was unknown; completion later confirmed' : 'Registrar completion confirmed. Original send evidence is retained for history.'),
-                array_key_exists('execution',$a) && $a['execution']===null=>'Original send response unknown; never resend',
-                ($a['seal']??null)==='sealed'=>'Original attempt possibly sent; never resend or credit automatically',
-                $op->state==='uncertain'=>'Unconfirmed. Do not resend or refund until the registrar result is known.',
-                default=>null,
-            };
-            $corrections=$a['corrections']??[];
-            if (is_array($corrections) && $corrections!==[]) { $out['correction']='Original corrections retained; separate review required'; }
-            elseif (!is_array($corrections)) { $out['correction']='Correction evidence unavailable'; }
-            if (isset($p['management']['correction_link'])) {
-                $d=$domain??Domain::find($op->domain_id);
-                $key=$p['management']['correction_link']['operation_key']??null;
-                $original=$d && is_string($key) ? DomainQueries::operations($d)->where('operation_key',$key)->first() : null;
-                $confirmed=$original && CorrectionProgress::matches($op,$original,$d)
-                    && $op->state==='succeeded' && ManagementEvidence::resolved($op,$d);
-                $out['correction']=$confirmed ? 'Readback confirmed; awaiting review' : 'Correction unresolved';
+            elseif ($op->state==='rejected' && $op->funding_basis!=='paid_invoice') { [$out['refund'],$out['refund_sub']]=[null,'No paid invoice recorded']; }
+            elseif ($closed && $op->funding_basis==='paid_invoice') { $out['refund']='Not refunded'; }
+            if ($op->registrar_key==='namesilo' && $op->action==='transfer' && $closed
+                && ($op->safe_code==='transfer_provider_rejected' || ($p['reconciliation']['transfer_status']??null)==='rejected')) {
+                $out['registrar_refund']='Ask NameSilo support for a refund';
             }
-            $counts=[self::count($p['contact_readmissions']??[]),self::count($p['reconciliation_resumptions']??[]),self::count($f['financial_adjustments']??[])];
-            if ($counts!==['0','0','0']) { $out['audit']='Contact readmissions: '.$counts[0].' · Read resumes: '.$counts[1].' · Financial adjustments: '.$counts[2]; }
+            // Completed, Failed and Cancelled requests are final, so a lost send response no longer leaves the result unconfirmed.
+            $unknown=!in_array($op->state,['succeeded','rejected','disposed'],true) && ($op->state==='uncertain' || (array_key_exists('execution',$a) && $a['execution']===null) || ($a['seal']??null)==='sealed');
+            $out['outcome']=$unknown ? PaidUncertainty::title($op) : null;
             if ($grants->costs) {
                 $c=$op->cost??[];
-                // Renewals authorize a fresh registrar cost at the seal; checkout estimates remain separate evidence.
-                $quoted=$op->action==='renew'
-                    ? 'Authorized '.Labels::money(($a['authorized_cost']['currency']??null)==='USD' ? ($a['authorized_cost']['amount']??null) : null)
-                    : 'Estimated '.Labels::money(($c['currency']??null)==='USD' ? ($c['estimated']??null) : null);
-                $out['cost']=$quoted
-                    .' · Actual '.Labels::money(($c['actual']['currency']??null)==='USD' ? ($c['actual']['amount']??null) : null);
+                $usd=fn(mixed $amount, mixed $currency)=>$currency==='USD'&&($m=Labels::money($amount))!=='Unknown' ? $m : null;
+                $actual=$usd($c['actual']['amount']??null,$c['actual']['currency']??null);
+                // Renewals authorize a fresh registrar cost at the seal; checkout estimates stay a separate quote.
+                $quote=$op->action==='renew'
+                    ? (($m=$usd($a['authorized_cost']['amount']??null,$a['authorized_cost']['currency']??null)) ? 'Authorized '.$m : null)
+                    : (($m=$usd($c['estimated']??null,$c['currency']??null)) ? 'Estimated '.$m : null);
+                $out['cost']=$actual;
+                $out['cost_sub']=$out['registrar_refund'] ?? $quote ?? ($actual===null ? 'No cost recorded' : null);
             }
-            if ($grants->metadata) {
+            if ($grants->metadata && $op->action==='transfer') {
                 $payload=$op->payload??[];
-                $out['metadata']='Transfer code: '.(is_string($payload['epp']??null)&&$payload['epp']!==''?'Stored':'Not recorded')
-                    .' · Contacts: '.(array_key_exists('contacts',$payload)?'Stored':'Not recorded')
-                    .' · Execution: '.(array_key_exists('execution',$a)?'Recorded':'Not recorded');
+                $out['auth_code']=is_string($payload['epp']??null)&&$payload['epp']!=='' ? 'Saved' : null;
+                $out['auth_code_sub']=$out['auth_code'] ? null : 'Customer has not entered it';
             }
-        } catch (\Throwable) { $out['outcome']='Encrypted evidence unavailable; no outcome inferred'; }
+        } catch (\Throwable) { $out['unreadable']=true; }
         return $out;
     }
-    public static function review(Operation $op, ?StaffGrants $grants = null, ?Domain $domain = null, bool $detail = false): array
+    /** The one request notice: the most urgent cause, a short next step and the action that fixes it, or null. */
+    public static function notice(Operation $op, ?array $facts = null): ?array
     {
-        $grants ??= Staff::requireView();
-        $facts=self::for($op,$grants,$domain);
-        return [...array_values(array_filter(array_map(fn($key)=>$facts[$key]??null,
-            ['cutoff','outcome','admission','auto_pay','auto_renew','registrar_refund','refund','correction','cost','metadata','audit']),fn($line)=>$line!==null)),
-            ...StaffReviewHistory::for($op,$grants,$detail)];
+        $facts ??= self::for($op);
+        if ($facts['unreadable']??false) { return ['title'=>DomainFacts::UNREADABLE,'tone'=>'danger']; }
+        $domain=$op->domain;
+        if ($domain && in_array(true,array_map(fn($line)=>str_starts_with($line,'Request #'.$op->id.' '),RenewalReplacements::activity($domain)),true)) {
+            return ['title'=>'Payment received after refund. Check the invoice.','tone'=>'warning','link'=>'invoice'];
+        }
+        if (isset($facts['cutoff'])) { return ['title'=>$facts['cutoff'],'tone'=>'danger','action'=>'refund']; }
+        if (isset($facts['outcome'])) {
+            return ['title'=>$facts['outcome'],'body'=>$facts['auto_renew']??PaidUncertainty::holdSummary($op),'tone'=>'warning',
+                'action'=>OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck'];
+        }
+        if ($op->state==='held') {
+            $reason=$facts['reason']??null;
+            $fix=is_string($reason)&&preg_match(self::ACCOUNT_CAUSES,$reason,$m) ? match(true) {
+                $m[1]==='orders paused'=>'Resume orders', str_contains($m[1],'balance')=>'Check balance',
+                str_ends_with($m[1],'off for this account')=>'Turn on', default=>'Open Registrars'} : null;
+            return ['title'=>($reason??Labels::reason(null)).'.','body'=>$facts['auto_renew']??$facts['admission']??null,'tone'=>'warning','action'=>'release',
+                'link'=>$fix?'registrars':null,'link_label'=>$fix];
+        }
+        return null;
     }
-    private static function count(mixed $items): string { return is_array($items) ? (string)count($items) : 'Unknown'; }
+    /** Held reasons fixed on the Registrars page, each with its link label: account settings, orders paused, balance and features turned off. */
+    private const ACCOUNT_CAUSES="/^Not sent: (registrar account |couldn't load the registrar|orders paused|low registrar balance|check the registrar balance|.* off for this account)/";
+    /** Account name, registrar and mode for the Registrar account fact. */
+    public static function account(Operation $op): array
+    {
+        $account=Account::where('server_id',$op->server_id)->where('registrar_key',$op->registrar_key)->where('account_fingerprint',$op->account_fingerprint)->first();
+        $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$op->registrar_key]??null;
+        $name=\App\Models\Server::whereKey($op->server_id)->value('name');
+        if (!$name) { return ['value'=>null,'sub'=>'Registrar account not found','account'=>null]; }
+        return ['value'=>$name,'sub'=>implode(' · ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account?->environment]??null])) ?: null,'account'=>$account];
+    }
 }

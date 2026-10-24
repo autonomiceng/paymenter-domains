@@ -38,8 +38,8 @@ for ($cycle=0;$cycle<2;$cycle++) {
         same('held',$engine->run($renewal->id,$writer)->state,'NameSilo auto-renew refusal is held before dispatch');
         same('provider_auto_renew_unconfirmed',$renewal->fresh()->safe_code,'NameSilo included admission code');
         same([],($renewal->fresh()->attempt??[]),'NameSilo refusal has no attempt');same(0,$writes,'No premature NameSilo send');
-        $guidance='Check auto-renew for this domain at NameSilo and turn it off if it is on. Then choose Release unsent hold; the renewal engine will check it again before sending.';
-        expect(in_array($guidance,Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::review($renewal->fresh()),true),'Unsent review names release rather than completion reads');
+        $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($renewal->fresh());
+        same(['Turn off auto-renew at NameSilo, then release the hold.','release'],[$notice['body']??null,$notice['action']??null],'Unsent notice names release rather than completion reads');
         $fresh=$renewal->fresh();$ticket=Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket($staff->id,$holding->id,$fresh->id,'release',Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($fresh,$holding->fresh()),$clock);
         (new Paymenter\Extensions\Servers\Domains\Services\StaffOperations($clock))->run($staff,$holding->id,$fresh->id,'release',$ticket,'Corrected provider auto-renew and reviewed unsent renewal');
         same('queued',$renewal->fresh()->state,'NameSilo staff release queues original paid renewal');same(null,$renewal->fresh()->safe_code,'NameSilo refusal cleared');

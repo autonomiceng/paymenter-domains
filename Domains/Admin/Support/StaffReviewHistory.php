@@ -3,29 +3,30 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
 /** Plain text only. Policy is already loaded and its append-only history is capped at 100 entries. */
 final class StaffReviewHistory
 {
-    public static function for(Operation $op, ?StaffGrants $grants = null, bool $detail = false): array
+    /** History rows in recorded order: time ("M j, Y H:i UTC" or null for Missing), event, reason sub-line and who.
+     * Null when the saved history can't be read. A check's request and result phases show as one row. */
+    public static function rows(Operation $op, ?StaffGrants $grants = null): ?array
     {
         $grants ??= Staff::requireView();
-        try { $history=$op->policy['staff_actions']??[]; }
-        catch (\Throwable) { return ['Staff review history unavailable']; }
-        if (!is_array($history)||!array_is_list($history)||count($history)>100) { return ['Staff review history unavailable']; }
-        $limit=$detail?20:3; $lines=[];
-        // Keep the latest entries in their recorded order, including both phases of a recheck.
-        foreach (array_slice($history,-$limit) as $entry) {
-            if (!is_array($entry)) { $lines[]='Staff review entry unavailable'; continue; }
-            $action=match($entry['action']??null) {
-                'hold'=>'Held', 'release'=>'Released',
-                'recheck'=>match($entry['phase']??null) {
-                    'read_requested'=>'Recheck requested', 'read_finished'=>'Recheck finished',
-                    'read_failed'=>'Recheck failed', default=>'Recheck',
-                },
-                'resume_reads'=>'Reconciliation reads resumed', 'resume_observation'=>'Scheduled reads resumed',
-                'disposition'=>'Terminal review recorded', 'refund'=>'Closure and credit reviewed',
-                'credit'=>'Account credit retried', 'replacement'=>'Replacement renewal allowed',
-                default=>'Staff review',
+        try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { return null; }
+        if (!is_array($history)||!array_is_list($history)||count($history)>100) { return null; }
+        $done=array_flip(array_filter(array_map(fn($e)=>is_array($e)&&in_array($e['phase']??null,['read_finished','read_failed'],true)&&is_string($e['key']??null)?$e['key']:null,$history)));
+        $rows=[];
+        foreach ($history as $entry) {
+            if (!is_array($entry)) { $rows[]=['time'=>null,'event'=>'Staff action','sub'=>null,'by'=>'Staff']; continue; }
+            $action=$entry['action']??null; $phase=$entry['phase']??null;
+            if ($phase==='read_requested'&&isset($done[$entry['key']??''])) { continue; }
+            $event=match($action) {
+                'hold'=>'Put on hold', 'release'=>'Hold released',
+                'recheck'=>$phase==='read_failed'?'Status check failed':'Status checked',
+                'resume_reads'=>'Status checked', 'resume_observation'=>'Sync resumed',
+                'disposition'=>'Request closed', 'refund'=>'Cancelled and refunded',
+                'credit'=>'Refund retried', 'replacement'=>'Renewal invoice reissued',
+                default=>'Staff action',
             };
             $date=null; $at=$entry['at']??null;
             if (is_string($at)) {
@@ -33,15 +34,13 @@ final class StaffReviewHistory
                 catch (\ValueError) { $date=null; }
                 if (!$date||$date->format(DATE_ATOM)!==$at) { $date=null; }
             }
-            $parts=[$action,$date?$date->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s').' UTC':'Date unavailable'];
             // Only stored display names are shown; actor_id is never resolved for display.
-            if (is_string($entry['actor_name']??null)&&$entry['actor_name']!=='') { $parts[]='By '.$entry['actor_name']; }
+            $by=is_string($entry['actor_name']??null)&&$entry['actor_name']!=='' ? $entry['actor_name'] : 'Staff';
+            // Actions without a reason field record their own name; that repeats the event, so it is not shown.
             $reason=$entry['reason']??null;
-            $parts[]=is_string($reason)&&$reason!=='' ? 'Reason: '.($detail?$reason:mb_strimwidth($reason,0,160,'…','UTF-8')) : 'Reason unavailable';
-            $lines[]=implode(' · ',$parts);
+            $sub=is_string($reason)&&$reason!==''&&$reason!==(StaffOperationReview::ACTIONS[$action]??null) ? $reason : null;
+            $rows[]=['time'=>$date?$date->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC':null,'event'=>$event,'sub'=>$sub,'by'=>$by];
         }
-        $older=max(0,count($history)-$limit);
-        if ($older) { $lines[]=$older.' older staff review '.($older===1?'entry':'entries').' not shown'.($detail?'':'; open request for details'); }
-        return $lines;
+        return $rows;
     }
 }

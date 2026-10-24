@@ -160,7 +160,8 @@ final class DomainFacts
         if (!self::account($d)) { return ['title'=>'Registrar account changed.','tone'=>'warning']; }
         $op=$d->latestAcquisition;
         if ($op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,['registration_pending','transfer_pending','needs_review'],true)) {
-            $title=Labels::action($op->action).($op->state==='held'?' not sent: '.lcfirst(Labels::reason($op->safe_code)).'.':' not confirmed by the registrar.');
+            $cause=preg_replace('/^Not sent: /','',(string)Labels::reason($op->safe_code));
+            $title=Labels::action($op->action).($op->state==='held'?' not sent'.($cause===''?'':': '.lcfirst($cause)).'.':' not confirmed by the registrar.');
             return ['title'=>$title,'tone'=>'warning','action'=>['label'=>'Open request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
         }
         return null;

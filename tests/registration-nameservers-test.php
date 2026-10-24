@@ -43,7 +43,7 @@ foreach (['enom', 'namesilo'] as $index => $registrar) {
             same('absent', $result->attempt['seal'], $registrar.' invalid setup is unsealed');
             expect(!array_key_exists('execution', $result->attempt), $registrar.' invalid setup has no execution');
             same($before, [$writer->calls, $registration->reads], $registrar.' invalid setup has zero wire calls or preflight reads');
-            same($case === 'privacy-first' ? 'Registrar write acceptance required' : 'Nameservers required',
+            same($case === 'privacy-first' ? 'Not sent: feature off for this account' : 'Not sent: nameservers missing',
                 Labels::reason($result->safe_code), $registrar.' held operation renders its staff reason');
         }
         same($money, $nativeMoney(), $registrar.' setup validation preserves native finance');

@@ -60,7 +60,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires
 // An inactive domain's renewal timing is not Missing: the rows do not apply.
 $pending=DomainFacts::for($held);
 expect(!isset($pending['Next invoice'])&&!isset($pending['Expires']),'Pending transfer hides expiry and next invoice');
-same(['Under review','Transfer needs attention'],[DomainFacts::status($held)['label'],DomainFacts::status($held)['reason']],'Held transfer pill and reason');
+same(['Under review','Old registrar needs approval'],[DomainFacts::status($held)['label'],DomainFacts::status($held)['reason']],'Held transfer pill and reason');
 same([null,'Customer account not found'],[$value($held,'Customer'),$sub($held,'Customer')],'Deleted customer is Missing with its cause');
 
 // Renewal settings.
@@ -79,8 +79,8 @@ foreach(['Saved facts','Assignment generation','Observation drift','Follow-up','
 same([DomainResource::getUrl('index')=>'Domains','active.example.com'],$page->instance()->getBreadcrumbs(),'Breadcrumb names the domain');
 same(null,DomainFacts::notice($active->fresh()),'A healthy domain has no notice');
 $notice=DomainFacts::notice($held);
-same(['Transfer not sent: transfer needs attention.','Open request #'.$held->operations()->sole()->id],[$notice['title'],$notice['action']['label']],'Held request notice');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Transfer not sent: transfer needs attention.')->assertSee('Open request #');
+same(['Transfer not sent: old registrar needs approval.','Open request #'.$held->operations()->sole()->id],[$notice['title'],$notice['action']['label']],'Held request notice');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Transfer not sent: old registrar needs approval.')->assertSee('Open request #');
 
 // Sync: failed after repeated attempts, record holds and demo pause under Enom Test mode.
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,
@@ -143,7 +143,7 @@ same(['reprice'=>'Edit renewal price','stop'=>'Stop renewal','resume'=>'Resume r
 
 // List: Status, Expires, Auto-renew and Registrar columns; Status filter uses the nine statuses.
 $list=Livewire::actingAs($viewer)->test(ListDomains::class)->assertCanSeeTableRecords([$held,$active,$long]);
-$list->assertTableColumnExists('auto_renew')->assertSee('Under review')->assertSee('Transfer needs attention')->assertSee('Active')->assertSee('Ada Lovelace')->assertSee('Synthetic registrar');
+$list->assertTableColumnExists('auto_renew')->assertSee('Under review')->assertSee('Old registrar needs approval')->assertSee('Active')->assertSee('Ada Lovelace')->assertSee('Synthetic registrar');
 foreach(['Unconfirmed','See Registrar requests','Payment review','Customer #','Sync failed'] as $old){$list->assertDontSee($old);}
 $filter=static function($page,string $name,mixed $value){$page->filterTable($name,$value);return $page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters');};
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$held,$long])->assertCanNotSeeTableRecords([$active]);

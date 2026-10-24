@@ -21,7 +21,8 @@ final class Staff
             'admin.domains.watch.manage' => 'Manage domain watch and public suffix list',
             'admin.domains.manage' => 'Manage domain operations', 'admin.domains.fund' => 'Fund domain renewals'];
         foreach(\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS as $action=>$label){
-            $permissions[\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission($action)]=$label;
+            // Check status has two permissions; the second restarts reads after the read limit.
+            $permissions[\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission($action)]=$label.($action==='resume_reads'?' after read limit':'');
         }
         foreach(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::ACTIONS as $action=>$label){
             $permissions[\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission($action)]=$label;

@@ -3,9 +3,11 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Resources\Resource;
-use Filament\Tables\{Columns\TextColumn, Filters\Filter, Filters\SelectFilter, Table};
+use Filament\Tables\{Columns\TextColumn, Filters\SelectFilter, Table};
 use Illuminate\Database\Eloquent\{Builder,Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Labels,OperationQueries,PaidUncertainty,RefundCandidates,RequestFacts,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Labels,OperationQueries,Staff};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Missing,RequestStatus};
+use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\{ListOperations,ViewOperation};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 class OperationResource extends Resource
@@ -29,30 +31,34 @@ class OperationResource extends Resource
     { Staff::requireView(); return OperationQueries::bound(parent::getEloquentQuery()); }
     public static function table(Table $table): Table
     {
-        $grants=Staff::requireView();
+        Staff::requireView();
+        $statuses=array_map(fn($status)=>$status[0],RequestStatus::SET); $servers=\App\Models\Server::pluck('name','id')->all();
         return $table->columns([
-            TextColumn::make('id')->label('Request')->prefix('#')->sortable(),
-            TextColumn::make('domain.domain')->label('Domain')->searchable()->wrap()
+            TextColumn::make('id')->label('Request')->formatStateUsing(fn($state)=>'Request #'.$state)->sortable()
+                ->suffix(fn(Operation $record)=>self::demo($record)?DemoData::tag(inline:true):null),
+            TextColumn::make('domain.domain')->label('Domain')->searchable()->wrap()->fontFamily('mono')
                 ->formatStateUsing(fn($state)=>new \Illuminate\Support\HtmlString(str_replace(['.','-'],['.<wbr>','-<wbr>'],e($state))))
                 ->extraAttributes(['style'=>'min-width:10rem;max-width:16rem;overflow-wrap:anywhere']),
-            TextColumn::make('action')->label('Request type')->formatStateUsing(fn($state)=>Labels::action($state))->visibleFrom('xl'),
-            TextColumn::make('state')->label('Status')->badge()->color(fn($state)=>Labels::color($state))
-                ->formatStateUsing(fn($state)=>Labels::state($state))->wrap()
-                ->description(fn($record)=>$record->safe_code===null?null:Labels::operationReason($record)),
-            TextColumn::make('review')->label('Review')->state(fn($record)=>array_values(array_unique(array_filter([PaidUncertainty::holdSummary($record,$grants)??PaidUncertainty::summary($record,$grants),...RequestFacts::review($record,$grants)]))))->listWithLineBreaks()->wrap()->placeholder('None')
-                ->extraAttributes(['style'=>'min-width:24rem;max-width:40rem;overflow-wrap:break-word;display:grid;row-gap:0.5rem']),
+            TextColumn::make('action')->label('Type')->formatStateUsing(fn($state)=>Labels::action($state)),
+            TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>Labels::requestStatus($record)['tone'])
+                ->formatStateUsing(fn($record)=>Labels::requestStatus($record)['label'])->wrap()
+                ->description(fn($record)=>Labels::requestStatus($record)['reason']),
+            TextColumn::make('created_at')->label('Created')->dateTime('M j, Y H:i \\U\\T\\C','UTC')->sortable()->visibleFrom('lg'),
+            TextColumn::make('server_id')->label('Registrar account')->visibleFrom('xl')->formatStateUsing(fn($state)=>$servers[$state]??Missing::LABEL)
+                ->color(fn($state)=>isset($servers[$state])?null:Missing::COLOR)->description(fn($record)=>isset($servers[$record->server_id])?null:'Registrar account not found'),
         ])->filters([
-            SelectFilter::make('state')->label('Status')->multiple()->options(['held'=>'On hold','uncertain'=>'Unconfirmed',
-                'pending'=>'In progress','running'=>'Sending','rejected'=>'Rejected','succeeded'=>'Completed']),
-            Filter::make('held')->label('On hold')->query(fn(Builder $query)=>$query->where('state','held')),
-            Filter::make('unresolved')->label('Awaiting reconciliation')->query(fn(Builder $query)=>$query->whereIn('state',['uncertain','pending','running'])),
-            Filter::make('credit_review')->label('Customer credit review')->query(fn(Builder $query)=>RefundCandidates::query($query)),
-            Filter::make('failed_transfer')->label('Failed transfers')->query(fn(Builder $query)=>$query->where('action','transfer')->where('state','rejected')),
-            Filter::make('paid_uncertainty')->label('Paid outcome review')->query(fn(Builder $query)=>OperationQueries::paidUncertainty($query)),
+            SelectFilter::make('status')->label('Status')->multiple()->options($statuses)
+                ->query(fn(Builder $query,array $data)=>$data['values']??[] ? $query->whereIn('state',array_keys(array_filter(RequestStatus::STATES,fn($state)=>in_array($state[0],$data['values'],true)))) : $query),
+            SelectFilter::make('action')->label('Type')->multiple()
+                ->options(fn()=>collect(Operation::query()->distinct()->pluck('action'))->mapWithKeys(fn($action)=>[$action=>Labels::action($action)])->sort()->all()),
+            SelectFilter::make('server_id')->label('Registrar account')->multiple()
+                ->options(fn()=>\App\Models\Server::whereIn('id',Operation::query()->distinct()->pluck('server_id'))->pluck('name','id')->all()),
         ])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->defaultSort('id','desc')
             ->paginated([25,50,100])->defaultPaginationPageOption(25)
-            ->emptyStateHeading('No registrar requests')->emptyStateDescription('Requests appear when domains are ordered, renewed or changed.');
+            ->emptyStateHeading('No registrar requests')->emptyStateDescription(null);
     }
+    /** Demo requests keep the Demo tag; a row whose saved data can't be read still lists. */
+    public static function demo(Operation $op): bool { try { return DemoData::is($op); } catch (\Throwable) { return false; } }
     public static function getPages(): array
     { return ['index'=>ListOperations::route('/'),'view'=>ViewOperation::route('/{record}')]; }
 }

@@ -17,33 +17,37 @@ foreach([str_repeat('é',4),str_repeat('é',501),"abcde\xff","line\nbreak"] as $
     $before=$op->fresh()->getRawOriginal();commerceReject(fn()=>$write($bad));same($before,$op->fresh()->getRawOriginal(),'Invalid Unicode reason changes nothing');
 }
 $reason=str_repeat('🦦',500);
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('release',['reason'=>$reason])->assertHasNoActionErrors()->assertNotified('Review recorded');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>$reason])->assertHasNoActionErrors()->assertNotified('Cancelled and refunded');
 same($reason,$op->fresh()->policy['staff_actions'][0]['reason'],'500 Unicode characters retained');
+// Release hold has no reason field and records its own name.
+$op=$held('staff-release-name-placeholder.com');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
+same('Release hold',$op->fresh()->policy['staff_actions'][0]['reason'],'Release records its action name');
 // Server refusal text is safe and meaningful, even when called without form validation.
 $op=$held('staff-unicode-server-placeholder.com');
 try{$write('éééé');throw new RuntimeException('Expected character-length refusal.');}
 catch(DomainException $e){same('Enter a one-line reason between 5 and 500 characters.',$e->getMessage(),'Character unit in safe refusal');}
 \Illuminate\Support\Facades\Auth::setUser($staff);
-$action=collect(OperationActions::make($op->fresh(),StaffOperationReview::stamp($op->fresh(),$op->domain->fresh())))->first(fn($a)=>$a->getName()==='release');
-($action->getActionFunction())(['review_key'=>$ticket($op,'release'),'reason'=>'éééé']);
-Notification::assertNotified(Notification::make()->danger()->title('Review refused')->body('Enter a one-line reason between 5 and 500 characters.'));
+$action=collect(OperationActions::make($op->fresh(),StaffOperationReview::stamp($op->fresh(),$op->domain->fresh())))->first(fn($a)=>$a->getName()==='refund');
+($action->getActionFunction())(['review_key'=>$ticket($op,'refund'),'reason'=>'éééé']);
+Notification::assertNotified(Notification::make()->danger()->title("Couldn't update request")->body('Enter a one-line reason between 5 and 500 characters.'));
 same([],$logs,'Expected staff validation remains quiet');
 // Exercise the actual source guards through the staff action, without provider traffic.
 $refuse=static function($op,string $name,string $code,string $message)use(&$logs,$ticket,$staff):string{
     \Illuminate\Support\Facades\Auth::setUser($staff);$logs=[];
     $action=collect(OperationActions::make($op,StaffOperationReview::stamp($op,$op->domain->fresh())))->first(fn($a)=>$a->getName()===$name);
     $key=$ticket($op,$name);($action->getActionFunction())(['review_key'=>$key,'reason'=>'Reviewed original evidence']);
-    Notification::assertNotified(Notification::make()->danger()->title('Review refused')->body($message));
+    Notification::assertNotified(Notification::make()->danger()->title("Couldn't update request")->body($message));
     same([['level'=>'warning','message'=>'Domains staff operation refused.','context'=>['reason'=>$code,'action'=>$name,'operation_id'=>(int)$op->id]]],$logs,'Exactly one warning with only safe diagnostic fields');
     return $key;
 };
 $evidence=$held('staff-provider-evidence-placeholder.com');$evidence->domain->update(['provider_domain_id'=>'synthetic-private-id']);
-$refuse($evidence,'refund','acquisition_provider_evidence','This domain has registrar evidence or its status has changed, so this request cannot be treated as unsent. A credit decision may be retained; check the ledger before retrying.');
+$refuse($evidence,'refund','acquisition_provider_evidence',"Can't refund: the registrar may have received this request.");
 $line=$held('staff-no-paid-line-placeholder.com');DB::table('domains_operations')->where('id',$line->id)->update(['funding_basis'=>'offline_demo']);$line->refresh();
-$refuse($line,'release','no_eligible_paid_line','This request has no eligible paid invoice line.');
+$refuse($line,'release','no_eligible_paid_line',"Can't refund: no paid invoice for this request.");
 $missing=$held('staff-missing-invoice-placeholder.com');DB::table('domains_operations')->where('id',$missing->id)->update(['invoice_id'=>999999]);$missing->refresh();
 $before=[$missing->attempt,$missing->funding,$missing->domain->fresh()->getRawOriginal(),$credit(),count($observation->calls),$state->writes];
-$key=$refuse($missing,'recheck','original_invoice_missing','The original invoice for this request could not be found.');
+$key=$refuse($missing,'recheck','original_invoice_missing',"Can't refund: invoice not found.");
 $history=$missing->fresh()->policy['staff_actions'];
 same(['read_requested','read_failed'],array_column($history,'phase'),'Failed read never claims to have finished');
 same('original_invoice_missing',$history[1]['safe_code'],'Failed read retains its bounded reason');
@@ -57,7 +61,7 @@ foreach([new DomainException('PRIVATE-PROVIDER-SENTINEL'),new RuntimeException('
         public function run(...$args):void{throw $this->error;}
     });
     $code=$error instanceof DomainException?'guard_refused':($error instanceof Illuminate\Database\Eloquent\ModelNotFoundException?'native_record_missing':'producer_failed');
-    $refuse($op,'release',$code,'Reload this page and review current permissions, funding and retained evidence. Reference: release/'.$op->id.'/'.$code.'.');
+    $refuse($op,'release',$code,'Reload the page and try again. Ref '.$code.'.');
     expect(!str_contains(json_encode($logs),'PRIVATE-')&&!str_contains(json_encode($logs),$error::class),'No exception message or class logged');
     expect(!str_contains(json_encode(session()->get('filament.notifications',[])),'PRIVATE-'),'Raw exception text never shown');
 }

@@ -63,7 +63,7 @@ foreach([0,1]as$i){
     }
     Auth::setUser($viewer);
     $component=Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$committed->id]);
-    expect(str_contains($component->html(),'Transfer code: Stored'),'Staff render positively confirms committed encrypted code receipt');
+    expect(str_contains($component->html(),'Auth code')&&str_contains($component->html(),'Saved')&&!str_contains($component->html(),'Customer has not entered it'),'Staff render positively confirms committed encrypted code receipt');
     expect(!str_contains($component->html(),$sentinel),'Same committed code absent from real staff markup');
     expect(!str_contains(json_encode($component->snapshot,JSON_THROW_ON_ERROR),$sentinel),'Same committed code absent from public Livewire state');
     expect(!str_contains(json_encode($session->all(),JSON_THROW_ON_ERROR),$sentinel),'Same committed code absent from session after Livewire');
