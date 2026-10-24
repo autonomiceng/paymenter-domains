@@ -79,6 +79,9 @@ $probe = static function (array $headers, array $details, int $cap = 15, bool $f
             same(true, $wire->receipt['checks']['aborted'] ?? null, 'Inventory failure recorded');
             same(null, $wire->receipt['checks']['completed'] ?? null, 'Aborted probe never marked completed');
         }
+        if ($wire->receipt['mismatches'] !== []) {
+            same(false, $wire->receipt['checks']['completed'] ?? false, 'Mismatched read shapes cannot complete diagnostics');
+        }
         same($nameBefore, $wire->domain, 'Inventory/order names never replace original transport scope');
         same('ambiguous', $facts['category'], 'Missing original identity/amount never resolves');
         same(false, $facts['adopted'], 'No candidate is adopted');

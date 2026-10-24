@@ -202,10 +202,12 @@ final class GuardedTransport implements DeadlineTransport
                 $entry['read_outcome'] = $parsed->outcome->name;
                 if (in_array($command, ['listOrders', 'orderDetails'], true)) { $entry['history_complete'] = $parsed->value('history_complete'); }
             }
-            foreach (Shapes::check($command, $data, $command === 'checkRegisterAvailability' ? explode(',', $parameters['domains']) : []) as $error) { $this->mismatch($command, $error); }
+            $shapeErrors = Shapes::check($command, $data, $command === 'checkRegisterAvailability' ? explode(',', $parameters['domains']) : []);
+            foreach ($shapeErrors as $error) { $this->mismatch($command, $error); }
             if ($response->httpStatus !== 200) { $this->mismatch($command, 'http_status'); $this->save(); throw new \RuntimeException('OTE HTTP response refused.'); }
             $this->save();
-            if (is_array($data['reply'] ?? null)) {
+            if ($shapeErrors === [] && ($readRequest === null || $parsed->outcome === \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Success)
+                && is_array($data['reply'] ?? null)) {
                 $this->latest[$command] = new \SensitiveParameterValue($data);
                 if ($command === 'orderDetails') { $this->details[(string) $parameters['order_number']] = new \SensitiveParameterValue($data['reply']); }
             }

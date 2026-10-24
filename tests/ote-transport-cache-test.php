@@ -51,12 +51,36 @@ try {
         } catch (RuntimeException) { /* Dependent readback still needs fresh evidence. */ }
         same([], $cached->latest('getDomainInfo'), 'Failed attempt clears prior reply: '.$failureMode);
     }
+    foreach (['getDomainInfo', 'orderDetails'] as $command) {
+        $valid = json_decode(file_get_contents(__DIR__.'/fixtures/synthetic-success.json'), true, 24, JSON_THROW_ON_ERROR)[$command];
+        if ($command === 'orderDetails') { $valid['reply']['order_number'] = '901'; }
+        foreach (['shape', 'non_success', 'parser'] as $invalid) {
+            $calls = 0;
+            $wire = new GuardedTransport('offline-secret-token', false, $output,
+                static function () use (&$calls, $valid, $invalid): TransportResponse {
+                    $body = $valid;
+                    if (++$calls === 2) {
+                        if ($invalid === 'shape') { unset($body['request']['ip']); }
+                        if ($invalid === 'non_success') { $body['reply']['code'] = 400; $body['reply']['detail'] = 'Synthetic declined reply'; }
+                        if ($invalid === 'parser') { $body['request']['operation'] = 'other'; }
+                    }
+                    return new TransportResponse(200, json_encode($body));
+                }, $clock);
+            $parameters = $command === 'orderDetails' ? ['order_number' => '901'] : ['domain' => $wire->domain];
+            $wire->raw('https://ote.namesilo.com/api', $command, $parameters);
+            expect($wire->latest($command) !== [], 'Valid read remains available: '.$command);
+            $wire->raw('https://ote.namesilo.com/api', $command, $parameters);
+            same([], $wire->latest($command), 'Invalid read cannot supply latest evidence: '.$command.' '.$invalid);
+            if ($command === 'orderDetails') { same([], $wire->orderDetail('901'), 'Invalid detail cannot corroborate: '.$invalid); }
+        }
+    }
     $attempts = 0;
     $cached = new GuardedTransport('offline-secret-token', false, $output,
         static function () use (&$attempts): TransportResponse {
             if (++$attempts === 2) { throw new RuntimeException('Synthetic timeout'); }
-            return new TransportResponse(200, json_encode(['request' => ['operation' => 'orderDetails'],
-                'reply' => ['code' => 300, 'detail' => 'synthetic', 'order_number' => '901']]));
+             $body = json_decode(file_get_contents(__DIR__.'/fixtures/synthetic-success.json'), true)['orderDetails'];
+            $body['reply']['order_number'] = '901';
+            return new TransportResponse(200, json_encode($body));
         }, $clock);
     $cached->raw('https://ote.namesilo.com/api', 'orderDetails', ['order_number' => '901']);
     expect($cached->orderDetail('901') !== [], 'First order detail is available');
