@@ -40,6 +40,6 @@ $fake->answers['example.com|NS']=$external;expect($observer->observe($watch->id,
 DB::table('domains_watch_work')->where('kind','points')->update(['due_at'=>$now,'backoff_until'=>null]);$q=new DnsQuery('example.com','MX');$fake->answers[$q->key()]=DnsAnswer::negative($q);
 expect($observer->observe($watch->id,$owner->id,'points'),'Fresh proven empties reset only points backoff');
 $view=(new WatchDnsProjection())->read($watch->id,$owner->id,$now+1);expect(in_array('domain.points.external_empty',DnsSignalLabels::projection($view),true),'Complete fake observations reach Not pointed to company');
-config(['settings.company_name'=>'  ']);same('Not pointed to Beco',DnsSignalLabels::configuredStrings()['domain.points.external_empty'],'Configured company fallback');
+config(['settings.company_name'=>'  ','app.name'=>'Example App (testing)']);same('Not pointed to Example App',DnsSignalLabels::configuredStrings()['domain.points.external_empty'],'Configured company fallback');
 echo "Dormant observer, unlocked fake reads, owner/source recheck and proven-empty versus failed-read labels passed.\n";
 $nativeSuccessful=true;

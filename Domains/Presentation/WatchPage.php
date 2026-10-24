@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Carbon\CarbonImmutable;
+use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 /** The hosting domain page: its one notice, the Expires and Nameservers rows and History, from the summary and open notices alone. */
 final class WatchPage
 {
@@ -18,7 +19,7 @@ final class WatchPage
             in_array('watch.not_registered', $keys, true) => ['tone' => 'warn', 'text' => 'The registry has no record of '.$s->name.'. Check with your registrar.'],
             (bool) array_intersect(['watch.expired', 'watch.redemption'], $keys) || (bool) array_intersect(['expired', 'registry_expiry_reached'], $kinds)
                 => ['tone' => 'bad', 'text' => $s->name.' expired'.($expiry ? ' on '.$expiry : '').'. Renew it at your registrar.'],
-            in_array('watch.ns_changed', $keys, true) || in_array('ns_changed', $kinds, true) => ['tone' => 'warn', 'text' => $s->name.' stopped using Beco nameservers'.self::movedOn($s, $notices).'. Change them back at your registrar, or',
+            in_array('watch.ns_changed', $keys, true) || in_array('ns_changed', $kinds, true) => ['tone' => 'warn', 'text' => $s->name.' stopped using '.DnsSignalLabels::nameservers().self::movedOn($s, $notices).'. Change them back at your registrar, or',
                 'link' => ['label' => 'contact support', 'url' => $s->urls['support'] ?? null]],
             $expiry && (in_array('expiring', $kinds, true) || ($days !== null && $days > 0 && $days <= 30)) => ['tone' => 'warn', 'text' => 'Renew '.$s->name.' at your registrar before '.$expiry.'.'],
             (bool) array_intersect(['expiry_unavailable', 'dns_unavailable'], $kinds) => ['tone' => 'info', 'text' => 'We can’t read the public '.implode(' or ', array_values(array_filter([
@@ -50,7 +51,7 @@ final class WatchPage
     /** History: nameserver changes from the open notices, newest last. */
     public static function history(array $notices): array
     {
-        $labels = ['ns_changed' => 'Nameservers changed', 'ns_restored' => 'Nameservers back to Beco'];
+        $labels = ['ns_changed' => 'Nameservers changed', 'ns_restored' => (DnsSignalLabels::company() !== '' ? 'Nameservers back to '.DnsSignalLabels::company() : 'Our nameservers restored')];
         return array_values(array_map(fn ($n) => ['label' => $labels[$n['kind']], 'date' => self::parse($n['date'] ?? null)?->format('Y-m-d')],
             array_filter($notices, fn ($n) => isset($labels[$n['kind'] ?? '']))));
     }

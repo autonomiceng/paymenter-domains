@@ -52,7 +52,7 @@ foreach($free?['dns','srv','ds','glue','auth_code_display']:['dns','srv','ds','a
 if($free){expect(!str_contains($html,'privacy_purchase'),'Free privacy offers no paid action');commerceReject(fn()=>$driver->validate('nameservers',['use_default'=>true,'nameservers'=>[]],$d->domain));}
 else {
     commerceReject(fn()=>$driver->validate('nameservers',['nameservers'=>[]],$d->domain));
-    expect(str_contains($html,'Use Beco nameservers'),'Explicit reset is distinct from custom nameservers');
+    expect(str_contains($html,'Use the default nameservers'),'Explicit reset is distinct from custom nameservers');
     $r=$post('nameservers',['use_default'=>'1']);$controller->manage($r,$d->id,'nameservers');$reset=$d->operations()->where('action','nameservers')->orderByDesc('id')->firstOrFail();
     same(['nameservers'=>[],'use_default'=>true],$reset->payload,'Named reset intent is frozen through the engine');
     $state->ns=['dns1.name-services.com','dns2.name-services.com'];$state->apply=false;Illuminate\Support\Facades\Cache::forget('domains-write-slot:'.$d->account_fingerprint);

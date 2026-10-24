@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Carbon\CarbonImmutable;
+use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 /** The client domain page: its one notice and the Renewal card rows, from the page DTOs alone. */
 final class DomainPage
 {
@@ -15,10 +16,10 @@ final class DomainPage
         return match (true) {
             $d->syncPaused => ['tone' => 'warn', 'text' => 'Sync paused: the demo registrar is off. Nameservers show when it resumes.', 'action' => $contact],
             $d->setupPending => ['tone' => 'info', 'text' => 'We’re confirming this domain. Changes and renewals start after that. Contact support if it expires soon.', 'action' => null],
-            in_array('watch.ns_changed', $s?->stateKeys ?? [], true) => ['tone' => 'warn', 'text' => $d->name.' stopped using Beco nameservers'.$movedAt.'.',
+            in_array('watch.ns_changed', $s?->stateKeys ?? [], true) => ['tone' => 'warn', 'text' => $d->name.' stopped using '.DnsSignalLabels::nameservers().$movedAt.'.',
                 'action' => isset($d->management['nameservers']) ? ['label' => 'Change nameservers', 'url' => $d->actions['show'].'?edit=nameservers#edit-nameservers'] : $contact],
             $setup && $phase === 'cutoff' && ($d->setup['contacts'] ?? false) => ['tone' => 'warn', 'text' => 'The auth code deadline passed. Update your details so we can finish the transfer.', 'action' => ['label' => 'Update details', 'url' => $setup]],
-            $setup && ($d->setup['defaults'] ?? false) && !($d->setup['contacts'] ?? false) => ['tone' => 'info', 'text' => 'Choose nameservers before registration starts, or we use Beco nameservers.', 'action' => ['label' => 'Choose nameservers', 'url' => $setup]],
+            $setup && ($d->setup['defaults'] ?? false) && !($d->setup['contacts'] ?? false) => ['tone' => 'info', 'text' => 'Choose nameservers before registration starts, or we use '.DnsSignalLabels::nameservers().'.', 'action' => ['label' => 'Choose nameservers', 'url' => $setup]],
             (bool) $setup => ['tone' => 'warn', 'text' => 'Finish setup to start registration.', 'action' => ['label' => 'Finish setup', 'url' => $setup]],
             isset($d->actions['code']) && ($d->transfer['open'] ?? false) && !($d->transfer['received'] ?? false) => ['tone' => 'warn', 'text' => 'Enter the auth code from your current registrar.', 'action' => ['label' => 'Enter auth code', 'url' => $d->actions['code']]],
             default => null,

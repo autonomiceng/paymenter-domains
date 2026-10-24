@@ -31,20 +31,27 @@ final class DnsSignalLabels
         $mixed = ($website === true || $email === true) && (($signals['website']['mixed'] ?? false) || ($signals['email']['mixed'] ?? false));
         return self::keys($signals['dns']['value'] ?? null, $website, $email, $mixed, $partial);
     }
-    /** The configured company name without a trailing environment name such as " (local)"; "Beco" when unset. */
-    public static function company(mixed $setting): string
+    /** Use the configured company, then the app name, without a trailing environment suffix. */
+    public static function company(mixed $setting = null): string
     {
-        $name = is_string($setting) ? trim((string) preg_replace('/\s*\((?:local|dev|development|test|testing|stage|staging|demo|sandbox|preview)\)\s*\z/i', '', $setting)) : '';
-        return $name !== '' ? $name : 'Beco';
+        $trim = static fn (mixed $value): string => is_string($value) ? trim((string) preg_replace('/\s*\((?:local|dev|development|test|testing|stage|staging|demo|sandbox|preview)\)\s*\z/i', '', trim($value))) : '';
+        $name = $trim($setting ?? (function_exists('config') ? config('settings.company_name') : null));
+        return $name !== '' ? $name : $trim(function_exists('config') ? config('app.name') : null);
     }
+    public static function nameservers(): string
+    {
+        $company = self::company();
+        return $company !== '' ? $company.' nameservers' : 'our nameservers';
+    }
+    public static function transferTarget(): string { return self::company() ?: 'us'; }
     public static function configuredStrings(): array { return self::strings(config('settings.company_name')); }
     public static function strings(mixed $companyName): array
     {
         $company = self::company($companyName);
-        return ['domain.dns.platform' => $company.' DNS', 'domain.dns.external' => 'External DNS', 'domain.dns.unknown' => 'DNS details unavailable',
-            'domain.points.website' => 'Points to '.$company.': website', 'domain.points.email' => 'Points to '.$company.': email',
-            'domain.points.both' => 'Points to '.$company.': website / email', 'domain.points.mixed' => 'Also points to other services',
+        return ['domain.dns.platform' => ($company !== '' ? $company.' DNS' : 'Our DNS'), 'domain.dns.external' => 'External DNS', 'domain.dns.unknown' => 'DNS details unavailable',
+            'domain.points.website' => 'Points to '.($company ?: 'us').': website', 'domain.points.email' => 'Points to '.($company ?: 'us').': email',
+            'domain.points.both' => 'Points to '.($company ?: 'us').': website / email', 'domain.points.mixed' => 'Also points to other services',
             'domain.points.partial' => 'Some checks are unavailable', 'domain.points.help' => 'These checks show DNS pointers. They do not test website or email availability.',
-            'domain.points.unknown' => 'Connection details unavailable', 'domain.points.platform_empty' => 'DNS only', 'domain.points.external_empty' => 'Not pointed to '.$company];
+            'domain.points.unknown' => 'Connection details unavailable', 'domain.points.platform_empty' => 'DNS only', 'domain.points.external_empty' => 'Not pointed to '.($company ?: 'us')];
     }
 }

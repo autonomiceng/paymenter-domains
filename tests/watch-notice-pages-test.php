@@ -9,7 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchNoticeController;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Services\WatchNoticePreferences as Pref;
 require dirname(__DIR__).'/Domains/routes/owned.php';
-$f=noticeFixture();extract($f);storefrontViews();$controller=new WatchNoticeController();$session=app('request')->session();
+$f=noticeFixture();extract($f);config(['settings.company_name'=>'Example Hosting']);
+storefrontViews();$controller=new WatchNoticeController();$session=app('request')->session();
 $request=static function($actor,array $data=[],string $method='GET')use($session){$r=Request::create('/domains/checks/watch/1',$method,$data);$r->setUserResolver(fn()=>$actor);$r->setLaravelSession($session);return $r;};
 foreach([$id,999999] as $foreign){try{$controller->show($request($other),'watch',$foreign);expect(false,'Foreign locator refuses');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(404,$e->getStatusCode(),'Cross-owner and missing target');}}
 $html=$controller->show($request($owner),'watch',$id)->render();$dom=storefrontDom($html);same(1,$dom->query('//form[@method="POST"]')->length,'One preference POST');
@@ -29,7 +30,7 @@ $data=$controller->show($request($owner),'watch',$id)->getData();$data['name']=s
 $data['summary']=new Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(...[...get_object_vars($data['summary']),'relatedServices'=>[['label'=>'<script>unsafe</script>','url'=>'/services/1']]]);
 $queries=0;DB::listen(static function()use(&$queries){$queries++;});$before=$queries;$long=view('domains::watch-notices',$data)->render();same($before,$queries,'Blade does not query database');
 expect(str_contains($long,'&lt;script&gt;unsafe&lt;/script&gt;') && !str_contains($long,'<script>unsafe'),'Hosting service name escaped');expect(str_contains($long,$data['name']),'Long domain retained');
-// One page for hosting domains: header, one notice, rows with their one action, History and Transfer to Beco. Each fact once.
+// One page for hosting domains: header, one notice, rows with their one action, History and Transfer to Example Hosting. Each fact once.
 $session->forget(['watch_saved','errors']);
 $text=static fn(string $html)=>trim(preg_replace('/\s+/',' ',strip_tags($html)));$norm=static fn($n)=>trim(preg_replace('/\s+/',' ',$n->textContent));
 $state=static function(array $states,string $kind='watch',array $with=[])use($data){$status=Paymenter\Extensions\Servers\Domains\Services\DomainStates::watch($states,'2027-01-15',true);
@@ -51,7 +52,7 @@ $fields=[];foreach($dom->query('//form[@id="form-alerts"]/input[@name!="_token" 
 same(['account_revision'=>'3','target_revision'=>'4','email'=>'1','notices'=>'0'],$fields,'Turn off posts this domain only');
 same('form-alerts',$dom->query('//li[@id="alerts"]//button[@type="submit"]/@form')->item(0)?->value,'Turn off submits the alerts form');
 same(['Jun 1, 2027','At your registrar'],[$card($plain,'Expires'),$card($plain,'Renewal')],'Renewal card: expiry and where it renews');
-same(['Transfer to Beco','/domains/checks/watch/1/transfer'],[$norm($dom->query('//aside//a[contains(@class,"domains-btn")]')->item(0)),$dom->query('//aside//a[contains(@class,"domains-btn")]/@href')->item(0)?->value],'Transfer to Beco is the card action');
+same(['Transfer to Example Hosting','/domains/checks/watch/1/transfer'],[$norm($dom->query('//aside//a[contains(@class,"domains-btn")]')->item(0)),$dom->query('//aside//a[contains(@class,"domains-btn")]/@href')->item(0)?->value],'Transfer to Example Hosting is the card action');
 same('No changes yet.',$norm($dom->query('//section[@id="history"]//p')->item(0)),'History empty state');
 foreach(['Latest notices','Domain check notifications','Public domain checks','Save preferences','registration provider','Registry dates can lag','Compare transfer price'] as $old){expect(!str_contains($plain,$old),'Old copy removed: '.$old);}
 same(['Monitoring alerts','Off',['Turn on']],$li($page([],[],[],[],true,[...$on,'target'=>['enabled'=>false,'revision'=>4]]),'alerts'),'Alerts off for this domain: Turn on');
@@ -60,10 +61,10 @@ same(['Monitoring alerts','Off for all domains',['Notification settings']],$li($
 same(null,$li($page([],[],[],[],false),'alerts')[0],'No alerts row when the domain cannot be edited');
 same([null,['Monitoring paused.']],[$li($page(['watch.paused']),'alerts')[0],$notice($page(['watch.paused']))],'Paused monitoring: one notice, no alerts row');
 $ns=$page(['watch.ns_changed'],$row('ns_changed'),['ns_changed'],['urls'=>['support'=>'/tickets/create']]);
-same(['example.com stopped using Beco nameservers on Jan 15, 2027. Change them back at your registrar, or contact support.'],$notice($ns),'Nameserver change: one notice with its fix');
+same(['example.com stopped using Example Hosting nameservers on Jan 15, 2027. Change them back at your registrar, or contact support.'],$notice($ns),'Nameserver change: one notice with its fix');
 same('/tickets/create',storefrontDom($ns)->query('//div[contains(@class,"domains-notice")]//a/@href')->item(0)?->value,'Contact support is the link');
-same(1,substr_count($text($ns),'stopped using Beco nameservers'),'Nameserver change stated once');expect(str_contains($ns,'>Action required<'),'Header keeps the status pill');same(0,storefrontDom($ns)->query('//*[contains(@class,"domains-pill-reason")]')->length,'The notice gives the reason, not the pill');
-same(['example.com stopped using Beco nameservers on Jan 15, 2027. Change them back at your registrar, or contact support.'],$notice($page(['watch.ns_changed'],[],['ns_changed'],['urls'=>[]])),'Portal fallback states the change once, without a link when support is unknown');
+same(1,substr_count($text($ns),'stopped using Example Hosting nameservers'),'Nameserver change stated once');expect(str_contains($ns,'>Action required<'),'Header keeps the status pill');same(0,storefrontDom($ns)->query('//*[contains(@class,"domains-pill-reason")]')->length,'The notice gives the reason, not the pill');
+same(['example.com stopped using Example Hosting nameservers on Jan 15, 2027. Change them back at your registrar, or contact support.'],$notice($page(['watch.ns_changed'],[],['ns_changed'],['urls'=>[]])),'Portal fallback states the change once, without a link when support is unknown');
 $expired=$page(['watch.expired'],$row('expired'),['registry_expiry_reached'],['expiry'=>'2026-10-01','daysLeft'=>-22]);same(['example.com expired on Oct 1, 2026. Renew it at your registrar.'],$notice($expired),'Expired: one notice');same(1,substr_count($text($expired),'at your registrar'),'Expired: the fix is said once');
 $soon=$page([],$row('expiring'),[],['expiry'=>'2026-11-01','daysLeft'=>9]);
 same([['Renew example.com at your registrar before Nov 1, 2026.'],'Nov 1, 2026 In 9 days'],[$notice($soon),$card($soon,'Expires')],'Expiring: one notice and the days left');
@@ -72,10 +73,21 @@ same([['We can’t read the public registry or DNS for example.com right now. We
 same('Missing Check at your registrar',$card($page([],[],[],['expiry'=>null]),'Expires'),'Unknown expiry carries its cause');
 same(['Nameservers','ns1.example.net ns2.example.net Checking again',[]],$li($page(['watch.ns_pending'],[],[],['nameservers'=>['nameservers'=>['ns1.example.net','ns2.example.net'],'at'=>'2027-01-10T08:00:00Z']]),'nameservers'),'Unconfirmed change says it is checking again');
 $moves=$page([],[...$row('ns_changed'),...$row('ns_restored','January 20, 2027')]);
-same(['Nameservers changed Jan 15, 2027','Nameservers back to Beco Jan 20, 2027'],array_map($norm,iterator_to_array(storefrontDom($moves)->query('//section[@id="history"]//tbody/tr'))),'History lists nameserver changes with dates');
+same(['Nameservers changed Jan 15, 2027','Nameservers back to Example Hosting Jan 20, 2027'],array_map($norm,iterator_to_array(storefrontDom($moves)->query('//section[@id="history"]//tbody/tr'))),'History lists nameserver changes with dates');
 same(null,storefrontDom($page([],[],[],['urls'=>[]]))->query('//aside//a[contains(@class,"domains-btn")]')->item(0),'No transfer offer, no button');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain($data['name'],'Active','ok','2027-01-15','On','$14.00',['show'=>'/domains/1'],[],['contacts'=>false,'required'=>false],[],[],true);
-same(1,substr_count($text(view('domains::show',['domain'=>$owned,'summary'=>$state(['domain.active','watch.ns_changed'],'managed'),'keys'=>[]])->render()),'stopped using Beco nameservers'),'Domain detail page states a nameserver change once');
+same(1,substr_count($text(view('domains::show',['domain'=>$owned,'summary'=>$state(['domain.active','watch.ns_changed'],'managed'),'keys'=>[]])->render()),'stopped using Example Hosting nameservers'),'Domain detail page states a nameserver change once');
 require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
 foreach(['show','save']as$action){$route=app('router')->getRoutes()->getByName('domains.checks.'.$action);expect(in_array('web',$route->gatherMiddleware(),true)&&in_array('auth',$route->gatherMiddleware(),true),'Native web auth guards preferences');}
+// Page notices, transfer controls and history share configured and absent-name behavior.
+foreach ([['Example Hosting','Ignored','Example Hosting'],['Example Hosting (preview)','Ignored','Example Hosting'],[null,'Example App (test)','Example App'],[' ',' (local) ','']] as [$setting,$appName,$expected]) {
+    config(['settings.company_name'=>$setting,'app.name'=>$appName]);
+    $nameservers=$expected !== '' ? $expected.' nameservers' : 'our nameservers';
+    expect(str_contains($text($page(['watch.ns_changed'])),'stopped using '.$nameservers),'Rendered watch notice uses the company fallback');
+    expect(str_contains($text($page([],[],[],['urls'=>['compareTransfer'=>'/domains/checks/watch/1/transfer']])),'Transfer to '.($expected !== '' ? $expected : 'us')),'Rendered transfer action uses the company fallback');
+    $managed=\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($owned,null,$state(['watch.ns_changed'],'managed'));
+    expect(str_contains($managed['text'],'stopped using '.$nameservers),'Managed notice uses the company fallback');
+    $history=\Paymenter\Extensions\Servers\Domains\Presentation\WatchPage::history($row('ns_restored'));
+    same($expected !== '' ? 'Nameservers back to '.$expected : 'Our nameservers restored',$history[0]['label'],'History uses the company fallback');
+}
 $nativeSuccessful=true;echo "Owner-safe preference detail, CSRF/session key, stale revision, escaping and query-free Blade passed.\n";

@@ -7,7 +7,7 @@ How each setting on a domain page works. Changes show in History once the regist
 Nameservers decide where your website and email are hosted. Your DNS provider or hosting company tells you which nameservers to use.
 
 - Enter 2 to 12 hostnames, one per line, such as ns1.example.com.
-- **Use Beco nameservers** fills in Beco's nameservers. Choose this if you want to manage DNS records on this page.
+- **Use the default nameservers** fills in the default nameservers. Choose this if you want to manage DNS records on this page.
 - Before saving, we show the current and new nameservers so you can check them.
 - Changes can take up to 48 hours to reach everyone.
 
@@ -25,7 +25,7 @@ Deleting a glue record that domains still use can stop those domains from resolv
 
 ## DNS records
 
-DNS records point your domain to your website, email and other services. They're used only while the domain uses Beco nameservers. If you use other nameservers, manage DNS records with that provider instead.
+DNS records point your domain to your website, email and other services. They're used only while the domain uses the default nameservers. If you use other nameservers, manage DNS records with that provider instead.
 
 - Use @ for the domain itself, and a name like www for a subdomain.
 - Alias (CNAME) and mail (MX) targets end with a dot, such as mail.example.com.

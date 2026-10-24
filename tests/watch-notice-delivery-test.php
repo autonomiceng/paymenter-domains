@@ -11,7 +11,7 @@ $f=noticeFixture();extract($f);noticeRegistry($f,$now);$at=$now+2;
 same([], (new WatchNotices())->plan('watch',$id,$uid,$at),'Default planning dormant');
 $ids=$planner->plan('watch',$id,$uid,$at);same(1,count($ids),'One nearest expiry notice');$n=WatchNotice::findOrFail($ids[0]);
 same('registry',$n->family,'Evidence in registry table');expect(DB::table('domains_public_evidence_refs')->where('family','registry')->where('observation_id',$n->observation_id)->exists(),'Notice pins evidence');
-same([],array_diff(array_keys(WatchNoticeDelivery::data($n)),['domain','date','company','domain_url']),'Template data whitelist');
+same([],array_diff(array_keys(WatchNoticeDelivery::data($n)),['domain','date','company','nameservers','domain_url']),'Template data whitelist');
 config(['settings.company_name'=>'<script>company</script>']);$nativeBefore=Notification::where('user_id',$uid)->count();
 $app=$delivery->reserve($n->id,'app',$at);$mail=$delivery->reserve($n->id,'mail',$at);expect($app!==null && $mail!==null && $app!==$mail,'Independent committed channel claims');
 $fail=true;Notification::creating(static function($r)use(&$fail,$uid){if($fail && (int)$r->user_id===$uid){throw new RuntimeException('Synthetic app failure');}});

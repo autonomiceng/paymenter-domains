@@ -12,6 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Relation
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainFacts, HoldingActions, Staff};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, ObservationRecords, StaffHoldingReview};
+config(['settings.company_name'=>'Example Hosting']);
 staffPanel(); [$held,$active,$long]=staffData(); Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Data\SystemClock);
@@ -50,7 +51,7 @@ same(['Ada Lovelace','ada@example.test'],[$f['Customer']['value'],$f['Customer']
 same(['On','On'],[$f['Auto-renew']['value'],$f['Renewal invoices']['value']],'Renewals on');
 same(today()->addDays(120-21)->format('M j, Y'),$f['Next invoice']['value'],'Next invoice from the billing calendar');
 expect(!isset($f['Open invoice']),'Open invoice hidden when none');
-same("The registrar's own auto-renew. Keep it off: Beco renews after the customer pays.",DomainFacts::HELP['Registrar auto-renew'],'Registrar auto-renew help');
+same("The registrar's own auto-renew. Keep it off: Example Hosting renews after the customer pays.",DomainFacts::help()['Registrar auto-renew'],'Registrar auto-renew help');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
 same([null,'Not synced yet',null,'Needs the expiry date'],[$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')],'Active without expiry shows Missing with causes');
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Expiry missing')->assertSee('Not synced yet');

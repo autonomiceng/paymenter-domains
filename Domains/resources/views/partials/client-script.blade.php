@@ -71,7 +71,7 @@
             event.preventDefault();
             servers.value = form.dataset.defaultServers; useDefault.disabled = false;
             servers.dispatchEvent(new Event('input', {bubbles: true})); servers.focus();
-            if (live) live.textContent = 'Beco nameservers filled in. Save to apply them.';
+            if (live) live.textContent = @js(ucfirst(\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers()).' filled in. Save to apply them.');
         });
         servers?.addEventListener('input', event => { if (event.isTrusted && useDefault) useDefault.disabled = true; });
         form.addEventListener('submit', event => {

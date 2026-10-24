@@ -33,7 +33,7 @@ same(1,$dom->query('//dialog[@id="confirm-nameservers"]//div[dt="Current"][@hidd
 // Defaults fill the textarea with script; without script the same button submits the server-side defaults path.
 same(implode("\n",OwnedDomains::DEFAULT_NAMESERVERS),$dom->query('//form[@data-default-servers]')->item(0)?->getAttribute('data-default-servers'),'Default list ready to fill the textarea');
 $fill=$dom->query('//button[@data-fill-defaults]')->item(0);
-same(['submit','use_default','1'],[$fill->getAttribute('type'),$fill->getAttribute('name'),$fill->getAttribute('value')],'Use Beco nameservers falls back to the defaults path without script');
+same(['submit','use_default','1'],[$fill->getAttribute('type'),$fill->getAttribute('name'),$fill->getAttribute('value')],'Use the default nameservers falls back to the defaults path without script');
 expect($fill->hasAttribute('formnovalidate')&&str_contains($fill->getAttribute('class'),'domains-btn--ghost'),'Defaults is a secondary button that skips the empty-field check');
 same(1,$dom->query('//li[@id="nameservers"]//dialog[@id="edit-nameservers"]//button[contains(@class,"domains-btn--primary")][not(ancestor::dialog[@data-confirm-dialog])]')->length,'One primary Save button');
 same(1,$dom->query('//input[@data-use-default][@disabled]')->length,'Defaults flag stays off until defaults are chosen');

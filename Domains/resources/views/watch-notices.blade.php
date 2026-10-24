@@ -46,7 +46,7 @@
 <div><dt>Expires @include('domains::partials.help', ['id' => 'expires', 'label' => 'Expires', 'helpText' => 'From the public registry. It can lag a few days after a renewal.'])</dt><dd>@if ($expires['missing'])@include('domains::partials.missing', ['cause' => $expires['cause'], 'fix' => null, 'stack' => true])@else<span class="domains-date{{ $expires['tone'] ? ' domains-tone-text-'.$expires['tone'] : '' }}">@include('domains::partials.date', ['date' => $summary->expiry])</span>@if ($expires['sub']) <span class="domains-sub">{{ $expires['sub'] }}</span>@endif @endif</dd></div>
 @if ($kind === 'watch')<div><dt>Renewal</dt><dd>At your registrar</dd></div>@endif
 </dl>
-@if ($kind === 'watch' && ($summary->urls['compareTransfer'] ?? null))<a class="domains-btn domains-btn--primary domains-btn--block" href="{{ $summary->urls['compareTransfer'] }}">Transfer to Beco</a>
+@if ($kind === 'watch' && ($summary->urls['compareTransfer'] ?? null))<a class="domains-btn domains-btn--primary domains-btn--block" href="{{ $summary->urls['compareTransfer'] }}">Transfer to {{ \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::transferTarget() }}</a>
 @elseif ($kind === 'managed' && ($summary->urls['detail'] ?? null))<a class="domains-btn domains-btn--ghost domains-btn--block" href="{{ $summary->urls['detail'] }}">Open domain</a>@endif
 </div></section>
 </aside></div>

@@ -7,6 +7,7 @@ use App\Models\NotificationTemplate;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnerActionController,OwnerHelpController,OwnerRenewalController};
 use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
 use Paymenter\Extensions\Servers\Domains\Services\{InvoiceDescription,OwnerHelp,ReminderTemplates,WatchNoticeTemplates};
+config(['settings.company_name'=>'Example Hosting']);
 storefrontViews();
 app('view')->share('keys',array_fill_keys(['setup','recovery','code','renew','auto-renew',...OwnerActionController::ACTIONS],str_repeat('a',64)));
 $plain=static fn(string $html):string=>trim(preg_replace('/\s+/u',' ',html_entity_decode(preg_replace('/<[^>]+>/',' ',preg_replace('~<(style|script|svg)\b[^>]*>.*?</\1>~si','',$html)),ENT_QUOTES)));
@@ -21,8 +22,8 @@ $md=file_get_contents(OwnerHelp::path());
 expect(str_contains($md,"How each setting on a domain page works. Changes show in History once the registrar confirms them."),'Help intro');
 same(1,substr_count(strtolower($md),'transfer code'),'"transfer code" appears once, as the other name for the auth code');
 same(1,substr_count($md,'(also called EPP code or transfer code)'),'The auth code names its other terms once');
-expect(str_contains($md,'**Use Beco nameservers**'),'Help names the nameservers button as the page does');
-$none($md,['Activity','Domain privacy','domain privacy','administrative contact','EPP code)','auth code or EPP','default nameservers','could not','cannot','do not','does not'],'Help page');
+expect(str_contains($md,'**Use the default nameservers**'),'Help names the nameservers button as the page does');
+$none($md,['Activity','Domain privacy','domain privacy','administrative contact','EPP code)','auth code or EPP','could not','cannot','do not','does not'],'Help page');
 $help=$plain((new OwnerHelpController)->show()->render());
 foreach(['Auth code','WHOIS privacy','History'] as $term){expect(str_contains($help,$term),'Rendered help says '.$term);}
 
@@ -37,15 +38,26 @@ expect(str_contains($r['domains_domain_expiring']['in_app_body'],'@else Auto-ren
 expect(str_contains($r['domains_domain_expiring']['body'],"Auto-renew is off. To keep this domain, contact support before **{{ \$expires }}**."),'Expiring email: Auto-renew is off');
 $none(json_encode($r,JSON_UNESCAPED_UNICODE),['transfer code','Transfer code','Renewal is turned off','could not','did not'],'Reminder templates');
 $w=WatchNoticeTemplates::definitions();
-same(['Monitoring alert: expires soon','Monitoring alert: expired','Monitoring alert: nameservers changed','Monitoring alert: nameservers back to Beco'],array_column($w,'name'),'Monitoring alert names');
+same(['Monitoring alert: expires soon','Monitoring alert: expired','Monitoring alert: nameservers changed','Monitoring alert: nameservers restored'],array_column($w,'name'),'Monitoring alert names');
 same(['Monitoring alerts'],array_values(array_unique(array_column($w,'edit_preference_message'))),'Monitoring alerts preference');
 same('{{ $domain }} has expired',$w['domains_watch_expired']['subject'],'Expired subject');
-same('As of {{ $date }}, {{ $domain }} no longer uses {{ $company }} nameservers. If you didn’t expect this, contact support.',$w['domains_watch_ns_changed']['in_app_body'],'Nameservers changed body');
+same('As of {{ $date }}, {{ $domain }} no longer uses {{ $nameservers }}. If you didn’t expect this, contact support.',$w['domains_watch_ns_changed']['in_app_body'],'Nameservers changed body');
 foreach($w as $key=>$t){
     $body=$plain($t['body']);
     expect(str_ends_with($body,'View domain You get this because monitoring alerts are on. Turn them off on the domain page.'),'Footer said once, after the link: '.$key);
     $none($body.$t['subject'],['registration provider','Domain checks','domain check','public domain check','not a bill','To pause notices','provided by','did not','could not','Registry expiry date reached'],'Watch email '.$key);
 }
+
+// Every template uses the same configured name and no-name wording as pages.
+foreach ([['Example Hosting','Ignored','Example Hosting'],[' Example Hosting (staging) ','Ignored','Example Hosting'],[null,'Example App (testing)','Example App'],[null,' (local) ','']] as [$setting,$appName,$expected]) {
+    config(['settings.company_name'=>$setting,'app.name'=>$appName]);
+    $n=new \Paymenter\Extensions\Servers\Domains\Models\WatchNotice(['target_kind'=>'watch','watch_id'=>1,'data'=>['domain'=>'example.com','date'=>'2027-01-15']]);
+    $data=\Paymenter\Extensions\Servers\Domains\Services\WatchNoticeDelivery::data($n);
+    same($expected,$data['company'],'Notification company fallback');
+    $rendered=\Illuminate\Support\Facades\Blade::render($w['domains_watch_ns_restored']['subject'],$data);
+    same('example.com uses '.($expected !== '' ? $expected.' nameservers' : 'our nameservers').' again',$rendered,'Rendered notification fallback');
+}
+config(['settings.company_name'=>'Example Hosting']);
 
 // Upgrades replace only exact earlier defaults, field by field; edited fields stay.
 ReminderTemplates::ensure();WatchNoticeTemplates::ensure();
@@ -126,4 +138,18 @@ expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Http\Controlle
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController::class),"'Check the TLD after the dot, for example '"),'Search TLD error');
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Services\NativeActivationInformation::class),'We may ask for the auth code from your current registrar.'),'Activation information');
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class),"['name'=>'Domain prices',"),'Client nav names the prices page by its title');
+// Previous defaults upgrade twice; custom text is retained.
+foreach ($w as $key=>$fields) {
+    $t=NotificationTemplate::where('key',$key)->sole();
+    foreach (array_intersect(['name','subject','in_app_title','in_app_body','body'],\Illuminate\Support\Facades\Schema::getColumnListing('notification_templates')) as $field) {
+        $old=str_replace('{{ $nameservers }}','{{ $company }} nameservers',$fields[$field]);
+        if ($key==='domains_watch_ns_restored' && $field==='name') { $old=hex2bin('4d6f6e69746f72696e6720616c6572743a206e616d6573657276657273206261636b20746f204265636f'); }
+        $t->setAttribute($field,$old)->save();
+        WatchNoticeTemplates::ensure();WatchNoticeTemplates::ensure();
+        same($fields[$field],$t->fresh()->getAttribute($field),'Previous default upgrades idempotently: '.$key.'/'.$field);
+        $t->setAttribute($field,'Custom '.$old)->save();WatchNoticeTemplates::ensure();
+        same('Custom '.$old,$t->fresh()->getAttribute($field),'Operator copy stays: '.$key.'/'.$field);
+        $t->setAttribute($field,$fields[$field])->save();
+    }
+}
 $nativeSuccessful=true;echo "Glossary sweep checks passed.\n";

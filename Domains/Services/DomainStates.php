@@ -48,7 +48,7 @@ final class DomainStates
     }
     /** "Not using {company} nameservers". */
     private static function nameservers(): string
-    { return 'Not using '.DnsSignalLabels::company(config('settings.company_name')).' nameservers'; }
+    { return 'Not using '.DnsSignalLabels::nameservers(); }
     /** The acquisition still describes this holding: same service, server, registrar, generation and account. */
     private static function current(Operation $op, Domain $d): bool
     {

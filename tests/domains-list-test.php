@@ -101,9 +101,19 @@ same(0,$empty->query('//*[contains(@class,"domains-empty")]//a')->length,'No sec
 $filtered=view('domains::index',['domains'=>new LengthAwarePaginator([],0,25),'filterCounts'=>[''=>3],'search'=>'zz'])->render();
 expect(str_contains((string)$norm(storefrontDom($filtered)->query('//div[@class="domains"]')->item(0)),'No domains match "zz".'),'Filtered empty uses straight quotes');
 
-// Company name for the nameserver reason: no environment suffix, Beco when unset.
-same('Beco',DnsSignalLabels::company('Beco (local)'),'Environment suffix removed');
-same('Beco Technologies',DnsSignalLabels::company('Beco Technologies (staging)'),'Staging suffix removed');
-same('Beco',DnsSignalLabels::company('  '),'Fallback company is Beco');
+// Configured names, application fallback and environment suffixes share one rule.
+config(['settings.company_name'=>'Example Hosting','app.name'=>'Example App (testing)']);
+same('Example Hosting',DnsSignalLabels::company(),'Configured company');
+same('Example Hosting',DnsSignalLabels::company(' Example Hosting (local) '),'Environment suffix removed');
+same('Example Technologies',DnsSignalLabels::company('Example Technologies (staging)'),'Staging suffix removed');
+same('Example App',DnsSignalLabels::company('  '),'Empty company uses the trimmed app name');
+config(['settings.company_name'=>null]);
+same('Example App',DnsSignalLabels::company(),'Unset company uses app name');
+config(['app.name'=>' (testing) ']);
+same('',DnsSignalLabels::company(),'Both names empty');
+same('our nameservers',DnsSignalLabels::nameservers(),'Unnamed nameservers');
+same('Not pointed to us',DnsSignalLabels::configuredStrings()['domain.points.external_empty'],'Unnamed connection label');
+same('Transfer :domain to us',\Paymenter\Extensions\Servers\Domains\Services\WatchTransferStrings::all()['watch.transfer_title'],'Unnamed transfer title');
+config(['settings.company_name'=>'Example Hosting']);
 same('Example (Hosting)',DnsSignalLabels::company('Example (Hosting)'),'Other brackets are kept');
 $nativeSuccessful=true;

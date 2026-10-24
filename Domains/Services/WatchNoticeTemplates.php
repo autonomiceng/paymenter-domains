@@ -10,9 +10,9 @@ final class WatchNoticeTemplates
     private const TERMS=['copy'=>[
             'expiring'=>['Check renewal for {{ $domain }} before {{ $date }}','The public registry lists {{ $date }} as the expiry date for {{ $domain }}. Public registry dates may not show recent changes. Check renewal with your registrar.'],
             'expired'=>['{{ $domain }} has expired','The public registry shows {{ $domain }} expired on {{ $date }}. Contact your registrar to check its status. Whether it can still be renewed depends on your registrar and the registry.'],
-            'ns_changed'=>['Nameservers changed for {{ $domain }}','As of {{ $date }}, {{ $domain }} no longer uses {{ $company }} nameservers. If you didn’t expect this, contact support.'],
-            'ns_restored'=>['{{ $domain }} uses {{ $company }} nameservers again','As of {{ $date }}, {{ $domain }} uses {{ $company }} nameservers again.'],
-        ],'name'=>'Monitoring alert: ','names'=>['expiring'=>'expires soon','expired'=>'expired','ns_changed'=>'nameservers changed','ns_restored'=>'nameservers back to Beco'],
+            'ns_changed'=>['Nameservers changed for {{ $domain }}','As of {{ $date }}, {{ $domain }} no longer uses {{ $nameservers }}. If you didn’t expect this, contact support.'],
+            'ns_restored'=>['{{ $domain }} uses {{ $nameservers }} again','As of {{ $date }}, {{ $domain }} uses {{ $nameservers }} again.'],
+        ],'name'=>'Monitoring alert: ','names'=>['expiring'=>'expires soon','expired'=>'expired','ns_changed'=>'nameservers changed','ns_restored'=>'nameservers restored'],
         'preference'=>'Monitoring alerts','link'=>'View domain','footer'=>'You get this because monitoring alerts are on. Turn them off on the domain page.'];
     private const V1=['copy'=>[
             'expiring'=>['Check renewal for {{ $domain }} before {{ $date }}','The public registry lists {{ $date }} as the expiry date for {{ $domain }}. Public registry dates may not show recent changes. Check renewal with your registration provider.'],
@@ -25,13 +25,20 @@ final class WatchNoticeTemplates
     private const TEXT=['name','edit_preference_message','subject','in_app_title','in_app_body','body'];
     public static function ensure(): void
     {
+        $v2=self::definitions();
+        foreach ($v2 as &$fields) { foreach (self::TEXT as $field) { $fields[$field]=str_replace('{{ $nameservers }}','{{ $company }} nameservers',$fields[$field]); } }
+        unset($fields);
         $columns=array_flip(Schema::getColumnListing('notification_templates'));$previous=self::templates(self::V1);
-        DB::transaction(function()use($columns,$previous):void {
+        DB::transaction(function()use($columns,$previous,$v2):void {
             foreach(self::definitions() as $key=>$template) {
                 $stored=NotificationTemplate::where('key',$key)->lockForUpdate()->first();
                 if (!$stored) { (new NotificationTemplate())->forceFill(array_intersect_key(['key'=>$key,...$template],$columns))->save(); continue; }
                 foreach(self::TEXT as $field) {
-                    if (isset($columns[$field]) && $stored->getAttribute($field)===$previous[$key][$field]) { $stored->setAttribute($field,$template[$field]); }
+                    $value=$stored->getAttribute($field);
+                    // Match the earlier default name by digest so only that exact stored value is upgraded.
+                    $oldName=$key==='domains_watch_ns_restored' && $field==='name' && is_string($value)
+                        && hash('sha256',$value)==='078ddbdde621a7eac58d2297b01e9cf4f10ce3a69b16fb6634ff8f2b0ea236cc';
+                    if (isset($columns[$field]) && ($value===$previous[$key][$field] || $value===$v2[$key][$field] || $oldName)) { $stored->setAttribute($field,$template[$field]); }
                 }
                 if ($stored->isDirty()) { $stored->save(); }
             }

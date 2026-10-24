@@ -17,7 +17,8 @@ final class WatchNoticeDelivery
     public static function data(WatchNotice $n): array
     {
         return ['domain'=>$n->data['domain'],'date'=>\Carbon\CarbonImmutable::parse($n->data['date'],'UTC')->format('F j, Y'),
-            'company'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company(config('settings.company_name')),
+            'company'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company(),
+            'nameservers'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers(),
             'domain_url'=>self::url($n->target_kind,(int)($n->watch_id??$n->managed_domain_id))];
     }
     public static function prepare(WatchNotice $n,string $channel,User $user): ?array

@@ -39,7 +39,7 @@ final class WatchFindings
     public static function status(WatchName $w,array $keys,?string $expiry=null,?int $now=null): array
     {
         if($w->state==='paused'){return ['label'=>'Paused','tone'=>'gray','reason'=>null];}
-        if($w->state!=='active'){return ['label'=>'Stopped','tone'=>'gray','reason'=>$w->state==='linked'?'Registered at '.self::company():null];}
+        if($w->state!=='active'){return ['label'=>'Stopped','tone'=>'gray','reason'=>$w->state==='linked'?(DnsSignalLabels::company() !== '' ? 'Registered at '.self::company() : 'Registered with us'):null];}
         foreach(self::PROBLEMS as $key=>$reason){if(in_array($key,$keys,true)){return ['label'=>'Problem found','tone'=>'warning','reason'=>$reason??self::expires($expiry,$now)];}}
         return ['label'=>'Monitoring','tone'=>'success','reason'=>null];
     }
@@ -49,8 +49,8 @@ final class WatchFindings
         $n=abs($days).' '.(abs($days)===1?'day':'days');return match(true){$days<0=>'Expired '.$n.' ago',$days===0=>'Expires today',default=>'Expires in '.$n};
     }
     /** The configured company name, as the customer pages show it. */
-    public static function company(): string{return DnsSignalLabels::company(config('settings.company_name'));}
-    /** "Beco" / "Other" for a saved platform / external value; null stays null so the page shows Missing. */
+    public static function company(): string{return DnsSignalLabels::company() ?: 'Us';}
+    /** Company / "Other" for a saved platform / external value; null stays null so the page shows Missing. */
     public static function who(?string $value): ?string{return match($value){'platform'=>self::company(),'external'=>'Other',default=>null};}
     /** Status filter. Paused and Stopped are saved states; Monitoring and Problem found use the ids the list page memoizes per request. */
     public static function filter(Builder $query,?string $status,mixed $livewire=null): Builder

@@ -16,8 +16,12 @@ final class DomainFacts
 {
     public const REGISTRATION=['Expires','Registrar','In registrar account','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'];
     public const BILLING=['Customer','Service','Auto-renew','Renewal price','Renewal invoices','Next invoice','Open invoice'];
-    public const HELP=['Transfer lock'=>'Registrar lock that blocks transfers to another registrar.',
-        'Registrar auto-renew'=>"The registrar's own auto-renew. Keep it off: Beco renews after the customer pays."];
+    public static function help(): array
+    {
+        $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+        return ['Transfer lock'=>'Registrar lock that blocks transfers to another registrar.',
+            'Registrar auto-renew'=>"The registrar's own auto-renew. Keep it off: ".($company !== '' ? $company.' renews' : 'we renew').' after the customer pays.'];
+    }
     /** Open alerts by kind: the row each concerns, its cause and its tone. The row keeps its value; with no value it is Missing.
      * Paid after the order closed shows in the status and the page notice instead. */
     public const ALERTS=[
@@ -70,9 +74,9 @@ final class DomainFacts
             $f['In registrar account']=self::fact(($observation['record_hold']['reason']??null)==='ownership_drift'?'No':self::flag($facts['owned']??null,'Yes','No'),sub:isset($facts['owned'])?null:$unread);
             $nameservers=OwnedDomains::storedNameservers($observation);
             $f['Nameservers']=self::fact($nameservers,sub:$nameservers?null:$unread,demo:$nameservers&&$account&&DemoData::is($account));
-            $f['Transfer lock']=self::fact(self::flag($facts['locked']??null),sub:isset($facts['locked'])?null:$unread,help:self::HELP['Transfer lock']);
+            $f['Transfer lock']=self::fact(self::flag($facts['locked']??null),sub:isset($facts['locked'])?null:$unread,help:self::help()['Transfer lock']);
             $f['WHOIS privacy']=self::fact(self::flag($facts['privacy']??null),sub:isset($facts['privacy'])?null:$unread);
-            $f['Registrar auto-renew']=self::fact(self::flag($facts['auto_renew']??null),sub:isset($facts['auto_renew'])?null:$unread,help:self::HELP['Registrar auto-renew']);
+            $f['Registrar auto-renew']=self::fact(self::flag($facts['auto_renew']??null),sub:isset($facts['auto_renew'])?null:$unread,help:self::help()['Registrar auto-renew']);
         }
         $job=!Schema::hasTable('domains_observation_work')||($id=ObservationWork::currentId($d))===null?null:DB::table('domains_observation_work')->find($id);
         if ($registered||$job||$d->last_synced_at) { $f['Last sync']=match(true) {

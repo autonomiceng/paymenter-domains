@@ -155,6 +155,6 @@ $retained=['dns'=>['value'=>'platform','available'=>true,'stale'=>false],'websit
     'email'=>['value'=>false,'available'=>true,'stale'=>true,'mixed'=>false],'partial'=>true];
 $retainedKeys=DnsSignalLabels::projection($retained);expect(in_array('domain.points.unknown',$retainedKeys,true) && !in_array('domain.points.platform_empty',$retainedKeys,true),'Superseded mixed positive across independent rows remains unknown without invalid label axes');
 $keys=DnsSignalLabels::keys('platform',true,false,true);expect(in_array('domain.points.mixed',$keys,true),'Mixed remains visible');
-same('Not pointed to Beco',DnsSignalLabels::strings('  ')['domain.points.external_empty'],'Empty company fallback');same('Example DNS',DnsSignalLabels::strings(' Example ')['domain.dns.platform'],'Company trim');
+same('Not pointed to us',DnsSignalLabels::strings('  ')['domain.points.external_empty'],'Empty company fallback');same('Example DNS',DnsSignalLabels::strings(' Example ')['domain.dns.platform'],'Company trim');
 same('Points to Example: website / email',DnsSignalLabels::strings('Example')['domain.points.both'],'Exact company wording');
 echo "Exact NS sets, complete/unknown pointers, mixed targets, CNAME bounds, shared budget, rotation and safe labels passed.\n";
