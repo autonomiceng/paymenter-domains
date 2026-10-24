@@ -53,6 +53,10 @@ foreach (['10/19/2025' => 'expired', '10/19/2037' => 'state_unconfirmed'] as $da
 $fake = new AdoptionWire;
 $fake->payloads['GetDomainInfo'] = str_replace('</Status>', '<Redemption>true</Redemption></Status>', $fake->payloads['GetDomainInfo']);
 same('state_unconfirmed', (new EnomAdoptionReader($binding, 'synthetic-uid', 'synthetic-secret', $fake, $clock))->read('example.com', 'com')->facts()['refusal'], 'Redemption refuses despite future expiry');
+foreach (['true', 'unknown'] as $redemption) {
+    $fake = new AdoptionWire; $fake->payloads['GetExtendInfo'] .= '<Redemption>'.$redemption.'</Redemption>';
+    same('state_unconfirmed', (new EnomAdoptionReader($binding, 'synthetic-uid', 'synthetic-secret', $fake, $clock))->read('example.com', 'com')->facts()['refusal'], 'Flat redemption never silently authorizes adoption');
+}
 $fake = new AdoptionWire;
 $fake->payloads['GetExtendInfo'] .= '<GetDomainInfo><Status><Expiration>10/19/2027 1:00:00 AM</Expiration></Status></GetDomainInfo>';
 same('expiry_disagrees', (new EnomAdoptionReader($binding, 'synthetic-uid', 'synthetic-secret', $fake, $clock))->read('example.com', 'com')->facts()['refusal'], 'Contradictory nested expiry alias refused');

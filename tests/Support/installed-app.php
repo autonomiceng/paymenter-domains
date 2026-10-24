@@ -20,9 +20,9 @@ $loader=require $fixture.'/vendor/autoload.php';
 $loader->addPsr4('App\\',$fixture.'/app/',true);
 $loader->addPsr4('Paymenter\\Extensions\\',$fixture.'/extensions/',true);
 $app=require $fixture.'/bootstrap/app.php';
-if(getenv('PACKAGE_PHASE')==='enom-test-registration'){
+if(in_array(getenv('PACKAGE_PHASE'),['enom-test-registration','enom-test-renewal','enom-test-renewal-restart','enom-test-renewal-race-issue','enom-test-renewal-race-admit','enom-test-renewal-race-verify'],true)){
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
-        static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true]));
+        static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>in_array(getenv('PACKAGE_PHASE'),['enom-test-registration','enom-test-renewal'],true),'domains.enom_writes.renewal'=>str_starts_with((string)getenv('PACKAGE_PHASE'),'enom-test-renewal-')]));
 }
 if(in_array(getenv('PACKAGE_PHASE'), ['identity','catalogue','catalogue-retained'], true)){
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,

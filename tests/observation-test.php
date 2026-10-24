@@ -33,6 +33,26 @@ DB::table('domains_read_budgets')->where('server_id',$d->server_id)->update(['us
 same('read_deferred',$work->tick(1)[$d->server_id],'Local quota refusal is retryable');same(0,DB::table('domains_observation_work')->where('id',$job->id)->value('tries'),'Local denial spends no failure try');
 $clock->instant=$clock->now()->modify('+60 seconds');$work->tick(1);expect(count($observation->calls)>$calls,'Quota reset permits read without another resume');
 expect(isset($d->fresh()->observation['resumptions'][0]),'Resume audit retained');same($before,$original->fresh()->getAttributes(),'Refresh/restart/resume preserves operation bytes');
+// Enom TEST cap denial is also local: no failure try or stopped state, then automatic recovery.
+DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$clock->now()->getTimestamp()]);
+$priorJob=DB::table('domains_observation_work')->where('id',$job->id)->sole();
+$observation->during=static fn()=>throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit;
+same('read_deferred',$work->tick(1)[$d->server_id],'TEST call cap defers scheduled primary read');
+$capped=DB::table('domains_observation_work')->where('id',$job->id)->sole();
+same([$priorJob->tries,$priorJob->safe_code,null,0,$clock->now()->getTimestamp()+60],[$capped->tries,$capped->safe_code,$capped->claim,$capped->lease_until,$capped->due_at],'Cap clears lease and restores tries and prior safe code');
+$calls=count($observation->calls);$clock->instant=$clock->now()->modify('+60 seconds');
+same('refreshed',$work->tick(1)[$d->server_id],'Capacity recovery needs no staff resume');expect(count($observation->calls)>$calls,'Next due tick performs read');
+same($before,$original->fresh()->getAttributes(),'Cap recovery preserves original operation evidence');
+// A disabled TEST limit is the same non-consuming refusal, even over successive due turns.
+$capConfig=config('domains.enom_test_daily_call_cap');config(['domains.enom_test_daily_call_cap'=>0]);
+foreach([1,2] as $turn){
+ DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$clock->now()->getTimestamp()]);
+ $observation->during=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::reserve(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test);
+ same('read_deferred',$work->tick(1)[$d->server_id],'Cap zero remains deferred on due turn '.$turn);
+ $zero=DB::table('domains_observation_work')->where('id',$job->id)->sole();same([0,'refreshed',null,0,$clock->now()->getTimestamp()+60],[$zero->tries,$zero->safe_code,$zero->claim,$zero->lease_until,$zero->due_at],'Cap zero never spends a failure try or stops work');
+ $clock->instant=$clock->now()->modify('+60 seconds');
+}
+config(['domains.enom_test_daily_call_cap'=>$capConfig]);same('refreshed',$work->tick(1)[$d->server_id],'Restored capacity recovers without staff resume');
 // Separately authorized correction: immutable link and appended readback progress, never closure.
 $bindings->setProcessing($d->server_id,true);$op=$management->request($user,$d->id,'auto_renew_off',[],$key(),$driver,correction:$original->operation_key);
 same('auto_renew',$op->policy['management']['correction_link']['section'],'Frozen section link');same('succeeded',$management->run($op->id,$driver)->state,'Separate correction execution');

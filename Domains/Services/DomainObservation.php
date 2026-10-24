@@ -41,7 +41,7 @@ final class DomainObservation
             } else { $result=$reader->readDomain($seed->domain,$ctx); $binding->requireMatch($result->binding); $snapshot=$result->evidence()->domain; }
             if ($snapshot) { $binding->requireMatch($snapshot->binding); if ($snapshot->name!==$seed->domain) { throw new \DomainException('Observation name changed.'); } }
             if ($this->clock->now()>=$ctx->deadline || (!$snapshot&&$transfer===TransferStatus::Unknown)) { throw new \DomainException('Observation unavailable.'); }
-        } catch (ReadDeferred $e) { throw $e; }
+        } catch (ReadDeferred|EnomTestCallLimit $e) { throw $e; }
         catch (\Throwable $e) {
             if (!$recordEnabled || $seed->status!=='active') { throw $e; }
             $snapshot=null; $transfer=TransferStatus::Unknown; $failed=true;
@@ -55,7 +55,7 @@ final class DomainObservation
                     $r=new \Paymenter\Extensions\Servers\Domains\Data\ManagementRequest($binding,'observation:'.$seed->id,$seed->domain,'discovery',[],$seed->provider_domain_id);
                     $records=$port->discover($r,$ctx,$knownGlue);
                     if ($this->clock->now()>=$ctx->deadline) { throw new \DomainException('Observation deadline reached.'); }
-                } catch (ReadDeferred) { $records=null; $deferred=true; }
+                } catch (ReadDeferred|EnomTestCallLimit) { $records=null; $deferred=true; }
                 catch (\Throwable) { $records=['glue'=>['state'=>'partial','records'=>$knownGlue]]; $recordFailed=true; }
             }
         }

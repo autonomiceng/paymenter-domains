@@ -19,7 +19,8 @@ class ViewDomain extends ViewRecord
     { return [\Filament\Actions\Action::make('adoptionPreview')->label('Preview adoption')->visible(fn () => Staff::can(Staff::ADOPT_PREVIEW) && $this->getRecord()->adoptionPending())
         ->url(fn () => DomainResource::getUrl('adoption', ['record' => $this->getRecord()->id])),
         ...\Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionActions::make($this->getRecord()),
-        ...\Paymenter\Extensions\Servers\Domains\Admin\Support\HoldingActions::make($this->getRecord())]; }
+        ...\Paymenter\Extensions\Servers\Domains\Admin\Support\HoldingActions::make($this->getRecord()),
+        ...\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::scheduledReads($this->getRecord())]; }
     // ViewRecord otherwise fills public form data with the entire model's attributes.
     protected function fillForm(): void { $this->data=[]; }
     public function infolist(Schema $schema): Schema
@@ -37,11 +38,11 @@ class ViewDomain extends ViewRecord
             $review=[TextEntry::make('record_hold_reason')->label('Reason')->state($hold),
                 TextEntry::make('record_next_step')->label('Next step')->state($request===null?
                     'There is no current registrar request for this domain. Ask an administrator to review scheduled reads.':
-                    'Review the reason, then open the registrar request and choose Resume scheduled reads.')];
+                    'Review the reason, then choose Resume scheduled reads on this page.')];
             if ($request!==null) {
                 $review[]=TextEntry::make('record_permission')->label('Permission')->state('Requires the Resume scheduled reads permission.');
                 $link='<a href="'.e(OperationResource::getUrl('view',['record'=>$request])).'" class="fi-link" style="text-decoration:underline;text-underline-offset:3px;--tw-outline-style:solid;display:inline-block;padding:2px;outline-offset:-2px">Open registrar request</a>';
-                $review[]=TextEntry::make('record_recovery')->label('Recovery')->state(new \Illuminate\Support\HtmlString($link));
+                $review[]=TextEntry::make('record_recovery')->label('Request')->state(new \Illuminate\Support\HtmlString($link));
             }
             $sections[]=Section::make($stopped?'Scheduled reads stopped':'Record checks paused')->icon('heroicon-o-exclamation-triangle')->iconColor('warning')
                 ->description($description)->columnSpanFull()->schema($review);

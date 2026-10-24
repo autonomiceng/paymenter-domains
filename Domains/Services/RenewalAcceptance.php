@@ -8,12 +8,12 @@ final readonly class RenewalAcceptance
 {
     private WriteAcceptance $account;
     public function __construct(private AccountBinding $binding, private bool $usdBalance = false,
-        private bool $batchRoute = false, private int $intervalSeconds = 0, public bool $grace = false)
+        private bool $batchRoute = false, private int $intervalSeconds = 0, public bool $grace = false, private ?\Closure $localCheck = null)
     { $this->account = new WriteAcceptance($binding, $usdBalance, $batchRoute, $intervalSeconds); }
     public function requireCurrent(AccountBinding $binding): void
     {
         $this->binding->requireMatch($binding);
-        if (!$this->usdBalance || !$this->batchRoute || $this->intervalSeconds < 25 || $this->intervalSeconds > 86400) {
+        if (($this->localCheck && ($this->localCheck)($binding)!==true) || !$this->usdBalance || !$this->batchRoute || $this->intervalSeconds < 25 || $this->intervalSeconds > 86400) {
             throw new RenewalRefused(RenewalCode::Acceptance);
         }
     }

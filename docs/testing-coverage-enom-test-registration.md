@@ -61,3 +61,25 @@ endpoint. The fixture covers:
 The retained upgrade scenario remains `tests/test_installed_package_previous.py`. These offline
 fixtures prove local composition and refusal behavior; they do not establish Enom account or
 provider acceptance.
+
+
+## Local cap recovery for reads
+
+`observation-test.php` injects the typed TEST cap refusal and checks that scheduled work
+retains its try count and prior safe code, clears the lease and retries at the next due tick
+without staff intervention. `observation-records-test.php` covers primary reads with records
+enabled, record-family discovery and child-host reads: inventory is retained and no record
+hold is created. Generic transport/contract failures still stop under the existing tests.
+All typed local cap refusals defer, including zero/invalid limits, an unavailable
+counter and an elapsed TEST request deadline; they retry every 60 seconds without consuming tries until the deployment
+restores capacity. The cap-zero regression checks repeated due turns and recovery.
+No new domain-level status is recorded; Registrar setup retains the daily-call facts.
+In the current Enom composition, scheduled observation skips TEST write-enabled
+accounts and the preview reader refuses domain reads before transport, so this
+observation cap handling is defensive; reconciliation job recovery is separate.
+Removing any cap-deferral catch must fail the corresponding regression.
+
+`test_installed_package_enom_test.py` consumes the scheduler's captured `RunOperation` through
+its queue-harness job handler after raising the cap. It asserts the seven confirmation reads,
+completion and no second Purchase. This is an offline installed-package queue-harness check, not a
+deployed scheduler/worker delivery claim.

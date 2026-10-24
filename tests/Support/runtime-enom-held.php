@@ -22,7 +22,7 @@ $readWire=new class($s) implements Transport {
             ReadCommand::Renewal=>'<RenewName>0</RenewName>',ReadCommand::Lock=>'<Reg-Lock>1</Reg-Lock>',
             ReadCommand::Privacy=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
             ReadCommand::Order=>'<Order><OrderID>1234</OrderID><Result>true</Result><OrderBillAmount>$99.00</OrderBillAmount><BillDate>'.$s->bill.'</BillDate><OrderDetail><Description>'.$s->name.'</Description><ProductType>Register</ProductType><Quantity>1</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>99.00</AmountPaid><ExpiryDateTime>2027-10-18</ExpiryDateTime></OrderDetail></Order>',
-            ReadCommand::RenewalInfo=>'<GetExtendInfo><Expiration>10/18/2027</Expiration><Price>8.00</Price><RegistrarHold>False</RegistrarHold><MaxExtension>8</MaxExtension></GetExtendInfo>',
+            ReadCommand::RenewalInfo=>'<Expiration>10/18/2027</Expiration><Price>8.00</Price><RegistrarHold>False</RegistrarHold><MaxExtension>8</MaxExtension>',
             ReadCommand::Check=>'<Domains><Domain><Name>'.$s->name.'</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Prices><Currency/><Renewal>8.00</Renewal></Prices></Domain></Domains>',
             ReadCommand::Balance=>'<AvailableBalance>100.00</AvailableBalance>',
             default=>throw new LogicException('Unreviewed synthetic read'),

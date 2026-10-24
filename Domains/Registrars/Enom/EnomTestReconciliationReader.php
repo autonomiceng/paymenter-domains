@@ -13,16 +13,18 @@ final readonly class EnomTestReconciliationReader implements CatalogueReader
     public function balance(RequestContext $c):DriverResult{return $this->reconciler->balance($c);}
     public function quote(Query $q,RequestContext $c):DriverResult{return $this->preview->quote($q,$c);}
     public function availability(Query $q,RequestContext $c):DriverResult{return $this->preview->availability($q,$c);}
-    public function readDomain(string $name,RequestContext $c):DriverResult{return $this->preview->readDomain($name,$c);}
-    public function renewalAssessment(Query $q,RequestContext $c):DriverResult{return $this->preview->renewalAssessment($q,$c);}
+    public function readDomain(string $name,RequestContext $c):DriverResult{return \Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding())?$this->reconciler->readDomain($name,$c):$this->preview->readDomain($name,$c);}
+    public function renewalAssessment(Query $q,RequestContext $c):DriverResult{return \Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding())?$this->reconciler->renewalAssessment($q,$c):$this->preview->renewalAssessment($q,$c);}
     public function reconcile(AttemptEvidence $attempt,RequestContext $c):ReconciliationResult
     {
+        $renewal=$attempt->query->action===Action::Renew&&\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding());
+        $captured=is_string($attempt->providerReference)&&preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->providerReference)&&$attempt->executionFacts;
+        $history=$renewal&&$attempt->historyAcceptance?->covers($attempt,$c->now());
         if($attempt->binding->registrarKey!=='enom'||$attempt->binding->environment!==Environment::Test
-            ||$attempt->query->action!==Action::Register||!is_string($attempt->providerReference)
-            ||!preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->providerReference)||!$attempt->executionFacts){
-            throw new \DomainException('Captured TEST Purchase OrderID is required.');
+            ||!($attempt->query->action===Action::Register||$renewal)||!($captured||$history)){
+            throw new \DomainException($renewal?'Captured TEST order or accepted renewal history is required.':'Captured TEST Purchase OrderID is required.');
         }
-        $attempt->executionFacts->requireAttempt($attempt);
+        $attempt->executionFacts?->requireAttempt($attempt);
         return $this->reconciler->reconcile($attempt,$c);
     }
     public function catalogue(RequestContext $c):ReadResult{return $this->preview->catalogue($c);}

@@ -52,7 +52,7 @@ final class ObservationWork
             try {
                 $account=Account::where('server_id',$queue->server_id)->first();
                 if($account&&$account->account_fingerprint===$queue->account_fingerprint
-                    &&EnomTestRegistration::enabled(CatalogueAcceptances::binding($account))){$summary[$queue->server_id]='read_deferred';continue;}
+                    &&(EnomTestRegistration::enabled(CatalogueAcceptances::binding($account))||EnomTestRenewal::enabled(CatalogueAcceptances::binding($account)))){$summary[$queue->server_id]='read_deferred';continue;}
                 $this->discover($queue); if ($this->catalogue) {
                     try { $this->catalogue($queue); }
                     catch (\Throwable $e) {
@@ -62,7 +62,7 @@ final class ObservationWork
                 }
                 $job=$this->claim($queue); if (!$job) { $summary[$queue->server_id]='idle'; continue; }
                 try { $code=$this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint); }
-                catch (ReadDeferred) { $code='read_deferred'; }
+                catch (ReadDeferred|EnomTestCallLimit) { $code='read_deferred'; }
                 catch (\Throwable) { $code='read_unavailable'; }
                 $this->finish($job,$code); $summary[$queue->server_id]=$code;
             } catch (\Throwable $e) {

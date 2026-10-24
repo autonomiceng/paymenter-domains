@@ -119,6 +119,20 @@ $unknown=$ns->discover(new ManagementRequest($b,'observation:2','example.com','d
 foreach(['dns','srv','ds']as$k){same(['state'=>'unknown'],$unknown[$k],'Unsupported '.$k.' never empty');}same(0,$calls,'Unsupported discovery never calls transport');
 // Existing worker provides durable fairness and no automatic retry of a failed record read.
 $work=new ObservationWork($observer,$clock,$budget);$work->enroll($d->server_id);$other=$tlds[1]->server_id;$work->enroll($other);
+// Cap refusal remains deferred through primary, record-family and child-host discovery catches.
+$families=$d->fresh()->observation['records']['families'];$families['glue']=['state'=>'partial','records'=>['ns1.discovery.com'=>'8.8.8.8']];
+ObservationRecords::save($d->fresh(),$families,$clock->now());$state->glue=['ns1.discovery.com'=>'8.8.8.8'];
+foreach(['primary','GetHosts','CheckNSStatus'] as $stage){
+    DB::table('domains_observation_work')->where('domain_id',$d->id)->update(['due_at'=>$clock->now()->getTimestamp()]);
+    if($stage==='primary'){$observation->during=static fn()=>throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit;}
+    else{$capHook=static function($command)use(&$capHook,$stage,$state){if($command===$stage){throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit;}$state->during=$capHook;};$state->during=$capHook;}
+    $inventory=$d->fresh()->observation['records'];same('read_deferred',$work->tick(2)[$d->server_id],'Cap is deferred at '.$stage);
+    $capJob=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();
+    same([0,null,0],[$capJob->tries,$capJob->claim,$capJob->lease_until],'Cap spends no try and releases job at '.$stage);
+    expect(!ObservationRecords::held($d->fresh()),'Cap does not create a record hold at '.$stage);same($inventory,$d->fresh()->observation['records'],'Cap preserves inventory at '.$stage);
+    $clock->instant=$clock->now()->modify('+60 seconds');same('refreshed',$work->tick(2)[$d->server_id],'Capacity returns without staff resume at '.$stage);
+}
+DB::table('domains_observation_work')->where('domain_id',$d->id)->update(['due_at'=>$clock->now()->getTimestamp()]);
 $state->fault='GetDnsSec';$clock->instant=$clock->now()->modify('+61 seconds');same('refreshed',$work->tick(1)[$d->server_id],'Record failure does not stop domain work');
 expect(ObservationRecords::held($d->fresh()),'Unsupported family durably holds records');
 same([$other=>'idle'],$work->tick(1),'Failing account cannot starve another account');

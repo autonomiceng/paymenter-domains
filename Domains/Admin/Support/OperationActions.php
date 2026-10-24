@@ -7,8 +7,8 @@ use Filament\Forms\Components\{Hidden,Textarea};
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{OperationFailure,StaffOperationReview,StaffOperations,StaffReviewRefused,TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Services\{ObservationRecords,OperationFailure,StaffOperationReview,StaffOperations,StaffReviewRefused,TransferInputs};
 final class OperationActions
 {
     public static function make(Operation $op,string $stamp): array
@@ -37,9 +37,23 @@ final class OperationActions
         }
         return $out;
     }
+    /** Domain recovery reuses the current request's bound, audited review ticket. */
+    public static function scheduledReads(Domain $d): array
+    {
+        $op=DomainQueries::operations($d)->orderByDesc('id')->first(); if(!$op){return [];}
+        foreach(self::make($op,StaffOperationReview::stamp($op,$d)) as $action){
+            if($action->getName()==='resume_observation'){
+                return [$action->visible(fn()=>Staff::can(StaffOperationReview::permission('resume_observation'))
+                    &&!StaffOperationReview::liveLease($op,app(Clock::class))&&ObservationRecords::stopped($d))];
+            }
+        }
+        return [];
+    }
     public static function relevant(string $action,Operation $op): bool
     {
         if(StaffOperationReview::liveLease($op,app(Clock::class))){return false;}
+        if($op->state==='succeeded'){return false;}
+        if($action==='resume_observation'){return ObservationRecords::stopped($op->domain);}
         if(PaidUncertainty::summary($op)!==null&&!in_array($action,['recheck','resume_reads','resume_observation'],true)){return false;}
         return match($action){
             'hold'=>in_array($op->state,['queued','awaiting_payment','awaiting_code'],true),
@@ -47,10 +61,10 @@ final class OperationActions
             'refund'=>$op->state==='held',
             'credit'=>$op->state==='rejected'&&$op->funding_basis==='paid_invoice',
             'replacement'=>$op->action==='renew'&&$op->state==='rejected',
-            'disposition'=>in_array($op->state,['succeeded','rejected'],true),
+            'disposition'=>$op->state==='rejected',
             'resume_reads'=>in_array($op->action,['register','transfer','renew'],true)&&in_array($op->state,['running','pending','uncertain','held'],true),
             'recheck'=>in_array($op->state,['running','pending','uncertain','held'],true),
-            'resume_observation'=>true,default=>false};
+            default=>false};
     }
     public static function transferCutoff(Operation $op): bool
     {
@@ -63,7 +77,7 @@ final class OperationActions
         return match($action){
             'recheck'=>'Reads the original attempt through the reconciliation engine. It never sends the request again.',
             'resume_reads'=>'Resets the bounded reconciliation read budget. The original attempt and financial uncertainty stay retained.',
-            'resume_observation'=>'Resumes existing scheduled reads within their original limits and pending window. It grants no purchase authority.',
+            'resume_observation'=>'Resumes this domain’s stopped scheduled reads within their original limits and pending window. It grants no purchase authority and does not reopen any request.',
             'hold'=>'Holds an unattempted request for staff review. It does not credit the account.',
             'release'=>'Queues only a proven unsent request. Normal engine admission still applies. Sent or unknown outcomes cannot resume.',
             'disposition'=>'Records review of existing terminal engine proof. It does not change the outcome, release a name or credit the account.',

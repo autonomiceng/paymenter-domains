@@ -15,7 +15,11 @@ final class RenewalExecution
         private readonly WriteFeatures $features, private readonly Clock $clock) { $this->grants = new \WeakMap; }
     public function run(int $id, RenewalWriter $writer): Operation
     {
-        return EntryDeadline::run($this->clock, fn ($finishCap) => $this->runEntered($id, $writer, $finishCap));
+        $work=fn()=>EntryDeadline::run($this->clock, fn ($finishCap) => $this->runEntered($id, $writer, $finishCap));
+        if(config('domains.enom_writes.renewal')!==true){return $work();}
+        $op=Operation::findOrFail($id);$a=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->first();
+        $b=$a?CatalogueAcceptances::binding($a):null;
+        return $b&&EnomTestRenewal::enabled($b)?EnomTestWriteReservation::run($b,'renewal',$id,$work):$work();
     }
     private function runEntered(int $id, RenewalWriter $writer, \DateTimeImmutable $finishCap): Operation
     {
@@ -40,7 +44,7 @@ final class RenewalExecution
         [$capture, $admissionClaim] = $capture;
         // The account slot is reserved once. The second complete assessment refreshes every provider fact.
         $deadline = min($finishCap, $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+250 seconds'));
-        $first = $this->admission->check($capture, $deadline);
+        $refusals=EnomTestCalls::refusalGeneration();$first = $this->admission->check($capture, $deadline);
         $descriptor = null; $context = null;$reservedContext=null;
         try {
             if ($first->code !== RenewalCode::Admitted) { throw new RenewalRefused($first->code); }
@@ -50,6 +54,7 @@ final class RenewalExecution
             $until = min($deadline, $first->validUntil, $ready->validUntil);
             $reservedContext=new RequestContext($binding,RequestOrigin::Background,$until,new RequestBudget(1),$this->clock,Runtime::limiter());
             return $reservedContext->withReservedWire(function()use($seed,$id,$binding,$name,$stamp,$ready,$until,$writer,$admissionClaim,$reservedContext,&$descriptor,&$context) {
+            EnomTestWriteReservation::reserve($binding,'renewal');
             [$descriptor, $context] = DB::transaction(function () use ($seed, $id, $binding, $name, $stamp, $ready, $until, $writer, $admissionClaim,$reservedContext) {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
                 if ($l['stamp'] !== $stamp || !$op || ($op->policy['renewal_admission']['key'] ?? null) !== $admissionClaim
@@ -75,12 +80,13 @@ final class RenewalExecution
             return $descriptor?$this->dispatch($seed,$id,$descriptor,$context,$writer):Operation::findOrFail($id);
             });
         } catch (\Throwable $error) {
-            DB::transaction(function () use ($seed, $id, $admissionClaim, $error) { $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
+            DB::transaction(function () use ($seed, $id, $admissionClaim, $error, $refusals) { $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
                 if ($op && RenewalCycles::virgin($op) && ($op->policy['renewal_admission']['key'] ?? null) === $admissionClaim) {
                     $reason = $error instanceof RenewalRefused ? $error->reason : ($error instanceof ReadDeferred?RenewalCode::Rate:RenewalCode::Changed);
                     $retry = in_array($reason, [RenewalCode::Rate, RenewalCode::Reads, RenewalCode::Balance, RenewalCode::Changed, RenewalCode::Acceptance], true);
                     $policy = $op->policy; unset($policy['renewal_admission']); $op->update(['policy' => $policy]);
-                    $this->hold($op, $reason->value, $retry);
+                    $cap=EnomTestRenewal::enabled(CatalogueAcceptances::binding($l['account']))&&($error instanceof EnomTestCallLimit||EnomTestCalls::refusedSince($refusals));
+                    $this->hold($op,$cap?'enom_test_renewal_call_cap':$reason->value,$retry&&!$cap);
                 } });
         }
         return Operation::findOrFail($id);

@@ -17,7 +17,14 @@ class ViewOperation extends ViewRecord
     public string $reviewStamp='';
     public function mount(int|string $record): void
     { parent::mount($record); $op=$this->getRecord(); $this->reviewStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($op,$op->domain); }
-    protected function getHeaderActions(): array { Staff::requireView(); return [ActionGroup::make(OperationActions::make($this->getRecord(),$this->reviewStamp))->label('Review actions')->button()]; }
+    protected function getHeaderActions(): array
+    {
+        Staff::requireView(); $op=$this->getRecord();
+        $actions=OperationActions::make($op,$this->reviewStamp);
+        $visible=array_filter(array_keys(\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS),
+            fn($name)=>Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission($name))&&OperationActions::relevant($name,$op));
+        return [ActionGroup::make($actions)->label('Review actions')->button()->visible((bool)$visible)];
+    }
     public function infolist(Schema $schema): Schema
     {
         $op=$this->getRecord(); Staff::requireView();

@@ -20,6 +20,7 @@ $wire = new class implements Transport {
     {
         $this->calls[] = [$command, $parameters];
         if ($this->fail || $this->failCommand === $command) { throw new RuntimeException('private-token'); }
+        if (str_starts_with($this->data[$command->name] ?? '', '<interface-response>')) { return $this->data[$command->name]; }
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>'.($this->reject ? '1' : '0').'</ErrCount><Done>true</Done>'.($this->data[$command->name] ?? '').'</interface-response>';
     }
 };
@@ -64,8 +65,17 @@ foreach ([['query' => new Query(reservedFixtureName('example.net'), Action::Regi
     try { Pricing::catalogue($bad, $binding, $query, $clock->now()); throw new LogicException('Expected refusal'); } catch (DomainException) {}
 }
 try { Pricing::catalogue($quote, new AccountBinding('enom', 2, Environment::Test, 'offline'), $query, $clock->now()); throw new LogicException('Expected binding refusal'); } catch (InvalidArgumentException) {}
+// Replay the observed flat reply and empty Check currency through the real driver.
+$captured = require __DIR__.'/Support/enom-captured-renewal.php';
+$wire->data['Info'] = '<GetDomainInfo><DomainName DomainNameID="456">example.com</DomainName><Status><Belongs-To>offline</Belongs-To><Expiration>10/22/2027 5:00:00 AM</Expiration></Status></GetDomainInfo>';
+$wire->data += $captured;
+$capturedResult = $driver->renewalAssessment(new Query('example.com', Action::Renew, 1), $context(3));
+same(Disposition::Accepted, $capturedResult->disposition, 'Captured flat renewal reply is accepted');
+same(RenewalStatus::Ordinary, $capturedResult->evidence()->renewal, 'Captured future flat expiry establishes ordinary renewal');
+same('8.9500', $capturedResult->evidence()->quote?->cost?->amount, 'Captured empty Check currency preserves exact one-year USD price');
+$wire->data = array_diff_key($wire->data, $captured, ['Info' => true]);
 $info = '<GetDomainInfo><DomainName DomainNameID="456">example.com</DomainName><Status><Belongs-To>offline</Belongs-To><Expiration>10/12/2028 11:14:00 PM</Expiration></Status></GetDomainInfo>';
-$extend = '<GetExtendInfo><Expiration>10/12/2028</Expiration><Price>8.95</Price><RegistrarHold>False</RegistrarHold><MaxExtension>8</MaxExtension></GetExtendInfo>';
+$extend = '<Expiration>10/12/2028</Expiration><Price>8.95</Price><RegistrarHold>False</RegistrarHold><MaxExtension>8</MaxExtension>';
 $check = '<Domains><Domain><Name>example.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Prices><Currency/><Renewal>8.95</Renewal></Prices></Domain></Domains>';
 $wire->data += ['Info' => $info, 'RenewalInfo' => $extend, 'Check' => $check];
 $renew = new Query('example.com', Action::Renew, 2);
@@ -88,10 +98,19 @@ foreach (['2028-10-13T00:00:00Z', '2028-10-13T06:14:00Z', '2028-10-13T06:59:59.9
 $wire->data['Info'] = str_replace('10/12/2028 11:14:00 PM', '2028-10-13T06:14:00.000001Z', $info);
 same(RenewalStatus::Unknown, $driver->renewalAssessment($renew, $context())->evidence()->renewal, 'Unsupported fractional expiry cannot be silently truncated');
 $wire->data['Info'] = $info;
+$wire->data['RenewalInfo'] = str_replace('10/12/2028', '2028-10-13T06:14:00Z', $extend)
+    .'<GetExtendInfo><Expiration>10/14/2028</Expiration></GetExtendInfo>';
+same(RenewalStatus::Unknown, $driver->renewalAssessment($renew, $context())->evidence()->renewal, 'Conflicting wrapped expiry refuses before matching instant shortcut');
+$wire->data['RenewalInfo'] = '<GetExtendInfo>'.$extend.'</GetExtendInfo>';
+same(RenewalStatus::Unknown, $driver->renewalAssessment($renew, $context())->evidence()->renewal, 'Unevidenced wrapped renewal reply stays unknown');
 foreach ([str_replace('10/12/2028', '10/13/2028', $extend), str_replace('False', 'unknown', $extend),
-    str_replace('</GetExtendInfo>', '</GetExtendInfo><RegistryExpDate>2028-10-12T08:00:00Z</RegistryExpDate>', $extend)] as $bad) {
+    $extend.'<RegistryExpDate>2028-10-12T08:00:00Z</RegistryExpDate>'] as $bad) {
     $wire->data['RenewalInfo'] = $bad;
     same(RenewalStatus::Unknown, $driver->renewalAssessment($renew, $context())->evidence()->renewal, 'Conflicting expiry/unknown hold never ordinary');
+}
+foreach (['<Currency>CAD</Currency>', '<Currency/>', '<Currency>?</Currency>', '<Currency>USD</Currency><Currency>USD</Currency>'] as $currency) {
+    $wire->data['RenewalInfo'] = $extend.$currency;
+    same(null, $driver->renewalAssessment($renew, $context())->evidence()->quote, 'Malformed or conflicting flat currency stays unknown');
 }
 $wire->data['RenewalInfo'] = $extend;
 $wire->data['Check'] = str_replace('<Currency/>', '<Currency>CAD</Currency>', $check);

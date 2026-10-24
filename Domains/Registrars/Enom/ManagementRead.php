@@ -9,7 +9,9 @@ final class ManagementRead
     {
         $p = []; foreach (['allowed','exists','enabled','autorenew'] as $k) { $p[$k] = Driver::flag($r->value('getwppsinfo.wpps'.$k)); }
         $expiry = Expiry::read(new ProtocolResult($r->status, null, ['expirationdate' => $r->value('getwppsinfo.wppsexpdate')]));
-        $p['expiry'] = $expiry ? substr($expiry->value, 0, 10) : null; $p['cost'] = Pricing::annual($r->value('getwppsinfo.wppsprice'));
+        $price = $r->value('getwppsinfo.wppsprice');
+        if (is_string($price) && str_starts_with($price, '$')) { $price = substr($price, 1); }
+        $p['expiry'] = $expiry ? substr($expiry->value, 0, 10) : null; $p['cost'] = Pricing::annual($price);
         return $p;
     }
     public static function nameservers(ProtocolResult $r): array

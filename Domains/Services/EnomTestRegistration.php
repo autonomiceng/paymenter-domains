@@ -48,16 +48,16 @@ final class EnomTestRegistration
     /** Pure: no credentials, queries, I/O, account mutation or feature inference from processing. */
     public static function factory(AccountBinding $binding): \Closure
     {
-        if (!self::enabled($binding)) { throw new \DomainException(self::reason()); }
+        if (!self::enabled($binding) && !EnomTestRenewal::enabled($binding)) { throw new \DomainException(self::reason()); }
         // USD comes only from the existing audited manual/preflight balance reads, bound to this fingerprint.
         // Route and spacing come from A6's actual TEST endpoint/command and worker request policy.
         $protocolAcceptance=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
         if(!$protocolAcceptance['batch_route']||$protocolAcceptance['interval_seconds']<25){throw new \DomainException('TEST registration acceptance evidence is unavailable.');}
         $usdProbe=static fn(AccountBinding $current,bool $lock):bool=>$binding->matches($current)&&self::balanceEvidence($current,$lock);
         $protocolProbe=static fn(AccountBinding $current,bool $lock):bool=>$binding->matches($current)&&self::protocolEvidence($current,$protocolAcceptance,$lock);
-        return app(AccountBindings::class)->enomRuntimeFactory($binding,app(Clock::class),new WriteFeatures(registration:true),
+        return app(AccountBindings::class)->enomRuntimeFactory($binding,app(Clock::class),new WriteFeatures(registration:self::enabled($binding),renewal:EnomTestRenewal::enabled($binding)),
             new WriteAcceptance($binding,true,$protocolAcceptance['batch_route'],$protocolAcceptance['interval_seconds'],null,$usdProbe,$protocolProbe),
-            new RenewalAcceptance($binding),new TransferPrecheck(new Rdap));
+            EnomTestRenewal::enabled($binding)?EnomTestRenewal::acceptance($binding):new RenewalAcceptance($binding),new TransferPrecheck(new Rdap));
     }
     private static function protocolEvidence(AccountBinding $binding,array $protocol,bool $lock): bool
     {

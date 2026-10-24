@@ -21,7 +21,7 @@ $registry->register('enom',['uid','token'],new class implements \Paymenter\Exten
     return new \Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar($binding,new Capabilities($binding,[]),
         new DriverResult($binding,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence(balance:new \Paymenter\Extensions\Servers\Domains\Data\Money('9.99','USD'))));
 });
-$bindings=new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($registry);
+$fixtureBindings=$bindings;$bindings=new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($registry);
 $permissions=[Staff::VIEW,Staff::POLICY];foreach(array_keys(Review::ACTIONS) as $action){$permissions[]=Review::permission($action);}
 $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($native,$sellers,$bindings,true);app()->instance(StaffSettingsWrites::class,$writer);
 $fixed=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'20','fixed_renew'=>'21','fixed_transfer'=>'22'];
@@ -71,4 +71,38 @@ tldRefusal(fn()=>$rotation->local(static fn()=>null),'Review key used.');
 app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sellers,$bindings));
 foreach(['configure','probe'] as $action){$name=\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content');Livewire::actingAs($u)->test(RegistrarSetup::class)->assertActionDisabled($name);}
 same('9.99',Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('server_id',$t->server_id)->value('amount'),'Existing account probe records its balance');
+// Submit the real seller action with each expired required cost; no provider read or policy write.
+$providerReads=$reads->calls;
+// Restore the original synthetic reader binding after the configure-action credential rotation.
+$fixtureBindings->configure($t->server_id,'enom',\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,['token'=>'account-enom']);
+$fixtureBindings->setProcessing($t->server_id,true);
+// Earlier acceptance actions deliberately invalidate publication proof; import fresh synthetic evidence.
+$enomAccount=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole();
+$enomBinding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($enomAccount);
+$acceptance=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($enomBinding);
+$rates=[];foreach([['register',1,'6.00'],['register',3,'6.00'],['renew',1,'8.00'],['transfer',1,'7.00']] as [$action,$term,$perYear]){$rates[]=new \Paymenter\Extensions\Servers\Domains\Data\CatalogueRate($action,$term,$perYear,'synthetic',$now,$now->modify('+1 day'));}
+$prices->import(new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($enomBinding,'com',$rates,[1,3],true,true),$acceptance,static fn()=>null,$now);
+$catalogueConfig=config('domains.enom_catalogue.enabled');$identityConfig=config('domains.enom_identity.environment');
+config(['domains.enom_identity.environment'=>'test']);
+\Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
+foreach([[$tlds[1],true,false],[$tlds[0],true,false],[$tlds[0],false,false],[$tlds[1],true,true]] as [$target,$enabled,$held]){
+ config(['domains.enom_catalogue.enabled'=>$enabled]);
+ $targetAccount=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$target->server_id)->sole();
+ Illuminate\Support\Facades\DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$target->server_id],['account_fingerprint'=>$targetAccount->account_fingerprint,'catalogue_hold'=>$held?'read_unavailable':null]);
+ foreach(['register'=>'registration','renew'=>'renewal'] as $action=>$label){
+    $costs=\Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$target->server_id,'tld'=>'com','action'=>$action])->orderBy('term')->get();
+    foreach($costs as $cost){Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$cost->id)->update(['fresh_until'=>$now]);}
+    $prior=SalesPolicy::where('tld','com')->sole()->getAttributes();
+    $remedy=$target->registrar_key==='enom'&&$enabled?"In Registrar setup for account #{$target->server_id}, use Import accepted ending for com to refresh costs, then try again."
+        :($target->registrar_key==='enom'?'Import accepted ending is unavailable for this account; ask the installation administrator to restore TEST catalogue import and refresh costs before trying again.':"Check Cost refresh on .com for account #{$target->server_id}; wait for fresh costs from its scheduled catalogue read, or ask the installation administrator to restore reads if refresh failed or was interrupted.");
+    $registrar=$target->registrar_key==='enom'?'Enom':'NameSilo';
+    $body="Cannot select {$registrar} account #{$target->server_id} for .com: its {$label} cost for 1 year expired at 2026-10-18 12:00 UTC. ".$remedy;
+    $mount('seller')->setActionData(['seller'=>$target->server_id,'register'=>true,'transfer'=>false,'reason'=>'Review expired seller cost evidence'])->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('Change refused')->body($body));
+    same($prior,SalesPolicy::where('tld','com')->sole()->getAttributes(),'Expired seller toast leaves prior seller and revision unchanged');
+    same($held?'read_unavailable':null,Illuminate\Support\Facades\DB::table('domains_observation_queues')->where('server_id',$target->server_id)->value('catalogue_hold'),'Refusal preserves selected account refresh hold');
+    foreach($costs as $cost){Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$cost->id)->update(['fresh_until'=>$cost->getRawOriginal('fresh_until')]);}
+ }
+}
+config(['domains.enom_catalogue.enabled'=>$catalogueConfig,'domains.enom_identity.environment'=>$identityConfig]);
+same($providerReads,$reads->calls,'Seller refusal makes no provider read');
 echo "Ten native action submissions, stale refusals, replay, fresh denial and retained audit passed.\n";$nativeSuccessful=true;
