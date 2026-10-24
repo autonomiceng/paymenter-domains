@@ -23,4 +23,26 @@ foreach([RequestOrigin::Interactive,RequestOrigin::Background] as $index=>$origi
     $lease=$budget->acquire($binding,$origin);$budget->release($binding,$origin,$lease);
     same($index+1,(int)DB::table('domains_read_budgets')->where('server_id',$server)->value('used'),'Real limiter shares usage across interactive and background requests');
 }
+// Broken retained identity must not stop other account turns or independent producers.
+$badAccount = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[0]->server_id)->sole();
+DB::table('domains_accounts')->where('id', $badAccount->id)->update(['stable_identity' => 'broken ciphertext']);
+$failures = [];
+\Illuminate\Support\Facades\Event::listen(\Illuminate\Log\Events\MessageLogged::class,
+    static function ($event) use (&$failures): void {
+        if ($event->message === 'Domains runtime work failed.') { $failures[] = $event->context; }
+    });
+$ports = new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts;
+$independent = 0;
+$ports->registerInitialManagedRecordObservations(static function () use (&$independent): void { $independent++; });
+$runtime = new \Paymenter\Extensions\Servers\Domains\Services\RuntimeWork($clock, $ports);
+$runtime->tick();
+foreach ($tlds as $tld) {
+    same($clock->now()->getTimestamp(), (int) DB::table('domains_runtime_turns')->where('server_id', $tld->server_id)->value('finished_at'),
+        'Each account turn finishes despite a broken binding');
+}
+same(1, $independent, 'Independent managed observation producer still runs');
+foreach (['registrar_balance', 'publication'] as $producer) {
+    expect((bool) array_filter($failures, static fn ($f) => $f['producer'] === $producer && $f['row_id'] === (int) $badAccount->server_id),
+        'Broken binding is recorded at its gate: '.$producer);
+}
 echo "Runtime shared interactive/background request budget passed.\n";$nativeSuccessful=true;

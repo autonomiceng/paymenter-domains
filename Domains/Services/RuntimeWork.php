@@ -64,15 +64,20 @@ final readonly class RuntimeWork
             });if(!$row){break;}
             $a=Account::where('server_id',$row->server_id)->first();
             if(!$a||$a->account_fingerprint!==$row->account_fingerprint){continue;}
-            $testRegistration=self::testRegistrationEnabled($a)||EnomTestManagement::enabled(CatalogueAcceptances::binding($a))||EnomTestTransfer::enabled(CatalogueAcceptances::binding($a))||EnomTestRenewal::enabled(CatalogueAcceptances::binding($a));
-            if(!$testRegistration){$this->attempt('registrar_balance',fn()=>app(RegistrarBalances::class)->daily($a),(int)$a->server_id);}
+            $this->attempt('registrar_balance',function()use($a):void {
+                $binding=CatalogueAcceptances::binding($a);
+                $test=EnomTestRegistration::enabled($binding)||EnomTestManagement::enabled($binding)||EnomTestTransfer::enabled($binding)||EnomTestRenewal::enabled($binding);
+                if(!$test){app(RegistrarBalances::class)->daily($a);}
+            },(int)$a->server_id);
             $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->where('id','>',$row->operation_cursor)
                 ->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])->orderBy('id')->limit(25)->get();
             foreach($ops as $op){if($op->action==='transfer'){$this->transferPayment($op);}$this->attempt('operation',fn()=>$this->enqueue((int)$op->id),(int)$op->id);}
             $domains=Domain::where('server_id',$a->server_id)->where('id','>',$row->domain_cursor)->orderBy('id')->limit(25)->get();
             foreach($domains as $d){if(in_array($d->provenance,[null,'purchased','converted_purchase'],true)){$this->attempt('transfer_watch_enrollment',fn()=>(new TransferWatchEnrollment())->repair((int)$d->id,(int)$d->user_id,$this->clock->now()->getTimestamp()),(int)$d->id);}if($d->provenance==='adopted'){$this->attempt('adoption_enrollment',fn()=>app(AdoptionEnrollment::class)->repair((int)$d->id),(int)$d->id);}$this->attempt('acquisition_retirement',fn()=>app(AcquisitionRetirement::class)->inspect((int)$d->id),(int)$d->id);$this->attempt('native_identity',fn()=>NativeIdentityDiscrepancies::inspect($d,$this->clock->now()->getTimestamp()),(int)$d->id);$this->bill($d);}
             $tlds=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->where('id','>',$row->tld_cursor)->orderBy('id')->limit(25)->get();
-            if(!TestCatalogue::enabled(CatalogueAcceptances::binding($a))){foreach($tlds as $t){$this->attempt('publication',fn()=>app(NativeCatalogue::class)->publish((int)$t->id,$this->clock->now()),(int)$t->id);}}
+            $this->attempt('publication',function()use($a,$tlds):void {
+                if(!TestCatalogue::enabled(CatalogueAcceptances::binding($a))){foreach($tlds as $t){$this->attempt('publication',fn()=>app(NativeCatalogue::class)->publish((int)$t->id,$this->clock->now()),(int)$t->id);}}
+            },(int)$a->server_id);
             DB::table('domains_runtime_turns')->where('id',$row->id)->update(['tld_cursor'=>$tlds->count()===25?$tlds->last()->id:0,'operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'domain_cursor'=>$domains->count()===25?$domains->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
         }
         $this->attempt('initial_managed_records',fn()=>$this->ports->initialManagedRecordObservations());
