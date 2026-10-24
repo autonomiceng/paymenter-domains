@@ -19,6 +19,7 @@
   "contracts": [
     "tests/ote-reconciliation-test.php",
     "tests/ote-transport-cache-test.php",
+    "tests/ote-normal-completion-test.php",
     "tests/namesilo-contact-readback-test.php",
     "tests/profile-diagnostics-test.php",
     "tests/driver-contract-test.php",

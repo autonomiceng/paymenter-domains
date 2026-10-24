@@ -54,7 +54,7 @@ try {
     foreach (['getDomainInfo', 'orderDetails'] as $command) {
         $valid = json_decode(file_get_contents(__DIR__.'/fixtures/synthetic-success.json'), true, 24, JSON_THROW_ON_ERROR)[$command];
         if ($command === 'orderDetails') { $valid['reply']['order_number'] = '901'; }
-        foreach (['shape', 'non_success', 'parser'] as $invalid) {
+        foreach (['shape', 'non_success', 'operation'] as $invalid) {
             $calls = 0;
             $wire = new GuardedTransport('offline-secret-token', false, $output,
                 static function () use (&$calls, $valid, $invalid): TransportResponse {
@@ -62,7 +62,7 @@ try {
                     if (++$calls === 2) {
                         if ($invalid === 'shape') { unset($body['request']['ip']); }
                         if ($invalid === 'non_success') { $body['reply']['code'] = 400; $body['reply']['detail'] = 'Synthetic declined reply'; }
-                        if ($invalid === 'parser') { $body['request']['operation'] = 'other'; }
+                        if ($invalid === 'operation') { $body['request']['operation'] = 'other'; }
                     }
                     return new TransportResponse(200, json_encode($body));
                 }, $clock);
@@ -74,6 +74,23 @@ try {
             if ($command === 'orderDetails') { same([], $wire->orderDetail('901'), 'Invalid detail cannot corroborate: '.$invalid); }
         }
     }
+    $valid = json_decode(file_get_contents(__DIR__.'/fixtures/synthetic-success.json'), true, 24, JSON_THROW_ON_ERROR)['orderDetails'];
+    $valid['reply']['order_number'] = '901';
+    $wrongOrder = $valid; $wrongOrder['reply']['order_number'] = '902';
+    same([], \OteContract\Shapes::check('orderDetails', $wrongOrder), 'Wrong order remains structurally valid');
+    $calls = 0;
+    $wire = new GuardedTransport('offline-secret-token', false, $output,
+        static function () use (&$calls, $valid, $wrongOrder): TransportResponse {
+            return new TransportResponse(200, json_encode(++$calls === 1 ? $valid : $wrongOrder, JSON_THROW_ON_ERROR));
+        }, $clock);
+    $wire->raw('https://ote.namesilo.com/api', 'orderDetails', ['order_number' => '901']);
+    expect($wire->latest('orderDetails') !== [], 'Matching order supplies latest evidence');
+    expect($wire->orderDetail('901') !== [], 'Matching order supplies detail evidence');
+    $wire->raw('https://ote.namesilo.com/api', 'orderDetails', ['order_number' => '901']);
+    same('Unknown', $wire->receipt['requests'][1]['read_outcome'], 'Real parser rejects the different order number');
+    same([], $wire->latest('orderDetails'), 'Parser-rejected read cannot supply latest evidence');
+    same([], $wire->orderDetail('901'), 'Parser-rejected read cannot corroborate the requested order');
+    same([], $wire->orderDetail('902'), 'Different order is not cached under its own number');
     $attempts = 0;
     $cached = new GuardedTransport('offline-secret-token', false, $output,
         static function () use (&$attempts): TransportResponse {
