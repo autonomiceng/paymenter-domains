@@ -284,6 +284,7 @@ $excluded=[
         'ds_add','glue_add','glue_update','privacy_enable','privacy_disable','privacy_purchase'], // Audit reasons and capability names.
     'ManagedPublicEnrollment.php'=>['managed_enrollment'],
     'NativeServiceRefusal.php'=>['identity','price'], // Structured log fields.
+    'ProviderSendGuard.php'=>['not_callable','clock_failed','guard_threw'], // Structured log fields.
     'StaffSettingsReview.php'=>['unavailable'], // Configuration snapshot sentinel.
     'TransferInputs.php'=>['transfer_code'], // Request field name.
     'RefundProof.php'=>['unsent'], // Driver execution disposition.

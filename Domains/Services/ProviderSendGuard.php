@@ -23,12 +23,20 @@ final class ProviderSendGuard
 
     public static function beforeSend(string $registrar,string $environment,string $command): void
     {
+        $reason=null;
         try {
             $guard=function_exists('config')?config('domains.provider_send_guard'):null;
             if($guard===null){return;}
-            if(!is_callable($guard)){throw new \RuntimeException;}
-            $guard($registrar,$environment,$command,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->setTimezone(new \DateTimeZone('UTC')));
+            if(!is_callable($guard)){$reason='not_callable';throw new \RuntimeException;}
+            $reason='clock_failed';
+            $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'));
+            $reason='guard_threw';
+            $guard($registrar,$environment,$command,$now);
         } catch(\Throwable) {
+            if($reason!==null){
+                try { logger()->warning('Domains provider send guard refused.',['registrar'=>$registrar,'command'=>$command,'reason'=>$reason]); }
+                catch(\Throwable) {}
+            }
             // Preserve the existing definitely-unsent path without exposing deployment exceptions.
             if($registrar==='enom'){EnomTestCalls::refuse();}
             throw new \RuntimeException('Registrar request refused before sending.');
