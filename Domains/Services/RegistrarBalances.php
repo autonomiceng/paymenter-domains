@@ -26,12 +26,20 @@ final readonly class RegistrarBalances
         $claimedUntil=$this->claim($account,'daily_due_at',86400);if($claimedUntil===null){return;}
         if($this->read($account,'daily',RequestOrigin::Background)==='rate_limited'){
             // No provider request was made. Retry a later scheduler turn without burning a full day.
-            DB::table(BalanceSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
-                ->where('daily_due_at',$claimedUntil)->update(['daily_due_at'=>$this->clock->now()->getTimestamp()+60]);
+            $this->retryDaily($account,$claimedUntil);
             return;
         }
         $facts=self::facts($account,$this->clock->now());
-        if($facts['low']){$this->notify($account);}
+        if($facts['low']){
+            $notified=false;
+            try{$notified=$this->notify($account);}
+            finally{if(!$notified){$this->retryDaily($account,$claimedUntil);}}
+        }
+    }
+    private function retryDaily(Account $account,int $claimedUntil): void
+    {
+        DB::table(BalanceSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
+            ->where('daily_due_at',$claimedUntil)->update(['daily_due_at'=>$this->clock->now()->getTimestamp()+60]);
     }
     private function claim(Account $account,string $field,int $seconds): ?int
     {
@@ -89,16 +97,17 @@ final readonly class RegistrarBalances
         $fraction=rtrim($fraction,'0');$fraction=str_pad($fraction,max(2,strlen($fraction)),'0');
         return $currency.' '.$sign.preg_replace('/\B(?=(\d{3})+(?!\d))/',',',$whole).'.'.$fraction;
     }
-    private function notify(Account $account): void
+    private function notify(Account $account): bool
     {
-        DB::transaction(function()use($account):void {
+        return DB::transaction(function()use($account):bool {
             $q=DB::table(BalanceSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint);
             $r=(clone $q)->lockForUpdate()->firstOrFail();$day=$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');
-            if($r->notified_on===$day){return;}
+            if($r->notified_on===$day){return true;}
             $name=\App\Models\Server::whereKey($account->server_id)->value('name')?:'Registrar account';
             if (StaffAlert::send('Low balance',$name.' balance is below renewals due in 30 days.','filament.admin.pages.registrar-setup')) {
-                $q->update(['notified_on'=>$day]);
+                $q->update(['notified_on'=>$day]);return true;
             }
+            return false;
         });
     }
 }

@@ -168,6 +168,39 @@ $assertAlerts();$balances->daily($a);$assertAlerts();
 DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0]);
 $clock->instant=$clock->now()->modify('+60 seconds');$balances->daily($a);$assertAlerts();
 same('Low balance',RegistrarBalances::facts($a,$clock->now())['status'],'Dashboard warning accompanies the native inbox alert');
+// Failed inbox persistence releases only this daily claim and never consumes the UTC day.
+$notificationFailure='veto';$replacement=null;
+App\Models\Notification::creating(static function($n)use(&$notificationFailure,&$replacement,$a){
+    if($n->title!=='Low balance'||!$notificationFailure){return;}
+    if($replacement!==null){DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>$replacement]);}
+    if($notificationFailure==='throw'){throw new RuntimeException('Synthetic inbox failure');}
+    return false;
+});
+foreach(['veto','throw'] as $notificationFailure){
+    $clock->instant=$clock->now()->modify('+60 seconds');
+    DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0,'notified_on'=>null]);
+    $balances->daily($a);
+    same(null,$row($a)->notified_on,'Failed '.$notificationFailure.' alert keeps day retryable');
+    same($clock->now()->getTimestamp()+60,(int)$row($a)->daily_due_at,'Failed notification releases daily claim after '.$notificationFailure);
+}
+$clock->instant=$clock->now()->modify('+60 seconds');$notificationFailure=false;$balances->daily($a);
+same($clock->now()->format('Y-m-d'),$row($a)->notified_on,'Retry consumes day only after successful native persistence');
+$clock->instant=$clock->now()->modify('+60 seconds');$notificationFailure='veto';$replacement=$clock->now()->getTimestamp()+172800;
+DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0,'notified_on'=>null]);
+$balances->daily($a);same($replacement,(int)$row($a)->daily_due_at,'Failure cannot release a replacement daily claim');$notificationFailure=false;
+// The quota-refusal twin must also preserve a replacement claim.
+$clock->instant=$clock->now()->modify('+60 seconds');
+DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0]);
+$replacement=$clock->now()->getTimestamp()+172800;
+$replacedLimiter=new class($a,$replacement) implements Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter {
+    public function __construct(private Account $account,private int $replacement){}
+    public function acquire(AccountBinding $binding,RequestOrigin $origin):string{
+        DB::table(BalanceSchema::TABLE)->where('server_id',$this->account->server_id)->where('account_fingerprint',$this->account->account_fingerprint)->update(['daily_due_at'=>$this->replacement]);
+        throw new Paymenter\Extensions\Servers\Domains\Services\ReadDeferred('Synthetic quota refusal');
+    }
+    public function release(AccountBinding $binding,RequestOrigin $origin,string $token):void{}
+};
+(new RegistrarBalances($manualBindings,$clock,$replacedLimiter))->daily($a);same($replacement,(int)$row($a)->daily_due_at,'Quota refusal cannot release replacement claim');
 $role=$staff->role;$role->update(['permissions'=>[]]);try{$balances->refresh($a->server_id);expect(false,'Permission revoked between renders must refuse');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Current permission reloaded');}
 BalanceSchema::install();same('6.00',$row($a)->amount,'Schema reinstall retains balance');
 $migration=require dirname(__DIR__).'/Domains/database/migrations/2026_10_19_000015_create_registrar_balances.php';$migration->down();expect(Schema::hasTable(BalanceSchema::TABLE),'Rollback retains ledger');
