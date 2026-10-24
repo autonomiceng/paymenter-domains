@@ -1,0 +1,46 @@
+<?php
+// Native notice, queue and staff inspection. MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/Support/watch-notices.php';
+require __DIR__.'/Support/storefront.php';
+use App\Models\EmailLog;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\{DB,Mail};
+use Paymenter\Extensions\Servers\Domains\Mail\WatchNotice as NoticeMail;
+use Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchNoticeReviewController;
+require dirname(__DIR__).'/Domains/routes/owned.php';
+$f=noticeFixture();extract($f);storefrontViews();
+$owner->update(['email'=>'watch-staff@example.test']);
+$owner->role->update(['permissions'=>['admin.domains.view','admin.domains.watch.manage']]);
+noticeRegistry($f,$now);$ids=$planner->plan('watch',$id,$uid,$now+2);
+same(1,count($ids),'Exactly one native expiry notice');
+$claim=$delivery->reserve($ids[0],'mail',$now+3);expect($claim!==null,'Actual mail claim reserved');
+expect($delivery->handoff($claim,$now+3),'Native queue accepts the staff owner notice');
+same(1,Mail::queued(NoticeMail::class)->count(),'Exactly one queued notice');
+$mail=Mail::queued(NoticeMail::class)->sole();
+same([['name'=>null,'address'=>'watch-staff@example.test']],$mail->to,'Mail addressed only to this staff owner');
+expect(!$mail->hasTo($other->email),'Another staff account never receives the notice');
+$date=gmdate('F j, Y',$now+7*86400);
+$subject='Check renewal for example.com before '.$date;
+same($subject,$mail->envelope()->subject,'Exact native subject');
+$html=$mail->render();$text=view('domains::mail-text',$mail->content()->with)->render();
+$body='The public registry lists '.$date.' as the expiry date for example.com. Public registry dates may not show recent changes. Check renewal with your registrar.';
+foreach([$html,$text] as $content){expect(str_contains($content,$body),'Expected complete notice body');expect(str_contains($content,'example.com'),'Domain appears in each mail alternative');}
+expect(str_contains($text,'View domain ('.url('/domains/checks/watch/'.$id).')'),'Text has exact owner domain link');
+$tables=storefrontDom($html)->query('//table[@role="presentation"]');expect($tables->length>0,'Domains notice provides a presentation table');
+$native=EmailLog::where('user_id',$uid)->sole();
+same([$uid,'watch-staff@example.test',$subject,$html],[(int)$native->user_id,$native->to,$native->subject,$native->body],'Native evidence retains exact owner, recipient, subject and HTML');
+same((int)$native->id,(int)$mail->email_log_id,'Queue carries the exact native evidence ID');
+$record=DB::table('domains_watch_deliveries')->find($claim);
+same(['mail','accepted',(int)$native->id],[$record->channel,$record->state,(int)$record->native_id],'Delivery binds the queued mail to native evidence');
+$request=Request::create('/domains/check-notices/deliveries/'.$claim);$request->setUserResolver(fn()=>$owner);$request->setLaravelSession(app('request')->session());
+$page=(new WatchNoticeReviewController)->show($request,$claim)->render();$dom=storefrontDom($page);
+$one=static function(string $xpath)use($dom):string{$nodes=$dom->query($xpath);same(1,$nodes->length,'One exact staff delivery field: '.$xpath);return trim($nodes->item(0)->textContent);};
+same('Public notice delivery review',$one('//h1'),'Staff delivery heading');
+same('mail',$one('//dt[normalize-space(.)="Channel"]/following-sibling::dd[1]'),'Staff page names mail');
+same('Queued',$one('//dt[normalize-space(.)="State"]/following-sibling::dd[1]'),'Staff page names queue acceptance');
+same((string)$native->id,$one('//dt[normalize-space(.)="Native email_log ID"]/following-sibling::dd[1]'),'Exact native email ID appears in its own field');
+expect(!$delivery->handoff($claim,$now+4),'Repeat handoff never queues another mail');
+same(1,Mail::queued(NoticeMail::class)->count(),'Still exactly one mail');
+echo "Staff owner watch notice: exact recipient, subject, HTML/text body, native evidence and delivery review passed.\n";
+$nativeSuccessful=true;

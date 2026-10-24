@@ -729,3 +729,8 @@ retained unsent evidence, staff release and later one-time dispatch without chan
 
 `staff-hold-release-audit-test.php` repeats a paid native request’s Hold and Livewire Release
 cycle, checking exact completed audit reasons/counts, no reason modal and its History request URL.
+
+`watch-notice-staff-delivery-test.php` queues a native watch notice to its staff owner and
+checks exact recipient, subject/body, native email evidence and the staff delivery review fields.
+The supplied site shell owns its branded card class and company branding assertions. Domains owns the
+mail presentation table, content/domain, recipient and native delivery evidence.
