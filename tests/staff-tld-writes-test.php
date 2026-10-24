@@ -1,6 +1,10 @@
 <?php
 // Native settings writer and one-use review regressions; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Services {
+    function hrtime(bool $asNumber=false): mixed {return $GLOBALS['staffProbeNanoseconds']??\hrtime($asNumber);}
+}
+namespace {
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
@@ -9,6 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewT
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolicy};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites,PricingRules,CatalogueAcceptances};
+use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 $f=commerceFixture(true);extract($f);tldPanel();Carbon\Carbon::setTestNow($now);$t=$tlds[0];
 $permissions=[Staff::VIEW,Staff::POLICY,Staff::COSTS];foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
 $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($native,$sellers,$bindings,true);app()->instance(StaffSettingsWrites::class,$writer);
@@ -88,13 +93,20 @@ commerceReject(fn()=>$writer->run($review('tld_settings',$t->id),['min_years'=>1
 commerceReject(fn()=>$writer->run($review('tld_settings',$t->id),['min_years'=>1,'max_years'=>1,'enabled'=>false,'renew'=>false],$now));
 $r=$review('configure');$writer->run($r,['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'account-enom']],$now);
 expect(!Account::where('server_id',$t->server_id)->sole()->processing_enabled,'Rotation pauses processing');commerceReject(fn()=>$writer->run($r,['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'account-enom']],$now));
+// Freeze monotonic time so the explicit-clock probes can require exactly ten seconds.
+$GLOBALS['staffProbeNanoseconds']=0;
 foreach(['2001-01-01T00:00:00Z','2040-01-01T00:00:00Z'] as $at){
     $explicit=new DateTimeImmutable($at);$otherClock=new class implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock {public function now(): DateTimeImmutable{return new DateTimeImmutable('2026-10-18T12:00:00Z');}};
     app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$otherClock);
-    $writer->run($review('probe'),[],$explicit);
+    FakeRegistrar::$readClaims=[];$writer->run($review('probe'),[],$explicit);
+    same([['milliseconds'=>10000,'remaining'=>0]],FakeRegistrar::$readClaims,'Explicit '.$at.' probe has ten seconds and one read');
 }
+unset($GLOBALS['staffProbeNanoseconds']);
 app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
-$writer->run($review('probe'),[]);$calls=$reads->calls;
+FakeRegistrar::$readClaims=[];$writer->run($review('probe'),[]);$calls=$reads->calls;
+same(1,count(FakeRegistrar::$readClaims),'Omitted-time probe makes one read');$claim=FakeRegistrar::$readClaims[0];
+expect($claim['milliseconds']>0&&$claim['milliseconds']<=10000,'Omitted-time probe retains a bounded deadline');
+same(0,$claim['remaining'],'Omitted-time probe consumes its one-read budget');
 commerceReject(fn()=>(new StaffSettingsWrites($native,$sellers,$bindings))->run($review('probe'),[]));same($calls,$reads->calls,'Default seam never calls provider');
 foreach([['configure',['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'wrong-account']]],['probe',[]]] as [$action,$data]){
     $r=$review($action);if($action==='configure'){commerceReject(fn()=>$writer->run($r,$data,$now));}else{$writer->run($r,$data);}
@@ -130,3 +142,4 @@ $audit->value='invalid';$audit->save();$before=Price::pluck('revision','id')->al
 commerceReject(fn()=>$writer->run($review('publish',$t->id),[],$now));same($before,Price::pluck('revision','id')->all(),'Corrupt audit rolls back writes');
 $u->role->update(['permissions'=>[Staff::VIEW]]);Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('publish');
 echo "Native settings confirmations, denial, stale/replay, audit, pricing, seller, acceptance and fake setup passed.\n";$nativeSuccessful=true;
+}

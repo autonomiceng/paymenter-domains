@@ -117,6 +117,7 @@ class RunnerTests(unittest.TestCase):
             with self.subTest(jobs=jobs), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
                 active, lock, parallel = set(), threading.Lock(), threading.Event()
+                pair = threading.Barrier(2, timeout=5) if jobs > 1 else None
                 def execute(argv, **kwargs):
                     path = argv[-1]
                     with lock:
@@ -128,7 +129,8 @@ class RunnerTests(unittest.TestCase):
                         if len(active) > 1:
                             parallel.set()
                     try:
-                        time.sleep(0.03)
+                        if pair is not None and path in ['before-0', 'before-1']:
+                            pair.wait()
                         return b'ok', b'', 0, False
                     finally:
                         with lock:

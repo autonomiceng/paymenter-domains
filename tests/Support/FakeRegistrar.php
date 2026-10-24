@@ -12,6 +12,7 @@ final class FakeRegistrar implements RegistrarDriver
 {
     public array $calls = [];
     public array $reconciliationReferences = [];
+    public static array $readClaims = [];
     public function __construct(private readonly AccountBinding $account, private readonly Capabilities $capabilities,
         private readonly DriverResult $response)
     {
@@ -21,7 +22,8 @@ final class FakeRegistrar implements RegistrarDriver
     public function binding(): AccountBinding { return $this->account; }
     private function read(string $method, RequestContext $context): DriverResult
     {
-        $context->claimRead($this->account);
+        $milliseconds = $context->claimRead($this->account);
+        self::$readClaims[] = ['milliseconds' => $milliseconds, 'remaining' => $context->budget->remaining()];
         $this->calls[] = $method;
         return $this->response;
     }
