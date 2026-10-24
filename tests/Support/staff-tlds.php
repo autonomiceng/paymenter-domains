@@ -24,3 +24,10 @@ function tldRefusal(callable $call,string $message): void
     try{$call();expect(false,'Expected exact settings refusal: '.$message);}
     catch(DomainException $e){same($message,$e->getMessage(),'Exact settings refusal: expected '.$message.'; got '.$e->getMessage());}
 }
+
+/** Account actions shared by write assertions and rendered fixtures. */
+function staffSetupActions(): array
+{
+    return ['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox',
+        'test_renewal','test_management','live_renewal','live_management','renewal_billing'];
+}

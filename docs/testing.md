@@ -716,3 +716,5 @@ unchanged. Receipts also record setup, command scheduling and final-guard stage 
 in `timings`. Its `run` value includes command execution and guards, excluding setup,
 receipt writing and cleanup. Parallel command/guard totals are summed worker time,
 not elapsed wall time. Measure full wall time around the runner separately.
+
+`native-paid-baseline-test.php` is the single entrypoint for the shared paid-processing matrix.

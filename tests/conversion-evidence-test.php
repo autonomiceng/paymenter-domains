@@ -82,7 +82,7 @@ conversionRefuses(fn()=>$curl->read('GetDomainInfo',$server->id,'test',$uid,$tok
 $oversize=new EvidenceClient(static fn()=>[200,str_repeat('x',EvidenceClient::LIMIT+1)],$clock,$sleep);
 conversionRefuses(fn()=>$oversize->read('GetDomainInfo',$server->id,'test',$uid,$token,$domain),'Injected cap','incomplete');
 $throwing=new EvidenceClient(static function()use($token){throw new RuntimeException($token);},$clock,$sleep);
-try{$throwing->read('GetDomainInfo',$server->id,'test',$uid,$token,$domain);}catch(RuntimeException $e){same(null,$e->getPrevious(),'Transport exception discarded');expect(!str_contains((string)$e,$token),'Transport diagnostics hide secret');}
+try{$throwing->read('GetDomainInfo',$server->id,'test',$uid,$token,$domain);throw new LogicException('Transport exception required');}catch(RuntimeException $e){same(null,$e->getPrevious(),'Transport exception discarded');expect(!str_contains((string)$e,$token),'Transport diagnostics hide secret');}
 // A retained second account with no selected successful anchor makes publication unusable.
 $second=\App\Models\Server::create(['name'=>'Second source','type'=>'server','extension'=>'Enom','enabled'=>true]);
 foreach($server->settings as$setting){$copy=$setting->replicate();$copy->settingable_id=$second->id;$copy->save();}

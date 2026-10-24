@@ -39,8 +39,9 @@ $render(Livewire::actingAs($u)->test(RegistrarSetup::class),'setup-both');$rende
 // TLD page actions, then the account actions this Enom TEST fixture shows. Live and test renewal or DNS changes
 // and NameSilo enrollment do not appear for it: their server config is off.
 $tldActions=['lifecycle','default_rule','override','remove_override','tld_settings','seller','publish'];
-$accountActions=['configure','probe','acceptance','import','history','processing','renewal_billing','delivery_review','alert_review'];
-same([],array_values(array_diff(array_keys(Review::ACTIONS),$tldActions,$accountActions,['live_management','live_renewal','test_management','test_renewal','enroll_sandbox'])),'Every settings action is placed');
+$hiddenAccountActions=['live_management','live_renewal','test_management','test_renewal','enroll_sandbox'];
+$accountActions=array_values(array_diff(staffSetupActions(),$hiddenAccountActions));
+same([],array_values(array_diff(array_keys(Review::ACTIONS),$tldActions,$accountActions,$hiddenAccountActions)),'Every settings action is placed');
 foreach(array_intersect_key(Review::ACTIONS,array_flip([...$tldActions,...$accountActions])) as $action=>$label){
     app()->instance(StaffSettingsWrites::class,in_array($action,['configure','probe'],true)?new StaffSettingsWrites($native,$sellers,$bindings,true):$writer);
     $setup=in_array($action,$accountActions,true);$page=Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id]);

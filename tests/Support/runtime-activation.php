@@ -23,6 +23,9 @@ DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'transfe
 $holding->update(['status'=>'transfer_pending','provider_expires_at'=>'2027-10-20']);
 $bare=Operation::create(['domain_id'=>$holding->id,'service_id'=>9001,'server_id'=>$server->id,'registrar_key'=>'namesilo','account_fingerprint'=>$binding->fingerprint,
     'authority_generation'=>$holding->authority_generation,'operation_key'=>'no-native-invoice','action'=>'transfer','term'=>1,'state'=>'awaiting_code','currency'=>'USD','amount'=>'20.00']);
+same(RuntimeReason::OfflineProvenance,RuntimeCandidates::transferReason($op->fresh()),'Offline transfer reason');
+same(RuntimeReason::NoInvoiceAuthority,RuntimeCandidates::transferReason($bare),'Transfer without native invoice reason');
+same(RuntimeReason::OfflineProvenance,RuntimeCandidates::billingReason($holding->fresh()),'Offline billing reason');
 same(0,RuntimeCandidates::transfer(Operation::query())->count(),'Display transfers excluded before guards');
 same(0,RuntimeCandidates::billing(Domain::query())->count(),'Display holdings excluded before billing');
 $before=[Invoice::count(),InvoiceItem::count(),Credit::sum('amount'),Operation::orderBy('id')->get()->map->getRawOriginal()->all()];
@@ -30,6 +33,9 @@ $worker->tick();$worker->service(9001);$clock->at=$clock->at->modify('+1 minute'
 same($before,[Invoice::count(),InvoiceItem::count(),Credit::sum('amount'),Operation::orderBy('id')->get()->map->getRawOriginal()->all()],'Display fixtures cannot invoice, credit, or mutate attempts');
 same([],array_values(array_filter($logs,fn($e)=>$e['level']==='warning'&&$e['message']==='Domains runtime work failed.')),'Display rows produce no runtime producer warnings');
 expect(!in_array($op->id,array_merge(...array_values(ObservationCandidates::next('timeout'))),true),'Offline transfer never reaches timeout guards');
+DB::table('domains_operations')->where('id',$op->id)->update(['funding_basis'=>'paid_invoice']);
+same(RuntimeReason::NoInvoiceAuthority,RuntimeCandidates::billingReason($holding->fresh()),'Billing without native invoice reason');
+DB::table('domains_operations')->where('id',$op->id)->update(['funding_basis'=>'offline_demo']);
 // Genuine native invoice/item, with deliberately lost service authority: this must remain actionable.
 $invoice=Invoice::create(['user_id'=>$user->id,'currency_code'=>'USD','status'=>'pending','due_at'=>'2026-11-01','send_create_email'=>false]);
 $item=$invoice->items()->create(['quantity'=>1,'price'=>'20.00','description'=>'Synthetic acquisition']);
