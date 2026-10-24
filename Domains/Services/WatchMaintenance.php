@@ -8,7 +8,7 @@ final class WatchMaintenance
 {
     private function alert(array $health): void
     {
-        Log::warning('Public domain checks need staff review.',['code'=>$health['reason']]);
+        Log::warning('Domain monitoring needs staff review.',['code'=>$health['reason']]);
         $title=$health['reason']==='checks_unsuccessful'?'Domain monitoring checks failed':'Domain monitoring stopped';
         $body=$health['reason']==='dispatch_overdue'?'Checks have not run since '.self::date($health['since']??null).'.':self::notice($health)['text'];
         \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send($title,$body,'filament.admin.resources.domain-watch.index','admin.domains.watch.view');
@@ -57,7 +57,8 @@ final class WatchMaintenance
         return ['outage'=>false,'reason'=>'current','since'=>$progress?:null];
     }
     private static function date(?int $at): string{return $at?gmdate('M j, Y H:i',$at).' UTC':'the first run';}
-    /** The Domain monitoring notice: one line, its tone and its one action (settings, failed_jobs or none). Normal states have none. */
+    /** The Domain monitoring notice: one line, its tone and its one action (settings, failed_jobs or none). Normal states have none;
+     * a short queue timeout shows under Registrars > account > System checks instead. */
     public static function notice(array $health): ?array
     {
         $since=self::date($health['since']??null);
@@ -69,7 +70,6 @@ final class WatchMaintenance
         }
         return match($health['reason']) {
             'disabled'=>['text'=>'Domain monitoring is off on this site.','tone'=>'warning','action'=>null],
-            'queue_configuration'=>['text'=>"Monitoring checks can't run. Queue timeout too short: set retry_after to 180 seconds or more.",'tone'=>'danger','action'=>null],
             'dispatch_overdue'=>['text'=>'Monitoring checks have not run since '.$since.'.','tone'=>'danger','action'=>'failed_jobs'],
             default=>null,
         };

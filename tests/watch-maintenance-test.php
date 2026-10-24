@@ -14,7 +14,9 @@ $panel=\Filament\Facades\Filament::getPanel('admin');
 \Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::registerRoutes($panel));
 app('router')->getRoutes()->refreshNameLookups();
 $now=1800000000;$m=new WatchMaintenance();same('waiting',$m->health($now)['reason'],'Active checks await first turn');
+$logs=[];\Illuminate\Support\Facades\Log::listen(static function($event)use(&$logs):void{$logs[]=$event->message;});
 DB::table('domains_watch_schedule')->insert(['scope'=>'dispatch','due_at'=>$now+300,'progress_at'=>$now,'data'=>json_encode(['started_at'=>$now])]);expect(!$m->health($now+599)['outage'],'Two intervals not elapsed');same('dispatch_overdue',$m->health($now+600)['reason'],'Two missed turns alert');$m->tick($now+600);$alert=DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at');same($now+600,(int)$alert,'Outage marker retained');$m->tick($now+700);same((int)$alert,(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at'),'Alert deduplicated');
+same(['Domain monitoring needs staff review.'],$logs,'Alert log names Domain monitoring, once');
 staffAlerts('Domain monitoring stopped','Checks have not run since Jan 15, 2027 08:00 UTC.',route('filament.admin.resources.domain-watch.index'),$staff);
 // Missing native storage/columns skip silently without queueing a fallback.
 $send=static fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Unavailable inbox','Body','missing.route');

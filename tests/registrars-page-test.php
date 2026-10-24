@@ -43,7 +43,7 @@ $off=App\Models\Server::create(['name'=>'Old account','extension'=>'Domains','ty
 $demoId=(int)App\Models\Server::max('id')+1;fixtureAccount($demoId,'namesilo','beco-demo-namesilo');$demo=Account::where('server_id',$demoId)->sole();
 App\Models\Server::whereKey($demo->server_id)->update(['name'=>'Demo NameSilo']);
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
-staffPanel();$panel=Filament::getCurrentPanel();$pages=[RegistrarSetup::class,RegistrarAccount::class,BalancesPage::class,ActivationStatus::class];$panel->pages($pages);
+staffPanel();$panel=Filament::getCurrentPanel();$pages=[RegistrarSetup::class,RegistrarAccount::class,BalancesPage::class,ActivationStatus::class,PslPage::class];$panel->pages($pages);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$pages){foreach($pages as $page){$page::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 $staff=staffUser([Staff::VIEW]);Auth::setUser($staff);
 // Navigation: one Registrars entry; Balances and Activation leave the menu and Balances redirects.
@@ -102,6 +102,16 @@ same('Delayed',$check('Payment events')->getState(),'Missing paid listener delay
 same('warning',$check('Payment events')->getColor('Delayed'),'Delayed payment events warn');
 same('Not running',$check('Background worker')->getState(),'No worker run recorded');
 same('danger',$check('Background worker')->getColor('Not running'),'A stopped worker is danger');
+// Domain monitoring on with a queue timeout under 180 seconds: the Background worker row names the cause, once.
+app()->instance(Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new Paymenter\Extensions\Servers\Domains\Services\WatchWork(new Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true));
+$queue=config('queue');config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>60]);
+$short=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id]);
+$worker=array_values(array_filter($short->instance()->content(\Filament\Schemas\Schema::make($short->instance()))->getFlatComponents(),fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry&&$e->getLabel()==='Background worker'))[0];
+same('Queue timeout too short',$worker->getState(),'Short queue timeout shows on the Background worker row');same('danger',$worker->getColor('Queue timeout too short'),'Short queue timeout is danger');
+$text=html_entity_decode(strip_tags($short->html()),ENT_QUOTES);
+same(1,substr_count($text,'Queue timeout too short'),'Queue timeout said once');same(1,substr_count($text,"Domain monitoring can't run. Use an asynchronous queue with retry_after of 180 seconds or more."),'Its cause said once');
+config(['queue.connections.database.retry_after'=>180]);Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertDontSee('Queue timeout too short')->assertSee('Not running');
+config(['queue'=>$queue]);app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\WatchWork::class);
 $passing=array_values(array_filter($flat,fn($e)=>$e instanceof \Filament\Schemas\Components\Section&&$e->getHeading()==='Passing checks'))[0];
 expect($passing->isCollapsed(),'Passing checks start collapsed');
 $inside=array_map(fn($e)=>$e->getLabel(),array_filter($passing->getChildSchema()->getFlatComponents(),fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry));
@@ -112,6 +122,8 @@ Paymenter\Extensions\Servers\Domains\Services\PslSchema::install();Paymenter\Ext
 $psl=Livewire::actingAs(staffUser([Staff::VIEW,PslPage::VIEW,PslPage::MANAGE]))->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Public suffix list')->assertSee('Not downloaded')
     ->assertActionVisible(TestAction::make('psl_download')->schemaComponent('system_checks','content'))->assertActionVisible(TestAction::make('psl_source')->schemaComponent('system_checks','content'))
     ->assertActionDoesNotExist(TestAction::make('psl_accept')->schemaComponent('system_checks','content'));
+// The full list page is off the menu: its System checks row links to it.
+$psl->assertActionVisible(TestAction::make('psl_details')->schemaComponent('system_checks','content'))->assertSee('View details')->assertSeeHtml('href="'.PslPage::getUrl().'"');
 $flat=$psl->instance()->content(\Filament\Schemas\Schema::make($psl->instance()))->getFlatComponents();
 same('danger',array_values(array_filter($flat,fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry&&$e->getLabel()==='Public suffix list'))[0]->getColor('Not downloaded'),'A list never downloaded is danger');
 Livewire::actingAs(staffUser([Staff::VIEW,PslPage::VIEW]))->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Not downloaded')

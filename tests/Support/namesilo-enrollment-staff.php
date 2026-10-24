@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,BalanceSchema,CatalogueAcceptances,IdentityRefused,NameSiloSandbox,ObservationSchema,RegistrarBalances,RegistrarFactories,RegistrarRegistry,RuntimeHealth,RuntimePorts,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,BalanceSchema,CatalogueAcceptances,IdentityRefused,NameSiloSandbox,ObservationSchema,RegistrarBalances,RegistrarFactories,RegistrarRegistry,RuntimePorts,StaffSettingsReview as Review,StaffSettingsWrites};
 require_once __DIR__.'/staff-tlds.php';
 ini_set('zend.exception_ignore_args','0');$GLOBALS['enrollmentCalls']=0;
 $empty=new RegistrarRegistry;config(['domains.namesilo_sandbox_enrollment.enabled'=>false]);
@@ -86,9 +86,7 @@ foreach($s->settings()->whereIn('key',[NameSiloSandbox::KEY,'domains_credentials
 }
 $facts=json_decode($s->settings()->where('key',NameSiloSandbox::KEY)->sole()->value,true);
 same(false,$facts['provider_confirmed_account'],'Stored ownership disclaimer');same(true,$facts['authenticated_ote_key'],'Stored authentication fact');same(hash('sha256','synthetic-ote-key'),$facts['key_fingerprint'],'Fixed key fingerprint');
-$nameSiloFacts=$bindings->sandboxFacts($a);expect(!str_contains(implode(' ',$nameSiloFacts),'Verified'),'NameSilo account facts never use verified wording');
-same('At enrollment, NameSilo OTE accepted this key in one read-only balance request. That balance was not saved. This row records only the enrollment check. Later balance checks and scheduled reads show on the account page. None confirms account ownership.',$nameSiloFacts['Key check'],'Enrollment history is distinct from subsequent checks');
-$page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->assertSee('API connection')->assertSee('Connected')->assertDontSee('OTE only')->assertDontSee('NameSilo did not confirm which account this key belongs to.')->assertDontSee('synthetic-ote-key')->assertDontSee('9876.54');unset($page);gc_collect_cycles();
+$page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->assertSee('API connection')->assertSee('Connected')->assertDontSee('Verified')->assertDontSee('OTE only')->assertDontSee('NameSilo did not confirm which account this key belongs to.')->assertDontSee('synthetic-ote-key')->assertDontSee('9876.54');unset($page);gc_collect_cycles();
 $configurePage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($action('configure',$s))->assertActionMounted($action('configure',$s));
 same("NameSilo accounts can't be connected with API credentials.",$configurePage->instance()->getMountedAction()->getModalDescription(),'NameSilo identity refusal remains unchanged');
 $configurePage->setActionData(['registrar'=>'enom']);same(Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::description('configure'),$configurePage->instance()->getMountedAction()->getModalDescription(),'Changing registrar updates description');
@@ -239,12 +237,10 @@ $legacy->settings()->create(['key'=>'domains_credentials','encrypted'=>true,'typ
 $legacy->settings()->create(['key'=>'domains_verified_credentials','encrypted'=>true,'type'=>'string','value'=>hash_hmac('sha256',$legacyBinding->fingerprint.json_encode($legacyCredentials,JSON_THROW_ON_ERROR),(string)config('app.key'))]);
 expect($bindings->configurationAvailable($legacy->id),'Legacy local settings can match their stored digest');$n=$GLOBALS['enrollmentCalls'];
 $refuse(fn()=>$bindings->reader($legacy->id,true),'Legacy synthetic NameSilo binding cannot use the OTE balance reader');same($n,$GLOBALS['enrollmentCalls'],'Legacy binding refuses without an OTE call');
-same('NameSilo account ownership unconfirmed · no OTE enrollment',RuntimeHealth::for($legacy->id)['Registrar configuration'],'Legacy NameSilo is never described as verified');
+$legacyStatus=Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::status($legacy->fresh(),Account::where('server_id',$legacy->id)->sole());expect(!str_contains(implode(' ',$legacyStatus),'Verified'),'Legacy NameSilo is never described as verified');
 $corrupt=$fresh();Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$corrupt->id,'registrar_key'=>'namesilo','environment'=>'test','stable_identity'=>NameSiloSandbox::PREFIX.'corrupt']));
 DB::table('domains_accounts')->where('server_id',$corrupt->id)->update(['stable_identity'=>'corrupt-ciphertext']);$corruptAccount=Account::where('server_id',$corrupt->id)->sole();
 same(false,NameSiloSandbox::enrolled($corruptAccount),'Undecryptable identity fails closed as not enrolled');
-$corruptHealth=RuntimeHealth::for($corrupt->id)['Registrar configuration'];
-expect(str_starts_with($corruptHealth,'On hold · saved settings no longer match this NameSilo binding, and NameSilo did not confirm which account the key belongs to.'),'Corrupt retained NameSilo identity keeps health available and unconfirmed');
 $corruptStatus=Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::status($corrupt->fresh(),$corruptAccount);
 same(['Connection failed','Credentials changed'],[$corruptStatus['label'],$corruptStatus['reason']],'Corrupt retained identity shows Credentials changed');
 $corruptEnrollment=$attempt(['api_key'=>'corrupt-marker-key']);$corruptEnrollmentAccount=Account::where('server_id',$corruptEnrollment->id)->sole();

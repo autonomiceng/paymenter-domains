@@ -19,6 +19,7 @@ class ListWatches extends ListRecords
     protected ?array $visible=null;
     protected array $status=[];
     public function getTitle(): string{return 'Domain monitoring';}
+    public function getBreadcrumbs(): array{return [];}
     public function getSubheading(): ?string{return null;}
     public function getSubNavigation(): array{return WatchResource::tabs('index');}
     /** Request-scoped maintenance notice; false until read. */

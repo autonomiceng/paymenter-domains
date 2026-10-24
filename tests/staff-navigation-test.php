@@ -22,6 +22,7 @@ $all=[DomainResource::class,OperationResource::class,TldResource::class,Registra
 $menu=array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()));usort($menu,fn($a,$b)=>[$a::getNavigationSort()??PHP_INT_MAX]<=>[$b::getNavigationSort()??PHP_INT_MAX]);
 same(['Domains','Registrar requests','TLDs & pricing','Registrars','Domain monitoring','DNS templates','Hosting products'],array_map(fn($c)=>$c::getNavigationLabel(),$menu),'Seven staff pages in order');
 foreach($menu as $c){same('Domains',$c::getNavigationGroup(),'One Domains group: '.$c);}
+same(count($menu),count(array_unique(array_map(fn($c)=>$c::getNavigationIcon(),$menu))),'Each staff page has its own icon');
 same(['domains','registrar-requests','domain-tlds','registrar-setup','domain-watch','dns-routing-profiles','product-domain-mappings','public-suffix-list','dns-resolver'],
     [DomainResource::getSlug(),OperationResource::getSlug(),TldResource::getSlug(),RegistrarSetup::getSlug(),WatchResource::getSlug(),RoutingProfileResource::getSlug(),ProductMappingResource::getSlug(),PublicSuffixList::getSlug(),DnsResolver::getSlug()],'Slugs kept');
 
@@ -35,6 +36,9 @@ Livewire::actingAs(staffUser([Staff::VIEW]))->test(MonitoringSettings::class)->a
 // Tabs: Domains and Settings on both pages.
 $tabs=fn($page)=>array_map(fn(NavigationItem $i)=>[$i->getLabel(),$i->isActive()],$page->instance()->getSubNavigation());
 $list=Livewire::actingAs($manager)->test(ListWatches::class)->assertSuccessful();same([['Domains',true],['Settings',false]],$tabs($list),'List tabs');
+// List pages carry no breadcrumb, like Domains and Registrars.
+same([],$list->instance()->getBreadcrumbs(),'Monitoring list has no breadcrumb');
+foreach([RoutingProfileResource\Pages\ListConfiguration::class,ProductMappingResource\Pages\ListConfiguration::class] as $page){same([],Livewire::actingAs($manager)->test($page)->instance()->getBreadcrumbs(),'No breadcrumb: '.$page);}
 $settings=app(DnsResolverSettings::class);
 $tab=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSuccessful();same([['Domains',false],['Settings',true]],$tabs($tab),'Settings tabs');
 // No saved resolver: Missing with its cause and the fix beside it, said once; nothing to test yet, no bootstrap IP.
@@ -71,7 +75,8 @@ same(['text'=>'Expiry checks have failed since '.$at.'.','tone'=>'danger','actio
 same(['text'=>'DNS checks have failed since '.$at.'.','tone'=>'danger','action'=>'settings'],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'watch_dns','families'=>['watch_dns','managed_dns'],'since'=>$since]),'DNS checks named once');
 same(['text'=>'Expiry checks and DNS checks have failed since '.$at.'.','tone'=>'danger','action'=>'settings'],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'registry','families'=>['registry','watch_dns'],'since'=>$since]),'Two families');
 same(['text'=>'Domain discovery has failed since '.$at.'.','tone'=>'danger','action'=>'failed_jobs'],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'local','families'=>['local'],'since'=>$since]),'Discovery');
-expect(str_contains(WatchMaintenance::notice(['outage'=>true,'reason'=>'queue_configuration','since'=>null])['text'],'Queue timeout too short'),'Queue configuration names the cause');
+// The queue timeout shows once, under Registrars > account > System checks, not on the monitoring list.
+same(null,WatchMaintenance::notice(['outage'=>true,'reason'=>'queue_configuration','since'=>null]),'Queue configuration has no monitoring notice');
 // The list shows the notice above the table with its one action.
 $clock=(object)['now'=>$since];app()->instance(WatchWork::class,new WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true,fn()=>$clock->now));
 config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>180]);
@@ -81,4 +86,5 @@ Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('Monitoring che
 $manager->role->update(['permissions'=>[...$manager->role->permissions,'admin.failed_jobs.viewAny']]);
 $overdue=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertSee('Open Failed jobs')->assertDontSee('Open Settings')->assertCanSeeTableRecords([$watch]);
 $text=html_entity_decode(strip_tags($overdue->html()));expect(!str_contains($text,'—'),'No em dash');foreach(['unavailable','Public domain checks','scheduler'] as $word){expect(stripos($text,$word)===false,'No "'.$word.'" on the list');}
+config(['queue.connections.database.retry_after'=>60]);Livewire::actingAs($manager)->test(ListWatches::class)->assertDontSee('Queue timeout too short')->assertDontSee('retry_after');config(['queue.connections.database.retry_after'=>180]);
 $nativeSuccessful=true;echo "Staff navigation, Settings tab and monitoring notice passed.\n";

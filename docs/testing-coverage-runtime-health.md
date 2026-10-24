@@ -1,12 +1,11 @@
 # Runtime health coverage
 
 `runtime-health-test.php` acquires and releases real minute-budget leases for an
-interactive request and a background request. Their shared usage appears under Read
-capacity without changing the persisted budget during the health view.
+interactive request and a background request and checks that both count against one
+shared minute budget.
 This budget includes balance and catalogue reads as well as registrar changes;
 identity verification and the
 Enom TEST deployment-wide daily limit remain separate.
-`native-identity-readiness-test.php` pins the empty minute-budget wording.
 These are synthetic offline SQLite checks; no registrar traffic or shared-database
 concurrency acceptance is implied.
 
@@ -22,7 +21,7 @@ provider boot checks exact warning and deferral context, argument/query/path red
 fallback, unchanged paid operation/financial bytes, zero sends and one diagnostic per operation
 across scheduler ticks and a second RuntimePorts instance. Fresh healthy processes recover the
 same registration and transfer through genuine action bridges and exercise the real expiry guard.
-Both native-paid matrices check the shared process notice in RuntimeHealth, Registrars,
+Both native-paid matrices check the shared process notice in NativePaidHooks, Registrars,
 DomainFacts and ViewDomain, then clear it by restoring the original saving callbacks. Lost invoice
 Paid wake recovery remains independent. These are offline SQLite/kernel/Livewire checks, not
 installed worker, browser, registrar or shared-database acceptance.

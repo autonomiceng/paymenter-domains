@@ -41,10 +41,11 @@ Keep its `0600` evidence file private and delete it after conversion and private
 
 The weekly updater stores validated Public Suffix List data (MPL-2.0, publicsuffix.org).
 A removal of more than 5% of either section keeps the saved list and retains the exact
-rejected download for staff review. **Domains → Registrars → an account → System checks → Public suffix list → Download now**
-shows removal counts and up to 20 samples per section. It requires watch view/manage rights,
-the displayed 12-character hash and a reason. Changes to the pending bytes or saved baseline
-invalidate acceptance. All current size, parsing, marker and sentinel checks still apply.
+rejected download for staff review. Staff with watch view rights find the list status under
+**Domains → Registrars → an account → System checks → Public suffix list**; **View details** on that
+row opens the full list page. With watch manage rights, **Download now** asks **Use new list?** and
+shows the ICANN and private rule counts before and after, plus up to 20 removed rules.
+Changes to the pending bytes or saved baseline invalidate acceptance. All current size, parsing, marker and sentinel checks still apply.
 The same procedure can replace a hash-valid historical list whose rules a newer international
 domain parser rejects; historical source identities explain its differences but never resolve names.
 Acceptance records encrypted retained audit evidence and does not refresh the download's age.

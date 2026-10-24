@@ -26,7 +26,7 @@ $clean=static function(string $html,string $where)use($text,$banned):void {
 $renew=static fn($t)=>'USD '.PriceCatalogue::retail(Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew','term'=>1])->value('retail'));
 
 // Prices synced: one row per registrar account, the account that takes new orders is marked.
-$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertCanSeeTableRecords($tlds);
+$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertCanSeeTableRecords($tlds);same([],$list->instance()->getBreadcrumbs(),'TLD list has no breadcrumb, like Domains');
 foreach(['Registrar account','Renewal price','Cost','Domains','Status','Enom TEST identity check','OFFLINE DEMO NameSilo (synthetic)',
     'Enom · default pricing · new orders','NameSilo · default pricing','For sale','USD 8.00',$renew($enom)] as $see){$list->assertSee($see);}
 $plain=$text($list->html());

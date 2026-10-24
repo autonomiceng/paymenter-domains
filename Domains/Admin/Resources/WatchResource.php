@@ -17,6 +17,7 @@ class WatchResource extends WatchReadResource
 {
     protected static ?string $model=WatchName::class;
     protected static ?string $navigationLabel='Domain monitoring';
+    protected static string|\BackedEnum|null $navigationIcon='heroicon-o-eye';
     protected static ?int $navigationSort=5;
     protected static ?string $modelLabel='monitored domain';
     protected static ?string $pluralModelLabel='Domain monitoring';

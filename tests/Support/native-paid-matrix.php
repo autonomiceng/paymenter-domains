@@ -6,7 +6,7 @@ require_once __DIR__.'/reserved-fixtures.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Service};
 use Illuminate\Support\Facades\{DB,Event,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds,RuntimeHealth,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds,UnpaidAcquisitionProof};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview;
 // Product mail initializes once, preserves custom text and deliberately cleared text on republish.
 same(NativeActivationInformation::TEXT,$product->fresh()->email_template,'Approved product information installed');
@@ -137,7 +137,7 @@ same('paid',Invoice::findOrFail($missing->invoice_id)->status,'Native payment re
 same($money,nativeFinancialSnapshot($missing),'Deferred paid work preserves native and financial state');
 same($operation,$missing->fresh()->getRawOriginal(),'Deferred work preserves operation bytes');
 $notice='Required Service listeners are missing in this process: Service saving model event. New registrations and transfers run here wait until a healthy process picks them up.';
-same($notice,RuntimeHealth::site()['Paymenter payment events'],'Runtime health describes current process');
+same($notice,NativePaidHooks::notices()['Paymenter payment events'],'Payment events notice describes current process');
 Illuminate\Support\Facades\Auth::login($staff);
 expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events']),'Process notice lives with registrar setup, not on each domain');
 $setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertSeeInOrder(['System checks','Payment events','Missing',$check='Service listeners are missing. Restart the queue worker.']);
@@ -145,7 +145,7 @@ same(1,substr_count(html_entity_decode($setup->html(),ENT_QUOTES),$check),'Regis
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$missing->domain_id])->assertDontSee($notice);
 foreach($saving as$listener){Event::listen($savingEvent,$listener);}
 same([],NativePaidHooks::serviceMissing(),'Real saving guards restored');
-same('Available',RuntimeHealth::site()['Paymenter payment events'],'Healthy runtime fact clears');
+same('Available',NativePaidHooks::notices()['Paymenter payment events'],'Healthy payment events notice clears');
 expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events']),'Healthy domain fact clears');
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertDontSee($check);
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$missing->domain_id])->assertDontSee($notice);

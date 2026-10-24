@@ -25,10 +25,11 @@ $save=function(string $name,$test)use($out,$css):void{
 };
 // Overdue checks, left by the test: sidebar and notice on the list.
 $save('monitoring-overdue',Livewire::actingAs($manager)->test(ListWatches::class));
-// Checks failing for registry and DNS, and the queue timeout too short.
+// Checks failing for registry and DNS.
 DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['progress_at'=>$since]);
 DB::table('domains_watch_work')->update(['attempts'=>1,'due_at'=>$since-86400]);foreach(['health_registry','health_watch_dns'] as $scope){DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>$scope],['cursor'=>$since-86400]);}
 $save('monitoring-failing',Livewire::actingAs($manager)->test(ListWatches::class));
+// A short queue timeout adds no notice here; it shows under Registrars > account > System checks.
 config(['queue.connections.database.retry_after'=>60]);$save('monitoring-queue',Livewire::actingAs($manager)->test(ListWatches::class));
 // Monitoring off (the default) on the list, and the Settings tab with and without a saved resolver.
 app()->forgetInstance(WatchWork::class);$save('monitoring-off',Livewire::actingAs($manager)->test(ListWatches::class));

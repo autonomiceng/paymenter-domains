@@ -130,7 +130,7 @@ This opt-in test makes no provider calls. Adoption stays off pending site checks
 
 Post-delete User/Service observers inspect at most 25 retained domains and save a staff discrepancy;
 the existing durable runtime domain cursor inspects at most 25 domains per account turn to recover
-missed/overflow checks while the saved account binding remains current. The Registrars page lists the saved alert under Missing Paymenter records and shows it even when native detail cannot open.
+missed/overflow checks while the saved account binding remains current. The turn saves the alert durably; the Registrars account page does not list it.
 These checks are diagnostic, grant no authority and do not recreate native records.
 The staff value lists domain names and states that their names remain reserved; no resolution action is promised.
 Runtime registration checks conversion completion before installing listeners, so refused boot cannot block parked conversion.
