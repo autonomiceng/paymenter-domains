@@ -14,7 +14,7 @@ same('Missing: phone, city, contact details. Update the customer account details
 
 // Decode failures inside contact eligibility retain the saved-data repair notice.
 $user->properties()->where('key','phone')->update(['value'=>'']);
-$damaged=$new('staff-corrupt-contact-placeholder.com',true,true);ContactRecovery::hold($damaged->id);
+$damaged=$new(placeholderComFixtureName('staff-corrupt-contact-placeholder.com'),true,true);ContactRecovery::hold($damaged->id);
 $user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);
 foreach([[$damaged,'payload'],[$damaged->domain,'snapshot']] as [$record,$field]){
     $saved=$record->getRawOriginal($field);$query=DB::table($record->getTable())->where('id',$record->id);
@@ -30,7 +30,7 @@ foreach([[$damaged,'payload'],[$damaged->domain,'snapshot']] as [$record,$field]
 // An actual paid contact hold keeps the checkout snapshot until audited owner recollection.
 foreach(['register','transfer'] as $kind){
     $user->properties()->where('key','phone')->update(['value'=>'']);
-    $op=$new('staff-contact-'.$kind.'-placeholder.com',true,true,$kind);ContactRecovery::hold($op->id);$op=$op->fresh();
+    $op=$new(placeholderComFixtureName('staff-contact-'.$kind.'-placeholder.com'),true,true,$kind);ContactRecovery::hold($op->id);$op=$op->fresh();
     same('contact_details_required',$op->safe_code,'Real contact hold: '.$kind);
     $before=$op->getRawOriginal();$deadline=TransferInputs::deadline($op,$clock->now())?->format(DATE_ATOM);$money=nativeFinancialSnapshot($op);$key=$ticket($op,'release');
     try{$run($op,'release');throw new RuntimeException('Expected incomplete contact refusal.');}
@@ -81,7 +81,7 @@ foreach(['register','transfer'] as $kind){
 
 // Late contact correction keeps the original code cutoff and the separate transfer review hold.
 $user->properties()->where('key','phone')->update(['value'=>'']);
-$late=$new('staff-late-contact-transfer-placeholder.com',true,true,'transfer');ContactRecovery::hold($late->id);$late=$late->fresh();
+$late=$new(placeholderComFixtureName('staff-late-contact-transfer-placeholder.com'),true,true,'transfer');ContactRecovery::hold($late->id);$late=$late->fresh();
 $deadline=TransferInputs::deadline($late,$clock->now());expect($deadline!==null,'Late fixture has its original paid deadline');
 $policy=$late->policy;$code=$late->payload['epp'];$money=nativeFinancialSnapshot($late);
 $user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);

@@ -23,7 +23,7 @@ foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
         if(in_array($fault,['missing-code','invalid-code','missing-paid-at','invalid-paid-at','expired-deadline'],true)&&$kind!=='transfer'){continue;}
         if($fault==='contact-cutoff'&&$kind!=='transfer'){continue;}
         if($kind==='renew'&&(str_starts_with($fault,'contact-')||in_array($fault,['registry','contacts','mixed-invoice','retained-cap-enabled','retained-cap-disabled'],true))){continue;}
-        $name='staff-state-'.$kind.'-'.$fault.'-placeholder.com';
+        $name=placeholderComFixtureName('staff-state-'.$kind.'-'.$fault.'-placeholder.com');
         if($fault==='contacts'||str_starts_with($fault,'contact-')){$user->properties()->where('key','phone')->update(['value'=>'']);}
         if($kind==='renew'){[$row,$domain]=$makeRenewal($name,paid:$fault!=='unpaid'&&!str_starts_with($fault,'complimentary'));
             if(str_starts_with($fault,'complimentary')){$cycles->retireUnpaid($row->id);$row=$cycles->complimentary($domain->id,$staff,1,new \Paymenter\Extensions\Servers\Domains\Data\Money('8.95','USD'),'reviewed_gift');}}
@@ -99,8 +99,8 @@ $testOnly=['enom_test_setup_required','enom_test_transfer_setup_required','usd_b
 $offered=[];
 foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
     $clock->instant=$now;config($deployment);
-    if($kind==='renew'){[$op]=$makeRenewal('staff-release-renewal-parity-placeholder.com');$op->update(['state'=>'held','safe_code'=>'staff_review_required']);}
-    else{$op=$new('staff-release-'.$kind.'-parity-placeholder.com',true,true,$kind);$op->update(['state'=>'held','safe_code'=>'staff_review_required']);}
+    if($kind==='renew'){[$op]=$makeRenewal(placeholderComFixtureName('staff-release-renewal-parity-placeholder.com'));$op->update(['state'=>'held','safe_code'=>'staff_review_required']);}
+    else{$op=$new(placeholderComFixtureName('staff-release-'.$kind.'-parity-placeholder.com'),true,true,$kind);$op->update(['state'=>'held','safe_code'=>'staff_review_required']);}
     Auth::setUser($staff);$original=$op->fresh()->getRawOriginal();
     $restore=static fn()=>DB::table('domains_operations')->where('id',$op->id)->update($original);
     foreach([false,true] as $enabled){
