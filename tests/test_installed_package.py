@@ -207,7 +207,14 @@ def main(scenario):
             phase('enom-test-registration')
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=2) as workers:
-                list(workers.map(lambda _: phase('enom-test-calls'), range(2)))
+                list(workers.map(lambda worker: phase('enom-test-calls', worker=worker), (1, 2)))
+            totals = [json.loads(Path(str(retained)+f'.test-calls-{worker}.json').read_text()) for worker in (1, 2)]
+            assert sorted(row['admitted'] for row in totals) == [3, 4], 'Both workers reserve under contention'
+            for row in totals:
+                assert row['admitted'] + row['refused'] == 20, 'Every worker accounts for all decisions'
+                assert row['refused'] == 20 - row['admitted'], 'Per-worker refused total'
+                assert row['barriers'] == 20, 'Every reservation reached the shared decision barrier'
+            evidence['counter_worker_totals'] = totals
             phase('enom-test-calls')
             phase('enom-test-call-count')
             shutil.rmtree(installed)

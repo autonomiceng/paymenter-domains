@@ -242,7 +242,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_worker_copies_use_canonical_paths_under_a_linked_output_parent(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             alias = root/'alias'; alias.symlink_to(root, target_is_directory=True)
             output = alias/'output'; output.mkdir()
             fixture = root/'fixture'; (fixture/'vendor').mkdir(parents=True)

@@ -13,7 +13,9 @@ function seedInstalledUpgrade(): void
         $t=Paymenter\Extensions\Servers\Domains\Models\Tld::firstOrFail();
         $ticket=StaffSettingsReview::ticket($staff->id,$t->server_id,$t->id,'default_rule',StaffSettingsReview::stamp($t->server_id,$t->id));
         $review=new StaffSettingsReview($staff->id,$t->server_id,$t->id,'default_rule',$ticket,'Synthetic retained upgrade review');
-        $review->local(fn()=>AuditArchives::append($t->server_id,'staff_settings',json_encode([['key'=>'synthetic-retained-upgrade']])));
+        $review->local(fn()=>AuditArchives::append($t->server_id,'staff_settings',json_encode([['key'=>'synthetic-retained-upgrade','actor_id'=>$staff->id,'at'=>'2026-10-22T12:00:00+00:00',
+            'action'=>'Edit default rule','reason'=>'Synthetic retained archive review','phase'=>'completed','input'=>[],
+            'tld_id'=>null,'before'=>[],'after'=>[]]],JSON_THROW_ON_ERROR)));
         expect(DB::table('domains_staff_review_keys')->exists(),'Baseline retained used staff review');
         expect(DB::table('domains_audit_archives')->exists(),'Baseline retained encrypted staff archive');
     }
@@ -46,7 +48,10 @@ function assertInstalledUpgradeAudit(): void
     $row=DB::table('domains_audit_archives')->where('family','staff_settings')->first();
     if(!$row){return;} // A baseline predating staff storage has no archive to retain.
     $json=AuditArchives::latest($row->server_id,'staff_settings');
-    same([['key'=>'synthetic-retained-upgrade']],json_decode($json,true,512,JSON_THROW_ON_ERROR),'Retained archive decrypts through upgraded code');
+    $archive=json_decode($json,true,512,JSON_THROW_ON_ERROR);
+    same('synthetic-retained-upgrade',$archive[0]['key'],'Retained archive decrypts through upgraded code');
+    same('Synthetic retained archive review',$archive[0]['reason'],'Retained archive keeps its staff reason');
+    same('2026-10-22T12:00:00+00:00',$archive[0]['at'],'Retained archive keeps its UTC time');
     $history=StaffSettingsReview::historyRows(App\Models\Server::findOrFail($row->server_id));
     same('synthetic-retained-upgrade',$history[0]['key'],'Upgraded staff history includes retained archive');
     same('Synthetic retained upgrade review',$history[1]['reason'],'Retained encrypted current audit batch decodes');
@@ -73,5 +78,21 @@ function assertInstalledUpgradePages(): void
     PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());
     Filament\Facades\Filament::setCurrentPanel(Filament\Facades\Filament::getPanel('admin'));
     Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class)->assertSuccessful()->assertSee('Registrars');
+    $archive=DB::table('domains_audit_archives')->where('family','staff_settings')->first();
+    if($archive){
+        $server=App\Models\Server::findOrFail($archive->server_id);
+        $history=StaffSettingsReview::historyRows($server);
+        $actor=App\Models\User::findOrFail($history[1]['actor_id']);
+        $rows=Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::history($server->id);
+        expect($rows!==null,'Retained audit normalizes for staff history');
+        same(['time'=>'Oct 22, 2026 12:00 UTC','change'=>'Default pricing changed','reason'=>'Synthetic retained archive review','by'=>'Staff #'.$actor->id],
+            $rows[1],'Retained archive normalizes time, action and actor');
+        Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
+            ->assertSuccessful()->mountAction('price_history')->assertActionMounted('price_history')
+            ->assertMountedActionModalSee('Synthetic retained archive review');
+        $tld=Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$server->id)->firstOrFail();
+        Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$tld->id])
+            ->assertSuccessful()->assertSee('Synthetic retained archive review');
+    }
     echo "Installed storefront routes and retained staff page render successfully.\n";
 }

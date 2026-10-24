@@ -149,11 +149,7 @@ if($phase==='server-delete'){
 }elseif($phase==='enom-test-registration'){
     require __DIR__.'/Support/enom-test-registration.php';
 }elseif($phase==='enom-test-calls'){
-    $clock=new class implements Paymenter\Extensions\Servers\Domains\Contracts\Clock { public function now():DateTimeImmutable{return new DateTimeImmutable('2026-10-23T12:00:00Z');} };
-    app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
-    config(['domains.enom_test_daily_call_cap'=>7]);
-    for($i=0;$i<20;$i++){try{Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::reserve(Paymenter\Extensions\Servers\Domains\Data\Environment::Test);}catch(Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit){}}
-    expect((int)DB::table(Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::TABLE)->where('day','2026-10-23')->value('used')===7,'Concurrent/restarted cap stops exactly at its limit');
+    require __DIR__.'/Support/installed-test-counter.php';
 }elseif($phase==='enom-test-call-count'){
     same(7,(int)DB::table(Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::TABLE)->where('day','2026-10-23')->value('used'),'TEST call units remain retained across process restart and reinstall');
 }elseif($phase==='held'){
