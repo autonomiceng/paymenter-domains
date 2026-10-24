@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/watch-dns.php';
+require __DIR__.'/Support/rdap-wire.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\DnsReader;
 use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer,DnsQuery,DnsContext};
@@ -28,4 +29,18 @@ $host=hash('sha256','data.iana.org');DB::table('domains_public_rdap_pool')->wher
 $now+=60;DB::table('domains_watch_work')->where('kind','expiry')->update(['due_at'=>$now]);$before=$wire;
 expect($observer->observe($id,$uid),'Bootstrap circuit does not block saved registry route');same($before+1,$wire,'Only domain request during IANA backoff');
 expect(!(new WatchRegistryProjection())->read($id,$uid,$now)['stale'],'Independent registry endpoint remains fresh');
+// Use the default pinned transport to distinguish failed empty replies from completed 404s across retries.
+$nativeObserver=new WatchRegistryObserver($checks,$dns,function()use(&$now){return $now;});
+$rdapCalls=0;$rdapStatus=404;
+foreach ([[CURLE_RECV_ERROR,'','unknown'],[CURLE_RECV_ERROR,'{"errorCode":404','unknown'],[CURLE_OK,'','not_registered'],[CURLE_RECV_ERROR,'{"errorCode":404}','not_registered'],[CURLE_RECV_ERROR,'','unknown']] as [$rdapErrno,$rdapBody,$expected]) {
+    $now+=100000;
+    DB::table('domains_watch_schedule')->where('scope','bootstrap')->update(['due_at'=>$now+604800]);
+    DB::table('domains_watch_work')->where('kind','expiry')->update(['due_at'=>$now,'backoff_until'=>null]);
+    expect($nativeObserver->observe($id,$uid),'Default transport records each retry');
+    $latest=Paymenter\Extensions\Servers\Domains\Models\WatchRegistryObservation::orderByDesc('id')->firstOrFail();
+    same($expected,$latest->result,'Watch records unknown for incomplete failed 404s');
+    same($expected==='unknown'?'endpoint_failed':'not_registered',$latest->reason,'Watch preserves retryable failure reason');
+    same('2028-01-01',(new WatchRegistryProjection())->read($id,$uid,$now)['expiry'],'Failed or absent lookup retains last good expiry');
+}
+same(5,$rdapCalls,'Each watch cycle performs one bounded HTTP exchange');
 $nativeSuccessful=true;echo "Registry observer uses injected DNS, shared public slots, retained bootstrap and independent outage facts.\n";

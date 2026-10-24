@@ -150,10 +150,10 @@ final class Rdap
         return $this->send($url, min(8000, $timeout), $addresses);
     }
 
-    private static function completedStatus(bool $ok, int $errno, int $status): ?int
+    private static function completedStatus(bool $ok, int $errno, int $status, string $body): ?int
     {
-        // Some registry servers close the connection uncleanly after a close-delimited 404.
-        return $ok || ($errno === CURLE_RECV_ERROR && $status === 404) ? $status : null;
+        // An unclean close proves absence only when a complete RDAP error object arrived.
+        return $ok || ($errno === CURLE_RECV_ERROR && $status === 404 && $body !== '' && self::missing($body)) ? $status : null;
     }
 
     private function send(string $url, int $timeout, ?array $pins = null): array
@@ -193,7 +193,7 @@ final class Rdap
             }]);
         try {
             $ok = curl_exec($curl) !== false;
-            $status = self::completedStatus($ok, curl_errno($curl), curl_getinfo($curl, CURLINFO_RESPONSE_CODE));
+            $status = self::completedStatus($ok, curl_errno($curl), curl_getinfo($curl, CURLINFO_RESPONSE_CODE), $body);
             if ($status === null) { throw new RuntimeException('Lookup response is unavailable.'); }
             return ['status' => $status, 'body' => $body, 'retry_after' => $retryAfter];
         } finally { curl_close($curl); }
