@@ -25,7 +25,7 @@ foreach(['operation'=>Operation::class,'domain'=>Domain::class] as $kind=>$model
 }
 $legacy=$new(reservedFixtureName('retained-binding.example.com'));$d=$legacy->domain;
 $identity=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d);$identity['server_id']=(string)$binding->serverId;
-$inventory=['identity'=>$identity,'families'=>['glue'=>['state'=>'partial','records'=>['ns.retained-binding.example.com'=>'8.8.8.8']]]];
+$inventory=['identity'=>$identity,'families'=>['glue'=>['state'=>'partial','records'=>['ns.retained-binding.example.com'=>'192.0.2.1']]]];
 $d->update(['observation'=>['record_hold'=>['identity'=>$identity],'record_failure'=>['identity'=>$identity],'records'=>$inventory]]);
 $numeric=true;$retained=Domain::findOrFail($d->id);
 expect(\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($retained),'Legacy numeric-string observation hold survives acquisition normalization');
