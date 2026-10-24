@@ -158,10 +158,10 @@ $ordinaryActivity=Livewire::actingAs($viewer)->test(RequestsRelationManager::cla
 $ordinaryActivity->assertCanSeeTableRecords([$active->operations()->sole()])->assertDontSee('Review retained evidence');
 DB::table('domains_operations')->where('domain_id',$active->id)->update(['safe_code'=>'unmapped_reason_code']);
 Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active,'pageClass'=>ViewDomain::class])
-    ->assertSee('unmapped_reason_code')->assertDontSee('Review retained evidence');
+    ->assertSee('Missing (unmapped_reason_code)')->assertDontSee('Review retained evidence');
 DB::table('domains_operations')->where('domain_id',$active->id)->update(['safe_code'=>'PRIVATE-UNKNOWN']);
 Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active,'pageClass'=>ViewDomain::class])
-    ->assertSee('Review retained evidence')->assertDontSee('PRIVATE-UNKNOWN');
+    ->assertSee('Missing')->assertDontSee('Review retained evidence')->assertDontSee('PRIVATE-UNKNOWN');
 DB::table('domains_operations')->where('domain_id',$active->id)->update(['domain_id'=>$held->id,'safe_code'=>'PRIVATE-FORGED-CODE']);
 $activity=Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$held,'pageClass'=>ViewDomain::class]);
 $activity->assertCountTableRecords(1);
@@ -174,11 +174,11 @@ Livewire::actingAs($customer)->test(ViewDomain::class,['record'=>$held->id])->as
 Auth::setUser($customer);
 try { DomainFacts::for($held); expect(false,'Customer read denied'); } catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(403,$e->getStatusCode(),'Support default deny'); }
 Auth::setUser($viewer); $op=$held->operations()->first();
-$op->safe_code='PRIVATE-UNKNOWN'; same('Review retained evidence',RequestFacts::for($op)['reason'],'Unknown private strings never echo');
+$op->safe_code='PRIVATE-UNKNOWN'; same('Missing',RequestFacts::for($op)['reason'],'Unknown private strings never echo');
 foreach(['provider exception: secret','<script>secret</script>',"read_failed\nsecret",str_repeat('a',65),'unsafe__code','_unsafe'] as $invalid){
-    same('Review retained evidence',Labels::reason($invalid),'Invalid reason strings remain hidden');
+    same('Missing',Labels::reason($invalid),'Invalid reason strings remain hidden');
 }
-same(str_repeat('a',64),Labels::reason(str_repeat('a',64)),'Safe code length boundary remains visible');
+same('Missing ('.str_repeat('a',64).')',Labels::reason(str_repeat('a',64)),'Safe code length boundary remains visible');
 $op->safe_code='transfer_provider_rejected'; $op->funding=['refund'=>['private'=>'PRIVATE-CREDIT']];
 $facts=RequestFacts::for($op);
 expect(str_contains($facts['registrar_refund'],'manual'),'NameSilo manual refund indicator');
@@ -197,6 +197,9 @@ foreach ([\Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::class,\P
     foreach($enum::cases() as $reason){$emitted[$reason->value][]=$enum;}
 }
 foreach(\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::CODES as $code){$emitted[$code][]='ReadFailure::CODES';}
+// Driver results and the demo seed's held and uncertain requests store these codes on requests too.
+foreach(\Paymenter\Extensions\Servers\Domains\Data\ResultReason::cases() as $reason){$emitted[$reason->value][]='ResultReason';}
+foreach(['configuration_unavailable','unverified','authority_changed'] as $code){$emitted[$code][]='request safe_code';}
 // Tokenize expressions so multiline ternaries, double quotes, comments and nested arrays do not hide codes.
 $inventory=static function(string $source):array{
     $tokens=array_values(array_filter(token_get_all($source),fn($t)=>!is_array($t)||!in_array($t[0],[T_WHITESPACE,T_COMMENT,T_DOC_COMMENT],true)));
@@ -288,8 +291,15 @@ foreach($holds[1] as $code){$emitted[$code][]='WriteHeld whitelist';}
 $missing=array_diff_key($emitted,$mapped);ksort($missing);
 expect($missing===[],'Service reason codes need explicit staff mappings: '.json_encode($missing));
 echo 'Explicit staff reason mapping coverage: '.count($emitted)." codes.\n";
-same('future_reason_code',Labels::reason('future_reason_code'),'Unknown reason code stays visible');
-same('Review retained evidence',Labels::reason(null),'Absent reason keeps the existing label');
+// Every known reason has its own cause text. An unknown one is Missing, with its safe code for staff.
+preg_match_all("/'([a-z][a-z0-9_]*)'\\s*=>/",preg_split('/\\n    (?:public|private) static function /',$reasonSource,2)[0],$known);
+expect(count($known[1])>150,'Known reasons come from the reason() map');
+foreach($known[1] as $code){ $label=Labels::reason($code);
+    expect(!str_starts_with($label,'Missing')&&$label!==$code&&$label!=='Review retained evidence','Known reason has cause text: '.$code); }
+same("Not sent: couldn't load the registrar account's settings",'Not sent: '.lcfirst(Labels::reason('configuration_unavailable')),'Held demo request reads as status-model.md 2.2');
+same('Registrar has not confirmed the result',Labels::reason('unverified'),'Uncertain demo request reads as status-model.md 2.2');
+same('Missing (future_reason_code)',Labels::reason('future_reason_code'),'Unknown reason code is Missing with the code');
+same('Missing',Labels::reason(null),'Absent reason is Missing');
 $op->attempt=['execution'=>null]; expect(str_contains(RequestFacts::for($op)['outcome'],'unknown'),'Null execution remains unknown');
 $ordinary=clone $op; $ordinary->state='succeeded'; $ordinary->safe_code=null; $ordinary->attempt=[]; $ordinary->policy=[]; $ordinary->funding=[];
 same(['Customer credit: not assessed'],RequestFacts::review($ordinary),'Ordinary rows omit default warning, empty corrections and zero audit');

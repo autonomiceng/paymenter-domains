@@ -60,7 +60,7 @@ final class Labels
     }
     public static function reason(?string $value): string
     {
-        // Stored safe codes retain their cause when a label has not been added yet.
+        // Each known code has its own cause text. Unknown codes are Missing (see unknownReason).
         return ['staff_review_required'=>'Staff review required','contact_details_required'=>'Contact details required','transfer_code_required'=>'Transfer code required',
             'transfer_code_timeout'=>'Transfer code deadline passed','transfer_not_registered'=>'Registry found no domain',
             'transfer_needs_action'=>'Transfer needs attention','transfer_provider_rejected'=>'Registrar rejected transfer',
@@ -134,7 +134,16 @@ final class Labels
             'catalogue_reader_unavailable'=>'Catalogue reader unavailable','catalogue_acceptance_unavailable'=>'Catalogue acceptance unavailable',
             'catalogue_acceptance_changed'=>'Catalogue acceptance changed','catalogue_evidence_missing'=>'Catalogue evidence missing',
             'catalogue_evidence_invalid'=>'Catalogue evidence invalid','catalogue_import_failed'=>'Catalogue import failed','catalogue_interrupted'=>'Catalogue refresh interrupted',
-            'awaiting_acceptance'=>'Awaiting feature acceptance'][$value] ?? (is_string($value) && strlen($value) <= 64 && preg_match('/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/D', $value) ? $value : 'Review retained evidence');
+            'awaiting_acceptance'=>'Awaiting feature acceptance','configuration_unavailable'=>"Couldn't load the registrar account's settings",
+            'unverified'=>'Registrar has not confirmed the result','unsent'=>'Not sent to the registrar','acknowledged'=>'Registrar accepted the request',
+            'fallback'=>'Registrar returned an unexpected result','proven_rejected'=>'Registrar rejected the request',
+            'unsupported'=>'Registrar does not support this request','authority_changed'=>'Renewal authority changed'][$value] ?? self::unknownReason($value);
+    }
+    /** Missing, plus the code when it is a safe snake_case code, so staff can report it. Other strings never echo. */
+    private static function unknownReason(?string $value): string
+    {
+        return is_string($value) && strlen($value) <= 64 && preg_match('/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/D', $value) ? \Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL.' ('.$value.')'
+            : \Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL;
     }
     public static function flag(mixed $value): string { return match ($value) { true=>'Yes', false=>'No', default=>'Unknown' }; }
     public static function money(mixed $value): string
