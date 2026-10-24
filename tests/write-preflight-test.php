@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, Cos
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, DomainOperations, OperationClaims, RegistrarFactories, RegistrarRegistry, RegistrationPreflight, WriteAcceptance, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 $op = $new(placeholderComFixtureName('fresh-preflight-placeholder.com')); $query = OperationClaims::query($op, $op->domain);
-$state = (object) ['calls' => 0, 'change' => '', 'revoke' => false];
+$state = (object) ['calls' => 0, 'change' => '', 'revoke' => false, 'readers'=>[]];
 $verifier = new class implements AccountVerifier {
     public function verify(Environment $e, #[SensitiveParameter] array $credentials): string { return 'verified-stable-id'; }
 };
@@ -22,9 +22,10 @@ $registry->register('enom', ['token'], $verifier, static function (AccountBindin
     $quote = new QuoteEvidence($state->change === 'term' ? new Query($query->name, $query->action, 3) : $query,
         $state->change === 'cost' ? null : $cost, CostUnit::TermTotal, 'synthetic', $observed, $clock->now()->modify('+120 seconds'));
     if ($state->revoke) { CatalogueAcceptances::save($b, 1, []); }
-    return new FakeRegistrar($b, new Capabilities($b, []), new DriverResult($b, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
+    $reader = new FakeRegistrar($b, new Capabilities($b, []), new DriverResult($b, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
         new Evidence(quote: $quote, balance: $state->change === 'balance' ? null : $balance,
             available: $state->change === 'available' ? null : true, premium: $state->change === 'premium' ? null : false)));
+    $state->readers[]=$reader;return $reader;
 });
 $freshBindings = new AccountBindings($registry); $features = new WriteFeatures(registration: true);
 $acceptance = new WriteAcceptance($enomBinding, true, true, 25);
@@ -35,6 +36,9 @@ foreach (['precision', 'low', 'currency', 'cost', 'balance', 'stale', 'term', 'a
 }
 $state->change = ''; $context = $ctx(); $ready = $fresh->inspect($op, $op->domain, $context);
 same('99.00', $ready->cost->amount, 'Fresh cost can exceed frozen retail; no dispatch floor'); same(1, $context->budget->remaining(), 'Three bounded preflight reads');
+$balanceRow=DB::table('domains_registrar_balances')->where('server_id',$op->server_id)->where('account_fingerprint',$op->account_fingerprint)->sole();
+same(['100.00','USD',null,'preflight'],[$balanceRow->amount,$balanceRow->currency,$balanceRow->last_error_code,$balanceRow->source],'Successful registration preflight retains exact balance');
+same(['availability','quote','balance'],end($state->readers)->calls,'Successful preflight performs exactly one balance read');
 $before = $state->calls;
 commerceReject(fn () => (new RegistrationPreflight($freshBindings, new WriteFeatures, $acceptance))->inspect($op, $op->domain, $ctx()));
 commerceReject(fn () => (new RegistrationPreflight($freshBindings, $features, new WriteAcceptance($enomBinding)))->inspect($op, $op->domain, $ctx()));
@@ -50,4 +54,4 @@ $production = new RegistrarRegistry; RegistrarFactories::install($production, $v
 same(['uid', 'token'], $production->credentialKeys('enom'), 'Production Enom schema'); same(['api_key'], $production->credentialKeys('namesilo'), 'Production NameSilo schema');
 [$verified] = $production->verify('namesilo', 999, Environment::Test, ['api_key' => 'synthetic']);
 same('namesilo', $verified->registrarKey, 'Positive verifier required; no credential identity fallback');
-echo "Fresh registration preflight, precision and seal acceptance checks passed\n"; expect(Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('source','preflight')->exists(),'Existing balance path records without extra reads'); $nativeSuccessful = true;
+echo "Fresh registration preflight, precision and seal acceptance checks passed\n"; $nativeSuccessful = true;

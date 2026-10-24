@@ -4,25 +4,41 @@ declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 require __DIR__.'/Support/adoption-wire.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RequestContext, RequestBudget, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{AdoptionReadCommand, AdoptionTransport, Client, ManagementCommand, ReadCommand, RegistrationCommand};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{AdoptionReadCommand, AdoptionTransport, Client, ReadCommand};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader;
 
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');
 $clock = new AdoptionClock; $wire = new AdoptionWire; $gate = new AdoptionTransport($wire);
 same(['GetDomainInfo', 'GetDomainExp', 'GetRenew', 'GetExtendInfo'], array_column(AdoptionReadCommand::cases(), 'value'), 'Exact adoption v1 vocabulary');
-// Test every general command individually, including every locally modeled write.
-$excluded = array_merge(array_filter(ReadCommand::cases(), fn ($c) => AdoptionReadCommand::tryFrom($c->value) === null),
-    RegistrationCommand::cases(), ManagementCommand::cases(),
-    ['SetContacts', 'SetDNS', 'SetNS', 'SetWPPSInfo', 'GetAuthInfo', 'SendAuthInfo', 'GetPOP3', 'GetEmailForward', 'GetWhoisContact']);
-foreach ($excluded as $command) {
+$refuse = static function (callable $send, string $type, string $message) use ($wire): void {
     $before = count($wire->calls);
-    try { $gate->send(Environment::Test, $command, ['SLD' => 'example', 'TLD' => 'com'], 'synthetic-uid', 'synthetic-secret', 25000); }
-    catch (Throwable) {}
-    same($before, count($wire->calls), 'Excluded command never reaches wire: '.(is_string($command) ? $command : $command->value));
+    try { $send(); } catch (Throwable $error) {
+        same($type, $error::class, 'Exact adoption gate exception');
+        same($message, $error->getMessage(), 'Exact adoption gate reason');
+        same($before, count($wire->calls), 'Refusal never reaches transport');
+        return;
+    }
+    throw new RuntimeException('Expected adoption gate refusal');
+};
+// Only valid ReadCommand values reach the allowlist predicate.
+foreach (ReadCommand::cases() as $command) {
+    if (AdoptionReadCommand::tryFrom($command->value) !== null) { continue; }
+    $refuse(fn () => $gate->send(Environment::Test, $command, [], 'synthetic-uid', 'synthetic-secret', 25000),
+        DomainException::class, 'Adoption command refused.');
 }
 foreach ([['Command' => 'SetRenew'], ['SLD' => 'example', 'TLD' => 'com', 'Command' => 'Purchase']] as $parameters) {
-    try { $gate->send(Environment::Test, ReadCommand::Info, $parameters, 'synthetic-uid', 'synthetic-secret', 25000); } catch (Throwable) {}
-    same(0, count($wire->calls), 'Credential or command parameter injection refused');
+    $refuse(fn () => $gate->send(Environment::Test, ReadCommand::Info, $parameters, 'synthetic-uid', 'synthetic-secret', 25000),
+        InvalidArgumentException::class, 'Invalid named read parameters.');
+}
+foreach ([0, 25001] as $timeout) {
+    $refuse(fn () => $gate->send(Environment::Test, ReadCommand::Info, ['SLD'=>'example','TLD'=>'com'], 'synthetic-uid', 'synthetic-secret', $timeout),
+        DomainException::class, 'Adoption timeout refused.');
+}
+foreach ([new RuntimeException('Synthetic transport failure'), new DomainException('Synthetic transport refusal')] as $failure) {
+    $fake = new AdoptionWire;
+    $fake->during = static function () use ($failure): void { throw $failure; };
+    same('read_failed', (new EnomAdoptionReader($binding, 'synthetic-uid', 'synthetic-secret', $fake, $clock))->read('example.com', 'com')->facts()['refusal'], 'Transport exception is a failed read');
+    same(['GetDomainInfo'], array_column($fake->calls, 0), 'Transport failure stops after exactly one exchange');
 }
 $reader = new EnomAdoptionReader($binding, 'synthetic-uid', 'synthetic-secret', $wire, $clock);
 $facts = $reader->read('example.com', 'com')->facts();
@@ -43,7 +59,7 @@ foreach ([
 ] as [$command, $from, $to, $reason]) {
     $fake = new AdoptionWire; $fake->payloads[$command] = str_replace($from, $to, $fake->payloads[$command]);
     same($reason, (new EnomAdoptionReader($binding, 'synthetic-uid', 'synthetic-secret', $fake, $clock))->read('example.com', 'com')->facts()['refusal'], $reason.' refused');
-    expect(count($fake->calls) <= 4, 'No failure retry');
+    same($command === 'GetDomainInfo' ? 1 : 4, count($fake->calls), 'Exact failure read count without retry');
 }
 foreach (['10/19/2025' => 'expired', '10/19/2037' => 'state_unconfirmed'] as $day => $reason) {
     $fake = new AdoptionWire;

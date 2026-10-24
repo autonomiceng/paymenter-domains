@@ -16,6 +16,20 @@ $refused=static function(#[SensitiveParameter] callable $work,string $reason):vo
         foreach(['secret-uid','secret-token','9876.54'] as $secret){expect(!str_contains($text,$secret),'Redacted identity exception');}
     }
 };
+$parser=new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ResponseParser;
+$text='<errors><Err1>Bad User name or Password</Err1></errors>';
+$code='<responses><response><ResponseNumber>304155</ResponseNumber></response></responses>';
+foreach ([$text,$code] as $signal) {
+    $reply=$parser->parse(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Balance,
+        \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\identityXml($signal,'1'));
+    same(['rejected','identity_credentials_refused'],[$reply->status,$reply->code],'Each credential-refusal signal independently classifies');
+}
+foreach ([[$text,'0'],[$code,'0'],[$text,'2'],[$code,'2'],['<errors><Err1>Unrelated failure</Err1></errors>','1'],
+    ['<responses><response><ResponseNumber>304156</ResponseNumber></response></responses>','1']] as [$signal,$count]) {
+    $reply=$parser->parse(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Balance,
+        \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\identityXml($signal,$count));
+    expect($reply->code!=='identity_credentials_refused','Unrelated errors and non-single error counts do not claim credential refusal');
+}
 $credentials=['uid'=>'secret-uid','token'=>'secret-token'];
 same('secret-uid',$verifier->verify(Environment::Test,$credentials),'Authenticated UID is canonical identity');
 foreach([['uid'=>'wrong-uid','token'=>'secret-token'],['uid'=>'secret-uid','token'=>'wrong-token']] as $bad){$refused(fn()=>$verifier->verify(Environment::Test,$bad),'identity_credentials_refused');}

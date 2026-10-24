@@ -4,6 +4,11 @@ declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/transfer-dispatch-fixture.php';
 $assertTransferDispatch(0);
+$balanceRow=Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->sole();
+same(['100.00','USD',null,'preflight'],[$balanceRow->amount,$balanceRow->currency,$balanceRow->last_error_code,$balanceRow->source],'Successful transfer preflight retains exact account balance');
+same(2,$state->reads,'Transfer performs exactly two fresh preflight reader acquisitions');
+foreach(array_slice($state->readers,-2) as $reader){same(1,count(array_filter($reader->calls,fn($call)=>$call==='balance')),'Each transfer observation reads balance exactly once');}
+
 $state->mode='';
 $op=$newTransfer(placeholderComFixtureName('rdap-unchecked-placeholder.com')); $makeTransfer(); $state->rdapUnknown=true; $r=$engine->execute($op->id);
 same(true,$r->attempt['transfer_admission']['rdap_unchecked'],'Explicit unchecked provenance'); same(null,$r->attempt['transfer_admission']['base_expiry'],'Missing baseline never inferred');
@@ -14,5 +19,4 @@ foreach (['nested'=>'7001','top'=>'7001','agree'=>'7001','conflict'=>null] as $s
     same(null,$r->provider_order_id,'Transfer reference never becomes a billing order ID');
 }
 $state->createShape='nested';
-expect(Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('source','preflight')->exists(),'Existing balance path records without extra reads');
 echo "Enom transfer one-use dispatch, RDAP provenance and order references passed.\n"; $nativeSuccessful=true;

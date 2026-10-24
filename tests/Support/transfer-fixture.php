@@ -15,7 +15,7 @@ if (($transferEnvironment??Environment::Test)===Environment::Live) { config(['ap
 extract(commerceFixture(true,environment:$transferEnvironment??Environment::Test)); $clock = new FakeClock($now);
 $guard=new Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices),$clock); $guard->boot();
 Carbon\Carbon::setTestNow($now); Carbon\CarbonImmutable::setTestNow($now); ContactProfileSchema::install();
-$state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false,'createShape'=>'nested','enomOrigin'=>($transferEnvironment??Environment::Test)===Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'];
+$state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'readers'=>[],'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false,'createShape'=>'nested','enomOrigin'=>($transferEnvironment??Environment::Test)===Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'];
 foreach ($tlds as $tld) { App\Models\Server::find($tld->server_id)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']); }
 $rdap = new Rdap(static function ($url) use ($state): array {
     same(0, DB::transactionLevel(), 'RDAP outside financial locks'); $state->rdap++;
@@ -47,8 +47,9 @@ foreach (['enom','namesilo'] as $key) {
         same(0,DB::transactionLevel(),'Fresh reads outside locks'); $state->reads++;
         if ($state->during) { ($state->during)($state->reads); }
         $q = new QuoteEvidence($state->query,new Money('99.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
-        return new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
+        $reader = new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
             new Evidence(quote:$q,balance:new Money($state->funds,'USD'),available:$state->available,premium:$state->premium)));
+        $state->readers[]=$reader;return $reader;
     });
 }
 $freshBindings = new AccountBindings($registry); $claims = new OperationClaims($bindings,$clock);

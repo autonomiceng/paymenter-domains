@@ -57,6 +57,10 @@ $decision = $check(); same(RenewalCode::Admitted, $decision->code, 'Ordinary kno
 same(RenewalStatus::Ordinary, $decision->status, 'Ordinary state retained'); same('8.9500', $decision->cost->amount, 'Exact cost retained');
 $admissionReads = [ReadCommand::Info, ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Balance];
 same($admissionReads, $state->calls, 'Ordinary renewal uses exactly six fresh reads');
+$balanceRow=DB::table('domains_registrar_balances')->where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->sole();
+same(['100.00','USD',null,'renewal'],[$balanceRow->amount,$balanceRow->currency,$balanceRow->last_error_code,$balanceRow->source],'Successful renewal retains exact balance');
+same(1,count(array_filter($state->calls,fn($call)=>$call===ReadCommand::Balance)),'Renewal admission has one balance exchange');
+
 foreach (['owner' => ['foreign', RenewalCode::Owner, 4], 'id' => ['999', RenewalCode::Owner, 5],
     'expiry' => ['10/19/2027 5:00:00 AM', RenewalCode::Anchor, 5],
     'same_day_expiry' => ['10/18/2027 5:00:01 AM', RenewalCode::Anchor, 5]] as $case => [$value, $code, $count]) {
@@ -242,4 +246,4 @@ expect(!$check()->allowed(), 'Expired bounded read window refuses');
 $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');
 $domain->refresh()->update(['renewal_policy' => [...$domain->renewal_policy, 'automatic_spend_paused' => true]]);
 same(RenewalCode::Paused, $check()->code, 'Automatic-spend pause respected'); same([], $state->calls, 'Paused admission performs no reads');
-echo "Renewal admission ordinary/grace/restore, exact costs and locked authority passed\n"; expect(Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('source','renewal')->exists(),'Existing balance path records without extra reads'); $nativeSuccessful = true;
+echo "Renewal admission ordinary/grace/restore, exact costs and locked authority passed\n"; $nativeSuccessful = true;

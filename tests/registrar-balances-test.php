@@ -69,6 +69,31 @@ $failedReader=new FakeRegistrar($binding,new Capabilities($binding,[]),$failed);
 $context=new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new RequestBudget(1),$clock);
 expect(BalanceReads::read($failedReader,$context,'preflight')===$failed,'Recording preserves the exact failed driver result for existing guards');
 same(['balance'],$failedReader->calls,'Failed balance result is read exactly once');same('7.99',$row($a)->amount,'Failed provider result retains the last balance');
+foreach ([new \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred('Synthetic deferred'),
+    new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit, new RuntimeException('Synthetic failure')] as $failure) {
+    BalanceReads::record($binding,new Money('7.99','USD'),$clock->now(),'manual'); $before=(array)$row($a);
+    $throwing=new class($binding,$failure) implements \Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver {
+        public int $calls=0;
+        public function __construct(private AccountBinding $account,private Throwable $failure){}
+        public function binding():AccountBinding{return $this->account;}
+        public function balance(RequestContext $c):DriverResult{$this->calls++;throw $this->failure;}
+        public function accountCapabilities(RequestContext $c):Capabilities{throw new LogicException('Unused');}
+        public function quote(\Paymenter\Extensions\Servers\Domains\Data\Query $q,RequestContext $c):DriverResult{throw new LogicException('Unused');}
+        public function availability(\Paymenter\Extensions\Servers\Domains\Data\Query $q,RequestContext $c):DriverResult{throw new LogicException('Unused');}
+        public function readDomain(string $n,RequestContext $c):DriverResult{throw new LogicException('Unused');}
+        public function readRenewalDomain(string $n,RequestContext $c):DriverResult{throw new LogicException('Unused');}
+        public function renewalAssessment(\Paymenter\Extensions\Servers\Domains\Data\Query $q,RequestContext $c):DriverResult{throw new LogicException('Unused');}
+        public function reconcile(\Paymenter\Extensions\Servers\Domains\Data\AttemptEvidence $a,RequestContext $c):\Paymenter\Extensions\Servers\Domains\Data\ReconciliationResult{throw new LogicException('Unused');}
+    };
+    try{BalanceReads::read($throwing,$context,'preflight');throw new LogicException('Expected exact balance exception');}
+    catch(Throwable $caught){expect($caught===$failure,'Balance exception identity is preserved');}
+    same(1,$throwing->calls,'Throwing balance is called exactly once');
+    if($failure instanceof RuntimeException){
+        same('7.99',$row($a)->amount,'Ordinary throw retains amount');same('USD',$row($a)->currency,'Ordinary throw retains currency');
+        same($before['read_at'],$row($a)->read_at,'Ordinary throw preserves last successful read');
+        same('read_failed',$row($a)->last_error_code,'Ordinary throw records failure');same('preflight',$row($a)->source,'Failure records attempted source');
+    }else{same($before,(array)$row($a),'Local deferral and TEST cap retain the entire last successful row');}
+}
 BalanceReads::record($binding,new Money('8.00','USD'),$clock->now()->modify('-1 second'),'manual');
 same('read_failed',$row($a)->last_error_code,'Old completion cannot replace newer failure');
 $rate=Price::where('server_id',$a->server_id)->where('action','renew')->sole();$saved=$rate->wholesale;
