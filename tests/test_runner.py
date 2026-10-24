@@ -191,6 +191,7 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
             path = root/'Domains/Probe.php'; path.write_text('<?php')
+            os.utime(path, ns=(1_000_000_000, 1_000_000_000))
             def execute(argv, **kwargs):
                 path.write_text('changed'); path.write_text('<?php')
                 return b'restored', b'', 0, False
@@ -238,6 +239,25 @@ class RunnerTests(unittest.TestCase):
             Path(workers[1]['PAYMENTER_TEST_PHP']).write_text('binary')
             Path(workers[1]['PAYMENTER_TEST_FIXTURE'], 'vendor/autoload.php').write_text('changed')
             with self.assertRaises(ValueError): runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
+
+    def test_worker_copies_use_canonical_paths_under_a_linked_output_parent(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            alias = root/'alias'; alias.symlink_to(root, target_is_directory=True)
+            output = alias/'output'; output.mkdir()
+            fixture = root/'fixture'; (fixture/'vendor').mkdir(parents=True)
+            (fixture/'vendor/autoload.php').write_text('<?php')
+            runtime = root/'runtime'; (runtime/'usr/bin').mkdir(parents=True)
+            (runtime/'usr/bin/php8.4').write_text('binary')
+            env = {'PAYMENTER_TEST_FIXTURE': str(fixture),
+                   'PAYMENTER_TEST_PHP': str(runtime/'usr/bin/php8.4')}
+            workers, fixture_snapshot, runtime_snapshot = runner.test_workers.environments(env, output, 2, runtime)
+            for worker in workers:
+                for key in ['PAYMENTER_TEST_FIXTURE', 'PAYMENTER_TEST_PHP', 'TMPDIR']:
+                    path = Path(worker[key])
+                    self.assertEqual(path, path.resolve())
+                    self.assertTrue(path.is_relative_to(root/'output/workers'))
+            runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
 
     def test_worker_dependency_guard_failure_preserves_results(self):
         with tempfile.TemporaryDirectory() as temp:

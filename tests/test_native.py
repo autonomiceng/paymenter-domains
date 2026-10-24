@@ -97,7 +97,7 @@ class NativeGuardTests(unittest.TestCase):
                            'broken': parent/'missing', 'loop': root/'linked', 'nested': parent/'outside/file'}
                 link = root/'nested/linked' if shape == 'nested' else root/'linked'
                 link.parent.mkdir(exist_ok=True); link.symlink_to(targets[shape])
-                with self.assertRaises(ValueError): native.hashes(root)
+                with self.assertRaisesRegex(ValueError, r'^Dependency symlinks are not accepted\.$'): native.hashes(root)
 
     def test_worker_fixture_keeps_pristine_files_and_exact_vendor_inventory(self):
         for failure in ['source', 'file_link', 'parent_link', 'vendor', 'added', 'missing', 'vendor_link', 'nested_link']:
@@ -118,7 +118,11 @@ class NativeGuardTests(unittest.TestCase):
                 if failure == 'added': (root/'vendor/extra.php').write_text('<?php')
                 if failure == 'missing': (root/'vendor/autoload.php').unlink()
                 if failure == 'nested_link': (root/'vendor/extra').symlink_to(root/'generated')
-                with self.assertRaises(ValueError): native.verify(root, fixture_snapshot=snapshot)
+                expected = (r'Fixture dependency changed: config/app\.php' if failure == 'source'
+                            else r'Fixture dependency path is linked\.' if failure in ['file_link', 'parent_link', 'vendor_link']
+                            else r'Dependency symlinks are not accepted\.' if failure == 'nested_link'
+                            else r'Fixture vendor inventory changed\.')
+                with self.assertRaisesRegex(ValueError, '^'+expected+'$'): native.verify(root, fixture_snapshot=snapshot)
 
     @unittest.skipUnless(os.environ.get('PAYMENTER_TEST_FIXTURE'), 'native fixture not selected')
     def test_rendered_native_exception_has_failure_exit(self):
@@ -129,10 +133,10 @@ class NativeGuardTests(unittest.TestCase):
         self.assertIn(b'synthetic native failure', result.stdout + result.stderr)
 
     def test_relative_or_symlink_source_refused(self):
-        with self.assertRaises(ValueError): native.verify(Path('relative'))
+        with self.assertRaisesRegex(ValueError, r'^Use a canonical pristine development dependency\.$'): native.verify(Path('relative'))
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'alias').symlink_to(root, target_is_directory=True)
-            with self.assertRaises(ValueError): native.verify(root/'alias')
+            with self.assertRaisesRegex(ValueError, r'^Use a canonical pristine development dependency\.$'): native.verify(root/'alias')
 
 
 if __name__ == '__main__':

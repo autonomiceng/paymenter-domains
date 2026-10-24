@@ -41,6 +41,7 @@ def environment(index, *, env, output, runtime, fixture, fixture_snapshot, runti
 
 
 def environments(env, output, jobs, runtime=None):
+    output = output.resolve()
     fixture = Path(env['PAYMENTER_TEST_FIXTURE']) if env.get('PAYMENTER_TEST_FIXTURE') else None
     fixture_snapshot = native.hashes(fixture) if fixture else None
     runtime_snapshot = runtime_hashes(runtime) if runtime else None
