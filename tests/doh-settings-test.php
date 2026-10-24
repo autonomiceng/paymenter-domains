@@ -35,7 +35,7 @@ $row = Setting::where('key', DnsResolverSettings::KEY)->sole(); $row->encrypted 
 same(null, $settings->configuration()[0], 'Unencrypted setting refused'); $settings->save(DohEndpoint::URL, DohEndpoint::IP);
 try { $settings->save('http://example.com', '1.1.1.1'); expect(false, 'Invalid setting refused at write'); } catch (InvalidArgumentException) {}
 same(DohEndpoint::URL, $settings->configuration()[0]->url, 'Invalid save preserves setting');
-foreach (['::ffff:10.0.0.1', '::ffff:127.0.0.1', '::127.0.0.1', '64:ff9b::a00:1'] as $ip) {
+foreach (['::ffff:10.0.0.1', '::ffff:127.0.0.1', '::127.0.0.1', '64:ff9b::a00:1','64:ff9b:1::','64:ff9b:1:ffff:ffff:ffff:ffff:ffff','0064:FF9B:0001:ABCD:0000:0000:0A00:0001'] as $ip) {
     $endpointRefused=$settingsRefused=false;
     try { new DohEndpoint(DohEndpoint::URL,$ip); } catch (InvalidArgumentException) { $endpointRefused=true; }
     try { $settings->save(DohEndpoint::URL,$ip); } catch (InvalidArgumentException) { $settingsRefused=true; }
@@ -44,6 +44,9 @@ foreach (['::ffff:10.0.0.1', '::ffff:127.0.0.1', '::127.0.0.1', '64:ff9b::a00:1'
     $saved=Setting::where('key',DnsResolverSettings::KEY)->sole();$saved->value=json_encode(['url'=>DohEndpoint::URL,'ip'=>$ip]);$saved->save();
     same(null,$settings->configuration()[0],'Retained nonpublic embedded IPv4 refuses at read: '.$ip);
     $settings->save(DohEndpoint::URL,DohEndpoint::IP);
+}
+foreach(['64:ff9b:0:ffff::1','64:ff9b:2::1','2606:4700:4700::1111'] as $ip){
+    same($ip,(new DohEndpoint(DohEndpoint::URL,$ip))->ip,'Adjacent global prefix remains eligible: '.$ip);
 }
 
 staffPanel(); $panel = Filament::getCurrentPanel(); $panel->resources([WatchResource::class]);
@@ -66,7 +69,7 @@ foreach ([fn() => $cachedCheck(), fn() => $cachedSave(['url' => DohEndpoint::URL
 }
 same(0, $calls, 'Revocation starts no query'); $setRights($rights);
 Livewire::actingAs($staff)->test(Page::class)->mountAction('configure')->setActionData(['url' => 'http://resolver-placeholder.org', 'ip' => '127.0.0.1'])->callMountedAction()->assertHasActionErrors(['url', 'ip']);
-foreach (['::ffff:10.0.0.1','::ffff:127.0.0.1','::127.0.0.1','64:ff9b::a00:1'] as $ip) {
+foreach (['::ffff:10.0.0.1','::ffff:127.0.0.1','::127.0.0.1','64:ff9b::a00:1','64:ff9b:1::','0064:FF9B:0001:ABCD:0000:0000:0A00:0001'] as $ip) {
     Livewire::actingAs($staff)->test(Page::class)->mountAction('configure')->setActionData(['url'=>DohEndpoint::URL,'ip'=>$ip])->callMountedAction()->assertHasActionErrors(['ip']);
 }
 Livewire::actingAs($staff)->test(Page::class)->mountAction('configure')->setActionData(['url' => DohEndpoint::URL, 'ip' => DohEndpoint::IP])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Resolver saved');

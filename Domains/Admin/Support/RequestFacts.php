@@ -18,6 +18,16 @@ final class RequestFacts
                     \Paymenter\Extensions\Servers\Domains\Services\ContactRecovery::requireReplacement($op,$l,
                         \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($l['user']),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
                 }catch(\Paymenter\Extensions\Servers\Domains\Services\ContactValidation $error){$out['contact_missing']=$error->missingMessage();}
+                catch(\DomainException $error){
+                    $out['contact_recovery']=match($error->getMessage()){
+                        'Adoption evidence unavailable; staff review required.'=>throw $error,
+                        'Contact ownership changed.','Contact recovery unavailable.','Saved transfer inputs require review.',
+                        'Contact recovery limit reached.','Holding native authority changed.','Holding checkout identity changed.',
+                        'Holding checkout route changed.','Holding product markers changed.','Domain invoice binding is not funded.',
+                        'The full invoice must remain paid.','Acquisition lifecycle changed.','This request is not proven unsent.',
+                        'Registry details are not supported for this ending.'=>$error->getMessage(),
+                        default=>'Contact recovery requires staff review.'};
+                }
             }
             $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
             $out['invoice']=$op->invoice_id ? 'Invoice #'.$op->invoice_id : null;
@@ -90,7 +100,7 @@ final class RequestFacts
             $fix=is_string($reason)&&preg_match(self::ACCOUNT_CAUSES,$reason,$m) ? match(true) {
                 $m[1]==='orders paused'=>'Resume orders', str_contains($m[1],'balance')=>'Check balance',
                 str_ends_with($m[1],'off for this account')=>'Turn on', default=>'Open Registrars'} : null;
-            return ['title'=>($reason??Labels::reason(null)).'.','body'=>$facts['contact_missing']??$facts['auto_renew']??$facts['admission']??null,'tone'=>'warning','action'=>OperationActions::relevant('release',$op)?'release':null,
+            return ['title'=>($reason??Labels::reason(null)).'.','body'=>$facts['contact_missing']??$facts['contact_recovery']??$facts['auto_renew']??$facts['admission']??null,'tone'=>'warning','action'=>OperationActions::relevant('release',$op)?'release':null,
                 'link'=>$fix?'registrars':null,'link_label'=>$fix];
         }
         return null;

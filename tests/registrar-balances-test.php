@@ -120,13 +120,14 @@ $off->update(['status'=>'retired']);same(0,$forecast()['count'],'Retired holding
 $off->update(['status'=>'active']);$off->service->update(['status'=>'cancelled']);same(0,$forecast()['count'],'Cancelled service excluded');
 $otherDomain=$make(placeholderComFixtureName('balance-other-placeholder.com'),'2026-11-01',$b);same(0,$forecast()['count'],'Forecast respects second server');$otherDomain->update(['billing_managed'=>false]);
 // Daily and manual reads use the same provider-login limiter, without requiring write activation.
-$readState=(object)['calls'=>0,'fail'=>false];$registry=new RegistrarRegistry;
+$readState=(object)['calls'=>0,'fail'=>false,'readers'=>[]];$registry=new RegistrarRegistry;
 $verify=new class implements AccountVerifier {public function verify(Environment $e,array $c):string{return $c['token'];}};
 foreach(['enom','namesilo'] as $key){$registry->register($key,['token'],$verify,static function($binding,$credentials)use($readState):FakeRegistrar {
     same(0,DB::transactionLevel(),'Balance read outside transaction');$readState->calls++;
     if($readState->fail){throw new RuntimeException('PRIVATE-PROVIDER-REPLY');}
-    return new FakeRegistrar($binding,new Capabilities($binding,[]),new DriverResult($binding,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence(balance:new Money('6.00','USD'))));
+    return $readState->readers[]=new FakeRegistrar($binding,new Capabilities($binding,[]),new DriverResult($binding,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence(balance:new Money('6.00','USD'))));
 });}
+$balanceReads=static fn()=>array_sum(array_map(static fn($reader)=>count(array_filter($reader->calls,static fn($method)=>$method==='balance')),$readState->readers));
 $manualBindings=new AccountBindings($registry);$limiter=new AccountReadBudget($clock);$balances=new RegistrarBalances($manualBindings,$clock,$limiter);
 app()->instance(Clock::class,$clock);app()->instance(RegistrarBalances::class,$balances);
 staffPanel();$panel=Filament::getCurrentPanel();$pages=[RegistrarSetup::class,RegistrarAccount::class,Page::class];$panel->pages($pages);
@@ -168,10 +169,9 @@ $assertAlerts();$balances->daily($a);$assertAlerts();
 DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0]);
 $clock->instant=$clock->now()->modify('+60 seconds');$balances->daily($a);$assertAlerts();
 same('Low balance',RegistrarBalances::facts($a,$clock->now())['status'],'Dashboard warning accompanies the native inbox alert');
-// Failed inbox persistence releases only this daily claim and never consumes the UTC day.
+// Failed inbox persistence retries delivery from the retained reading, never from another provider read.
 $notificationFailure='veto';$replacement=null;
 $clock->instant=$clock->now()->modify('+1 day');
-$successfulBefore=App\Models\Notification::where('title','Low balance')->where('user_id',$secondStaff->id)->count();
 App\Models\Notification::creating(static function($n)use(&$notificationFailure,&$replacement,$a,$staff){
     if($n->title!=='Low balance'||!$notificationFailure||(int)$n->user_id!==(int)$staff->id){return;}
     if($notificationFailure==='throw'){throw new RuntimeException('Synthetic inbox failure');}
@@ -183,17 +183,27 @@ App\Models\Notification::creating(static function($n)use(&$notificationFailure,&
         DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>$replacement]);
     }
 });
-foreach(['veto','throw'] as $notificationFailure){
-    $clock->instant=$clock->now()->modify('+60 seconds');
+foreach(['veto','throw','missing-inbox','missing-receipts'] as $failure){
+    $clock->instant=$clock->now()->modify('+1 day');$rate->update(['revision'=>$rate->revision+1,'fresh_until'=>$clock->now()->modify('+3 days')]);
+    $notificationFailure=in_array($failure,['veto','throw'],true)?$failure:false;
     DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0,'notified_on'=>null]);
-    $balances->daily($a);
-    same(null,$row($a)->notified_on,'Failed '.$notificationFailure.' alert keeps day retryable');
-    same($clock->now()->getTimestamp()+60,(int)$row($a)->daily_due_at,'Failed notification releases daily claim after '.$notificationFailure);
+    $unavailable=match($failure){'missing-inbox'=>'notifications','missing-receipts'=>\Paymenter\Extensions\Servers\Domains\Services\StaffAlertSchema::TABLE,default=>null};
+    $calls=$readState->calls;$wireBefore=$balanceReads();$sentBefore=App\Models\Notification::where('title','Low balance')->where('user_id',$secondStaff->id)->count();
+    if($unavailable){Schema::rename($unavailable,$unavailable.'_unavailable');}
+    try{
+        $readAt=$clock->now()->getTimestamp();$balances->daily($a);
+        foreach([60,60,60] as $seconds){$clock->instant=$clock->now()->modify('+'.$seconds.' seconds');$balances->daily($a);}
+        same($wireBefore+1,$balanceReads(),'Persistent '.$failure.' retries alerts with exactly one daily balance call');
+        same($calls+1,$readState->calls,'Persistent '.$failure.' retries alerts with exactly one daily provider read');
+        same($readAt+86400,(int)$row($a)->daily_due_at,'Alert failure preserves actual provider read schedule');
+        same($readAt,(int)$row($a)->read_at,'Alert retries retain the original reading timestamp');
+        same(null,$row($a)->notified_on,'Failed '.$failure.' keeps alert retryable');
+    }finally{if($unavailable){Schema::rename($unavailable.'_unavailable',$unavailable);}}
+    $notificationFailure=false;$clock->instant=$clock->now()->modify('+60 seconds');$balances->daily($a);
+    same($calls+1,$readState->calls,'Recovered alert never re-reads provider');same($wireBefore+1,$balanceReads(),'Recovered alert uses no balance call');
+    same($sentBefore+1,App\Models\Notification::where('title','Low balance')->where('user_id',$secondStaff->id)->count(),'Partial retries deliver once per recipient');
+    same($clock->now()->format('Y-m-d'),$row($a)->notified_on,'Recovery acknowledges retained daily reading');
 }
-same($successfulBefore+1,App\Models\Notification::where('title','Low balance')->where('user_id',$secondStaff->id)->count(),'Successful balance recipient receives one alert across partial retries');
-$clock->instant=$clock->now()->modify('+60 seconds');$notificationFailure=false;$balances->daily($a);
-same($successfulBefore+1,App\Models\Notification::where('title','Low balance')->where('user_id',$secondStaff->id)->count(),'Balance recovery skips delivered recipients');
-same($clock->now()->format('Y-m-d'),$row($a)->notified_on,'Retry consumes day only after successful native persistence');
 $clock->instant=$clock->now()->modify('+1 day');$rate->update(['revision'=>$rate->revision+1,'fresh_until'=>$clock->now()->modify('+3 days')]);$notificationFailure='veto';$replacement=$clock->now()->getTimestamp()+172800;
 DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0,'notified_on'=>null]);
 $balances->daily($a);same($replacement,(int)$row($a)->daily_due_at,'Failure cannot release a replacement daily claim');$notificationFailure=false;

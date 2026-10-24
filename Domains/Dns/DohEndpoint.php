@@ -28,6 +28,7 @@ final readonly class DohEndpoint
     {
         $packed = inet_pton($ip);
         return $packed !== false && strlen($packed) === 16
-            && substr($packed, 0, 12) === substr(inet_pton('64:ff9b::'), 0, 12);
+            && (substr($packed, 0, 12) === substr(inet_pton('64:ff9b::'), 0, 12)
+                || substr($packed, 0, 6) === substr(inet_pton('64:ff9b:1::'), 0, 6));
     }
 }

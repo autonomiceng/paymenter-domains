@@ -23,18 +23,15 @@ final readonly class RegistrarBalances
         OperationClaims::outside();
         if (TestCatalogue::enabled(CatalogueAcceptances::binding($account))) { return; }
         if(!Schema::hasTable(BalanceSchema::TABLE)){return;}
-        $claimedUntil=$this->claim($account,'daily_due_at',86400);if($claimedUntil===null){return;}
-        if($this->read($account,'daily',RequestOrigin::Background)==='rate_limited'){
+        $claimedUntil=$this->claim($account,'daily_due_at',86400);
+        if($claimedUntil!==null&&$this->read($account,'daily',RequestOrigin::Background)==='rate_limited'){
             // No provider request was made. Retry a later scheduler turn without burning a full day.
             $this->retryDaily($account,$claimedUntil);
             return;
         }
         $facts=self::facts($account,$this->clock->now());
-        if($facts['low']){
-            $notified=false;
-            try{$notified=$this->notify($account);}
-            finally{if(!$notified){$this->retryDaily($account,$claimedUntil);}}
-        }
+        // Alert retries use the retained reading without changing the provider read schedule.
+        if($facts['low']){$this->notify($account);}
     }
     private function retryDaily(Account $account,int $claimedUntil): void
     {

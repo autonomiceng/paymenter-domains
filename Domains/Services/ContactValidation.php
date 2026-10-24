@@ -11,7 +11,7 @@ final class ContactValidation extends \DomainException
         $labels=['first_name'=>'first name','last_name'=>'last name','address1'=>'address','address2'=>'address line 2',
             'organization_name'=>'company name','city'=>'city','state_province'=>'state or province','postal_code'=>'postal code',
             'country'=>'country','email_address'=>'email','phone'=>'phone'];
-        $fields=array_unique(array_map(static fn($field)=>$labels[substr($field,strrpos($field,'.')+1)]??'contact details',$this->fields));
+        $fields=array_unique(array_map(static fn($field)=>$labels[($dot=strrpos($field,'.'))===false?$field:substr($field,$dot+1)]??'contact details',$this->fields));
         return 'Missing: '.implode(', ',$fields).'. Update the customer account details.';
     }
     public function __construct(public readonly array $fields) { parent::__construct('Check the contact details.'); }

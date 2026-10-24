@@ -9,6 +9,24 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery,StaffOperationReview,TransferInputs};
 
+same('Missing: phone, city, contact details. Update the customer account details.',
+    (new \Paymenter\Extensions\Servers\Domains\Services\ContactValidation(['phone','contacts.registrant.phone','city','unrecognized']))->missingMessage(),'Undotted and dotted contact fields keep their complete leaf and deduplicate');
+
+// Decode failures inside contact eligibility retain the saved-data repair notice.
+$user->properties()->where('key','phone')->update(['value'=>'']);
+$damaged=$new('staff-corrupt-contact-placeholder.com',true,true);ContactRecovery::hold($damaged->id);
+$user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);
+foreach([[$damaged,'payload'],[$damaged->domain,'snapshot']] as [$record,$field]){
+    $saved=$record->getRawOriginal($field);$query=DB::table($record->getTable())->where('id',$record->id);
+    $query->update([$field=>'not-encrypted']);
+    try{
+        \Illuminate\Support\Facades\Auth::setUser($staff);
+        $row=$damaged->fresh();$facts=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($row);
+        expect($facts['unreadable']??false,'Unreadable contact '.$field.' remains a decode failure');
+        Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionHidden('release')->assertSee("Can't read saved data. Check the app encryption key.");
+    }finally{$query->update([$field=>$saved]);}
+}
+
 // An actual paid contact hold keeps the checkout snapshot until audited owner recollection.
 foreach(['register','transfer'] as $kind){
     $user->properties()->where('key','phone')->update(['value'=>'']);
