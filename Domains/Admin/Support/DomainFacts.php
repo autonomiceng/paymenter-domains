@@ -19,46 +19,48 @@ final class DomainFacts
     public const HELP=['Transfer lock'=>'Registrar lock that blocks transfers to another registrar.',
         'Registrar auto-renew'=>"The registrar's own auto-renew. Keep it off: Beco renews after the customer pays."];
     public const UNREADABLE="Can't read saved data. Check the app encryption key.";
+    public const UNREADABLE_RENEWAL="Can't read renewal settings";
     /** Statuses where the registration exists, so its dates and registrar settings apply. */
     private const REGISTERED=['active','expired','grace','redemption'];
     public static function for(Domain $d): array
     {
         Staff::requireView();
         $pending=$d->adoptionPending(); $registered=$pending||in_array($d->status,self::REGISTERED,true);
-        $account=self::account($d); $f=[];
+        $account=self::account($d); $sync=self::sync($d,$account); $paused=$sync==='paused'; $f=[];
         try { $observation=$d->observation??[]; $policy=$d->renewal_policy??[]; } catch (\Throwable) { $observation=$policy=null; }
         if ($registered) {
             $expiry=$d->provider_expires_at?->format('Y-m-d');
             if ($pending) { $expiry??=is_string($policy['conversion_source_expiry']??null)?$policy['conversion_source_expiry']:null; }
-            $f['Expires']=self::fact($expiry?gmdate('M j, Y',strtotime($expiry.' 00:00:00 UTC')):null,help:$pending&&$expiry?'From the old record. Not synced yet.':null);
+            $f['Expires']=self::fact($expiry?gmdate('M j, Y',strtotime($expiry.' 00:00:00 UTC')):null,sub:$expiry?null:self::unread($d,$sync),
+                help:$pending&&$expiry?'From the old record. Not synced yet.':null);
         }
-        $paused=$account&&DemoData::paused($account);
         $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$d->registrar_key]??null;
         $f['Registrar']=$account&&$registrar ? self::fact(\App\Models\Server::whereKey($d->server_id)->value('name')??$registrar,
             sub:implode(' · ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account->environment]??null,
                 $paused||!$account->processing_enabled||($policy['automatic_spend_paused']??false)?'orders paused':null])),
             url:self::url(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::canAccess()?\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl():null),
-            demo:DemoData::is($account)) : self::fact(null);
+            demo:DemoData::is($account)) : self::fact(null,sub:$account?'Unknown registrar':'Registrar account not found');
         if ($registered && $observation!==null) {
             $facts=$observation['facts']??[];
-            $f['In registrar account']=self::fact(($observation['record_hold']['reason']??null)==='ownership_drift'?'No':self::flag($facts['owned']??null,'Yes','No'));
-            $f['Transfer lock']=self::fact(self::flag($facts['locked']??null),help:self::HELP['Transfer lock']);
-            $f['WHOIS privacy']=self::fact(self::flag($facts['privacy']??null));
-            $f['Registrar auto-renew']=self::fact(self::flag($facts['auto_renew']??null),help:self::HELP['Registrar auto-renew']);
+            $unread=self::unread($d,$sync);
+            $f['In registrar account']=self::fact(($observation['record_hold']['reason']??null)==='ownership_drift'?'No':self::flag($facts['owned']??null,'Yes','No'),sub:isset($facts['owned'])?null:$unread);
+            $f['Transfer lock']=self::fact(self::flag($facts['locked']??null),sub:isset($facts['locked'])?null:$unread,help:self::HELP['Transfer lock']);
+            $f['WHOIS privacy']=self::fact(self::flag($facts['privacy']??null),sub:isset($facts['privacy'])?null:$unread);
+            $f['Registrar auto-renew']=self::fact(self::flag($facts['auto_renew']??null),sub:isset($facts['auto_renew'])?null:$unread,help:self::HELP['Registrar auto-renew']);
         }
         $job=!Schema::hasTable('domains_observation_work')||($id=ObservationWork::currentId($d))===null?null:DB::table('domains_observation_work')->find($id);
         if ($registered||$job||$d->last_synced_at) { $f['Last sync']=match(true) {
             $paused=>self::fact('Paused',sub:'Demo registrar is off while Enom Test mode is on',tone:'warning'),
-            ObservationWork::stopped($d)=>self::fact('Sync failed',sub:(int)$job->tries.' attempt'.((int)$job->tries===1?'':'s').'. Stopped until resumed.',tone:'danger'),
+            $sync==='failed'=>self::fact('Sync failed',sub:(int)$job->tries.' attempt'.((int)$job->tries===1?'':'s').'. Stopped until resumed.',tone:'danger'),
             default=>self::fact($d->last_synced_at?->utc()->format('M j, Y H:i').($d->last_synced_at?' UTC':''),
-                sub:$job&&$job->claim!==null&&$job->lease_until>time()?'Syncing now':null),
+                sub:$job&&$job->claim!==null&&$job->lease_until>time()?'Syncing now':($d->last_synced_at?null:'Not synced yet')),
         }; }
         $user=$d->user;
         $f['Customer']=$user?self::fact(trim($user->first_name.' '.$user->last_name)?:$user->email,sub:$user->email,
-            url:self::url(fn()=>\App\Admin\Resources\UserResource::getUrl('edit',['record'=>$user->id]))):self::fact(null);
+            url:self::url(fn()=>\App\Admin\Resources\UserResource::getUrl('edit',['record'=>$user->id]))):self::fact(null,sub:'Customer account not found');
         $service=\App\Models\Service::find($d->service_id);
         $f['Service']=$service?self::fact($d->domain.' registration',sub:'Service #'.$service->id,
-            url:self::url(fn()=>\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$service->id]))):self::fact(null);
+            url:self::url(fn()=>\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$service->id]))):self::fact(null,sub:'Service #'.$d->service_id.' not found');
         if ($policy!==null) {
             try { $renewal=RenewalStop::read($d); } catch (\Throwable) { $renewal=null; }
             $cancel=$renewal&&$renewal['cancel']->contains('service_id',$d->service_id);
@@ -66,7 +68,7 @@ final class DomainFacts
                 $cancel&&!RenewalStop::blocksExisting($renewal)=>'Cancels at period end',RenewalStop::ownerOff($renewal)=>'Turned off by customer',default=>null};
             $invoicesOff=match(true) {$pending=>'Until import',$renewal&&RenewalStop::blocksExisting($renewal)=>'Service cancellation pending',
                 (bool)($policy['renewals_stopped']??false)=>'Stopped by staff',default=>null};
-            $f['Auto-renew']=$renewal===null?self::fact(null):self::fact($autoOff?'Off':'On',sub:$autoOff);
+            $f['Auto-renew']=$renewal===null?self::fact(null,sub:self::UNREADABLE_RENEWAL):self::fact($autoOff?'Off':'On',sub:$autoOff);
             $f['Renewal price']=self::price($d,$service,$observation);
             $f['Renewal invoices']=self::fact($invoicesOff?'Off':'On',sub:$invoicesOff);
             if (!$pending&&$d->status==='active'&&$renewal&&!$autoOff&&!$invoicesOff) { $f['Next invoice']=self::nextInvoice($d); }
@@ -135,13 +137,26 @@ final class DomainFacts
                 default=>'Sync stopped: DNS record check failed.' };
         } catch (\Throwable) { return self::UNREADABLE; }
     }
+    /** 'paused' (demo registrar off under Enom Test mode), 'failed' (stopped after repeated failures) or null. Shared by the page and the list. */
+    public static function sync(Domain $d, ?Account $account=null): ?string
+    {
+        $account??=self::account($d);
+        return $account&&DemoData::paused($account)?'paused':(ObservationWork::stopped($d)?'failed':null);
+    }
+    /** Why a value read from the registrar is Missing. */
+    public static function unread(Domain $d, ?string $sync): string
+    {
+        return $d->adoptionPending()?'Shows after import':match($sync) {'paused'=>'Sync paused','failed'=>'Sync failed',
+            default=>$d->last_synced_at?'Registrar did not return it':'Not synced yet'};
+    }
     private static function account(Domain $d): ?Account
     {
         return Account::where('server_id',$d->server_id)->where('registrar_key',$d->registrar_key)->where('account_fingerprint',$d->account_fingerprint)->first();
     }
     private static function price(Domain $d, ?\App\Models\Service $service, ?array $observation): array
     {
-        if (!$service||!in_array($d->price_mode,['standard','complimentary'],true)) { return self::fact(null); }
+        if (!$service) { return self::fact(null,sub:'Needs the linked service'); }
+        if (!in_array($d->price_mode,['standard','complimentary'],true)) { return self::fact(null,sub:'No renewal price set'); }
         $code=$observation['adoption_review']['price']??null;
         return self::fact($service->currency_code.' '.number_format((float)$service->price,2).' / year',
             sub:match(true) {$code==='below_cost'=>'Below cost',$code!==null=>'Cost missing',$d->price_mode==='complimentary'=>'Complimentary',default=>'Standard pricing'},

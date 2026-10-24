@@ -14,13 +14,15 @@ use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
 {
     protected static string $resource = DomainResource::class;
+    /** Wider label column for Registration and Billing so labels with a help icon stay on one line at desktop width. */
+    private const FACTS_STYLE='<style>@media (min-width:40rem){.domains-facts .fi-in-entry.fi-in-entry-has-inline-label{grid-template-columns:minmax(0,40%) minmax(0,1fr) minmax(0,1fr)}}</style>';
     public function getTitle(): string { Staff::requireView(); return (string)$this->getRecord()->domain; }
     public function getHeading(): HtmlString
     {
         $status=DomainFacts::status($this->getRecord());
         return new HtmlString('<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem"><span class="font-mono" style="overflow-wrap:anywhere">'.e($this->getTitle()).'</span>'
             .(DemoData::is($this->getRecord())?DemoData::tag(inline:true)->toHtml():'')
-            .view('filament::components.badge',['color'=>$status['tone'],'size'=>'lg','slot'=>new HtmlString(e($status['label']))])->render().'</span>');
+            .view('filament::components.badge',['color'=>$status['tone'],'size'=>'lg','slot'=>new HtmlString(e($status['label']))])->render().'</span>'.self::FACTS_STYLE);
     }
     public function getSubheading(): ?string { return DomainFacts::status($this->getRecord())['reason']; }
     public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains',$this->getTitle()]; }
@@ -52,7 +54,7 @@ class ViewDomain extends ViewRecord
                 ->footer($buttons?new HtmlString('<div style="display:flex;flex-wrap:wrap;gap:.5rem">'.implode('',array_filter($buttons)).'</div>'):null);
         }
         $section=fn(string $title,array $labels)=>Section::make($title)->schema(array_map(fn(string $label)=>self::entry($label,$facts[$label]),
-            array_values(array_filter($labels,fn($label)=>isset($facts[$label])))))->columnSpan(1);
+            array_values(array_filter($labels,fn($label)=>isset($facts[$label])))))->columnSpan(1)->extraAttributes(['class'=>'domains-facts']);
         return $schema->components([...$components,Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()
             ->schema([$section('Registration',DomainFacts::REGISTRATION),$section('Billing',DomainFacts::BILLING)])]);
     }

@@ -117,7 +117,7 @@ foreach ([['read_unavailable',1,'1 attempt. Stopped until resumed.'],['budget_ex
 }
 foreach ([null,'healthy_pending','refreshed','unresolved'] as $code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>2]);
-    same([null,null],$sync(),'Running sync without a saved read shows Missing, not a failure');
+    same([null,'Not synced yet'],$sync(),'Running sync without a saved read shows Missing with its cause, not a failure');
 }
 DB::table('domains_domains')->where('id',$held->id)->update(['last_synced_at'=>'2026-10-20 15:05:00']);
 same(['Oct 20, 2026 15:05 UTC',null],$sync(),'Last sync shows the saved read time');

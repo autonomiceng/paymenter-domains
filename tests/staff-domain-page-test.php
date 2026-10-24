@@ -29,14 +29,18 @@ same(['Synthetic registrar','Enom · Test · orders paused'],[$f['Registrar']['v
 DB::table('domains_accounts')->where('server_id',$active->server_id)->update(['processing_enabled'=>true]);$f=DomainFacts::for($active);
 same(['Synthetic registrar','Enom · Test'],[$f['Registrar']['value'],$f['Registrar']['sub']],'Registrar account name and registrar sub-line');
 same(['Yes','On','Off','Off'],[$f['In registrar account']['value'],$f['Transfer lock']['value'],$f['WHOIS privacy']['value'],$f['Registrar auto-renew']['value']],'Synced registrar facts');
-same(null,$f['Last sync']['value'],'Never synced is Missing');
+same([null,'Not synced yet'],[$f['Last sync']['value'],$f['Last sync']['sub']],'Never synced is Missing with its cause');
+// Every Missing carries its cause.
+same([null,'Service #'.$active->service_id.' not found'],[$f['Service']['value'],$f['Service']['sub']],'Deleted service is Missing with its cause');
+same([null,'Needs the linked service'],[$f['Renewal price']['value'],$f['Renewal price']['sub']],'Renewal price without a service names the cause');
 same(['Ada Lovelace','ada@example.test'],[$f['Customer']['value'],$f['Customer']['sub']],'Customer name with email');
 same(['On','On'],[$f['Auto-renew']['value'],$f['Renewal invoices']['value']],'Renewals on');
 same(today()->addDays(120-21)->format('M j, Y'),$f['Next invoice']['value'],'Next invoice from the billing calendar');
 expect(!isset($f['Open invoice']),'Open invoice hidden when none');
 same("The registrar's own auto-renew. Keep it off: Beco renews after the customer pays.",DomainFacts::HELP['Registrar auto-renew'],'Registrar auto-renew help');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
-same([null,null,'Needs the expiry date'],[$value($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')],'Active without expiry shows Missing');
+same([null,'Not synced yet',null,'Needs the expiry date'],[$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')],'Active without expiry shows Missing with causes');
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Expiry missing')->assertSee('Not synced yet');
 same('Under review',DomainFacts::status($active->fresh())['label'],'Active without expiry is Under review');
 same('Expiry missing',DomainFacts::status($active->fresh())['reason'],'Expiry missing reason');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>today()->addDays(120)->format('Y-m-d')]);
@@ -44,7 +48,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires
 $pending=DomainFacts::for($held);
 expect(!isset($pending['Next invoice'])&&!isset($pending['Expires']),'Pending transfer hides expiry and next invoice');
 same(['Under review','Transfer needs attention'],[DomainFacts::status($held)['label'],DomainFacts::status($held)['reason']],'Held transfer pill and reason');
-same(null,$value($held,'Customer'),'Unknown customer is Missing');
+same([null,'Customer account not found'],[$value($held,'Customer'),$sub($held,'Customer')],'Deleted customer is Missing with its cause');
 
 // Renewal settings.
 $policy=$active->renewal_policy;
@@ -57,7 +61,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=
 
 // Page: no internal facts, one notice, breadcrumb uses the name.
 $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->assertSet('data',[]);
-$page->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing');
+$page->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing')->assertSee('Needs the linked service')->assertSeeHtml('domains-facts');
 foreach(['Saved facts','Assignment generation','Observation drift','Follow-up','Data retention','Server #','Domain #','Account spending holds','Preview adoption','Scheduled reads'] as $old){$page->assertDontSee($old);}
 same([DomainResource::getUrl('index')=>'Domains','active.example.com'],$page->instance()->getBreadcrumbs(),'Breadcrumb names the domain');
 same(null,DomainFacts::notice($active->fresh()),'A healthy domain has no notice');
@@ -70,6 +74,10 @@ $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->
     'domain_id'=>$active->id,'generation'=>$active->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
 same(['Sync failed','danger','5 attempts. Stopped until resumed.'],[$value($active,'Last sync'),DomainFacts::for($active->fresh())['Last sync']['tone'],$sub($active,'Last sync')],'Sync failed row');
 same('Sync stopped after repeated failures.',DomainFacts::notice($active->fresh())['title'],'Sync stopped notice');
+DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
+same('Sync failed',$sub($active,'Expires'),'Missing expiry names the failed sync');
+DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>today()->addDays(120)->format('Y-m-d')]);
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync failed');
 $staff=staffUser([Staff::VIEW,'admin.domains.operations.resume_observation']);
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Sync stopped after repeated failures.')->assertSee('Resume sync')->assertSee('Sync failed');
 DB::table('domains_observation_work')->where('id',$work)->delete();
@@ -88,6 +96,7 @@ $demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'eno
 config(['domains.enom_identity.environment'=>'test']);
 same(['Paused','Demo registrar is off while Enom Test mode is on'],[$value($demo,'Last sync'),$sub($demo,'Last sync')],'Demo registrar paused under Enom Test mode');
 same('Enom · Test · orders paused',$sub($demo,'Registrar'),'Registrar sub-line says orders paused');
+same([null,'Sync paused'],[$value($demo,'Registrar auto-renew'),$sub($demo,'Registrar auto-renew')],'Unread registrar facts name the paused sync');
 config(['domains.enom_identity.environment'=>'live','domains.enom_writes.registration'=>false,'domains.enom_writes.renewal'=>false]);
 same(null,$value($demo,'Last sync'),'Demo registrar runs when Enom Test mode is off');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$demo->id])->assertSee('Demo');
@@ -119,7 +128,7 @@ same(['reprice'=>'Edit renewal price','stop'=>'Stop renewal','resume'=>'Resume r
 // List: Status, Expires, Auto-renew and Registrar columns; Status filter uses the nine statuses.
 $list=Livewire::actingAs($viewer)->test(ListDomains::class)->assertCanSeeTableRecords([$held,$active,$long]);
 $list->assertTableColumnExists('auto_renew')->assertSee('Under review')->assertSee('Transfer needs attention')->assertSee('Active')->assertSee('Ada Lovelace')->assertSee('Synthetic registrar');
-foreach(['Unconfirmed','See Registrar requests','Payment review','Customer #'] as $old){$list->assertDontSee($old);}
+foreach(['Unconfirmed','See Registrar requests','Payment review','Customer #','Sync failed'] as $old){$list->assertDontSee($old);}
 $filter=static function($page,string $name,mixed $value){$page->filterTable($name,$value);return $page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters');};
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$held,$long])->assertCanNotSeeTableRecords([$active]);
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active'])->assertCanSeeTableRecords([$active])->assertCanNotSeeTableRecords([$held,$long]);
