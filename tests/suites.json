@@ -273,6 +273,8 @@
     "tests/watch-notice-snapshot-test.php",
     "tests/watch-notice-overflow-test.php",
     "tests/staff-ui-polish-test.php",
+    "tests/staff-domains-list-test.php",
+    "tests/domains-list-rows-test.php",
     "tests/domain-summaries-test.php",
     "tests/domain-summary-managed-test.php",
     "tests/domain-portal-test.php",

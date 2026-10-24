@@ -16,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{A
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, Missing};
-use Paymenter\Extensions\Servers\Domains\Services\{NativeCancellation, RenewalStop};
+use Paymenter\Extensions\Servers\Domains\Services\{NativeCancellation, ObservationWork, RenewalStop};
 class DomainResource extends Resource
 {
     protected static ?string $model = Domain::class;
@@ -49,13 +49,15 @@ class DomainResource extends Resource
                 ->description(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
                 ->extraAttributes(['style'=>'overflow-wrap:anywhere;max-width:24rem'])),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::status($record,$livewire)['label'])
-                ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone'])->description(fn(Domain $record,$livewire)=>self::status($record,$livewire)['reason']??(DomainFacts::sync($record)==='failed'?'Sync failed':null)),
+                ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone'])->description(fn(Domain $record,$livewire)=>self::status($record,$livewire)['reason']
+                    ??match(self::row($record,$livewire)['sync']){'failed'=>'Sync failed','paused'=>'Sync paused',default=>null}),
             TextColumn::make('provider_expires_at')->label('Expires')->state(fn(Domain $record)=>$record->provider_expires_at?->format('M j, Y')
                 ?? (self::registered($record)?Missing::LABEL:null))->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
-                ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?DomainFacts::unread($record,DomainFacts::sync($record)):null)
+                ->description(fn(Domain $record,$state,$livewire)=>$state===Missing::LABEL?DomainFacts::unread($record,self::row($record,$livewire)['sync']):null)
                 ->sortable(query: fn(Builder $query,string $direction)=>$query->orderBy('provider_expires_at',$direction)),
-            TextColumn::make('auto_renew')->label('Auto-renew')->state(fn(Domain $record,$livewire)=>self::registered($record)
-                ? (self::renewalOff($record,$livewire)===null?Missing::LABEL:(self::renewalOff($record,$livewire)?'Off':'On')) : null)
+            // Auto-renew applies in every state, so pending and under-review rows show it too.
+            TextColumn::make('auto_renew')->label('Auto-renew')->state(fn(Domain $record,$livewire)=>match(self::row($record,$livewire)['off']) {
+                null=>Missing::LABEL,true=>'Off',false=>'On'})
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
                 ->description(fn($state)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:null),
             TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?->name??Missing::LABEL)
@@ -81,21 +83,20 @@ class DomainResource extends Resource
     /** The nine domain statuses, in DomainStatus order. */
     public static function statusOptions(): array { return array_map(fn(array $s)=>$s[0],DomainStatus::SET); }
     private const REGISTRARS=['enom'=>'Enom','namesilo'=>'NameSilo'];
-    /** Auto-renew stops per rendered page of records, keyed by domain id: one batch of reads per page. */
-    private static ?\WeakMap $renewalOff=null;
+    /** Auto-renew stops and sync state per rendered page of records, keyed by domain id: one batch of reads per page. */
+    private static ?\WeakMap $rows=null;
     private static function status(Domain $record, mixed $livewire): array
     {
-        $off=self::renewalOff($record,$livewire);
-        return DomainFacts::status($record,(bool)$off,(int)($record->late_money??0)>0);
+        return DomainFacts::status($record,(bool)self::row($record,$livewire)['off'],(int)($record->late_money??0)>0);
     }
     private static function registered(Domain $record): bool
     { return $record->adoptionPending()||in_array($record->status,['active','expired','grace','redemption'],true); }
-    /** True when automatic renewal is off, null when its saved data cannot be read. */
-    private static function renewalOff(Domain $record, mixed $livewire): ?bool
+    /** 'off': true when automatic renewal is off, null when its saved data cannot be read. 'sync': DomainFacts::sync(). */
+    private static function row(Domain $record, mixed $livewire): array
     {
         $records=method_exists($livewire,'getTableRecords')?$livewire->getTableRecords():collect([$record]);
-        self::$renewalOff??=new \WeakMap();
-        $cached=self::$renewalOff[$records]??[];
+        self::$rows??=new \WeakMap();
+        $cached=self::$rows[$records]??[];
         if (!array_key_exists($record->id,$cached)) {
             $page=collect(method_exists($records,'items')?$records->items():$records->all())->filter(fn($r)=>$r instanceof Domain);
             if (!$page->contains('id',$record->id)) { $page=collect([$record]); }
@@ -103,12 +104,17 @@ class DomainResource extends Resource
             $cancel=NativeCancellation::withIntents(ServiceCancellation::whereIn('service_id',$services)->get(),$services,true);
             $ids=$page->pluck('adoption_id')->filter()->unique()->all();
             $adoptions=$ids?Adoption::whereIn('id',$ids)->get()->keyBy('id'):collect();
+            $accounts=Account::whereIn('server_id',$page->pluck('server_id')->unique()->values()->all())->get();
+            $stopped=ObservationWork::stoppedIds($page);
             foreach ($page as $d) {
-                try { $cached[$d->id]=RenewalStop::stopped(['domain'=>$d,'adoption'=>$adoptions[$d->adoption_id]??null,
+                try { $off=RenewalStop::stopped(['domain'=>$d,'adoption'=>$adoptions[$d->adoption_id]??null,
                     'cancel'=>$cancel->where('service_id',$d->service_id)->values()]); }
-                catch (\Throwable) { $cached[$d->id]=null; }
+                catch (\Throwable) { $off=null; }
+                $account=$accounts->first(fn(Account $a)=>(int)$a->server_id===(int)$d->server_id&&$a->registrar_key===$d->registrar_key
+                    &&$a->account_fingerprint===$d->account_fingerprint);
+                $cached[$d->id]=['off'=>$off,'sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]))];
             }
-            self::$renewalOff[$records]=$cached;
+            self::$rows[$records]=$cached;
         }
         return $cached[$record->id];
     }

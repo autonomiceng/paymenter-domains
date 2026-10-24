@@ -16,6 +16,16 @@ final class ObservationWork
         if (!Schema::hasTable('domains_observation_work')) { return false; }
         return self::current($d)->whereIn('safe_code',self::STOPPED)->exists();
     }
+    /** stopped() for a page of domains in one read: the ids, as keys, of those whose current work stopped. */
+    public static function stoppedIds(\Illuminate\Support\Collection $domains): array
+    {
+        if ($domains->isEmpty()||!Schema::hasTable('domains_observation_work')) { return []; }
+        $rows=DB::table('domains_observation_work')->whereIn('domain_id',$domains->pluck('id'))->whereIn('safe_code',self::STOPPED)
+            ->get(['domain_id','server_id','account_fingerprint','generation','phase']);
+        return $domains->filter(fn(Domain $d)=>$rows->contains(fn($r)=>(int)$r->domain_id===(int)$d->id&&(int)$r->server_id===(int)$d->server_id
+            &&$r->account_fingerprint===$d->account_fingerprint&&(int)$r->generation===(int)$d->authority_generation&&$r->phase===self::phase($d)))
+            ->pluck('id')->flip()->all();
+    }
     /** Advisory selection only; resume revalidates the locked holding and job. */
     public static function currentId(Domain $d): ?int
     {

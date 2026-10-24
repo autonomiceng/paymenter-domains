@@ -137,11 +137,12 @@ final class DomainFacts
                 default=>'Sync stopped: DNS record check failed.' };
         } catch (\Throwable) { return self::UNREADABLE; }
     }
-    /** 'paused' (demo registrar off under Enom Test mode), 'failed' (stopped after repeated failures) or null. Shared by the page and the list. */
-    public static function sync(Domain $d, ?Account $account=null): ?string
+    /** 'paused' (demo registrar off under Enom Test mode), 'failed' (stopped after repeated failures) or null. Shared by the page and the list.
+     * The list passes the account and stopped state it loaded for the whole page. */
+    public static function sync(Domain $d, ?Account $account=null, ?bool $stopped=null): ?string
     {
         $account??=self::account($d);
-        return $account&&DemoData::paused($account)?'paused':(ObservationWork::stopped($d)?'failed':null);
+        return $account&&DemoData::syncPaused($d,$account)?'paused':(($stopped??ObservationWork::stopped($d))?'failed':null);
     }
     /** Why a value read from the registrar is Missing. */
     public static function unread(Domain $d, ?string $sync): string
