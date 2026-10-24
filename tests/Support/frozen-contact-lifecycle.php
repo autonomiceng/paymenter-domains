@@ -18,7 +18,7 @@ foreach([false,true]as$invalid){
     $before=$row->fresh()->getRawOriginal();$money=serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('invoice_transactions')->get()]);
     ContactRecovery::hold($row->id);$after=$row->fresh();
     same($snapshot,$after->payload,'Real funded lifecycle uses the frozen snapshot after a native account edit');
-    if($invalid){same($rawPayload,$after->getRawOriginal('payload'),'Invalid frozen contact correction preserves encrypted payload bytes');}
+    if($invalid){same($rawPayload,$after->getRawOriginal('payload'),'Contact-validation hold preserves encrypted payload bytes');}
     same($invalid?'held':'awaiting_payment',$after->state,'Lifecycle readiness follows frozen contacts');
     same($invalid?'contact_details_required':null,$after->safe_code,'Only invalid frozen contacts need readmission');
     if($invalid){

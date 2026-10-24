@@ -16,4 +16,4 @@ per-ending work and zero-query warm hits. Existing storefront/cache suites cover
 price/eligibility freshness, invalidation and the thirty-second display TTL.
 
 `owned-pages-test.php` renders proven-unsent transfer contact recovery for both registrars and submits the owner POST. Unknown, sent and recorded-null attempts hide recovery and refuse the POST without changing the operation.
-The corruption fixture restores the xyz transfer price and checks the offer becomes visible again.
+The corruption fixture restores the test transfer price and checks the offer becomes visible again.

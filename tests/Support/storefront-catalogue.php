@@ -33,12 +33,12 @@ function storefrontCatalogueFixture(array $fixture, array $endings, array $terms
 function storefrontCorruptionChecks(array $fixture, Storefront $store): void
 {
     extract($fixture);
-    extract(storefrontCatalogueFixture($fixture, ['net', 'org', 'xyz', 'old', 'belowcost', 'unknown'], [1, 3]));
+    extract(storefrontCatalogueFixture($fixture, ['net', 'org', 'test', 'old', 'belowcost', 'unknown'], [1, 3]));
     $broken = $native->product($catalogueTlds['org'], 'register');
     $marker = $broken->settings()->where('key', 'domains_action')->sole();
     $brokenPrices = $broken->plans()->with('prices')->get()->flatMap(static fn ($plan) => $plan->prices)->pluck('id');
     // Valid registration survives an independently corrupt transfer price on the same ending.
-    $onlyTransfer = $native->product($catalogueTlds['xyz'], 'transfer')->plans()->sole()->prices()->sole();
+    $onlyTransfer = $native->product($catalogueTlds['test'], 'transfer')->plans()->sole()->prices()->sole();
     $transferPrice = $onlyTransfer->getRawOriginal('price');
     DB::table('prices')->where('id', $onlyTransfer->id)->update(['price' => 'malformed']);
     foreach (['old' => ['fresh_until' => $now], 'belowcost' => ['hold_reason' => 'below_cost'], 'unknown' => ['wholesale' => null]] as $ending => $changes) {
@@ -55,13 +55,13 @@ function storefrontCorruptionChecks(array $fixture, Storefront $store): void
             foreach ($broken->settings()->get() as $setting) { $duplicateProduct->settings()->create($setting->only(['key', 'value', 'type', 'encrypted'])); }
         }
         Cache::flush(); $before = $reads->calls; $public = array_column($store->endings(), null, 'tld');
-        same(['com', 'net', 'xyz'], array_keys($public), 'Corrupt '.$corruption.' isolates broken, old, below-cost and unknown offers');
+        same(['com', 'net', 'test'], array_keys($public), 'Corrupt '.$corruption.' isolates broken, old, below-cost and unknown offers');
         same(['tld' => 'net', 'price' => '$20.00', 'register' => '$20.00', 'transfer' => '$22.00', 'renew' => '$21.00', 'terms' => [1, 3], 'testEnvironment' => true],
             $public['net'], 'Corrupt '.$corruption.' preserves exact healthy row');
-        same(null, $public['xyz']['transfer'], 'Corrupt transfer never leaks a price');
-        same([1, 3], $public['xyz']['terms'], 'Registration-only ending retains exact terms');
+        same(null, $public['test']['transfer'], 'Corrupt transfer never leaks a price');
+        same([1, 3], $public['test']['terms'], 'Registration-only ending retains exact terms');
         same($before, $reads->calls, 'Catalogue isolation performs no provider I/O');
-        foreach (['net', 'xyz'] as $ending) {
+        foreach (['net', 'test'] as $ending) {
             $result = $store->check('example.'.$ending);
             same('available', $result['status'], 'Corrupt '.$corruption.' preserves healthy check for '.$ending);
             same([1 => '$20.00', 3 => '$60.00'], $result['terms'], 'Healthy check retains exact prices');
@@ -81,7 +81,7 @@ function storefrontCorruptionChecks(array $fixture, Storefront $store): void
     }
     DB::table('prices')->where('id', $onlyTransfer->id)->update(['price' => $transferPrice]);
     Cache::flush(); $repaired = array_column($store->endings(), null, 'tld');
-    same('$22.00', $repaired['xyz']['transfer'], 'Restored xyz transfer price is visible');
+    same('$22.00', $repaired['test']['transfer'], 'Restored test transfer price is visible');
     foreach (array_keys($catalogueTlds) as $ending) { $sellers->change($ending, 2, null, false, false, $now); }
     Cache::flush();
 }
