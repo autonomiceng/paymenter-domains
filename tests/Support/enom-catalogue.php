@@ -16,7 +16,9 @@ $hot=storage_path('framework/domains-assets-hot');file_put_contents($hot,'http:/
 app(Illuminate\Foundation\Vite::class)->useHotFile($hot);
 $session=app('session')->driver();$session->start();app('request')->setLaravelSession($session);
 app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
-config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true]);
+// This fixture tests the catalogue's own default-off reads; the separate cap
+// fixture owns exhaustion assertions, so keep this shared test day below cap.
+config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_test_daily_call_cap'=>500]);
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
 tldPanel();$staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);

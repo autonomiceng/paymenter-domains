@@ -32,6 +32,7 @@ final class CatalogueSync
         $summary = ['synced' => 0, 'failed' => []];
         if ($accepted->endings === []) { return $summary; }
         try { $batch = $reader->catalogueBatch($accepted, $freshness, $context); }
+        catch (EnomTestCallLimit $error) { throw $error; }
         catch (ReadDeferred $error) { throw $error; }
         catch (\Throwable) { return ['synced' => 0, 'failed' => array_map(static fn (string $tld): string => '.'.$tld, array_keys($accepted->endings))]; }
         foreach ($accepted->endings as $tld => $_) {

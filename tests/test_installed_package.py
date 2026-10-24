@@ -72,7 +72,7 @@ def refuse_unsafe_archives(root, current):
 
 
 def main(scenario):
-    if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'acquisition', 'enom-exchange', 'namesilo-registration', 'namesilo-renewal'):
+    if scenario not in ('held', 'fresh', 'upgrade', 'previous', 'acquisition', 'enom-exchange', 'enom-test-registration', 'namesilo-registration', 'namesilo-renewal'):
         raise ValueError('Unknown installed package scenario')
     began = time.monotonic()
     fixture = Path(os.environ['PAYMENTER_TEST_FIXTURE'])
@@ -152,6 +152,18 @@ def main(scenario):
             phase('catalogue-retained')
             evidence['test_catalogue_fresh_reinstall'] = True
             evidence['fresh_installed_registration_held'] = True
+        elif scenario == 'enom-test-registration':
+            phase('enom-test-registration')
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                list(workers.map(lambda _: phase('enom-test-calls'), range(2)))
+            phase('enom-test-calls')
+            phase('enom-test-call-count')
+            shutil.rmtree(installed)
+            phase('reinstall', 'current')
+            phase('enom-test-call-count')
+            phase('enom-test-calls')
+            evidence['test_registration_and_cap_survive_restart_and_reinstall'] = True
         elif scenario == 'enom-exchange':
             phase('exchange-contracts')
             phase('enom-exchange')

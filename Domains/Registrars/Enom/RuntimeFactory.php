@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ManagementCommand,ReadCommand,RegistrationCommand};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,OperationClaims,RenewalAcceptance,Runtime,RuntimeComposition,TransferPrecheck,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomTestCallLimit,OperationClaims,RenewalAcceptance,Runtime,RuntimeComposition,TransferPrecheck,WriteAcceptance,WriteFeatures};
 
 /** Deployment opt-in only. Exchanges remain private inside the genuine engine-bound protocols. */
 final class RuntimeFactory
@@ -27,10 +27,23 @@ final class RuntimeFactory
             $wire->exchange('renewal'),new Management($binding,$wire->exchange('management')),$managementAccepted);
     }
 
+    /** Reuse the reviewed TEST Purchase route and worker request interval as acceptance evidence. */
+    public static function registrationAcceptance(AccountBinding $binding): array
+    {
+        $test=$binding->registrarKey==='enom'&&$binding->environment===Environment::Test;
+        $route=self::originFor(Environment::Test);
+        return [
+            'route'=>$route,
+            'batch_route'=>$test&&$route==='https://resellertest.enom.com/interface.asp'
+                &&RegistrationCommand::Purchase->value==='Purchase',
+            'interval_seconds'=>\Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::REQUEST_SECONDS,
+        ];
+    }
+
     private function exchange(string $role): \Closure
     {
         return function(string $origin,string $command,#[\SensitiveParameter] array $parameters,int $timeoutMs)use($role):string {
-            $handle=null;$entered=hrtime(true);
+            $handle=null;$entered=hrtime(true);$deadline=$entered+max(0,$timeoutMs)*1000000;
             try {
                 OperationClaims::outside();
                 if (Runtime::limiter()===null || $origin!==$this->origin() || $timeoutMs<1 || $timeoutMs>25000
@@ -46,11 +59,14 @@ final class RuntimeFactory
                     throw new \DomainException('Enom credentials unavailable.');
                 }
                 $this->binding->requireMatch(new AccountBinding('enom',$this->binding->serverId,$this->binding->environment,$uid));
-                $timeoutMs-=(int)ceil((hrtime(true)-$entered)/1000000);
-                if ($timeoutMs<1) { throw new \RuntimeException('Enom exchange deadline reached.'); }
+                $timeoutMs=intdiv($deadline-hrtime(true),1000000);
+                if ($timeoutMs<1) {
+                    if($this->binding->environment===Environment::Test){throw new EnomTestCallLimit;}
+                    throw new \RuntimeException('Enom exchange deadline reached.');
+                }
                 $body='';$handle=curl_init();
                 if ($handle===false) { throw new \RuntimeException('Enom exchange failed.'); }
-                $configured=curl_setopt_array($handle,[
+                $options=[
                     CURLOPT_URL=>$this->origin(),CURLOPT_POST=>true,
                     CURLOPT_POSTFIELDS=>http_build_query(['Command'=>$named->value,'UID'=>$uid,'PW'=>$token,'ResponseType'=>'XML']+$parameters,'','&',PHP_QUERY_RFC3986),
                     CURLOPT_HTTPHEADER=>['Content-Type: application/x-www-form-urlencoded','Accept: application/xml'],
@@ -63,11 +79,24 @@ final class RuntimeFactory
                         if (strlen($chunk)>$named->bodyLimit()-strlen($body)) { return 0; }
                         $body.=$chunk;return strlen($chunk);
                     },
-                ]);
-                if (!$configured||curl_exec($handle)===false||curl_getinfo($handle,CURLINFO_RESPONSE_CODE)!==200) {
+                ];
+                if(!curl_setopt_array($handle,$options)){throw new \RuntimeException('Enom exchange incomplete.');}
+                $purchase=$named===RegistrationCommand::Purchase;
+                $day=\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::prepareSend($this->binding,$purchase);
+                $timeoutMs=intdiv($deadline-hrtime(true),1000000);
+                if($timeoutMs<1){
+                    if($this->binding->environment===Environment::Test){throw new EnomTestCallLimit;}
+                    throw new \RuntimeException('Enom exchange deadline reached.');
+                }
+                $options[CURLOPT_CONNECTTIMEOUT_MS]=min(8000,$timeoutMs);$options[CURLOPT_TIMEOUT_MS]=$timeoutMs;
+                if(!curl_setopt_array($handle,$options)){throw new \RuntimeException('Enom exchange incomplete.');}
+                \Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::authorizeSend($this->binding,$purchase,$day);
+                if (curl_exec($handle)===false||curl_getinfo($handle,CURLINFO_RESPONSE_CODE)!==200) {
                     throw new \RuntimeException('Enom exchange incomplete.');
                 }
                 return $body;
+            } catch (EnomTestCallLimit) {
+                throw new EnomTestCallLimit;
             } catch (\Throwable) {
                 // Discard cURL/raw-response/credential-bearing exceptions, including their causes.
                 throw new \RuntimeException('Enom exchange failed.');
@@ -77,8 +106,10 @@ final class RuntimeFactory
         };
     }
 
-    private function origin(): string
-    { return $this->binding->environment===Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'; }
+    private function origin(): string { return self::originFor($this->binding->environment); }
+
+    private static function originFor(Environment $environment): string
+    { return $environment===Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'; }
 
     private function command(string $role,string $command): RegistrationCommand|ManagementCommand|ReadCommand
     {

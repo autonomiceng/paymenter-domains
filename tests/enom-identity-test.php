@@ -2,10 +2,11 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
+require __DIR__.'/Support/enom-test-counter.php';
 require __DIR__.'/Support/enom-identity.php';
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\AccountVerifier;
-use Paymenter\Extensions\Servers\Domains\Services\IdentityRefused;
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,IdentityRefused,RegistrarRegistry};
 ini_set('zend.exception_ignore_args','0');
 $verifier=new AccountVerifier(Environment::Test);$GLOBALS['identityCalls']=[];
 $refused=static function(#[SensitiveParameter] callable $work,string $reason):void {
@@ -25,6 +26,10 @@ foreach(['html','partial','done','errors','missing_balance','bad_balance','timeo
     $refused(fn()=>$verifier->verify(Environment::Test,$credentials),'identity_unavailable');same($before+1,count($GLOBALS['identityCalls']),'One bounded attempt, no retry');
 }
 $GLOBALS['identityMode']='empty_account';same('secret-uid',$verifier->verify(Environment::Test,$credentials),'Zero funds and no domains still authenticate; no contact/domain substitute');
+$before=count($GLOBALS['identityCalls']);config(['domains.enom_test_daily_call_cap'=>0]);
+$registry=new RegistrarRegistry;$registry->register('enom',['uid','token'],$verifier,static fn()=>throw new LogicException('Reader is unused.'),null,true);
+try{$registry->verify('enom',1,Environment::Test,$credentials);throw new LogicException('Identity cap refusal must remain typed through registry');}catch(EnomTestCallLimit){}
+same($before,count($GLOBALS['identityCalls']),'Identity cap refuses before transport send');config(['domains.enom_test_daily_call_cap'=>50]);
 $GLOBALS['identityMode']='credentials';
 require __DIR__.'/Support/enom-identity-staff.php';
 echo "Enom identity: strict authentication, redaction, rotation and native staff flow passed.\n";$nativeSuccessful=true;

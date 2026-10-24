@@ -20,6 +20,10 @@ $loader=require $fixture.'/vendor/autoload.php';
 $loader->addPsr4('App\\',$fixture.'/app/',true);
 $loader->addPsr4('Paymenter\\Extensions\\',$fixture.'/extensions/',true);
 $app=require $fixture.'/bootstrap/app.php';
+if(getenv('PACKAGE_PHASE')==='enom-test-registration'){
+    $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
+        static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true]));
+}
 if(in_array(getenv('PACKAGE_PHASE'), ['identity','catalogue','catalogue-retained'], true)){
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
         static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>getenv('PACKAGE_PHASE')!=='identity']));

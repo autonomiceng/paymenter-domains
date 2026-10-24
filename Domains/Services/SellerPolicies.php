@@ -102,7 +102,15 @@ final class SellerPolicies
         $servers = $accounts = [];
         foreach ($ids as $id) { $servers[$id] = Server::whereKey($id)->lockForUpdate()->firstOrFail(); }
         foreach ($ids as $id) { $accounts[$id] = Account::where('server_id', $id)->lockForUpdate()->firstOrFail(); }
-        foreach ($ids as $id) { $this->bindings->requireProcessingLocked($servers[$id], $accounts[$id]); }
+        foreach ($ids as $id) {
+            $binding = CatalogueAcceptances::binding($accounts[$id]);
+            $hasNonRegistration = array_filter($lines, static fn (SaleSelection $line): bool => $line->serverId === $id && $line->action !== 'register');
+            if (EnomTestRegistration::enabled($binding) && !$hasNonRegistration) {
+                $this->bindings->requireReadableLocked($servers[$id], $accounts[$id]);
+            } else {
+                $this->bindings->requireProcessingLocked($servers[$id], $accounts[$id]);
+            }
+        }
         $names = array_values(array_unique(array_map(static fn (SaleSelection $s): string => $s->tld, $lines))); sort($names, SORT_STRING);
         $policies = [];
         foreach ($names as $name) { $policies[$name] = SalesPolicy::where('tld', $name)->lockForUpdate()->firstOrFail(); }

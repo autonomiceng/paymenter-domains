@@ -7,7 +7,7 @@ use Filament\Forms\Components\{Checkbox,CheckboxList,Hidden,Select,Textarea,Text
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{PricingRules,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestCalls,PricingRules,StaffSettingsReview as Review,StaffSettingsWrites};
 final class SettingsActions
 {
     public static function description(string $name): string
@@ -23,7 +23,7 @@ final class SettingsActions
             'tld_settings'=>'Narrow term bounds or pause new sales. Widening and restoring sales require explicit verification and current acceptance. Retained holders require annual renewal support. For Enom TEST, ineligible cart lines are removed.',
             'seller'=>'Selects the registrar for new sales only. Existing domains and renewal obligations keep their holding registrar. No automatic fallback. For Enom TEST, previous seller cart lines for this ending are removed.',
             'import'=>'Reads one accepted TEST ending from Enom and imports current costs and registry requirements. Publish prices and select a seller separately. Processing stays off; withdrawn registration, transfer and renewal support stay off. Costs expire 60 minutes after the read; re-import before continuing preview. An annual registration and renewal baseline takes five reads; each additional accepted term or transfer adds up to one. Existing TEST cart lines for this ending are removed.',
-            'acceptance'=>'Accept only independently verified exact terms. Any change holds new sales for every TLD on this account until a new import and removes its TEST cart lines. Retained holders keep accepted annual renewal support.',
+            'acceptance'=>'Accept only independently verified exact terms. For opted-in Enom TEST, also review and accept the Purchase route and request interval shown below. Any change holds new sales for every TLD on this account until a new import and removes its TEST cart lines. Retained holders keep accepted annual renewal support.',
             'history'=>'Accept only a verified complete USD history contract for this action. Revocation stops new reconciliation reads; saved attempts and financial evidence stay retained.',
             'configure'=>'Sends one account read to check the supplied credentials, then saves them encrypted. The verified account cannot change. Saving pauses processing until it is re-enabled.',
             'probe'=>'Reads the verified account balance once and saves it to Registrar balances. Does not enable processing, purchases or new sales.',
@@ -60,6 +60,11 @@ final class SettingsActions
                 $fields[]=CheckboxList::make('terms')->label('Independently verified registration terms')->options(array_combine(range(1,10),array_map(fn($n)=>$n.' '.($n===1?'year':'years'),range(1,10))))->columns(2);
                 $fields[]=Checkbox::make('transfer')->label('Annual transfers verified');$fields[]=Checkbox::make('registry')->label('Registry requirements supported');
                 $fields[]=Checkbox::make('verified')->label('I independently verified these exact terms and annual renewal support');
+                $account=Account::where('server_id',$server)->first();
+                if($account?->registrar_key==='enom'&&$account->environment==='test'&&config('domains.enom_writes.registration')===true){
+                    $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account));
+                    $fields[]=Checkbox::make('test_registration_accepted')->label('I reviewed Enom TEST Purchase at '.$protocol['route'].' and its '.$protocol['interval_seconds'].' second request interval');
+                }
             }
             if($name==='history'){
                 $fields[]=Select::make('history_action')->label('History action')->options(['register'=>'Registration','renew'=>'Renewal','transfer'=>'Transfer'])->required();
@@ -95,7 +100,10 @@ final class SettingsActions
                         Notification::make()->success()->title($name==='processing'?($account->processing_enabled?'Processing enabled':'Processing paused').' for '.$target():'Change recorded')->body($name==='processing'?null:($name==='probe'?'Balance read saved. See Registrar balances.':'Reload this page before another change.'))->send();
                         if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl());}
                     }catch(\Throwable $error){
-                        $message=match($error->getMessage()){'Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',
+                        $message=$error instanceof EnomTestCallLimit
+                            ?'Enom TEST request refused before sending. '.($name==='import'?'Earlier reads in this import may have been sent and counted. ':'')
+                                .EnomTestCalls::facts().(EnomTestCalls::callsRemain()?' Calls remain today, so a counter error or UTC day change refused it; you can retry now.':'')
+                            :match($error->getMessage()){'Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',
                             'Settings changed. Reload this page.'=>'Settings changed. Reload this page.',
                             'Current staff permissions required.'=>'Your permission changed. Reload this page.',
                             'Runtime acceptance and shared workers are required.'=>'Provider acceptance and shared cache, sessions and queue workers are required before enabling processing.',

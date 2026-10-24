@@ -23,6 +23,7 @@ enum RuntimeReason: string
     public static function failure(\Throwable $e): string
     {
         return match(true){
+            $e instanceof EnomTestCallLimit=>'enom_test_call_cap',
             $e instanceof WriteHeld=>$e->reason,
             $e instanceof RenewalRefused=>$e->reason->value,
             $e instanceof \Illuminate\Database\QueryException,$e instanceof \PDOException=>self::DatabaseFailed->value,

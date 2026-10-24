@@ -36,7 +36,8 @@ final class TestCatalogue
             $reader = $bindings->reader($review->serverId);
             $context = new RequestContext($binding, RequestOrigin::Interactive, $clock->now()->modify('+25 seconds'),
                 new RequestBudget(15), $clock, Runtime::limiter(), stopOnReadFailure: true);
-            if (!$reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\CataloguePreview
+            if ((!$reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\CataloguePreview
+                && !$reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomTestReconciliationReader)
                 || !in_array($ending, $reader->catalogue($context)->facts()['tlds'] ?? [], true)) {
                 throw new \DomainException('Catalogue import unavailable.');
             }

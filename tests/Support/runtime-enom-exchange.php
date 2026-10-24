@@ -9,6 +9,10 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,CatalogueAcceptances,OperationClaims,RegistrarRegistry,RenewalAcceptance,RuntimePorts,RuntimeWork,TransferInputs,Refunds,WriteAcceptance,WriteFeatures,NativeCatalogue,PriceCatalogue,SellerPolicies,CartAdmission,CheckoutEligibility,InvoiceBinding,TransferPrecheck,Rdap};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
+// Exercise the TEST Purchase scope used by the deployment composition. The
+// direct fixture below supplies its own audited writer and acceptance.
+config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,
+    'domains.enom_writes.registration'=>true,'domains.enom_test_daily_call_cap'=>1000]);
 $account=Account::where('server_id',$tlds[0]->server_id)->sole();$binding=CatalogueAcceptances::binding($account);
 $identityBytes=$account->getRawOriginal('stable_identity');$changed=clone $account;$changed->stable_identity='other-account';$otherIdentityBytes=$changed->getAttributes()['stable_identity'];
 $state=(object)['query'=>null,'reads'=>0];
@@ -17,13 +21,18 @@ $precheck=new TransferPrecheck(new Rdap(static fn($url)=>['status'=>200,'body'=>
     'events'=>[['eventAction'=>'registration','eventDate'=>'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>'2027-01-01T00:00:00Z']]])]));
 $registry=new RegistrarRegistry;
 $verify=new class implements AccountVerifier {public function verify(Environment $e,array $c):string{return $c['uid'];}};
-$registry->register('enom',['uid','token'],$verify,static function($b)use($clock,$state){
+$reader=static function($b)use($clock,$state){
     $state->reads++;$quote=new QuoteEvidence($state->query,new Money('99.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
     return new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence(quote:$quote,balance:new Money('100.00','USD'),available:true,premium:false)));
-});
+};
+$registry->register('enom',['uid','token'],$verify,$reader,null,false,$reader);
 $auth=new AccountBindings($registry);$auth->configure($binding->serverId,'enom',Environment::Test,['uid'=>'account-enom','token'=>'SYNTHETIC-WIRE-TOKEN']);
 $sellers=new SellerPolicies($prices,$auth);
 foreach([AccountBindings::class=>$auth,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$instance){app()->instance($type,$instance);}
+$acceptedCatalogue=CatalogueAcceptances::load($binding);
+DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance(
+    $binding,$acceptedCatalogue->revision,$acceptedCatalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
+Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($binding,new Money('100.00','USD'),$clock->now(),'manual');
 $admission=new CartAdmission($native,$sellers,new CheckoutEligibility($auth,$clock,$precheck),$clock);app()->instance(CartAdmission::class,$admission);
 app()->instance(InvoiceBinding::class,new InvoiceBinding($admission,$native,$prices,$clock));
 (new Paymenter\Extensions\Servers\Domains\Domains)->boot();Illuminate\Support\Facades\Queue::fake();
@@ -60,7 +69,18 @@ $reply=static function($p):string {
 };
 echo "Installed exchange composition ready.\n";
 foreach(['register','transfer','register'] as $i=>$action){
-    $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new('authenticated-'.$i.'.com',$action);resetWire(['reply'=>$reply]);
+    $clock->at=$clock->at->modify('+61 seconds');Cache::flush();
+    if($action==='transfer'){
+        DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance(
+            $binding,$acceptedCatalogue->revision,$acceptedCatalogue->endings)));
+        config(['domains.enom_identity.environment'=>'live','domains.enom_catalogue.enabled'=>false]);
+    }
+    $op=$new('authenticated-'.$i.'.com',$action);
+    if($action==='transfer'){
+        DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance(
+            $binding,$acceptedCatalogue->revision,$acceptedCatalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
+    }
+    config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true]);resetWire(['reply'=>$reply]);
     $seen=false;$GLOBALS['enomWire']['during']=static function()use(&$seen,$op,$worker,$auth,$binding,$clock,$limiter){
         if($seen){return;}$seen=true;
         // Reentrant workers model an overlapping delivery after sealing, before the reply.
@@ -71,7 +91,11 @@ foreach(['register','transfer','register'] as $i=>$action){
         catch(Paymenter\Extensions\Servers\Domains\Services\ReadDeferred){}
         expect(!$entered,'Interactive reader shares physical slot with background write');
     };
-    $worker->operation($op->id);same(1,count($GLOBALS['enomWire']['forms']),'One authenticated monetary send');
+    $worker->operation($op->id);same(1,count($GLOBALS['enomWire']['forms']),'One authenticated monetary send: '.json_encode([
+        'state'=>$op->fresh()->state,'safe_code'=>$op->fresh()->safe_code,'attempt'=>$op->fresh()->attempt,
+        'used'=>DB::table(Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::TABLE)->where('day',Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::day())->value('used'),
+        'config'=>[config('domains.enom_identity.environment'),config('domains.enom_catalogue.enabled'),config('domains.enom_writes.registration')],
+    ]));
     same($action==='register'?'pending':'uncertain',$op->fresh()->state,'Acknowledgement never completes acquisition');same('sealed',$op->fresh()->attempt['seal'],'Actual paid operation sealed');if($action==='register'){$registered=$op->fresh();}
     $freshPorts=new RuntimePorts;$freshPorts->register($binding->fingerprint,$auth->enomRuntimeFactory($binding,$clock,$features,$accepted,$renewalAccepted,$precheck));
     Cache::flush();(new RuntimeWork($clock,$freshPorts))->operation($op->id);same(1,count($GLOBALS['enomWire']['forms']),'Reconstructed worker never replays');

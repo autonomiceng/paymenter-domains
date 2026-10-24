@@ -16,7 +16,9 @@ final class OperationClaims
 {
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock) {}
 
-    public function claim(int $id): ?array
+    public function requireProcessing(AccountBinding $binding): void { $this->bindings->requireProcessing($binding); }
+
+    public function claim(int $id, ?\DateTimeImmutable $startedAt = null): ?array
     {
         self::outside();
         $route = Operation::findOrFail($id);
@@ -33,7 +35,7 @@ final class OperationClaims
             return null;
         }
         if (!in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { return null; }
-        return $this->locked($id, function ($op, $domain, $all, $funding, $server, $account): ?array {
+        return $this->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($startedAt): ?array {
             if ($op->state === 'running') {
                 if (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now()) {
                     $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
@@ -42,23 +44,38 @@ final class OperationClaims
             }
             if (!in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { return null; }
             if ($op->action === 'transfer' && !TransferInputs::validCode($op->payload['epp'] ?? null)) { return null; }
-            if (!self::virgin($op)&&!self::capacityRetry($op)) {
+            $capacityRetry=self::capacityRetry($op);$testCallRetry=self::testCallRetry($op);
+            // A TEST history proves the prior send was refused. A staff readmission therefore starts a fresh
+            // execution window, even when this operation already has an older unsent claim.
+            $claimRetry=$capacityRetry&&!$testCallRetry;
+            if (!self::virgin($op)&&!$capacityRetry&&!$testCallRetry) {
                 $op->update(['state' => 'uncertain', 'safe_code' => 'prior_attempt', 'lease_expires_at' => null]); return null;
             }
             try { [$binding, $paid] = $this->validate($op, $domain, $all, $funding, $server, $account); }
-            catch (\Throwable) { $op->update(['state' => 'held', 'safe_code' => 'claim_authority_invalid']); return null; }
+            catch (RuntimeIneligible $error) {
+                $op->update(['state'=>'held','safe_code'=>$error->reason===RuntimeReason::ProcessingOff?'processing':'claim_authority_invalid']);return null;
+            } catch (\Throwable) { $op->update(['state' => 'held', 'safe_code' => 'claim_authority_invalid']); return null; }
             try { ContactSetup::requireReady($op); }
             catch (\DomainException) {
                 // The contact service owns its transaction and rechecks payment/identity after commit.
                 DB::afterCommit(static fn () => ContactRecovery::hold((int) $op->id));
                 return null;
             }
-            $now = $this->clock->now(); $digest = self::digest($op, $domain);$retry=self::capacityRetry($op);
-            if($retry&&(!$op->started_at||$now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')>$op->started_at->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'))){$op->update(['state'=>'held','safe_code'=>'write_rate_limited']);return null;}
-            if($retry&&($op->request_fingerprint!==$digest||($op->funding['claim']??null)!==$paid)){$op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null;}
-            $op->update(['state' => 'running', 'safe_code' => null, 'started_at' => $retry?$op->started_at:$now,
+            // Anchor the TEST preflight lease window at worker entry, before the first provider read.
+            // Model datetime columns are persisted in the active application timezone. Keep the
+            // stored claim in that zone; comparisons below still compare absolute instants.
+            $now = $this->clock->now();$claimStartedAt=($startedAt??$now)->setTimezone($now->getTimezone());
+            if($claimStartedAt>$now||$claimStartedAt<$now->modify('-'.ExecuteOperation::EXECUTION_SECONDS.' seconds')) { $op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null; }
+            $digest = self::digest($op, $domain);$retry=$claimRetry;
+            if($claimRetry&&(!$op->started_at||$now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')>$op->started_at->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'))){$op->update(['state'=>'held','safe_code'=>'write_rate_limited']);return null;}
+            if($claimRetry&&($op->request_fingerprint!==$digest||($op->funding['claim']??null)!==$paid)){$op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null;}
+            $attempt=$claimRetry?$op->attempt:($testCallRetry
+                ?array_replace(['test_call_refusals'=>$op->attempt['test_call_refusals']],array_intersect_key($op->attempt,['capacity_deferrals'=>true]),
+                    ['claim_key'=>bin2hex(random_bytes(16)),'seal'=>'absent','send_state'=>'definitely_unsent'])
+                :['claim_key'=>bin2hex(random_bytes(16)),'seal'=>'absent','send_state'=>'definitely_unsent']);
+            $op->update(['state' => 'running', 'safe_code' => null, 'started_at' => $retry?$op->started_at:$claimStartedAt,
                 'lease_expires_at' => $now->modify('+'.ExecuteOperation::LEASE_SECONDS.' seconds'), 'request_fingerprint' => $digest,
-                'attempt' => $retry?$op->attempt:['claim_key' => bin2hex(random_bytes(16)), 'seal' => 'absent', 'send_state' => 'definitely_unsent'],
+                'attempt' => $attempt,
                 'funding' => [...($op->funding ?? []), 'claim' => $paid]]);
             return [$op, $domain, $binding];
         });
@@ -86,7 +103,8 @@ final class OperationClaims
                     throw new \DomainException('Insufficient dispatch lease or changed request.');
                 }
             } catch (ReadDeferred $error) {throw $error;} catch (\Throwable $error) {
-                $op->update(['state' => 'held', 'safe_code' => $error instanceof WriteHeld ? $error->reason : 'seal_authority_invalid', 'lease_expires_at' => null]); return null;
+                $reason=$error instanceof WriteHeld?$error->reason:'seal_authority_invalid';
+                $op->update(['state' => 'held', 'safe_code' => $reason, 'lease_expires_at' => null]); return null;
             }
             $attempt = $op->attempt;
             $attempt['seal'] = 'sealed'; $attempt['dispatch_attempted_at'] = $now->format(DATE_ATOM);
@@ -145,8 +163,36 @@ final class OperationClaims
             $op->update(['state'=>count($history)<5?'queued':'held','safe_code'=>'write_rate_limited','attempt'=>$a,'lease_expires_at'=>null]);return $op;
         });
     }
+    /** A TEST counter refusal proves this worker did not cross the provider boundary. */
+    public function holdTestCallCap(Operation $claimed): Operation
+    {
+        return $this->locked((int)$claimed->id,function($op)use($claimed):Operation {
+            if(!self::sameClaim($op,$claimed)||$op->action!=='register'||$op->state!=='running') { return $op; }
+            $attempt=$op->attempt??[];$sealed=($attempt['seal']??null)==='sealed';
+            try { self::requireNoSendEvidence($op); } catch (\Throwable) { return $op; }
+            if($sealed) {
+                if(($attempt['send_state']??null)!=='possibly_sent'||!isset($attempt['dispatch_attempted_at'],$attempt['authorized_cost'],$attempt['registration_admission'])) { return $op; }
+                if(!EnomTestCalls::purchaseUnconsumed($op->account_fingerprint,(int)$op->id)) { return $op; }
+            } elseif(!self::unsealed($op)||($attempt['send_state']??null)!=='definitely_unsent') { return $op; }
+            $history=$attempt['test_call_refusals']??[];
+            if(!self::testCallHistory($history)) { return $op; }
+            $event=['phase'=>$sealed?'purchase':'preflight','refused_at'=>$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM),
+                'dispatch_attempted_at'=>$sealed?$attempt['dispatch_attempted_at']:null,'authorized_cost'=>$sealed?$attempt['authorized_cost']:null];
+            if(count($history)>=100) { return $op; }
+            $funding=$op->funding??[];unset($funding['claim'],$funding['seal']);
+            $refusalAttempt=['test_call_refusals'=>[...$history,$event],...array_intersect_key($attempt,['capacity_deferrals'=>true])];
+            $op->update(['attempt'=>$refusalAttempt,'funding'=>$funding,'state'=>'held','safe_code'=>'enom_test_call_cap',
+                'lease_expires_at'=>null,'started_at'=>null,'request_fingerprint'=>null]);
+            return $op;
+        });
+    }
     private static function capacityRetry(Operation $op): bool
-    { $a=$op->attempt??[];return self::unsealed($op)&&isset($a['claim_key'],$a['capacity_deferrals'])&&is_array($a['capacity_deferrals'])&&count($a['capacity_deferrals'])<=5&&!array_diff(array_keys($a),['claim_key','seal','send_state','capacity_deferrals']); }
+    {
+        $a=$op->attempt??[];$history=$a['test_call_refusals']??[];
+        return self::unsealed($op)&&isset($a['claim_key'],$a['capacity_deferrals'])&&is_array($a['capacity_deferrals'])
+            &&count($a['capacity_deferrals'])<=5&&(!array_key_exists('test_call_refusals',$a)||self::testCallHistory($history))
+            &&!array_diff(array_keys($a),['claim_key','seal','send_state','capacity_deferrals','test_call_refusals']);
+    }
     /** Disabled feature gates create no claim, seal or provider traffic. */
     public function holdUnclaimed(int $id, string $reason): Operation
     {
@@ -159,11 +205,75 @@ final class OperationClaims
             if ($op->action === 'transfer' && $op->state === 'awaiting_code' && !TransferInputs::validCode($op->payload['epp'] ?? null)) { return $op; }
             if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
                 $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
-            } elseif (in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true) && self::virgin($op)) {
+            } elseif (in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)
+                && (self::virgin($op)||(in_array($reason,['enom_test_call_cap','write_acceptance_required','nameservers_required',
+                    'registry_details_unsupported','processing','write_disabled','usd_balance_required','enom_test_setup_required'],true)&&self::testCallRetry($op)))) {
                 $op->update(['state' => 'held', 'safe_code' => $reason]);
             }
             return $op;
         });
+    }
+    /** Staff may release only this retained, proven-unsent TEST preflight hold. */
+    public static function testCallRefusalRetryable(Operation $op): bool
+    {
+        return $op->state==='held'&&in_array($op->safe_code,['enom_test_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid',
+                'nameservers_required','write_acceptance_required','write_rate_limited','registry_details_unsupported','processing','write_disabled',
+                'usd_balance_required','enom_test_setup_required'],true)
+            &&$op->action==='register'&&$op->registrar_key==='enom'
+            &&$op->lease_expires_at===null&&$op->completed_at===null
+            &&$op->provider_order_id===null&&$op->confirmed_expires_at===null
+            &&self::testCallRefusalUnsent($op)
+            &&self::testCallRetry($op)
+            &&self::testCallRetryFunding($op);
+    }
+
+    /** A retained claim is allowed only because the TEST proof below establishes it was unsealed. */
+    private static function testCallRetryFunding(Operation $op): bool
+    {
+        $funding=$op->funding??[];unset($funding['claim']);$withoutClaim=clone $op;$withoutClaim->setAttribute('funding',$funding);
+        return FinancialAdjustments::unattemptedFunding($withoutClaim);
+    }
+
+    /** Prior TEST cap refusals remain negative proof through a later unsealed retry or refund decision. */
+    public static function testCallRefusalUnsent(Operation $op): bool
+    {
+        $a=$op->attempt??[];$f=$op->funding??[];$history=$a['test_call_refusals']??null;
+        $holdCodes=['enom_test_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required',
+            'write_acceptance_required','write_rate_limited','registry_details_unsupported','processing','write_disabled','usd_balance_required','enom_test_setup_required'];
+        if($op->action!=='register'||$op->registrar_key!=='enom'||!self::testCallHistory($history)||!$history||!self::unsealed($op)
+            ||$op->lease_expires_at!==null||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->completed_at!==null
+            ||array_key_exists('actual',$op->cost??[])||array_key_exists('execution',$op->cost??[])||array_key_exists('dispatch_attempted_at',$op->policy??[])
+            ||array_diff(array_keys($f),['claim','seal','refund_authorization','refund','financial_adjustments'])||array_key_exists('seal',$f)) { return false; }
+        $held=$op->state==='held'&&in_array($op->safe_code,$holdCodes,true);
+        $queued=$op->state==='queued'&&in_array($op->safe_code,[null,'write_rate_limited'],true);
+        $approved=$op->state==='rejected'&&$op->safe_code==='refund_approved';
+        $terminal=$op->state==='rejected'&&in_array($op->safe_code,$holdCodes,true)
+            &&($a['disposition']??null)==='rejected'&&($a['rejection_basis']??null)==='definitely_unsent'
+            &&($a['terminal']??null)===['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation];
+        if(!$held&&!$queued&&!$approved&&!$terminal) { return false; }
+        if($approved) {
+            $auth=$f['refund_authorization']??null;
+            if(!is_array($auth)||array_keys($auth)!==['actor_id','reason','at','operation_key','generation']||!is_int($auth['actor_id']??null)
+                ||$auth['actor_id']<1||!is_string($auth['reason']??null)||!preg_match('/^[a-z][a-z0-9_]{4,63}$/D',$auth['reason'])
+                ||!is_string($auth['at']??null)||$auth['operation_key']!==$op->operation_key||$auth['generation']!==$op->authority_generation) { return false; }
+        }
+        $unclaimedKeys=['test_call_refusals','capacity_deferrals'];
+        if(!isset($a['claim_key'])) {
+            $deferrals=$a['capacity_deferrals']??[];
+            return !$terminal&&!array_diff(array_keys($a),$unclaimedKeys)&&$op->started_at===null&&$op->request_fingerprint===null
+                &&!array_key_exists('seal',$a)&&!array_key_exists('send_state',$a)&&!array_key_exists('claim',$f)&&!array_key_exists('seal',$f)
+                &&(!array_key_exists('capacity_deferrals',$a)||(is_array($deferrals)&&array_is_list($deferrals)&&count($deferrals)<=5
+                    &&!array_filter($deferrals,static fn($at)=>!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/D',$at))));
+        }
+        $allowed=['test_call_refusals','claim_key','seal','send_state','capacity_deferrals'];
+        if($terminal){$allowed[]='disposition';$allowed[]='rejection_basis';$allowed[]='terminal';}
+        $deferrals=$a['capacity_deferrals']??[];
+        return isset($a['claim_key'],$a['seal'],$a['send_state'])&&is_string($a['claim_key'])&&preg_match('/^[a-f0-9]{32}$/D',$a['claim_key'])
+            &&$a['seal']==='absent'&&$a['send_state']==='definitely_unsent'&&$op->started_at!==null
+            &&is_string($op->request_fingerprint)&&preg_match('/^[a-f0-9]{64}$/D',$op->request_fingerprint)
+            &&is_array($f['claim']??null)&&!array_diff(array_keys($a),$allowed)
+            &&(!array_key_exists('capacity_deferrals',$a)||(is_array($deferrals)&&array_is_list($deferrals)&&count($deferrals)<=6
+                &&!array_filter($deferrals,static fn($at)=>!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/D',$at))));
     }
 
     /** Authorizes nonmonetary fresh profile creation for this live, funded, unsealed claim only. */
@@ -218,7 +328,7 @@ final class OperationClaims
     /** Independent presence guard: null charge/refund/candidate facts are still uncertainty. */
     private static function requireNoSendEvidence(Operation $op): void
     {
-        if (array_diff(array_keys($op->attempt ?? []), ['claim_key', 'seal', 'send_state', 'capacity_deferrals', 'dispatch_attempted_at', 'authorized_cost', 'registration_admission', 'transfer_admission'])
+        if (array_diff(array_keys($op->attempt ?? []), ['claim_key', 'seal', 'send_state', 'capacity_deferrals', 'test_call_refusals', 'dispatch_attempted_at', 'authorized_cost', 'registration_admission', 'transfer_admission'])
             || array_key_exists('refund', $op->funding ?? []) || array_key_exists('actual', $op->cost ?? [])
             || array_key_exists('execution', $op->cost ?? []) || array_key_exists('dispatch_attempted_at', $op->policy ?? [])) {
             throw new \DomainException('Prior operation evidence blocks dispatch.');
@@ -227,7 +337,6 @@ final class OperationClaims
 
     private function validate(Operation $op, Domain $domain, $all, InvoiceFunding $funding, Server $server, Account $account): array
     {
-        $this->bindings->requireProcessingLocked($server, $account);
         $binding = new AccountBinding($account->registrar_key, (int) $account->server_id, Environment::from($account->environment), $account->stable_identity);
         if ($op->account_fingerprint !== $binding->fingerprint || $domain->account_fingerprint !== $binding->fingerprint
             || $op->registrar_key !== $binding->registrarKey || $op->server_id !== $binding->serverId
@@ -243,8 +352,10 @@ final class OperationClaims
         }
         if ($op->action === 'transfer' && ($op->term !== 1 || !TransferInputs::validCode($op->payload['epp'] ?? null)
             || !TransferInputs::deadline($op, $this->clock->now()))) { throw new \DomainException('Transfer inputs incomplete.'); }
+        $paid=$funding->requireInitial($op,$domain);
+        $this->bindings->requireProcessingLocked($server,$account);
         $op->setRelation('domain', $domain); // Contact validation consumes the already locked holding.
-        return [$binding, $funding->requireInitial($op, $domain)];
+        return [$binding,$paid];
     }
 
     private static function resolvedOther(Operation $op): bool
@@ -290,6 +401,28 @@ final class OperationClaims
         return true;
     }
     private static function virgin(Operation $op): bool { return ($op->attempt ?? []) === [] && !array_key_exists('refund', $op->funding ?? []) && self::unsealed($op); }
+    private static function testCallRetry(Operation $op): bool
+    {
+        if(!self::testCallRefusalUnsent($op)||!in_array($op->state,['queued','held'],true)) { return false; }
+        $attempt=$op->attempt??[];
+        return !isset($attempt['capacity_deferrals'])||count($attempt['capacity_deferrals'])<=5;
+    }
+    private static function testCallHistory(mixed $history): bool
+    {
+        if(!is_array($history)||!array_is_list($history)||count($history)>100) { return false; }
+        foreach($history as $event) {
+            if(!is_array($event)||array_keys($event)!==['phase','refused_at','dispatch_attempted_at','authorized_cost']
+                ||!in_array($event['phase']??null,['preflight','purchase'],true)||!is_string($event['refused_at']??null)) { return false; }
+            try { if((new \DateTimeImmutable($event['refused_at']))->format(DATE_ATOM)!==$event['refused_at']) { return false; } }
+            catch(\Throwable) { return false; }
+            if($event['phase']==='preflight') {
+                if($event['dispatch_attempted_at']!==null||$event['authorized_cost']!==null) { return false; }
+            } elseif(!is_string($event['dispatch_attempted_at'])||!is_array($event['authorized_cost'])
+                ||array_keys($event['authorized_cost'])!==['amount','currency']||!is_string($event['authorized_cost']['amount']??null)
+                ||$event['authorized_cost']['currency']!=='USD') { return false; }
+        }
+        return true;
+    }
     private static function unsealed(Operation $op): bool
     {
         $a = $op->attempt ?? [];

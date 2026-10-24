@@ -50,6 +50,9 @@ final class ObservationWork
         $summary=[];
         foreach ($queues as $queue) {
             try {
+                $account=Account::where('server_id',$queue->server_id)->first();
+                if($account&&$account->account_fingerprint===$queue->account_fingerprint
+                    &&EnomTestRegistration::enabled(CatalogueAcceptances::binding($account))){$summary[$queue->server_id]='read_deferred';continue;}
                 $this->discover($queue); if ($this->catalogue) {
                     try { $this->catalogue($queue); }
                     catch (\Throwable $e) {

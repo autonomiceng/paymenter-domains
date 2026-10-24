@@ -24,6 +24,7 @@ function resetWire(array $extra=[]): void
 }
 // Compare the existing read wire's configuration with the new authenticated protocol wire.
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api;
+function hrtime(bool $asNumber=false): mixed { return \Paymenter\Extensions\Servers\Domains\Registrars\Enom\hrtime($asNumber); }
 function curl_init(): object|false {return \Paymenter\Extensions\Servers\Domains\Registrars\Enom\curl_init();}
 function curl_setopt_array($h,array $o): bool {return \Paymenter\Extensions\Servers\Domains\Registrars\Enom\curl_setopt_array($h,$o);}
 function curl_exec($h): bool {return \Paymenter\Extensions\Servers\Domains\Registrars\Enom\curl_exec($h);}

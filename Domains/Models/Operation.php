@@ -64,6 +64,70 @@ class Operation extends Model
                 }
             }
             $old = $operation->getOriginal('attempt') ?? []; $new = $operation->attempt ?? [];
+            $oldRefusals=$old['test_call_refusals']??[];$newRefusals=$new['test_call_refusals']??[];
+            if(!is_array($oldRefusals)||!array_is_list($oldRefusals)||!is_array($newRefusals)||!array_is_list($newRefusals)
+                ||count($newRefusals)>100||count($newRefusals)<count($oldRefusals)||array_slice($newRefusals,0,count($oldRefusals))!==$oldRefusals) {
+                throw new \DomainException('TEST call refusal history is append-only and bounded.');
+            }
+            foreach($newRefusals as $refusal) {
+                if(!is_array($refusal)||array_keys($refusal)!==['phase','refused_at','dispatch_attempted_at','authorized_cost']
+                    ||!in_array($refusal['phase']??null,['preflight','purchase'],true)||!is_string($refusal['refused_at']??null)) {
+                    throw new \DomainException('TEST call refusal evidence is invalid.');
+                }
+                try { if((new \DateTimeImmutable($refusal['refused_at']))->format(DATE_ATOM)!==$refusal['refused_at']) { throw new \DomainException('TEST call refusal time is invalid.'); } }
+                catch(\Throwable) { throw new \DomainException('TEST call refusal time is invalid.'); }
+                if($refusal['phase']==='preflight') {
+                    if($refusal['dispatch_attempted_at']!==null||$refusal['authorized_cost']!==null) { throw new \DomainException('Preflight refusal cannot have sealed evidence.'); }
+                } elseif(!is_string($refusal['dispatch_attempted_at'])||!is_array($refusal['authorized_cost'])
+                    ||array_keys($refusal['authorized_cost'])!==['amount','currency']||!is_string($refusal['authorized_cost']['amount']??null)
+                    ||$refusal['authorized_cost']['currency']!=='USD') { throw new \DomainException('Purchase refusal evidence is invalid.'); }
+            }
+            $oldFunding=$operation->getOriginal('funding')??[];$newFunding=$operation->funding??[];
+            $expectedFunding=$oldFunding;unset($expectedFunding['claim'],$expectedFunding['seal']);
+            $phase=($old['seal']??null)==='sealed'?'purchase':'preflight';$lastRefusal=$newRefusals?end($newRefusals):null;
+            $deferrals=$old['capacity_deferrals']??[];
+            $validDeferrals=!array_key_exists('capacity_deferrals',$old)||(is_array($deferrals)&&array_is_list($deferrals)&&count($deferrals)<=5
+                &&!array_filter($deferrals,static fn($at)=>!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/D',$at)));
+            $safeCapReset=$operation->getOriginal('state')==='running'&&$operation->state==='held'&&$operation->safe_code==='enom_test_call_cap'
+                &&$operation->action==='register'&&$operation->started_at===null&&$operation->request_fingerprint===null&&$operation->lease_expires_at===null
+                &&$operation->provider_order_id===null&&!array_key_exists('actual',$operation->cost??[])&&!array_key_exists('execution',$operation->cost??[])
+                &&!array_key_exists('dispatch_attempted_at',$operation->policy??[])
+                &&is_array($lastRefusal)&&$lastRefusal===['phase'=>$phase,'refused_at'=>$lastRefusal['refused_at']??null,
+                    'dispatch_attempted_at'=>$phase==='purchase'?($old['dispatch_attempted_at']??null):null,
+                    'authorized_cost'=>$phase==='purchase'?($old['authorized_cost']??null):null]
+                &&$new===['test_call_refusals'=>$newRefusals,...array_intersect_key($old,['capacity_deferrals'=>true])]
+                &&$newRefusals===array_merge($oldRefusals,[$lastRefusal])
+                &&$newFunding===$expectedFunding;
+            // A proven-unsent TEST refusal can be staff-released and freshly claimed with a new
+            // execution window. Preserve its refusal/deferral histories while rotating authority.
+            $retryDeferrals=$old['capacity_deferrals']??[];
+            $retryFunding=$newFunding;unset($retryFunding['claim'],$retryFunding['seal']);
+            $freshClaim=$newFunding['claim']??null;
+            $safeTestRetry=$operation->getOriginal('state')==='queued'&&$operation->state==='running'&&$operation->safe_code===null
+                &&$operation->action==='register'&&$operation->registrar_key==='enom'&&$oldRefusals!==[]&&$oldRefusals===$newRefusals
+                &&in_array($operation->getOriginal('safe_code'),[null,'write_rate_limited'],true)
+                &&($old['seal']??null)==='absent'&&($old['send_state']??null)==='definitely_unsent'
+                &&(!isset($old['claim_key'])||(is_string($old['claim_key'])&&preg_match('/^[a-f0-9]{32}$/D',$old['claim_key'])&&($new['claim_key']??null)!==$old['claim_key']))
+                &&is_array($retryDeferrals)&&array_is_list($retryDeferrals)&&count($retryDeferrals)<=5
+                &&!array_filter($retryDeferrals,static fn($at)=>!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/D',$at))
+                &&$new===['test_call_refusals'=>$oldRefusals,...array_intersect_key($old,['capacity_deferrals'=>true]),
+                    'claim_key'=>$new['claim_key']??null,'seal'=>'absent','send_state'=>'definitely_unsent']
+                &&is_string($new['claim_key']??null)&&preg_match('/^[a-f0-9]{32}$/D',$new['claim_key'])
+                &&$operation->started_at!==null&&is_string($operation->request_fingerprint)&&preg_match('/^[a-f0-9]{64}$/D',$operation->request_fingerprint)
+                &&$operation->lease_expires_at!==null&&$retryFunding===$expectedFunding&&is_array($freshClaim)
+                &&(!array_key_exists('claim',$oldFunding)||$freshClaim===$oldFunding['claim']);
+            if($safeCapReset) {
+                $allowed=$phase==='purchase'
+                    ?['test_call_refusals','claim_key','seal','send_state','capacity_deferrals','dispatch_attempted_at','authorized_cost','registration_admission']
+                    :['test_call_refusals','claim_key','seal','send_state','capacity_deferrals'];
+                $safeCapReset=($old['send_state']??null)===($phase==='purchase'?'possibly_sent':'definitely_unsent')
+                    &&($phase==='purchase'?($old['seal']??null)==='sealed'&&isset($old['dispatch_attempted_at'],$old['authorized_cost'],$old['registration_admission']):($old['seal']??null)==='absent')
+                    &&($phase!=='purchase'||\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::purchaseUnconsumed($operation->account_fingerprint,(int)$operation->id))
+                    &&$validDeferrals&&!array_diff(array_keys($old),$allowed)
+                    &&!array_intersect(array_keys($old),['execution','evidence','charge','order_candidates','provider_reference','registration','corrections','reconciliation','terminal']);
+            }
+            $safeAttemptReset=$safeCapReset||$safeTestRetry;
+            if($newRefusals!==$oldRefusals&&!$safeCapReset) { throw new \DomainException('TEST call refusal history requires a proven-unsent cap reset.'); }
             if (!array_key_exists('registration_admission', $old) && array_key_exists('registration_admission', $new)
                 && (($old['seal'] ?? null) !== 'absent' || ($new['seal'] ?? null) !== 'sealed' || $operation->action !== 'register')) {
                 throw new \DomainException('Registration admission can only be recorded at the original seal.');
@@ -71,18 +135,18 @@ class Operation extends Model
             if (!array_key_exists('transfer_admission', $old) && array_key_exists('transfer_admission', $new)
                 && (($old['seal'] ?? null) !== 'absent' || ($new['seal'] ?? null) !== 'sealed' || $operation->action !== 'transfer')) { throw new \DomainException('Transfer admission requires the original seal.'); }
             foreach (['converted_completion', 'legacy_retained', 'transfer_admission', 'transfer_terminal', 'claim_key', 'dispatch_attempted_at', 'authorized_cost', 'renewal_mode', 'renewal', 'registration_admission', 'execution', 'evidence', 'charge', 'order_candidates', 'registration', 'corrections', 'reconciliation', 'terminal', 'transfer_timeout'] as $key) {
-                if (array_key_exists($key, $old) && (!array_key_exists($key, $new) || $new[$key] !== $old[$key])) {
+                if (!$safeAttemptReset&&array_key_exists($key, $old) && (!array_key_exists($key, $new) || $new[$key] !== $old[$key])) {
                     throw new \DomainException('Attempt evidence is write-once.');
                 }
             }
-            if (isset($old['claim_key']) && $operation->isDirty(['started_at', 'request_fingerprint'])) { throw new \DomainException('Original attempt identity is frozen.'); }
+            if (!$safeAttemptReset&&isset($old['claim_key']) && $operation->isDirty(['started_at', 'request_fingerprint'])) { throw new \DomainException('Original attempt identity is frozen.'); }
             if (isset($old['reconciliation']) && $operation->isDirty(['provider_order_id', 'confirmed_expires_at', 'completed_at'])) { throw new \DomainException('Completion evidence is frozen.'); }
             if (($old['seal'] ?? null) === 'sealed' && $operation->isDirty('payload')) {
                 throw new \DomainException('Sealed desired state is frozen.');
             }
             foreach (['claim', 'seal', 'refund_authorization', 'refund'] as $key) {
                 $before = $operation->getOriginal('funding') ?? []; $after = $operation->funding ?? [];
-                if (array_key_exists($key, $before) && (!array_key_exists($key, $after) || $after[$key] !== $before[$key])) {
+                if (!$safeAttemptReset&&array_key_exists($key, $before) && (!array_key_exists($key, $after) || $after[$key] !== $before[$key])) {
                     throw new \DomainException('Claim funding evidence is frozen.');
                 }
             }
@@ -92,7 +156,7 @@ class Operation extends Model
                 || count($next) > 20 || count($next) < count($history) || array_slice($next, 0, count($history)) !== $history) {
                 throw new \DomainException('Financial adjustments are append-only.');
             }
-            if (($old['seal'] ?? null) === 'sealed' && ($new['seal'] ?? null) !== 'sealed') {
+            if (!$safeAttemptReset&&($old['seal'] ?? null) === 'sealed' && ($new['seal'] ?? null) !== 'sealed') {
                 throw new \DomainException('Dispatch seals cannot be removed.');
             }
         });

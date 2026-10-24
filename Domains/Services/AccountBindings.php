@@ -90,6 +90,17 @@ final class AccountBindings
         return $this->registry->reader($this->binding($account), $this->configuration($account, true), $balanceOnly);
     }
 
+    /** Bound real reads for the one targeted, paid TEST registration preflight. */
+    public function registrationPreflightReader(AccountBinding $expected): RegistrarDriver
+    {
+        if(DB::transactionLevel()!==0||!EnomTestRegistration::enabled($expected)){
+            throw new \DomainException('TEST registration preflight is unavailable.');
+        }
+        $this->server($expected->serverId);$account=Account::where('server_id',$expected->serverId)->sole();
+        $expected->requireMatch($this->binding($account));
+        return $this->registry->registrationPreflightReader($expected,$this->configuration($account,true));
+    }
+
     /** Pure opt-in factory. Plaintext is loaded only inside the private protocol exchange. */
     public function enomRuntimeFactory(AccountBinding $expected, \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,
         WriteFeatures $features, WriteAcceptance $accepted, RenewalAcceptance $renewalAccepted,

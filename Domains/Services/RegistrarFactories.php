@@ -17,16 +17,25 @@ final class RegistrarFactories
         $environment = \Paymenter\Extensions\Servers\Domains\Data\Environment::tryFrom((string)config('domains.enom_identity.environment', ''));
         if (!$environment) { return false; }
         $registry->register('enom', ['uid', 'token'], new Enom\AccountVerifier($environment),
-            static function(AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): Enom\CataloguePreview {
+            static function(AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): Enom\CataloguePreview|Enom\EnomTestReconciliationReader {
                 if ($binding->environment !== $environment) { throw new IdentityRefused('identity_environment_refused'); }
                 if (!TestCatalogue::enabled($binding)) { throw new \DomainException('TEST catalogue reads are unavailable.'); }
                 $accepted = CatalogueAcceptances::load($binding);
-                return new Enom\CataloguePreview(new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), array_keys($accepted->endings)));
+                $driver=new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), array_keys($accepted->endings));
+                $preview=new Enom\CataloguePreview($driver);
+                return EnomTestRegistration::enabled($binding)?new Enom\EnomTestReconciliationReader($preview,$driver):$preview;
             },
             static function(AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): Enom\Driver {
                 if ($binding->environment !== $environment) { throw new IdentityRefused('identity_environment_refused'); }
                 return new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), []);
-            }, true);
+            }, true,
+            static function(AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): Enom\Driver {
+                if ($binding->environment !== $environment || !EnomTestRegistration::enabled($binding)) {
+                    throw new IdentityRefused('identity_environment_refused');
+                }
+                $accepted=CatalogueAcceptances::load($binding);
+                return new Enom\Driver(new Enom\Api\Client($binding,$credentials['uid'],$credentials['token']),array_keys($accepted->endings));
+            });
         return true;
     }
     public static function install(RegistrarRegistry $registry, ?AccountVerifier $enom = null, ?AccountVerifier $namesilo = null): void

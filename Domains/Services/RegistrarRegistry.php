@@ -10,7 +10,8 @@ final class RegistrarRegistry
 {
     private array $entries = [];
 
-    public function register(string $key, array $credentialKeys, AccountVerifier $verifier, \Closure $readerFactory, ?\Closure $balanceFactory = null, bool $accountReadsOnly = false): void
+    public function register(string $key, array $credentialKeys, AccountVerifier $verifier, \Closure $readerFactory, ?\Closure $balanceFactory = null, bool $accountReadsOnly = false,
+        ?\Closure $registrationPreflightFactory = null): void
     {
         if (!in_array($key, ['enom', 'namesilo'], true) || isset($this->entries[$key]) || $credentialKeys === []) {
             throw new \InvalidArgumentException('Unsupported or duplicate registrar.');
@@ -22,7 +23,7 @@ final class RegistrarRegistry
             }
             $keys[$name] = true;
         }
-        $this->entries[$key] = [array_keys($keys), $verifier, $readerFactory, $balanceFactory, $accountReadsOnly];
+        $this->entries[$key] = [array_keys($keys), $verifier, $readerFactory, $balanceFactory, $accountReadsOnly, $registrationPreflightFactory];
     }
 
     public function keys(): array { return array_keys($this->entries); }
@@ -50,8 +51,12 @@ final class RegistrarRegistry
     public function verify(string $key, int $serverId, Environment $environment, #[\SensitiveParameter] array $credentials): array
     {
         $credentials = $this->credentials($key, $credentials);
+        $refusals=EnomTestCalls::refusalGeneration();
         try { $identity = AccountBinding::canonicalIdentity($key, $this->entry($key)[1]->verify($environment, $credentials)); }
-        catch (IdentityRefused $error) { throw new IdentityRefused($error->reason); }
+        catch (IdentityRefused $error) {
+            if(EnomTestCalls::refusedSince($refusals)){throw new EnomTestCallLimit;}
+            throw new IdentityRefused($error->reason);
+        }
         catch (\Throwable) { throw new \RuntimeException('Registrar account ownership could not be verified.'); }
         return [new AccountBinding($key, $serverId, $environment, $identity), $identity];
     }
@@ -68,6 +73,20 @@ final class RegistrarRegistry
         }
         $binding->requireMatch($driver->binding());
         return $driver;
+    }
+
+    /** Targeted paid-registration preflight; never used by catalogue or background polling. */
+    public function registrationPreflightReader(AccountBinding $binding, #[\SensitiveParameter] array $credentials): RegistrarDriver
+    {
+        try {
+            $factory=$this->entry($binding->registrarKey)[5]??throw new \DomainException('Registration preflight reader is unavailable.');
+            $driver=$factory($binding,$this->credentials($binding->registrarKey,$credentials));
+        } catch (IdentityRefused $error) { throw new IdentityRefused($error->reason); }
+        catch (\Throwable) { throw new \RuntimeException('Registrar preflight reader could not be created.'); }
+        if(!$driver instanceof RegistrarDriver||$driver instanceof \Paymenter\Extensions\Servers\Domains\Contracts\AdmittedRegistrarDriver){
+            throw new \RuntimeException('Registrar preflight factory returned an invalid handle.');
+        }
+        $binding->requireMatch($driver->binding());return $driver;
     }
 
     private function entry(string $key): array

@@ -16,7 +16,7 @@ final class BalanceReads
             $context->binding->requireMatch($result->binding);
         } catch (\Throwable $e) {
             // A local quota refusal did not read the provider and cannot invalidate its last result.
-            if(!$e instanceof ReadDeferred){self::record($context->binding,null,$context->now(),$source,'read_failed');}
+            if(!$e instanceof ReadDeferred&&!$e instanceof EnomTestCallLimit){self::record($context->binding,null,$context->now(),$source,'read_failed');}
             throw $e;
         }
         $money = $result->disposition === Disposition::Accepted ? $result->evidence()->balance : null;

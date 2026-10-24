@@ -21,21 +21,24 @@ final class CatalogueAcceptances
             if (!$setting->encrypted || !is_string($setting->value)) { throw new \DomainException; }
             $data = json_decode($setting->value, true, 16, JSON_THROW_ON_ERROR);
             if (($data['fingerprint'] ?? null) !== $binding->fingerprint || ($data['currency'] ?? null) !== 'USD' || ($data['unit'] ?? null) !== 'exact_term_annual') { throw new \DomainException; }
-            return new CatalogueAcceptance($binding, $data['revision'], $data['endings']);
+            return new CatalogueAcceptance($binding, $data['revision'], $data['endings'],
+                $data['registration_route'] ?? null, $data['registration_interval_seconds'] ?? 0);
         } catch (\Throwable) { throw new \DomainException('Catalogue acceptance is unavailable.'); }
     }
     /** Explicit acceptance/revocation by the future staff workflow; not automatic discovery. */
     public static function save(AccountBinding $binding, int $expectedRevision, array $endings): CatalogueAcceptance
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Acceptance owns its lock order.'); }
-        $next = new CatalogueAcceptance($binding, $expectedRevision + 1, $endings);
-        return DB::transaction(static function () use ($binding, $expectedRevision, $next): CatalogueAcceptance {
+        return DB::transaction(static function () use ($binding, $expectedRevision, $endings): CatalogueAcceptance {
             $server = Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
             $account = Account::where('server_id', $binding->serverId)->lockForUpdate()->firstOrFail();
             $binding->requireMatch(self::binding($account));
             if (!$server->enabled || $server->extension !== 'Domains') { throw new \DomainException('Unavailable registrar server.'); }
             $setting = $server->settings()->where('key', self::KEY)->lockForUpdate()->first();
-            if (($setting ? self::load($binding, true)->revision : 0) !== $expectedRevision) { throw new \DomainException('Stale acceptance revision.'); }
+            $old = $setting ? self::load($binding, true) : null;
+            if (($old?->revision ?? 0) !== $expectedRevision) { throw new \DomainException('Stale acceptance revision.'); }
+            $next = new CatalogueAcceptance($binding, $expectedRevision + 1, $endings,
+                $old?->registrationRoute, $old?->registrationIntervalSeconds ?? 0);
             self::saveLocked($next); return $next;
         });
     }
@@ -48,7 +51,13 @@ final class CatalogueAcceptances
         $account = Account::where('server_id', $binding->serverId)->lockForUpdate()->firstOrFail();
         $binding->requireMatch(self::binding($account));
         if (!$server->enabled || $server->extension !== 'Domains') { throw new \DomainException('Unavailable registrar server.'); }
-        $encoded = json_encode(['fingerprint' => $binding->fingerprint, 'revision' => $next->revision, 'endings' => $next->endings, 'currency' => 'USD', 'unit' => 'exact_term_annual'], JSON_THROW_ON_ERROR);
+        $data = ['fingerprint' => $binding->fingerprint, 'revision' => $next->revision, 'endings' => $next->endings,
+            'currency' => 'USD', 'unit' => 'exact_term_annual'];
+        if ($next->registrationRoute !== null) {
+            $data['registration_route'] = $next->registrationRoute;
+            $data['registration_interval_seconds'] = $next->registrationIntervalSeconds;
+        }
+        $encoded = json_encode($data, JSON_THROW_ON_ERROR);
         if (strlen($encoded) > 32768) { throw new \DomainException('Acceptance exceeds encrypted settings capacity.'); }
         $setting = $server->settings()->where('key', self::KEY)->lockForUpdate()->first() ?? $server->settings()->make(['key' => self::KEY]);
         $setting->encrypted = true; $setting->type = 'string'; $setting->value = $encoded; $setting->save();

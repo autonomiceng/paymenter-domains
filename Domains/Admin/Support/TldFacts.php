@@ -86,7 +86,11 @@ final class TldFacts
     }
     public static function acceptance(Account $a): string
     {
-        try{$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding($a));$count=count($accepted->endings);return 'Revision '.$accepted->revision.' · '.$count.' '.($count===1?'ending':'endings');}
+        try{$binding=CatalogueAcceptances::binding($a);$accepted=CatalogueAcceptances::load($binding);$count=count($accepted->endings);$text='Revision '.$accepted->revision.' · '.$count.' '.($count===1?'ending':'endings');
+            if($a->registrar_key==='enom'&&$a->environment==='test'){$protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
+                $text.=$accepted->registrationRoute===$protocol['route']&&$accepted->registrationIntervalSeconds===$protocol['interval_seconds']
+                    ?' · Enom TEST Purchase route and interval accepted':' · Enom TEST Purchase route and interval not accepted';}
+            return $text;}
         catch(\Throwable){return 'Unavailable · new sales held';}
     }
     public static function salesState(Tld $t, ?StaffGrants $grants = null): string

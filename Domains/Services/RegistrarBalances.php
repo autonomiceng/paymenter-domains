@@ -59,7 +59,7 @@ final readonly class RegistrarBalances
             // Reserve the same per-login wire limiter used by the existing driver reads.
             $r=$c->withReservedWire(fn()=>BalanceReads::read($reader,$c,$source));
             return $r->evidence()->balance&&$r->disposition===\Paymenter\Extensions\Servers\Domains\Data\Disposition::Accepted?'refreshed':'read_failed';
-        }catch(\Throwable $e){if($e instanceof ReadDeferred){return 'rate_limited';}BalanceReads::record($binding,null,$this->clock->now(),$source,'read_failed');return 'read_failed';}
+        }catch(\Throwable $e){if($e instanceof EnomTestCallLimit){return 'test_call_refused';}if($e instanceof ReadDeferred){return 'rate_limited';}BalanceReads::record($binding,null,$this->clock->now(),$source,'read_failed');return 'read_failed';}
     }
     public static function fundsUrl(string $registrar): string
     {
