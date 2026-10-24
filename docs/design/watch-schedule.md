@@ -62,3 +62,8 @@ owner and 2,880 globally. Rough baseline capacity is 96 watched names/owner or 4
 before managed checks, urgent expiry or retries. With more than five backlogged owners,
 each owner gets about 576 times five divided by the owner count per day. Capacity acceptance must size the rollout
 within these policy bounds; wrapping one owner within a tick would violate the owner cap.
+
+Staff inbox retries retain one receipt per recipient and outage episode or UTC balance day in
+`domains_staff_alert_receipts`. Each native notification and receipt commit together. A partial
+failure retries only undelivered recipients, including after a delivered inbox item is deleted.
+Installation verifies this retained table; uninstall and migration rollback keep it.

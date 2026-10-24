@@ -11,7 +11,7 @@ final class WatchMaintenance
         Log::warning('Domain monitoring needs staff review.',['code'=>$health['reason']]);
         $title=$health['reason']==='checks_unsuccessful'?'Domain monitoring checks failed':'Domain monitoring stopped';
         $body=$health['reason']==='dispatch_overdue'?'Checks have not run since '.self::date($health['since']??null).'.':self::notice($health)['text'];
-        return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send($title,$body,'filament.admin.resources.domain-watch.index','admin.domains.watch.view');
+        return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send($title,$body,'filament.admin.resources.domain-watch.index','admin.domains.watch.view','watch:'.$health['alert_key']);
     }
     private function families(int $now): array
     {
@@ -93,7 +93,7 @@ final class WatchMaintenance
             $previous=($prior['reason']??'').'|'.implode(',',$prior['families']??[]);
             if ($health['outage'] && ($row->alert_at===null || $episode!==$previous)) {
                 $q->update(['alert_at'=>$now]);
-                $prior=[...$health,'alert_pending'=>true,'alert_retry_at'=>0];
+                $prior=[...$health,'alert_pending'=>true,'alert_retry_at'=>0,'alert_key'=>bin2hex(random_bytes(16))];
                 DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'outage'],['data'=>json_encode($prior),'progress_at'=>$now]);
             } elseif (!$health['outage']) {
                 if($row->alert_at!==null){$q->update(['alert_at'=>null]);}

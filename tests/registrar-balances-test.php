@@ -170,11 +170,18 @@ $clock->instant=$clock->now()->modify('+60 seconds');$balances->daily($a);$asser
 same('Low balance',RegistrarBalances::facts($a,$clock->now())['status'],'Dashboard warning accompanies the native inbox alert');
 // Failed inbox persistence releases only this daily claim and never consumes the UTC day.
 $notificationFailure='veto';$replacement=null;
-App\Models\Notification::creating(static function($n)use(&$notificationFailure,&$replacement,$a){
-    if($n->title!=='Low balance'||!$notificationFailure){return;}
-    if($replacement!==null){DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>$replacement]);}
+$clock->instant=$clock->now()->modify('+1 day');
+$successfulBefore=App\Models\Notification::where('title','Low balance')->where('user_id',$secondStaff->id)->count();
+App\Models\Notification::creating(static function($n)use(&$notificationFailure,&$replacement,$a,$staff){
+    if($n->title!=='Low balance'||!$notificationFailure||(int)$n->user_id!==(int)$staff->id){return;}
     if($notificationFailure==='throw'){throw new RuntimeException('Synthetic inbox failure');}
     return false;
+});
+// Replace the claim after the failed recipient savepoint rolls back.
+\Illuminate\Support\Facades\Log::listen(static function($event)use(&$replacement,$a):void {
+    if($replacement!==null&&$event->message==='Staff inbox notification could not be saved.'){
+        DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>$replacement]);
+    }
 });
 foreach(['veto','throw'] as $notificationFailure){
     $clock->instant=$clock->now()->modify('+60 seconds');
@@ -183,9 +190,11 @@ foreach(['veto','throw'] as $notificationFailure){
     same(null,$row($a)->notified_on,'Failed '.$notificationFailure.' alert keeps day retryable');
     same($clock->now()->getTimestamp()+60,(int)$row($a)->daily_due_at,'Failed notification releases daily claim after '.$notificationFailure);
 }
+same($successfulBefore+1,App\Models\Notification::where('title','Low balance')->where('user_id',$secondStaff->id)->count(),'Successful balance recipient receives one alert across partial retries');
 $clock->instant=$clock->now()->modify('+60 seconds');$notificationFailure=false;$balances->daily($a);
+same($successfulBefore+1,App\Models\Notification::where('title','Low balance')->where('user_id',$secondStaff->id)->count(),'Balance recovery skips delivered recipients');
 same($clock->now()->format('Y-m-d'),$row($a)->notified_on,'Retry consumes day only after successful native persistence');
-$clock->instant=$clock->now()->modify('+60 seconds');$notificationFailure='veto';$replacement=$clock->now()->getTimestamp()+172800;
+$clock->instant=$clock->now()->modify('+1 day');$rate->update(['revision'=>$rate->revision+1,'fresh_until'=>$clock->now()->modify('+3 days')]);$notificationFailure='veto';$replacement=$clock->now()->getTimestamp()+172800;
 DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0,'notified_on'=>null]);
 $balances->daily($a);same($replacement,(int)$row($a)->daily_due_at,'Failure cannot release a replacement daily claim');$notificationFailure=false;
 // The quota-refusal twin must also preserve a replacement claim.

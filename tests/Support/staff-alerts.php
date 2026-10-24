@@ -12,6 +12,7 @@ function staffAlertFixture(): void
     foreach(Schema::getColumns('notifications') as $column){
         if(in_array($column['name'],['user_id','title','body'],true)){expect(!$column['nullable'],'Native required alert fields');}
     }
+    \Paymenter\Extensions\Servers\Domains\Services\StaffAlertSchema::install();
     Queue::fake();
 }
 function staffAlerts(string $title,string $body,string $url,array $staff): void

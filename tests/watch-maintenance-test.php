@@ -68,18 +68,32 @@ foreach(['throw','veto'] as $failure){
     expect(!$sent,'Failed recipient must not report successful handoff');
     same(1,App\Models\Notification::where('title','Retry inbox')->where('user_id',$staff[1]->id)->count(),'Later recipient still receives alert after '.$failure);
 }
-$failure='throw';$levels=[];$markers=[];$retryAt=$now+92*86400;
+$failure='throw';$levels=[];$markers=[];$retryAt=$now+92*86400;$episodeCommitted=false;
+\Illuminate\Support\Facades\Event::listen(\Illuminate\Database\Events\TransactionCommitted::class,static function()use(&$episodeCommitted,$retryAt):void {
+    if(DB::transactionLevel()===0&&(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at')===$retryAt){$episodeCommitted=true;}
+});
+App\Models\Notification::creating(static function($n)use(&$episodeCommitted):void {
+    if($n->title==='Domain monitoring stopped'){expect($episodeCommitted,'Episode commits before recipient delivery transaction');}
+});
+$successfulBefore=App\Models\Notification::where('title','Domain monitoring stopped')->where('user_id',$staff[1]->id)->count();
 DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['alert_at'=>null,'progress_at'=>$now]);
 $old=(array)DB::table('domains_watch_registry')->where('id',$last)->first();unset($old['id']);
 $old['result']='unknown';$old['reason']='endpoint_failed';$old['completed_at']=$now;
 $oldId=DB::table('domains_watch_registry')->insertGetId($old);
 $m->tick($retryAt);
 same([$retryAt,true],[(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at'),!DB::table('domains_watch_registry')->where('id',$oldId)->exists()],'Failure retains episode and still sweeps old observations');
-expect($levels!==[]&&array_unique($levels)===[0],'Native inbox writes happen outside episode locks');
+expect($levels!==[]&&array_unique($levels)===[1],'Native inbox writes use a separate receipt transaction after episode locks');
 expect(!in_array(false,$markers,true),'Episode committed before any native inbox write');
 $outage=fn()=>json_decode(DB::table('domains_watch_schedule')->where('scope','outage')->value('data'),true);
 same(true,$outage()['alert_pending']??null,'Failed alert retains durable retry');
-$failure=false;$m->tick($retryAt+60);same(false,$outage()['alert_pending']??null,'Later tick acknowledges successful retry');
-$count=App\Models\Notification::where('title','Domain monitoring stopped')->count();$m->tick($retryAt+120);
+$m->tick($retryAt+60);same(true,$outage()['alert_pending']??null,'Repeated partial failure keeps retry pending');
+same($successfulBefore+1,App\Models\Notification::where('title','Domain monitoring stopped')->where('user_id',$staff[1]->id)->count(),'Successful recipient receives one alert across partial retries');
+$failure=false;$m->tick($retryAt+120);same(false,$outage()['alert_pending']??null,'Later tick acknowledges successful retry');
+same($successfulBefore+1,App\Models\Notification::where('title','Domain monitoring stopped')->where('user_id',$staff[1]->id)->count(),'Recovery skips recipients already delivered');
+$count=App\Models\Notification::where('title','Domain monitoring stopped')->count();$m->tick($retryAt+180);
 same($count,App\Models\Notification::where('title','Domain monitoring stopped')->count(),'Completed episode stays deduplicated');
+// An inbox deletion must not erase durable delivery success during a lost acknowledgement retry.
+App\Models\Notification::where('title','Domain monitoring stopped')->where('user_id',$staff[1]->id)->latest('id')->firstOrFail()->delete();
+$retry=$outage();$retry['alert_pending']=true;DB::table('domains_watch_schedule')->where('scope','outage')->update(['data'=>json_encode($retry)]);
+$m->tick($retryAt+240);same($count-1,App\Models\Notification::where('title','Domain monitoring stopped')->count(),'Inbox deletion does not resend acknowledged recipient delivery');
 $nativeSuccessful=true;echo "Two missed turns, day-long outage, deduplicated health and ninety-day retained last-good/notice evidence passed.\n";

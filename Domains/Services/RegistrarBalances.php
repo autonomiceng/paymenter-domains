@@ -104,7 +104,7 @@ final readonly class RegistrarBalances
             $r=(clone $q)->lockForUpdate()->firstOrFail();$day=$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');
             if($r->notified_on===$day){return true;}
             $name=\App\Models\Server::whereKey($account->server_id)->value('name')?:'Registrar account';
-            if (StaffAlert::send('Low balance',$name.' balance is below renewals due in 30 days.','filament.admin.pages.registrar-setup')) {
+            if (StaffAlert::send('Low balance',$name.' balance is below renewals due in 30 days.','filament.admin.pages.registrar-setup',Staff::VIEW,'balance:'.$account->server_id.':'.$account->account_fingerprint.':'.$day)) {
                 $q->update(['notified_on'=>$day]);return true;
             }
             return false;

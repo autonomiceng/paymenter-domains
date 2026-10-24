@@ -18,7 +18,11 @@ try { $entry->installed(); } catch (DomainException $e) { $pointerRefused = str_
 expect($pointerRefused, 'Retained adoption pointer without migration history refuses installation');
 DB::table('migrations')->insert((array) $pointerMigration);
 same(7,DB::table('migrations')->where('migration','like','2026_10_18_%')->count(),'All extension migrations recorded');
+$receipts=\Paymenter\Extensions\Servers\Domains\Services\StaffAlertSchema::TABLE;
+DB::table($receipts)->insert(['delivery_key'=>str_repeat('a',64),'user_id'=>1,'notification_id'=>2]);
 $entry->upgraded('0.0.1');$entry->uninstalled();$entry->installed();
+$receiptMigration=require dirname(__DIR__).'/Domains/database/migrations/2026_10_24_000039_create_staff_alert_receipts.php';$receiptMigration->down();
+same(2,(int)DB::table($receipts)->sole()->notification_id,'Install, upgrade, uninstall and rollback retain recipient receipts');
 Runtime::register();same(app(RuntimePorts::class),app(RuntimePorts::class),'One port authority');expect(!app()->bound(\Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class),'Disabled TEST transfer preserves absent cart precheck');
 $entry->boot();$entry->boot();
 same(1,count(Event::getListeners('navigation')),'One public navigation authority');
