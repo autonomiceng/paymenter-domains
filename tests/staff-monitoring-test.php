@@ -103,5 +103,5 @@ $day=strtotime('2026-01-03 12:00:00 UTC');foreach(['2026-01-01'=>'Expired 2 days
 same('Save',$product->instance()->getAction('save')->getModalSubmitActionLabel(),'Edit submit');same('Turn on monitoring',$offProduct->instance()->getAction('enable')->getModalSubmitActionLabel(),'Turn on submit');
 $acts=\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchActions::watch($watch,(int)$watch->revision);$more=[];foreach(end($acts)->getActions() as $a){$more[$a->getName()]=$a->getModalSubmitActionLabel();}
 same(['profile'=>'Save','note'=>'Add note','retire'=>'Stop monitoring'],$more,'More submit labels');
-DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'paused']);$paused=WatchFacts::for(WatchName::find($watch->id));expect(($paused['Checks']['DNS records']['value']??'')!==null,'Paused DNS records not Missing');
+DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'paused']);$paused=WatchFacts::for(WatchName::find($watch->id));expect(!array_key_exists('DNS records',$paused['Checks']),'Paused name with no record results hides DNS records, not Missing');
 $nativeSuccessful=true;echo "Domain monitoring, DNS templates and Hosting products pages passed.\n";
