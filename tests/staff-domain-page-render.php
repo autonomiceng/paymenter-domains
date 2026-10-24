@@ -34,9 +34,10 @@ $review=$copy('import-review.example.com',[]); DB::table('domains_domains')->whe
 $order=$copy('new-order.example.com',['status'=>'registration_pending','authority_generation'=>1]);
 $op=$active->operations()->sole()->replicate(); $op->fill(['domain_id'=>$order->id,'service_id'=>$order->service_id,'operation_key'=>'render-order',
     'action'=>'register','state'=>'awaiting_payment','safe_code'=>null,'authority_generation'=>1]); $op->save();
-// Open alerts on the rows they concern: Missing records on Service, a review alert on Renewal invoices and one on Last sync.
+// Open alerts on the rows they concern: Missing records on a Service with no service, review alerts on Renewal invoices and Last sync,
+// and a missing renewal invoice under the Next invoice date.
 $alerted=$copy('alerts.example.com',[]);
-foreach(['native_identity_missing','renewal_unpaid','observation_review'] as $code){Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($alerted,$code,time());}
+foreach(['native_identity_missing','renewal_unpaid','observation_review','missing_obligation'] as $code){Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($alerted,$code,time());}
 require_once __DIR__.'/Support/accounts.php';
 $demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'enom','beco-demo-enom'),'domain'=>'beco-demo-held.com','sld'=>'beco-demo-held','tld'=>'com',
     'user_id'=>$customer->id,'service_id'=>699,'status'=>'active','provider_expires_at'=>today()->addDays(200)->format('Y-m-d'),

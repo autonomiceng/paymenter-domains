@@ -122,6 +122,13 @@ same(['1 domain','warning'],[$row->getState(),$row->getColor('1 domain')],'One d
 $filtered=Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$enom->server_id],'alerts'=>['isActive'=>true]]]);
 $alerts->assertActionVisible(TestAction::make('domain_alerts')->schemaComponent('system_checks','content'))->assertSee('View domains')->assertSeeHtml('href="'.e($filtered).'"');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertDontSee('View domains');
+// The same alert on a domain whose service still exists: the Service row keeps its value and link, with the cause below in danger.
+Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>App\Admin\Resources\ServiceResource::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();
+$serviceUrl=App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$service->id]);
+$fact=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($alerted->fresh())['Service'];
+same([$alerted->domain.' registration','Service #'.$service->id.' · Customer, order or service missing','danger',$serviceUrl],[$fact['value'],$fact['sub'],$fact['tone'],$fact['url']],'A live service keeps its value and link under the alert');
+Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$alerted->id])
+    ->assertSeeHtml('href="'.e($serviceUrl).'"')->assertSeeInOrder(['Service',$alerted->domain.' registration','Customer, order or service missing']);
 $passing=array_values(array_filter($flat,fn($e)=>$e instanceof \Filament\Schemas\Components\Section&&$e->getHeading()==='Passing checks'))[0];
 expect($passing->isCollapsed(),'Passing checks start collapsed');
 $inside=array_map(fn($e)=>$e->getLabel(),array_filter($passing->getChildSchema()->getFlatComponents(),fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry));

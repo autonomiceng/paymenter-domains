@@ -152,12 +152,12 @@ same(array_keys(Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::
 $importer=staffUser([Staff::VIEW,Staff::ADOPT_PREVIEW]);
 Livewire::actingAs($importer)->test(ListDomains::class)->assertActionVisible('adopt')->assertActionHasLabel('adopt','Import domain');
 
-// Open alerts: every recorded kind shows on the row it concerns with its cause. Missing kinds make the row Missing.
+// Open alerts: every recorded kind shows on the row it concerns with its cause. A row is Missing only when its own value is absent.
 same(['acquisition_late_money'],array_values(array_diff(array_keys(ObligationAlerts::LABELS),array_keys(DomainFacts::ALERTS))),'Every alert kind has a row; late payment shows in the status and notice');
 ObligationAlerts::record($active->fresh(),'native_identity_missing',time());
 same([null,'Service #'.$active->service_id.' not found · Customer, order or service missing','danger'],[$value($active,'Service'),$sub($active,'Service'),DomainFacts::for($active->fresh())['Service']['tone']],'Missing records alert on the Service row');
 ObligationAlerts::record($active->fresh(),'missing_obligation',time());
-same([null,'Renewal invoice missing'],[$value($active,'Next invoice'),$sub($active,'Next invoice')],'Missing renewal invoice makes Next invoice Missing');
+same([today()->addDays(120-21)->format('M j, Y'),'Renewal invoice missing','danger'],[$value($active,'Next invoice'),$sub($active,'Next invoice'),DomainFacts::for($active->fresh())['Next invoice']['tone']],'A Next invoice date stays, with the missing invoice below in danger');
 ObligationAlerts::record($active->fresh(),'renewal_unpaid',time());
 same(['On','Unpaid renewal invoice cancelled','warning'],[$value($active,'Renewal invoices'),$sub($active,'Renewal invoices'),DomainFacts::for($active->fresh())['Renewal invoices']['tone']],'Review alerts keep the value and add the cause');
 ObligationAlerts::record($active->fresh(),'observation_review',time());
