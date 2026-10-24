@@ -177,4 +177,24 @@ Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->serv
     ->tap(fn($t)=>same(['Resume orders?','Registrar requests on this account start sending again.'],[$t->instance()->getMountedAction()->getModalHeading(),$t->instance()->getMountedAction()->getModalDescription()],'Resume orders dialog'));
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>999999])->assertNotFound();
 Livewire::actingAs(staffUser([]))->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertForbidden();
+// Corrupt saved identity must leave both modes and credential repair reachable.
+DB::table('domains_accounts')->where('id',$enom->id)->update(['stable_identity'=>'broken ciphertext']);
+foreach(['test','live'] as $mode){
+    DB::table('domains_accounts')->where('id',$enom->id)->update(['environment'=>$mode]);
+    config(['domains.enom_identity.environment'=>$mode,'domains.enom_writes.registration'=>true,'domains.enom_live.renewal'=>true,'domains.enom_live.management'=>true]);
+    $broken=Account::findOrFail($enom->id);
+    foreach(['acceptance','live_renewal','live_management'] as $action){
+        Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::setup((int)$enom->server_id,'corrupt-binding',$action);
+    }
+    $page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful()
+        ->assertActionVisible(setupAction('configure',(int)$enom->server_id));
+    $action=setupAction('acceptance',(int)$enom->server_id);
+    $page->mountAction($action)->assertActionMounted($action);
+    $schema=(new ReflectionMethod(RegistrarAccount::class,'getMountedActionSchema'))->invoke($page->instance());
+    $dialog=html_entity_decode(strip_tags($schema->toHtml()),ENT_QUOTES);
+    same(1,substr_count($dialog,'Missing: saved account identity cannot be read. Restore the saved identity before accepting provider actions.'),'One cause next to the omitted control');
+    $names=array_map(fn($field)=>$field->getName(),$schema->getFlatFields());
+    expect(!in_array($mode.'_registration_accepted',$names,true),'Unreadable '.$mode.' binding omits provider acceptance');
+    expect(in_array('ending',$names,true)&&in_array('reason',$names,true),'Independent controls remain editable');
+}
 echo "Registrars list and account page passed\n";$nativeSuccessful=true;

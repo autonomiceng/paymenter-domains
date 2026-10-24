@@ -80,5 +80,5 @@ final class RegistrarFacts
     }
     /** Verified Enom user ID for the account's mode. NameSilo has no user ID. */
     public static function apiUser(Account $account): ?string
-    { return config('domains.enom_identity.environment')===$account->environment?$account->stable_identity:null; }
+    { try{return config('domains.enom_identity.environment')===$account->environment?$account->stable_identity:null;}catch(\Throwable){return null;} }
 }

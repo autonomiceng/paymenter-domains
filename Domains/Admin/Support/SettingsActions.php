@@ -15,6 +15,8 @@ final class SettingsActions
     private const RETRY_GUIDANCE='For “Not configured”, confirm the server is enabled and fresh, OTE enrollment is enabled, your permissions are current, and the key is not already enrolled on this site before submitting another review. Submitting another review may send another OTE key check.';
     public const SAVED_OUTCOME_UNKNOWN='One OTE key check was sent and NameSilo accepted the key; its balance was not saved. Enrollment may have been saved, but its outcome could not be confirmed. Reload the account page. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. '.self::NOT_ENROLLED.' '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE;
     public const GENERIC_OUTCOME_UNKNOWN='Enrollment did not finish normally, and its outcome could not be confirmed. An OTE key check may or may not have been sent. If it was sent, NameSilo may or may not have accepted the key. Reload the account page. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. '.self::NOT_ENROLLED.' '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE;
+    private static function missingIdentity(): \Filament\Schemas\Components\Text
+    { return \Filament\Schemas\Components\Text::make('Missing: saved account identity cannot be read. Restore the saved identity before accepting provider actions.'); }
     public static function description(string $name): string
     {
         if(config('domains.enom_identity.environment')==='live'&&in_array($name,['acceptance','import'],true)){
@@ -98,20 +100,27 @@ final class SettingsActions
                 $fields[]=Checkbox::make('transfer')->label('Annual transfers verified');$fields[]=Checkbox::make('registry')->label('Registry requirements supported');
                 $fields[]=Checkbox::make('verified')->label('I independently verified these exact terms and annual renewal support');
                 $account=Account::where('server_id',$server)->first();
-                if($account?->registrar_key==='enom'&&$account->environment==='live'){
-                    $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account));
-                    $fields[]=Checkbox::make('live_registration_accepted')->label('I independently reviewed live Enom Purchase at '.$protocol['route'].' and its '.$protocol['interval_seconds'].'-second request interval');
-                }
-                if($account?->registrar_key==='enom'&&$account->environment==='test'&&(config('domains.enom_writes.registration')===true||config('domains.enom_writes.transfer')===true)){
-                    $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account));
-                    $fields[]=Checkbox::make('test_registration_accepted')->label('I reviewed Enom TEST '.(config('domains.enom_writes.transfer')===true?'Purchase / TP_CreateOrder':'Purchase').' at '.$protocol['route'].' and its '.$protocol['interval_seconds'].'-second request interval');
+                if($account?->registrar_key==='enom'&&($account->environment==='live'||config('domains.enom_writes.registration')===true||config('domains.enom_writes.transfer')===true)){
+                    try{$binding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account);}
+                    catch(\Throwable){$binding=null;$fields[]=self::missingIdentity();}
+                    if($binding!==null){
+                        $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
+                        $fields[]=$account->environment==='live'
+                            ?Checkbox::make('live_registration_accepted')->label('I independently reviewed live Enom Purchase at '.$protocol['route'].' and its '.$protocol['interval_seconds'].'-second request interval')
+                            :Checkbox::make('test_registration_accepted')->label('I reviewed Enom TEST '.(config('domains.enom_writes.transfer')===true?'Purchase / TP_CreateOrder':'Purchase').' at '.$protocol['route'].' and its '.$protocol['interval_seconds'].'-second request interval');
+                    }
                 }
             }
             if(in_array($name,['live_renewal','live_management'],true)){
-                $fields[]=Checkbox::make('accept')->label('Accept live '.($name==='live_renewal'?'ordinary annual renewal':'supported management actions').' (clear to revoke)');
-                $liveAccount=Account::where('server_id',$server)->first();$b=$liveAccount?\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($liveAccount):null;
-                $protocol=$name==='live_renewal'?\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol($b):\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::protocol($b);
-                $fields[]=Checkbox::make('verified')->label('I independently checked this live action at '.$protocol['route'].', its '.$protocol['interval'].'-second interval and USD account');
+                $liveAccount=Account::where('server_id',$server)->first();
+                try{$b=$liveAccount?\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($liveAccount):null;}
+                catch(\Throwable){$b=null;}
+                if($b===null){$fields[]=self::missingIdentity();}
+                else{
+                    $fields[]=Checkbox::make('accept')->label('Accept live '.($name==='live_renewal'?'ordinary annual renewal':'supported management actions').' (clear to revoke)');
+                    $protocol=$name==='live_renewal'?\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol($b):\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::protocol($b);
+                    $fields[]=Checkbox::make('verified')->label('I independently checked this live action at '.$protocol['route'].', its '.$protocol['interval'].'-second interval and USD account');
+                }
             }
             if($name==='test_management'){
                 $fields[]=Checkbox::make('accept')->label('Accept the supported TEST management actions (clear to revoke)');

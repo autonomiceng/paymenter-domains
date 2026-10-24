@@ -19,10 +19,15 @@ final class DemoData
             $model instanceof Domain => ($model->snapshot[self::MARKER] ?? null) === true,
             $model instanceof Operation => ($model->policy[self::MARKER] ?? null) === true || $model->funding_basis === self::MARKER,
             $model instanceof ManagedPublicConfig => $model->reason === self::MARKER,
-            $model instanceof Account => isset(self::ACCOUNTS[$model->registrar_key]) && $model->stable_identity === self::ACCOUNTS[$model->registrar_key],
+            $model instanceof Account => self::account($model),
             $model instanceof WatchName => ($model->registry?->facts[self::MARKER] ?? null) === true,
             default => false,
         };
+    }
+    private static function account(Account $account): bool
+    {
+        try{return isset(self::ACCOUNTS[$account->registrar_key]) && $account->stable_identity === self::ACCOUNTS[$account->registrar_key];}
+        catch(\Throwable){return false;}
     }
     /** True while a seeded demo registrar account exists. Accounts are few, so each is checked directly. */
     public static function present(): bool
