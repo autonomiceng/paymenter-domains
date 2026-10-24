@@ -306,6 +306,8 @@ and HTML/Livewire credential secrecy are checked offline. Native action tests co
 stale/replayed keys, current permissions, encrypted audit, margin holds, seller/holder separation,
 acceptance narrowing/recovery and fake-only credential/probe paths. Default setup performs no I/O.
 `tests/staff-tld-render.php` emits native fixtures to its output argument. No panel registration is installed.
+`tests/staff-tld-pricing-render.php OUTPUT_DIRECTORY` captures TLDs & pricing and the TLD page when prices are synced,
+when sync failed with its stored cause, and with no registrar for new orders, across two registrar accounts (one demo).
 Source layout/labels adapt Enom `444f31c` TldResource and EnomSetup (MIT).
 
 ### Neutral reminders and obligation alerts

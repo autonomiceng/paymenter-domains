@@ -23,7 +23,7 @@ $action='lifecycle';
 
 // An unchanged retained installation has no lifecycle settings and no implied support.
 same(null,$saved(),'Old native settings have no inferred lifecycle facts');same(['grace'=>false,'restore'=>false],$cap(true),'Missing evidence closes both capabilities even with future acceptance');
-Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('Not verified')->assertActionVisible($action);
+Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('No lifecycle policy saved')->assertActionVisible($action);
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction($action)->assertActionMounted($action);
 $ticket=$page->get('mountedActions.0.data.review_key');
 same(null,$page->get('mountedActions.0.data.grace_extra'),'No default zero charge without verification');
@@ -35,7 +35,7 @@ expect($row->encrypted&&!str_contains($raw,$valid['restore_source']),'Registrar 
 $audit=array_values(array_filter(Review::historyRows($server->fresh()),fn($r)=>$r['action']==='Review lifecycle facts'));
 same(1,count($audit),'One audit record');same(null,$audit[0]['before']['lifecycle'],'Audit before absent');same($valid,$audit[0]['after']['lifecycle'],'Audit retains verified facts');same($valid['grace_source'],$audit[0]['input']['grace_source'],'Audit keeps evidence source');
 commerceReject(fn()=>$writer->run(new Review($u->id,$t->server_id,$t->id,'lifecycle',$ticket,'Refuse repeat submission'),[...$valid,'verified'=>true],$now));
-Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('80.0000 USD')->assertSee('execution disabled');
+Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('Restore fee')->assertSee('USD 80.00')->assertSee('Redemption period')->assertSee('30 days');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction($action);
 same($valid['grace_verified_at'],$page->get('mountedActions.0.data.grace_verified_at'),'Reopening never refreshes verification time');
 
@@ -124,7 +124,7 @@ foreach([Staff::VIEW,Staff::COSTS,Staff::POLICY,Review::permission('lifecycle')]
     if($removed!==Staff::VIEW){Livewire::actingAs($u->fresh())->test(ViewTld::class,['record'=>$t->id])->assertActionHidden($action);}
 }
 $u->role->update(['permissions'=>[Staff::VIEW]]);
-Livewire::actingAs($u->fresh())->test(ViewTld::class,['record'=>$t->id])->assertSee('Policy verified')->assertDontSee('80.0000 USD')->assertActionHidden($action);
+Livewire::actingAs($u->fresh())->test(ViewTld::class,['record'=>$t->id])->assertSee('Updated '.$now->setTimezone(new DateTimeZone('UTC'))->format('M j, Y'))->assertDontSee('USD 80.00')->assertDontSee('Restore fee')->assertActionHidden($action);
 $u->role->update(['permissions'=>$permissions]);
 foreach([
     new Review($u->id,$other->serverId,$t->id,'lifecycle',Review::ticket($u->id,$other->serverId,$t->id,'lifecycle',Review::stamp($other->serverId,$t->id)),'Foreign account review'),
