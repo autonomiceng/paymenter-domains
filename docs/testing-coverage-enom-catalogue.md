@@ -6,7 +6,7 @@ Restart application workers after configuration changes. This opts in to Enom
 TEST reads and catalogue/cart preview only. It supplies no writer, processing
 approval, funding or live-site authority. NameSilo remains unavailable.
 
-Staff use **Domains → Registrar setup** with the specific action permissions,
+Staff use **Domains → Registrars** with the specific action permissions,
 fresh review and a reason:
 
 1. **Verify identity** saves encrypted UID/token after one authenticated GetBalance.
@@ -33,9 +33,9 @@ up to one additional read. Failures may spend reads but do not replace saved pri
 rows. Import is manual and audited: scheduler catalogue work skips Enom TEST identity-mode accounts, even while
 opted out, before claiming a refresh;
 unreviewed direct imports refuse; daily balance and automatic native publication skip this TEST preview.
-Use **Read balance** in Registrar setup for an explicit balance refresh. The
+Use **Read balance** in Registrars for an explicit balance refresh. The
 Registrar balances page refresh reports configuration unavailable, points to
-Registrar setup and retains the cached amount without a provider read. Page rendering makes no provider call.
+Registrars and retains the cached amount without a provider read. Page rendering makes no provider call.
 The preview reader refuses balance, ad-hoc quotes, domain observation, renewal
 assessment and reconciliation before I/O. General adoption reads remain unavailable.
 

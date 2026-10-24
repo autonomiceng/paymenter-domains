@@ -10,7 +10,7 @@ The repository follows the layout of [Paymenter Enom](https://github.com/autonom
 
 Fresh installation creates no registrar account or sale offer. Verified credentials alone leave account processing off. The runtime supplies no accepted provider executor; registration, transfer, renewal and management write features independently default off. No setting enables these write features; they change only through a reviewed deployment composition after the relevant provider/account path is independently proven.
 
-Enablement requires trusted deployment composition for the exact account binding and explicit staff review in **Domains → Registrar setup**. Catalogue acceptance records staff attestation of independently verified exact terms and annual renewal support in the staff audit. Registration and transfer offers for an ending stay withdrawn unless that acceptance also marks registry requirements supported. Processing requires a fresh confirmed review, accepted runtime composition and shared cache/session/queue workers. Neither catalogue review nor credential verification alone enables processing, publishes prices, selects a seller or enables sales. Registration also needs eligible current prices, explicit TLD/seller availability and the registration feature/acceptance in that reviewed composition.
+Enablement requires trusted deployment composition for the exact account binding and explicit staff review in **Domains → Registrars**. Catalogue acceptance records staff attestation of independently verified exact terms and annual renewal support in the staff audit. Registration and transfer offers for an ending stay withdrawn unless that acceptance also marks registry requirements supported. Processing requires a fresh confirmed review, accepted runtime composition and shared cache/session/queue workers. Neither catalogue review nor credential verification alone enables processing, publishes prices, selects a seller or enables sales. Registration also needs eligible current prices, explicit TLD/seller availability and the registration feature/acceptance in that reviewed composition.
 
 Transfers retain their separate default-off write feature, accepted ending/precheck evidence, funded native invoice and owner-supplied transfer code before its deadline. Renewals retain their separate default-off feature and accepted ordinary renewal policy (grace is an additional explicit opt-in); scheduled billing (`domains_billing_enabled`) and manual renewal requests (`domains_manual_renewals_enabled`) also default off. Redemption restores are always refused; this build has no restore path. These gates preserve existing obligations and uncertain history; pausing or disabling sales grants no retry, refund or registrar fallback.
 
@@ -41,7 +41,7 @@ Keep its `0600` evidence file private and delete it after conversion and private
 
 The weekly updater stores validated Public Suffix List data (MPL-2.0, publicsuffix.org).
 A removal of more than 5% of either section keeps the saved list and retains the exact
-rejected download for staff review. **Domains → Public suffix list → Accept this list**
+rejected download for staff review. **Domains → Registrars → an account → System checks → Public suffix list → Download now**
 shows removal counts and up to 20 samples per section. It requires watch view/manage rights,
 the displayed 12-character hash and a reason. Changes to the pending bytes or saved baseline
 invalidate acceptance. All current size, parsing, marker and sentinel checks still apply.
@@ -72,4 +72,4 @@ between platform-held accounts remain a separate, unavailable feature.
 After a proved LIVE transfer acquisition, local source relinking and external-notice
 suppression run independently of the comparison flag. TEST acquisitions never change
 external watches. This cleanup enables no DNS/registry worker. Deferred relinks appear
-in Registrar setup and the staff alerts; the bounded runtime cursor retries them.
+in Registrars and the staff alerts; the bounded runtime cursor retries them.

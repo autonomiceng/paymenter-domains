@@ -1,7 +1,7 @@
 # Native registrar server settings
 
 Registrar credentials and their verification digest stay in Paymenter's native encrypted
-server settings. Registrar setup verifies the supplied account identity before saving;
+server settings. The Registrars page verifies the supplied account identity before saving;
 rotations must match the retained registrar, environment and account fingerprint. A
 successful save pauses processing until staff deliberately resume it. No migration or
 second credential store is introduced.
@@ -12,7 +12,7 @@ Treat staff with server-edit permission as able to access saved credentials. Wit
 native server editor restored, its Livewire state exposes decrypted credentials and the
 verification digest even though the visible form contains only the Domains setup note.
 The native editor's exposure is the accepted native secret-key permission boundary.
-Domains permissions separately control Registrar setup and Registrar balances. The owned
+Domains permissions separately control registrar setup and balances on Registrars. The owned
 pages do not display saved credentials, digests or account fingerprints. Encrypted review
 history retains the binding fingerprint as evidence; its staff-facing projection omits it
 and neither representation records credential input or the verification digest.
@@ -28,7 +28,7 @@ the other server settings.
 
 A stored credential or digest edit is not identity verification. Binding checks refuse
 processing and reader construction before a registrar transport is composed when the
-configuration no longer matches its saved digest. Registrar setup shows **On hold** when
+configuration no longer matches its saved digest. The Registrars page shows **On hold** when
 processing was enabled, and local health directs staff to verify and save the original
 account before resuming. Disabled-server health instead directs staff to re-enable the
 server. A fresh live account has no staff action to bind its site in this release, so
@@ -57,7 +57,7 @@ the scoped deleting observer sends a danger notice and halts that native action 
 a 500 or success notice. Its native before hook still pauses account processing; the
 server, verified binding and settings remain. Other writers retain the guard exception,
 and unrelated native server deletion continues. Missing notification/action capabilities
-are reported in Registrar setup; the underlying deletion guard remains in force.
+are reported in Registrars; the underlying deletion guard remains in force.
 
 Native Edit Service also handles refused identity, price and Delete writes with a
 danger notification and Halt. These notices apply only to the current native service
@@ -67,7 +67,7 @@ on the Domains page. Fixed field names are listed for identity refusals; deletio
 guidance points to
 Stop renewal or Retire unpaid order there. The native Recalculate Price hint
 only edits a draft; its changed price is refused on Save. A refused service delete
-leaves processing unchanged. Missing feedback capabilities are shown in Registrar setup
+leaves processing unchanged. Missing feedback capabilities are shown in Registrars
 without weakening the guards.
 
 Native Create Server, Edit Server and Edit Service use unchanged native routes. No

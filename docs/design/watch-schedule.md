@@ -45,8 +45,8 @@ visit retained IDs only, allowing cleanup without enrolling new native services.
 Watch and managed DNS jobs share the existing public owner cursor: ten jobs, two per owner.
 Each job has one attempt, a 60-second timeout and a 120-second uniqueness window.
 
-A read-only status on the existing staff DNS resolver page reports disabled, invalid queue,
-a first turn waiting state, two missed dispatch turns, or a family with pending work and
+A notice on the staff Domain monitoring page reports disabled, invalid queue,
+two missed dispatch turns, or a family with pending work and
 no successful progress for 24 hours. Each proven successful daily job gets its expected completion and two dispatch turns
 before that family can alert, including registry expiry’s 0–60 minute jitter. Failed or abandoned
 claims cannot extend this grace. Managed health shares dispatch eligibility. Family-specific

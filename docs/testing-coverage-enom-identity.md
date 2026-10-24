@@ -16,7 +16,7 @@ and restart workers after deliberate deployment configuration changes. No creden
 this configuration. Live account reads still need the existing explicit current-site binding;
 this slice adds no staff live-site binding action.
 
-On **Domains → Registrar setup**, create a native Domains server, open **Verify identity**, choose
+On **Domains → Registrars**, create a native Domains server, open **Verify identity**, choose
 Enom and the configured environment, enter UID/token and a reason, and confirm. This makes at most
 one ten-second `GetBalance` call and saves encrypted credentials only after positive identity proof.
 Reload to see the verified lowercase UID and TEST/Live badge. Credential fields are never prefilled.

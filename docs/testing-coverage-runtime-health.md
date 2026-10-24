@@ -22,7 +22,7 @@ provider boot checks exact warning and deferral context, argument/query/path red
 fallback, unchanged paid operation/financial bytes, zero sends and one diagnostic per operation
 across scheduler ticks and a second RuntimePorts instance. Fresh healthy processes recover the
 same registration and transfer through genuine action bridges and exercise the real expiry guard.
-Both native-paid matrices check the shared process notice in RuntimeHealth, Registrar setup,
+Both native-paid matrices check the shared process notice in RuntimeHealth, Registrars,
 DomainFacts and ViewDomain, then clear it by restoring the original saving callbacks. Lost invoice
 Paid wake recovery remains independent. These are offline SQLite/kernel/Livewire checks, not
 installed worker, browser, registrar or shared-database acceptance.

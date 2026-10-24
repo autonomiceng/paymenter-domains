@@ -7,7 +7,7 @@ its own opt-in. Live or unset identity environments refuse TEST renewal. This
 configuration supplies no processing, catalogue or financial approval.
 
 Use the existing positively verified TEST account and accepted annual holder
-renewal terms. In Registrar setup, **Review TEST renewal acceptance** records an
+renewal terms. In Registrars, **Review TEST renewal acceptance** records an
 independent check of Extend, the TEST route, request interval and USD balance.
 The encrypted review binds to the immutable account fingerprint and exact protocol.
 Clearing it stops new writes; retained attempts still reconcile while the
@@ -15,7 +15,7 @@ deployment opt-in stays on. Turning off the deployment opt-in pauses confirmatio
 
 Renewal billing and owner requests remain independent native server settings:
 `domains_billing_enabled` and `domains_manual_renewals_enabled`. Staff set them in
-Registrar setup → **Review renewal billing** (see below); neither acceptance nor
+Registrars → **Review renewal billing** (see below); neither acceptance nor
 processing sets them.
 A manual owner request creates or retrieves the native invoice for the current
 cycle. Scheduled billing uses the saved issue/due calendar. Native payment funds
@@ -118,7 +118,7 @@ concurrency remain unverified.
 
 ## Staff renewal billing and owner requests
 
-Registrar setup → **Review renewal billing** sets both switches and the issue/due calendar through an audited staff review
+Registrars → **Review renewal billing** sets both switches and the issue/due calendar through an audited staff review
 (`renewal-billing-settings-test.php`). Calendar changes apply to invoices issued afterwards;
 `renewal-billing-test.php` confirms an issued renewal invoice and its operation stay unchanged.
 
