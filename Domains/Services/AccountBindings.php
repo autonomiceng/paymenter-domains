@@ -136,7 +136,7 @@ final class AccountBindings
             NameSiloSandbox::validate($account,$facts,$credentials);
             return ['Enrollment'=>'OTE only · immutable','Account label (staff-entered, unconfirmed)'=>$facts['label'],
                 'Account ownership'=>'NameSilo did not confirm which account this key belongs to.',
-                'Key check'=>'At enrollment, NameSilo OTE accepted this key in one read-only balance request. That balance was not saved. This row records only the enrollment check. Later Read balance, Refresh now and scheduled reads appear in Registrar balances. None confirms account ownership.',
+                'Key check'=>'At enrollment, NameSilo OTE accepted this key in one read-only balance request. That balance was not saved. This row records only the enrollment check. Later balance checks and scheduled reads show on the account page. None confirms account ownership.',
                 'Key or label change'=>'To change the key or label, use a different OTE key on a fresh Domains server. Each key can be enrolled once on this site. Holdings, acceptances and operations stay with the old enrollment.'];
         }catch(\Throwable){return ['Enrollment'=>'Unavailable · not a current OTE enrollment. This server may be off or unavailable, OTE enrollment may be off on this site, saved enrollment settings may have changed, or this binding was never enrolled. The label is hidden.',
             'Account ownership'=>'NameSilo did not confirm which account this key belongs to.'];}

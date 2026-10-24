@@ -17,25 +17,24 @@ $clock=new PslClock;$v=new PslValidator(128,5,1);$body=pslFixture(80,80);$calls=
 $list=new Lists($clock,new PslTransport(function()use(&$calls,&$body){$calls++;return ['status'=>200,'body'=>$body];}),$v);
 $reviews=new PslRebaseline($clock,$v);app()->instance(Lists::class,$list);app()->instance(PslRebaseline::class,$reviews);app()->instance(Clock::class,$clock);
 $rights=[Staff::VIEW,Page::VIEW,Page::MANAGE];$staff=staffUser($rights);Auth::setUser($staff);
-Livewire::actingAs($staff)->test(Page::class)->assertActionHidden('accept');same('updated',$list->update(),'First download');
+Livewire::actingAs($staff)->test(Page::class)->assertActionHidden('psl_accept');same('updated',$list->update(),'First download');
 $body=pslFixture(40,40);$clock->at+=86400;same('rules_lost_icann',$list->update(),'Rejected candidate');$hash=hash('sha256',$body);
-$page=Livewire::actingAs($staff)->test(Page::class)->assertActionVisible('accept')->mountAction('accept')->assertActionMounted('accept');
-$page->assertActionDataSet(['revision'=>$hash]);
-$page->setActionData(['revision'=>$hash,'confirmation'=>'wrong','reason'=>'Reviewed'])->callMountedAction()->assertHasActionErrors(['confirmation']);
+$page=Livewire::actingAs($staff)->test(Page::class)->assertActionVisible('psl_accept')->assertActionHidden('psl_download')->mountAction('psl_accept')->assertActionMounted('psl_accept');
+same('The new list removes 80 rules. Use it anyway?',$page->instance()->getMountedAction()->getModalDescription(),'Native modal states the removed count');
 $schema=(new ReflectionMethod(Page::class,'getMountedActionSchema'))->invoke($page->instance());$text='';
-foreach($schema->getComponents() as $component){if($component instanceof \Filament\Infolists\Components\TextEntry){$text.=implode("\n",$component->getState());}}
-foreach([$hash,Lists::SOURCE,'ICANN: 40 removed.','PRIVATE: 40 removed.','i40.example'] as $expected){expect(str_contains($text,$expected),'Native modal review facts: '.$expected);}
+foreach($schema->getComponents() as $component){if($component instanceof \Filament\Infolists\Components\TextEntry){$text.=implode("\n",(array)$component->getState())."\n";}}
+foreach([Lists::SOURCE,'80 → 40','i40.example'] as $expected){expect(str_contains($text,$expected),'Native modal review facts: '.$expected);}
 expect(!str_contains($text,'i60.example'),'Native modal limits samples to 20');
-$accept=$page->instance()->getCachedHeaderActions()[2]->getActionFunction();
+$accept=$page->instance()->getCachedHeaderActions()[1]->getActionFunction();
 $staff->role()->first()->update(['permissions'=>[Staff::VIEW,Page::VIEW]]);
-$denied=false;try{$accept(['revision'=>$hash,'confirmation'=>substr($hash,0,12),'reason'=>'Reviewed']);}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Cached acceptance rechecks permission');
+$denied=false;try{$accept();}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Cached acceptance rechecks permission');
 $viewOnly=Livewire::actingAs($staff)->test(Page::class);
-expect($viewOnly->instance()->getCachedHeaderActions()[2]->isHidden(),'View-only acceptance hidden without mounting protected schema');
+expect($viewOnly->instance()->getCachedHeaderActions()[1]->isHidden(),'View-only acceptance hidden without mounting protected schema');
 $staff->role()->first()->update(['permissions'=>$rights]);
-Livewire::actingAs($staff)->test(Page::class)->mountAction('accept')->setActionData(['revision'=>$hash,'confirmation'=>substr($hash,0,12),'reason'=>'Reviewed removal'])
-    ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Public suffix list accepted');
+Livewire::actingAs($staff)->test(Page::class)->mountAction('psl_accept')
+    ->callMountedAction()->assertHasNoActionErrors()->assertNotified('List updated');
 same($hash,$list->revision(),'Native action accepted exact bytes');same(2,$calls,'Acceptance performs no I/O');same(1,DB::table('domains_watch_audit')->count(),'Native acceptance audited');
 $entry->upgraded('0.1.0');$entry->uninstalled();same(1,DB::table('domains_watch_audit')->count(),'Native lifecycle keeps audit');
 DB::table('migrations')->where('migration','2026_10_19_000008_create_psl_reviews')->delete();
 $refused=false;try{$entry->installed();}catch(DomainException $e){$refused=str_contains($e->getMessage(),'suffix review history');}expect($refused,'Missing review installation history refused');
-echo "Installed suffix acceptance removed-rule samples, typed confirmation, revoked permission, no I/O and retained migration history passed.\n";$nativeSuccessful=true;
+echo "Installed suffix acceptance removed-rule samples, revoked permission, no I/O and retained migration history passed.\n";$nativeSuccessful=true;

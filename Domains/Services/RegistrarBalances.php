@@ -59,10 +59,11 @@ final readonly class RegistrarBalances
             return $r->evidence()->balance&&$r->disposition===\Paymenter\Extensions\Servers\Domains\Data\Disposition::Accepted?'refreshed':'read_failed';
         }catch(\Throwable $e){if($e instanceof EnomTestCallLimit){return 'test_call_refused';}if($e instanceof ReadDeferred){return 'rate_limited';}BalanceReads::record($binding,null,$this->clock->now(),$source,'read_failed');return 'read_failed';}
     }
-    public static function fundsUrl(string $registrar): string
+    public static function fundsUrl(string $registrar,string $environment): string
     {
         // The public Enom refill instructions do not publish a stable deep link; use account home.
-        return match($registrar){'enom'=>'https://cp.enom.com/','namesilo'=>\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Environment::Live->origin().'/cart/add-funds',default=>throw new \DomainException('Unknown registrar.')};
+        $namesilo=$environment==='live'?\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Environment::Live:\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Environment::Sandbox;
+        return match($registrar){'enom'=>'https://cp.enom.com/','namesilo'=>$namesilo->origin().'/cart/add-funds',default=>throw new \DomainException('Unknown registrar.')};
     }
     public static function facts(Account $a,\DateTimeImmutable $now): array
     {
@@ -73,22 +74,29 @@ final readonly class RegistrarBalances
         $forecast=BalanceForecast::for($a,$now);
         $unknown=!$available||!$row?->read_at||$row->last_error_code!==null||$row->amount===null||$row->currency!==$forecast['currency'];
         $low=!$unknown&&BalanceForecast::compare($row->amount,$forecast['total'])<0;
-        $status=$unknown?'Unknown':($low?'Low for upcoming renewals':'OK');
-        if($forecast['unknown']>0){$status=($low||$unknown?$status.' · ':'').'Upcoming renewals unknown';}
-        return ['status'=>$status,'low'=>$low,'balance'=>!$available||$row?->amount===null?'Unknown':self::money($row->amount,$row->currency),
-            'as_of'=>$row?->read_at?gmdate('Y-m-d H:i:s',$row->read_at).' UTC':'Never read',
-            'error'=>match($available?$row?->last_error_code:'configuration_unavailable'){null=>'None','rate_limited'=>'Read deferred','configuration_unavailable'=>'Configuration unavailable',default=>'Read failed'},
-            'total'=>self::money($forecast['total'],$forecast['currency']),'unknown'=>$forecast['unknown']];
+        $code=$available?$row?->last_error_code:'configuration_unavailable';
+        // Missing always carries its cause; a failed check hides the retained amount.
+        $cause=match(true){$code==='configuration_unavailable'=>"Couldn't load the account's settings",$code==='rate_limited'=>'Check delayed. Try again in a minute.',
+            $code!==null=>'Last check failed',!$row?->read_at||$row->amount===null=>'Not checked yet',$unknown=>'Balance is not in USD',default=>null};
+        return ['status'=>$unknown?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:($low?'Low balance':'OK'),'low'=>$low,
+            'balance'=>$unknown?null:self::money($row->amount,$row->currency),'checked'=>$unknown?null:gmdate('M j, Y H:i \\U\\T\\C',(int)$row->read_at),
+            'cause'=>$cause,'total'=>self::money($forecast['total'],$forecast['currency']),'unknown'=>$forecast['unknown']];
     }
+    /** Staff money: "USD 49,642.19". */
     private static function money(string $amount,string $currency): string
-    {$value=rtrim(rtrim($amount,'0'),'.');$dot=strpos($value,'.');return ($dot===false?$value.'.00':str_pad($value,$dot+3,'0')).' '.$currency;}
+    {
+        [$whole,$fraction]=array_pad(explode('.',ltrim($amount,'+')),2,'');$sign=str_starts_with($whole,'-')?'-':'';$whole=ltrim($whole,'-');
+        $fraction=rtrim($fraction,'0');$fraction=str_pad($fraction,max(2,strlen($fraction)),'0');
+        return $currency.' '.$sign.preg_replace('/\B(?=(\d{3})+(?!\d))/',',',$whole).'.'.$fraction;
+    }
     private function notify(Account $account): void
     {
         DB::transaction(function()use($account):void {
             $q=DB::table(BalanceSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint);
             $r=(clone $q)->lockForUpdate()->firstOrFail();$day=$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');
             if($r->notified_on===$day){return;}
-            if (StaffAlert::send('Low for upcoming renewals','Registrar account #'.$account->server_id.' has a renewal shortfall.','filament.admin.pages.registrar-balances')) {
+            $name=\App\Models\Server::whereKey($account->server_id)->value('name')?:'Registrar account';
+            if (StaffAlert::send('Low balance',$name.' balance is below renewals due in 30 days.','filament.admin.pages.registrar-setup')) {
                 $q->update(['notified_on'=>$day]);
             }
         });

@@ -73,7 +73,7 @@ foreach ([
     'site_invalid'=>$pill('Connection failed','danger','Site address must use HTTPS'),
     'site_unbound'=>$pill('Connection failed','danger','Site address not approved for live mode'),
     'site_mismatch'=>$pill('Connection failed','danger','Site address changed'),
-    'configuration_unavailable'=>$pill('Connection failed','danger',"Couldn't load the account's settings"),
+    'configuration_unavailable'=>$pill('Connection failed','danger','Credentials changed'),
     'something_new'=>$pill('Connection failed','danger','Status missing'),
 ] as $state=>$expected) { same($expected,AccountStatus::for($state),'Account state '.$state); }
 same($pill('Orders paused','warning','Paused by staff'),AccountStatus::for('matched',processing:false),'Processing off pauses orders');

@@ -42,7 +42,7 @@ commerceReject(fn()=>$writer->run($review(),['enabled'=>true,'confirmed'=>true])
 same(false,Account::where('server_id',$t->server_id)->sole()->processing_enabled,'No acceptance or shared workers means no activation');
 $bindings->setProcessing($t->server_id,true,static fn()=>null); // Synthetic existing activation; exercise a real On→Off transition.
 $writer->run($review(),['enabled'=>false,'confirmed'=>true]);
-same('Change processing',Review::historyRows(Server::findOrFail($t->server_id))[0]['action'],'Processing change audited');
+same('Pause or resume orders',Review::historyRows(Server::findOrFail($t->server_id))[0]['action'],'Processing change audited');
 // Generic native lifecycle changes cannot repurpose or remove retained identities.
 commerceReject(fn()=>Server::findOrFail($t->server_id)->update(['extension'=>'Enom']));
 commerceReject(fn()=>Server::findOrFail($t->server_id)->delete());

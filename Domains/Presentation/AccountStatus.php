@@ -6,6 +6,8 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
 final class AccountStatus
 {
     public const DEMO_PAUSED = 'Demo registrar off while Enom Test mode is on';
+    /** A NameSilo test account while test enrollment is off on this site. */
+    public const TEST_MODE_OFF = 'Test mode turned off on this site';
     /** key => [label, tone] */
     public const SET = [
         'active' => ['Active', 'success'], 'orders_paused' => ['Orders paused', 'warning'],
@@ -16,7 +18,7 @@ final class AccountStatus
         'matched' => ['active', null], 'not_configured' => ['not_connected', null], 'server_disabled' => ['not_connected', 'Off in Paymenter'],
         'server_unavailable' => ['connection_failed', 'Server missing in Paymenter'], 'site_invalid' => ['connection_failed', 'Site address must use HTTPS'],
         'site_unbound' => ['connection_failed', 'Site address not approved for live mode'], 'site_mismatch' => ['connection_failed', 'Site address changed'],
-        'configuration_unavailable' => ['connection_failed', "Couldn't load the account's settings"],
+        'configuration_unavailable' => ['connection_failed', 'Credentials changed'],
     ];
     /** A connected account with processing off has its orders paused; $reason names why (default: paused by staff).
      * @return array{label:string,tone:string,reason:?string} */

@@ -16,8 +16,8 @@ foreach(['live','',null] as $env){config(['domains.enom_identity.environment'=>$
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>false]);expect(!Policy::enabled($binding),'Catalogue required');config(['domains.enom_catalogue.enabled'=>true]);
 expect(!Policy::accepted($binding),'Management acceptance defaults closed');
 try{$write('test_management',['accept'=>true]);throw new LogicException('Independent review required');}catch(DomainException){}
-$managementAction=\Filament\Actions\Testing\TestAction::make('test_management_'.$server->id)->schemaComponent('account_'.$server->id,'content');
-Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class)->mountAction($managementAction)->setActionData(['accept'=>true,'verified'=>true,'reason'=>'Independent synthetic TEST management review'])->callMountedAction()->assertHasNoActionErrors();expect(Policy::accepted($binding),'Audited visible TEST management action saves acceptance');
+$managementAction=setupAction('test_management',$server->id);
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->mountAction($managementAction)->setActionData(['accept'=>true,'verified'=>true,'reason'=>'Independent synthetic TEST management review'])->callMountedAction()->assertHasNoActionErrors();expect(Policy::accepted($binding),'Audited visible TEST management action saves acceptance');
 $saved=$server->settings()->where('key',Policy::KEY)->sole();expect($saved->encrypted,'Acceptance encrypted');
 $value=$saved->value;$saved->value=str_replace($binding->fingerprint,str_repeat('0',64),$value);$saved->save();expect(!Policy::accepted($binding),'Exact fingerprint bound');$saved->value=$value;$saved->save();
 $saved->encrypted=false;$saved->value=$value;$saved->save();expect(!Policy::accepted($binding),'Plain acceptance refused');$saved->encrypted=true;$saved->value=$value;$saved->save();
@@ -34,7 +34,7 @@ foreach(['domains.enom_writes.management'=>false,'domains.enom_catalogue.enabled
 $write('test_management',['accept'=>false]);$write('test_management',['accept'=>true,'verified'=>true]);try{$ask('auto_renew_off',[]);throw new LogicException('Uncomposed action remains closed');}catch(DomainException){}$write('test_management',['accept'=>true,'verified'=>true]);
 $reset();Auth::setUser($user);$owners=app(OwnedDomains::class);
 $dto=$owners->present($d->fresh());expect(isset($dto->management['nameservers'],$dto->management['lock']),'Supported owner forms offered');expect(!isset($dto->management['dns'],$dto->management['srv'],$dto->management['ds'],$dto->management['contacts'],$dto->management['privacy_purchase']),'DNS default off and uncomposed actions absent');
-Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class)->assertSee('Enom TEST management')->assertSee('Accepted')->assertDontSee('TEST-SECRET-TOKEN');
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->assertSeeInOrder(['Setup checklist','DNS, nameservers and contacts','On','Renewal invoices'])->assertDontSee('TEST-SECRET-TOKEN');
 same([],$GLOBALS['enomWire']['forms'],'Owner and staff page views make zero calls');
 $op=$ask('nameservers',['nameservers'=>['ns3.example.com','ns4.example.com']]);$nonce=substr($op->operation_key,strrpos($op->operation_key,':')+1);
 same($op->id,$engine->request($user,$d->id,'nameservers',['nameservers'=>['ns3.example.com','ns4.example.com']],$nonce,$driver)->id,'Duplicate owner intent returns same operation');

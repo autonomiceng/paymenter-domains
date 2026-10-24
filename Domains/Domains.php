@@ -17,7 +17,7 @@ class Domains extends Server
     public function getConfig($values = []): array
     {
         Runtime::register();app(Services\NativeServerGuard::class)->boot();
-        return [['name'=>'domains_setup_note','type'=>'placeholder','label'=>'Configure credentials, acceptance and processing in Domains → Registrar setup. Treat staff with server-edit permission as able to access saved credentials.']];
+        return [['name'=>'domains_setup_note','type'=>'placeholder','label'=>'Connect accounts and choose TLDs in Domains → Registrars. Treat staff with server-edit permission as able to access saved credentials.']];
     }
     public function getProductConfig($values = []): array { return []; }
     public function getCheckoutConfig($product, $values = [], $settings = []): array

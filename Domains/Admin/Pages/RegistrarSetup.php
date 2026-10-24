@@ -3,77 +3,81 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
 use App\Models\Server;
+use Filament\Actions\Action;
 use Filament\Pages\Page;
-use Filament\Schemas\{Schema,Components\Section};
-use Filament\Infolists\Components\TextEntry;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts,SettingsActions};
+use Filament\Schemas\{Schema,Components\Callout,Components\EmbeddedTable};
+use Filament\Support\Enums\IconPosition;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Concerns\InteractsWithTable;
+use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Table;
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\HtmlString;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
-class RegistrarSetup extends Page
+use Paymenter\Extensions\Servers\Domains\Support\DemoData;
+/** Registrars: every registrar account (Domains server) with its status and balance. The slug keeps the old address. */
+class RegistrarSetup extends Page implements HasTable
 {
+    use InteractsWithTable;
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-cog-6-tooth';
     protected static string|\UnitEnum|null $navigationGroup='Domains';
-    protected static ?string $title='Registrar setup';
+    protected static ?string $title='Registrars';
     protected static ?string $slug='registrar-setup';
+    /** Row facts per server for one render. */
+    private array $rows=[];
     public static function canAccess(): bool {return Staff::can();}
-    public array $reviewStamps=[];
-    public function mount(): void
-    {Staff::requireView();foreach(Server::where('extension','Domains')->get() as $s){$this->reviewStamps[$s->id]=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp((int)$s->id,null);}}
+    public function mount(): void {Staff::requireView();}
+    protected function getHeaderActions(): array
+    { return [Action::make('add_account')->label('Add registrar account')->url(self::resourceUrl(\App\Admin\Resources\ServerResource::class,'create'))]; }
     public function content(Schema $schema): Schema
     {
-        Staff::requireView();
-        $site=['Renewal safety'=>'Keep both registrar accounts serviced. Seller selection affects new sales only.',
-            'Adoption readiness'=>"Off. Customer deletion and domain checkout are protected. Adoption still needs site checks for simultaneous edits, registrar pricing and managed public DNS. Before switching it on, let in-progress edits finish, then restart web and queue workers. Direct database edits bypass these checks.",
-            'Credentials'=>'This page does not display saved credentials. Treat staff with server-edit permission as able to access them. Saving credentials pauses processing until you resume it.',
-            ...\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::site()];
-        $missing=ContactDetails::missingRequiredProperties();
-        if($missing){$site['Contact properties missing']='Missing user contact properties: '.implode(', ',$missing).'. Registrations and transfers are held until customers can enter them. Configure these user properties in Paymenter under Configuration → Custom Properties.';}
-        $entries=[];foreach($site as $label=>$value){$entries[]=TextEntry::make('site_'.count($entries))->label($label)->state($value);}
-        $sections=[Section::make('All registrar accounts')->columns(2)->schema($entries)->columnSpanFull()];
-        $servers=Server::where('extension','Domains')->orderBy('id')->get();
-        foreach($servers as $s){
-            $a=Account::where('server_id',$s->id)->first();
-            $facts=['Environment'=>$a?->environment==='live'?'Live':($a?'TEST':'Not configured'),
-                'Processing'=>$a?->processing_enabled?(app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class)->configurationAvailable((int)$s->id)?'On':'On hold'):'Off',
-                'Catalogue acceptance'=>$a?TldFacts::acceptance($a):'Unavailable · new sales held',
-                'Connection'=>app(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class)->connectionAvailable($a?->registrar_key)?'Not tested this visit':'Unavailable','Retained domains'=>$a?\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count():0];
-            $facts += $a?->registrar_key==='namesilo'
-                ?app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class)->sandboxFacts($a)
-                :['Account binding'=>$a?'Verified · immutable':'Not configured',
-                    'Verified user ID'=>$a?->registrar_key==='enom'&&config('domains.enom_identity.environment')===$a->environment?$a->stable_identity:'Unavailable'];
-            if ($a?->registrar_key==='enom' && $a->environment==='test') { $facts['Enom TEST daily calls']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::facts(); }
-            if ($a?->registrar_key==='enom' && $a->environment==='test' && config('domains.enom_writes.registration')===true) {
-                $facts['Enom TEST registration']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRegistration::reason();
-            }
-            if($a?->registrar_key==='enom'&&$a->environment==='test'&&config('domains.enom_writes.transfer')===true){
-                $facts['Enom TEST inbound transfer']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::reason();
-            }
-            if($a?->registrar_key==='enom'&&$a->environment==='test'&&config('domains.enom_writes.renewal')===true){
-                $facts['Enom TEST renewal']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::reason();
-                try{$facts['TEST renewal acceptance']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::accepted(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a))?'Accepted':'Not accepted';}
-                catch(\Throwable){$facts['TEST renewal acceptance']='Unavailable';}
-            }
-            if($a?->registrar_key==='enom'&&$a->environment==='test'&&config('domains.enom_writes.management')===true){
-                $facts['Enom TEST management']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::reason();
-                try{$facts['TEST management acceptance']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::accepted(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a))?'Accepted':'Not accepted';}
-                catch(\Throwable){$facts['TEST management acceptance']='Unavailable';}
-            }
-            if($a?->registrar_key==='enom'&&$a->environment==='live'){
-                try{$liveBinding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a);
-                $facts['Live account fingerprint']=$liveBinding->fingerprint;
-                $facts += \Paymenter\Extensions\Servers\Domains\Services\EnomLive::facts($liveBinding);
-                $facts['Live renewal acceptance']=!\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($liveBinding,'renewal')?'Inactive while deployment is off or unavailable':(\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::accepted($liveBinding)?'Accepted':'Not accepted');
-                $facts['Live management acceptance']=!\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($liveBinding,'management')?'Inactive while deployment is off or unavailable':(\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::accepted($liveBinding)?'Accepted':'Not accepted');}catch(\Throwable){$facts['Live actions']='Unavailable';}
-            }
-            $facts += \Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::facts((int)$s->id);
-            $facts += \Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for((int)$s->id);
-            $facts += \Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule((int)$s->id);
-            $entries=[];foreach($facts as $label=>$value){$entries[]=TextEntry::make('s'.$s->id.'_'.count($entries))->label($label)->state((string)$value)->badge($label==='Environment');}
-            $sections[]=Section::make($s->name)
-                ->key('account_'.$s->id)->description(($a?TldFacts::registrar($a->registrar_key):'Registrar').' · Server #'.$s->id.' · '.($s->enabled?'Viewing uses saved local facts.':'This server is off in Paymenter.'))
-                ->columns(2)->schema([...$entries,\Filament\Schemas\Components\Actions::make([...SettingsActions::make((int)$s->id,null,$this->reviewStamps[$s->id]??'',true),\Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderAction::make((int)$s->id)])->columnSpanFull()])->columnSpanFull();
+        Staff::requireView();$components=[];
+        if ($missing=ContactDetails::missingRequiredProperties()) {
+            $open=self::resourceUrl(\App\Admin\Resources\CustomPropertyResource::class,'index');
+            $components[]=Callout::make("Customers can't enter ".implode(', ',$missing).'. Add them as custom properties.')->warning()->columnSpanFull()
+                ->footer($open?new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">Open custom properties</x-filament::button>',['url'=>$open])):null);
         }
-        if($servers->isEmpty()){$sections[]=Section::make('No registrar accounts')->description('Create a Domains server before configuring a registrar account.');}
-        return $schema->components($sections);
+        return $schema->components([...$components,EmbeddedTable::make()]);
     }
+    public function table(Table $table): Table
+    {
+        $row=fn(Server $s)=>$this->row($s);
+        $missing=static fn(TextColumn $column)=>$column->color(fn($state,Server $record)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null);
+        return $table->query(Server::query()->where('extension','Domains'))->defaultSort('id')->paginated(false)->heading('Accounts')
+            ->emptyStateHeading('No registrar accounts')->emptyStateDescription(null)
+            ->recordUrl(fn(Server $record)=>RegistrarAccount::getUrl(['account'=>$record->id]))
+            ->columns([
+                TextColumn::make('name')->label('Account')->weight('medium')->wrap()->description(fn(Server $record)=>$row($record)['summary'])
+                    ->suffix(fn(Server $record)=>$row($record)['demo']?DemoData::tag(inline:true):null),
+                TextColumn::make('mode')->label('Mode')->state(fn(Server $record)=>$row($record)['connected']?RegistrarFacts::mode($row($record)['account']):null),
+                TextColumn::make('status')->label('Status')->badge()->state(fn(Server $record)=>$row($record)['status']['label'])
+                    ->color(fn(Server $record)=>$row($record)['status']['tone'])->description(fn(Server $record)=>$row($record)['status']['reason']),
+                $missing(TextColumn::make('balance')->label('Balance')->state(fn(Server $record)=>$row($record)['balance']?($row($record)['balance']['value']??Missing::LABEL):null)
+                    ->description(function(Server $record)use($row){$b=$row($record)['balance'];if(!$b){return null;}
+                        return $b['value']===null?$b['cause']:($b['low']?RegistrarFacts::warn('Low balance'):'Checked '.$b['checked']);})),
+                TextColumn::make('due')->label('Due in 30 days')->state(fn(Server $record)=>$row($record)['balance']['due']??null)
+                    ->description(fn(Server $record)=>($row($record)['balance']['without_cost']??0)>0?RegistrarFacts::warn($row($record)['balance']['without_cost'].' without a cost'):null),
+            ])
+            ->recordActions([
+                Action::make('add_funds')->label('Add funds')->link()->icon('heroicon-m-arrow-top-right-on-square')->iconPosition(IconPosition::After)
+                    ->visible(fn(Server $record)=>$row($record)['balance']!==null)->url(fn(Server $record)=>$row($record)['balance']['funds']??null)->openUrlInNewTab()
+                    ->extraAttributes(['rel'=>'noopener noreferrer']),
+                Action::make('connect')->label('Connect')->link()->visible(fn(Server $record)=>$row($record)['account']===null)
+                    ->url(fn(Server $record)=>RegistrarAccount::getUrl(['account'=>$record->id])),
+            ]);
+    }
+    public function getHeading(): HtmlString { return new HtmlString(e(static::$title).RegistrarFacts::STYLE); }
+    /** @return array{account:?Account,status:array,connected:bool,summary:string,demo:bool,balance:?array} */
+    private function row(Server $s): array
+    {
+        if (isset($this->rows[$s->id])) { return $this->rows[$s->id]; }
+        $a=Account::where('server_id',$s->id)->first();$status=RegistrarFacts::status($s,$a);$connected=RegistrarFacts::connected($a,$status);
+        return $this->rows[$s->id]=['account'=>$a,'status'=>$status,'connected'=>$connected,'summary'=>RegistrarFacts::summary($s,$a),
+            'demo'=>$a!==null&&DemoData::is($a),'balance'=>$connected?RegistrarFacts::balance($a):null];
+    }
+    private static function resourceUrl(string $resource,string $page): ?string
+    { try { return class_exists($resource)?$resource::getUrl($page):null; } catch (\Throwable) { return null; } }
 }

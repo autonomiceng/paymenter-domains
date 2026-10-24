@@ -9,9 +9,11 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBu
 
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();extract(commerceFixture(false,static fn()=>null));
 app()->instance(AccountBindings::class,$bindings);
-$cadence=RuntimeHealth::site()['Worker cadence'];
-expect(str_contains($cadence,'25 operations, 25 domains and 25 TLDs per account turn'),'Worker selection counts operations, domains and TLDs');
-expect(str_contains($cadence,'Registrar requests share a separate limiter'),'Request limits have a separate unit');
+// Worker cadence is operator documentation, not a staff page fact.
+expect(!array_key_exists('Worker cadence',RuntimeHealth::site()),'Worker cadence left the staff page');
+$runtimeDoc=(string)file_get_contents(__DIR__.'/../docs/runtime.md');
+expect(str_contains($runtimeDoc,'at most eight accounts, with 25 operations, 25 domains and 25 TLDs per account'),'Worker selection counts operations, domains and TLDs');
+expect(str_contains($runtimeDoc,'share the same limiter'),'Request limits have a separate unit');
 $server=$tlds[0]->server_id;
 $binding=CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server)->sole());
 $clock=new class implements Clock {

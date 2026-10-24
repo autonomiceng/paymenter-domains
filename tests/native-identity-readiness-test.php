@@ -6,23 +6,24 @@ use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Blade,DB};
 use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 $entry=new Paymenter\Extensions\Servers\Domains\Domains;$entry->installed();extract(commerceFixture(true,static fn()=>null));$entry->boot();tldPanel();
 $orphan=Paymenter\Extensions\Servers\Domains\Models\Domain::create(['user_id'=>987654,'service_id'=>987654,'domain'=>'missing-native-placeholder.com','sld'=>'missing-native-placeholder','tld'=>'com','server_id'=>$tlds[0]->server_id,'registrar_key'=>'enom','account_fingerprint'=>$tlds[0]->account_fingerprint,'status'=>'registration_pending']);
 Paymenter\Extensions\Servers\Domains\Services\NativeIdentityDiscrepancies::inspect($orphan,now()->getTimestamp());
 $staff=staffUser(array_keys(Staff::permissions()));$panel=Filament::getCurrentPanel();
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
-$test=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful();
-$test->assertSee('Adoption readiness')->assertSee("Off. Customer deletion and domain checkout are protected. Adoption still needs site checks for simultaneous edits, registrar pricing and managed public DNS. Before switching it on, let in-progress edits finish, then restart web and queue workers. Direct database edits bypass these checks.");
-$test->assertSee('Missing Paymenter records')->assertSee('Customer, order or service missing')->assertSee('missing-native-placeholder.com')->assertSee('The domain and its name stay reserved until a later release adds a resolution step.')->assertSee('Do not restore deleted records manually.');
-// Every moved site fact has one entry, independent of the number of configured accounts.
+$test=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$tlds[0]->server_id])->assertSuccessful();
+$test->assertSee('System checks')->assertDontSee('Adoption readiness')->assertDontSee('Renewal safety');
+// Missing records show on the affected domains (Under review), not on the account page.
+$test->assertDontSee('Missing Paymenter records')->assertDontSee('missing-native-placeholder.com');
+// Each system check appears once; site notes moved to docs/runtime.md appear nowhere.
 $site=\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::site();
 $flat=$test->instance()->content(\Filament\Schemas\Schema::make($test->instance()))->getFlatComponents();
-foreach(['Renewal safety','Adoption readiness','Credentials',...array_keys($site)] as $label){
-    $entries=array_values(array_filter($flat,fn($entry)=>$entry instanceof \Filament\Infolists\Components\TextEntry && $entry->getLabel()===$label));
-    same(1,count($entries),'Site fact appears exactly once: '.$label);
-    if(isset($site[$label])){same($site[$label],$entries[0]->getState(),'Moved site value is unchanged: '.$label);}
+$count=fn(string $label)=>count(array_filter($flat,fn($entry)=>$entry instanceof \Filament\Infolists\Components\TextEntry && $entry->getLabel()===$label));
+foreach(['Background worker','Payment events','Domain editor','Registrar runtime'] as $label){same(1,$count($label),'System check appears once: '.$label);}
+foreach(['Renewal safety','Adoption readiness','Credentials','Worker cadence','Worker recovery','Binding recovery','Native server settings',...array_keys($site)] as $label){
+    same(0,$count($label),'Removed or renamed fact never appears: '.$label);
     foreach($tlds as $tld){expect(!array_key_exists($label,\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for($tld->server_id)),'Site fact removed from per-account health: '.$label);}
 }
 same('Waiting for the first scheduled run',\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for($tlds[0]->server_id)['Runtime account'],'Scheduled run copy snapshot');

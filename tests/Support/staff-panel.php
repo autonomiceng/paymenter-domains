@@ -50,3 +50,10 @@ function staffData(bool $ordinaryCompleted = false): array
     }
     return $domains;
 }
+
+/** A registrar account setup action: header actions by name, the rest inside the account's sections. */
+function setupAction(string $action,int $server): string|\Filament\Actions\Testing\TestAction
+{
+    return in_array($action,['processing','configure','enroll_sandbox'],true)?$action.'_'.$server
+        :\Filament\Actions\Testing\TestAction::make($action.'_'.$server)->schemaComponent('account_'.$server,'content');
+}

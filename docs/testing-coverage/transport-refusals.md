@@ -48,8 +48,8 @@ independently of retained replay keys. The historical installed-package fixture 
 uploads and additive migrations from that baseline, not conversion or automatic repair of superseded missing-table schemas.
 
 Installed default-held package acceptance also covers runtime candidate isolation for offline display rows and missing native invoice authority. It verifies
-retained reconciliation/refund selection, safe actionable warnings, shared UTC daily diagnostic slots, permission revocation and secret-free read-only
-Activation status rendering from the extracted ZIP.
+retained reconciliation/refund selection, safe actionable warnings, shared UTC daily diagnostic slots, permission revocation and secret-free
+registrar account page rendering from the extracted ZIP; the old Activation status address redirects.
 
 Staff operation diagnostics exercise the actual provider-evidence and paid-line guards and missing-invoice recheck through staff actions.
 Each unexpected refusal emits exactly one warning containing only a closed reason, action and numeric operation ID; unknown failures

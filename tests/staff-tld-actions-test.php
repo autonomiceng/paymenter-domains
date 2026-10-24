@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\Auth;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\SalesPolicy;
@@ -33,8 +33,8 @@ $inputs=['default_rule'=>$fixed,'override'=>$fixed,'remove_override'=>[],
     'configure'=>['registrar'=>'enom','environment'=>'test','uid'=>'synthetic-user','token'=>'account-enom'],'probe'=>[]];
 $mount=static function(string $action)use($u,$t){
     $setup=in_array($action,['acceptance','history','configure','probe'],true);
-    $name=$setup?\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content'):$action;
-    return Livewire::actingAs($u)->test($setup?RegistrarSetup::class:ViewTld::class,$setup?[]:['record'=>$t->id])->mountAction($name)->assertActionMounted($name);
+    $name=$setup?setupAction($action,$t->server_id):$action;
+    return Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id])->mountAction($name)->assertActionMounted($name);
 };
 foreach($inputs as $action=>$input){
     echo 'Native action: '.$action."\n";
@@ -45,11 +45,11 @@ foreach($inputs as $action=>$input){
     if($action==='tld_settings'){same(1,(int)$defaults['min_years'],'Current minimum prefilled');same(3,(int)$defaults['max_years'],'Current maximum prefilled');}
     if($action==='seller'){same($t->server_id,(int)$defaults['seller'],'Current seller prefilled');expect($defaults['register']&&$defaults['transfer'],'Current seller actions prefilled');}
     if($action==='configure'){same('enom',$defaults['registrar'],'Bound registrar prefilled');same('test',$defaults['environment'],'Bound environment prefilled');expect(empty($defaults['token'])&&empty($defaults['uid']),'Credentials never prefilled');}
-    $page->setActionData([...$input,'reason'=>'Confirm native action with saved facts'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded')->assertSet('mountedActions',[]);
+    $page->setActionData([...$input,'reason'=>'Confirm native action with saved facts'])->callMountedAction()->assertHasNoActionErrors()->assertNotified($setup?($action==='probe'?'Balance updated':'Saved'):'Change recorded')->assertSet('mountedActions',[]);
     $review=new Review($u->id,$t->server_id,$ending,$action,$key,'Replay must refuse this native action');
     tldRefusal(fn()=>$writer->run($review,$input,$now),in_array($action,['tld_settings','probe'],true)?'Review key used.':'Settings changed. Reload this page.');
     $page=$mount($action);SalesPolicy::where('tld','com')->increment('revision');
-    $page->setActionData([...$input,'reason'=>'Refuse stale native action after change'])->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('Change refused')->body('Settings changed. Reload this page.'))->assertSet('mountedActions',[]);
+    $page->setActionData([...$input,'reason'=>'Refuse stale native action after change'])->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title($setup?"Couldn't save":'Change refused')->body('Settings changed. Reload this page.'))->assertSet('mountedActions',[]);
     $key=Review::ticket($u->id,$t->server_id,$ending,$action,Review::stamp($t->server_id,$ending));
     $u->role->update(['permissions'=>array_values(array_diff($permissions,[Review::permission($action)]))]);
     commerceReject(fn()=>$writer->run(new Review($u->id,$t->server_id,$ending,$action,$key,'Permission revoked before submission'),$input,$now));
@@ -69,7 +69,8 @@ foreach(array_column($rows,'key') as $used){expect(Illuminate\Support\Facades\DB
 expect($rotation!==null,'Rollover exercised a successful unchanged-stamp action');
 tldRefusal(fn()=>$rotation->local(static fn()=>null),'Review key used.');
 app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sellers,$bindings));
-foreach(['configure','probe'] as $action){$name=\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content');Livewire::actingAs($u)->test(RegistrarSetup::class)->assertActionDisabled($name);}
+// Setup buttons that can't run are hidden (layout.md section 6); the nested Test connection button leaves the schema.
+Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertActionHidden(setupAction('configure',$t->server_id))->assertActionDoesNotExist(setupAction('probe',$t->server_id));
 same('9.99',Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('server_id',$t->server_id)->value('amount'),'Existing account probe records its balance');
 // Submit the real seller action with each expired required cost; no provider read or policy write.
 $providerReads=$reads->calls;
@@ -93,8 +94,8 @@ foreach([[$tlds[1],true,false],[$tlds[0],true,false],[$tlds[0],false,false],[$tl
     $costs=\Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$target->server_id,'tld'=>'com','action'=>$action])->orderBy('term')->get();
     foreach($costs as $cost){Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$cost->id)->update(['fresh_until'=>$now]);}
     $prior=SalesPolicy::where('tld','com')->sole()->getAttributes();
-    $remedy=$target->registrar_key==='enom'&&$enabled?"In Registrar setup for account #{$target->server_id}, use Import accepted ending for com to refresh costs, then try again."
-        :($target->registrar_key==='enom'?'Import accepted ending is unavailable for this account; ask the installation administrator to restore TEST catalogue import and refresh costs before trying again.':"Check Cost refresh on .com for account #{$target->server_id}; wait for fresh costs from its scheduled catalogue read, or ask the installation administrator to restore reads if refresh failed or was interrupted.");
+    $remedy=$target->registrar_key==='enom'&&$enabled?"On the account page for account #{$target->server_id}, use Sync TLD prices to refresh com costs, then try again."
+        :($target->registrar_key==='enom'?'Sync TLD prices is unavailable for this account; ask the installation administrator to restore TEST catalogue import and refresh costs before trying again.':"Check Cost refresh on .com for account #{$target->server_id}; wait for fresh costs from its scheduled catalogue read, or ask the installation administrator to restore reads if refresh failed or was interrupted.");
     $registrar=$target->registrar_key==='enom'?'Enom':'NameSilo';
     $body="Cannot select {$registrar} account #{$target->server_id} for .com: its {$label} cost for 1 year expired at 2026-10-18 12:00 UTC. ".$remedy;
     $mount('seller')->setActionData(['seller'=>$target->server_id,'register'=>true,'transfer'=>false,'reason'=>'Review expired seller cost evidence'])->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('Change refused')->body($body));

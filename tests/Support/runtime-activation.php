@@ -5,7 +5,7 @@ use App\Models\{Invoice,InvoiceItem,Credit};
 use Illuminate\Support\Facades\{DB,Queue,Event};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Illuminate\Log\Events\MessageLogged;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\ActivationStatus;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{ActivationStatus,RegistrarAccount};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{ObservationCandidates,RuntimeCandidates,RuntimeDiagnostics,RuntimeIneligible,RuntimeReason,RuntimeWork,RuntimePorts};
@@ -81,17 +81,17 @@ config(['cache.default'=>'array']);$logs=[];$diagnostics->ineligible('billing',R
 // Native panel discovery, permission revocation and secret-safe closed gates.
 require_once __DIR__.'/installed.php';installedPanel(); // Discover after the first native server exists.
 $panel=Filament\Facades\Filament::getPanel('admin');Filament\Facades\Filament::setCurrentPanel($panel);
-expect(in_array(ActivationStatus::class,$panel->getPages(),true),'Native discovery finds Activation status');
-$test=Livewire\Livewire::actingAs($staff)->test(ActivationStatus::class)->assertSuccessful();
-expect(!str_contains($test->html(),'No accepted catalogue'),'Accepted catalogue is not falsely reported closed');
+expect(in_array(RegistrarAccount::class,$panel->getPages(),true),'Native discovery finds the registrar account page');
+// Activation status's go-live facts now live in the account's Setup checklist; its old address redirects.
+Livewire\Livewire::actingAs($staff)->test(ActivationStatus::class)->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl());
+$account=['account'=>$server->id];
+$test=Livewire\Livewire::actingAs($staff)->test(RegistrarAccount::class,$account)->assertSuccessful();
+expect(!str_contains($test->html(),'No TLDs chosen yet'),'Accepted catalogue is not falsely reported missing');
 DB::table('settings')->where('settingable_id',$server->id)->where('key',Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::KEY)->update(['value'=>'invalid-synthetic-acceptance']);
-$test->call('$refresh');$html=$test->html();
-foreach(['Activation status','NameSilo','Enom','No connection check available','Processing off','Billing off','Registration composition unavailable','domains_billing_enabled','Review renewal billing','Display fixtures cannot authorize billing','retry_after','No accepted catalogue'] as $word){expect(str_contains($html,$word),'Activation page explains '.$word);}
-foreach(['synthetic-held-account','synthetic-password','PRIVATE-','queued-held-placeholder.com','held-package-operation','domains_credentials','account_fingerprint'] as $secret){expect(!str_contains($html,$secret),'Activation view excludes secrets and ledger payloads');}
-expect(!str_contains($html,'mountAction('),'Status page has no gate-opening actions');
-$plain=staffUser([]);Livewire\Livewire::actingAs($plain)->test(ActivationStatus::class)->assertForbidden();
-Livewire\Livewire::actingAs($staff)->test(ActivationStatus::class)->assertSuccessful();
-$staff->role->update(['permissions'=>[]]);Livewire\Livewire::actingAs($staff)->test(ActivationStatus::class)->assertForbidden();
+$test=Livewire\Livewire::actingAs($staff)->test(RegistrarAccount::class,$account)->assertSuccessful();$html=$test->html();
+foreach(['Setup checklist','Supported TLDs','No TLDs chosen yet','Registrations','Transfers','Renewal invoices','Turn on','System checks','Registrar runtime'] as $word){expect(str_contains($html,$word),'Account page shows go-live fact '.$word);}
+foreach(['synthetic-held-account','synthetic-password','PRIVATE-','queued-held-placeholder.com','held-package-operation','domains_credentials','account_fingerprint'] as $secret){expect(!str_contains($html,$secret),'Account page excludes secrets and ledger payloads');}
+$plain=staffUser([]);Livewire\Livewire::actingAs($plain)->test(RegistrarAccount::class,$account)->assertForbidden();
+$staff->role->update(['permissions'=>[]]);Livewire\Livewire::actingAs($staff)->test(RegistrarAccount::class,$account)->assertForbidden();
 $staff->role->update(['permissions'=>[Staff::VIEW]]);
-if($out=getenv('ACTIVATION_RENDER_DIR')){require __DIR__.'/activation-render.php';}
 echo "Installed activation: display isolation, retained recovery, bounded diagnostics and permission-gated local status passed.\n";

@@ -11,7 +11,7 @@ use App\Models\{Invoice,ServiceCancellation};
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,DB,Route,Schema};
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarBalances as Page;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarBalances as Page,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Disposition,DriverResult,Environment,Evidence,Money,RequestBudget,RequestContext,RequestOrigin,ResultReason,SendState};
@@ -52,7 +52,7 @@ foreach ([['2026-11-15','2026-12-15',true],['2026-12-15','2026-11-15',true],
 BalanceReads::record($binding,new Money('8.00','USD'),$clock->now(),'preflight');
 same('OK',RegistrarBalances::facts($a,$clock->now())['status'],'Equal balance is OK');
 BalanceReads::record($binding,new Money('7.99','USD'),$clock->now(),'renewal');
-same('Low for upcoming renewals',RegistrarBalances::facts($a,$clock->now())['status'],'One cent short is Low');
+same('Low balance',RegistrarBalances::facts($a,$clock->now())['status'],'One cent short is Low balance');
 BalanceReads::record($other,new Money('777.00','USD'),$clock->now(),'manual');
 same('7.99',$row($a)->amount,'Two servers isolated');same('777.00',$row($b)->amount,'Other server unchanged');
 expect(BalanceForecast::compare('999999999999999999.000001','999999999999999999.000002')<0,'Six decimal digits at maximum magnitude stay exact');
@@ -63,7 +63,7 @@ same('123.45',DB::table(BalanceSchema::TABLE)->where('account_fingerprint',$fore
 same('7.99',$row($a)->amount,'Same server account isolation');
 BalanceReads::record($binding,null,$clock->now(),'manual','PRIVATE-PROVIDER-REPLY');
 same('7.99',$row($a)->amount,'Failure retains last value');same('read_failed',$row($a)->last_error_code,'Failure category allowlist');
-same('Unknown',RegistrarBalances::facts($a,$clock->now())['status'],'Failure status unknown');
+$failedFacts=RegistrarBalances::facts($a,$clock->now());same('Missing',$failedFacts['status'],'A failed check is Missing');same('Last check failed',$failedFacts['cause'],'Missing balance names its cause');same(null,$failedFacts['balance'],'A failed check hides the old amount');
 $failed=new DriverResult($binding,Disposition::Unknown,SendState::PossiblySent,ResultReason::Unverified);
 $failedReader=new FakeRegistrar($binding,new Capabilities($binding,[]),$failed);
 $context=new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new RequestBudget(1),$clock);
@@ -73,7 +73,7 @@ BalanceReads::record($binding,new Money('8.00','USD'),$clock->now()->modify('-1 
 same('read_failed',$row($a)->last_error_code,'Old completion cannot replace newer failure');
 $rate=Price::where('server_id',$a->server_id)->where('action','renew')->sole();$saved=$rate->wholesale;
 $rate->update(['wholesale'=>null,'revision'=>$rate->revision+1]);same(1,$forecast()['unknown'],'Unknown cost is counted');
-expect(str_contains(RegistrarBalances::facts($a,$clock->now())['status'],'Upcoming renewals unknown'),'Status includes unknown cost');$rate->update(['wholesale'=>$saved,'revision'=>$rate->revision+1]);
+same(1,RegistrarBalances::facts($a,$clock->now())['unknown'],'Facts count renewals without a cost');$rate->update(['wholesale'=>$saved,'revision'=>$rate->revision+1]);
 $d->update(['billing_managed'=>false]);
 $overdue=$make(placeholderComFixtureName('balance-overdue-placeholder.com'),'2026-10-20');
 same('8.000000',$forecast()['total'],'Past Paymenter due date and future expiry without open invoice counts as due now');
@@ -129,11 +129,12 @@ foreach(['enom','namesilo'] as $key){$registry->register($key,['token'],$verify,
 });}
 $manualBindings=new AccountBindings($registry);$limiter=new AccountReadBudget($clock);$balances=new RegistrarBalances($manualBindings,$clock,$limiter);
 app()->instance(Clock::class,$clock);app()->instance(RegistrarBalances::class,$balances);
-staffPanel();$panel=Filament::getCurrentPanel();$panel->pages([Page::class]);
-Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>Page::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();
+staffPanel();$panel=Filament::getCurrentPanel();$pages=[RegistrarSetup::class,RegistrarAccount::class,Page::class];$panel->pages($pages);
+Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$pages){foreach($pages as $page){$page::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 $staff=staffUser([Staff::VIEW]);$denied=staffUser([]);Auth::login($denied);
 try{$balances->refresh($a->server_id);expect(false,'Refresh must reject missing permission');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Permission refusal');}
 same(0,$readState->calls,'Refused refresh never resolves reader');Livewire::actingAs($denied)->test(Page::class)->assertForbidden();
+Livewire::actingAs($denied)->test(RegistrarSetup::class)->assertForbidden();Livewire::actingAs($denied)->test(RegistrarAccount::class,['account'=>$a->server_id])->assertForbidden();
 Auth::login($staff);same('refreshed',$balances->refresh($a->server_id),'Permitted manual read');same('manual',$row($a)->source,'Manual source');
 same('rate_limited',$balances->refresh($a->server_id),'60-second refresh cooldown');same(1,$readState->calls,'Cooldown adds no provider read');
 $clock->instant=$clock->now()->modify('+60 seconds');same('refreshed',$balances->refresh($a->server_id),'Exact60-second boundary permits refresh');
@@ -146,24 +147,27 @@ $calls=$readState->calls;$balances->daily($a);same($calls,$readState->calls,'Suc
 $clock->instant=$clock->now()->modify('+60 seconds');$readState->fail=true;same('configuration_unavailable',$balances->refresh($a->server_id),'Reader configuration failure is safe');
 same('6.00',$row($a)->amount,'Daily value retained on refresh failure');$readState->fail=false;
 // Render actual Filament page; neither credentials, fingerprints nor provider error text reach HTML or Livewire state.
-$render=Livewire::actingAs($staff)->test(Page::class)->assertSee('Registrar balances')->assertSee('Add funds')->assertSee('Refresh now')->assertSee('Unknown');
-$html=$render->html();foreach(['https://cp.enom.com/','noopener noreferrer','Server #'.$a->server_id] as $needle){expect(str_contains($html,$needle),'Rendered account structure and official external links');}
+$shown=RegistrarBalances::facts($a,$clock->now());$serverName=App\Models\Server::findOrFail($a->server_id)->name;
+$render=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Registrars')->assertSee('Add funds')->assertSee($serverName)->assertSee($shown['balance']??'Missing');
+$account=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$a->server_id])->assertSee('Check balance')->assertSee('Add funds')->assertSee($shown['balance']??'Missing');
+$html=$render->html().$account->html();foreach(['https://cp.enom.com/','https://ote.namesilo.com/cart/add-funds','noopener noreferrer'] as $needle){expect(str_contains($html,$needle),'Rendered account structure and official external links: '.$needle);}
 expect(!str_contains($html,'https://www.namesilo.com/cart/add-funds'),'OTE accounts never link to live funding');
 $liveServer=App\Models\Server::create(['name'=>'Synthetic live balance','extension'=>'Domains','type'=>'server','enabled'=>true]);
 $manualBindings->configure($liveServer->id,'namesilo',Environment::Live,['token'=>'synthetic-live-balance-account']);
-Livewire::actingAs($staff)->test(Page::class)->assertSee('https://www.namesilo.com/cart/add-funds');
+Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSeeHtml('https://www.namesilo.com/cart/add-funds');
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$liveServer->id])->assertSeeHtml('https://www.namesilo.com/cart/add-funds')->assertDontSeeHtml('https://ote.namesilo.com/cart/add-funds');
 foreach(['PRIVATE-PROVIDER-REPLY','account-enom','account-namesilo',$a->account_fingerprint,$foreign->fingerprint,'domains_credentials'] as $secret){expect(!str_contains($html,$secret),'HTML and state redact private evidence');}
 // Staff alerts use the real native inbox independently of Filament's optional inbox flag.
 staffAlertFixture();$secondStaff=staffUser([Staff::VIEW]);$customer=commerceUser();
 $d->update(['billing_managed'=>true,'provider_expires_at'=>'2026-11-01']);
 $rate->update(['revision'=>$rate->revision+1,'observed_at'=>$clock->now(),'fresh_until'=>$clock->now()->modify('+3 days')]);
 $clock->instant=$clock->now()->modify('+1 day');$balances->daily($a);
-$assertAlerts=static fn()=>staffAlerts('Low for upcoming renewals','Registrar account #'.$a->server_id.' has a renewal shortfall.',route('filament.admin.pages.registrar-balances'),[$staff,$secondStaff]);
+$assertAlerts=static fn()=>staffAlerts('Low balance',$serverName.' balance is below renewals due in 30 days.',route('filament.admin.pages.registrar-setup'),[$staff,$secondStaff]);
 $assertAlerts();$balances->daily($a);$assertAlerts();
 // Re-enter the alert path on the same UTC day without bypassing its retained day marker.
 DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0]);
 $clock->instant=$clock->now()->modify('+60 seconds');$balances->daily($a);$assertAlerts();
-same('Low for upcoming renewals',RegistrarBalances::facts($a,$clock->now())['status'],'Dashboard warning accompanies the native inbox alert');
+same('Low balance',RegistrarBalances::facts($a,$clock->now())['status'],'Dashboard warning accompanies the native inbox alert');
 $role=$staff->role;$role->update(['permissions'=>[]]);try{$balances->refresh($a->server_id);expect(false,'Permission revoked between renders must refuse');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Current permission reloaded');}
 BalanceSchema::install();same('6.00',$row($a)->amount,'Schema reinstall retains balance');
 $migration=require dirname(__DIR__).'/Domains/database/migrations/2026_10_19_000015_create_registrar_balances.php';$migration->down();expect(Schema::hasTable(BalanceSchema::TABLE),'Rollback retains ledger');

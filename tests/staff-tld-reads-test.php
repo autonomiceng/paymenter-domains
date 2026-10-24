@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 require __DIR__.'/Support/staff-tld-filter-lookalikes.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
@@ -20,12 +20,12 @@ $d=Domain::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key
 DB::table('domains_observation_queues')->insert(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint,'catalogue_hold'=>'read_unavailable']);
 foreach([[],[Staff::COSTS],[Staff::VIEW],[Staff::VIEW,Staff::COSTS]] as $permissions){
     $u=staffUser($permissions);Auth::setUser($u);$can=in_array(Staff::VIEW,$permissions,true);$cost=$can&&in_array(Staff::COSTS,$permissions,true);
-    $list=Livewire::actingAs($u)->test(ListTlds::class);$setup=Livewire::actingAs($u)->test(RegistrarSetup::class);
-    if(!$can){$list->assertForbidden();$setup->assertForbidden();continue;}
-    $list->assertCanSeeTableRecords($tlds);$setup->assertSuccessful()->assertSee('Enom')->assertSee('NameSilo')->assertSee('Processing');
+    $list=Livewire::actingAs($u)->test(ListTlds::class);$setup=Livewire::actingAs($u)->test(RegistrarSetup::class);$account=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]);
+    if(!$can){$list->assertForbidden();$setup->assertForbidden();$account->assertForbidden();continue;}
+    $list->assertCanSeeTableRecords($tlds);$setup->assertSuccessful()->assertSee('Enom')->assertSee('NameSilo')->assertSee('Status');$account->assertSuccessful()->assertSee('Setup checklist')->assertSee('Supported TLDs')->assertDontSee('Catalogue acceptance');
     $detail=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSuccessful()->assertSet('data',[])
         ->assertSee('History')->assertSee('Sync failed')->assertSee('Registrar read failed')->assertSee('Existing domains stay with their registrar');
-    $body=$detail->html().$setup->html().json_encode($detail->snapshot).json_encode($setup->snapshot);
+    $body=$detail->html().$setup->html().$account->html().json_encode($detail->snapshot).json_encode($setup->snapshot).json_encode($account->snapshot);
     foreach(['PRIVATE-','account-enom','account-namesilo',$t->account_fingerprint] as $secret){expect(!str_contains($body,$secret),'No account or credential in markup/state');}
     same($cost,str_contains($detail->html(),'USD 8.00'),'Wholesale independently permissioned');
     expect(!str_contains(json_encode($detail->snapshot),'8.0000'),'Cost not public component state');
@@ -75,7 +75,7 @@ $unknown->update(['wholesale'=>null,'hold_reason'=>'unknown_price','revision'=>$
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('Not for sale')->assertSee('Cost missing');
 $row=collect(TldFacts::prices($t->fresh()))->first(fn($r)=>$r['action']==='register'&&$r['term']===1);
 expect(in_array('cost_missing',$row['flags'],true)&&$row['cost']===null,'Unknown cost remains explicit');
-$calls=$reads->calls;Livewire::actingAs($u)->test(RegistrarSetup::class)->assertSee('Unavailable');same($calls,$reads->calls,'No reader factory on GET');
+$calls=$reads->calls;Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Sync failed')->assertSee('Saved prices are kept.')->assertDontSee('Unavailable');Livewire::actingAs($u)->test(RegistrarSetup::class)->assertSuccessful();same($calls,$reads->calls,'No reader factory on GET');
 DB::table('domains_tlds')->where('id',$tlds[1]->id)->update(['account_fingerprint'=>str_repeat('f',64)]);
 Livewire::actingAs($u)->test(ListTlds::class)->assertCanNotSeeTableRecords([$tlds[1]]);
 $open=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id]);$u->role->update(['permissions'=>[]]);$open->call('$refresh')->assertForbidden();

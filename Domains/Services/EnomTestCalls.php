@@ -88,6 +88,14 @@ final class EnomTestCalls
         try{return (int)(DB::table(EnomTestCallSchema::TABLE)->where('day',self::day())->value('used')??0)<$limit;}
         catch(\Throwable){return false;}
     }
+    /** Today's count and limit for the Registrars page; null when the setting is invalid or the counter can't be read.
+     * @return array{used:?int,limit:?int} */
+    public static function usage(): array
+    {
+        $limit=self::configuredLimit();
+        try{$used=(int)(DB::table(EnomTestCallSchema::TABLE)->where('day',self::day())->value('used')??0);}catch(\Throwable){$used=null;}
+        return ['used'=>$used,'limit'=>is_int($limit)&&$limit>=0?$limit:null];
+    }
     public static function facts(): string
     {
         $limit=self::configuredLimit();
