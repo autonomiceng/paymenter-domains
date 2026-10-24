@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolicy};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites,PricingRules,CatalogueAcceptances};
 $f=commerceFixture(true);extract($f);tldPanel();Carbon\Carbon::setTestNow($now);$t=$tlds[0];
@@ -16,8 +16,8 @@ $review=static fn(string $action,?int $ending=null,?int $account=null,?string $s
     $key??Review::ticket($u->id,$account??$t->server_id,$ending,$action,$stamp??Review::stamp($account??$t->server_id,$ending)),$reason);
 $fixed=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'1.00','fixed_renew'=>'1.00','fixed_transfer'=>'1.00'];
 foreach(array_keys(Review::ACTIONS) as $action){
-    $page=Livewire::actingAs($u)->test(in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true)?RegistrarSetup::class:ViewTld::class,
-        in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true)?[]:['record'=>$t->id]);
+    $page=Livewire::actingAs($u)->test(in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true)?RegistrarAccount::class:ViewTld::class,
+        in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true)?['account'=>$t->server_id]:['record'=>$t->id]);
     $name=in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true)?\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content'):$action;
     if(in_array($action,['test_renewal','test_management','live_renewal','live_management'],true)){$page->assertActionDoesNotExist($name);continue;} // Deployment opt-in is off.
     if($action==='enroll_sandbox'){$page->assertActionDisabled($name);continue;}
@@ -27,7 +27,7 @@ foreach(array_keys(Review::ACTIONS) as $action){
 $u->role->update(['permissions'=>[Staff::VIEW,Staff::POLICY]]);
 foreach(array_keys(Review::ACTIONS) as $action){
     $setup=in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true);
-    $page=Livewire::actingAs($u)->test($setup?RegistrarSetup::class:ViewTld::class,$setup?[]:['record'=>$t->id]);
+    $page=Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id]);
     if($setup){$page->assertActionDoesNotExist(\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content'));}else{$page->assertActionHidden($action);}
 }
 $u->role->update(['permissions'=>$permissions]);
@@ -99,7 +99,7 @@ commerceReject(fn()=>(new StaffSettingsWrites($native,$sellers,$bindings))->run(
 foreach([['configure',['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'wrong-account']]],['probe',[]]] as [$action,$data]){
     $r=$review($action);if($action==='configure'){commerceReject(fn()=>$writer->run($r,$data,$now));}else{$writer->run($r,$data);}
 }
-$body=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->html().Livewire::actingAs($u)->test(RegistrarSetup::class)->html();
+$body=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->html().Livewire::actingAs($u)->test(RegistrarSetup::class)->html().Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->html();
 foreach(['account-enom','wrong-account','account-namesilo'] as $secret){expect(!str_contains($body,$secret),'No credentials rendered');}
 $history=Review::historyRows(App\Models\Server::find($t->server_id));
 foreach(['verification_requested','verification_refused','connection_requested','connection_finished'] as $phase){expect(count(array_filter($history,fn($r)=>$r['phase']===$phase))>=1,'Requested and failed/finished phases retained');}

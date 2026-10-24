@@ -6,7 +6,7 @@ use Filament\Actions\Testing\TestAction;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar,RenewalBillingSettings as Billing,StaffSettingsReview as Review,StaffSettingsWrites};
 extract(commerceFixture(true));tldPanel();Carbon\Carbon::setTestNow($now);$t=$tlds[0];$server=App\Models\Server::find($t->server_id);
@@ -20,8 +20,8 @@ $valid=['scheduled'=>true,'manual'=>true,'issue_days'=>30,'due_days'=>10,'confir
 // Absent rows display the calendar defaults and keep both switches off.
 same([],$rows(),'Fixture starts without renewal billing rows');
 same(['Scheduled renewal invoices'=>'Off','Owner renewal requests'=>'Off','Renewal invoice calendar'=>'Issued 21 days before expiry · due 7 days before (defaults)'],Billing::facts($t->server_id),'Absent rows show effective defaults');
-Livewire::actingAs($u)->test(RegistrarSetup::class)->assertSee('Owner renewal requests')->assertSee('Issued 21 days before expiry · due 7 days before (defaults)')->assertActionVisible($name);
-$page=Livewire::actingAs($u)->test(RegistrarSetup::class)->mountAction($name)->assertActionMounted($name);$defaults=$page->get('mountedActions.0.data');$ticket=$defaults['review_key'];
+Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Owner renewal requests')->assertSee('Issued 21 days before expiry · due 7 days before (defaults)')->assertActionVisible($name);
+$page=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($name)->assertActionMounted($name);$defaults=$page->get('mountedActions.0.data');$ticket=$defaults['review_key'];
 same([false,false,21,7],[$defaults['scheduled'],$defaults['manual'],(int)$defaults['issue_days'],(int)$defaults['due_days']],'Modal prefills effective defaults');
 
 // Owner requests stay open until the confirmed expiry date (DomainBilling::requireRequest), not the due day.
@@ -42,7 +42,7 @@ same([$u->id,'completed','Turn on renewal billing after review'],[$entry['actor_
 $input=$entry['input'];ksort($input);same(['due_days'=>10,'issue_days'=>30,'manual'=>true,'scheduled'=>true],array_map(fn($v)=>is_bool($v)?$v:(int)$v,$input),'Audit input keeps only reviewed fields');
 same(['scheduled'=>false,'manual'=>false,'issue_days'=>21,'due_days'=>7,'calendar_saved'=>false],$entry['before']['renewal_billing'],'Audit before shows effective defaults');
 same(['scheduled'=>true,'manual'=>true,'issue_days'=>30,'due_days'=>10,'calendar_saved'=>true],$entry['after']['renewal_billing'],'Audit after shows saved values');
-Livewire::actingAs($u)->test(RegistrarSetup::class)->mountAction($name)->assertSet('mountedActions.0.data.issue_days',30)->assertSet('mountedActions.0.data.due_days',10)->assertSet('mountedActions.0.data.scheduled',true);
+Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($name)->assertSet('mountedActions.0.data.issue_days',30)->assertSet('mountedActions.0.data.due_days',10)->assertSet('mountedActions.0.data.scheduled',true);
 
 // Replay of a used review refuses; unchanged values refuse without a second audit row.
 $used=new Review($u->id,$t->server_id,null,'renewal_billing',$ticket,'Replay must refuse');
@@ -66,9 +66,9 @@ foreach([[365,364],[2,1]] as [$issue,$due]){$writer->run($review(),[...$valid,'i
 $saved=$rows();$history=count(Review::historyRows($server->fresh()));
 
 // Native refusal toast for a bound violation; stale page refuses after another change.
-Livewire::actingAs($u)->test(RegistrarSetup::class)->mountAction($name)->setActionData(['scheduled'=>true,'manual'=>true,'issue_days'=>'7','due_days'=>'7','confirmed'=>true,'reason'=>'Refuse an equal issue and due day'])
+Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($name)->setActionData(['scheduled'=>true,'manual'=>true,'issue_days'=>'7','due_days'=>'7','confirmed'=>true,'reason'=>'Refuse an equal issue and due day'])
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified(Notification::make()->danger()->title('Change refused')->body('Issue days must be more than due days. Issue days can be at most 365 and due days at least 1. Nothing was saved.'));
-$stale=Livewire::actingAs($u)->test(RegistrarSetup::class)->mountAction($name);$writer->run($review(),[...$valid,'manual'=>false,'issue_days'=>2,'due_days'=>1]);$saved=$rows();$history=count(Review::historyRows($server->fresh()));
+$stale=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($name);$writer->run($review(),[...$valid,'manual'=>false,'issue_days'=>2,'due_days'=>1]);$saved=$rows();$history=count(Review::historyRows($server->fresh()));
 $stale->setActionData([...$valid,'issue_days'=>'40','reason'=>'Stale page must refuse'])->callMountedAction()->assertNotified(Notification::make()->danger()->title('Change refused')->body('Settings changed. Reload this page.'));
 same([$saved,$history],[$rows(),count(Review::historyRows($server->fresh()))],'Refused native submissions write nothing');
 
@@ -81,7 +81,7 @@ DB::table('settings')->where('settingable_type',$server->getMorphClass())->where
 // Permission: hidden without the action permission or policy, and the writer refuses a minted ticket.
 foreach([[Staff::VIEW,Staff::POLICY],[Staff::VIEW,Review::permission('renewal_billing')]] as $reduced){
     $u->role->update(['permissions'=>$reduced]);
-    Livewire::actingAs($u->fresh())->test(RegistrarSetup::class)->assertActionDoesNotExist($name);
+    Livewire::actingAs($u->fresh())->test(RegistrarAccount::class,['account'=>$t->server_id])->assertActionDoesNotExist($name);
     $denied=$review('Permission revoked before submission');commerceReject(fn()=>$writer->run($denied,[...$valid,'issue_days'=>50]));
 }
 $u->role->update(['permissions'=>$permissions]);

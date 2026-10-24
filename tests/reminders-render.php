@@ -9,7 +9,7 @@ use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts,ReminderTemplates};
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 $out=$argv[1]??'';expect(is_dir($out)&&is_writable($out),'Output directory required');$strings=[];
 $base=['domain'=>'example.com','expires'=>'October 18, 2027','days'=>7,'invoice'=>false,'invoice_on'=>null,'due'=>'October 11, 2027',
@@ -40,7 +40,7 @@ foreach($cases as $name=>[$key,$values]){
 [$unknown]=$make(placeholderComFixtureName('staff-unknown-price-placeholder.com'));$rate=\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$unknown->server_id)->where('action','renew')->sole();$rate->update(['revision'=>$rate->revision+1,'retail'=>null]);$reminders->remind($unknown->id);
 tldPanel();Auth::setUser($staff);$panel=Filament::getCurrentPanel();$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
-foreach(['staff-held'=>[ViewDomain::class,['record'=>$d->id]],'staff-unknown'=>[ViewDomain::class,['record'=>$unknown->id]],'staff-setup'=>[RegistrarSetup::class,[]]] as $name=>[$class,$params]){
+foreach(['staff-held'=>[ViewDomain::class,['record'=>$d->id]],'staff-unknown'=>[ViewDomain::class,['record'=>$unknown->id]],'staff-setup'=>[RegistrarSetup::class,[]],'staff-account'=>[RegistrarAccount::class,['account'=>$d->server_id]]] as $name=>[$class,$params]){
     $test=Livewire::actingAs($staff)->test($class,$params)->assertSuccessful();
     $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$test->instance(),'body'=>$test->html()]);
     $html=preg_replace('~<script\b[^>]*>.*?</script>~si','',$html);$html=preg_replace('~<link\b[^>]*>~si','',$html);

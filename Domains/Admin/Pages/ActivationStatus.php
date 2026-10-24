@@ -7,13 +7,14 @@ use Filament\Schemas\{Schema,Components\Section};
 use Filament\Infolists\Components\TextEntry;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Services\ActivationFacts;
-/** Local facts and review steps only; this page has no activation actions. */
+/** Local facts and review steps only; this page has no activation actions. Not in navigation: its rows are moving to the Registrars account page. */
 class ActivationStatus extends Page
 {
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-information-circle';
     protected static string|\UnitEnum|null $navigationGroup='Domains';
     protected static ?string $title='Activation status';
     protected static ?string $slug='domains-activation-status';
+    protected static bool $shouldRegisterNavigation=false;
     public static function canAccess(): bool {return Staff::can();}
     public function mount(): void {Staff::requireView();}
     public function content(Schema $schema): Schema

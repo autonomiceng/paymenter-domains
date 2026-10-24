@@ -23,7 +23,9 @@ $clock = new FakeClock($now); $admission = new CartAdmission($native, $sellers, 
 $admission->boot(); (new InvoiceBinding($admission, $native, $prices, $clock))->boot();
 $user = commerceUser(); $user->update(['email' => 'contact@example.com']); $other = commerceUser();
 $staff = commerceUser(); $role = Role::create(['name' => 'Domain manager', 'permissions' => ['admin.domains.manage']]); $staff->update(['role_id' => $role->id]);
-tldPanel();
+tldPanel();$panel = Filament\Facades\Filament::getCurrentPanel();
+Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn () => App\Admin\Resources\CustomPropertyResource::registerRoutes($panel));
+app('router')->getRoutes()->refreshNameLookups();
 DB::beginTransaction();
 $setupStaff = staffUser(['admin.domains.view']);
 CustomProperty::query()->delete();
@@ -35,11 +37,10 @@ $checkProperties = static function (array $missing) use ($setupStaff): void {
         same($missing, ContactDetails::missingRequiredProperties(), 'Exact missing user property definitions');
         $page = Livewire::actingAs($setupStaff)->test(RegistrarSetup::class)->assertSuccessful();
         if ($missing) {
-            $page->assertSee('Contact properties missing')->assertSee('Missing user contact properties: '.implode(', ', $missing).'.')
-                ->assertSee('Registrations and transfers are held until customers can enter them.')
-                ->assertSee('Configuration → Custom Properties');
+            $page->assertSee("Customers can't enter ".implode(', ', $missing).'. Add them as custom properties.')
+                ->assertSee('Open custom properties')->assertSeeHtml(e(App\Admin\Resources\CustomPropertyResource::getUrl('index')));
         } else {
-            $page->assertDontSee('Contact properties missing')->assertDontSee('Missing user contact properties:');
+            $page->assertDontSee("Customers can't enter")->assertDontSee('Open custom properties');
         }
         same($before, DB::table('custom_properties')->orderBy('id')->get()->toJson(), 'Setup check never changes definitions');
         unset($page); gc_collect_cycles();

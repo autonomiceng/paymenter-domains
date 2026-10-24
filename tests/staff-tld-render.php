@@ -6,7 +6,7 @@ use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,Blade};
 use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
@@ -34,10 +34,10 @@ $render=static function($test,string $name)use($out,$css){
     expect(!str_contains($html,'account-enom'),'No synthetic credential');writeRenderArtifact($out.'/'.$name.'.html',$html);
 };
 $render(Livewire::actingAs($u)->test(ListTlds::class),'tlds');$render(Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id]),'tld-revisions');
-$render(Livewire::actingAs($u)->test(RegistrarSetup::class),'setup-both');$strings=[];
+$render(Livewire::actingAs($u)->test(RegistrarSetup::class),'setup-both');$render(Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]),'setup-account');$strings=[];
 foreach(Review::ACTIONS as $action=>$label){
     app()->instance(StaffSettingsWrites::class,in_array($action,['configure','probe'],true)?new StaffSettingsWrites($native,$sellers,$bindings,true):$writer);
-    $setup=in_array($action,['configure','probe','acceptance','import','history','processing','renewal_billing','delivery_review','alert_review'],true);$page=Livewire::actingAs($u)->test($setup?RegistrarSetup::class:ViewTld::class,$setup?[]:['record'=>$t->id]);
+    $setup=in_array($action,['configure','probe','acceptance','import','history','processing','renewal_billing','delivery_review','alert_review'],true);$page=Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id]);
     $name=$setup?\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content'):$action;$page->mountAction($name)->assertActionMounted($name)->call('$refresh');$render($page,'modal-'.$action);
     $strings[$action]=['label'=>$label,'description'=>SettingsActions::description($action)];
 }

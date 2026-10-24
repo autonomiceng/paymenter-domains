@@ -72,6 +72,6 @@ function assertInstalledUpgradePages(): void
     Auth::login(App\Models\User::where('role_id',$role->id)->firstOrFail());
     PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());
     Filament\Facades\Filament::setCurrentPanel(Filament\Facades\Filament::getPanel('admin'));
-    Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class)->assertSuccessful()->assertSee('Registrar setup');
+    Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class)->assertSuccessful()->assertSee('Registrars');
     echo "Installed storefront routes and retained staff page render successfully.\n";
 }

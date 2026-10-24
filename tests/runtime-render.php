@@ -6,7 +6,7 @@ use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,Blade};
 use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains,ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\{ListOperations,ViewOperation};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
@@ -31,15 +31,15 @@ $d=\Paymenter\Extensions\Servers\Domains\Models\Domain::firstOrFail();$op=$d->op
 // Quarantine uses retained unknown costs, never a synthetic zero price.
 foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$t->server_id)->whereIn('action',['register','transfer'])->get() as $price){$price->update(['revision'=>$price->revision+1,'wholesale'=>null,'hold_reason'=>'price_unavailable','eligibility'=>[...$price->eligibility,'price_unavailable'=>true,'staff_label'=>'Price unavailable']]);}
 foreach(['staff-domains'=>[ListDomains::class,[]],'staff-domain'=>[ViewDomain::class,['record'=>$d->id]],'staff-queue'=>[ListOperations::class,[]],
-    'staff-request'=>[ViewOperation::class,['record'=>$op->id]],'staff-tlds'=>[ListTlds::class,[]],'staff-tld'=>[ViewTld::class,['record'=>$t->id]],'staff-setup'=>[RegistrarSetup::class,[]]] as $name=>[$class,$params]){
+    'staff-request'=>[ViewOperation::class,['record'=>$op->id]],'staff-tlds'=>[ListTlds::class,[]],'staff-tld'=>[ViewTld::class,['record'=>$t->id]],'staff-setup'=>[RegistrarSetup::class,[]],'staff-account'=>[RegistrarAccount::class,['account'=>$t->server_id]]] as $name=>[$class,$params]){
     $render(Livewire::actingAs($staff)->test($class,$params)->assertSuccessful(),$name);
 }
 foreach([false,true] as $enabled){
     if(!$enabled){$bindings->setProcessing($t->server_id,true,static fn()=>null);} // Seed an already enabled synthetic account before the actual pause action.
     $action=\Filament\Actions\Testing\TestAction::make('processing_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content');
-    $test=Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($action)->assertActionMounted($action)->setActionData(['enabled'=>$enabled,'reason'=>'Review installed processing change']);
+    $test=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($action)->assertActionMounted($action)->setActionData(['enabled'=>$enabled,'reason'=>'Review installed processing change']);
     $test->call('$refresh');$render($test,'staff-processing-'.($enabled?'enable':'disable'));
-    if(!$enabled){$test->setActionData(['enabled'=>false,'confirmed'=>true,'reason'=>'Review installed processing change'])->callMountedAction()->assertRedirect(RegistrarSetup::getUrl());expect(!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->value('processing_enabled'),'Native pause persisted');$render(Livewire::actingAs($staff)->test(RegistrarSetup::class),'staff-processing-saved');}
+    if(!$enabled){$test->setActionData(['enabled'=>false,'confirmed'=>true,'reason'=>'Review installed processing change'])->callMountedAction()->assertRedirect(RegistrarAccount::getUrl(['account'=>$t->server_id]));expect(!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->value('processing_enabled'),'Native pause persisted');$render(Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$t->server_id]),'staff-processing-saved');}
     if($enabled){$test->setActionData(['enabled'=>true,'confirmed'=>true,'reason'=>'Review installed processing change'])->callMountedAction();$render($test,'staff-activation-refusal');}
 }
 $legacy=\App\Models\Server::create(['type'=>'server','name'=>'Legacy','extension'=>'Enom','enabled'=>false]);$setting=$legacy->settings()->create(['key'=>'operations_enabled','type'=>'boolean','value'=>false]);

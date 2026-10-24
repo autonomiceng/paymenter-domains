@@ -4,7 +4,7 @@ declare(strict_types=1);
 use App\Models\Server;
 use Illuminate\Support\Facades\{Auth,DB,Log};
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
@@ -43,7 +43,7 @@ $refuse=static function(#[SensitiveParameter] callable $work,string $message,?st
 };
 same(true,$writes->connectionAvailable('namesilo'),'NameSilo OTE reader is available');same(false,$writes->connectionAvailable('enom'),'NameSilo-only opt-in does not enable Enom reads');
 $unsupported=$nativeServer();same('not_configured',$bindings->configurationStatus((int)$unsupported->id),'Fresh server account binding is not configured');expect(!Account::where('server_id',$unsupported->id)->exists(),'Fresh server has no account or Enrollment row');
-$emptySetup=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Account binding')->assertSee('Not configured')->assertDontSee('OTE only · immutable')->assertDontSee('Unavailable · not a current OTE enrollment.');unset($emptySetup);gc_collect_cycles();
+$emptySetup=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$unsupported->id])->assertSee('Not connected')->assertSee('Account not set up yet')->assertDontSee('OTE only · immutable')->assertDontSee('Unavailable · not a current OTE enrollment.');unset($emptySetup);gc_collect_cycles();
 $unsupportedReview=$review($unsupported,'configure');
 $refuse(fn()=>$writes->run($unsupportedReview,['registrar'=>'enom','environment'=>'test','uid'=>'synthetic-uid','token'=>'synthetic-token','reason'=>'Check unsupported Enom','review_key'=>'unused']),'Enom is unavailable in a NameSilo-only deployment','Connection checks are unavailable.');
 expect(!DB::table(Review::KEYS)->where('server_id',$unsupported->id)->exists(),'Unavailable Enom composition refuses before consuming review');
@@ -62,7 +62,7 @@ expect($s->settings()->where('key','domains_setup_note')->exists(),'Native write
 unset($nativeEdit);gc_collect_cycles();
 
 $action=static fn(string $name,Server $server)=>Filament\Actions\Testing\TestAction::make($name.'_'.$server->id)->schemaComponent('account_'.$server->id,'content');
-$page=Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($action('enroll_sandbox',$s))->assertActionMounted($action('enroll_sandbox',$s));
+$page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($action('enroll_sandbox',$s))->assertActionMounted($action('enroll_sandbox',$s));
 expect(empty($page->get('mountedActions.0.data.api_key')),'No saved secret prefill');$n=$GLOBALS['enrollmentCalls'];
 $page->setActionData([...$input,'api_key'=>'synthetic-ote-key','reason'=>'Enroll a sandbox account']);
 expect(str_contains($page->instance()->getMountedAction()->getModalDescription(),'The balance is not saved.'),'Enrollment copy says the key-check balance is discarded');
@@ -75,7 +75,7 @@ same($n+1,$GLOBALS['enrollmentCalls'],'Staff enrollment exactly one OTE read');$
 expect(NameSiloSandbox::enrolled($a),'Distinct local enrollment identity');
 foreach(['sandbox@example.test','synthetic-ote-key','123','456','789','999','9876.54'] as $substitute){expect($a->stable_identity!==$substitute,'No identity substitute');}
 same('test',$a->environment,'Fixed sandbox environment');same(false,$a->processing_enabled,'Processing starts off');same(null,$a->live_site,'No live site');
-$s->update(['enabled'=>false]);$unavailableSetup=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Enrollment')->assertSee('Unavailable · not a current OTE enrollment.');unset($unavailableSetup);gc_collect_cycles();$s->update(['enabled'=>true]);
+$s->update(['enabled'=>false]);$unavailableSetup=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->assertSee('Enrollment')->assertSee('Unavailable · not a current OTE enrollment.');unset($unavailableSetup);gc_collect_cycles();$s->update(['enabled'=>true]);
 expect(!app(RuntimePorts::class)->accepted($a),'No installed write ports');
 $refuse(fn()=>$bindings->requireProcessing($binding),'Processing gate');$refuse(fn()=>$bindings->reader($s->id),'Domain reads separately composed');
 $refuse(fn()=>CatalogueAcceptances::load($binding),'No inherited acceptance');
@@ -88,8 +88,8 @@ $facts=json_decode($s->settings()->where('key',NameSiloSandbox::KEY)->sole()->va
 same(false,$facts['provider_confirmed_account'],'Stored ownership disclaimer');same(true,$facts['authenticated_ote_key'],'Stored authentication fact');same(hash('sha256','synthetic-ote-key'),$facts['key_fingerprint'],'Fixed key fingerprint');
 $nameSiloFacts=$bindings->sandboxFacts($a);expect(!str_contains(implode(' ',$nameSiloFacts),'Verified'),'NameSilo account facts never use verified wording');
 same('At enrollment, NameSilo OTE accepted this key in one read-only balance request. That balance was not saved. This row records only the enrollment check. Later Read balance, Refresh now and scheduled reads appear in Registrar balances. None confirms account ownership.',$nameSiloFacts['Key check'],'Enrollment history is distinct from subsequent checks');
-$page=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('OTE only')->assertSee('sandbox@example.test')->assertSee('NameSilo did not confirm which account this key belongs to.')->assertDontSee('synthetic-ote-key')->assertDontSee('9876.54');unset($page);gc_collect_cycles();
-$configurePage=Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($action('configure',$s))->assertActionMounted($action('configure',$s));
+$page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->assertSee('OTE only')->assertSee('sandbox@example.test')->assertSee('NameSilo did not confirm which account this key belongs to.')->assertDontSee('synthetic-ote-key')->assertDontSee('9876.54');unset($page);gc_collect_cycles();
+$configurePage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($action('configure',$s))->assertActionMounted($action('configure',$s));
 same('NameSilo identity verification is unavailable. This account cannot be connected.',$configurePage->instance()->getMountedAction()->getModalDescription(),'NameSilo identity refusal remains unchanged');
 $configurePage->setActionData(['registrar'=>'enom']);same(Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::description('configure'),$configurePage->instance()->getMountedAction()->getModalDescription(),'Changing registrar updates description');
 unset($configurePage);gc_collect_cycles();
@@ -98,7 +98,7 @@ BalanceSchema::install();ObservationSchema::install();Paymenter\Extensions\Serve
 $GLOBALS['enrollmentExpectedTimeout']=10000;
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,
     new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-21 12:00:00',new DateTimeZone('UTC'))));
-$n=$GLOBALS['enrollmentCalls'];$probePage=Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($action('probe',$s));
+$n=$GLOBALS['enrollmentCalls'];$probePage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($action('probe',$s));
 $probePage->assertActionEnabled($action('probe',$s))->setActionData(['reason'=>'Check sandbox balance'])->callMountedAction()
     ->assertHasNoActionErrors()->assertNotified('Change recorded')->assertSet('mountedActions',[]);
 same($n+1,$GLOBALS['enrollmentCalls'],'Separate balance probe reaches OTE');
@@ -124,15 +124,15 @@ $balanceRow=DB::table(BalanceSchema::TABLE)->where('server_id',$s->id)->sole();s
 $GLOBALS['enrollmentExpectedContext']='api';
 $balanceClock->instant=$balanceClock->now()->modify('+2 seconds');$n=$GLOBALS['enrollmentCalls'];same('refreshed',$balanceService->refresh($s->id),'Manual refresh uses the enrolled OTE balance composition');
 same($n+1,$GLOBALS['enrollmentCalls'],'Manual refresh makes one OTE read');same('manual',DB::table(BalanceSchema::TABLE)->where('server_id',$s->id)->value('source'),'Manual read records its source');
-same('None',RegistrarBalances::facts($a,$balanceClock->now())['error'],'Successful scheduler and refresh keep balance status healthy');
+same(null,RegistrarBalances::facts($a,$balanceClock->now())['cause'],'Successful scheduler and refresh keep balance status healthy');
 $GLOBALS['enrollmentExpectedContext']='api';
-Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarBalances::class)->assertDontSee('Add funds')->assertDontSee('www.namesilo.com');
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->assertSee('Add funds')->assertSeeHtml('https://ote.namesilo.com/cart/add-funds')->assertDontSee('www.namesilo.com');
 $n=$GLOBALS['enrollmentCalls'];$refuse(fn()=>$attempt(['api_key'=>'synthetic-ote-key']),'Duplicate key must use original enrollment');same($n,$GLOBALS['enrollmentCalls'],'Duplicate key refuses before read');
 
 // Render recovery forms before unrelated guard fixtures accumulate.
 $uncertain=$fresh();$GLOBALS['enrollmentExpectedContext']='api';$GLOBALS['enrollmentExpectedTimeout']=10000;
 $GLOBALS['enrollmentDuringRead']=static function()use($uncertain):void {DB::table('domains_runtime_turns')->insert(['server_id'=>$uncertain->id,'account_fingerprint'=>str_repeat('b',64)]);};
-$offline=$fresh(false);$n=$GLOBALS['enrollmentCalls'];$offlinePage=Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($action('enroll_sandbox',$offline))
+$offline=$fresh(false);$n=$GLOBALS['enrollmentCalls'];$offlinePage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$offline->id])->mountAction($action('enroll_sandbox',$offline))
     ->setActionData([...$input,'api_key'=>'offline-server-key','reason'=>'Exercise unavailable server copy'])
     ->callMountedAction()->assertHasNoActionErrors()->assertSet('mountedActions',[]);
 $sent=session()->get('filament.claimed_notifications',[]);$notice=$sent?end($sent):null;
@@ -141,7 +141,7 @@ same($n,$GLOBALS['enrollmentCalls'],'Unavailable server sends no OTE request');u
 $preflight=$fresh();$n=$GLOBALS['enrollmentCalls'];$writesMock=Mockery::mock($writes)->makePartial();
 $writesMock->shouldReceive('run')->once()->andThrow(new RuntimeException('unclassified enrollment failure'));
 app()->instance(StaffSettingsWrites::class,$writesMock);
-$preflightPage=Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($action('enroll_sandbox',$preflight))
+$preflightPage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$preflight->id])->mountAction($action('enroll_sandbox',$preflight))
     ->setActionData([...$input,'api_key'=>'preflight-key','reason'=>'Exercise uncertain preflight copy'])
     ->callMountedAction()->assertHasNoActionErrors()->assertSet('mountedActions',[]);
 $sent=session()->get('filament.claimed_notifications',[]);$notice=$sent?end($sent):null;
@@ -150,7 +150,7 @@ same('Enrollment did not finish normally, and its outcome could not be confirmed
 same($n,$GLOBALS['enrollmentCalls'],'Preflight failure sends no OTE request');same(0,Account::where('server_id',$preflight->id)->count(),'Preflight failure saves no enrollment');unset($preflightPage);gc_collect_cycles();app()->instance(StaffSettingsWrites::class,$writes);
 $usedReviewServer=$fresh();$usedTicket=Review::ticket($staff->id,$usedReviewServer->id,null,'enroll_sandbox',Review::stamp($usedReviewServer->id,null));
 (new Review($staff->id,$usedReviewServer->id,null,'enroll_sandbox',$usedTicket,'Consume review for recovery copy'))->local(fn()=>null);
-$n=$GLOBALS['enrollmentCalls'];$usedReviewPage=Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($action('enroll_sandbox',$usedReviewServer))
+$n=$GLOBALS['enrollmentCalls'];$usedReviewPage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$usedReviewServer->id])->mountAction($action('enroll_sandbox',$usedReviewServer))
     ->setActionData([...$input,'api_key'=>'used-review-key','reason'=>'Exercise used review copy','review_key'=>$usedTicket])
     ->callMountedAction()->assertHasNoActionErrors()->assertSet('mountedActions',[]);
 $sent=session()->get('filament.claimed_notifications',[]);$notice=$sent?end($sent):null;
@@ -164,7 +164,7 @@ $notEnrolled='If no Enrollment row appears and Account binding reads “Not conf
 $unavailableRecovery='If Enrollment reads “Unavailable”, an account record exists, but its current OTE enrollment cannot be confirmed. Do not make another enrollment attempt on this server. If it is off, re-enable it in Servers; ask the installation administrator to check that OTE enrollment is enabled on this site, then reload. If it remains unavailable and this account was enrolled, ask them to restore the original saved enrollment settings. If it was never enrolled, use a fresh Domains server for a new key.';
 $retryGuidance='For “Not configured”, confirm the server is enabled and fresh, OTE enrollment is enabled, your permissions are current, and the key is not already enrolled on this site before submitting another review. Submitting another review may send another OTE key check.';
 $unknownBody='One OTE key check was sent and NameSilo accepted the key; its balance was not saved. Enrollment may have been saved, but its outcome could not be confirmed. Reload Registrar setup. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. '.$notEnrolled.' '.$unavailableRecovery.' '.$retryGuidance;
-$n=$GLOBALS['enrollmentCalls'];$uncertainPage=Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($action('enroll_sandbox',$uncertain))
+$n=$GLOBALS['enrollmentCalls'];$uncertainPage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$uncertain->id])->mountAction($action('enroll_sandbox',$uncertain))
     ->setActionData([...$input,'api_key'=>'uncertain-save-key','reason'=>'Exercise uncertain save copy'])
     ->callMountedAction()->assertHasNoActionErrors()->assertSet('mountedActions',[]);
 $sent=session()->get('filament.claimed_notifications',[]);$notice=$sent?end($sent):null;

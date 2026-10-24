@@ -131,7 +131,7 @@ config(['cache.default'=>'database','session.driver'=>'database','queue.default'
 $write('processing',['enabled'=>true,'confirmed'=>true]);
 $observations=app(ObservationWork::class);$observations->enroll($server->id);$before=count($GLOBALS['enomWire']['forms']);$observations->tick();same($before,count($GLOBALS['enomWire']['forms']),'Live catalogue keeps the TEST staff-only refresh policy');same(null,DB::table('domains_observation_queues')->where('server_id',$server->id)->value('catalogue_hold'),'No spurious automatic catalogue failure');
 config(['domains.enom_live.catalogue'=>false]);$observations->tick();same($before,count($GLOBALS['enomWire']['forms']),'Catalogue opt-out sends no scheduled refresh');same(null,DB::table('domains_observation_queues')->where('server_id',$server->id)->value('catalogue_hold'),'Catalogue opt-out creates no false failure');config(['domains.enom_live.catalogue'=>true]);
-Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class)->assertSee('Enom live registration')->assertSee('Live renewal acceptance')->assertDontSee('LIVE-SECRET-TOKEN');
+Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->assertSee('Enom live registration')->assertSee('Live renewal acceptance')->assertDontSee('LIVE-SECRET-TOKEN');
 $user=commerceUser();$user->update(['email'=>'live-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
 $product=app(NativeCatalogue::class)->product($tld,'register');$worker=app(RuntimeWork::class);

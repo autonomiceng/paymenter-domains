@@ -13,7 +13,7 @@ require __DIR__.'/enom-test-registration-fixture.php';
 try{$write('acceptance',['ending'=>'com','accept'=>true,'terms'=>[1],'registry'=>true,'verified'=>true]);throw new LogicException('TEST route/interval acceptance must be recorded.');}
 catch(DomainException $error){expect(str_contains($error->getMessage(),'Purchase route'),'Staff catalogue acceptance requires explicit TEST protocol review');}
 $setupAction=\Filament\Actions\Testing\TestAction::make('acceptance_'.$server->id)->schemaComponent('account_'.$server->id,'content');
-Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class)->mountAction($setupAction)
+Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->mountAction($setupAction)
     ->assertSchemaComponentExists('test_registration_accepted',checkComponentUsing:fn($field)=>$field->getLabel()==='I reviewed Enom TEST Purchase at https://resellertest.enom.com/interface.asp and its 25-second request interval')
     ->setActionData(['ending'=>'com','accept'=>true,'terms'=>['1'],'registry'=>true,'verified'=>true,'reason'=>'Synthetic unticked TEST route review'])->callMountedAction()
     ->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('Change refused')->body('Check the box confirming the Enom TEST Purchase route and request interval, then try again. Nothing was saved.'));
@@ -108,9 +108,9 @@ config(['cache.default'=>'database','session.driver'=>'database','queue.default'
 $user=commerceUser();$user->update(['email'=>'registration-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
 $product=app(NativeCatalogue::class)->product($tld,'register');$front=app(Storefront::class);
-$before=count($GLOBALS['enomWire']['forms']);$beforeUsed=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class)->assertSee(EnomTestCalls::facts())->assertSee('Enom TEST registration')->assertSee('Enom TEST Purchase route and interval accepted')->assertDontSee('TEST-SECRET-TOKEN');$front->endings();same($before,count($GLOBALS['enomWire']['forms']),'Page views make zero calls');same($beforeUsed,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'Page views do not reserve TEST calls');
-$before=count($GLOBALS['enomWire']['forms']);Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarBalances::class)
-    ->callAction(\Filament\Actions\Testing\TestAction::make('refresh_'.$server->id)->schemaComponent('account_'.$server->id,'content'))->assertNotified('Balance refreshed');
+$before=count($GLOBALS['enomWire']['forms']);$beforeUsed=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->assertSee('API calls today')->assertSee(EnomTestCalls::usage()['used'].' of '.EnomTestCalls::usage()['limit'])->assertSee('Enom TEST registration')->assertSee('Enom TEST Purchase route and interval accepted')->assertDontSee('TEST-SECRET-TOKEN');$front->endings();same($before,count($GLOBALS['enomWire']['forms']),'Page views make zero calls');same($beforeUsed,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'Page views do not reserve TEST calls');
+$before=count($GLOBALS['enomWire']['forms']);Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
+    ->callAction('check_balance')->assertNotified('Balance updated');
 same($before+1,count($GLOBALS['enomWire']['forms']),'Staff Refresh now makes one counted balance read');
 same('GetBalance',$GLOBALS['enomWire']['forms'][array_key_last($GLOBALS['enomWire']['forms'])]['Command'],'Existing staff Refresh now reads the opted-in TEST balance');
 $manualBalance=DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->first();
@@ -278,8 +278,8 @@ same((array)$balanceBeforeRefusal,(array)DB::table(Paymenter\Extensions\Servers\
 same($beforeUsed,(int)DB::table(EnomTestCallSchema::TABLE)->value('used'),'Zero cap does not increment');same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Zero cap refuses before transport send');
 $clock->at=$clock->at->modify('+61 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();
 $beforeCalls=count($GLOBALS['enomWire']['forms']);$evidenceBefore=array_intersect_key((array)$balanceBeforeRefusal,array_flip(['amount','currency','source','attempted_at','read_at','last_error_code']));
-Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarBalances::class)
-    ->callAction(\Filament\Actions\Testing\TestAction::make('refresh_'.$server->id)->schemaComponent('account_'.$server->id,'content'))->assertNotified(\Filament\Notifications\Notification::make()->title('Enom TEST request refused')->body(EnomTestCalls::facts().' No provider request was made.'));
+Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
+    ->callAction('check_balance')->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't check balance")->body('Enom test daily limit reached. Try again after 00:00 UTC.'));
 same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Staff Refresh now honors the exhausted cap before transport');
 $evidenceAfter=DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->first();
 same($evidenceBefore,array_intersect_key((array)$evidenceAfter,array_flip(['amount','currency','source','attempted_at','read_at','last_error_code'])),'Staff cap refusal preserves the prior successful USD evidence');
@@ -291,8 +291,8 @@ config(['domains.enom_test_daily_call_cap'=>500]);
 $clock->at=$clock->at->modify('+61 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();
 $beforeCalls=count($GLOBALS['enomWire']['forms']);$beforeUsed=(int)DB::table(EnomTestCallSchema::TABLE)->value('used');$counterFault=true;
 DB::listen(static function($query)use(&$counterFault):void{if($counterFault&&str_starts_with(strtolower($query->sql),'insert')&&str_contains($query->sql,EnomTestCallSchema::TABLE)){$counterFault=false;throw new RuntimeException('Synthetic counter error');}});
-Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarBalances::class)
-    ->callAction(\Filament\Actions\Testing\TestAction::make('refresh_'.$server->id)->schemaComponent('account_'.$server->id,'content'))->assertNotified(\Filament\Notifications\Notification::make()->title('Enom TEST request refused')->body(EnomTestCalls::facts().' Calls remain today, so a counter error or UTC day change refused it; you can retry. No provider request was made.'));
+Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
+    ->callAction('check_balance')->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't check balance")->body("Couldn't count Enom test calls. Try again."));
 expect(!$counterFault,'Synthetic counter error reached the reservation');same($beforeUsed,(int)DB::table(EnomTestCallSchema::TABLE)->value('used'),'Counter error refusal does not increment');same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Staff Refresh now explains a refusal while calls remain, before transport');
 $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$reconcileCapOp=$new(placeholderComFixtureName('reconcile-cap-placeholder.com'));$worker->operation($reconcileCapOp->id);same('pending',$reconcileCapOp->fresh()->state,'Second Purchase ACK remains Processing');
 $GLOBALS['testRegisteredName']=$reconcileCapOp->domain->domain;$used=(int)DB::table(EnomTestCallSchema::TABLE)->value('used');config(['domains.enom_test_daily_call_cap'=>$used+3]);

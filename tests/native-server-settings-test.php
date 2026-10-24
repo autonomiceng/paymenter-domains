@@ -10,7 +10,7 @@ use App\Models\{Extension,Server};
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\{Auth,DB,Schema};
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarSetup,RegistrarBalances as BalancesPage};
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup,RegistrarBalances as BalancesPage};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Disposition,DriverResult,Environment,Evidence,Money,ResultReason,SendState};
@@ -54,17 +54,17 @@ same(0,$io->verifications,'Native Create Server does no provider verification');
 Livewire::actingAs($staff)->test(CreateServer::class)->fillForm(['name'=>'Native second registrar','extension'=>'Domains'])->call('create')->assertHasNoFormErrors();
 $second=Server::where('name','Native second registrar')->sole();
 // Register the owned pages after the fresh server exists, as native discovery does on its next boot.
-$panel=Filament\Facades\Filament::getCurrentPanel();$panel->pages([RegistrarSetup::class,BalancesPage::class]);
-Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel):void {RegistrarSetup::registerRoutes($panel);BalancesPage::registerRoutes($panel);});
+$panel=Filament\Facades\Filament::getCurrentPanel();$panel->pages([RegistrarSetup::class,RegistrarAccount::class,BalancesPage::class]);
+Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel):void {RegistrarSetup::registerRoutes($panel);RegistrarAccount::registerRoutes($panel);BalancesPage::registerRoutes($panel);});
 app('router')->getRoutes()->refreshNameLookups();
 $writer=new StaffSettingsWrites(app(NativeCatalogue::class),app(SellerPolicies::class),$bindings,true);app()->instance(StaffSettingsWrites::class,$writer);
 $processingAction=static fn(Server $s)=>TestAction::make('processing_'.$s->id)->schemaComponent('account_'.$s->id,'content');
-$unconfigured=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertActionDisabled($processingAction($first))
+$unconfigured=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$first->id])->assertActionDisabled($processingAction($first))
     ->assertActionExists($processingAction($first),fn($action)=>$action->getTooltip()==='Configure and verify this account first.');
 $unconfigured->mountAction($processingAction($first))->assertActionNotMounted($processingAction($first));
 $configure=static function(Server $s,string $registrar,string $secret)use($staff):void {
     $name=TestAction::make('configure_'.$s->id)->schemaComponent('account_'.$s->id,'content');
-    $page=Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($name)->assertActionMounted($name);
+    $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($name)->assertActionMounted($name);
     $data=['registrar'=>$registrar,'environment'=>'test','reason'=>'Verify the original synthetic account',...($registrar==='enom'?['uid'=>'synthetic-enom','token'=>$secret]:['api_key'=>$secret])];
     $page->setActionData($data)->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded');
 };
@@ -72,11 +72,11 @@ $configure($first,'enom','PRIVATE-ORIGINAL-ENOM');$configure($second,'namesilo',
 foreach([$first,$second] as $server){
     $a=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($a);
     same(false,$a->processing_enabled,'Owned verified configuration starts paused');
-    Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertActionEnabled($processingAction($server));
+    Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionEnabled($processingAction($server));
     $bindings->setProcessing($server->id,true,static fn()=>null);
     BalanceReads::record($binding,new Money('42.17','USD'),$clock->now(),'manual');
     expect($bindings->configurationAvailable($server->id),'Local configuration validated without constructing reader');
-    same('42.17 USD',RegistrarBalances::facts($a,$clock->now())['balance'],'Valid original account displays own cached amount');
+    same('USD 42.17',RegistrarBalances::facts($a,$clock->now())['balance'],'Valid original account displays own cached amount');
     $route=app('router')->getRoutes()->getByName('filament.admin.resources.servers.edit');
     same(EditServer::class,explode('@',$route->getActionName())[0],'Native route remains native');
     // Cached native route remains native; no Secure* class or mount guard participates.
@@ -105,30 +105,29 @@ foreach([$first,$second] as $server){
     serverSettingsReject(fn()=>$bindings->requireProcessing($binding));serverSettingsReject(fn()=>$bindings->reader($server->id));
     DB::transaction(function()use($bindings,$server,$a):void {serverSettingsReject(fn()=>$bindings->requireProcessingLocked(Server::whereKey($server->id)->lockForUpdate()->sole(),$a->fresh()));});
     same($readerCalls,$io->readers,'Changed credentials refuse before reader or spending transport composition');
-    $facts=RegistrarBalances::facts($a,$clock->now());same('Unknown',$facts['balance'],'Wrong account never displays original account balance');same('Configuration unavailable',$facts['error'],'Changed credentials give safe balance status');
+    $facts=RegistrarBalances::facts($a,$clock->now());same(null,$facts['balance'],'Wrong account never displays original account balance');same("Couldn't load the account's settings",$facts['cause'],'Changed credentials give safe balance status');
     same('42.17',DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->value('amount'),'Held display retains original balance history');
-    $pause=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertActionEnabled($processingAction($server));
+    $pause=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionEnabled($processingAction($server));
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);
-    $disabled=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertActionDisabled($processingAction($server));
+    $disabled=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionDisabled($processingAction($server));
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
     $health=RuntimeHealth::for($server->id);$healthNeedle=$a->registrar_key==='namesilo'?'saved settings no longer match this NameSilo binding':'saved settings no longer match the verified account';$recoveryNeedle=$a->registrar_key==='namesilo'?'Restore the original saved settings':'re-enter credentials for the original account';expect(str_contains($health['Registrar configuration'],$healthNeedle),'Hold covers credential and digest settings');expect(str_contains($health['Registrar configuration'],$recoveryNeedle),'Local health gives actionable hold');
-    Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('On hold')->assertSee($recoveryNeedle)->assertDontSee('PRIVATE-WRONG');
-    $balancePage=Livewire::actingAs($staff)->test(BalancesPage::class)->assertDontSee('PRIVATE-WRONG');
-    $funds=TestAction::make('funds_'.$server->id)->schemaComponent('account_'.$server->id,'content');
-    if($a->registrar_key==='namesilo'){$balancePage->assertActionDoesNotExist($funds);}
-    else{$balancePage->assertActionExists($funds,fn($action)=>$action->getColor()==='gray'&&$action->isOutlined()&&$action->getIconPosition()===\Filament\Support\Enums\IconPosition::After);}
+    // The account shows Connection failed with its cause; Balance is Missing with the same cause and Add funds stays available.
+    Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('Connection failed')->assertSee("Couldn't load the account's settings")->assertSee('Missing')
+        ->assertSee('Add funds')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
+    Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Connection failed')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
     // A positively verified different account still cannot repurpose the retained binding.
     serverSettingsReject(fn()=>$bindings->configure($server->id,$a->registrar_key,Environment::Test,$a->registrar_key==='enom'?['uid'=>'other-account','token'=>'PRIVATE-WRONG-ROTATION']:['api_key'=>'PRIVATE-WRONG-ROTATION']));
     same($binding->fingerprint,$a->fresh()->account_fingerprint,'Failed rotation retains B1 fingerprint key');
     $configure($server,$a->registrar_key,'PRIVATE-ROTATED-'.$a->registrar_key);
     same($binding->fingerprint,$a->fresh()->account_fingerprint,'Verified same-account rotation retains B1 fingerprint key');
     same(false,$a->fresh()->processing_enabled,'Verified recovery requires explicit resume');
-    same('42.17 USD',RegistrarBalances::facts($a,$clock->now())['balance'],'Same verified account can display its retained amount again');
+    same('USD 42.17',RegistrarBalances::facts($a,$clock->now())['balance'],'Same verified account can display its retained amount again');
     $digest=$server->settings()->where('key','domains_verified_credentials')->sole();$savedDigest=$digest->value;$digest->update(['value'=>str_repeat('f',64)]);
-    serverSettingsReject(fn()=>$bindings->reader($server->id));same('Unknown',RegistrarBalances::facts($a,$clock->now())['balance'],'Digest-only changes also hide the balance');$digest->update(['value'=>$savedDigest]);
+    serverSettingsReject(fn()=>$bindings->reader($server->id));same(null,RegistrarBalances::facts($a,$clock->now())['balance'],'Digest-only changes also hide the balance');$digest->update(['value'=>$savedDigest]);
     $bindings->setProcessing($server->id,true,static fn()=>null);$server->refresh()->update(['enabled'=>false]);
     same(false,$a->fresh()->processing_enabled,'Native disable pauses the retained account');
-    expect(str_contains(RuntimeHealth::for($server->id)['Registrar configuration'],'Re-enable it in Servers, then resume processing in Registrar setup'),'Disabled-server health names its actual recovery path');same('Unknown',RegistrarBalances::facts($a,$clock->now())['balance'],'Disabled account hides balance');
+    expect(str_contains(RuntimeHealth::for($server->id)['Registrar configuration'],'Re-enable it in Servers, then resume processing in Registrar setup'),'Disabled-server health names its actual recovery path');same(null,RegistrarBalances::facts($a,$clock->now())['balance'],'Disabled account hides balance');
     serverSettingsReject(fn()=>$bindings->reader($server->id));$server->refresh()->update(['enabled'=>true]);same(false,$a->fresh()->processing_enabled,'Re-enable does not resume spending');
     foreach([Server::class,Extension::class] as $model){
         foreach(['extension'=>'Enom','type'=>'other','id'=>999999] as $field=>$value){$s=$model::findOrFail($server->id);$s->$field=$value;serverSettingsReject(fn()=>$s->save());}
@@ -144,7 +143,7 @@ foreach([$first,$second] as $server){
     same($retained,DB::table('settings')->where('settingable_id',$server->id)->orderBy('id')->get()->toJson(),'Handled refusal retains encrypted settings');
     same($binding->fingerprint,$a->fresh()->account_fingerprint,'Handled refusal retains the account binding');
     serverSettingsReject(fn()=>$a->fresh()->delete());
-    $owned=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Treat staff with server-edit permission as able to access them');
+    $owned=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful()->assertSee('Setup')->assertSee('Balance');
     foreach([$secret,'PRIVATE-ROTATED-'.$a->registrar_key,$savedDigest,$a->account_fingerprint] as $private){expect(!str_contains($owned->html(),$private),'Owned setup excludes saved credentials, HMAC and fingerprints');}
     $audit=Review::historyRows($server->fresh());expect(count($audit)>=2,'Configuration and rotation retain audited review outcomes');
     foreach(['PRIVATE-ORIGINAL','PRIVATE-ROTATED','PRIVATE-WRONG','domains_credentials',$savedDigest] as $private){expect(!str_contains(json_encode($audit),$private),'Retained owned audit excludes credentials and verification digest');}
@@ -162,26 +161,26 @@ $liveAccount=Account::where('server_id',$live->id)->sole();BalanceReads::record(
 $savedUrl=config('app.url');config(['app.url'=>'https://native-settings.example.invalid']);
 same('site_unbound',$bindings->configurationStatus($live->id),'Unbound live site is distinct from changed credentials');
 expect(str_contains(RuntimeHealth::for($live->id)['Registrar configuration'],'This release has no staff action to bind it; processing stays off.'),'Unbound-site health names the unsupported staff binding action');
-same('Unknown',RegistrarBalances::facts($liveAccount,$clock->now())['balance'],'Unbound live site hides cached amount');
+same(null,RegistrarBalances::facts($liveAccount,$clock->now())['balance'],'Unbound live site hides cached amount');
 $bindings->confirmLiveSite($live->id,'https://native-settings.example.invalid');
-same('77.00 USD',RegistrarBalances::facts($liveAccount,$clock->now())['balance'],'Explicit site binding permits same-account cached display');
+same('USD 77.00',RegistrarBalances::facts($liveAccount,$clock->now())['balance'],'Explicit site binding permits same-account cached display');
 config(['app.url'=>'https://moved-native-settings.example.invalid']);
 same('site_mismatch',$bindings->configurationStatus($live->id),'Changed application URL holds live configuration');
 expect(str_contains(RuntimeHealth::for($live->id)['Registrar configuration'],'restore the original site configuration'),'Site mismatch does not suggest ineffective credential rotation');
-same('Unknown',RegistrarBalances::facts($liveAccount,$clock->now())['balance'],'Wrong live site hides cached amount');
+same(null,RegistrarBalances::facts($liveAccount,$clock->now())['balance'],'Wrong live site hides cached amount');
 config(['app.url'=>'http://native-settings.example.invalid']);same('site_invalid',$bindings->configurationStatus($live->id),'Invalid live URL has distinct recovery');
 config(['app.url'=>'https://native-settings.example.invalid']);
 // Copying another server's matching credential/digest pair cannot reuse its HMAC binding.
 $destination=$second->fresh();$saved=[];
 foreach(['domains_credentials','domains_verified_credentials'] as $key){$s=$destination->settings()->where('key',$key)->sole();$saved[$key]=$s->value;$s->update(['value'=>$live->settings()->where('key',$key)->sole()->value]);}
 serverSettingsReject(fn()=>$bindings->reader($destination->id));
-same('Unknown',RegistrarBalances::facts(Account::where('server_id',$destination->id)->sole(),$clock->now())['balance'],'Copied pair never displays another bound balance');
+same(null,RegistrarBalances::facts(Account::where('server_id',$destination->id)->sole(),$clock->now())['balance'],'Copied pair never displays another bound balance');
 foreach($saved as $key=>$value){$destination->settings()->where('key',$key)->sole()->update(['value'=>$value]);}
 config(['app.url'=>$savedUrl]);
 expect(!array_key_exists('Native editors',RuntimeHealth::for($first->id)),'Server qualification health needs no remap fact');
 same(null,NativeServerGuard::deletionNoticeMissing(),'Native delete notice capabilities are available');
 expect(!array_key_exists('Server delete notice',RuntimeHealth::for($first->id)),'Available native delete notice needs no unavailable warning');
-Livewire::actingAs($nativeOnly)->test(RegistrarSetup::class)->assertForbidden();Livewire::actingAs($nativeOnly)->test(BalancesPage::class)->assertForbidden();
+Livewire::actingAs($nativeOnly)->test(RegistrarSetup::class)->assertForbidden();Livewire::actingAs($nativeOnly)->test(BalancesPage::class)->assertForbidden();Livewire::actingAs($nativeOnly)->test(RegistrarAccount::class,['account'=>$first->id])->assertForbidden();
 // Legacy processing exclusion and installation refusal are scoped model events, with no remaps.
 $legacy=Server::create(['type'=>'server','extension'=>'Enom','name'=>'Paused legacy','enabled'=>false]);
 $toggle=$legacy->settings()->create(['key'=>'operations_enabled','value'=>false,'type'=>'boolean']);

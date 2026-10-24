@@ -4,7 +4,7 @@ declare(strict_types=1);
 use App\Models\{Currency,Server};
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
@@ -31,7 +31,7 @@ $write=static function(string $action,array $data=[],?int $tld=null)use($review,
 $refuse=static function(callable $work):void {try{$work();throw new LogicException('Refusal required');}catch(DomainException|RuntimeException|InvalidArgumentException $e){expect($e->getMessage()!=='Refusal required','Expected safe refusal');}};
 $action=static fn(string $name)=>Filament\Actions\Testing\TestAction::make($name.'_'.$server->id)->schemaComponent('account_'.$server->id,'content');
 $before=count($GLOBALS['catalogueCalls']);
-Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($action('configure'))->setActionData([
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction($action('configure'))->setActionData([
     'registrar'=>'enom','environment'=>'test','uid'=>'catalogue-uid','token'=>'catalogue-token','reason'=>'Verify synthetic TEST catalogue'])
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded');
 same($before+1,count($GLOBALS['catalogueCalls']),'Configure one authenticated read');
@@ -71,7 +71,7 @@ try{$write('import',['ending'=>'com']);expect(false,'Malformed staff import must
 }$GLOBALS['catalogueBadPrice']=false;
 $write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 $before=count($GLOBALS['catalogueCalls']);
-Livewire::actingAs($staff)->test(RegistrarSetup::class)->mountAction($action('import'))->setActionData(['ending'=>'com','reason'=>'Import accepted annual TEST baseline'])
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction($action('import'))->setActionData(['ending'=>'com','reason'=>'Import accepted annual TEST baseline'])
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded');
 same(['GetTLDList','GetTLDDetails','GetExtAttributes','PE_GetProductPrice','PE_GetProductPrice'],array_column(array_slice($GLOBALS['catalogueCalls'],$before),'Command'),'Annual import is exactly five reviewed bounded reads');
 $tld=Tld::where('server_id',$server->id)->sole();same(false,$tld->enabled,'Import leaves ending unpublished');
@@ -92,7 +92,7 @@ $secret=$verified->value('value');$verified->update(['value'=>'invalid-encrypted
 $refuse(fn()=>app(SellerPolicies::class)->selection('com','register',1,new DateTimeImmutable));
 $refuse(fn()=>$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id));$verified->update(['value'=>$secret]);
 $before=count($GLOBALS['catalogueCalls']);
-Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('TEST');Livewire::actingAs($staff)->test(ViewTld::class,['record'=>$tld->id])->assertSee('Pricing for .com');
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('Mode')->assertSee('Test');Livewire::actingAs($staff)->test(ViewTld::class,['record'=>$tld->id])->assertSee('Pricing for .com');
 foreach(['pricing'=>'/domains/pricing','search'=>'/domains'] as $method=>$path){$request=Illuminate\Http\Request::create($path);$request->setLaravelSession($session);(new Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController($front))->$method($request)->render();}
 same($before,count($GLOBALS['catalogueCalls']),'Staff, pricing and search page rendering makes zero provider calls');
 same('available',$front->check('catalogue-check-placeholder.com')['status'],'Explicit search confirms ordinary availability');same($before+1,count($GLOBALS['catalogueCalls']),'Explicit search one Check');
