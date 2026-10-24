@@ -302,7 +302,8 @@
     "tests/lifecycle-policy-test.php",
     "tests/acquisition-binding-test.php",
     "tests/provider-send-guard-test.php",
-    "tests/provider-send-guard-operation-test.php"
+    "tests/provider-send-guard-operation-test.php",
+    "tests/staff-hold-release-audit-test.php"
   ],
   "ui": [],
   "runner": [

@@ -726,3 +726,6 @@ not elapsed wall time. Measure full wall time around the runner separately.
 all named command routes, UTC metadata, default-null sends and closed failure paths.
 `provider-send-guard-operation-test.php` checks a funded native registration's guard refusal,
 retained unsent evidence, staff release and later one-time dispatch without changing its debt.
+
+`staff-hold-release-audit-test.php` repeats a paid native request’s Hold and Livewire Release
+cycle, checking exact completed audit reasons/counts, no reason modal and its History request URL.
