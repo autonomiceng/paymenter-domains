@@ -138,7 +138,7 @@ final class StorefrontController extends Controller
             return ['sld' => null, 'ending' => null, 'error' => 'Use only letters a–z, numbers and hyphens, without a hyphen at the start or end.'];
         }
         if ($ending !== null && !preg_match('/\A[a-z0-9]+(?:\.[a-z0-9]+)*\z/', $ending)) {
-            return ['sld' => $sld, 'ending' => null, 'error' => 'Check the ending after the dot, for example '.$sld.'.com.'];
+            return ['sld' => $sld, 'ending' => null, 'error' => 'Check the TLD after the dot, for example '.$sld.'.com.'];
         }
 
         return ['sld' => $sld, 'ending' => $ending, 'error' => null];

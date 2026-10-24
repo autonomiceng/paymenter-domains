@@ -34,12 +34,12 @@ expect($reminders->remind($d->id),'Renewal-off notice');
 $offMail=Mail::queued(DomainNotice::class)->last();
 same(null,$offMail->data['invoice'],'Cancelled renewal notice offers no payment instruction (absent invoice is null for retained templates)');
 same(false,$offMail->data['complimentary'],'Native cancellation is not complimentary renewal');
-expect(str_contains($offMail->render(),'Renewal is turned off'),'Actual cancelled-service mail says Renewal off');
+expect(str_contains($offMail->render(),'Auto-renew is off'),'Actual cancelled-service mail says Auto-renew is off');
 expect(str_contains($offMail->render(),'contact support before') && !str_contains($offMail->render(),'unless you renew it'),'Renewal-off mail points to support without promising self-service renewal');
-expect(str_contains(view('domains::mail-text',$offMail->content()->with)->render(),'Renewal is turned off'),'Cancelled-service text alternative says Renewal off');
+expect(str_contains(view('domains::mail-text',$offMail->content()->with)->render(),'Auto-renew is off'),'Cancelled-service text alternative says Auto-renew is off');
 expect(!DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereIn('code',['missing_obligation','held_obligation','invalid_invoice'])->exists(),'Native cancellation alone creates no renewal billing review alert');
 $offNotice=App\Models\Notification::where('user_id',$d->user_id)->latest('id')->firstOrFail();
-expect(str_contains($offNotice->title,$d->domain)&&str_contains($offNotice->body,'Renewal is turned off. To keep this domain, contact support before it expires.'),'Actual native in-app reminder says renewal is off for the cancelled domain');
+expect(str_contains($offNotice->title,$d->domain)&&str_contains($offNotice->body,'Auto-renew is off. To keep this domain, contact support before it expires.'),'Actual native in-app reminder says auto-renew is off for the cancelled domain');
 
 [$d]=$make(placeholderComFixtureName('expired-off-placeholder.com'),false);ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Synthetic request']);
 $d->update(['status'=>'expired']);$clock->instant=new DateTimeImmutable('2027-10-21T12:00:00Z');

@@ -6,7 +6,7 @@ use Illuminate\Support\Str;
 final class OwnerHelp
 {
     // Stable help page anchors and the ## heading each one belongs to.
-    public const ANCHORS=['nameservers'=>'Nameservers','glue-records'=>'Glue records','dns-records'=>'DNS records','dnssec'=>'DNSSEC','transfer-lock'=>'Transfer lock','transfer-code'=>'Transfer code','privacy'=>'Domain privacy','contacts'=>'Contacts','auto-renew'=>'Auto-renew'];
+    public const ANCHORS=['nameservers'=>'Nameservers','glue-records'=>'Glue records','dns-records'=>'DNS records','dnssec'=>'DNSSEC','transfer-lock'=>'Transfer lock','transfer-code'=>'Auth code','privacy'=>'WHOIS privacy','contacts'=>'Contacts','auto-renew'=>'Auto-renew'];
     // Owner management sections and the anchor that explains each one.
     public const SECTIONS=['nameservers'=>'nameservers','glue'=>'glue-records','dns'=>'dns-records','srv'=>'dns-records','ds'=>'dnssec','lock'=>'transfer-lock','auth_code_email'=>'transfer-code','privacy'=>'privacy','contacts'=>'contacts','auto_renew_off'=>'auto-renew','auto-renew'=>'auto-renew'];
     // One short line per popover. The help page has the full text.

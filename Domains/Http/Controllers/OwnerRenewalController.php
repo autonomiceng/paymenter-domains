@@ -27,11 +27,11 @@ final readonly class OwnerRenewalController
     public static function refusal(\Throwable $e,?string $status=null): string
     {
         if ($e instanceof RuntimeIneligible) { return match($e->reason) {
-            RuntimeReason::BillingOff=>'Online renewal is not available right now. Contact support to renew this domain.',
+            RuntimeReason::BillingOff=>'You can’t renew online right now. Contact support to renew this domain.',
             RuntimeReason::OutsideCalendar=>'This domain is too close to its expiry date to renew online. Contact support to renew it.',
             default=>self::UNAVAILABLE}; }
         return $e instanceof \DomainException ? match($e->getMessage()) {
-            'Renewal is off for this adopted registration.'=>'Renewal is turned off for this domain. Contact support if you want to renew it.',
+            'Renewal is off for this adopted registration.'=>'Auto-renew is off for this domain. Contact support if you want to renew it.',
             'Renewal term exceeds the registry horizon.'=>'Domains can be registered for at most 10 years ahead. Choose a shorter term.',
             'Existing renewal obligation requires review.'=>match($status) { 'cancelled'=>self::CANCELLED,
                 'review'=>'This renewal is under review. Contact support if you need an update on this renewal.',

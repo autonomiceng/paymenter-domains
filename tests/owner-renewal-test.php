@@ -49,7 +49,7 @@ $clock->instant=new DateTimeImmutable('2027-09-01T12:00:00Z');
 $setting('domains_manual_renewals_enabled',false);$setting('domains_billing_enabled',true);
 same([],$owners->present($d->fresh())->renewNow,'Manual renewals off hide the request');
 $html=$page($d);expect(!str_contains($html,'Renew now')&&!str_contains($html,route('domains.domains.renew',$d->id)),'Off page shows no renewal form');
-$before=$ledger();$refused($d,['years'=>'1'],'Online renewal is not available right now. Contact support to renew this domain.');
+$before=$ledger();$refused($d,['years'=>'1'],'You can’t renew online right now. Contact support to renew this domain.');
 same($before,$ledger(),'Off request creates no invoice');
 
 // On: form offers only terms inside the ten-year registry horizon.
@@ -304,7 +304,7 @@ foreach ([true,false] as $autoRenew) {
 // Owner copy for every billing refusal hides reasons and internal messages.
 foreach([[new RuntimeIneligible(RuntimeReason::SpendingPaused),OwnerRenewalController::UNAVAILABLE],[new RuntimeIneligible(RuntimeReason::LifecycleNotReady),OwnerRenewalController::UNAVAILABLE],
     [new RuntimeIneligible(RuntimeReason::MissingAnchor),OwnerRenewalController::UNAVAILABLE],[new DomainException('Domain renewal is unavailable.'),OwnerRenewalController::UNAVAILABLE],
-    [new DomainException('Renewal is off for this adopted registration.'),'Renewal is turned off for this domain. Contact support if you want to renew it.'],
+    [new DomainException('Renewal is off for this adopted registration.'),'Auto-renew is off for this domain. Contact support if you want to renew it.'],
     [new RuntimeException('Renewal term exceeds the registry horizon.'),OwnerRenewalController::UNAVAILABLE]] as [$error,$copy]){same($copy,OwnerRenewalController::refusal($error),'Owner copy for '.$error->getMessage());}
 foreach([[null,'This domain already has a renewal invoice for a different term. Pay that invoice, or contact support to change it.'],['cancelled',OwnerRenewalController::CANCELLED],
     ['review','This renewal is under review. Contact support if you need an update on this renewal.']] as [$state,$copy]){same($copy,OwnerRenewalController::refusal(new DomainException('Existing renewal obligation requires review.'),$state),'Issued cycle copy for '.($state??'term'));}

@@ -9,7 +9,7 @@ final class NativeActivationInformation
     public const TEXT= <<<'BLADE'
 Your domain registration or transfer is in progress. Registrations usually finish within minutes.
 
-Transfers can take several days. We may ask you for the transfer (auth) code from your current registrar.
+Transfers can take several days. We may ask for the auth code from your current registrar.
 
 See the domain status and manage your domain on the [service page]({{ route('services.show', $service) }}).
 BLADE;

@@ -58,7 +58,7 @@ final class Runtime
         app(CartAdmission::class)->boot();app(InvoiceBinding::class)->boot();
         Event::listen('permissions',fn()=>Staff::permissions());
         Event::listen('navigation',fn()=>['name'=>'Domains','url'=>route('domains.domains.search'),'icon'=>'ri-global','priority'=>12,'spa'=>false,
-            'children'=>[['name'=>'Register a domain','url'=>route('domains.domains.search'),'spa'=>false],['name'=>'Domain pricing','url'=>route('domains.domains.pricing'),'spa'=>false]]]);
+            'children'=>[['name'=>'Register a domain','url'=>route('domains.domains.search'),'spa'=>false],['name'=>'Domain prices','url'=>route('domains.domains.pricing'),'spa'=>false]]]);
         Event::listen('navigation.dashboard',fn()=>['name'=>'Domains','url'=>route('domains.domains.index'),'icon'=>'ri-global','priority'=>12,'spa'=>false]);
         foreach(['Domain','Operation'] as $model){Gate::policy('Paymenter\\Extensions\\Servers\\Domains\\Models\\'.$model,'Paymenter\\Extensions\\Servers\\Domains\\Policies\\'.$model.'Policy');}
         NativePaidHooks::boot();

@@ -39,7 +39,7 @@ final class CartAdmission
         $mapping = $this->native->mapping($product);
         return !$mapping ? [] : [['name' => 'domain', 'type' => 'text', 'label' => 'Domain name', 'required' => true,
             'placeholder' => 'example.'.$mapping['tld']->tld,
-            'description' => $mapping['action'] === 'transfer' ? 'Enter the transfer code after checkout.' : 'Enter the full domain name.']];
+            'description' => $mapping['action'] === 'transfer' ? 'Enter the auth code after checkout.' : 'Enter the full domain name.']];
     }
 
     public function prepare(CartItem $item): void
@@ -53,7 +53,7 @@ final class CartAdmission
         }
         $selected = $this->sellers->selection($mapping['tld']->tld, $mapping['action'], $mapping['term'], $this->clock->now());
         if ($selected->serverId !== (int) $product->server_id || $selected->fingerprint !== $mapping['tld']->account_fingerprint) {
-            throw new \DomainException('Seller changed; search again.');
+            throw new \DomainException('Registrar changed. Search again.');
         }
         $token = $this->eligibility->observe($name, $selected, $this->identity($item));
         // Drop arbitrary fields, including transfer codes and client-supplied authority claims.
@@ -70,7 +70,7 @@ final class CartAdmission
             $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $product->server_id)->firstOrFail();
             $binding = CatalogueAcceptances::binding($account);
             if (EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::enabled($binding) && !(($this->native->mapping($product)['action']??null)==='transfer'&&EnomTestTransfer::enabled($binding))) {
-                throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Live domain registration is off. No order or payment was created. Remove domain lines to check out other items.':'TEST domains are for preview. Checkout is unavailable; no order or payment was created. Remove TEST domain lines to check out other items.');
+                throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Domains can’t be ordered right now. Remove them to check out.':'Test domains can’t be ordered. Remove them to check out.');
             }
             if (DB::transactionLevel() !== 1 || $this->order || (int) Auth::id() !== (int) $order->user_id
                 || ($cart->user_id !== null && (int) $cart->user_id !== (int) $order->user_id) || $order->currency_code !== 'USD') {
@@ -78,7 +78,7 @@ final class CartAdmission
             }
             $mapping = $this->validate($item, $product);
             if ($mapping['action'] !== 'register' && EnomTestRegistration::enabled($binding) && !EnomTestTransfer::enabled($binding)) {
-                throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Live transfers are unavailable. No order or payment was created. Remove transfer lines and check out registrations only.':'TEST transfers are unavailable; no order or payment was created. Remove TEST transfer lines and check out registrations only.');
+                throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Transfers can’t be ordered yet. Remove them to check out.':'Test transfers can’t be ordered yet. Remove them to check out.');
             }
             $name = $this->name($item, $mapping);
             if (isset($names[$name])) { throw new \DomainException('Duplicate domain cart line.'); } $names[$name] = true;

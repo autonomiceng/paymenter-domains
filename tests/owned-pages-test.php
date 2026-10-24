@@ -77,7 +77,7 @@ $unchecked=$newTransfer(placeholderComFixtureName('owner-unchecked-placeholder.c
 same(true,$sealed->attempt['transfer_admission']['rdap_unchecked'],'Real sealed attempt retains unchecked provenance');
 $dto=$owners->present($sealed->domain);expect($dto->transfer['unchecked']&&!$dto->transfer['open'],'Sealed provenance survives the closed editor');
 storefrontViews();$calls=$state->calls;$html=$controller->code($request($user),$sealed->domain_id)->render();
-expect(str_contains($html,'We couldn’t check this domain’s public registration record for this transfer.'),'Real presenter-to-Blade preserves unchecked provenance');
+expect(str_contains($html,'<dt>Expires</dt>')&&str_contains($html,'Missing</span> <span class="domains-missing__cause">Shows when the transfer completes</span>'),'Real presenter-to-Blade preserves unchecked provenance: Expires Missing with its cause');
 same(0,storefrontDom($html)->query('//input[@name="transfer_code"]')->length,'Provenance grants no code editor');same($calls,$state->calls,'Rendering provenance performs no I/O');
 require __DIR__.'/Support/late-contact-pages.php';
 foreach(['show','setup','code','index','transfer']as$route){$r=Illuminate\Support\Facades\Route::getRoutes()->getByName('domains.domains.'.$route);expect(in_array('auth',$r->gatherMiddleware(),true)&&in_array('web',$r->gatherMiddleware(),true),'Dormant routes have native auth/session boundary');}

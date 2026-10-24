@@ -1,4 +1,4 @@
-@component('layouts.app', ['title' => 'Domain prices', 'sidebar' => !$guest, 'spa' => false, 'description' => 'Registration, renewal and transfer prices for every domain ending we offer.'])
+@component('layouts.app', ['title' => 'Domain prices', 'sidebar' => !$guest, 'spa' => false, 'description' => 'Registration, renewal and transfer prices for every TLD we sell.'])
 @php
     $termRange = static function (array $terms): string {
         if (!$terms) { return 'Not offered'; }
@@ -19,7 +19,7 @@
         <div class="domains-head">
             <div>
                 <h1 class="domains-title">Domain prices</h1>
-                <p class="domains-lede">Every ending we offer, with its registration, renewal and transfer price.</p>
+                <p class="domains-lede">Every TLD we sell, with its register, renew and transfer price per year.</p>
             </div>
         </div>
     </div>
@@ -37,15 +37,15 @@
 
 
         <section class="domains-panel" aria-labelledby="domains-prices-heading">
-            <h2 id="domains-prices-heading" class="domains-sr">Prices by ending</h2>
+            <h2 id="domains-prices-heading" class="domains-sr">Prices by TLD</h2>
             <div class="domains-tablewrap">
                 <table class="domains-tbl domains-stackable domains-pricelist">
                     <thead>
                         <tr>
-                            <th scope="col">Ending</th>
-                            <th scope="col" class="domains-end">Register, first year</th>
-                            <th scope="col" class="domains-end">Renew, per year</th>
-                            <th scope="col" class="domains-end">Transfer, adds 1 year</th>
+                            <th scope="col">TLD</th>
+                            <th scope="col" class="domains-end">Register</th>
+                            <th scope="col" class="domains-end">Renew</th>
+                            <th scope="col" class="domains-end">Transfer</th>
                             @if ($showTerms)<th scope="col" class="domains-end">Register for</th>@endif
                         </tr>
                     </thead>
@@ -54,7 +54,7 @@
                             <tr>
                                 <th scope="row" class="domains-domain domains-cell-wide">.{{ $row['tld'] }}@if ($row['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</th>
                                 <td class="domains-end domains-num" data-label="Register">{{ $row['register'] ?? 'Not offered' }}</td>
-                                <td class="domains-end domains-num" data-label="Renew, per year">{{ $row['renew'] ?: 'Not offered' }}</td>
+                                <td class="domains-end domains-num" data-label="Renew">{{ $row['renew'] ?: 'Not offered' }}</td>
                                 <td class="domains-end domains-num" data-label="Transfer">{{ $row['transfer'] ?? 'Not offered' }}</td>
                                 @if ($showTerms)<td class="domains-end" data-label="Register for">{{ $termRange($row['terms']) }}</td>@endif
                             </tr>

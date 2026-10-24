@@ -21,7 +21,7 @@ same(['mail'=>false,'app'=>false],$delivery->deliver($n->id,$at),'Neither accept
 same(1,Mail::queued(NoticeMail::class)->count(),'Mail exactly once despite app failure');same($nativeBefore,Notification::where('user_id',$uid)->count(),'Failed app not fabricated');
 $m=Mail::queued(NoticeMail::class)->sole();expect(str_contains($m->render(),'example.com') && str_contains($m->render(),$m->data['date']),'Mail names domain and relevant date');
 expect(!str_contains($m->render(),'https://rdap.example.com'),'Registry endpoint not in notice');expect(!str_contains($m->render(),'<script>company'),'Company escaped');
-$text=view('domains::mail-text',$m->content()->with)->render();expect(str_contains($text,'example.com')&&str_contains($text,$m->data['date'])&&str_contains($text,'View domain checks ('),'Readable text alternative includes safe detail link');
+$text=view('domains::mail-text',$m->content()->with)->render();expect(str_contains($text,'example.com')&&str_contains($text,$m->data['date'])&&str_contains($text,'View domain ('),'Readable text alternative includes safe detail link');
 // Current owner, native preference and target pause are rechecked after reservation.
 noticeDns($f,$now);noticeDns($f,$now+900);$ids=$planner->plan('watch',$id,$uid,$now+902);$drift=WatchNotice::where('kind','ns_changed')->sole();
 $pending=$delivery->reserve($drift->id,'app',$now+902);expect($pending!==null,'Pending app reserved');

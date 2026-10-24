@@ -83,7 +83,7 @@ final class NativeCancellation
     {
         $seed=Service::find($id);if(!$seed||!NativeIdentity::routed($seed)){return;}
         if(!Schema::hasTable('domains_native_intents')){
-            self::refuse('Cancelling or suspending this domain is unavailable until the Domains update is finished. Contact support if this continues.',(int)$seed->id,$kind);
+            self::refuse('Can’t cancel this domain right now. Contact support.',(int)$seed->id,$kind);
         }
         // Invoice prefix before all orders/services, then owned intents/domains/operations. We
         // never acquire a user lock after a native cron caller already locked its invoices.

@@ -1,17 +1,17 @@
 # Domain help
 
-How each setting on the domain management page works. Changes are sent to the registrar and show in Activity when they are confirmed.
+How each setting on a domain page works. Changes show in History once the registrar confirms them.
 
 ## Nameservers
 
 Nameservers decide where your website and email are hosted. Your DNS provider or hosting company tells you which nameservers to use.
 
 - Enter 2 to 12 hostnames, one per line, such as ns1.example.com.
-- **Use default nameservers** fills in the registrar's nameservers. Choose this if you want to manage DNS records on this page.
+- **Use Beco nameservers** fills in Beco's nameservers. Choose this if you want to manage DNS records on this page.
 - Before saving, we show the current and new nameservers so you can check them.
 - Changes can take up to 48 hours to reach everyone.
 
-If the new nameservers are not set up for your domain, your website and email can stop working until you fix them or switch back.
+If the new nameservers aren't set up for your domain, your website and email can stop working until you fix them or switch back.
 
 ## Glue records
 
@@ -25,7 +25,7 @@ Deleting a glue record that domains still use can stop those domains from resolv
 
 ## DNS records
 
-DNS records point your domain to your website, email and other services. They are used only while the domain uses the registrar's default nameservers. If you use other nameservers, manage DNS records with that provider instead.
+DNS records point your domain to your website, email and other services. They're used only while the domain uses Beco nameservers. If you use other nameservers, manage DNS records with that provider instead.
 
 - Use @ for the domain itself, and a name like www for a subdomain.
 - Alias (CNAME) and mail (MX) targets end with a dot, such as mail.example.com.
@@ -46,28 +46,28 @@ A DS record that doesn't match your DNS provider's keys can make your domain unr
 
 The transfer lock stops anyone from moving this domain to another registrar. Keep it on unless you are moving the domain.
 
-When the lock is off, anyone with the transfer code can start a transfer. Turn it back on if you decide not to move the domain.
+When the lock is off, anyone with the auth code can start a transfer. Turn it back on if you decide not to move the domain.
 
-## Transfer code
+## Auth code
 
-Your new registrar asks for this code, also called an auth code or EPP code, when you transfer the domain to them. We ask the registrar to email it to the domain owner, or to the administrative contact for some registrars. The page shows who receives it.
+Your new registrar asks for the auth code (also called EPP code or transfer code) when you move the domain to them. We ask the registrar to email the auth code to the owner, or to the admin contact for some registrars. The page shows who gets it.
 
-Treat the code like a password. Anyone with the code can move this domain once the transfer lock is off.
+Treat the auth code like a password. Anyone with it can move this domain once the transfer lock is off.
 
-## Domain privacy
+## WHOIS privacy
 
-Domain privacy hides the owner's name, address, phone and email from public WHOIS lookups. The registrar shows its privacy service details instead.
+WHOIS privacy hides the owner's name, address, phone and email from public WHOIS lookups. The registrar shows its privacy service details instead.
 
 - Some domains include privacy at no charge. Otherwise it renews separately from the domain, one year at a time, and we send an invoice for it, plus tax where applicable.
-- Some registries do not allow privacy, or require the owner's details to stay public.
+- Some registries don't allow privacy, or require the owner's details to stay public.
 
 ## Contacts
 
-Each domain has an owner (registrant) and administrative, technical and billing contacts. You can change one contact or all of them at once.
+Each domain has an owner (registrant) and admin, tech and billing contacts. You can change one contact or all of them at once.
 
 - Use details you can be reached at. Registries can suspend domains with false contact details.
 - Changing the owner's name, organization or email may need email verification, and can block transfers to another registrar for 60 days.
-- Some registrars apply contact changes in two steps. Prepare the new details first, then apply them once Activity shows them as confirmed.
+- Some registrars apply contact changes in two steps. Prepare the new details first, then apply them once History shows them as confirmed.
 
 ## Auto-renew
 
