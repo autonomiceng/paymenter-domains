@@ -23,6 +23,7 @@ class DomainResource extends Resource
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-globe-alt';
     protected static string|\UnitEnum|null $navigationGroup = 'Domains';
     protected static ?string $navigationLabel = 'Domains';
+    protected static ?int $navigationSort = 1;
     protected static ?string $modelLabel = 'domain';
     protected static ?string $pluralModelLabel = 'domains';
     protected static ?string $slug = 'domains';

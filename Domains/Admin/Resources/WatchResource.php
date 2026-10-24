@@ -9,16 +9,26 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag,WatchReadResource,WatchQueries,WatchFacts,WatchFindings};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,ViewWatch};
+use Filament\Navigation\NavigationItem;
+use Filament\Pages\Enums\SubNavigationPosition;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,MonitoringSettings,ViewWatch};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProductMap};
 class WatchResource extends WatchReadResource
 {
     protected static ?string $model=WatchName::class;
     protected static ?string $navigationLabel='Domain monitoring';
+    protected static ?int $navigationSort=5;
     protected static ?string $modelLabel='monitored domain';
     protected static ?string $pluralModelLabel='Domain monitoring';
     protected static ?string $breadcrumb='Domain monitoring';
     protected static ?string $slug='domain-watch';
+    protected static ?SubNavigationPosition $subNavigationPosition=SubNavigationPosition::Top;
+    /** Domains and Settings tabs on the list and Settings pages. */
+    public static function tabs(string $active): array
+    {
+        return [NavigationItem::make('Domains')->url(static::getUrl('index'))->isActiveWhen(fn()=>$active==='index'),
+            ...(MonitoringSettings::canAccess()?[NavigationItem::make('Settings')->url(static::getUrl('settings'))->isActiveWhen(fn()=>$active==='settings')]:[])];
+    }
     public static function getEloquentQuery(): Builder{return parent::getEloquentQuery()->with(['delegation','registry','work']);}
     /** Missing in danger with its cause below; present values show $sub below. */
     private static function fact(TextColumn $column,\Closure $fact): TextColumn
@@ -55,5 +65,5 @@ class WatchResource extends WatchReadResource
                 ->indicateUsing(fn(array $data)=>in_array($data['value']??null,['7','30','90'],true)?self::capped('Expires within '.$data['value'].' days'):null),
         ])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->defaultSort('canonical_name')->paginated([25,50])->defaultPaginationPageOption(25)->emptyStateHeading('No monitored domains');
     }
-    public static function getPages(): array{return ['index'=>ListWatches::route('/'),'view'=>ViewWatch::route('/{record}')];}
+    public static function getPages(): array{return ['index'=>ListWatches::route('/'),'settings'=>MonitoringSettings::route('/settings'),'view'=>ViewWatch::route('/{record}')];}
 }

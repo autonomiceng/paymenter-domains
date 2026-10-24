@@ -10,6 +10,7 @@ class RoutingProfileResource extends WatchReadResource
 {
     protected static ?string $model=WatchProfile::class;
     protected static ?string $navigationLabel='DNS templates';
+    protected static ?int $navigationSort=6;
     protected static ?string $modelLabel='DNS template';
     protected static ?string $pluralModelLabel='DNS templates';
     protected static ?string $breadcrumb='DNS templates';

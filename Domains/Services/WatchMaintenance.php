@@ -9,8 +9,9 @@ final class WatchMaintenance
     private function alert(array $health): void
     {
         Log::warning('Public domain checks need staff review.',['code'=>$health['reason']]);
-        \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send(
-            'Public domain checks need attention',self::message($health),'filament.admin.pages.dns-resolver','admin.domains.watch.view');
+        $title=$health['reason']==='checks_unsuccessful'?'Domain monitoring checks failed':'Domain monitoring stopped';
+        $body=$health['reason']==='dispatch_overdue'?'Checks have not run since '.self::date($health['since']??null).'.':self::notice($health)['text'];
+        \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send($title,$body,'filament.admin.resources.domain-watch.index','admin.domains.watch.view');
     }
     private function families(int $now): array
     {
@@ -55,23 +56,22 @@ final class WatchMaintenance
         if ($failed) { return ['outage'=>true,'reason'=>'checks_unsuccessful','family'=>array_key_first($failed),'families'=>array_keys($failed),'since'=>min($failed)]; }
         return ['outage'=>false,'reason'=>'current','since'=>$progress?:null];
     }
-    public static function message(array $health): string
+    private static function date(?int $at): string{return $at?gmdate('M j, Y H:i',$at).' UTC':'the first run';}
+    /** The Domain monitoring notice: one line, its tone and its one action (settings, failed_jobs or none). Normal states have none. */
+    public static function notice(array $health): ?array
     {
-        $time=isset($health['since'])?gmdate('Y-m-d H:i',$health['since']).' UTC':'an unrecorded time';
-        $families=$health['families']??[$health['family']??'local'];
-        $names=['registry'=>'Public registry expiry checks','watch_dns'=>'Watched-name DNS checks','managed_dns'=>'Managed-name DNS checks','local'=>'Local public-check discovery or enrollment'];
-        $family=implode(' and ',array_map(static fn($f)=>$names[$f]??$names['local'],$families));
-        $help=[];
-        if (in_array('registry',$families,true)) { $help[]='Registry RDAP failures retry automatically.'; }
-        if (array_intersect(['watch_dns','managed_dns'],$families)) { $help[]='Review DNS resolver settings.'; }
-        if (in_array('local',$families,true)) { $help[]='Check the scheduler log.'; }
+        $since=self::date($health['since']??null);
+        if ($health['reason']==='checks_unsuccessful') {
+            $families=$health['families']??[$health['family']??'local'];
+            $names=array_values(array_unique(array_map(static fn($f)=>['registry'=>'Expiry checks','watch_dns'=>'DNS checks','managed_dns'=>'DNS checks'][$f]??'Domain discovery',$families)));
+            $action=array_intersect(['watch_dns','managed_dns'],$families)?'settings':(in_array('local',$families,true)?'failed_jobs':null);
+            return ['text'=>implode(' and ',$names).(count($names)>1||$names[0]!=='Domain discovery'?' have':' has').' failed since '.$since.'.','tone'=>'danger','action'=>$action];
+        }
         return match($health['reason']) {
-            'disabled'=>'Scheduled public domain checks are disabled.',
-            'waiting'=>'Waiting for the first scheduled turn. If this persists, check the scheduler and queue worker.',
-            'queue_configuration'=>'Public domain checks need an asynchronous queue with retry_after of at least 180 seconds.',
-            'dispatch_overdue'=>'Public domain checks have made no progress since '.$time.'. At least two five-minute turns were missed. Check the scheduler, queue worker and queue configuration.',
-            'checks_unsuccessful'=>$family.' have made no successful progress since '.$time.'. Last results are retained; stale results cannot trigger notices. '.implode(' ',$help),
-            default=>'Public domain checks are running. Last progress: '.$time.'.',
+            'disabled'=>['text'=>'Domain monitoring is off on this site.','tone'=>'warning','action'=>null],
+            'queue_configuration'=>['text'=>"Monitoring checks can't run. Queue timeout too short: set retry_after to 180 seconds or more.",'tone'=>'danger','action'=>null],
+            'dispatch_overdue'=>['text'=>'Monitoring checks have not run since '.$since.'.','tone'=>'danger','action'=>'failed_jobs'],
+            default=>null,
         };
     }
     public function tick(int $now): void
