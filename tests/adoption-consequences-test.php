@@ -44,7 +44,16 @@ foreach ([1, 2] as $veto) {
     same(['preview', 0, 0, 0], [$a->fresh()->state, Domain::count(), ServiceCancellation::count(), HistoryLink::count()], 'History veto rolls all links/cancellation/holding back'); same($money, scenarioMoney(), 'History veto no financial changes');
 }
 $vetoAt = 0;
+$lateHoldingRead=false;$cancellationOrder=[];
+DB::listen(static function($query)use(&$lateHoldingRead):void{
+    if(DB::transactionLevel()!==1){return;}
+    $sql=strtolower($query->sql);
+    if(str_starts_with($sql,'select * from "users"')){$lateHoldingRead=false;}
+    if(str_starts_with($sql,'select ')&&(str_contains($sql,'from "domains_domains"')||str_contains($sql,'from "domains_adoptions"'))){$lateHoldingRead=true;}
+});
+App\Models\ServiceCancellation::creating(static function()use(&$cancellationOrder,&$lateHoldingRead):void{$cancellationOrder[]=$lateHoldingRead;});
 $d = $confirm(); $a->refresh(); $c = ServiceCancellation::sole();
+same([false],$cancellationOrder,'New holding cancellation precedes domain/adoption reads under the native prefix');
 same('end_of_period', $c->type, 'Adoption uses end-of-period cancellation'); same($service->id, (int) $c->service_id, 'Cancellation is on domain service');
 same($c->id, (int) $a->cancellation_id, 'Durable cancellation identity'); same('active', $service->fresh()->status, 'Display stays active'); same(null, $service->fresh()->expires_at, 'Native expiry remains null');
 same(2, HistoryLink::count(), 'Paid/cancelled history links created once');

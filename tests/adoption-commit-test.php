@@ -153,5 +153,27 @@ same(null, \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::noti
     ->assertSee('Billing')->assertSee('Cost missing')->assertDontSee('Adoption needs review')->assertDontSee('PRIVATE-PROVIDER-ALERT');
 $promoted->update(['observation' => ['adoption_review' => ['near_due' => true]]]);
 same(['Imported after the invoice date. No renewal invoice was issued.', 'Open service'], [(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($promoted->fresh()) ?? [])['title'] ?? null, (\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($promoted->fresh()) ?? [])['action']['label'] ?? null], 'Reached-cutoff staff notice is readable');
+// Converted holdings with renewal stopped create native cancellation before holding reads.
+DB::table('domains_domains')->where('id',$promoted->id)->delete();
+DB::table('services')->where('id',$service->id)->update(['status'=>'pending']);
+$pending=adoptionPendingFixture($service,$binding,['reservation_name'=>null]);
+$dnrContext=new \Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext($staff->id,'Reviewed converted holding with renewal stopped',true);
+$ready=$reader->preview($target,$dnrContext);same('ready',$ready->code,'Converted DNR preview ready');$a2=Adoption::findOrFail($ready->previewId);
+$lateHoldingRead=false;$cancellationOrder=[];
+DB::listen(static function($query)use(&$lateHoldingRead):void{
+    if(DB::transactionLevel()!==1){return;}
+    $sql=strtolower($query->sql);
+    if(str_starts_with($sql,'select * from "users"')){$lateHoldingRead=false;}
+    if(str_starts_with($sql,'select ')&&(str_contains($sql,'from "domains_domains"')||str_contains($sql,'from "domains_adoptions"'))){$lateHoldingRead=true;}
+});
+ServiceCancellation::creating(static function()use(&$cancellationOrder,&$lateHoldingRead):void{$cancellationOrder[]=$lateHoldingRead;});
+$late=true;$refuse(fn()=>$confirm($a2),'Converted DNR late projection rolls back');
+same(0,ServiceCancellation::where('service_id',$service->id)->count(),'Rollback leaves no native cancellation');
+$converted=$confirm($a2);
+same([false,false],$cancellationOrder,'Converted holding cancellation precedes domain/adoption reads on rollback and success');
+same($pending->id,$converted->id,'Converted DNR preserves pending domain identity');
+same(1,ServiceCancellation::where('service_id',$service->id)->count(),'Converted DNR retains exactly one cancellation');
+same($converted->id,$confirm($a2)->id,'Converted DNR replay returns original result');
+same(1,ServiceCancellation::where('service_id',$service->id)->count(),'Converted DNR replay retains one cancellation');
 $nativeSuccessful = true;
 echo "Fresh adoption, stale evidence, locked identities, replay and whole-transaction rollback passed\n";

@@ -31,6 +31,8 @@ final class AdoptionCommit
         $result = DB::transaction(function () use ($seed, $e, $target, $name, $expectedDigest, $actor): Domain {
             $lock = HoldingIdentityLock::lockForAdoption($e['native_identity']['order_id'], $target->serviceId, (int) $actor->id);
             $rows = $lock->nativeRows($target->customerId); self::permissions($rows['staff'], $e);
+            // Native cancellation creation precedes extension and holding ledger locks.
+            $cancellation = $seed->state === 'preview' ? NativeCancellation::forAdoption($lock, $seed) : null;
             $identitySeed = new Domain(['user_id' => $target->customerId, 'service_id' => $target->serviceId,
                 'server_id' => $target->serverId, 'domain' => $target->name, 'tld' => $name['tld'],
                 'registrar_key' => $seed->registrar_key, 'account_fingerprint' => $seed->account_fingerprint]);
@@ -80,7 +82,6 @@ final class AdoptionCommit
                 Domain::whereKey($d->id)->update(['reservation_name' => $target->name]); $d->refresh();
             }
             if ($d->reservation_name !== $target->name || $d->price_mode !== 'standard') { throw new AdoptionRefused(RefusalCode::HoldingReview); }
-            $cancellation = NativeCancellation::forAdoption($lock, $a);
             $a->fill(['cancellation_id' => $cancellation, 'state' => 'committed', 'domain_id' => $d->id, 'authority_generation' => $e['resulting_generation'], 'committed_at' => $now])->save();
             $d->attachAdoption($lock, (int) $a->id);
             NativeDomainGuard::adopt($lock, $d, $a);
