@@ -14,7 +14,7 @@ final class WatchNoticeHealth
         DB::afterCommit(static function():void {
             try {
                 \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send(
-                    'Domain checks need attention','A public domain check or notice could not be completed. Review domain watch history.',
+                    'Domain monitoring check failed','Open Domain monitoring to see the domain.',
                     'filament.admin.resources.domain-watch.index','admin.domains.watch.view');
             } catch (\Throwable) { \Illuminate\Support\Facades\Log::warning('Public notice staff inbox unavailable.'); }
         });

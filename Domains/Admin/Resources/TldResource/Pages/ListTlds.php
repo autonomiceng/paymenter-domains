@@ -13,6 +13,7 @@ class ListTlds extends ListRecords
 {
     protected static string $resource=TldResource::class;
     public function getTitle(): string{return 'TLDs & pricing';}
+    public function getBreadcrumbs(): array{return [];}
     public function content(Schema $schema): Schema
     {
         $failures=TldResource::syncFailures();

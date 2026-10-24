@@ -7,11 +7,11 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{DB,Route};
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList as Page;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{PublicSuffixList as Lists,PslFailure,PslRebaseline,PslTransport};
-/** The System checks row "Public suffix list" and its Download now, Use new list? and Change source actions. */
+/** The System checks row "Public suffix list": Download now, Use new list? and Change source, plus a link to the full list page. */
 final class PslActions
 {
     public const VIEW=Page::VIEW;
@@ -40,7 +40,8 @@ final class PslActions
         if ((int)$status->consecutive_failures>0&&$status->last_attempt_at!==null&&$review===null) { $tone??='warning';$subs[]='Last download failed '.self::date((int)$status->last_attempt_at); }
         if ($review===null&&($at=self::limitedUntil($list))!==null) { $subs[]='Next download allowed '.self::date($at); }
         return ['label'=>'Public suffix list','value'=>$value,'tone'=>$tone??'success','cause'=>$subs?implode(' · ',$subs):null,'action'=>null,'help'=>self::HELP,
-            'buttons'=>[self::download($refresh),self::accept($refresh),self::source($refresh)]];
+            'buttons'=>[self::download($refresh),self::accept($refresh),self::source($refresh),
+                Action::make('psl_details')->label('View details')->link()->size('sm')->url(fn()=>Page::getUrl())->visible(fn()=>Route::has(Page::getRouteName()))]];
     }
     public static function download(callable $refresh): Action
     {

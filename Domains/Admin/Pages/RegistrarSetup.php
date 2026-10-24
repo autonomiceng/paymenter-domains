@@ -24,6 +24,7 @@ class RegistrarSetup extends Page implements HasTable
     use InteractsWithTable;
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-cog-6-tooth';
     protected static string|\UnitEnum|null $navigationGroup='Domains';
+    protected static ?int $navigationSort=4;
     protected static ?string $title='Registrars';
     protected static ?string $slug='registrar-setup';
     /** Row facts per server for one render. */

@@ -34,6 +34,10 @@ $review=$copy('import-review.example.com',[]); DB::table('domains_domains')->whe
 $order=$copy('new-order.example.com',['status'=>'registration_pending','authority_generation'=>1]);
 $op=$active->operations()->sole()->replicate(); $op->fill(['domain_id'=>$order->id,'service_id'=>$order->service_id,'operation_key'=>'render-order',
     'action'=>'register','state'=>'awaiting_payment','safe_code'=>null,'authority_generation'=>1]); $op->save();
+// Open alerts on the rows they concern: Missing records on a Service with no service, review alerts on Renewal invoices and Last sync,
+// and a missing renewal invoice under the Next invoice date.
+$alerted=$copy('alerts.example.com',[]);
+foreach(['native_identity_missing','renewal_unpaid','observation_review','missing_obligation'] as $code){Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($alerted,$code,time());}
 require_once __DIR__.'/Support/accounts.php';
 $demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'enom','beco-demo-enom'),'domain'=>'beco-demo-held.com','sld'=>'beco-demo-held','tld'=>'com',
     'user_id'=>$customer->id,'service_id'=>699,'status'=>'active','provider_expires_at'=>today()->addDays(200)->format('Y-m-d'),
@@ -46,7 +50,7 @@ $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixtur
 $user=staffUser([Staff::VIEW,Staff::ADOPT_PREVIEW,'admin.domains.manage',AcquisitionRetirement::PERMISSION,'admin.domains.operations.resume_observation']); Auth::setUser($user);
 foreach (['list'=>[ListDomains::class,[]],'active'=>[ViewDomain::class,['record'=>$active->id]],'nameservers'=>[ViewDomain::class,['record'=>$withNs->id]],'sync-failed'=>[ViewDomain::class,['record'=>$failed->id]],
     'demo-paused'=>[ViewDomain::class,['record'=>$demo->id]],'missing-expiry'=>[ViewDomain::class,['record'=>$noExpiry->id]],
-    'under-review'=>[ViewDomain::class,['record'=>$review->id]],'pending-order'=>[ViewDomain::class,['record'=>$order->id]]] as $name=>[$class,$params]) {
+    'under-review'=>[ViewDomain::class,['record'=>$review->id]],'pending-order'=>[ViewDomain::class,['record'=>$order->id]],'alerts'=>[ViewDomain::class,['record'=>$alerted->id]]] as $name=>[$class,$params]) {
     $test=Livewire::actingAs($user)->test($class,$params)->assertSuccessful();
     $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$test->instance(),'body'=>$test->html()]);
     // Static visual capture only: component interactions are covered by the native test suite.
@@ -58,6 +62,7 @@ foreach (['list'=>[ListDomains::class,[]],'active'=>[ViewDomain::class,['record'
     $html=str_replace('</head>','<style>'.$css.'</style>'.$loadingStyles.'</head>',$html);
     expect(!str_contains($html,'PRIVATE-'),'Synthetic secret must not enter the rendered fixture');
     expect(!str_contains($html,"\u{2014}"),'No em dashes in rendered page');
+    if ($name==='alerts') { foreach(['dark','light'] as $mode){writeRenderArtifact($out.'/'.$name.'-'.$mode.'.html',preg_replace('~<html\b[^>]*>~','<html lang="en" class="'.$mode.'">',$html,1));} continue; }
     writeRenderArtifact($out.'/'.$name.'.html',$html);
 }
 echo "Staff domain page and list captures rendered.\n";

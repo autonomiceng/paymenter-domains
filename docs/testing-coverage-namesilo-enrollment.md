@@ -16,7 +16,7 @@ reader construction. A legacy synthetic NameSilo binding with a matching local c
 cannot use the OTE reader. Scheduled and manual NameSilo balance refreshes use the same balance-only
 composition; other registrar read behavior remains unchanged. Neither path grants domain reads.
 
-Create a fresh enabled native Domains server, then open **Domains → Registrar setup → Enroll
+Create a fresh enabled native Domains server, then open **Domains → Registrars → Enroll
 NameSilo OTE key**. Enter a staff account label, the OTE API key and a one-line reason, accept
 the weaker ownership contract, and confirm. This sends at most one ten-second read-only
 `getAccountBalance` request to the fixed OTE origin, with redirects and proxies disabled.

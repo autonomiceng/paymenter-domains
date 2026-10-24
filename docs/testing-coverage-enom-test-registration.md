@@ -18,7 +18,7 @@ every Enom TEST request); if a source setting is a string, cast it to an integer
 invalid value or unavailable counter refuses requests. One UTC-day counter is shared across every TEST account and
 counts failed or timed-out requests as well as successful ones. This configuration never enables live registration.
 
-The existing Registrar setup catalogue acceptance action records staff acceptance of the exact TEST Purchase route
+The existing catalogue acceptance action on Registrars records staff acceptance of the exact TEST Purchase route
 and worker request interval alongside the TLD terms. A later protocol or interval change no longer matches that
 record and holds registration. The USD requirement is checked against a recent, successful, fingerprint-bound manual
 or preflight balance read. These checks do not establish Enom account/provider acceptance; no provider request is
@@ -55,7 +55,7 @@ endpoint. The fixture covers:
   Purchase scope/fingerprint/single-use checks, and retained counter schema/data after runtime
   removal and reinstall.
 - Exact staff wording for TEST hold labels, cap facts and the Refresh now refusal. An unticked route review through
-  the Registrar setup action says nothing was saved, and the unaccepted-route warning appears only when the
+  the action on Registrars says nothing was saved, and the unaccepted-route warning appears only when the
   deployment allows TEST registration.
 
 The retained upgrade scenario remains `tests/test_installed_package_previous.py`. These offline
@@ -73,7 +73,7 @@ hold is created. Generic transport/contract failures still stop under the existi
 All typed local cap refusals defer, including zero/invalid limits, an unavailable
 counter and an elapsed TEST request deadline; they retry every 60 seconds without consuming tries until the deployment
 restores capacity. The cap-zero regression checks repeated due turns and recovery.
-No new domain-level status is recorded; Registrar setup retains the daily-call facts.
+No new domain-level status is recorded; the Registrars page retains the daily-call facts.
 In the current Enom composition, scheduled observation skips TEST write-enabled
 accounts and the preview reader refuses domain reads before transport, so this
 observation cap handling is defensive; reconciliation job recovery is separate.

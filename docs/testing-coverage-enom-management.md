@@ -3,7 +3,7 @@
 Before extension boot, set `domains.enom_identity.environment=test`,
 `domains.enom_catalogue.enabled=true` and `domains.enom_writes.management=true`
 with strict boolean flags. Restart web and queue workers. Registration and renewal
-remain independent. Registrar setup requires the positively verified TEST account,
+remain independent. The Registrars page requires the positively verified TEST account,
 processing and an audited, encrypted fingerprint/protocol-bound management review.
 Revoking that review stops new changes; retained attempts can still reconcile while
 the deployment opt-in remains on.

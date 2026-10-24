@@ -166,7 +166,7 @@ settings decrypt on retrieval and Edit Server fills every setting into form stat
 (`P/app/Events/Setting/Retrieved.php:19–26`;
 `P/app/Admin/Resources/ServerResource/Pages/EditServer.php:23–29`). Native server-edit admins
 therefore have registrar-secret access, the accepted native secret-key boundary. A placeholder
-is not secrecy; do not claim otherwise. Retain Registrar setup permissions, redacted diagnostics,
+is not secrecy; do not claim otherwise. Retain Registrars page permissions, redacted diagnostics,
 account/site binding and verified configuration. A credential digest mismatch holds processing
 until verified reconfiguration (`D/Domains/Services/AccountBindings.php:139–153`); native edits
 are not identity verification. Preserve key/decryption and retained-history rotation requirements.
@@ -203,7 +203,7 @@ no core edits, global interception or runtime version gate.
   and nonthrowing ordinary paid/cron writes. Preserve completion's funding validation if its
   redundant native activation (`D/Domains/Services/InvoiceFunding.php:68–71`) is later removed;
   do not bundle that behavior change into this removal.
-- **8:** qualify native Registrar setup/server-create installation, permissions, native encrypted
+- **8:** qualify native Registrars page/server-create installation, permissions, native encrypted
   settings/payload exposure and health under pure E, after 3a. No owned-storage dependency.
 - **9, removal only:** after 5 and 8, delete native route remaps and registration
   (`D/Domains/Services/Runtime.php:42–48,54`), Livewire EventBus mount/hydration guards
@@ -299,7 +299,7 @@ Native Edit Service handles refused identity, price and delete writes with a dan
 notification and public Filament Halt, scoped to that native page, its record and the
 matching Save/Delete context. No service or ledger change is saved and no deletion
 occurs. Other writers keep the original guard exception and message. Required feedback
-capabilities are checked locally; Registrar setup reports missing capabilities while
+capabilities are checked locally; the Registrars page reports missing capabilities while
 the guard continues to refuse unsafe writes.
 
 Recalculate Price keeps the native draft-only behavior and its native success notice.

@@ -3,18 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Support\Facades\{DB,Schema};
-use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
 final class ReminderFacts
 {
-    public static function for(Domain $d):array
-    {
-        Staff::requireView();if(!Schema::hasTable('domains_obligation_alerts')){return [];}
-        $rows=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->orderBy('id')->limit(20)->get();
-        $result=$rows->map(fn($r)=>(ObligationAlerts::LABELS[$r->code]??'Notification needs review')
-            .($r->operation_id?' · Request #'.$r->operation_id:''))->all();
-        return ['Renewal and notification alerts'=>$result?:['No open saved alerts; a reminder check may still be needed']];
-    }
     /** "Reminder emails" row for the account page: On or Off, with the days below. */
     public static function emails(int $server):array
     {

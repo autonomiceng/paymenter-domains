@@ -99,8 +99,6 @@ $orphan=Domain::create(['user_id'=>$user->id,'service_id'=>987654,'domain'=>'swe
     'server_id'=>$tlds[0]->server_id,'registrar_key'=>'enom','account_fingerprint'=>$tlds[0]->account_fingerprint,'status'=>'registration_pending']);
 $clock->instant=$now->modify('+122 seconds');app(RuntimeWork::class)->tick();
 expect(DB::table('domains_obligation_alerts')->where('domain_id',$orphan->id)->where('code','native_identity_missing')->whereNull('resolved_at')->exists(),'Durable turn records missed deletion discrepancy');
-$health=\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for((int)$tlds[0]->server_id);
-expect(str_contains($health['Missing Paymenter records'],'sweep-orphan-placeholder.com'),'Orphan is visible without native detail');
 $clock->instant=$now->modify('+2 hours');$b=CatalogueAcceptances::binding(Account::where('server_id',$tlds[0]->server_id)->sole());$limiter=app(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
 for($n=0;$n<48;$n++){$token=$limiter->acquire($b,RequestOrigin::Background);$limiter->release($b,RequestOrigin::Background,$token);}
 try{$limiter->acquire($b,RequestOrigin::Background);expect(false,'Background headroom enforced');}catch(\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred){}

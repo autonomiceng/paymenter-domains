@@ -126,22 +126,6 @@ final class AccountBindings
         }
     }
 
-    /** Staff-only local projection. Corrupt, copied or edited facts reveal no saved label. */
-    public function sandboxFacts(Account $account): array
-    {
-        try {
-            if(!NameSiloSandbox::enrolled($account)){throw new \DomainException;}
-            $credentials=$this->configuration($account);
-            $facts=json_decode($this->secret((int)$account->server_id,NameSiloSandbox::KEY),true,8,JSON_THROW_ON_ERROR);
-            NameSiloSandbox::validate($account,$facts,$credentials);
-            return ['Enrollment'=>'OTE only · immutable','Account label (staff-entered, unconfirmed)'=>$facts['label'],
-                'Account ownership'=>'NameSilo did not confirm which account this key belongs to.',
-                'Key check'=>'At enrollment, NameSilo OTE accepted this key in one read-only balance request. That balance was not saved. This row records only the enrollment check. Later balance checks and scheduled reads show on the account page. None confirms account ownership.',
-                'Key or label change'=>'To change the key or label, use a different OTE key on a fresh Domains server. Each key can be enrolled once on this site. Holdings, acceptances and operations stay with the old enrollment.'];
-        }catch(\Throwable){return ['Enrollment'=>'Unavailable · not a current OTE enrollment. This server may be off or unavailable, OTE enrollment may be off on this site, saved enrollment settings may have changed, or this binding was never enrolled. The label is hidden.',
-            'Account ownership'=>'NameSilo did not confirm which account this key belongs to.'];}
-    }
-
     public function confirmLiveSite(int $serverId, string $explicitSite): void
     {
         $site = self::site();

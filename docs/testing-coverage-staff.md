@@ -49,7 +49,7 @@ offline native checks, not installed browser or provider acceptance.
 renewal cost and asserts typed account, ending, action, term and saved expiry context.
 The prior seller and revision remain unchanged; a different fresh eligible registration
 term still permits selection. `staff-tld-actions-test.php` submits the native Livewire
-seller action and checks the exact UTC notification and Registrar setup refresh label,
+seller action and checks the exact UTC notification and Registrars refresh label,
 unchanged policy and no provider reads. Enom TEST with import enabled gets the existing
 Import accepted ending path; NameSilo gets the Cost refresh row on its own ending page; disabled TEST imports
 get an explicit administrator recovery explanation rather than an unusable remedy. A selected-account
@@ -81,7 +81,7 @@ These are synthetic native staff-fact checks, not installed panel or provider ac
 
 ## Renewal billing review
 
-`renewal-billing-settings-test.php` covers **Review renewal billing** on Registrar setup:
+`renewal-billing-settings-test.php` covers **Review renewal billing** on Registrars:
 absent rows show Off/Off and the 21/7 calendar marked as defaults, and the modal prefills them.
 A native submit writes exactly four plain rows and one audit entry with actor, reason, reviewed
 input and effective before/after values. Replay, stale pages, unchanged values, missing keys,
@@ -95,4 +95,4 @@ These are synthetic native checks, not installed panel acceptance.
 
 `staff-tld-writes-test.php` runs balance probes with explicit past and future timestamps while the container clock differs. `staff-domains-test.php` applies native status filters to pending provenance and the latest held or uncertain acquisition, including multiple selections.
 
-`contact-setup-test.php` renders Registrar setup with all, one or no required user contact property definitions, rejects definitions for other models, and checks repeated views and restored definitions without changing saved properties.
+`contact-setup-test.php` renders Registrars with all, one or no required user contact property definitions, rejects definitions for other models, and checks repeated views and restored definitions without changing saved properties.

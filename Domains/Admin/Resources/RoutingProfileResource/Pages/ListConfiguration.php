@@ -9,6 +9,7 @@ class ListConfiguration extends ListRecords
 {
     protected static string $resource=RoutingProfileResource::class;
     public function getTitle(): string{return 'DNS templates';}
+    public function getBreadcrumbs(): array{return [];}
     public function getSubheading(): ?string{return null;}
     protected function getHeaderActions(): array{return [WatchActions::configuration('profile',null)];}
 }

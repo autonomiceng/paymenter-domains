@@ -11,12 +11,12 @@ use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\{Auth,DB,Schema};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup,RegistrarBalances as BalancesPage};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,RegistrarFacts,Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Disposition,DriverResult,Environment,Evidence,Money,ResultReason,SendState};
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceReads,BalanceSchema,CatalogueAcceptances,Installation,NativeCatalogue,NativeServerGuard,RegistrarBalances,RegistrarRegistry,Runtime,RuntimeHealth,SellerPolicies,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceReads,BalanceSchema,CatalogueAcceptances,Installation,NativeCatalogue,NativeServerGuard,RegistrarBalances,RegistrarRegistry,Runtime,SellerPolicies,StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Tests\{FakeClock,FakeRegistrar};
 function serverSettingsReject(callable $call): void
 {
@@ -110,7 +110,7 @@ foreach([$first,$second] as $server){
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);
     $disabled=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionHidden($processingAction($server));
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
-    $health=RuntimeHealth::for($server->id);$healthNeedle=$a->registrar_key==='namesilo'?'saved settings no longer match this NameSilo binding':'saved settings no longer match the verified account';$recoveryNeedle=$a->registrar_key==='namesilo'?'Restore the original saved settings':'re-enter credentials for the original account';expect(str_contains($health['Registrar configuration'],$healthNeedle),'Hold covers credential and digest settings');expect(str_contains($health['Registrar configuration'],$recoveryNeedle),'Local health gives actionable hold');
+    same(['label'=>'Connection failed','tone'=>'danger','reason'=>'Credentials changed'],RegistrarFacts::status($server->fresh(),$a->fresh()),'Hold covers credential and digest settings');
     // The account shows Connection failed with its cause; Balance is Missing with the same cause and Add funds stays available.
     Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('Connection failed')->assertSee('Credentials changed')->assertSee('Missing')
         ->assertSee('Add funds')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
@@ -126,7 +126,7 @@ foreach([$first,$second] as $server){
     serverSettingsReject(fn()=>$bindings->reader($server->id));same(null,RegistrarBalances::facts($a,$clock->now())['balance'],'Digest-only changes also hide the balance');$digest->update(['value'=>$savedDigest]);
     $bindings->setProcessing($server->id,true,static fn()=>null);$server->refresh()->update(['enabled'=>false]);
     same(false,$a->fresh()->processing_enabled,'Native disable pauses the retained account');
-    expect(str_contains(RuntimeHealth::for($server->id)['Registrar configuration'],'Re-enable it in Servers, then resume orders on the account page'),'Disabled-server health names its actual recovery path');same(null,RegistrarBalances::facts($a,$clock->now())['balance'],'Disabled account hides balance');
+    same(['label'=>'Not connected','tone'=>'gray','reason'=>'Off in Paymenter'],RegistrarFacts::status($server->fresh(),$a->fresh()),'Disabled-server status names its cause');same(null,RegistrarBalances::facts($a,$clock->now())['balance'],'Disabled account hides balance');
     serverSettingsReject(fn()=>$bindings->reader($server->id));$server->refresh()->update(['enabled'=>true]);same(false,$a->fresh()->processing_enabled,'Re-enable does not resume spending');
     foreach([Server::class,Extension::class] as $model){
         foreach(['extension'=>'Enom','type'=>'other','id'=>999999] as $field=>$value){$s=$model::findOrFail($server->id);$s->$field=$value;serverSettingsReject(fn()=>$s->save());}
@@ -159,13 +159,13 @@ $liveBinding=$bindings->configure($live->id,'namesilo',Environment::Live,['api_k
 $liveAccount=Account::where('server_id',$live->id)->sole();BalanceReads::record($liveBinding,new Money('77.00','USD'),$clock->now(),'manual');
 $savedUrl=config('app.url');config(['app.url'=>'https://native-settings.example.invalid']);
 same('site_unbound',$bindings->configurationStatus($live->id),'Unbound live site is distinct from changed credentials');
-expect(str_contains(RuntimeHealth::for($live->id)['Registrar configuration'],'This release has no staff action to bind it; processing stays off.'),'Unbound-site health names the unsupported staff binding action');
+same(['label'=>'Connection failed','tone'=>'danger','reason'=>'Site address not approved for live mode'],RegistrarFacts::status($live->fresh(),$liveAccount->fresh()),'Unbound-site status names its cause');
 same(null,RegistrarBalances::facts($liveAccount,$clock->now())['balance'],'Unbound live site hides cached amount');
 $bindings->confirmLiveSite($live->id,'https://native-settings.example.invalid');
 same('USD 77.00',RegistrarBalances::facts($liveAccount,$clock->now())['balance'],'Explicit site binding permits same-account cached display');
 config(['app.url'=>'https://moved-native-settings.example.invalid']);
 same('site_mismatch',$bindings->configurationStatus($live->id),'Changed application URL holds live configuration');
-expect(str_contains(RuntimeHealth::for($live->id)['Registrar configuration'],'restore the original site configuration'),'Site mismatch does not suggest ineffective credential rotation');
+same(['label'=>'Connection failed','tone'=>'danger','reason'=>'Site address changed'],RegistrarFacts::status($live->fresh(),$liveAccount->fresh()),'Site mismatch names the site, not credentials');
 same(null,RegistrarBalances::facts($liveAccount,$clock->now())['balance'],'Wrong live site hides cached amount');
 config(['app.url'=>'http://native-settings.example.invalid']);same('site_invalid',$bindings->configurationStatus($live->id),'Invalid live URL has distinct recovery');
 config(['app.url'=>'https://native-settings.example.invalid']);
@@ -176,9 +176,9 @@ serverSettingsReject(fn()=>$bindings->reader($destination->id));
 same(null,RegistrarBalances::facts(Account::where('server_id',$destination->id)->sole(),$clock->now())['balance'],'Copied pair never displays another bound balance');
 foreach($saved as $key=>$value){$destination->settings()->where('key',$key)->sole()->update(['value'=>$value]);}
 config(['app.url'=>$savedUrl]);
-expect(!array_key_exists('Native editors',RuntimeHealth::for($first->id)),'Server qualification health needs no remap fact');
+$systemLabels=fn()=>array_column(array_merge(...array_values(AccountChecklist::system())),'label');expect(!in_array('Native editors',$systemLabels(),true),'Server qualification checks need no remap fact');
 same(null,NativeServerGuard::deletionNoticeMissing(),'Native delete notice capabilities are available');
-expect(!array_key_exists('Server delete notice',RuntimeHealth::for($first->id)),'Available native delete notice needs no unavailable warning');
+expect(!in_array('Server delete warning',$systemLabels(),true),'Available native delete notice needs no warning row');
 Livewire::actingAs($nativeOnly)->test(RegistrarSetup::class)->assertForbidden();Livewire::actingAs($nativeOnly)->test(BalancesPage::class)->assertForbidden();Livewire::actingAs($nativeOnly)->test(RegistrarAccount::class,['account'=>$first->id])->assertForbidden();
 // Legacy processing exclusion and installation refusal are scoped model events, with no remaps.
 $legacy=Server::create(['type'=>'server','extension'=>'Enom','name'=>'Paused legacy','enabled'=>false]);

@@ -10,18 +10,19 @@ final class DnsResolverSettings
 {
     public const KEY = 'domains_dns_resolver';
     public function __construct(private DohTransport $transport, private NativeDnsReader $native) {}
+    /** [endpoint, reason, forced]: forced means the server cannot use a custom resolver; otherwise a null endpoint is a Missing saved resolver. */
     public function configuration(): array
     {
-        if (getenv('SSLKEYLOGFILE')) { return [null, 'TLS key logging is enabled. Disable SSLKEYLOGFILE before using DNS-over-HTTPS.']; }
-        if (!DohTransport::available()) { return [null, 'The required cURL HTTP client is unavailable. Enable it before configuring DNS-over-HTTPS.']; }
+        if (getenv('SSLKEYLOGFILE')) { return [null, 'Turn off SSLKEYLOGFILE on the server to use a custom resolver.', true]; }
+        if (!DohTransport::available()) { return [null, 'Install the PHP cURL extension to use a custom resolver.', true]; }
         try {
             $rows = Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key', self::KEY)->get();
-            if ($rows->isEmpty()) { return [null, 'Resolver settings are missing. Save the default or configure a resolver.']; }
+            if ($rows->isEmpty()) { return [null, "No resolver set. Checks use the server's resolver.", false]; }
             if ($rows->count() !== 1 || !$rows[0]->encrypted || $rows[0]->type !== 'string' || !is_string($rows[0]->value)) { throw new \UnexpectedValueException; }
             $data = json_decode($rows[0]->value, true, 8, JSON_THROW_ON_ERROR);
             if (!is_array($data) || !is_string($data['url'] ?? null) || !is_string($data['ip'] ?? null)) { throw new \UnexpectedValueException; }
-            return [new DohEndpoint($data['url'], $data['ip']), null];
-        } catch (\Throwable) { return [null, 'Resolver settings are invalid or cannot be decrypted. Save valid settings.']; }
+            return [new DohEndpoint($data['url'], $data['ip']), null, false];
+        } catch (\Throwable) { return [null, "Saved settings can't be read. Checks use the server's resolver.", false]; }
     }
     public function save(string $url, string $ip): void
     {
@@ -40,35 +41,29 @@ final class DnsResolverSettings
         [$endpoint] = $this->configuration();
         return new FallbackDnsReader($endpoint === null ? null : new DohDnsReader($endpoint, $this->transport), $this->native);
     }
-    /** Exactly one DoH query; a failed diagnostic never starts a blocking native resolver call. Messages describe what domain checks do with the same answer (FallbackDnsReader). */
+    /** Exactly one DoH query; a failed test never starts a blocking native resolver call. */
     public function check(): array
     {
         OperationClaims::outside(); [$endpoint, $reason] = $this->configuration();
-        if ($endpoint === null) { return ['ok' => false, 'message' => "DNS-over-HTTPS is not configured, so domain checks use the server's resolver. No query was sent. ".$reason]; }
+        if ($endpoint === null) { return ['ok' => false, 'message' => $reason]; }
         $start = hrtime(true);
         $answer = (new DohDnsReader($endpoint, $this->transport))->read(new DnsQuery('example.com', 'A'), new DnsContext());
         $ms = (int) round((hrtime(true) - $start) / 1e6);
-        if ($answer->code === 'deadline') {
-            return ['ok' => false, 'message' => "DNS-over-HTTPS check failed: the query ran out of time. The check did not try the server's resolver, and domain checks that run out of time record the answer as unknown."];
-        }
+        if ($answer->code === 'deadline') { return ['ok' => false, 'message' => 'Resolver failed: timed out.']; }
         if (str_starts_with($answer->code, 'transport_')) {
             $reason = match ($answer->code) {
-                'transport_timeout' => 'timed out', 'transport_connect' => 'could not connect',
-                'transport_tls' => 'TLS certificate or connection failed', 'transport_http_status' => 'HTTP response was not 200',
-                'transport_too_large' => 'response exceeded 64 KiB', 'transport_malformed' => 'response was not valid DNS JSON',
-                default => 'HTTP client unavailable',
+                'transport_timeout' => 'timed out', 'transport_connect' => "couldn't connect", 'transport_tls' => 'TLS error',
+                'transport_http_status' => 'HTTP error', 'transport_too_large' => 'response too large', 'transport_malformed' => 'not a DNS answer',
+                default => 'PHP cURL missing',
             };
-            return ['ok' => false, 'message' => "DNS-over-HTTPS check failed: ".$reason.". The check did not try the server's resolver, but domain checks retry a query that fails this way once with the server's resolver if time remains."];
+            return ['ok' => false, 'message' => 'Resolver failed: '.$reason.'.'];
         }
-        $identity = $endpoint->host.', '.$ms.' ms';
-        if ($answer->state === 'rrset') { return ['ok' => true, 'message' => 'DNS-over-HTTPS working ('.$identity.')']; }
-        if ($answer->state === 'negative') {
-            return ['ok' => false, 'message' => 'DNS-over-HTTPS reachable ('.$identity.'), but it reported that example.com has no address. Check the endpoint. The check did not try the server\'s resolver, and domain checks accept a "no such name" or "no records" answer as final.'];
-        }
+        if ($answer->state === 'rrset') { return ['ok' => true, 'message' => 'Resolver works ('.$endpoint->host.', '.$ms.' ms)']; }
+        if ($answer->state === 'negative') { return ['ok' => false, 'message' => 'Resolver works, but returned no address for example.com.']; }
         $code = str_starts_with($answer->code, 'dns_rcode_') ? match ($answer->code) {
             'dns_rcode_1' => 'FORMERR', 'dns_rcode_2' => 'SERVFAIL', 'dns_rcode_4' => 'NOTIMP', 'dns_rcode_5' => 'REFUSED',
-            default => 'RCODE '.substr($answer->code, 10),
-        } : 'an unusable DNS answer';
-        return ['ok' => false, 'message' => 'DNS-over-HTTPS reachable ('.$identity.'), but the resolver answered '.$code.'. The check did not try the server\'s resolver, and domain checks record this answer as unknown without retrying it.'];
+            default => 'error '.substr($answer->code, 10),
+        } : 'an unusable answer';
+        return ['ok' => false, 'message' => 'Resolver returned '.$code.'.'];
     }
 }

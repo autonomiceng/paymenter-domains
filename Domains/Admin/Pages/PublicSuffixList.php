@@ -16,7 +16,7 @@ class PublicSuffixList extends Page
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-globe-alt';
     protected static string|\UnitEnum|null $navigationGroup = 'Domains';
     protected static ?string $title = 'Public suffix list';
-    protected static ?int $navigationSort = 50;
+    protected static bool $shouldRegisterNavigation = false;
     protected static ?string $slug = 'public-suffix-list';
     public static function canAccess(): bool { return Staff::can(self::VIEW); }
     public function mount(): void { abort_unless(self::canAccess(), 403); }

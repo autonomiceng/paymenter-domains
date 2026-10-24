@@ -9,13 +9,14 @@ use Filament\Schemas\Components\{Callout, Grid, Section};
 use Filament\Schemas\Schema;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainFacts, HoldingActions, MissingEntry, OperationActions, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainFacts, HoldingActions, MissingEntry, OperationActions, RegistrarFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
 {
     protected static string $resource = DomainResource::class;
     /** Wider label column for Registration and Billing so labels with a help icon stay on one line at desktop width. */
-    private const FACTS_STYLE='<style>@media (min-width:40rem){.domains-facts .fi-in-entry.fi-in-entry-has-inline-label{grid-template-columns:minmax(0,40%) minmax(0,1fr) minmax(0,1fr)}}</style>';
+    private const FACTS_STYLE='<style>@media (min-width:40rem){.domains-facts .fi-in-entry.fi-in-entry-has-inline-label{grid-template-columns:minmax(0,40%) minmax(0,1fr) minmax(0,1fr)}}'
+        .'.domains-warn{color:var(--warning-600)}.dark .domains-warn{color:var(--warning-400)}.domains-err{color:var(--danger-600)}.dark .domains-err{color:var(--danger-400)}</style>';
     public function getTitle(): string { Staff::requireView(); return (string)$this->getRecord()->domain; }
     public function getHeading(): HtmlString
     {
@@ -61,7 +62,9 @@ class ViewDomain extends ViewRecord
     private static function entry(string $label, array $fact): TextEntry
     {
         $entry=TextEntry::make('fact_'.md5($label))->label($label)->state($fact['value'])->inlineLabel()
-            ->extraAttributes(['style'=>'overflow-wrap:anywhere'])->belowContent($fact['sub'])->url($fact['url']);
+            ->extraAttributes(['style'=>'overflow-wrap:anywhere'])->url($fact['url'])
+            // A cause under a value in warning or danger takes the same tone, so an open alert stands out next to its row.
+            ->belowContent($fact['value']!==null&&$fact['sub']!==null&&in_array($fact['tone'],['danger','warning'],true)?RegistrarFacts::tone($fact['sub'],$fact['tone']):$fact['sub']);
         if (is_array($fact['value'])) { $entry->listWithLineBreaks(); }
         if ($fact['help']) { $entry->hintIcon('heroicon-m-question-mark-circle',$fact['help']); }
         if ($fact['demo']) { $entry->suffix(DemoData::tag(inline:true)); }

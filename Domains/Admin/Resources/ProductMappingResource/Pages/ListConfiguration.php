@@ -9,6 +9,7 @@ class ListConfiguration extends ListRecords
 {
     protected static string $resource=ProductMappingResource::class;
     public function getTitle(): string{return 'Hosting products';}
+    public function getBreadcrumbs(): array{return [];}
     public function getSubheading(): ?string{return null;}
     protected function getHeaderActions(): array{return [WatchActions::configuration('mapping',null)];}
 }

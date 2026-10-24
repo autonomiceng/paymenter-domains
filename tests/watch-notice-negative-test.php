@@ -24,7 +24,7 @@ $template->update(['body'=>'@php throw new \\RuntimeException("Synthetic render 
 $before=DB::table('domains_watch_deliveries')->count();$health=WatchAudit::where('event','notice_health')->count();
 expect($delivery->reserve($n->id,'mail',$at)===null,'Render failure does not claim');expect($delivery->reserve($n->id,'mail',$at)===null,'Repeated render failure safe');
 same($before,DB::table('domains_watch_deliveries')->count(),'No delivery identity on render error');same($health+1,WatchAudit::where('event','notice_health')->count(),'Render health deduplicated');
-staffAlerts('Domain checks need attention','A public domain check or notice could not be completed. Review domain watch history.',route('filament.admin.resources.domain-watch.index'),$staff);
+staffAlerts('Domain monitoring check failed','Open Domain monitoring to see the domain.',route('filament.admin.resources.domain-watch.index'),$staff);
 $template->update(['body'=>'{{ $domain }} {{ $date }} <a href="{{ $domain_url }}">View domain checks</a>']);
 $claim=$delivery->reserve($n->id,'mail',$at);expect($claim!==null,'Fixed template can claim');
 $nativePref=NotificationPreference::create(['user_id'=>$uid,'notification_template_id'=>$template->id,'mail_enabled'=>false,'in_app_enabled'=>true]);
