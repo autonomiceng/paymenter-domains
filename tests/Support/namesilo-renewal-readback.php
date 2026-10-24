@@ -32,16 +32,19 @@ foreach(['on','missing','invalid','outage','late'] as $case){
     same(1,$writes,'Readback hold never retries purchase or changes provider settings');
 }
 Illuminate\Support\Facades\Auth::login(staffUser(['admin.domains.view']));
-$guidance='Check auto-renew for this domain at NameSilo and turn it off if it is on. Then choose Re-check now, or Resume reconciliation reads if the read limit is reached. Completion requires a fresh check confirming auto-renew is off.';
-expect(in_array($guidance,RequestFacts::review($held),true),'Staff review renders the removal and fresh-check instruction');
+$guidance='Turn off auto-renew at NameSilo, then check status.';
+$notice=RequestFacts::notice($held);
+same([$guidance,'recheck'],[RequestFacts::for($held)['auto_renew']??null,$notice['action']??null],'Staff notice names removal and a fresh check');
+same($guidance,$notice['body']??null,'Notice body carries the auto-renew instruction');
 $limit=clone $held;$policy=$limit->policy;$policy['renewal_execution']['reason']='poll_limit_reached';$policy['renewal_polls']=5;$limit->policy=$policy;
-expect(in_array('Read limit reached. '.$guidance,RequestFacts::review($limit),true),'Auto-renew instruction survives an exhausted read budget');
+$notice=RequestFacts::notice($limit);
+same([$guidance,'resume_reads'],[$notice['body']??null,$notice['action']??null],'Auto-renew instruction survives an exhausted read budget');
 $wire->auto='No';$wire->historyAction='unrecognized';
 $unresolved=$completion->run($renewal->id);
 same('pending',$unresolved->state,'Off readback alone cannot complete unresolved charge history');
 same(null,$unresolved->safe_code,'Fresh off readback clears only the stale auto-renew reason');
 same('original_attempt_unresolved',$unresolved->policy['renewal_execution']['reason'],'Unresolved history keeps its own recovery reason');
-expect(!in_array($guidance,RequestFacts::review($unresolved),true),'Staff no longer told to remove auto-renew after fresh off proof');
+expect(!isset(RequestFacts::for($unresolved)['auto_renew'])&&(RequestFacts::notice($unresolved)['body']??null)!==$guidance,'Staff no longer told to remove auto-renew after fresh off proof');
 same($financial,nativeFinancialSnapshot($unresolved),'Off with incomplete history preserves finance and holding');
 same($originalAttempt,$unresolved->attempt,'Off with incomplete history preserves sealed attempt');
 same(1,$writes,'Off alone triggers no extra write');

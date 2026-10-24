@@ -291,11 +291,13 @@ These are presentation checks, not installed provider acceptance. DNS/SRV editin
 ### Dormant staff operation review
 
 The native staff-operation suites cover independent default-deny actions, locked fresh authorization,
-required reasons, immutable before/after audit, one-use keys, stale/binding refusals, exact unsent
+required reasons for money actions, immutable before/after audit, one-use keys, stale/binding refusals, exact unsent
 account credits, bounded read resumes and explicit refunded-renewal replacement. Paid sent/unknown
 outcomes keep their account spending holds and cannot be released or credited by these actions.
-`tests/staff-operations-render.php OUTPUT_DIRECTORY` renders the native queue, views, all nine
+`tests/staff-operations-render.php OUTPUT_DIRECTORY` renders the native queue, views, the four
 confirmations and reason refusal with synthetic data; capture at 1440/1024 in light/dark.
+`tests/staff-request-page-render.php OUTPUT_DIRECTORY` captures Registrar requests and the request page
+when not sent, pending, under review, unconfirmed after payment, completed, and cancelled and refunded.
 No resource or permission registration is installed by these fixtures.
 
 ### Staff TLD pricing and setup (slice37)

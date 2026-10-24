@@ -39,14 +39,14 @@ foreach (range(0,15) as $mask) {
     $activity->assertCanSeeTableRecords([$held->operations()->sole()]);
     $body=$page->html().json_encode($page->snapshot).$activity->html().json_encode($activity->snapshot);
     expect(!str_contains($body,'PRIVATE-')&&!str_contains($body,'private-operation-'),'No secret/raw evidence in HTML or Livewire');
-    expect(!str_contains($body,'827.43')&&!str_contains($body,'839.47')&&!str_contains($body,'Transfer code'),'Costs and metadata stay on the request page');
+    expect(!str_contains($body,'827.43')&&!str_contains($body,'839.47')&&!str_contains($body,'Transfer code')&&!str_contains($body,'Auth code'),'Costs and metadata stay on the request page');
     // The request page keeps the independent cost and metadata permissions.
     $request=Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$held->operations()->sole()->id]);
     $detail=$request->html().json_encode($request->snapshot);
     expect(!str_contains($detail,'PRIVATE-')&&!str_contains($detail,'private-operation-'),'No secret/raw evidence on the request page');
     same($cost,str_contains($request->html(),'827.43'),'Cost HTML independent permission');
     same($cost,str_contains($request->html(),'839.47'),'Actual nested charge permission');
-    same($metadata,str_contains($request->html(),'Transfer code: Stored'),'Metadata independent permission');
+    same($metadata,str_contains($request->html(),'Auth code'),'Metadata independent permission');
     expect(!str_contains(json_encode($request->snapshot),'827.43'),'No cost in public component data');
 }
 echo "Permission matrix passed.\n";
@@ -137,13 +137,13 @@ foreach ([['status',['under_review'],[$held,$long],[$active]],['server_id','2',[
 DB::table('domains_operations')->where('domain_id',$long->id)->update(['state'=>'uncertain']);
 staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$held,$long])->assertCanNotSeeTableRecords([$active]);
 same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::attention(Domain::query(),['uncertain'])->pluck('id')->all(),'Unconfirmed transfer query');
-same(['Under review','Transfer needs attention'],[DomainFacts::status($long->fresh())['label'],DomainFacts::status($long->fresh())['reason']],'Unconfirmed transfer keeps its saved reason');
+same(['Under review','Old registrar needs approval'],[DomainFacts::status($long->fresh())['label'],DomainFacts::status($long->fresh())['reason']],'Unconfirmed transfer keeps its saved reason');
 // Rejected paid obligations remain visible even when a credit retry failed.
 $review=$long->operations()->sole();
 DB::table('domains_operations')->where('id',$review->id)->update(['state'=>'rejected','funding_basis'=>'paid_invoice','safe_code'=>'transfer_code_timeout']);
 $review->refresh();
 expect(RefundCandidates::matches($review,$review->funding??[]),'Paid timeout is a review candidate, never eligibility proof');
-expect(str_contains(RequestFacts::for($review)['refund'],'candidate'),'Failed credit retry candidate is visible');
+same(['Not refunded','credit'],[RequestFacts::for($review)['refund'],RequestFacts::for($review)['refund_fix']],'Failed credit retry candidate is visible with its fix');
 same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::creditReview(Domain::query())->pluck('id')->all(),'Credit review query');
 staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['pending_transfer'])->assertCanSeeTableRecords([$long]);
 $review->funding=['refund'=>null]; expect(!RefundCandidates::matches($review,$review->funding),'Even null credit marker excludes uncredited interpretation');
@@ -152,16 +152,17 @@ DB::table('domains_operations')->where('id',$review->id)->update(['safe_code'=>'
 same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::registrarRejected(Domain::query())->pluck('id')->all(),'Registrar rejected query');
 same([],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::creditReview(Domain::query())->pluck('id')->all(),'Sent rejection leaves credit review');
 $review->safe_code='transfer_code_timeout'; $review->funding_basis='complimentary';
-expect(str_contains(RequestFacts::for($review)['refund'],'no credit inferred'),'Never-paid rejections do not imply customer credit');
+$neverPaid=RequestFacts::for($review); expect(array_key_exists('refund',$neverPaid)&&!isset($neverPaid['refund_fix']),'Never-paid rejections do not imply customer credit');
+same([null,'No paid invoice recorded'],[$neverPaid['refund'],$neverPaid['refund_sub']],'Never-paid refund is Missing with its cause');
 // A cross-bound operation must never appear just because its domain_id was forged through privileged SQL.
 $ordinaryActivity=Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active,'pageClass'=>ViewDomain::class]);
-$ordinaryActivity->assertCanSeeTableRecords([$active->operations()->sole()])->assertDontSee('Review retained evidence');
+$ordinaryActivity->assertCanSeeTableRecords([$active->operations()->sole()])->assertDontSee('Reason missing');
 DB::table('domains_operations')->where('domain_id',$active->id)->update(['safe_code'=>'unmapped_reason_code']);
 Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active,'pageClass'=>ViewDomain::class])
-    ->assertSee('unmapped_reason_code')->assertDontSee('Review retained evidence');
+    ->assertSee('unmapped_reason_code')->assertDontSee('Reason missing');
 DB::table('domains_operations')->where('domain_id',$active->id)->update(['safe_code'=>'PRIVATE-UNKNOWN']);
 Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active,'pageClass'=>ViewDomain::class])
-    ->assertSee('Review retained evidence')->assertDontSee('PRIVATE-UNKNOWN');
+    ->assertSee('Reason missing')->assertDontSee('PRIVATE-UNKNOWN');
 DB::table('domains_operations')->where('domain_id',$active->id)->update(['domain_id'=>$held->id,'safe_code'=>'PRIVATE-FORGED-CODE']);
 $activity=Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$held,'pageClass'=>ViewDomain::class]);
 $activity->assertCountTableRecords(1);
@@ -174,17 +175,18 @@ Livewire::actingAs($customer)->test(ViewDomain::class,['record'=>$held->id])->as
 Auth::setUser($customer);
 try { DomainFacts::for($held); expect(false,'Customer read denied'); } catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(403,$e->getStatusCode(),'Support default deny'); }
 Auth::setUser($viewer); $op=$held->operations()->first();
-$op->safe_code='PRIVATE-UNKNOWN'; same('Review retained evidence',RequestFacts::for($op)['reason'],'Unknown private strings never echo');
+$op->safe_code='PRIVATE-UNKNOWN'; same('Reason missing',RequestFacts::for($op)['reason'],'Unknown private strings never echo');
 foreach(['provider exception: secret','<script>secret</script>',"read_failed\nsecret",str_repeat('a',65),'unsafe__code','_unsafe'] as $invalid){
-    same('Review retained evidence',Labels::reason($invalid),'Invalid reason strings remain hidden');
+    same('Reason missing',Labels::reason($invalid),'Invalid reason strings remain hidden');
 }
 same(str_repeat('a',64),Labels::reason(str_repeat('a',64)),'Safe code length boundary remains visible');
 $op->safe_code='transfer_provider_rejected'; $op->funding=['refund'=>['private'=>'PRIVATE-CREDIT']];
-$facts=RequestFacts::for($op);
-expect(str_contains($facts['registrar_refund'],'manual'),'NameSilo manual refund indicator');
-expect(str_contains($facts['refund'],'Credit marker'),'Customer credit is retained separately');
-same('Original send response unknown; never resend',RequestFacts::review($op)[0],'Safety instruction precedes refund and audit');
-expect(!str_contains($facts['registrar_refund'],'Customer credit'),'Registrar refund does not duplicate customer-credit wording');
+same('NameSilo has not confirmed this transfer.',RequestFacts::notice($op)['title'],'Unknown outcome notice precedes the hold cause');
+expect(!isset(RequestFacts::for($op)['registrar_refund']),'Registrar refund shows only once the request failed or was cancelled');
+$op->state='rejected'; $facts=RequestFacts::for($op);
+same('Ask NameSilo support for a refund',$facts['registrar_refund'],'NameSilo manual refund indicator');
+same(['Refunded','Check the account credit'],[$facts['refund'],$facts['refund_sub']],'Customer credit is retained separately');
+expect(!str_contains($facts['registrar_refund'],'credit'),'Registrar refund does not duplicate customer-credit wording');
 $op->state='rejected'; $op->safe_code='transfer_code_timeout';
 expect(!isset(RequestFacts::for($op)['registrar_refund']),'Local unsent rejection does not imply a registrar charge');
 // Check explicit map keys. Passthrough alone must never satisfy mapping coverage.
@@ -289,10 +291,12 @@ $missing=array_diff_key($emitted,$mapped);ksort($missing);
 expect($missing===[],'Service reason codes need explicit staff mappings: '.json_encode($missing));
 echo 'Explicit staff reason mapping coverage: '.count($emitted)." codes.\n";
 same('future_reason_code',Labels::reason('future_reason_code'),'Unknown reason code stays visible');
-same('Review retained evidence',Labels::reason(null),'Absent reason keeps the existing label');
-$op->attempt=['execution'=>null]; expect(str_contains(RequestFacts::for($op)['outcome'],'unknown'),'Null execution remains unknown');
+same('Reason missing',Labels::reason(null),'Absent reason reads Reason missing');
+$op->attempt=['execution'=>null]; same(null,RequestFacts::for($op)['outcome'],'A Failed request is final even with a lost send response');
+$op->state='held'; same('NameSilo has not confirmed this transfer.',RequestFacts::for($op)['outcome'],'Null execution remains unknown');
 $ordinary=clone $op; $ordinary->state='succeeded'; $ordinary->safe_code=null; $ordinary->attempt=[]; $ordinary->policy=[]; $ordinary->funding=[];
-same(['Customer credit: not assessed'],RequestFacts::review($ordinary),'Ordinary rows omit default warning, empty corrections and zero audit');
+$plain=RequestFacts::for($ordinary); same(null,RequestFacts::notice($ordinary,$plain),'Ordinary rows have no notice');
+expect(!array_key_exists('refund',$plain)&&$plain['outcome']===null&&!isset($plain['correction'])&&!isset($plain['audit']),'Ordinary rows omit refund, outcome, corrections and audit');
 same('USD 0.00',Labels::money('0'),'Known zero is distinct'); same('Unknown',Labels::money(null),'Unknown cost is not zero');
 same('USD 123456789012345678.1234',Labels::money('123456789012345678.12340000'),'Exact money without floats');
 // Historic admitted renewals retain the sealed authorization, even without a checkout estimate.
@@ -300,35 +304,36 @@ $costUser=staffUser([Staff::VIEW,Staff::COSTS]); Auth::setUser($costUser);
 $renewal=new Operation(['action'=>'renew','state'=>'succeeded','cost'=>['actual'=>['amount'=>'8.95','currency'=>'USD']],
     'attempt'=>['seal'=>'sealed','authorized_cost'=>['amount'=>'8.9500','currency'=>'USD']],
     'policy'=>['renewal'=>['cost_cap'=>['amount'=>'12.00','currency'=>'USD']]],'funding'=>[]]);
-$retained=$renewal->getAttributes();
-same('Authorized USD 8.95 · Actual USD 8.95',RequestFacts::for($renewal)['cost'],'Historic renewal shows authorized registrar cost');
+$retained=$renewal->getAttributes(); $cost=fn(Operation $op)=>[($f=RequestFacts::for($op))['cost'],$f['cost_sub']];
+same(['USD 8.95','Authorized USD 8.95'],$cost($renewal),'Historic renewal shows authorized registrar cost');
 same($retained,$renewal->getAttributes(),'Reading renewal facts never backfills retained cost evidence');
 $renewal->cost=['estimated'=>'7.00','currency'=>'USD'];
-same('Authorized USD 8.95 · Actual Unknown',RequestFacts::for($renewal)['cost'],'Renewal authorization stays distinct from an existing estimate');
+same([null,'Authorized USD 8.95'],$cost($renewal),'Renewal authorization stays distinct from an existing estimate');
 foreach(['running','pending','uncertain','held'] as $state){
     $renewal->state=$state;
-    same('Authorized USD 8.95 · Actual Unknown',RequestFacts::for($renewal)['cost'],'Retained authorization survives unresolved renewal states');
+    same([null,'Authorized USD 8.95'],$cost($renewal),'Retained authorization survives unresolved renewal states');
 }
 foreach([[],['amount'=>'8.95'],['amount'=>'8.95','currency'=>'EUR'],['amount'=>8.95,'currency'=>'USD'],['amount'=>'private','currency'=>'USD']] as $authorized){
     $renewal->attempt=$authorized===[]?[]:['authorized_cost'=>$authorized];
-    same('Authorized Unknown · Actual Unknown',RequestFacts::for($renewal)['cost'],'Missing or invalid authorization never falls back to estimate or cap');
+    same([null,'No cost recorded'],$cost($renewal),'Missing or invalid authorization never falls back to estimate or cap');
 }
 $renewal->attempt=['authorized_cost'=>['amount'=>'0','currency'=>'USD']];
-same('Authorized USD 0.00 · Actual Unknown',RequestFacts::for($renewal)['cost'],'Known zero authorization remains distinct from unknown');
+same([null,'Authorized USD 0.00'],$cost($renewal),'Known zero authorization remains distinct from unknown');
 $renewal->attempt=['authorized_cost'=>['amount'=>'123456789012345678.12340000','currency'=>'USD']];
-same('Authorized USD 123456789012345678.1234 · Actual Unknown',RequestFacts::for($renewal)['cost'],'Authorized cost preserves exact money');
+same([null,'Authorized USD 123456789012345678.1234'],$cost($renewal),'Authorized cost preserves exact money');
 foreach(['register','transfer'] as $action){
     $renewal->action=$action;
-    same('Estimated USD 7.00 · Actual Unknown',RequestFacts::for($renewal)['cost'],'Acquisitions still render frozen checkout estimates');
+    same([null,'Estimated USD 7.00'],$cost($renewal),'Acquisitions still render frozen checkout estimates');
 }
 $renewal->action='renew'; Auth::setUser($viewer);
-expect(!isset(RequestFacts::for($renewal)['cost']),'Renewal authorization requires staff cost rights');
+expect(!array_key_exists('cost',RequestFacts::for($renewal)),'Renewal authorization requires staff cost rights');
 $op->attempt=['seal'=>'sealed','management_reads'=>[['confirmed'=>true]]];
 $op->policy=['management'=>['correction_link'=>['operation_key'=>'missing']]];
-same('Correction unresolved',RequestFacts::for($op)['correction'],'An unbound readback never closes a correction');
+expect(!isset(RequestFacts::for($op)['correction']),'Correction state is internal and never shown');
 $metadataUser=staffUser([Staff::VIEW,Staff::METADATA]); Auth::setUser($metadataUser);
 $op->payload=['epp'=>null];
-expect(str_contains(RequestFacts::for($op)['metadata'],'Transfer code: Not recorded'),'Null transfer-code slot is not a stored code');
+same([null,'Customer has not entered it'],[RequestFacts::for($op)['auth_code'],RequestFacts::for($op)['auth_code_sub']],'Null transfer-code slot is not a stored code');
+$op->payload=['epp'=>'PRIVATE-EPP']; same('Saved',RequestFacts::for($op)['auth_code'],'Stored auth code reads Saved, never its value');
 Auth::setUser($viewer);
 $open=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id]);
 // Same authenticated object and open components must lose revoked role permissions.

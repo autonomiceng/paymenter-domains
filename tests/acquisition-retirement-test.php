@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionActions;
 $solo=$new(placeholderComFixtureName('unpaid-solo-placeholder.com'),paid:false);$cancel($solo);$retirement->inspect($solo->domain_id);
 same('rejected',$solo->fresh()->state,'Solo cancelled unpaid request is terminal');same(UnpaidAcquisitionProof::CODE,$solo->fresh()->safe_code,'Dedicated unfunded terminal code');
 same(null,$solo->domain->fresh()->reservation_name,'Unfunded retirement releases reservation atomically');same('cancelled',$solo->domain->fresh()->status,'Owned acquisition closed');
-same('Unpaid order retired',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason($solo->fresh()->safe_code),'Retired request has a clear staff reason');same(null,$solo->fresh()->funding,'No account credit fabricated');$retirement->inspect($solo->domain_id);
+same('Order cancelled: not paid',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason($solo->fresh()->safe_code),'Retired request has a clear staff reason');same(null,$solo->fresh()->funding,'No account credit fabricated');$retirement->inspect($solo->domain_id);
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('unpaid-solo-placeholder.com'));commerceCheckout($user,$cart);
 $again=Domain::where('reservation_name','unpaid-solo-placeholder.com')->sole()->operations()->sole();expect($again->domain_id!==$solo->domain_id,'Fresh checkout can reserve retired name');
 // Native full cron, shared hosting invoice, no invoice model events and all-null stock.

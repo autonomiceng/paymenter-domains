@@ -108,25 +108,24 @@ function staffOperationFilterLookalikes($viewer, Domain $seed): void
         $rows = staffFilterLookalikes($seed);
         Livewire::actingAs($viewer)->test(ListOperations::class)->searchTable('filter-')
             ->assertCanSeeTableRecords(array_column($rows, 'operation'))->assertCountTableRecords(count($rows));
+        $failed = ['provider_rejected', 'timeout', 'registration_rejected', 'renewal_rejected', 'complimentary_timeout', 'contacts_rejected', 'reasonless', 'credited_timeout'];
         foreach ([
-            ['held', true, ['held', 'contact_hold']],
-            ['unresolved', true, ['uncertain', 'pending', 'running']],
-            ['failed_transfer', true, ['provider_rejected', 'timeout', 'complimentary_timeout', 'credited_timeout']],
-            ['credit_review', true, ['timeout', 'registration_rejected', 'renewal_rejected', 'reasonless', 'credited_timeout']],
-        ] as [$filter, $value, $keys]) {
-            staffAssertLookalikeFilter($viewer, ListOperations::class, $filter, $value, $rows, 'operation', $keys);
+            [['under_review'], ['held', 'contact_hold', 'uncertain']],
+            [['in_progress'], ['pending', 'running', 'queued']],
+            [['action_required'], ['awaiting_payment']],
+            [['completed'], ['succeeded']],
+            [['failed'], $failed],
+            [['cancelled'], []],
+            [['under_review', 'completed'], ['held', 'contact_hold', 'uncertain', 'succeeded']],
+        ] as [$value, $keys]) {
+            staffAssertLookalikeFilter($viewer, ListOperations::class, 'status', $value, $rows, 'operation', $keys);
         }
-        foreach (['held', 'uncertain', 'pending', 'running', 'rejected', 'succeeded'] as $state) {
-            $keys = match ($state) {
-                'held' => ['held', 'contact_hold'],
-                'rejected' => ['provider_rejected', 'timeout', 'registration_rejected', 'renewal_rejected',
-                    'complimentary_timeout', 'contacts_rejected', 'reasonless', 'credited_timeout'],
-                default => [$state],
-            };
-            staffAssertLookalikeFilter($viewer, ListOperations::class, 'state', [$state], $rows, 'operation', $keys);
-        }
-        staffAssertLookalikeFilter($viewer, ListOperations::class, 'state', ['held', 'uncertain'], $rows,
-            'operation', ['held', 'contact_hold', 'uncertain']);
+        staffAssertLookalikeFilter($viewer, ListOperations::class, 'action', ['register'], $rows, 'operation', ['contact_hold', 'registration_rejected', 'reasonless']);
+        // Failed transfers: Status Failed with Type Transfer.
+        $yes = array_map(fn ($key) => $rows[$key]['operation'], ['provider_rejected', 'timeout', 'complimentary_timeout', 'credited_timeout']);
+        $component = Livewire::actingAs($viewer)->test(ListOperations::class)->searchTable('filter-')->filterTable('status', ['failed'])->filterTable('action', ['transfer']);
+        $component->set('tableDeferredFilters', $component->get('tableFilters'))->call('applyTableFilters')
+            ->assertCanSeeTableRecords($yes)->assertCountTableRecords(count($yes));
     } finally { DB::rollBack(); }
-    echo "Operation lookalike filters: holds, unresolved states, failed-transfer action, credit reasons and status selection passed.\n";
+    echo "Operation lookalike filters: request statuses, type, failed transfers and multi-status selection passed.\n";
 }

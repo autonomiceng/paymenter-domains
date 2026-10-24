@@ -24,10 +24,10 @@ same(1,count($opQueries),'Exactly one acquisition query for the rendered table p
 $userReads=array_filter($queries,fn($q)=>str_contains($q['query'],'from "users"')&&str_contains($q['query'],'"email"'));
 same(1,count($userReads),'Customer descriptions use one eager query');
 $customer=trim($viewer->first_name.' '.$viewer->last_name)?:$viewer->email;
-$page->assertSee('Under review')->assertSee('Transfer needs attention')->assertSee($customer)->assertSee('Offline registrar (synthetic)')->assertDontSee('Missing');
+$page->assertSee('Under review')->assertSee('Old registrar needs approval')->assertSee($customer)->assertSee('Offline registrar (synthetic)')->assertDontSee('Missing');
 $instance=$page->instance();$columns=$instance->getTable()->getColumns();
 $records=$instance->getTableRecords()->keyBy('id');
-foreach([[$held,'Transfer needs attention'],[$uncertain,'Transfer needs attention'],[$active,null]] as [$domain,$reason]){
+foreach([[$held,'Old registrar needs approval'],[$uncertain,'Old registrar needs approval'],[$active,null]] as [$domain,$reason]){
     $record=$records[$domain->id];$column=$columns['status']->record($record);
     same('Under review',$column->getState(),'Held, uncertain and stored review share one status');
     same('warning',$column->getColor($column->getState()),'Under review tone');
@@ -58,18 +58,15 @@ $record=$fallback->instance()->getTableRecords()->keyBy('id')[$held->id];$column
 same([null,'Missing'],[$columns['domain']->record($record)->getDescriptionBelow(),$columns['server_id']->record($record)->getState()],'Missing customer and registrar account keep the row');
 // Age grammar and exact staff copy; frozen timestamps avoid dependence on fixture business clocks.
 $op=clone $base;$op->state='uncertain';$op->funding_basis='paid_invoice';$op->safe_code=null;
-foreach([0=>'less than 1 hour',1=>'1 hour',7=>'7 hours'] as $hours=>$age){
+foreach([0=>' (under 1 hour so far)',1=>' (1 hour so far)',7=>' (7 hours so far)'] as $hours=>$age){
     $op->started_at=\Carbon\CarbonImmutable::createFromTimestampUTC(time()-$hours*3600-30);
-    $summary=PaidUncertainty::summary($op);
-    expect(str_contains($summary,' · '.$age.' · since '.$op->started_at->format('M j, Y H:i').' UTC'),'Age copy '.$age);
-    expect(str_starts_with($summary,'Paid, outcome unconfirmed · '),'Paid uncertainty heading snapshot');
-    expect(str_starts_with(PaidUncertainty::holdSummary($op),'Spending on hold for this account · '),'Spending hold heading snapshot');
-    expect(str_ends_with(PaidUncertainty::holdSummary($op),'. Check the original request with the registrar. Staff cannot release this hold.'),'Hold instructions snapshot');
+    same('NameSilo has not confirmed this transfer.',PaidUncertainty::summary($op),'Paid uncertainty title snapshot');
+    same('New orders on this NameSilo account are paused until the result is known'.$age.'.',PaidUncertainty::holdSummary($op),'Paused orders copy '.$hours);
 }
 $op->started_at=null;$op->created_at=null;
-expect(str_contains(PaidUncertainty::summary($op),'Age unknown'),'Absent timestamps remain unknown');
+same('New orders on this NameSilo account are paused until the result is known.',PaidUncertainty::holdSummary($op),'Absent timestamps omit the age');
 $op->attempt=[];
-same('Unconfirmed. Do not resend or refund until the registrar result is known.',RequestFacts::for($op)['outcome'],'Uncertain request copy snapshot');
+same('NameSilo has not confirmed this transfer.',RequestFacts::for($op)['outcome'],'Uncertain request copy snapshot');
 same(['Start after payment','Paymenter payment events'],array_keys(NativePaidHooks::notices()),'Payment event labels snapshot');
 same('Paused · the invoice-paid listener is missing. Scheduled checks still pick up paid orders.',NativePaidHooks::notices()['Start after payment'],'Missing listener copy snapshot');
 echo "Staff list batch queries, labels, identity fallbacks and uncertainty copy passed.\n";$nativeSuccessful=true;

@@ -21,7 +21,8 @@ $release=static function($op)use($staff,$clock):void {
 $state->hold='unknown';same('held',$engine->run($op->id,$writer)->state,'Unconfirmed provider state holds before dispatch');
 same('renewal_state_unconfirmed',$op->fresh()->safe_code,'Exact admission refusal');same([],($op->fresh()->attempt??[]),'No original attempt');
 Auth::login($staff);
-expect(in_array('After correcting the cause, choose Release unsent hold. The renewal engine repeats every admission check before any send and holds the renewal again if a check still fails.',Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::review($op->fresh()),true),'Unsent admission review names normal readmission');
+$notice=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($op->fresh());
+same(['Fix the cause, then release the hold.','release'],[$notice['body']??null,$notice['action']??null],'Unsent admission hold names normal readmission');
 $baseline=$op->fresh()->getRawOriginal();
 // Raw fixture writes model retained/adversarial evidence without manufacturing a new obligation.
 $restore=static fn()=>DB::table('domains_operations')->where('id',$op->id)->update($baseline);

@@ -62,7 +62,7 @@ class RequestsRelationManager extends RelationManager
     private static function request(Operation $op): array
     {
         return ['time'=>$op->created_at,'event'=>'Request #'.$op->id.' '.Labels::action($op->action),
-            'sub'=>RequestStatus::for($op->state,$op->safe_code===null?null:Labels::operationReason($op))['reason'],
+            'sub'=>Labels::requestStatus($op)['reason'],
             'status'=>RequestStatus::for($op->state),'by'=>'System'];
     }
     private static function utc(?\DateTimeInterface $time): ?string

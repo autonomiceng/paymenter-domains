@@ -63,14 +63,14 @@ foreach([0,1]as$i){
     Illuminate\Support\Facades\Auth::setUser($lateViewer);
     expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::relevant('release',$late->fresh()),'Late corrected transfer offers no impossible staff release');
     expect(Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::relevant('refund',$late->fresh()),'Late corrected transfer retains explicit credit review');
-    expect(str_contains(implode(' ',Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::review($late->fresh())),'Code deadline passed. Release is unavailable'),'Staff review explains cutoff and credit review');
+    same(['Auth code deadline passed.','danger','refund'],array_values(array_intersect_key(Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($late->fresh())??[],['title'=>1,'tone'=>1,'action'=>1])),'Staff notice explains cutoff and offers Cancel and refund');
     foreach(['succeeded','pending','sent-hold','explicit-unsent','execution-evidence','started']as$otherState){
         $otherOp=clone$late->fresh();$otherOp->state=in_array($otherState,['sent-hold','explicit-unsent','execution-evidence','started'],true)?'held':$otherState;
         if($otherState==='explicit-unsent'){$otherOp->attempt=['seal'=>'absent','send_state'=>'definitely_unsent'];}
         elseif($otherState==='execution-evidence'){$otherOp->cost=[...$otherOp->cost,'execution'=>null];}
         elseif($otherState==='started'){$otherOp->started_at=now();}
         elseif($otherState!=='succeeded'){$otherOp->attempt=['seal'=>'sealed','send_state'=>'sent'];}
-        expect(!str_contains(implode(' ',Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::review($otherOp)),'Code deadline passed.'),'Sent and completed transfers never get cutoff-credit guidance');
+        expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($otherOp)['cutoff'])&&(Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($otherOp)['title']??null)!=='Auth code deadline passed.','Sent and completed transfers never get cutoff-credit guidance');
     }
     Illuminate\Support\Facades\Auth::setUser($user);
     same($before,[$state->calls,$state->reads,$late->fresh()->payload['epp'],$late->fresh()->policy['paid_at']],'Owner POST preserves code/payment and performs no dispatch/read');

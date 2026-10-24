@@ -11,32 +11,43 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{ObservationRecords,OperationFailure,StaffOperationReview,StaffOperations,StaffReviewRefused,TransferInputs};
 final class OperationActions
 {
+    /** Toast titles, named for the action. */
+    public const DONE=['recheck'=>'Status checked','resume_reads'=>'Status checked','resume_observation'=>'Sync resumed','hold'=>'Request on hold',
+        'release'=>'Hold released','disposition'=>'Request closed','refund'=>'Cancelled and refunded','credit'=>'Refund retried','replacement'=>'Renewal invoice reissued'];
+    /** Money actions ask for a reason. Check status, Resume sync, Put on hold and Release hold run on click with the action name as the
+     * recorded reason; every action still uses a one-use ticket bound to the page's review stamp, so a stale second click is refused. */
+    private const REASON=['refund','credit','replacement'];
     public static function make(Operation $op,string $stamp): array
     {
         $out=[];
         foreach(StaffOperationReview::ACTIONS as $name=>$label){
-            $out[]=Action::make($name)->label($label)->color(in_array($name,['refund','credit','replacement'],true)?'warning':'gray')
-                ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&self::relevant($name,$op))
-                ->requiresConfirmation()->modalHeading($label)->modalSubmitActionLabel($label)->modalWidth('lg')
-                ->modalDescription(self::description($name))->schema([
-                    Hidden::make('review_key')->default(fn()=>StaffOperationReview::ticket((int)Auth::id(),(int)$op->domain_id,(int)$op->id,$name,$stamp,app(Clock::class))),
-                    Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(3)->helperText('Use one line.')
-                        ->rules(['regex:/\A[^\x00-\x1f\x7f]*\z/'])->validationMessages(['regex'=>'Use one line without control characters.']),
-                ])->action(function(array $data)use($op,$name){
-                    try { $actor=Auth::user(); if(!$actor instanceof \App\Models\User){throw new \DomainException('Staff required.');}
-                        app(StaffOperations::class)->run($actor,(int)$op->domain_id,(int)$op->id,$name,(string)($data['review_key']??''),trim((string)($data['reason']??'')));
-                        Notification::make()->success()->title('Review recorded')->body('Reload this page to see the current request.')->send();
-                    }catch(StaffReviewRefused $error){Notification::make()->danger()->title('Review refused')->body($error->getMessage())->send();
-                    }catch(\Throwable $error){
-                        $code=OperationFailure::code($error);
-                        Log::warning('Domains staff operation refused.',['reason'=>$code,'action'=>$name,'operation_id'=>(int)$op->id]);
-                        $message=(OperationFailure::known($error)?->message() ?? 'Reload this page and review current permissions, funding and retained evidence. Reference: '.$name.'/'.$op->id.'/'.$code.'.')
-                            .(in_array($name,['refund','credit'],true)?' A credit decision may be retained; check the ledger before retrying.':'');
-                        Notification::make()->danger()->title('Review refused')->body($message)->send();}
-                });
+            $ticket=fn()=>StaffOperationReview::ticket((int)Auth::id(),(int)$op->domain_id,(int)$op->id,$name,$stamp,app(Clock::class));
+            $action=Action::make($name)->label($label)->color($name==='refund'?'danger':'gray')
+                ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&self::relevant($name,$op));
+            if(in_array($name,[...self::REASON,'disposition'],true)){
+                $action->requiresConfirmation()->modalHeading($name==='disposition'?$label:$label.'?')->modalSubmitActionLabel($label)->modalWidth('lg')
+                    ->modalDescription(self::description($name));
+            }
+            if(in_array($name,self::REASON,true)){
+                $action->schema([Hidden::make('review_key')->default($ticket),
+                    Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(3)
+                        ->rules(['regex:/\A[^\x00-\x1f\x7f]*\z/'])->validationMessages(['regex'=>'Use one line.'])]);
+            }
+            $out[]=$action->action(function(array $data)use($op,$name,$label,$ticket){
+                try { $actor=Auth::user(); if(!$actor instanceof \App\Models\User){throw new \DomainException('Staff required.');}
+                    $reason=in_array($name,self::REASON,true)?trim((string)($data['reason']??'')):$label;
+                    app(StaffOperations::class)->run($actor,(int)$op->domain_id,(int)$op->id,$name,(string)($data['review_key']??$ticket()),$reason);
+                    Notification::make()->success()->title(self::DONE[$name])->send();
+                }catch(StaffReviewRefused $error){Notification::make()->danger()->title(self::FAILED)->body($error->getMessage())->send();
+                }catch(\Throwable $error){
+                    $code=OperationFailure::code($error);
+                    Log::warning('Domains staff operation refused.',['reason'=>$code,'action'=>$name,'operation_id'=>(int)$op->id]);
+                    Notification::make()->danger()->title(self::FAILED)->body(OperationFailure::known($error)?->message() ?? 'Reload the page and try again. Ref '.$code.'.')->send();}
+            });
         }
         return $out;
     }
+    public const FAILED="Couldn't update request";
     /** Domain recovery reuses the current request's bound, audited review ticket. */
     public static function scheduledReads(Domain $d): array
     {
@@ -62,8 +73,8 @@ final class OperationActions
             'credit'=>$op->state==='rejected'&&$op->funding_basis==='paid_invoice',
             'replacement'=>$op->action==='renew'&&$op->state==='rejected',
             'disposition'=>$op->state==='rejected',
-            'resume_reads'=>in_array($op->action,['register','transfer','renew'],true)&&in_array($op->state,['running','pending','uncertain','held'],true),
-            'recheck'=>in_array($op->state,['running','pending','uncertain','held'],true),
+            'resume_reads'=>in_array($op->action,['register','transfer','renew'],true)&&in_array($op->state,['running','pending','uncertain','held'],true)&&self::readLimit($op),
+            'recheck'=>in_array($op->state,['running','pending','uncertain','held'],true)&&!(in_array($op->action,['register','transfer','renew'],true)&&self::readLimit($op)),
             default=>false};
     }
     public static function transferCutoff(Operation $op): bool
@@ -72,18 +83,20 @@ final class OperationActions
         $deadline=$op->action==='transfer'?TransferInputs::deadline($op,$now):null;
         return $deadline!==null && $now>=$deadline;
     }
-    public static function description(string $action): string
+    /** Status checks stopped at the read limit; Check status then restarts them. */
+    public static function readLimit(Operation $op): bool
+    {
+        try { $p=$op->policy??[]; } catch (\Throwable) { return false; }
+        return ($p['renewal_polls']??0)>=5||($p['reconciliation']['polls']??0)>=5;
+    }
+    public static function description(string $action): ?string
     {
         return match($action){
-            'recheck'=>'Reads the original attempt through the reconciliation engine. It never sends the request again.',
-            'resume_reads'=>'Resets the bounded reconciliation read budget. The original attempt and financial uncertainty stay retained.',
-            'resume_observation'=>'Resumes this domain’s stopped scheduled reads within their original limits and pending window. It grants no purchase authority and does not reopen any request.',
-            'hold'=>'Holds an unattempted request for staff review. It does not credit the account.',
-            'release'=>'Queues only a proven unsent request. Normal engine admission still applies. Sent or unknown outcomes cannot resume.',
-            'disposition'=>'Records review of existing terminal engine proof. It does not change the outcome, release a name or credit the account.',
-            'refund'=>'Closes only a proven unsent paid request and credits its exact funded line. Invoices and payment history stay retained. No registrar refund is requested.',
-            'credit'=>'Retries the engine account-credit path with current funding and unsent proof. A sent failure never qualifies.',
-            'replacement'=>'Allows a separate renewal obligation only after an exact unsent account credit for this cycle. The original debt and evidence stay retained.',
+            'disposition'=>'Records the final result. Nothing is sent or refunded.',
+            'refund'=>"Cancels this unsent request and credits the customer's account.",
+            'credit'=>'Tries the account credit again.',
+            'replacement'=>'Creates a new renewal invoice for this cycle.',
+            default=>null,
         };
     }
 }

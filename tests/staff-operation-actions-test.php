@@ -15,14 +15,15 @@ $op=$held('staff-actions-placeholder.com'); $page=Livewire::actingAs($staff)->te
 // Every action has an independent default-deny permission; a general manager has none of them.
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){
     $staff->role->update(['permissions'=>array_values(array_diff($all,[StaffOperationReview::permission($action)]))]);
-    Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden($action);
+    // Resume sync sits on the domain page; the other actions sit on the request page.
+    Livewire::actingAs($staff)->test(...($action==='resume_observation'?[\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$op->domain_id]]:[ViewOperation::class,['record'=>$op->id]]))->assertActionHidden($action);
     commerceReject(fn()=>$run($op,$action));
 }
 $staff->role->update(['permissions'=>array_values(array_diff($all,[Staff::VIEW]))]);
 commerceReject(fn()=>$run($op,'refund')); $staff->role->update(['permissions'=>$all]);
-// Native modal reason validation and allowed release, audit, immutable attempt and single-use key.
-$page->mountAction('release')->setActionData(['reason'=>'no'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);
-$page->unmountAction()->mountAction('release')->setActionData(['reason'=>"Review\nwith newline"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
+// Native modal reason validation on a money action, then allowed release, audit, immutable attempt and single-use key.
+$page->mountAction('refund')->setActionData(['reason'=>'no'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);
+$page->unmountAction()->mountAction('refund')->setActionData(['reason'=>"Review\nwith newline"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
 $key=$ticket($op,'release'); $before=$op->attempt; $run($op,'release',$key);
 same('queued',$op->fresh()->state,'Unattempted hold queues through explicit writer'); same($before,$op->fresh()->attempt,'No attempt reset');
 $audit=$op->fresh()->policy['staff_actions'][0]; same($staff->id,$audit['actor_id'],'Current staff audited');
@@ -33,9 +34,9 @@ foreach([array_diff_key($op->fresh()->policy,['staff_actions'=>true]),[...$op->f
 }
 echo "Release guard passed.\n";
 // Authorized native hold and refund confirmations invoke only the engine refund path.
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('hold',['reason'=>'Pause for customer review'])->assertNotified('Review recorded');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('hold')->assertNotified('Request on hold');
 echo "Native hold passed.\n"; same('held',$op->fresh()->state,'Native hold action'); $before=$credit();
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled this unsent order'])->assertHasNoActionErrors()->assertNotified('Review recorded');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled this unsent order'])->assertHasNoActionErrors()->assertNotified('Cancelled and refunded');
 echo "Native refund passed.\n";
 same('rejected',$op->fresh()->state,'Native refund uses engine disposition');expect($credit()>$before,'Exact engine account credit applied');
 same('account_credit',$op->fresh()->funding['refund']['to'],'Engine once marker');
@@ -44,17 +45,17 @@ same(null,$op->domain->fresh()->reservation_name,'Proven unsent registration rel
 // A failed native credit keeps the audited rejection; the separately permitted UI retry succeeds once.
 $retry=$held('staff-credit-retry-placeholder.com'); $before=$credit();
 DB::unprepared("CREATE TRIGGER staff_credit_fail BEFORE UPDATE ON credits BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END");
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled unsent order'])->assertHasNoActionErrors()->assertNotified(Notification::make()->danger()->title('Review refused')->body('Reload this page and review current permissions, funding and retained evidence. Reference: refund/'.$retry->id.'/database_failure. A credit decision may be retained; check the ledger before retrying.'));
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled unsent order'])->assertHasNoActionErrors()->assertNotified(Notification::make()->danger()->title("Couldn't update request")->body('Reload the page and try again. Ref database_failure.'));
 echo "Failed credit retained.\n";
 DB::unprepared('DROP TRIGGER staff_credit_fail'); same('rejected',$retry->fresh()->state,'Decision survives failed credit');same($before,$credit(),'Failed credit atomic');
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('credit')->callAction('credit',['reason'=>'Retry verified retained credit'])->assertHasNoActionErrors()->assertNotified('Review recorded');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('credit')->callAction('credit',['reason'=>'Retry verified retained credit'])->assertHasNoActionErrors()->assertNotified('Refund retried');
 echo "Native credit passed.\n";
 $after=$credit();commerceReject(fn()=>$run($retry->fresh(),'credit'));same($after,$credit(),'Repeat credit never duplicates');
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->callAction('disposition',['reason'=>'Reviewed retained terminal proof'])->assertNotified('Review recorded');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->callAction('disposition')->assertNotified('Request closed');
 echo "Native disposition passed.\n";
 // Open page and old tickets cannot act after state changes, expiration, domain spoofing or role revocation.
 $stale=$held('staff-stale-placeholder.com');$open=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$stale->id]);$key=$ticket($stale,'release');
-$stale->update(['safe_code'=>'funding']);$open->callAction('release',['reason'=>'Stale review cannot resume'])->assertNotified(Notification::make()->danger()->title('Review refused')->body('This request changed. Reload this page.'));
+$stale->update(['safe_code'=>'funding']);$open->callAction('release')->assertNotified(Notification::make()->danger()->title("Couldn't update request")->body('This request changed. Reload the page and try again.'));
 commerceReject(fn()=>$run($stale,'release',$key));
 $foreign=$held('staff-foreign-placeholder.com');$key=$ticket($stale->fresh(),'refund');
 commerceReject(fn()=>$service->run($staff,$foreign->domain_id,$foreign->id,'refund',$key,'Cross domain review refused'));

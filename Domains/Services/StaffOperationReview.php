@@ -9,9 +9,11 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 /** One-use, actor/action/domain-bound review. All mutation checks run under the writer's locks. */
 final class StaffOperationReview
 {
-    public const ACTIONS=['recheck'=>'Re-check now','resume_reads'=>'Resume reconciliation reads','resume_observation'=>'Resume scheduled reads',
-        'hold'=>'Hold unsent request','release'=>'Release unsent hold','disposition'=>'Record terminal review',
-        'refund'=>'Close and credit account','credit'=>'Retry account credit','replacement'=>'Allow replacement renewal'];
+    /** Check status covers both a fresh read (recheck) and restarting reads after the read limit (resume_reads). */
+    public const ACTIONS=['recheck'=>'Check status','resume_reads'=>'Check status','resume_observation'=>'Resume sync',
+        'hold'=>'Put on hold','release'=>'Release hold','disposition'=>'Close request',
+        'refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'];
+    public const CHANGED='This request changed. Reload the page and try again.';
     private array $before=[];
     private array $verifiedTicket=[];
     public function __construct(public readonly int $actorId, public readonly int $domainId, public readonly int $operationId,
@@ -34,11 +36,10 @@ final class StaffOperationReview
             || (!in_array($this->action,['recheck','resume_reads','resume_observation'],true)&&!$staff->hasPermission('admin.domains.manage'))
             || (in_array($this->action,['refund','credit','replacement'],true)&&!$staff->hasPermission('admin.invoices.update'))
             || ($this->action==='release'&&$op?->funding_basis==='complimentary'&&!$staff->hasPermission('admin.domains.fund'))) {
-            throw new StaffReviewRefused('Current staff permissions are required. Reload this page.');
+            throw new StaffReviewRefused("You don't have permission to do this.");
         }
         if($op?->state==='succeeded' && ($this->action!=='resume_observation' || !ObservationRecords::stopped($d))){
-            throw new StaffReviewRefused($this->action==='resume_observation' ? 'Scheduled reads are no longer stopped. Reload this page.'
-                : 'Completion confirmed. This request is closed to staff actions.');
+            throw new StaffReviewRefused($this->action==='resume_observation' ? 'Sync is already running.' : 'This request is already completed.');
         }
         StaffReason::require($this->reason);
         if($op){$this->requireIdle($op);}
@@ -46,11 +47,11 @@ final class StaffOperationReview
         if(!$op || (int)$d->id!==$this->domainId || $op->domain_id!==$d->id || $op->service_id!==$d->service_id
             || $op->server_id!==$d->server_id || $op->registrar_key!==$d->registrar_key || $op->account_fingerprint!==$d->account_fingerprint
             || $op->authority_generation!==$d->authority_generation || $op->authority_generation<1
-            || !hash_equals($t['stamp'],self::stamp($op,$d))) { throw new StaffReviewRefused('This request changed. Reload this page.'); }
+            || !hash_equals($t['stamp'],self::stamp($op,$d))) { throw new StaffReviewRefused(self::CHANGED); }
         $history=$op->policy['staff_actions']??[];
         $limit=in_array($this->action,['recheck','resume_reads','resume_observation'],true)?($this->action==='recheck'?88:89):99;
         if(!is_array($history)||!array_is_list($history)||count($history)>$limit
-            || array_filter($history,fn($a)=>($a['key']??null)===$t['key'])) { throw new StaffReviewRefused('Review key used or audit full. Reload this page.'); }
+            || array_filter($history,fn($a)=>($a['key']??null)===$t['key'])) { throw new StaffReviewRefused(self::CHANGED); }
         $this->verifiedTicket=$t; $this->before=self::state($op,$d);
     }
     public static function liveLease(Operation $op,Clock $clock): bool
@@ -58,16 +59,16 @@ final class StaffOperationReview
     private function requireIdle(Operation $op): void
     {
         if(self::liveLease($op,$this->clock)){
-            throw new StaffReviewRefused('A worker is processing this request. Wait for its lease to expire, then reload this page.');
+            throw new StaffReviewRefused('This request is being sent. Try again in a few minutes.');
         }
     }
     private function decode(): array
     {
         try { $t=json_decode(Crypt::decryptString($this->ticket),true,8,JSON_THROW_ON_ERROR); }
-        catch(\Throwable){throw new StaffReviewRefused('Invalid review key. Reload this page.');}
+        catch(\Throwable){throw new StaffReviewRefused(self::CHANGED);}
         if(($t['actor']??null)!==$this->actorId||($t['domain']??null)!==$this->domainId||($t['operation']??null)!==$this->operationId
             ||($t['action']??null)!==$this->action||!is_int($t['until']??null)||$t['until']<=$this->clock->now()->getTimestamp()
-            ||!is_string($t['stamp']??null)||!is_string($t['key']??null)){throw new StaffReviewRefused('Review key expired or changed. Reload this page.');}
+            ||!is_string($t['stamp']??null)||!is_string($t['key']??null)){throw new StaffReviewRefused(self::CHANGED);}
         return $t;
     }
     public function record(array $l,string $phase='completed',?\Throwable $failure=null): void

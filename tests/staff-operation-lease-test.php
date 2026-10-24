@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
 use Paymenter\Extensions\Servers\Domains\Data\{AdmittedOperation,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Services\{OperationClaims,StaffOperationReview,WriteAcceptance};
 
-$message='A worker is processing this request. Wait for its lease to expire, then reload this page.';
+$message='This request is being sent. Try again in a few minutes.';
 $refused=static function(Closure $action)use($message):void {
     try{$action();}catch(DomainException $e){same($message,$e->getMessage(),'Clear live-worker refusal');return;}
     throw new RuntimeException('Expected live-worker staff refusal.');
@@ -46,7 +46,7 @@ foreach(['before_seal','before_send'] as $phase){
             same($before['policy'],$op->fresh()->getRawOriginal('policy'),'Staff preserves frozen policy bytes');
             same($reads,count($observation->calls),'Refused staff action performs no provider reads');
             expect($sealed!==null&&$workerError===null,'Worker seals and verifies send after staff refusal');
-            Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden($action);
+            Livewire::actingAs($staff)->test(...($action==='resume_observation'?[\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$op->domain_id]]:[ViewOperation::class,['record'=>$op->id]]))->assertActionHidden($action);
         }
     }
 }
@@ -59,7 +59,7 @@ $action=collect(OperationActions::make($op,StaffOperationReview::stamp($op,$op->
 \Illuminate\Support\Facades\Auth::setUser($staff);
 $refused(fn()=>$run($op->fresh(),'recheck'));
 ($action->getActionFunction())(['review_key'=>$oldKey,'reason'=>'Review current worker']);
-Notification::assertNotified(Notification::make()->danger()->title('Review refused')->body($message));
+Notification::assertNotified(Notification::make()->danger()->title("Couldn't update request")->body($message));
 // Every action is hidden during a live lease, including financial actions and observation resume.
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){same(false,OperationActions::relevant($action,$op->fresh()),'Live lease hides '.$action);}
 // Equal-to-now and absent leases have the same expired semantics as OperationClaims.

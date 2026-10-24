@@ -127,6 +127,7 @@
     "tests/owner-management-namesilo-test.php",
     "tests/staff-domains-test.php",
     "tests/staff-domain-page-test.php",
+    "tests/staff-request-page-test.php",
     "tests/staff-operations-test.php",
     "tests/staff-operation-actions-test.php",
     "tests/staff-operation-reads-test.php",

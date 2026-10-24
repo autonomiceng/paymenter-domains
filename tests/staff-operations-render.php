@@ -32,24 +32,26 @@ $render=static function($test,string $name)use($out,$css){
 $render(Livewire::actingAs($user)->test(ListOperations::class)->assertSuccessful(),'queue');
 $render(Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$op->id])->assertSuccessful(),'operation');
 $render(Livewire::actingAs($user)->test(ViewDomain::class,['record'=>$long->id])->assertSuccessful(),'domain-long');
-$completed=$active->operations()->sole();$completed->update(['attempt'=>['seal'=>'sealed','execution'=>['outcome'=>'pending']]]);
-$render(Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$completed->id])->assertDontSee('Review actions')
-    ->assertSee('Registrar completion confirmed. Original send evidence is retained for history.'),'operation-completed');
+// The fixture's completed request already keeps sealed send history; attempt evidence is write-once.
+$completed=$active->operations()->sole();
+$render(Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$completed->id])->assertDontSee('More')
+    ->assertSee('Completed'),'operation-completed');
 $rows=[];
 foreach(StaffOperationReview::ACTIONS as $action=>$label){
     $copy=$op->replicate();$copy->safe_code='staff_review_required';$copy->operation_key='synthetic-modal-'.$action;$copy->state=match($action){'hold'=>'queued','credit','disposition','replacement'=>'rejected',default=>'held'};
     if($action==='replacement'){$copy->action='renew';}$copy->save();
-    if($action==='resume_observation'){
-        DB::table('domains_observation_work')->insert(['server_id'=>$held->server_id,'account_fingerprint'=>$held->account_fingerprint,
-            'domain_id'=>$held->id,'generation'=>$held->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_unavailable']);
+    // Only the money actions and Close request open a dialog; the rest run on click.
+    $rows[$action]=['label'=>$label,'description'=>OperationActions::description($action)];
+    if(in_array($action,['disposition','refund','credit','replacement'],true)){
+        $page=Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$copy->id])->mountAction($action)->assertActionMounted($action);
+        $page->call('$refresh');$render($page,'modal-'.$action);
     }
-    $page=Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$copy->id])->mountAction($action)->assertActionMounted($action);
-    $page->call('$refresh');$render($page,'modal-'.$action);$rows[$action]=['label'=>$label,'description'=>OperationActions::description($action)];
     if($action==='release'){
-        $refusal=Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$copy->id])->callAction('release',['reason'=>'Synthetic binding is unavailable']);
+        $refusal=Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$copy->id])->callAction('release');
         $render($refusal,'refusal-server');$html=file_get_contents($out.'/refusal-server.html');
-        expect(str_contains($html,'Review refused')&&!str_contains($html,'A credit decision may be retained'),'Native nonfinancial refusal omits ledger warning');
-        $page->setActionData(['reason'=>'no'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);$page->call('$refresh');$render($page,'refusal-reason');}
+        expect(str_contains($html,'update request')&&!str_contains($html,'A credit decision may be retained'),'Native nonfinancial refusal omits ledger warning');
+    }
+    if($action==='refund'){$page->setActionData(['reason'=>'no'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);$page->call('$refresh');$render($page,'refusal-reason');}
 }
 writeRenderArtifact($out.'/strings.json',json_encode($rows,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-echo "Native operation queue, view, nine confirmation modals and refusal fixture rendered.\n";$nativeSuccessful=true;
+echo "Native operation queue, view, four confirmation modals and refusal fixture rendered.\n";$nativeSuccessful=true;

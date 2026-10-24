@@ -13,9 +13,9 @@ enum OperationFailure: string
     public function message(): string
     {
         return match($this){
-            self::ProviderEvidence=>'This domain has registrar evidence or its status has changed, so this request cannot be treated as unsent.',
-            self::NoPaidLine=>'This request has no eligible paid invoice line.',
-            self::InvoiceMissing=>'The original invoice for this request could not be found.',
+            self::ProviderEvidence=>"Can't refund: the registrar may have received this request.",
+            self::NoPaidLine=>"Can't refund: no paid invoice for this request.",
+            self::InvoiceMissing=>"Can't refund: invoice not found.",
         };
     }
     public static function known(\Throwable $error): ?self
