@@ -5,6 +5,9 @@ PHP **8.4.27**, Debian `8.4.27-1~deb13u1`, Linux x86_64 is pinned by archive SHA
 PHP archive SHA-256 hashes were computed from Debian security downloads on 2026-10-22.
 Native runs also load gd and bcmath. ICU remains pinned at `76.1-4` with its existing hash;
 its archive was downloaded again and verified without changing the pin.
+Native GD requires the host `libgd3` package (`libgd.so.3`) and its dependencies; these are
+not bundled in the pinned PHP archives. Native bootstrap verifies GD loads and retains the
+loader error on failure. Provider-only bootstrap does not load or require GD.
 Every run verifies and re-extracts archives; missing/corrupt cache fails without downloading.
 `PHP_RUNTIME_ARCHIVE_CACHE` copies verified archives from another cache without changing it.
 Python 3, dpkg-deb and compatible system libraries are required; no system PHP or Composer runs.

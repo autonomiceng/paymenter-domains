@@ -53,6 +53,13 @@ def prepare(download=False, native=False):
         version = subprocess.check_output([str(binary), '-n', '-r', 'echo PHP_VERSION;'], env=env, text=True)
         if version != '8.4.27' or not extension.is_file():
             raise RuntimeError('Pinned PHP runtime verification failed.')
+        if native:
+            gd = subprocess.run([str(binary), '-n', '-d', 'extension='+str(extension.parent/'gd.so'),
+                                 '-r', 'exit(extension_loaded("gd") ? 0 : 1);'],
+                                env=env, capture_output=True, text=True, timeout=30)
+            if gd.returncode:
+                raise RuntimeError('Native PHP GD failed to load. The host needs libgd3 (libgd.so.3) '
+                                   'and its dependencies.\n'+(gd.stderr+gd.stdout).strip())
         return runtime, binary, extension
     except BaseException:
         shutil.rmtree(runtime)

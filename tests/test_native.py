@@ -5,6 +5,7 @@ import subprocess
 import json
 from pathlib import Path
 import sys
+import shutil
 import tarfile
 import tempfile
 import unittest
@@ -12,6 +13,42 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 import native
+import bootstrap
+
+
+class BootstrapTests(unittest.TestCase):
+    def prepare(self, root, native_mode=False):
+        # Reuse only verified local archives; never download for these checks.
+        archives = bootstrap.CACHE
+        with mock.patch.object(bootstrap, 'CACHE', root/'runtime-cache'), mock.patch.dict(os.environ, {
+                'PHP_RUNTIME_ARCHIVE_CACHE': str(archives), 'LD_LIBRARY_PATH': str(root)}):
+            return bootstrap.prepare(native=native_mode)
+
+    @unittest.skipUnless(os.environ.get('PAYMENTER_TEST_FIXTURE'), 'native fixture not selected')
+    def test_native_bootstrap_reports_gd_library_load_failure_and_cleans_runtime(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            # Shadow the host library without changing it. PHP must report the actual loader failure.
+            (root/'libgd.so.3').write_bytes(b'not a shared library')
+            with self.assertRaisesRegex(RuntimeError, r'GD.*libgd3') as failure:
+                self.prepare(root, native_mode=True)
+            self.assertIn(str(root/'libgd.so.3'), str(failure.exception))
+            self.assertIn('file too short', str(failure.exception))
+            self.assertEqual(list((root/'runtime-cache').glob('runtime-*')), [])
+
+    def test_provider_bootstrap_does_not_need_gd(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'libgd.so.3').write_bytes(b'not a shared library')
+            for _ in range(2):
+                runtime, binary, extension = self.prepare(root)
+                try:
+                    self.assertTrue(binary.is_file())
+                    self.assertTrue(extension.is_file())
+                    self.assertFalse((extension.parent/'gd.so').exists())
+                    self.assertEqual(list((root/'runtime-cache').glob('*-gd_*.deb')), [])
+                finally:
+                    shutil.rmtree(runtime)
 
 
 class NativeGuardTests(unittest.TestCase):
