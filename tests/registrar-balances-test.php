@@ -5,6 +5,7 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/staff-panel.php';
+require __DIR__.'/Support/staff-alerts.php';
 use App\Models\{Invoice,ServiceCancellation};
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,DB,Route,Schema};
@@ -142,15 +143,23 @@ $clock->instant=$clock->now()->modify('+60 seconds');$readState->fail=true;same(
 same('6.00',$row($a)->amount,'Daily value retained on refresh failure');$readState->fail=false;
 // Render actual Filament page; neither credentials, fingerprints nor provider error text reach HTML or Livewire state.
 $render=Livewire::actingAs($staff)->test(Page::class)->assertSee('Registrar balances')->assertSee('Add funds')->assertSee('Refresh now')->assertSee('Unknown');
-$html=$render->html();foreach(['https://cp.enom.com/','https://www.namesilo.com/cart/add-funds','noopener noreferrer','Server #'.$a->server_id] as $needle){expect(str_contains($html,$needle),'Rendered account structure and official external links');}
+$html=$render->html();foreach(['https://cp.enom.com/','noopener noreferrer','Server #'.$a->server_id] as $needle){expect(str_contains($html,$needle),'Rendered account structure and official external links');}
+expect(!str_contains($html,'https://www.namesilo.com/cart/add-funds'),'OTE accounts never link to live funding');
+$liveServer=App\Models\Server::create(['name'=>'Synthetic live balance','extension'=>'Domains','type'=>'server','enabled'=>true]);
+$manualBindings->configure($liveServer->id,'namesilo',Environment::Live,['token'=>'synthetic-live-balance-account']);
+Livewire::actingAs($staff)->test(Page::class)->assertSee('https://www.namesilo.com/cart/add-funds');
 foreach(['PRIVATE-PROVIDER-REPLY','account-enom','account-namesilo',$a->account_fingerprint,$foreign->fingerprint,'domains_credentials'] as $secret){expect(!str_contains($html,$secret),'HTML and state redact private evidence');}
-// A panel flag alone cannot make Paymenter's differently shaped native inbox compatible.
-expect(Schema::hasTable('notifications'),'Native notification storage exists');$panel->databaseNotifications();
+// Staff alerts use the real native inbox independently of Filament's optional inbox flag.
+staffAlertFixture();$secondStaff=staffUser([Staff::VIEW]);$customer=commerceUser();
 $d->update(['billing_managed'=>true,'provider_expires_at'=>'2026-11-01']);
 $rate->update(['revision'=>$rate->revision+1,'observed_at'=>$clock->now(),'fresh_until'=>$clock->now()->modify('+3 days')]);
 $clock->instant=$clock->now()->modify('+1 day');$balances->daily($a);
-same(0,DB::table('notifications')->count(),'Incompatible native inbox safely keeps dashboard-only status');
-same('Low for upcoming renewals',RegistrarBalances::facts($a,$clock->now())['status'],'Dashboard warning survives unavailable inbox');
+$assertAlerts=static fn()=>staffAlerts('Low for upcoming renewals','Registrar account #'.$a->server_id.' has a renewal shortfall.',route('filament.admin.pages.registrar-balances'),[$staff,$secondStaff]);
+$assertAlerts();$balances->daily($a);$assertAlerts();
+// Re-enter the alert path on the same UTC day without bypassing its retained day marker.
+DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0]);
+$clock->instant=$clock->now()->modify('+60 seconds');$balances->daily($a);$assertAlerts();
+same('Low for upcoming renewals',RegistrarBalances::facts($a,$clock->now())['status'],'Dashboard warning accompanies the native inbox alert');
 $role=$staff->role;$role->update(['permissions'=>[]]);try{$balances->refresh($a->server_id);expect(false,'Permission revoked between renders must refuse');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Current permission reloaded');}
 BalanceSchema::install();same('6.00',$row($a)->amount,'Schema reinstall retains balance');
 $migration=require dirname(__DIR__).'/Domains/database/migrations/2026_10_19_000015_create_registrar_balances.php';$migration->down();expect(Schema::hasTable(BalanceSchema::TABLE),'Rollback retains ledger');

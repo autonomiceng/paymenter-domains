@@ -2,11 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\User;
-use Filament\Facades\Filament;
-use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{DB,Schema};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffAlert};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
@@ -51,7 +48,8 @@ final readonly class RegistrarBalances
     private function read(Account $account,string $source,RequestOrigin $origin): string
     {
         $binding=CatalogueAcceptances::binding($account);
-        try{$reader=$this->bindings->reader((int)$account->server_id);$binding->requireMatch($reader->binding());
+        try{$balanceOnly=$account->registrar_key==='namesilo'&&NameSiloSandbox::enrolled($account);
+            $reader=$this->bindings->reader((int)$account->server_id,$balanceOnly);$binding->requireMatch($reader->binding());
             if ($reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\CataloguePreview) { throw new \DomainException('Use the reviewed staff balance probe.'); }}
         catch(\Throwable){BalanceReads::record($binding,null,$this->clock->now(),$source,'configuration_unavailable');return 'configuration_unavailable';}
         $c=new RequestContext($binding,$origin,$this->clock->now()->modify('+25 seconds'),new RequestBudget(1),$this->clock,$this->limiter);
@@ -86,19 +84,13 @@ final readonly class RegistrarBalances
     {$value=rtrim(rtrim($amount,'0'),'.');$dot=strpos($value,'.');return ($dot===false?$value.'.00':str_pad($value,$dot+3,'0')).' '.$currency;}
     private function notify(Account $account): void
     {
-        // Use the native inbox only when it exists and is enabled; no email fallback.
-        if(!method_exists(Notification::class,'sendToDatabase')||!Schema::hasTable('notifications')
-            ||!Filament::getPanel('admin')->hasDatabaseNotifications()
-            ||!((new User)->notifications()->getRelated() instanceof \Illuminate\Notifications\DatabaseNotification)
-            ||!Schema::hasColumns('notifications',['id','type','notifiable_type','notifiable_id','data','read_at'])){return;}
         DB::transaction(function()use($account):void {
             $q=DB::table(BalanceSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint);
             $r=(clone $q)->lockForUpdate()->firstOrFail();$day=$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');
             if($r->notified_on===$day){return;}
-            foreach(User::whereHas('role')->with('role')->lazyById(100) as $staff){
-                if(Staff::allows($staff)){Notification::make()->title('Low for upcoming renewals')->body('Registrar account #'.$account->server_id.' has a renewal shortfall.')->warning()->sendToDatabase($staff);}
+            if (StaffAlert::send('Low for upcoming renewals','Registrar account #'.$account->server_id.' has a renewal shortfall.','filament.admin.pages.registrar-balances')) {
+                $q->update(['notified_on'=>$day]);
             }
-            $q->update(['notified_on'=>$day]);
         });
     }
 }

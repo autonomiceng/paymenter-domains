@@ -13,11 +13,9 @@ final class WatchNoticeHealth
             'reason'=>'Public domain notice needs review.','data'=>['target_kind'=>$kind,'code'=>$code],'created_at'=>gmdate('Y-m-d H:i:s',$now)]);
         DB::afterCommit(static function():void {
             try {
-                foreach(\App\Models\User::whereHas('role')->lazyById(100) as $staff) {
-                    if (\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::allows($staff,'admin.domains.watch.view')) {
-                        \Filament\Notifications\Notification::make()->title('Domain checks need attention')->body('A public domain check or notice could not be completed. Review domain watch history.')->warning()->sendToDatabase($staff);
-                    }
-                }
+                \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send(
+                    'Domain checks need attention','A public domain check or notice could not be completed. Review domain watch history.',
+                    'filament.admin.resources.domain-watch.index','admin.domains.watch.view');
             } catch (\Throwable) { \Illuminate\Support\Facades\Log::warning('Public notice staff inbox unavailable.'); }
         });
     }

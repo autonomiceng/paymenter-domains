@@ -32,7 +32,7 @@ definitely-unsent refusal evidence validates; uncertain or possibly sent Purchas
 installed ZIP. Its socket-free cURL seam counts physical Enom requests and records the selected
 endpoint. The fixture covers:
 
-- The A4 checkout refusal while the deployment write key is absent, including no order, invoice,
+- The preview-only checkout refusal while the deployment registration key is absent, including no order, invoice,
   payment or Enom request.
 - Strict boolean opt-in, TEST identity and enabled TEST catalogue requirements; live, unset,
   other-registrar and non-boolean configurations cannot compose registration.
@@ -42,7 +42,7 @@ endpoint. The fixture covers:
   Registrar balances “Refresh now” action makes one counted balance request and preserves prior USD evidence when
   the local cap refuses it. A mid-import cap remains actionable, identity day rollover remains a typed local refusal,
   and prior history acceptance cannot open TEST history reconciliation; the Refresh notice shows cap usage/reset facts.
-  failed requests spend their reservation and zero cap refuses before the socket seam.
+  Failed requests spend their reservation, and a zero cap refuses before the socket seam.
 - A single worker Purchase, restart reconciliation, duplicate prevention, definitely-unsent
   Purchase cap hold, and partial reconciliation cap that retains Processing without replay.
 - Native runtime turns continue to enqueue TEST operations while skipping registrar balance
@@ -54,6 +54,9 @@ endpoint. The fixture covers:
 - Deployment-wide conditional counter reservations under concurrent PHP processes, strict
   Purchase scope/fingerprint/single-use checks, and retained counter schema/data after runtime
   removal and reinstall.
+- Exact staff wording for TEST hold labels, cap facts and the Refresh now refusal. An unticked route review through
+  the Registrar setup action says nothing was saved, and the unaccepted-route warning appears only when the
+  deployment allows TEST registration.
 
 The retained upgrade scenario remains `tests/test_installed_package_previous.py`. These offline
 fixtures prove local composition and refusal behavior; they do not establish Enom account or

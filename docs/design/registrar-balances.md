@@ -57,7 +57,5 @@ A balance equal to the known total is **OK**; a lower balance is **Low for upcom
 The forecast is advisory and grants no permission to invoice or spend.
 
 After a successful daily read finds a shortfall, staff with the Domains permission receive
-one Filament database notification per account per UTC day, when the native database inbox
-has a compatible user relationship and table, and is enabled. Otherwise the card shows the status. No email is sent. The pinned
-native test application has a different notification format and does not enable the
-Filament database inbox. It uses dashboard status only.
+one native Paymenter notification per account per UTC day when its notification model and
+required columns are available. Otherwise the card shows the status. No email is sent.

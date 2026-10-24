@@ -29,7 +29,7 @@ final class EnomTestRegistration
         return config('domains.enom_writes.registration')!==true?'TEST registration is off in deployment configuration.'
             :(config('domains.enom_identity.environment')!=='test'?'TEST registration refused: the deployment identity environment is not test. Live and unset environments cannot use TEST registration.'
                 :(config('domains.enom_catalogue.enabled')!==true?'TEST registration refused: the deployment TEST catalogue is off.'
-                    :'Deployment allows TEST registration. The catalogue record must accept the Enom TEST Purchase route and request interval; the account also needs accepted catalogue terms, processing on, and a successful USD Read balance under an hour old when the worker runs.'));
+                    :'Deployment allows TEST registration. Catalogue acceptance must include the Enom TEST Purchase route and request interval; the account also needs accepted catalogue terms, processing on, and a successful USD balance read (Read balance) under an hour old when the worker runs.'));
     }
     /** Local predicates are checked before the worker claim; provider availability still uses the normal preflight. */
     public static function localHoldReason(AccountBinding $binding, Operation $op): ?string

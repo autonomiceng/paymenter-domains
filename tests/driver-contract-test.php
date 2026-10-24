@@ -25,6 +25,13 @@ $precise = new DateEvidence('2029-10-17T00:00:00-07:00', ExpiryPrecision::Instan
 same('2029-10-17', $expiry->value, 'Date-only source has no manufactured instant');
 same(null, $expiry->timezone, 'Date-only timezone remains unknown');
 same(ExpiryPrecision::Instant, $precise->precision, 'Exact source precision retained');
+// Floating order clocks retain seconds without claiming a timezone or an instant.
+$local = new DateEvidence('2029-10-17T00:00:00', ExpiryPrecision::Local, 'enom_order_bill_date');
+same(null, $local->timezone, 'Local wall-clock zone remains unknown');
+foreach (['2029-02-30T00:00:00', '2029-10-17T00:00:00+00:00', '2029-10-17'] as $bad) {
+    refuses(fn () => new DateEvidence($bad, ExpiryPrecision::Local, 'enom_order_bill_date'), 'Invalid local clock accepted');
+}
+refuses(fn () => new DateEvidence($local->value, ExpiryPrecision::Local, $local->source, 'UTC'), 'Invented local clock zone accepted');
 foreach (['2029-02-30', '2029-1-01', '2029-10-17T00:00:00+00:00', "2029-10-17\0"] as $bad) {
     refuses(fn () => new DateEvidence($bad, ExpiryPrecision::Date, 'domain_info'), 'Invalid expiry accepted');
 }

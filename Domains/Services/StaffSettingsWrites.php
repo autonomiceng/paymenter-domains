@@ -10,10 +10,18 @@ final class StaffSettingsWrites
 {
     public function __construct(private readonly NativeCatalogue $native,private readonly SellerPolicies $sellers,
         private readonly AccountBindings $bindings,private readonly bool $allowInjectedProbes=false) {}
-    public function connectionAvailable(): bool {return $this->allowInjectedProbes;}
+    public function connectionAvailable(?string $registrar=null): bool
+    {return $this->allowInjectedProbes&&($registrar===null||$this->bindings->hasRegistrar($registrar));}
     public function run(StaffSettingsReview $r,#[\SensitiveParameter] array $data,?\DateTimeImmutable $now=null): void
     {
         $clock=app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)?app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class):new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;$now??=$clock->now();$r->input($data);
+        if($r->action==='enroll_sandbox'){
+            if(($data['confirmed']??false)!==true){throw new \DomainException('Sandbox contract confirmation required.');}
+            if(!is_string($data['label']??null)||array_diff(array_keys($data),['environment','label','api_key','confirmed','reason','review_key'])){throw new \DomainException('Invalid sandbox enrollment input.');}
+            if(($data['environment']??null)!=='test'){throw new \DomainException('Sandbox enrollment unavailable.');}
+            $this->bindings->enrollSandbox($r->serverId,Environment::Test,
+                $data['label'],['api_key'=>$data['api_key']??''],$r);return;
+        }
         if($r->action==='alert_review'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Explicit notification check confirmation required.');}
             $r->local(function()use($r,$data,$now):void {
@@ -73,9 +81,9 @@ final class StaffSettingsWrites
         }
         if(in_array($r->action,['configure','probe'],true)){
             // Production boot explicitly opts into connection reads; processing remains independent.
-            if(!$this->allowInjectedProbes){$r->local(fn()=>throw new \DomainException('Connection checks are unavailable.'));return;}
+            $registrar=$r->action==='configure'?(string)($data['registrar']??''):(string)Account::where('server_id',$r->serverId)->value('registrar_key');
+            if(!$this->connectionAvailable($registrar)){throw new \DomainException('Connection checks are unavailable.');}
             if($r->action==='configure'){
-                $registrar=(string)($data['registrar']??'');
                 $credentials=$data['credentials']??($registrar==='enom'?['uid'=>$data['uid']??'','token'=>$data['token']??'']:['api_key'=>$data['api_key']??'']);
                 $this->bindings->configure($r->serverId,$registrar,Environment::from((string)($data['environment']??'')),$credentials,$r);return;
             }

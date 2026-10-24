@@ -113,7 +113,9 @@ OrderCharge reads GetOrderDetail for a captured ID and requires a retained succe
 Purchase/Register or Extend/Renew execution plus one exact successful closed item. Equal header
 and item amounts prove USD using source OrderBillAmount semantics; different authorized charge
 is retained as a discrepancy. Split/unknown/pending orders and UpdateExpiredDomains remain
-unconfirmed. BillDate/expiry retain date precision and Pacific provenance. This is read evidence,
+unconfirmed. Captured-ID BillDate retains local wall-clock seconds with unknown timezone;
+a matching retained execution permits the original window widened by -12h/+14h. History
+candidates keep Pacific provenance and the strict window; expiry parsing is unchanged. This is read evidence,
 not completion, no-charge proof, unique attempt correlation, replay/refund or spending authority.
 The internal execution input is only a consistency check; slice 22 must replace it with a
 neutral persisted execution record and decide unique original-attempt charge acceptance.

@@ -152,7 +152,8 @@
           "Domains/Services/ReminderTemplates.php",
           "Domains/Mail/WatchNotice.php",
           "Domains/Services/WatchNoticeDelivery.php",
-          "Domains/Services/WatchNoticeTemplates.php"
+          "Domains/Services/WatchNoticeTemplates.php",
+          "Domains/Admin/Support/StaffAlert.php"
         ],
         "review": "Re-review inherited data, customized HTML/text, preferences, disabled mail, log ownership and queue serialization.",
         "files": {

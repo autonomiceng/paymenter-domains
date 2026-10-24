@@ -26,7 +26,7 @@ foreach(['Renewal safety','Adoption readiness','Credentials',...array_keys($site
     foreach($tlds as $tld){expect(!array_key_exists($label,\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for($tld->server_id)),'Site fact removed from per-account health: '.$label);}
 }
 same('Waiting for the first scheduled run',\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for($tlds[0]->server_id)['Runtime account'],'Scheduled run copy snapshot');
-same('No registrar requests recorded',\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for($tlds[0]->server_id)['Read capacity'],'Empty request budget copy snapshot');
+same('No registrar requests recorded. Shared by interactive and background reads and changes; identity verification and the Enom TEST daily limit are separate.',\Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for($tlds[0]->server_id)['Read capacity'],'Empty request budget copy snapshot');
 same('60, 30, 7, 1',\Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule($tlds[0]->server_id)['Days before expiry'],'Default reminder display order');
 $scheduleTable=DB::table('domains_reminder_schedules');
 $scheduleTable->insert(['server_id'=>$tlds[0]->server_id,'account_fingerprint'=>$tlds[0]->account_fingerprint,'before_days'=>'[1,7,30,60]','after_days'=>'[7,1,3]','audit'=>'synthetic']);

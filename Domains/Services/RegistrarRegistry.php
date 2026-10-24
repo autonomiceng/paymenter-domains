@@ -58,6 +58,7 @@ final class RegistrarRegistry
             throw new IdentityRefused($error->reason);
         }
         catch (\Throwable) { throw new \RuntimeException('Registrar account ownership could not be verified.'); }
+        if($key==='namesilo'&&str_starts_with($identity,NameSiloSandbox::PREFIX)){throw new IdentityRefused('namesilo_identity_unavailable');}
         return [new AccountBinding($key, $serverId, $environment, $identity), $identity];
     }
 

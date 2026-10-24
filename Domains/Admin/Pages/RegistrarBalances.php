@@ -32,12 +32,12 @@ class RegistrarBalances extends Page
             $sections[]=Section::make($names[$id] ?? 'Server #'.$id)
                 ->description(TldFacts::registrar($a->registrar_key).' · Server #'.$id.' · '.($a->environment==='live'?'Live':'Test'))->key('account_'.$id)->columns(2)->schema([...$entries,
                     Actions::make([
-                        Action::make('funds_'.$id)->label('Add funds')->color('gray')->outlined()->icon('heroicon-m-arrow-top-right-on-square')->iconPosition(IconPosition::After)
+                        Action::make('funds_'.$id)->visible($a->registrar_key!=='namesilo'||$a->environment==='live')->label('Add funds')->color('gray')->outlined()->icon('heroicon-m-arrow-top-right-on-square')->iconPosition(IconPosition::After)
                             ->tooltip("Opens the registrar's site in a new tab")->url(Balances::fundsUrl($a->registrar_key))->openUrlInNewTab()->extraAttributes(['rel'=>'noopener noreferrer']),
                         Action::make('refresh_'.$id)->label('Refresh now')->action(function()use($id):void {
                             Staff::requireView();$code=app(Balances::class)->refresh($id);
                             $body=match($code){'configuration_unavailable'=>'Open Registrar setup to check this account and use Read balance.',
-                                'test_call_refused'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::facts().' No provider request was made.',default=>null};
+                                'test_call_refused'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::refusedFacts().' No provider request was made.',default=>null};
                             \Filament\Notifications\Notification::make()->title(match($code){'refreshed'=>'Balance refreshed','rate_limited'=>'Wait before refreshing again',
                                 'test_call_refused'=>'Enom TEST request refused','configuration_unavailable'=>'Configuration unavailable',default=>'Balance read failed'})->body($body)->send();
                         }),

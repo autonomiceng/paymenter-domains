@@ -2,12 +2,27 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/watch-dns.php';
+require __DIR__.'/Support/staff-alerts.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{WatchMaintenance,WatchRegistryChecks,WatchDnsChecks};
 use Paymenter\Extensions\Servers\Domains\Dns\DnsReading;
 use Paymenter\Extensions\Servers\Domains\Models\WatchRegistryObservation;
-extract(dnsFixture());$now=1800000000;$m=new WatchMaintenance();same('waiting',$m->health($now)['reason'],'Active checks await first turn');
+extract(dnsFixture());staffAlertFixture();
+$staff=[staffUser(['admin.domains.view','admin.domains.watch.view']),staffUser(['admin.domains.view','admin.domains.watch.view'])];
+staffUser(['admin.domains.view']);staffUser(['admin.domains.watch.view']);
+$panel=\Filament\Facades\Filament::getPanel('admin');
+\Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\DnsResolver::registerRoutes($panel));
+app('router')->getRoutes()->refreshNameLookups();
+$now=1800000000;$m=new WatchMaintenance();same('waiting',$m->health($now)['reason'],'Active checks await first turn');
 DB::table('domains_watch_schedule')->insert(['scope'=>'dispatch','due_at'=>$now+300,'progress_at'=>$now,'data'=>json_encode(['started_at'=>$now])]);expect(!$m->health($now+599)['outage'],'Two intervals not elapsed');same('dispatch_overdue',$m->health($now+600)['reason'],'Two missed turns alert');$m->tick($now+600);$alert=DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at');same($now+600,(int)$alert,'Outage marker retained');$m->tick($now+700);same((int)$alert,(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at'),'Alert deduplicated');
+staffAlerts('Public domain checks need attention',WatchMaintenance::message($m->health($now+600)),route('filament.admin.pages.dns-resolver'),$staff);
+// Missing native storage/columns skip silently without queueing a fallback.
+$send=static fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Unavailable inbox','Body','missing.route');
+\Illuminate\Support\Facades\Schema::rename('notifications','notifications_unavailable');
+try { expect(!$send(),'Absent native table skips'); } finally { \Illuminate\Support\Facades\Schema::rename('notifications_unavailable','notifications'); }
+\Illuminate\Support\Facades\Schema::table('notifications',fn($table)=>$table->renameColumn('title','unavailable_title'));
+try { expect(!$send(),'Incompatible native columns skip'); } finally { \Illuminate\Support\Facades\Schema::table('notifications',fn($table)=>$table->renameColumn('unavailable_title','title')); }
+\Illuminate\Support\Facades\Queue::assertNotPushed(\Illuminate\Notifications\SendQueuedNotifications::class,static fn($job)=>$job->notification instanceof \Filament\Notifications\DatabaseNotification);
 $c=new WatchRegistryChecks(true);$c->enroll((int)$watch->id,(int)$owner->id,$now);DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['progress_at'=>$now+86400]);expect(!$m->health($now+86400)['outage'],'Newly enrolled work is not a day-old failure');
 $good=['result'=>'facts','reason'=>'facts','safe_code'=>null,'expiry'=>'2030-01-01','precision'=>'date','source'=>'https://rdap.example.com','status'=>[]];
 $t=$c->begin((int)$watch->id,(int)$owner->id,$now);$c->finish($t,$good,str_repeat('a',64),$now);$first=(int)WatchRegistryObservation::latest('id')->value('id');DB::table('domains_watch_work')->where('kind','expiry')->update(['due_at'=>$now+100]);$t=$c->begin((int)$watch->id,(int)$owner->id,$now+100);$c->finish($t,$good,str_repeat('a',64),$now+100);$last=(int)WatchRegistryObservation::latest('id')->value('id');

@@ -63,6 +63,14 @@ Schema::table('domains_adoptions', static fn ($t) => $t->string('unexpected')->n
 try { AdoptionSchema::verify(); throw new LogicException('Schema drift accepted'); }
 catch (RuntimeException $error) { same('Retained Domains schema mismatch: domains_adoptions', $error->getMessage(), 'Specific drift refusal'); }
 $after = Schema::getTableListing($database, false); sort($after); same($tables, $after, 'Failed verification also removes reference tables');
+$guardServer=\App\Models\Server::create(['name'=>'Freshness guard','type'=>'server','extension'=>'Domains','enabled'=>true]);
+Schema::create('domains_freshness_guard',static function($table):void {$table->id();$table->unsignedBigInteger('server_id');});
+DB::table('domains_freshness_guard')->insert(['server_id'=>$guardServer->id]);
+try{(new \ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,'freshSandbox'))
+    ->invoke(app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class),(int)$guardServer->id);
+    throw new LogicException('Prefixed retained Domains table passed the fresh-server guard');
+}catch(DomainException $error){same('Sandbox enrollment requires a fresh server.',$error->getMessage(),'Prefixed retained table blocks sandbox enrollment');}
+Schema::drop('domains_freshness_guard');$guardServer->delete();
 $version = DB::selectOne('SELECT VERSION() AS version')->version;
 expect(str_starts_with($version, '11.4.5-MariaDB'), 'Pinned real MariaDB version');
 echo json_encode(['complete' => true, 'server_version' => $version, 'prefix' => $prefix,
