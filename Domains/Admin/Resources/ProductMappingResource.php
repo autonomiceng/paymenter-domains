@@ -17,7 +17,6 @@ class ProductMappingResource extends WatchReadResource
     protected static ?string $modelLabel='hosting product';
     protected static ?string $pluralModelLabel='Hosting products';
     protected static ?string $breadcrumb='Hosting products';
-    protected static ?string $breadcrumb='Hosting products';
     protected static ?string $slug='product-domain-mappings';
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder{return parent::getEloquentQuery()->with('product');}
     public static function table(Table $table): Table
