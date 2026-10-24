@@ -6,12 +6,12 @@ use Illuminate\Support\Facades\{DB,Log};
 /** Bounded retention and durable outage marker. Financial/audit/source history is never swept. */
 final class WatchMaintenance
 {
-    private function alert(array $health): void
+    private function alert(array $health): bool
     {
         Log::warning('Domain monitoring needs staff review.',['code'=>$health['reason']]);
         $title=$health['reason']==='checks_unsuccessful'?'Domain monitoring checks failed':'Domain monitoring stopped';
         $body=$health['reason']==='dispatch_overdue'?'Checks have not run since '.self::date($health['since']??null).'.':self::notice($health)['text'];
-        \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send($title,$body,'filament.admin.resources.domain-watch.index','admin.domains.watch.view');
+        return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send($title,$body,'filament.admin.resources.domain-watch.index','admin.domains.watch.view');
     }
     private function families(int $now): array
     {
@@ -85,17 +85,35 @@ final class WatchMaintenance
             }
         }
         $health=$this->health($now);$q=DB::table('domains_watch_schedule')->where('scope','dispatch');
-        DB::transaction(function()use($q,$now,$health):void {
-            $row=(clone$q)->lockForUpdate()->first();if(!$row){return;}
-            $prior=json_decode(DB::table('domains_watch_schedule')->where('scope','outage')->value('data')??'{}',true);
+        $pending=DB::transaction(function()use($q,$now,$health):?array {
+            $row=(clone$q)->lockForUpdate()->first();if(!$row){return null;}
+            $outage=DB::table('domains_watch_schedule')->where('scope','outage');
+            $prior=json_decode((clone$outage)->value('data')??'{}',true);
             $episode=($health['reason']??'').'|'.implode(',',$health['families']??[]);
             $previous=($prior['reason']??'').'|'.implode(',',$prior['families']??[]);
             if ($health['outage'] && ($row->alert_at===null || $episode!==$previous)) {
-                $this->alert($health);
                 $q->update(['alert_at'=>$now]);
-                DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'outage'],['data'=>json_encode($health),'progress_at'=>$now]);
-            } elseif (!$health['outage'] && $row->alert_at!==null) { $q->update(['alert_at'=>null]); }
+                $prior=[...$health,'alert_pending'=>true,'alert_retry_at'=>0];
+                DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'outage'],['data'=>json_encode($prior),'progress_at'=>$now]);
+            } elseif (!$health['outage']) {
+                if($row->alert_at!==null){$q->update(['alert_at'=>null]);}
+                if($prior['alert_pending']??false){$prior['alert_pending']=false;$outage->update(['data'=>json_encode($prior)]);}
+                return null;
+            }
+            if(!($prior['alert_pending']??false)||($prior['alert_retry_at']??0)>$now){return null;}
+            // Commit a bounded delivery lease with the episode; crashed delivery retries on a later turn.
+            $prior['alert_retry_at']=$now+60;$prior['alert_attempt']=bin2hex(random_bytes(16));
+            $outage->update(['data'=>json_encode($prior)]);
+            return $prior;
         });
+        if($pending!==null){
+            try{
+                if($this->alert($pending)){
+                    $encoded=json_encode($pending);$pending['alert_pending']=false;
+                    DB::table('domains_watch_schedule')->where('scope','outage')->where('data',$encoded)->update(['data'=>json_encode($pending)]);
+                }
+            }catch(\Throwable){Log::warning('Domain monitoring alert will be retried.');}
+        }
         foreach(['registry'=>['domains_watch_registry','watch_id','facts'],'watch_dns'=>['domains_watch_observations','watch_id','complete'],
             'managed_dns'=>['domains_managed_public_observations','domain_id','complete']]as$family=>[$table,$target,$success]) {
             $old=DB::table($table.' as o')->where('o.completed_at','<',$now-90*86400)

@@ -52,4 +52,34 @@ $m->tick($at+2*86400);$oldAlert=(int)DB::table('domains_watch_schedule')->where(
 DB::table('domains_watch_work')->insert(['watch_id'=>$watch->id,'kind'=>'points','watch_revision'=>1,'due_at'=>$at]);DB::table('domains_watch_schedule')->insert(['scope'=>'health_watch_dns','cursor'=>$at]);$m->tick($at+2*86400+1);expect((int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at')>$oldAlert,'Additional failed family is not suppressed');
 DB::transaction(fn()=>$m->retain('registry',$first));$m->tick($now+91*86400);expect(WatchRegistryObservation::whereKey($first)->exists(),'Notice reference survives retention');expect(WatchRegistryObservation::whereKey($last)->exists(),'Last good survives beyond ninety days');
 DB::table('domains_public_evidence_refs')->delete();$m->tick($now+91*86400);expect(!WatchRegistryObservation::whereKey($first)->exists(),'Unreferenced superseded evidence pruned');expect(WatchRegistryObservation::whereKey($last)->exists(),'Last successful fact retained');same(0,DB::table('domains_operations')->count(),'Maintenance never writes financial operations');
+// A failed native recipient must not prevent delivery to later eligible staff.
+$failure='throw';$levels=[];$markers=[];
+App\Models\Notification::creating(static function($n)use(&$failure,&$levels,&$markers,$staff){
+    if($n->title!=='Retry inbox'&&$n->title!=='Domain monitoring stopped'){return;}
+    $levels[]=DB::transactionLevel();$markers[]=DB::table('domains_watch_schedule')->where('scope','outage')->exists();
+    if((int)$n->user_id===(int)$staff[0]->id&&$failure){
+        if($failure==='throw'){throw new RuntimeException('Synthetic native inbox failure');}
+        return false;
+    }
+});
+foreach(['throw','veto'] as $failure){
+    App\Models\Notification::where('title','Retry inbox')->delete();
+    try{$sent=\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Retry inbox','Body','missing.route','admin.domains.watch.view');}catch(Throwable){$sent=false;}
+    expect(!$sent,'Failed recipient must not report successful handoff');
+    same(1,App\Models\Notification::where('title','Retry inbox')->where('user_id',$staff[1]->id)->count(),'Later recipient still receives alert after '.$failure);
+}
+$failure='throw';$levels=[];$markers=[];$retryAt=$now+92*86400;
+DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['alert_at'=>null,'progress_at'=>$now]);
+$old=(array)DB::table('domains_watch_registry')->where('id',$last)->first();unset($old['id']);
+$old['result']='unknown';$old['reason']='endpoint_failed';$old['completed_at']=$now;
+$oldId=DB::table('domains_watch_registry')->insertGetId($old);
+$m->tick($retryAt);
+same([$retryAt,true],[(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at'),!DB::table('domains_watch_registry')->where('id',$oldId)->exists()],'Failure retains episode and still sweeps old observations');
+expect($levels!==[]&&array_unique($levels)===[0],'Native inbox writes happen outside episode locks');
+expect(!in_array(false,$markers,true),'Episode committed before any native inbox write');
+$outage=fn()=>json_decode(DB::table('domains_watch_schedule')->where('scope','outage')->value('data'),true);
+same(true,$outage()['alert_pending']??null,'Failed alert retains durable retry');
+$failure=false;$m->tick($retryAt+60);same(false,$outage()['alert_pending']??null,'Later tick acknowledges successful retry');
+$count=App\Models\Notification::where('title','Domain monitoring stopped')->count();$m->tick($retryAt+120);
+same($count,App\Models\Notification::where('title','Domain monitoring stopped')->count(),'Completed episode stays deduplicated');
 $nativeSuccessful=true;echo "Two missed turns, day-long outage, deduplicated health and ninety-day retained last-good/notice evidence passed.\n";

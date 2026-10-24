@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\{Notification,User};
-use Illuminate\Support\Facades\{Route,Schema};
+use Illuminate\Support\Facades\{Log,Route,Schema};
 /** Native inbox persistence only; callers retain their own episode/day deduplication. */
 final class StaffAlert
 {
@@ -13,12 +13,16 @@ final class StaffAlert
         if (!class_exists(Notification::class) || !Schema::hasTable('notifications')
             || !Schema::hasColumns('notifications',['user_id','title','body','url','created_at','updated_at'])) { return false; }
         $url=Route::has($route)?route($route):null;
+        $complete=true;
         foreach (User::whereHas('role')->with('role')->lazyById(100) as $staff) {
             if (Staff::allows($staff,$permission)) {
                 // Same native model API as NotificationHelper::sendInAppNotification, without a template render.
-                Notification::create(['user_id'=>$staff->id,'title'=>$title,'body'=>$body,'url'=>$url]);
+                try{
+                    $notification=Notification::create(['user_id'=>$staff->id,'title'=>$title,'body'=>$body,'url'=>$url]);
+                    if(!$notification->exists){$complete=false;}
+                }catch(\Throwable){$complete=false;Log::warning('Staff inbox notification could not be saved.',['user_id'=>$staff->id]);}
             }
         }
-        return true;
+        return $complete;
     }
 }
