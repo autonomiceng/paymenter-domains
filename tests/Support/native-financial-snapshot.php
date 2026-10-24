@@ -12,6 +12,7 @@ function nativeFinancialSnapshot(Operation $operation): array
         'service' => Service::findOrFail($operation->service_id)->getRawOriginal(),
         'domain' => Domain::findOrFail($operation->domain_id)->getRawOriginal(),
         'invoice' => $operation->invoice_id === null ? null : Invoice::findOrFail($operation->invoice_id)->getRawOriginal(),
+        'invoice_items' => DB::table('invoice_items')->orderBy('id')->get()->toJson(),
         'transactions' => DB::table('invoice_transactions')->orderBy('id')->get()->toJson(),
         'invoice_count' => Invoice::count(),
         'operation_count' => Operation::count(),

@@ -72,6 +72,8 @@ same('40.00', $holder->renewal($holdings[0], 'USD', $clock->now())->retail, 'Exp
 same('10.40', $holder->renewal($holdings[2], 'USD', $clock->now())->retail, 'NameSilo retail is independent of expensive Enom');
 // Switch to no seller: both accounts remain readable for their existing holders.
 scenarioSwitch($sellers, $clock, null);
-foreach ($holdings as $domain) { expect($holder->renewal($domain, 'USD', $clock->now())->retail !== null, 'No seller does not remove holder renewal price'); }
+foreach ($holdings as $domain) {
+    same($domain->registrar_key === 'enom' ? '40.00' : '10.40', $holder->renewal($domain, 'USD', $clock->now())->retail, 'No seller retains exact account price for both acquisition holders');
+}
 echo "Paired native acquisition, one-use dispatch, canonical duplicate and holder-retail scenarios passed\n";
 $nativeSuccessful = true;

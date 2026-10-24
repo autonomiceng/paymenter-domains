@@ -35,8 +35,27 @@ foreach (['premium','unknown','funds','changed','reverse','rules','profile','rda
     if ($fault==='changed') {
         // The explicit pre-seal terminal encoder is the only new negative-proof/refund path.
         $terminal=OperationTerminalProof::encode($claims,$r->id); same('rejected',$terminal->state,'Proven local terminal');
+        $invoiceBefore = App\Models\Invoice::findOrFail($op->invoice_id)->getRawOriginal();
+        $itemsBefore = Illuminate\Support\Facades\DB::table('invoice_items')->orderBy('id')->get()->toJson();
+        $transactionsBefore = Illuminate\Support\Facades\DB::table('invoice_transactions')->orderBy('id')->get()->toJson();
+        same(0, App\Models\Credit::where('user_id',$user->id)->where('currency_code','USD')->count(), 'No pre-existing credit hides a missing refund');
         same(['amount'=>$op->amount,'currency'=>'USD'],$refunds->creditRejected($r->id),'Unsent terminal credited through RefundProof');
+        $credit = App\Models\Credit::where('user_id',$user->id)->where('currency_code','USD')->sole();
+        same(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($op->amount), \Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$credit->amount), 'One exact retained account credit');
+        same('paid', App\Models\Invoice::findOrFail($op->invoice_id)->status, 'Refund retains paid invoice status');
+        same(App\Enums\InvoiceTransactionStatus::Succeeded, App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole()->status, 'Original successful payment remains');
+        same($invoiceBefore, App\Models\Invoice::findOrFail($op->invoice_id)->getRawOriginal(), 'Refund retains invoice bytes');
+        same($itemsBefore, Illuminate\Support\Facades\DB::table('invoice_items')->orderBy('id')->get()->toJson(), 'Refund retains issued item bytes');
+        same($transactionsBefore, Illuminate\Support\Facades\DB::table('invoice_transactions')->orderBy('id')->get()->toJson(), 'Refund retains transaction bytes');
+        $afterCredit = nativeFinancialSnapshot($r);
+        Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            Illuminate\Support\Facades\DB::table('invoice_items')->where('id',$op->invoice_item_id)->update(['description'=>'Synthetic changed line']);
+            expect($afterCredit !== nativeFinancialSnapshot($r), 'Financial snapshot detects changed invoice items');
+        } finally { Illuminate\Support\Facades\DB::rollBack(); }
+        same($afterCredit, nativeFinancialSnapshot($r), 'Snapshot probe rolls back all item changes');
         same(null,$refunds->creditRejected($r->id),'Credit once');
+        same($afterCredit, nativeFinancialSnapshot($r), 'Replay retains exact credit, invoice, item and transaction rows');
     }
 }
 echo "Transfer dispatch input, feature and pre-seal refusal proofs passed.\n"; $nativeSuccessful=true;

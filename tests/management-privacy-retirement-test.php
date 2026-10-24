@@ -4,10 +4,12 @@ declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/management.php';
 use App\Models\{Credit,Invoice,InvoiceItem,InvoiceTransaction,Role};
+use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,ManagementRequest,ManagementResult,RequestContext};
 use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{ManagementEvidence,PrivacyRetirement,RefundCandidates,RefundProof,Refunds,StaffOperationReview,StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,ManagementEvidence,PrivacyRetirement,RefundCandidates,RefundProof,Refunds,StaffOperationReview,StaffOperations};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries;
 $product->server->settings()->create(['key'=>'domains_privacy_price','value'=>'5.00','type'=>'string']);
 $refunds=new Refunds($clock);app()->instance(Refunds::class,$refunds);
@@ -30,6 +32,46 @@ $visible=static function($op,$d){
     expect(DomainQueries::creditReview(Domain::query())->whereKey($d->id)->exists(),'Holding credit-review SQL includes retired privacy independently of eligibility');
     expect(RefundCandidates::matches($op->fresh(),$op->fresh()->funding??[]),'Presentation candidate includes uncredited retirement');};
 foreach(['privacy_purchase','privacy_renew'] as $action){
+    foreach ([false,true] as $deferred) {
+        [$d,$driver,$op]=$issue($action); $payment($op); $preparations=0; $observed=null;
+        $prepare=static function () use ($op,$deferred,&$preparations,&$observed): void {
+            $preparations++;
+            $entered=$op->fresh(); $observed=[$entered->state,$entered->attempt['management_claim']??null];
+            if($deferred){throw new \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred('Synthetic local deferral');}
+            throw new RuntimeException('Synthetic preparation failure');
+        };
+        $enteredDriver=new class(CatalogueAcceptances::binding(Account::where('server_id',$op->server_id)->sole()),$driver,$prepare) extends ManagementProtocol {
+            public function __construct(AccountBinding $b,private ManagementProtocol $real,private Closure $prepare){parent::__construct($b,static fn()=>throw new LogicException('Unused exchange'));}
+            public function capabilities():Capabilities{return $this->real->capabilities();}
+            public function validate(string $a,array $p,string $n):array{return $this->real->validate($a,$p,$n);}
+            public function prepare(ManagementRequest $r,RequestContext $c):array{($this->prepare)();throw new LogicException('Preparation must refuse');}
+            public function observe(ManagementRequest $r,RequestContext $c):ManagementResult{throw new LogicException('Unused observation');}
+            protected function apply(ManagementRequest $r,RequestContext $c):ManagementResult{throw new LogicException('Unsent claim cannot apply');}
+            protected function readCommands():array{return [];}
+            protected function validateRead(string $c,array $p):void{throw new LogicException('Unused read');}
+            protected function writeCommand(string $a):string{throw new LogicException('Unused write');}
+            protected function origin(RequestContext $c):string{throw new LogicException('Unused origin');}
+        };
+        $entered=$management->run($op->id,$enteredDriver);
+        same(1,$preparations,'Real worker reaches preparation once');
+        same('running',$observed[0],'Preparation observes real entered worker claim');
+        expect(preg_match('/^[a-f0-9]{32}$/D',$observed[1]??'')===1,'Preparation observes valid real claim token');
+        expect(preg_match('/^[a-f0-9]{32}$/D',$entered->attempt['management_claim']??'')===1,'Failed preparation retains real claim token');
+        same($deferred?'queued':'held',$entered->state,'Real claim records deferral or preparation failure');
+        same('absent',$entered->attempt['seal'],'Entered failure never seals');
+        same('definitely_unsent',$entered->attempt['send_state'],'Entered failure is definitely unsent');
+        same($deferred?1:0,count($entered->attempt['management_deferrals']??[]),'Real deferred claim retains one timestamp');
+        expect($entered->started_at!==null,'Real entered worker retains start time');
+        $finance=[]; foreach(['invoices','invoice_items','invoice_transactions','credits'] as $table){$finance[$table]=DB::table($table)->orderBy('id')->get()->toJson();}
+        $before=$entered->fresh()->getRawOriginal(); $calls=$state->calls;
+        try{$management->retire($user,$op->id);throw new RuntimeException('Expected funded retirement refusal');}
+        catch(DomainException $error){same('Privacy financial activity requires review.',$error->getMessage(),'Real entered funding reaches the financial retirement guard');}
+        if(!$deferred){$management->run($op->id,$driver);}
+        same($before,$op->fresh()->getRawOriginal(),'Funded entered claim cannot become unpaid retirement or reopen held work');
+        same($calls,$state->calls,'Refused retirement and held replay perform no provider work');
+        foreach($finance as $table=>$rows){same($rows,DB::table($table)->orderBy('id')->get()->toJson(),'Entered claim retirement retains '.$table);}
+    }
+
     foreach(['native','cancelled','claim','deferral','staff'] as $mode){
         [$d,$driver,$op]=$issue($action,in_array($mode,['claim','deferral'],true)?$mode:'');
         $item=InvoiceItem::findOrFail($op->invoice_item_id);commerceReject(fn()=>$item->update(['description'=>'Changed pending privacy line']));$item->refresh();$itemBytes=$item->getRawOriginal();$serviceBytes=$d->service->getRawOriginal();

@@ -36,7 +36,6 @@ foreach (['paid', 'cap-over', 'cap-exact'] as $case) {
     same($held ? 'held' : 'pending', $result->state, 'Non-selling holder respects '.$case.' authority');
     same($writes + ($held ? 0 : 1), $state->writes, 'Exact cap boundary controls one renewal send');
     same($money, scenarioMoney(), 'Switches and renewal dispatch add no supplemental debt or credit');
-    if ($held) { continue; }
     $calls = $state->calls;
     foreach ([0, 1, null, 1] as $seller) {
         scenarioRetained($d, static function () use ($sellers, $clock, $tlds, $seller, $engine, $writer, $op): void {
@@ -44,7 +43,9 @@ foreach (['paid', 'cap-over', 'cap-exact'] as $case) {
         });
     }
     same($calls, $state->calls, 'Pending renewal cannot re-read or replay after repeated switches');
-    same($writes + 1, $state->writes, 'One provider charge per cycle');
+    same($writes + ($held ? 0 : 1), $state->writes, 'Held cycle has no write; pending cycle has exactly one');
+    same($money, scenarioMoney(), 'Replay preserves all invoice, item, transaction and credit bytes');
+    if ($held) { continue; }
     $state->expiry = '2028-10-18'; $state->charge = '8.00';
     same('succeeded', $completion->run($op->id)->state, 'Original holder completes while another registrar sells');
     same('2028-10-18', $d->fresh()->provider_expires_at->format('Y-m-d'), 'One proved annual expiry advance');
