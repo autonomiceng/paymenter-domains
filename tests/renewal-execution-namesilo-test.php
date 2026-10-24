@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/reconciliation-namesilo-test.php'; $nativeSuccessful = false;
 use Illuminate\Support\Facades\{Cache, Queue};
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
 use Paymenter\Extensions\Servers\Domains\Models\{Operation, Price};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainBilling, HolderPricing, NativeDomainGuard, RenewalAcceptance, RenewalAdmission, RenewalAuthority, RenewalCompletion, RenewalExecution, RenewalWriter, WriteFeatures};
@@ -38,6 +39,8 @@ for ($cycle=0;$cycle<2;$cycle++) {
         same('held',$engine->run($renewal->id,$writer)->state,'NameSilo auto-renew refusal is held before dispatch');
         same('provider_auto_renew_unconfirmed',$renewal->fresh()->safe_code,'NameSilo included admission code');
         same([],($renewal->fresh()->attempt??[]),'NameSilo refusal has no attempt');same(0,$writes,'No premature NameSilo send');
+        app()->instance(Clock::class,$clock);
+        expect(app(Clock::class)===$clock,'Release offer and writer share the existing fixture clock');
         $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($renewal->fresh());
         same(['Turn off auto-renew at NameSilo, then release the hold.','release'],[$notice['body']??null,$notice['action']??null],'Unsent notice names release rather than completion reads');
         $fresh=$renewal->fresh();$ticket=Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket($staff->id,$holding->id,$fresh->id,'release',Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($fresh,$holding->fresh()),$clock);
