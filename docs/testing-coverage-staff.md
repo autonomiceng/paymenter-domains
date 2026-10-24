@@ -92,3 +92,5 @@ without the policy or action permission, and tickets bound to another actor or a
 `renewal-billing-test.php` changes the calendar and switches through the reviewed writer after a
 renewal invoice is issued and checks the invoice, items, transactions and operation stay unchanged.
 These are synthetic native checks, not installed panel acceptance.
+
+`staff-tld-writes-test.php` runs balance probes with explicit past and future timestamps while the container clock differs. `staff-domains-test.php` applies native status filters to pending provenance and the latest held or uncertain acquisition, including multiple selections.

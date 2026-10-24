@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Native funded lifecycle checks after account edits.
 declare(strict_types=1);
+require_once __DIR__.'/reserved-fixtures.php';
 // Parent supplies the native owner, registration product and contactProperty helper.
 use App\Models\InvoiceTransaction;
 use Illuminate\Support\Facades\DB;
@@ -8,8 +9,9 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery,ContactSetup};
 foreach([false,true]as$invalid){
     contactProperty($user,'phone',$invalid?'private-value':'(206) 555-0100');$user->unsetRelation('properties');
-    $cart=commerceCart($user);commerceAdd($cart,$product,'lifecycle-frozen-'.(int)$invalid.'.com');commerceCheckout($user,$cart);
-    $row=Domain::where('domain','lifecycle-frozen-'.(int)$invalid.'.com')->sole()->operations()->sole();$snapshot=$row->payload;
+    $name=reservedFixtureName('lifecycle-frozen-'.(int)$invalid.'.test');
+    $cart=commerceCart($user);commerceAdd($cart,$product,$name);commerceCheckout($user,$cart);
+    $row=Domain::where('domain',$name)->sole()->operations()->sole();$snapshot=$row->payload;
     DB::table('invoices')->where('id',$row->invoice_id)->update(['status'=>'paid']);
     InvoiceTransaction::create(['invoice_id'=>$row->invoice_id,'amount'=>$row->amount,'status'=>'succeeded']);
     contactProperty($user,'phone',$invalid?'(206) 555-0100':'private-value');$user->unsetRelation('properties');

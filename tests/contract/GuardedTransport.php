@@ -93,6 +93,7 @@ final class GuardedTransport implements DeadlineTransport
             'dnsAddRecord' => ['domain','rrtype','rrhost','rrvalue','rrttl'], 'dnsDeleteRecord' => ['domain','rrid'],
             default => throw new \RuntimeException('OTE command refused.'),
         };
+        if ($command === 'orderDetails' && !array_key_exists('order_number', $p)) { throw new \RuntimeException('OTE order number required.'); }
         if (array_diff(array_keys($p), $keys)) { throw new \RuntimeException('OTE parameters refused.'); }
         if ($this->continuationReceipt !== null && !in_array($command, ['getPrices', 'getDomainInfo', 'listOrders', 'orderDetails', 'renewDomain'], true)) {
             throw new \RuntimeException('Renewal continuation scope refused.');
@@ -192,7 +193,7 @@ final class GuardedTransport implements DeadlineTransport
             if ($diagnosticRequest !== null) { $entry['parser'] = ParserDiagnostics::inspect($body, $diagnosticRequest, $key); }
             $readRequest = $diagnosticRequest ?? match ($command) {
                 'getDomainInfo' => RegistrarRequest::domainInfo($parameters['domain']),
-                'listOrders' => RegistrarRequest::listOrders($parameters['date_from'], $parameters['date_to']),
+                'listOrders' => RegistrarRequest::listOrders($parameters['date_from'] ?? null, $parameters['date_to'] ?? null),
                 'orderDetails' => RegistrarRequest::orderDetails($parameters['order_number']),
                 default => null,
             };

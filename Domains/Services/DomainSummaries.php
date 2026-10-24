@@ -108,7 +108,7 @@ final class DomainSummaries
                     if (!$pending) { $expiry=$t->provider_expires_at?->format('Y-m-d');$precision=$expiry?'date':null;$source=$expiry?'Confirmed registration':null; }
                     $op=$acquisitions[$id]??null;if(!$pending && $op && (int)$op->service_id===(int)$t->service_id && (int)$op->server_id===(int)$t->server_id && $op->registrar_key===$t->registrar_key){if($op->state==='awaiting_payment'){$states=['domain.awaiting_payment'];}elseif(in_array($op->state,['held','uncertain'],true)){$states=[$op->action==='register' && !in_array($op->safe_code,['contact_details_required','transfer_setup_review_required','nameservers_required'],true)?'domain.processing':'domain.review'];}}
                     $s=$c->services[$t->service_id];$a=$adoptions[$t->adoption_id]??null;
-                    $off=$pending || ($t->provenance==='adopted' && (!$a || $a->do_not_renew)) || ($t->renewal_policy['renewals_stopped']??false) || in_array($s->id,[...$cancels,...$intents],true);
+                    $off=$pending || ($t->renewal_policy['owner_auto_renew']??true)===false || ($t->provenance==='adopted' && (!$a || $a->do_not_renew)) || ($t->renewal_policy['renewals_stopped']??false) || in_array($s->id,[...$cancels,...$intents],true);
                     $reminderOff=$t->provenance==='adopted' && $a && $a->do_not_renew;
                     if ($t->provenance==='adopted') { $states[]='adopt.provenance'; }
                     if ($off && !$pending) { $states[]='adopt.renewal_off'; }

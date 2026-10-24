@@ -9,6 +9,7 @@ Route::middleware(['web','auth',MustVerfiyEmail::class,'throttle:60,1,domains.ow
     Route::post('/domains/{domain}/setup',[Action::class,'setup'])->whereNumber('domain')->name('domains.domains.setup-save')->block(10,10);
     Route::post('/domains/{domain}/account-contacts',[Action::class,'contacts'])->whereNumber('domain')->name('domains.domains.contacts-save')->block(10,10);
     Route::post('/domains/{domain}/transfer-code',[Action::class,'code'])->whereNumber('domain')->name('domains.domains.code-save')->block(10,10);
+    Route::post('/domains/{domain}/auto-renew',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerAutoRenewController::class,'save'])->whereNumber('domain')->name('domains.domains.auto-renew')->block(10,10);
     Route::post('/domains/{domain}/renew',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerRenewalController::class,'renew'])->whereNumber('domain')->name('domains.domains.renew')->block(10,10);
     Route::post('/domains/{domain}/manage/{action}',[Action::class,'manage'])->whereNumber('domain')->where('action',implode('|',Action::ACTIONS))->name('domains.domains.manage')->block(10,10);
     Route::get('/domains',[Owner::class,'index'])->name('domains.domains.index');

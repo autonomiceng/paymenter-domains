@@ -87,6 +87,12 @@ commerceReject(fn()=>$writer->run($review('tld_settings',$t->id),['min_years'=>1
 commerceReject(fn()=>$writer->run($review('tld_settings',$t->id),['min_years'=>1,'max_years'=>1,'enabled'=>false,'renew'=>false],$now));
 $r=$review('configure');$writer->run($r,['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'account-enom']],$now);
 expect(!Account::where('server_id',$t->server_id)->sole()->processing_enabled,'Rotation pauses processing');commerceReject(fn()=>$writer->run($r,['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'account-enom']],$now));
+foreach(['2001-01-01T00:00:00Z','2040-01-01T00:00:00Z'] as $at){
+    $explicit=new DateTimeImmutable($at);$otherClock=new class implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock {public function now(): DateTimeImmutable{return new DateTimeImmutable('2026-10-18T12:00:00Z');}};
+    app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$otherClock);
+    $writer->run($review('probe'),[],$explicit);
+}
+app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
 $writer->run($review('probe'),[]);$calls=$reads->calls;
 commerceReject(fn()=>(new StaffSettingsWrites($native,$sellers,$bindings))->run($review('probe'),[]));same($calls,$reads->calls,'Default seam never calls provider');
 foreach([['configure',['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'wrong-account']]],['probe',[]]] as [$action,$data]){

@@ -38,6 +38,14 @@ foreach(['expiry','cost','price','held','missing'] as $case){
     expect(DB::table('domains_obligation_alerts')->where('domain_id',$x->id)->where('code',$code)->exists(),'Durable staff alert: '.$case);
     DB::table('domains_prices')->where('id',$rate->id)->update($original);
 }
+// Owner Off sends expiry information without promising scheduled renewal or a new invoice.
+[$ownerOff]=$make('owner-off-reminder.com',false);$ownerOff->update(['renewal_policy'=>[...$ownerOff->renewal_policy,'owner_auto_renew'=>false]]);
+$enable(0,'30,7','3');$clock->instant=new DateTimeImmutable('2027-09-18T12:00:00Z');
+expect($reminders->remind($ownerOff->id),'Owner Off still receives expiry information');
+Mail::assertQueued(DomainNotice::class,fn($mail)=>$mail->data['domain']===$ownerOff->domain&&!$mail->data['invoice']&&$mail->data['invoice_on']===null&&!$mail->data['complimentary']);
+[$ownerIssued,$ownerInvoice]=$make('owner-off-issued-reminder.com');$ownerIssued->update(['renewal_policy'=>[...$ownerIssued->renewal_policy,'owner_auto_renew'=>false]]);
+expect($reminders->remind($ownerIssued->id),'Owner Off preserves issued invoice reminder');
+Mail::assertQueued(DomainNotice::class,fn($mail)=>$mail->data['domain']===$ownerIssued->domain&&$mail->data['invoice']&&$mail->data['invoice_url']===route('invoices.show',$ownerInvoice));
 // A failed render has no send claim and can retry safely after a staff template correction.
 [$x]=$make('render-failure.com');$template->update(['body'=>'{{ $missing->property }}']);
 same(false,$reminders->remind((int)$x->id),'Bad staff template cannot be marked sent');

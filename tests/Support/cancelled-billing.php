@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Scheduled cancellation is a quiet native billing decision.
 declare(strict_types=1);
+require_once __DIR__.'/reserved-fixtures.php';
 use App\Models\ServiceCancellation;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -23,12 +24,12 @@ foreach(['suspended','cancelled']as$status){
 }
 DB::table('services')->where('id',$s->id)->update(['status'=>'active']);
 // An unrelated native cancellation cannot hide this domain's broken processing authority.
-[$otherSource]=$prepare('unrelated-cancellation.com');
+[$otherSource]=$prepare(reservedFixtureName('example.com'));
 same('succeeded',$reconcile->run($otherSource->id)->state,'Uncancelled manual control has a real completed anchor');
 $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$setting('domains_manual_renewals_enabled',true);
 expect($billing->invoice($otherSource->domain_id,$user) instanceof App\Models\Invoice,'Otherwise eligible uncancelled manual billing succeeds');
 $setting('domains_manual_renewals_enabled',false);
 $unrelated=ServiceCancellation::create(['service_id'=>$otherSource->service_id,'type'=>'end_of_period','reason'=>'Synthetic unrelated request']);
-$bindings->setProcessing($server->id,false);commerceReject(fn()=>$billing->invoice($d->id));$bindings->setProcessing($server->id,true);
+$bindings->setProcessing($server->id,false);commerceReject(fn()=>$billing->invoice($d->id));$bindings->setProcessing($server->id, true, syntheticActivation());
 DB::table('service_cancellations')->where('id',$unrelated->id)->delete();
 $clock->instant=$billingTime;

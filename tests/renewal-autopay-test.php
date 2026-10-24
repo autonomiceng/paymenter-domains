@@ -209,7 +209,7 @@ same($count, count(DomainRenewalGateway::$calls), 'Repeated settlement and sched
 
 DomainRenewalGateway::$mode = 'paid';
 $second = BillingAgreement::create(['user_id'=>$user->id,'gateway_id'=>$gateway->id,'name'=>'Second card','external_reference'=>'second']);
-foreach (['no_agreement','foreign_agreement','gateway_disabled','gateway_missing','agreement_changed','service_inactive','renewal_off','currency','invoice_settled'] as $reason) {
+foreach (['no_agreement','foreign_agreement','gateway_disabled','gateway_missing','agreement_changed','service_inactive','renewal_off','owner_auto_renew_off','currency','invoice_settled'] as $reason) {
     $held = $holder(str_replace('_','-',$reason)); $count = count(DomainRenewalGateway::$calls);
     $foreign = null;
     if ($reason==='no_agreement') { $held->service->update(['billing_agreement_id'=>null]); }
@@ -224,6 +224,7 @@ foreach (['no_agreement','foreign_agreement','gateway_disabled','gateway_missing
                 'agreement_changed' => $held->service->update(['billing_agreement_id'=>$second->id]),
                 'service_inactive' => DB::table('services')->where('id',$held->service_id)->update(['status'=>'cancelled']),
                 'renewal_off' => $held->update(['renewal_policy'=>[...$held->renewal_policy,'renewals_stopped'=>true]]),
+                'owner_auto_renew_off' => $held->update(['renewal_policy'=>[...$held->renewal_policy,'owner_auto_renew'=>false]]),
                 'currency' => DB::table('invoices')->where('id',$op->invoice_id)->update(['currency_code'=>'EUR']),
                 'invoice_settled' => ExtensionHelper::addPayment($op->invoice_id,null,$op->amount),
             };
@@ -231,7 +232,7 @@ foreach (['no_agreement','foreign_agreement','gateway_disabled','gateway_missing
     }
     $invoice = $billing->invoice($held->id); $row = $operation($invoice);
     $decision = $row->funding['auto_pay_result']??$row->funding['auto_pay'];
-    same($reason, $decision['reason'], 'Saved-method refusal: '.$reason);
+    same($reason, $decision['reason']??null, 'Saved-method refusal: '.$reason);
     same('skipped', $decision['status'], 'Refusal retained');
     same($count, count(DomainRenewalGateway::$calls), 'Refusal makes no charge: '.$reason);
     $gateway->restore(); $gateway->update(['enabled'=>true]); $agreement->restore();

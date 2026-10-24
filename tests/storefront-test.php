@@ -46,7 +46,7 @@ same($displayRows, $slowRows, 'Slow public projection returns rows uncached inst
 $before = $reads->calls; $bindings->setProcessing($tlds[0]->server_id, false);
 same([], $store->endings(), 'Processing pause invalidates cached catalogue');
 same('held', $store->check('paused.com')['status'], 'Engine processing guard already protects selection');
-same($before, $reads->calls, 'Paused seller never reads availability'); $bindings->setProcessing($tlds[0]->server_id, true);
+same($before, $reads->calls, 'Paused seller never reads availability'); $bindings->setProcessing($tlds[0]->server_id, true, syntheticActivation());
 $product = $native->product($tlds[0], 'register'); $tlds[0]->update(['register_enabled' => false]); $native->publish($tlds[0]->id, $now);
 same(null, $store->endings()[0]['register'], 'Owned withdrawal invalidates cached registration');
 $tlds[0]->update(['register_enabled' => true]); $native->publish($tlds[0]->id, $now);

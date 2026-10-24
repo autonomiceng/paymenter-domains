@@ -78,7 +78,8 @@ DB::table('domains_observation_work')->where('id',$job)->update(['resumes'=>20])
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$renew->id])->callAction('release',['reason'=>'Funding restored and verified'])->assertNotified('Review recorded');
 same('queued',$renew->fresh()->state,'Held renewal re-release');$run($renew->fresh(),'hold');$run($renew->fresh(),'refund');
 // Crediting never implicitly frees the cycle. Replacement needs its own explicit reviewed authority.
-same($renew->invoice_id,$billing->invoice($domain->id,$user)->id,'Refund retains original obligation before explicit review');
+// Owner requests end at the confirmed expiry, so read the retained obligation inside the request window.
+$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');same($renew->invoice_id,$billing->invoice($domain->id,$user)->id,'Refund retains original obligation before explicit review');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$renew->id])->callAction('replacement',['reason'=>'Replace exactly refunded unsuitable cycle'])->assertNotified('Review recorded');
 expect(RenewalReplacements::reviewed($renew->fresh(),$domain->fresh()),'Explicit replacement proof retained');
 same([],RenewalReplacements::activity($domain->fresh()),'Unchanged refunded debt shows no false financial warning');
@@ -89,7 +90,8 @@ expect(str_contains($replacement->operation_key,':replacement:'),'Replacement ke
 \App\Helpers\ExtensionHelper::addPayment($invoice,null,$replacement->amount);
 $clock->instant=new DateTimeImmutable('2027-10-18T11:59:00Z');same('pending',$runRenewal($replacement,$binding)->state,'Replacement sealed normally');
 InvoiceTransaction::create(['invoice_id'=>$renew->invoice_id,'amount'=>'0.01','fee'=>'0.00','status'=>'succeeded']);
-same($invoice->id,$billing->invoice($domain->id,$user)->id,'Late old payment never duplicates admitted replacement');
+// The clock is on the expiry date, where owner requests stop; the scheduled path still reuses issued debt.
+same($invoice->id,$billing->invoice($domain->id)->id,'Late old payment never duplicates admitted replacement');
 expect(RenewalReplacements::activity($domain->fresh())!==[],'Late old financial activity is a read-only review fact');
 $completion=app(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class);$state->fail=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Info;
 $calls=count($state->calls);same('pending',$completion->run($replacement->id)->state,'Engine read remains available after late old payment');expect(count($state->calls)>$calls,'No global lock-time freeze');

@@ -12,3 +12,13 @@ function reservedFixtureName(string $name): string
     if (str_ends_with($name, '.test')) { return $name; }
     throw new InvalidArgumentException('Synthetic fixture domain must use a reserved name: '.$name);
 }
+
+/** Explicit opt-in for .com-only fixtures that require a single-label SLD. */
+function placeholderComFixtureName(string $name): string
+{
+    $parsed = Paymenter\Extensions\Servers\Domains\Data\CanonicalName::parse($name, ['com']);
+    if (!str_contains($parsed['sld'], 'placeholder')) {
+        throw new InvalidArgumentException('Synthetic .com fixture label must include placeholder.');
+    }
+    return $name;
+}

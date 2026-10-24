@@ -84,7 +84,8 @@ $state->expiry='2028-10-18';same('succeeded',$compCompletion->run($comp->id)->st
 [$renew,$debtDomain,$binding,$invoice]=$makeRenewal('holding-existing-debt.com',paid:false);
 $issued=$nativeMoney();$review->run($staff,$debtDomain->id,'stop',$ticket($debtDomain,'stop'),'Stop only future obligations');
 ServiceCancellation::create(['service_id'=>$debtDomain->service_id,'type'=>'end_of_period','reason'=>'Native end-period stop']);
-same($invoice->id,$billing->invoice($debtDomain->id,$user)->id,'Manual request returns existing debt while stopped');same($issued,$nativeMoney(),'Stop leaves issued debt byte-identical');
+// Owner requests end at the confirmed expiry, so make the manual request inside the request window.
+$atExpiry=$clock->instant;$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');same($invoice->id,$billing->invoice($debtDomain->id,$user)->id,'Manual request returns existing debt while stopped');$clock->instant=$atExpiry;same($issued,$nativeMoney(),'Stop leaves issued debt byte-identical');
 App\Helpers\ExtensionHelper::addPayment($invoice,null,$renew->amount);[$renewEngine,$renewWriter,$completion]=$compose($binding);
 $debtWrites=$state->writes;same('pending',$renewEngine->run($renew->id,$renewWriter)->state,'Paid issued obligation still executes while future renewals stopped');same($debtWrites+1,$state->writes,'Exactly one fake renewal write');
 $state->expiry='2028-10-18';same('succeeded',$completion->run($renew->id)->state,'Paid renewal completes while stopped');same(true,$debtDomain->fresh()->renewal_policy['renewals_stopped'],'Completion preserves stop flag');

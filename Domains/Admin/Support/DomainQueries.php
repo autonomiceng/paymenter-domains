@@ -13,6 +13,28 @@ final class DomainQueries
             ->where('registrar_key',$d->registrar_key)->where('account_fingerprint',$d->account_fingerprint)
             ->where('authority_generation',$d->authority_generation);
     }
+    /** Match the list's pending-provenance and latest-acquisition display overrides. */
+    public static function status(Builder $q, array $states): Builder
+    {
+        if (!$states) { return $q; }
+        return $q->where(function (Builder $group) use ($states): void {
+            if (in_array('adoption_pending', $states, true)) {
+                $group->orWhere(fn(Builder $pending)=>$pending->where('status','adoption_pending')->orWhere('provenance','adoption_pending'));
+            }
+            $stored=array_values(array_diff($states,['adoption_pending','held','uncertain']));
+            $attention=array_values(array_intersect($states,['held','uncertain']));
+            $group->orWhere(function (Builder $ordinary) use ($stored,$attention): void {
+                $ordinary->where('status','!=','adoption_pending')->where(fn(Builder $p)=>$p->whereNull('provenance')->orWhere('provenance','!=','adoption_pending'));
+                $ordinary->where(function (Builder $display) use ($stored,$attention): void {
+                    $display->where(function (Builder $plain) use ($stored): void {
+                        $plain->whereIn('status',$stored)->where(fn(Builder $review)=>$review->where('status','!=','needs_review')
+                            ->orWhereDoesntHave('latestAcquisition',fn(Builder $op)=>$op->whereIn('state',['held','uncertain'])));
+                    });
+                    if ($attention) { $display->orWhere(fn(Builder $review)=>$review->where('status','needs_review')->whereHas('latestAcquisition',fn(Builder $op)=>$op->whereIn('state',$attention))); }
+                });
+            });
+        });
+    }
     public static function attention(Builder $q, array $states = ['held','uncertain']): Builder
     {
         return self::related($q,fn($ops)=>$ops->whereIn('attention.state',$states));

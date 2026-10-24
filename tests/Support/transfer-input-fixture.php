@@ -5,6 +5,7 @@ require dirname(__DIR__).'/native-app.php';
 require __DIR__.'/commerce.php';
 require __DIR__.'/native-commerce.php';
 require_once __DIR__.'/native-financial-snapshot.php';
+require_once __DIR__.'/reserved-fixtures.php';
 use App\Models\{Credit, InvoiceTransaction, Service};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,5 +33,5 @@ $post = static function ($actor, mixed $code, string $method='POST', bool $query
     $r=Request::create('/internal-transfer-input'.($query?'?transfer_code=forbidden':''),$method,['transfer_code'=>$code]);
     $r->setUserResolver(fn()=>$actor); return $r;
 };
-$unrelated=$new('transfer-unrelated.com',false);
+$unrelated=$new(placeholderComFixtureName('transfer-unrelated-placeholder.com'),false);
 App\Models\ServiceCancellation::create(['service_id'=>$unrelated->service_id,'type'=>'end_of_period','reason'=>'Unrelated service']);

@@ -16,7 +16,7 @@ final class HoldingActions
     {
         if(!Staff::can('admin.domains.manage')){return [];}
         try{$l=HoldingLocks::take($d,advisory:true);$stamp=StaffHoldingReview::stamp($l);}catch(\Throwable){return [];}
-        $stopped=RenewalStop::stopped($l);
+        $stopped=RenewalStop::blocked($l);
         $out=[];
         foreach(StaffHoldingReview::ACTIONS as$name=>$label){
             if($name==='reprice'&&$d->price_mode!=='standard'){continue;}

@@ -6,13 +6,18 @@ use Illuminate\Support\Facades\{DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery,TransferInputs};
 require_once __DIR__.'/staff-panel.php';
+require_once __DIR__.'/reserved-fixtures.php';
+$createOperation = $new;
+$new = static function (string $name, bool $paid = true) use ($createOperation) {
+    return $createOperation(placeholderComFixtureName($name), $paid);
+};
 $staff=staffUser(['admin.domains.manage']);
 $setTime=static function($at)use($clock):void{$clock->instant=$at;Carbon\Carbon::setTestNow($at);Carbon\CarbonImmutable::setTestNow($at);};
 $scenarios=['accept','explicit-unsent','missing-code','invalid-code','late-code','cutoff-code','missing-stamp','invalid-stamp',
     'precreation-stamp','unknown-payment','unpaid','reversed','possibly-sent','sent','execution-null','cancelled','suspended','cancellation'];
 foreach([$user,$staff]as$actor){
     $setTime($now);$user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');
-    $row=$new('late-contact-'.$actor->id.'.com');$inputs->paymentAccepted($row->id);
+    $row=$new('late-contact-placeholder-'.$actor->id.'.com');$inputs->paymentAccepted($row->id);
     $inputs->submitCode($post($user,'Saved frozen transfer input'),$row->id);ContactRecovery::hold($row->id);
     $original=$row->fresh()->getRawOriginal();$originalService=Service::findOrFail($row->service_id)->getRawOriginal();
     $originalInvoice=(array)DB::table('invoices')->where('id',$row->invoice_id)->first();
@@ -77,7 +82,7 @@ foreach([$user,$staff]as$actor){
 }}
 $setTime($now);
 $user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');
-$early=$new('late-prepayment-code.com',false);$inputs->submitCode($post($user,'Saved before payment'),$early->id);
+$early=$new('late-prepayment-code-placeholder.com',false);$inputs->submitCode($post($user,'Saved before payment'),$early->id);
 App\Helpers\ExtensionHelper::addPayment($early->invoice_id,null,$early->amount);$inputs->paymentAccepted($early->id);ContactRecovery::hold($early->id);
 $user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);$user->unsetRelation('properties');
 $setTime($now->modify('+30 days'));

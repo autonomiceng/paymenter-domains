@@ -156,6 +156,13 @@ final class ContactRecovery
         }
     }
 
+    /** Read-only form eligibility uses the same evidence check as the locked writer. */
+    public static function provenUnsent(Operation $op): bool
+    {
+        try { self::unsent($op); return true; }
+        catch (\DomainException) { return false; }
+    }
+
     private static function unsent(Operation $op): void
     {
         $attempt = $op->attempt ?? [];

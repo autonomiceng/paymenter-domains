@@ -9,7 +9,8 @@ final class WatchProfile extends WatchRecord
     protected $table = 'domains_watch_profiles';
     protected $attributes = ['revision' => 1, 'enabled' => false];
     protected array $identity = ['id'];
-    protected $casts = ['revision' => 'integer', 'enabled' => 'boolean', 'nameservers' => 'array', 'website_endpoints' => 'array', 'email_endpoints' => 'array'];
+    protected $hidden = ['reason'];
+    protected $casts = ['reason' => \Paymenter\Extensions\Servers\Domains\Casts\LegacyEncryptedString::class, 'revision' => 'integer', 'enabled' => 'boolean', 'nameservers' => 'array', 'website_endpoints' => 'array', 'email_endpoints' => 'array'];
     protected function validateRecord(): void
     {
         if (!is_string($this->name) || trim($this->name) === '' || strlen($this->name) > 128 ||

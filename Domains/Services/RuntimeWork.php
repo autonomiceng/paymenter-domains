@@ -41,6 +41,7 @@ final readonly class RuntimeWork
     }
     private function bill(Domain $d): void
     {
+        $this->attempt('renewal_expiry',fn()=>app(RenewalCycles::class)->expireUnpaid((int)$d->id),(int)$d->id);
         $this->attempt('billing',function()use($d):void {
             if($reason=RuntimeCandidates::billingReason($d)){throw new RuntimeIneligible($reason);}
             app(DomainBilling::class)->invoice((int)$d->id);
@@ -79,6 +80,5 @@ final readonly class RuntimeWork
         foreach(ObservationCandidates::next('timeout') as $ids){foreach($ids as $id){$this->attempt('timeout',fn()=>app(TransferInputs::class)->expireMissingCode((int)$id),(int)$id);}}
         $this->attempt('reminders',fn()=>app(Reminders::class)->sweep());
         $this->attempt('watch_public_checks',fn()=>app(WatchWork::class)->tick());
-        $this->attempt('public_suffix_list',fn()=>app(PublicSuffixList::class)->tick());
     }
 }

@@ -3,6 +3,7 @@
 # Adapted from Paymenter Enom scripts/build.py; MIT, Copyright (c) 2026 Autonomic Engineering.
 import argparse
 import hashlib
+import io
 import json
 from pathlib import Path
 import re
@@ -249,13 +250,19 @@ def build(source, output):
     # Self-hashing is impossible: the embedded inventory hashes payload files; the
     # external release receipt hashes EVERY ZIP member, including that inventory.
     members[MANIFEST] = json_bytes({'schema_version': 1, 'version': version, 'license': 'MIT', 'members': digests(members)})
-    with zipfile.ZipFile(archive, 'x', compression=zipfile.ZIP_STORED) as package:
+    serialized = io.BytesIO()
+    with zipfile.ZipFile(serialized, 'w', compression=zipfile.ZIP_STORED) as package:
         for name, data in sorted(members.items()):
             entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             entry.create_system = 3
             entry.external_attr = (stat.S_IFREG | 0o644) << 16
             entry.compress_type = zipfile.ZIP_STORED
             package.writestr(entry, data)
+    # Serialize the inventory and ZIP headers before creating either release artifact.
+    if serialized.tell() > MAX_ARCHIVE_BYTES:
+        raise ValueError('Unsafe or oversized archive')
+    with archive.open('xb') as stream:
+        stream.write(serialized.getbuffer())
     manifest = verify(archive)
     if runtime_members(source) != (version, {k: v for k, v in members.items() if k != MANIFEST}):
         raise RuntimeError('Runtime changed during packaging; preserve the artifact')

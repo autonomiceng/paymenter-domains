@@ -8,6 +8,13 @@ use Paymenter\Extensions\Servers\Domains\Models\{WatchProfile,WatchDnsObservatio
 use Paymenter\Extensions\Servers\Domains\Services\{WatchDnsSchema,WatchDnsChecks,WatchDnsProjection};
 $f = dnsFixture(); extract($f); $now = 1800000000;
 WatchDnsSchema::install(); WatchDnsSchema::verify();
+$profileRaw=DB::table('domains_watch_profiles')->where('id',$profile->id)->value('reason');
+expect($profileRaw!=='Synthetic composition'&&!str_contains($profileRaw,'Synthetic composition'),'Profile reason is encrypted at rest');
+same('Synthetic composition',Illuminate\Support\Facades\Crypt::decryptString($profileRaw),'Profile reason uses application encryption');
+expect(!array_key_exists('reason',$profile->toArray()),'Profile reason hidden from serialization');
+DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['reason'=>'Legacy profile reason']);
+same('Legacy profile reason',$profile->fresh()->reason,'Legacy profile remains readable');
+DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['reason'=>$profileRaw]);
 same(false, $profile->enabled, 'Profiles default off');
 same(['ns1.platform.test','ns2.platform.test'], $profile->nameservers, 'Profile canonical exact set');
 same(1, WatchAudit::where('event','dns_profile_saved')->count(), 'Profile changes audited');

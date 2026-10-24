@@ -13,7 +13,20 @@ $engines=array_fill_keys(['extensions','products','roles','notification_template
 conversionRefuses(fn()=>Host::quiescent('/synthetic/app',$units,['periodic.service'=>'ExecStart=/usr/bin/run-parts /etc/cron.daily'],[],[]),'Periodic activator fenced','Application unit omitted');
 conversionRefuses(fn()=>Host::quiescent('/synthetic/app',$units,[],[],["#!/bin/sh\ncd /synthetic/app && php artisan queue:work"]),'Periodic executable refused','All-user cron must be empty');
 $converter=new Converter($evidence,$maintenance);$baseline=$converter->run();$marker=$backup();
-conversionRefuses(fn()=>Host::quiescent('/synthetic/app',$units,['user@.service'=>'ExecStart=/usr/lib/systemd/systemd --user'],[],[]),'User managers must be masked','Application unit omitted');
+$inspected=[];
+$inspect=static function(array $args)use(&$inspected):string{$inspected[]=$args;return 'synthetic definition';};
+same('synthetic definition',Host::definition('getty@.service',$inspect),'Bare template definition is readable');
+same(['cat','--','getty@.service'],$inspected[0],'Bare templates never use show');
+foreach(['masked','masked-runtime']as$state){same('UnitFileState='.$state,Host::definition('user@.service',$inspect,$state),'Masked templates have no readable definition or active state');}
+same(1,count($inspected),'Masked templates do not call cat or show');
+Host::definition('user@1000.service',$inspect);
+same('show',$inspected[1][0],'Concrete instances retain effective properties');
+Host::quiescent('/synthetic/app',$units,['user@.service'=>'ExecStart=/usr/lib/systemd/systemd --user'],[],[]);
+conversionRefuses(fn()=>Host::quiescent('/synthetic/app',$units,['user@1000.service'=>'ExecStart=/usr/lib/systemd/systemd --user'],[],[]),'User manager instances must be masked','Application unit omitted');
+$templates=$units;$templates['workers']=['worker@.service'];$inspections=0;
+$stateInspect=static function()use(&$inspections):string{$inspections++;return "ActiveState=inactive\nUnitFileState=masked\n";};
+conversionRefuses(fn()=>Inputs::maintenance($templates,$stateInspect),'Bare templates have no active state','Explicit systemd unit instance');
+same(2,$inspections,'Bare template refused before inspecting that unit');
 conversionRefuses(fn()=>Host::quiescent('/synthetic/app',$units,[],[['command'=>'/usr/lib/systemd/systemd --user','cwd'=>'/']],[]),'Active user manager refused','Application/web process');
 $webUnits=$units;$webUnits['checkout'][]='php-fpm.service';
 conversionRefuses(fn()=>Host::quiescent('/synthetic/app',$webUnits,['php-fpm.service'=>"TriggeredBy=generic.socket\n",'generic.socket'=>"Triggers=php-fpm.service\n"],[],[]),'PHP socket restart refused','Application unit omitted');

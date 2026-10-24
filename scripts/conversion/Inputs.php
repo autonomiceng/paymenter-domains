@@ -56,7 +56,7 @@ final class Inputs
             if(proc_close($process)!==0||$err!==''){throw new \DomainException('Service inspection failed.');}return $out;
         };
         foreach($units as $role=>$names){if(!is_array($names)||!$names){throw new \DomainException('Every stopped role requires a unit.');}
-            foreach($names as $unit){if(!is_string($unit)||!preg_match('/^[a-zA-Z0-9_.@-]+\.(service|timer|socket|path)$/D',$unit)){throw new \DomainException('Explicit systemd unit required.');}
+            foreach($names as $unit){if(!is_string($unit)||Host::template($unit)||!preg_match('/^[a-zA-Z0-9_.@-]+\.(service|timer|socket|path)$/D',$unit)){throw new \DomainException('Explicit systemd unit instance required.');}
                 $state=$inspect($unit);if(!str_contains($state,"ActiveState=inactive\n")||!str_contains($state,"UnitFileState=masked\n")){throw new \DomainException('All maintenance units must be inactive and masked.');}}}
         self::registrarsOff();
     }

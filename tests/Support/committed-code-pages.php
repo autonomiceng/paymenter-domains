@@ -2,6 +2,11 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Committed owner POST followed by actual customer/staff renders.
 declare(strict_types=1);
 require_once __DIR__.'/staff-panel.php';
+require_once __DIR__.'/reserved-fixtures.php';
+$createTransfer = $newTransfer;
+$newTransfer = static function (string $name, int $i = 0, bool $paid = true, bool $code = true) use ($createTransfer) {
+    return $createTransfer(placeholderComFixtureName($name), $i, $paid, $code);
+};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
@@ -16,7 +21,7 @@ app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clo
 staffPanel();$viewer=staffUser(array_keys(Staff::permissions()));
 foreach([0,1]as$i){
     $user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');
-    $committed=$newTransfer('committed-private-page-'.$i.'.com',$i,true,false);
+    $committed=$newTransfer('committed-private-page-placeholder-'.$i.'.com',$i,true,false);
     $sentinel=bin2hex(random_bytes(32));$r=$req($committed->domain,'code',['transfer_code'=>$sentinel]);
     $result=$action->code($r,$committed->domain_id);
     expect($result->getStatusCode()===302&&DB::transactionLevel()===0,'Real owner POST commits outside a test rollback');

@@ -55,3 +55,5 @@ independent setup/preflight/protocol threading, renewal wire flag, completion ga
 unknown-read handling, stale-code clearing and rendered staff instructions.
 Live `.us` collection/profile behavior, renewal flag semantics and accepted
 charge/expiry/off readback remain evidence requests, not test claims.
+
+OTE checks cover omitted order date filters, missing order IDs before sending, blocked renewal quotes, renewal completion only after a send with clean readback, sender counts on route refusal and replay, unrelated mismatches after registration reconciliation, native completion reset before assertions, and file plus parent-directory sync for one-time continuation claims and atomic private-evidence replacement. All transports are synthetic.

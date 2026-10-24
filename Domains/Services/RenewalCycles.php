@@ -32,21 +32,51 @@ final readonly class RenewalCycles
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         return DB::transaction(function () use ($seed, $id): Operation {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
-            $invoice = $l['invoices']->firstWhere('id', $op?->invoice_id); $item = $l['items']->firstWhere('id', $op?->invoice_item_id);
-            if (!$op || $op->action !== 'renew' || $op->funding_basis !== 'paid_invoice' || !$invoice || !$item
+            if (!self::canRetireUnpaid($op, $l)) { throw new \DomainException('Unpaid terminal proof unavailable.'); }
+            return $this->retireLocked($op, $l, 'Unpaid renewal cancelled');
+        });
+    }
+    /** Local expiry cleanup, independent of renewal preferences and billing switches. */
+    public function expireUnpaid(int $domainId): void
+    {
+        OperationClaims::outside(); $seed = Domain::findOrFail($domainId);
+        if (!DomainBilling::expired($seed, $this->clock->now())) { return; }
+        // Expired holdings stay in the cursor; take row locks only when an unpaid renewal may remain.
+        if (!$seed->operations()->where('action', 'renew')->whereIn('state', ['awaiting_payment', 'queued', 'held'])->exists()) { return; }
+        DB::transaction(function () use ($seed): void {
+            $l = HoldingLocks::take($seed);
+            if (!DomainBilling::expired($l['domain'], $this->clock->now())) { return; }
+            foreach ($l['operations'] as $op) {
+                if (self::canRetireUnpaid($op, $l)) { $this->retireLocked($op, $l, 'Domain expired'); }
+            }
+        });
+    }
+    private static function canRetireUnpaid(?Operation $op, array $l): bool
+    {
+        $invoice = $l['invoices']->firstWhere('id', $op?->invoice_id); $item = $l['items']->firstWhere('id', $op?->invoice_item_id);
+        return !(!$op || $op->action !== 'renew' || $op->funding_basis !== 'paid_invoice' || !$invoice || !$item
                 || $op->service_id !== $l['domain']->service_id || $op->authority_generation !== $l['domain']->authority_generation
                 || (int) $invoice->user_id !== (int) $l['domain']->user_id || $invoice->currency_code !== 'USD'
                 || (int) $item->invoice_id !== (int) $invoice->id
                 || !in_array($invoice->status, ['pending', 'cancelled'], true) || $l['transactions']->contains('invoice_id', $invoice->id)
                 || $l['items']->where('invoice_id', $invoice->id)->count() !== 1 || $item->reference_type !== null || $item->reference_id !== null
                 || PricingRule::minor($item->price) !== PricingRule::minor($op->amount) || (string) $item->quantity !== '1'
-                || !in_array($op->state, ['awaiting_payment', 'queued', 'held'], true) || !self::virgin($op)) { throw new \DomainException('Unpaid terminal proof unavailable.'); }
-            $invoice->update(['status' => 'cancelled']);
-            $op->update(['state' => 'rejected', 'safe_code' => 'renewal_cancelled_unpaid', 'completed_at' => $this->clock->now(),
-                'attempt' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent',
-                    'terminal' => ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'invoice_id' => $invoice->id, 'transactions' => []]]]);
-            return $op;
-        });
+                || !in_array($op->state, ['awaiting_payment', 'queued', 'held'], true) || !self::virgin($op));
+    }
+    private function retireLocked(Operation $op, array $l, string $reason): Operation
+    {
+        $invoice = $l['invoices']->firstWhere('id', $op->invoice_id);
+        // Retain the same local financial audit shape as unpaid acquisition retirement.
+        $audit = ['actor_id' => null, 'reason' => $reason, 'at' => $this->clock->now()->format(DATE_ATOM),
+            'operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'invoice_id' => $invoice->id,
+            'before' => ['invoice' => $invoice->status, 'operation' => $op->state],
+            'after' => ['invoice' => 'cancelled', 'operation' => 'rejected']];
+        $invoice->update(['status' => 'cancelled']);
+        $op->update(['state' => 'rejected', 'safe_code' => 'renewal_cancelled_unpaid', 'completed_at' => $this->clock->now(),
+            'policy' => [...($op->policy ?? []), 'unpaid_retirement' => $audit],
+            'attempt' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent',
+                'terminal' => ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'invoice_id' => $invoice->id, 'transactions' => []]]]);
+        return $op;
     }
     public function complimentary(int $domainId, User $actor, int $years, Money $cap, string $reason): Operation
     {

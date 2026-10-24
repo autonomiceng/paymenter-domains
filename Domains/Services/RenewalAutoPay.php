@@ -43,7 +43,8 @@ final readonly class RenewalAutoPay
             !$scheduled => 'manual_renewal',
             $op->currency !== 'USD' || $invoice->currency_code !== 'USD' || $s->currency_code !== 'USD' => 'currency',
             $s->status !== 'active' => 'service_inactive',
-            RenewalStop::stopped($l) => 'renewal_off',
+            RenewalStop::blocked($l) => 'renewal_off',
+            RenewalStop::ownerOff($l) => 'owner_auto_renew_off',
             $op->service_id !== $d->service_id || $op->authority_generation !== $d->authority_generation
                 || (int)$invoice->user_id !== (int)$d->user_id || (int)$s->user_id !== (int)$d->user_id => 'authority_changed',
             $invoice->status !== Invoice::STATUS_PENDING || PricingRule::minor($invoice->remaining) <= 0 => 'invoice_settled',

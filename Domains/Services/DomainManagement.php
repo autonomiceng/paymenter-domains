@@ -212,14 +212,16 @@ final class DomainManagement
     private function reconcileEntered(int $id, ManagementProtocol $driver, \DateTimeImmutable $deadline): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver): array {
-            if(count($op->attempt['management_reads']??[])>=20){throw new \DomainException('Management read budget exhausted.');}
-            if ($op->state === 'running' && $op->lease_expires_at > $this->clock->now()) { throw new \DomainException('Management worker still active.'); }
-            if (!in_array($op->state, ['uncertain', 'running'], true) || ($op->attempt['seal'] ?? null) !== 'sealed') { throw new \DomainException('No unresolved management readback.'); }
+        $read = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver): ?array {
+            if(count($op->attempt['management_reads']??[])>=20){return null;}
+            if ($op->state === 'running' && $op->lease_expires_at > $this->clock->now()) { return null; }
+            if (!in_array($op->state, ['uncertain', 'running'], true) || ($op->attempt['seal'] ?? null) !== 'sealed') { return null; }
             $b=CatalogueAcceptances::binding($l['account']); if(!$driver->bindsTo($b)){throw new \DomainException('Read binding changed.');}
             $this->bindings->requireReadableLocked($l['server'],$l['account']);
             return [$this->descriptor($op, $l), $l['stamp']];
         }, false, false);
+        if ($read === null) { return Operation::findOrFail($id); }
+        [$r, $stamp] = $read;
         $ctx = new RequestContext($r->binding, RequestOrigin::Background, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter());
         try { $result = $driver->observe($r, $ctx); return $this->finish($seed, $id, $driver, $result, $stamp); }
         catch (\Throwable) { return Operation::findOrFail($id); }

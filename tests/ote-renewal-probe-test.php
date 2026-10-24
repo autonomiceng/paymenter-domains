@@ -2,7 +2,15 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace OteContract {
-    function fsync($file): bool { return !($GLOBALS['ote_sync_failure'] ?? false) && \fsync($file); }
+    function fsync($file): bool {
+        $directory=(fstat($file)['mode']&0170000)===0040000;
+        if ($directory) { $GLOBALS['ote_directory_syncs']=($GLOBALS['ote_directory_syncs']??0)+1; }
+        return !($GLOBALS['ote_sync_failure']??false)&&!($directory&&($GLOBALS['ote_directory_sync_failure']??false))&&\fsync($file);
+    }
+    function fopen($path,$mode) {
+        if (is_dir($path)&&($GLOBALS['ote_directory_open_failure']??false)) { return false; }
+        return \fopen($path,$mode);
+    }
 }
 namespace {
 require __DIR__.'/bootstrap.php';
@@ -46,15 +54,20 @@ $probe = static function (string $scenario, string $route = 'background') use ($
             if ($command === 'getDomainInfo') {
                 $reply += ['created' => gmdate('Y-m-d'), 'expires' => $renewed ? $after : $before,
                     'status' => 'Active', 'locked' => 'Yes', 'private' => 'No', 'auto_renew' => 'No'];
+                if ($attempted && $scenario === 'bad-readback') { $reply['expires']=$before; }
                 if (!$attempted && $scenario === 'expired') { $reply['expires'] = gmdate('Y-m-d'); }
                 if ($attempted && $scenario === 'unknown-info') { $reply = ['code' => null, 'detail' => null]; }
             } elseif ($command === 'getPrices') {
                 $reply['com'] = $reply['net'] = ['registration' => '8.95', 'renew' => '8.95', 'transfer' => '8.95'];
+                if ($scenario === 'quote-timeout') { throw new RuntimeException('Synthetic quote timeout'); }
+                if ($scenario === 'quote-rejected') { $reply=['code'=>200,'detail'=>'synthetic']; }
+                if ($scenario === 'quote-missing') { unset($reply['com']['renew']); }
+                if ($scenario === 'quote-no-com') { unset($reply['com']); }
             } elseif ($command === 'renewDomain') {
                 $attempted = true;
                 same(1, $p['years'], 'Only one annual term'); same(0, $p['auto_renew'], 'Explicit renewal auto-renew off');
                 $renewed = !in_array($scenario, ['absent', 'unchanged-order', 'timeout', 'unknown-orders', 'unknown-info', 'empty-detail', 'partial-history', 'unknown-empty-orders', 'invalid-description', 'uppercase', 'trailing-dot'], true);
-                if ($scenario === 'success') { $reply += ['domain' => $wire->domain, 'order_amount' => '8.95']; }
+                if (in_array($scenario,['success','bad-readback'],true)) { $reply += ['domain' => $wire->domain, 'order_amount' => '8.95']; }
                 else { $reply = ['code' => null, 'detail' => 'private account 123 and cost 8.95']; }
                 if ($scenario === 'timeout') { throw new RuntimeException('synthetic timeout'); }
             } elseif ($command === 'listOrders') {
@@ -78,8 +91,14 @@ $probe = static function (string $scenario, string $route = 'background') use ($
                 if ($scenario === 'credited') { $reply['order_details'][0]['credited_amount'] = '8.95'; }
                 if ($scenario === 'detail-timeout') { throw new RuntimeException('synthetic'); }
             } else { throw new RuntimeException('Unexpected command'); }
+            if ($command==='getDomainInfo') {
+                $reply+=['traffic_type'=>'Custom DNS','email_verification_required'=>'No','portfolio'=>'','forward_url'=>'N/A','forward_type'=>'N/A',
+                    'nameservers'=>[['nameserver'=>'ns1.namesilo.com','position'=>1],['nameserver'=>'ns2.namesilo.com','position'=>2]],
+                    'contact_ids'=>array_fill_keys(['registrant','administrative','technical','billing'],'101')];
+            }
+            if ($command==='renewDomain'&&in_array($scenario,['success','bad-readback'],true)) { $reply['message']='synthetic'; }
             return new TransportResponse($scenario === 'http' && $command === 'listOrders' ? 503 : 200,
-                json_encode(['request' => ['operation' => $scenario === 'wrong-operation' && $command === 'getDomainInfo' && $attempted ? 'getPrices' : $command], 'reply' => $reply], JSON_THROW_ON_ERROR));
+                json_encode(['request' => ['ip'=>'192.0.2.1','operation' => $scenario === 'wrong-operation' && $command === 'getDomainInfo' && $attempted ? 'getPrices' : $command], 'reply' => $reply], JSON_THROW_ON_ERROR));
         };
         $priorReceipt = $route === 'interactive' ? $priorEvidence($out.'/prior', $before) : null;
         $wire = new GuardedTransport('offline-secret-token', true, $out, $fake, static fn () => 21, $scenario === 'budget' ? 24 : 40,
@@ -93,12 +112,20 @@ $probe = static function (string $scenario, string $route = 'background') use ($
             same('OTE renewal needs investigation.', $error->getMessage(), 'Unresolved renewal stops at its outcome guard');
             $thrown = true;
         }
-        if (in_array($scenario, ['expired', 'budget'], true)) {
-            same(false, $attempted, 'Readback/budget prevents purchase'); return;
+        if (in_array($scenario, ['expired','budget','quote-timeout','quote-rejected','quote-missing','quote-no-com'], true)) {
+            same(false, $thrown, 'Blocked probe returns without aborting');
+            same(false, $attempted, 'Readback, budget and quote prevent purchase');
+            if (str_starts_with($scenario,'quote-')) {
+                same('blocked_without_renewal_quote',$wire->receipt['checks']['renew_probe'],'Quote failure has an explicit blocked result');
+                same(['getDomainInfo','getPrices'],$calls,'Quote failure performs only preflight reads');
+                $private=is_file($out.'/attempt-private.json')?PurchaseAttempt::readPrivate($out.'/attempt-private.json'):[];
+                expect(!isset($private['dispatch_utc']),'Quote failure creates no purchase dispatch evidence');
+            }
+            same(false,RenewalProbe::completed($wire),'Skipped diagnostic cannot complete');return;
         }
-        $expected = match ($scenario) { 'renewed' => 'renewed', 'absent', 'timeout' => 'not_renewed', 'success' => null, default => 'ambiguous' };
+        $expected = match ($scenario) { 'renewed' => 'renewed', 'absent', 'timeout' => 'not_renewed', 'success','bad-readback' => null, default => 'ambiguous' };
         same($expected, $wire->receipt['renewal_reconciliation']['category'] ?? null, 'Exactly one closed renewal category: '.$scenario);
-        same(!in_array($scenario, ['success', 'renewed'], true), $thrown, 'Unknown unresolved stops, success continues');
+        same(!in_array($scenario, ['success','bad-readback','renewed'], true), $thrown, 'Unknown unresolved stops, success continues');
         if ($expected !== null) {
             $data = PurchaseAttempt::readPrivate($out.'/attempt-private.json');
             same($expected, $data['renewal_category'], 'Private continuation evidence retains category');
@@ -113,10 +140,13 @@ $probe = static function (string $scenario, string $route = 'background') use ($
         foreach ([$wire->domain, '8.9500', 'private account 123 and cost 8.95', 'offline-secret-token'] as $secret) {
             expect(!str_contains($receipt, $secret), 'No private scalar in receipt');
         }
-        if ($scenario !== 'success' && $scenario !== 'timeout') {
+        if (!in_array($scenario,['success','bad-readback','timeout'],true)) {
             same('unknown_reply', array_values(array_filter($wire->receipt['requests'], static fn ($r) => $r['command'] === 'renewDomain'))[0]['category'], 'Null-code purchase has a closed category');
             same('private account 123 and cost 8.95', PurchaseAttempt::readPrivate($out.'/attempt-private.json')['non_success_replies'][0]['detail'], 'Unknown detail retained privately');
         }
+        if ($scenario==='success') { same([], $wire->receipt['mismatches'], 'Success fixture matches the full contract'); }
+        same($scenario==='success',RenewalProbe::completed($wire),'Completion needs a sent renewal and no mismatches');
+        if ($scenario==='bad-readback') { same(false,$wire->receipt['checks']['renew_added_one_year'],'Wrong expiry blocks completion after send'); }
         if ($scenario === 'success') { same(true, $wire->receipt['checks']['renew_auto_renew_request_accepted'], 'Documented acknowledgement accepted'); }
         if ($scenario === 'renewed') {
             same(false, $wire->receipt['checks']['renew_auto_renew_request_accepted'], 'Unknown never promoted to documented acceptance');
@@ -129,7 +159,7 @@ $probe = static function (string $scenario, string $route = 'background') use ($
     }
 };
 foreach (['success', 'renewed', 'absent', 'expiry-only', 'unchanged-order', 'wrong-amount', 'wrong-term', 'wrong-name',
-    'empty-detail', 'partial-history', 'unknown-empty-orders', 'invalid-description', 'uppercase', 'trailing-dot', 'old-date', 'duplicate', 'credited', 'unknown-orders', 'unknown-info', 'timeout', 'detail-timeout', 'wrong-operation', 'http', 'overflow', 'expired', 'budget'] as $scenario) { $probe($scenario); }
+    'empty-detail', 'partial-history', 'unknown-empty-orders', 'invalid-description', 'uppercase', 'trailing-dot', 'old-date', 'duplicate', 'credited', 'unknown-orders', 'unknown-info', 'timeout', 'detail-timeout', 'wrong-operation', 'http', 'overflow','expired','budget','quote-timeout','quote-rejected','quote-missing','quote-no-com','bad-readback'] as $scenario) { $probe($scenario); }
 $probe('renewed', 'interactive'); $probe('absent', 'interactive');
 
 $out = sys_get_temp_dir().'/ote-details-'.bin2hex(random_bytes(6)); mkdir($out, 0700);
@@ -147,6 +177,15 @@ try {
     $GLOBALS['ote_sync_failure'] = false;
     same(['original' => true], PurchaseAttempt::readPrivate($out.'/atomic.json'), 'Failed sync preserves the original private evidence');
     same([], glob($out.'/*.pending-*'), 'Failed persistence removes private temporary fixture');
+    $syncs=$GLOBALS['ote_directory_syncs']??0;
+    PurchaseAttempt::writePrivate($out.'/atomic.json',['replacement'=>true]);
+    same($syncs+1,$GLOBALS['ote_directory_syncs'],'Atomic evidence replacement syncs its directory');
+    foreach(['ote_directory_open_failure'=>'Private evidence directory open failed.','ote_directory_sync_failure'=>'Private evidence directory sync failed.']as$flag=>$message){
+        $GLOBALS[$flag]=true;
+        try { $refused(fn()=>PurchaseAttempt::writePrivate($out.'/atomic.json',['replacement'=>true]),$message); }
+        finally { $GLOBALS[$flag]=false; }
+        same([],glob($out.'/*.pending-*'),'Directory durability failure leaves no temporary files');
+    }
     $secretWire = new GuardedTransport('offline-secret-token', true, $out,
         static fn () => new TransportResponse(200, json_encode(['request' => ['operation' => 'contactAdd'], 'reply' => ['code' => 210, 'detail' => 'offline-secret-token']])), static fn () => 21);
     $refused(fn () => $secretWire->raw('https://ote.namesilo.com/apibatch', 'contactAdd', []), 'OTE exchange unresolved.');
@@ -171,6 +210,17 @@ try {
         }
     };
     $reset();
+    $syncs=$GLOBALS['ote_directory_syncs']??0;
+    same($name,RenewalContinuation::claim($out.'/receipt.json'),'POSIX directory stream sync succeeds in the pinned runtime');
+    same($syncs+1,$GLOBALS['ote_directory_syncs'],'Claim syncs the parent directory');unlink($out.'/interactive-renewal-claimed');
+    foreach (['ote_sync_failure'=>'Continuation claim failed.','ote_directory_open_failure'=>'Continuation directory open failed.','ote_directory_sync_failure'=>'Continuation directory sync failed.']as$flag=>$message) {
+        $GLOBALS[$flag]=true;
+        try { $refused(fn()=>RenewalContinuation::claim($out.'/receipt.json'),$message); }
+        finally { $GLOBALS[$flag]=false; }
+        expect(is_file($out.'/interactive-renewal-claimed'),'Failed durability check still consumes the claim');
+        $refused(fn()=>RenewalContinuation::claim($out.'/receipt.json'),'Renewal continuation already consumed.');
+        unlink($out.'/interactive-renewal-claimed');
+    }
     foreach (['renewal_category' => 'ambiguous', 'name' => 'contract-ote-987654321abc.com', 'command' => 'registerDomain',
         'term' => 2, 'route' => '/api', 'before_expiry' => 'invalid', 'dispatch_utc' => '2020-01-01T00:00:00+00:00'] as $field => $bad) {
         PurchaseAttempt::writePrivate($out.'/attempt-private.json', array_replace($attempt, [$field => $bad]));
@@ -220,6 +270,7 @@ try {
     same('Success', $wire->receipt['requests'][0]['read_outcome'], 'Fresh baseline fixture is a valid domain read');
     same(false, $wire->attempted('renewDomain'), 'Changed fresh baseline refuses the continuation purchase');
     same('blocked_without_active_owned_autorenew_off_readback', $wire->receipt['checks']['renew_probe'], 'Fresh baseline checked before purchase');
+    same(false,RenewalProbe::completed($wire),'Consumed continuation with a changed expiry is not completed');
     foreach (['contactAdd', 'contactList', 'getPrices', 'getDomainInfo'] as $command) {
         putenv('OTE_REGISTRATION_CONTEXT=interactive');
         same('https://ote.namesilo.com/apibatch', GuardedTransport::purchaseOrigin($command, 'https://ote.namesilo.com/apibatch'), 'Non-purchase production route retained');

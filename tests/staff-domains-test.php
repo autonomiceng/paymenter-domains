@@ -50,6 +50,27 @@ expect(Staff::can(Staff::COSTS)&&Staff::can(Staff::METADATA)&&$policy->managePol
 expect(!$policy->update($wild,$held),'Wildcard cannot add staff writes in this slice');
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 staffDomainFilterLookalikes($viewer, $active);
+\Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();
+DB::table('domains_domains')->where('id',$active->id)->update(['provenance'=>'adoption_pending']);
+$pending=$active->fresh();expect($pending->adoptionPending(),'Pending provenance overrides stored active status');
+staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['adoption_pending'])->assertCanSeeTableRecords([$pending])->assertCanNotSeeTableRecords([$held,$long]);
+staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active'])->assertCanNotSeeTableRecords([$pending]);
+staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active','adoption_pending'])->assertCanSeeTableRecords([$pending]);
+DB::table('domains_domains')->where('id',$active->id)->update(['provenance'=>null]);
+DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'needs_review']);
+$acquisition=$active->operations()->sole();$storedState=$acquisition->state;
+foreach(['held','uncertain'] as $shown){
+    DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>$shown]);
+    staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',[$shown])->assertCanSeeTableRecords([$active]);
+    staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['needs_review'])->assertCanNotSeeTableRecords([$active]);
+}
+DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>'succeeded']);
+staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['needs_review'])->assertCanSeeTableRecords([$active]);
+staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['held','uncertain'])->assertCanNotSeeTableRecords([$active]);
+DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'active']);
+DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>$storedState]);
+
+
 // Current record holds are safe review alerts; stale identities and arbitrary reasons never leak.
 $recordService=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::class;
 foreach (['history_limit'=>'Record history has reached its safety limit.','ownership_drift'=>'The registrar account no longer lists this domain.',

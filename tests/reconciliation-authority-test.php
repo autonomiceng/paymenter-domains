@@ -15,7 +15,7 @@ foreach (['generation', 'cancelled', 'reversal', 'changed', 'paused'] as $race) 
     $result = $reconcile->run($op->id);
     same($race === 'paused' ? 'succeeded' : 'pending', $result->state, 'Fresh authority blocks stale reads; spending pause allows observation');
     if ($race !== 'paused') { same(null, $result->domain->provider_expires_at, 'No resurrection or anchoring after authority change'); }
-    if ($race === 'paused') { $readBindings->setProcessing($binding->serverId, true); }
+    if ($race === 'paused') { $readBindings->setProcessing($binding->serverId, true, syntheticActivation()); }
 }
 [$op] = $prepare('bounded-poll.com'); $observation->fault = 'term';
 for ($i = 0; $i < 7; $i++) { $reconcile->run($op->id); }

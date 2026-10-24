@@ -5,7 +5,7 @@ require __DIR__.'/Support/namesilo-registration-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrationTransport;
 use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, DriverResult, Money, Query, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-foreach (['300', '301', '302', 'amount', 'badns', 'remove', 'stillon', 'lost', 'unknown', 'default', 'wrongcontact', 'authoritydrift', 'hyphenphone', 'wrongphone', 'missingphone'] as $mode) {
+foreach (['300', '301', '302', 'amount', 'badns', 'mismatch', 'remove', 'stillon', 'lost', 'unknown', 'default', 'wrongcontact', 'authoritydrift', 'hyphenphone', 'wrongphone', 'missingphone'] as $mode) {
     $registration->mode = $mode; $registration->calls = []; $registration->diagnostics = []; $makeEngine($binding, $exchange);
     $result = $runRegistration($nsNew('ns-'.$mode.'.com'));
     if (in_array($mode, ['default', 'wrongcontact', 'authoritydrift', 'wrongphone', 'missingphone'], true)) {
@@ -19,7 +19,7 @@ foreach (['300', '301', '302', 'amount', 'badns', 'remove', 'stillon', 'lost', '
         same('uncertain', $result->state, 'Unknown purchase stays unresolved');
         same(['contactAdd', 'contactList', 'registerDomain'], $registration->calls, 'No follow-up/retry after unknown');
     } else {
-        $corrections = match ($mode) { '301' => ['nameservers'], '302' => ['contacts'], 'badns' => ['nameservers'], 'stillon' => ['auto_renew'],
+        $corrections = match ($mode) { '301' => ['nameservers'], '302' => ['contacts'], 'badns', 'mismatch' => ['nameservers'], 'stillon' => ['auto_renew'],
             'lost' => ['auto_renew', 'nameservers', 'contacts', 'privacy'], default => [] };
         $assertRetained($result, $corrections);
         same(null, $result->attempt['registration']['order_reference'], 'No fabricated NameSilo order ID');

@@ -3,8 +3,9 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\Server;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,SalesPolicy,Tld};
-use Paymenter\Extensions\Servers\Domains\Data\{CatalogueAcceptance,Environment,RequestBudget,RequestContext,RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{CatalogueAcceptance,Environment,RequestBudget,RequestContext,RequestOrigin,SystemClock};
 /** Local reviews and deliberately composed account reads; connection access defaults off. */
 final class StaffSettingsWrites
 {
@@ -14,7 +15,16 @@ final class StaffSettingsWrites
     {return $this->allowInjectedProbes&&($registrar===null||$this->bindings->hasRegistrar($registrar));}
     public function run(StaffSettingsReview $r,#[\SensitiveParameter] array $data,?\DateTimeImmutable $now=null): void
     {
-        $clock=app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)?app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class):new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;$now??=$clock->now();$r->input($data);
+        $clock=app()->bound(Clock::class)?app(Clock::class):new SystemClock;
+        if($now!==null){
+            $clock=new class($now) implements Clock {
+                private readonly int $started;
+                public function __construct(private readonly \DateTimeImmutable $instant){$this->started=hrtime(true);}
+                public function now(): \DateTimeImmutable
+                {return $this->instant->modify('+'.intdiv(hrtime(true)-$this->started,1000).' microseconds');}
+            };
+        }
+        $now??=$clock->now();$r->input($data);
         if($r->action==='test_management'){EnomTestManagement::review($r,$data);return;}
         if($r->action==='test_renewal'){EnomTestRenewal::review($r,$data);return;}
         if($r->action==='renewal_billing'){RenewalBillingSettings::save($r,$data);return;}

@@ -14,3 +14,5 @@ longest ending and current authoritative offer. Display caching never supplies o
 Cold catalogue rendering remains intentionally proportional to the catalogue, with bounded
 per-ending work and zero-query warm hits. Existing storefront/cache suites cover term growth,
 price/eligibility freshness, invalidation and the thirty-second display TTL.
+
+`owned-pages-test.php` renders proven-unsent transfer contact recovery for both registrars and submits the owner POST. Unknown, sent and recorded-null attempts hide recovery and refuse the POST without changing the operation.

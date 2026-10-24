@@ -84,6 +84,7 @@ final class Runtime
             $product=(int)$map->product_id;
             \Illuminate\Support\Facades\DB::afterCommit(fn()=>app(WatchDiscoveryWork::class)->hint($product));
         });
-        Schedule::call(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\RunRuntime::dispatch())->name('domains-runtime')->everyMinute()->withoutOverlapping(15)->onOneServer();
+        Schedule::call(static function():void {\Paymenter\Extensions\Servers\Domains\Jobs\RunRuntime::dispatch();})->name('domains-runtime')->everyMinute()->withoutOverlapping(15)->onOneServer();
+        Schedule::call(static function():void {\Paymenter\Extensions\Servers\Domains\Jobs\UpdatePublicSuffixList::dispatch();})->name('domains-public-suffix-list')->everyMinute()->withoutOverlapping(15)->onOneServer();
     }
 }

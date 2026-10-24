@@ -34,6 +34,7 @@ final class DomainBilling
             // A native cancellation disables scheduled billing without touching retained debts.
             if ($actor === null && RenewalStop::stopped($l)) { return null; }
             if (!$d->provider_expires_at) { throw new RuntimeIneligible(RuntimeReason::MissingAnchor); }
+            if ($actor && self::expired($d, $this->clock->now())) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
             $key = RenewalCycles::key($d);
             // Issued debt keeps its calendar, term and amount through later configuration changes.
             $existing = $l['operations']->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
@@ -90,13 +91,13 @@ final class DomainBilling
     }
 
     /** Read-only eligibility shared by billing, owner previews and notices; writer callers hold HoldingLocks. */
-    public static function requireAuthority(array $l,AccountBindings $bindings):void
+    public static function requireAuthority(array $l,AccountBindings $bindings,bool $manual=false):void
     {
         $d=$l['domain'];$s=$l['service'];
         $bindings->requireProcessingLocked($l['server'],$l['account'], $l['advisory'] ?? false);
         if($d->renewal_policy['automatic_spend_paused']??false){throw new RuntimeIneligible(RuntimeReason::SpendingPaused);}
         if ($s->status !== 'active' || !in_array($d->status, ['active', 'expired', 'grace'], true)
-            || RenewalStop::stopped($l) || $d->price_mode !== 'standard') { throw new RuntimeIneligible(RuntimeReason::LifecycleNotReady); }
+            || ($manual ? RenewalStop::blocked($l) : RenewalStop::stopped($l)) || $d->price_mode !== 'standard') { throw new RuntimeIneligible(RuntimeReason::LifecycleNotReady); }
         $anchor = HoldingAnchor::resolve($l); $prior = $anchor->operation;
         if ($prior) { RenewalAuthority::requireCostAnchor($prior); }
         if ($l['operations']->contains(fn ($op) => $op->id !== $prior?->id && !HoldingAnchor::resolved($op, $l))) {
@@ -133,25 +134,32 @@ final class DomainBilling
             $calendar = $this->requireRequest($l, true);
             $this->native->quote($l);
             return ['terms' => self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now()),
-                'order_by' => (new \DateTimeImmutable($calendar['due']))->modify('-1 day')->format('Y-m-d')];
+                'order_by' => (new \DateTimeImmutable($calendar['expiry']))->modify('-1 day')->format('Y-m-d')];
         });
     }
 
     /** New-debt eligibility only. Existing invoices keep their own dates and terms. */
     private function requireRequest(array $l, bool $manual, ?int $years = null): array
     {
-        self::requireAuthority($l, $this->bindings);
+        self::requireAuthority($l, $this->bindings, $manual);
         $calendar = self::calendarFor($l); $settings = $l['settings']->pluck('value', 'key');
         if (!self::enabled($settings->get($manual ? 'domains_manual_renewals_enabled' : 'domains_billing_enabled', false))) {
             throw new RuntimeIneligible(RuntimeReason::BillingOff);
         }
         $today = $this->clock->now()->format('Y-m-d');
-        if ($today >= $calendar['due'] || (!$manual && $today < $calendar['issue'])) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
+        if (($manual && self::expired($l['domain'], $this->clock->now())) || (!$manual && ($today >= $calendar['due'] || $today < $calendar['issue']))) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
         $terms = self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now());
         if ($terms === [] || ($years !== null && !in_array($years, $terms, true))) {
             throw new \DomainException('Renewal term exceeds the registry horizon.');
         }
+        if ($manual) { $calendar['due'] = min($calendar['expiry'], max($calendar['due'], $today)); }
         return $calendar;
+    }
+
+    /** Billing uses the clock date and confirmed expiry date, without converting time zones. */
+    public static function expired(Domain $domain, \DateTimeImmutable $now): bool
+    {
+        return $domain->provider_expires_at !== null && $now->format('Y-m-d') >= $domain->provider_expires_at->format('Y-m-d');
     }
 
     private static function enabled(mixed $value): bool

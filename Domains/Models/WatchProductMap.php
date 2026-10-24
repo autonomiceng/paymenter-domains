@@ -6,7 +6,8 @@ final class WatchProductMap extends WatchRecord
 {
     protected $table = 'domains_watch_product_maps';
     protected $attributes = ['revision' => 1, 'enabled' => false];
-    protected $casts = ['revision' => 'integer', 'enabled' => 'boolean'];
+    protected $hidden = ['reason'];
+    protected $casts = ['reason' => \Paymenter\Extensions\Servers\Domains\Casts\LegacyEncryptedString::class, 'revision' => 'integer', 'enabled' => 'boolean'];
     protected array $identity = ['id', 'product_id'];
     public function product(): \Illuminate\Database\Eloquent\Relations\BelongsTo {return $this->belongsTo(\App\Models\Product::class,'product_id');}
     protected function validateRecord(): void

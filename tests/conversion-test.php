@@ -17,7 +17,19 @@ $marker=$backup();$markerBody=json_decode(file_get_contents($marker),true);
 same(Inputs::selectedRevision(),$markerBody['revision'],'Backup binds selected revision');
 $wrong=$markerBody;$wrong['revision']=array_values(array_filter(array_column(Inputs::pins(),'revision'),fn($r)=>$r!==Inputs::selectedRevision()))[0];file_put_contents($temporary.'/wrong-revision.json',json_encode($wrong));
 conversionRefuses(fn()=>Inputs::backup($temporary.'/wrong-revision.json',$source),'Backup revision refuses','Backup does not match this source/key');
+ConversionGate::requireComplete(); // A no-table check must not cache permission before conversion starts.
+$definitions=(new ReflectionMethod(Journal::class,'definitions'))->invoke(null);
+$mysql=new class(static fn()=>throw new LogicException('Offline grammar must not connect'),'','',['charset'=>'utf8mb4','collation'=>'utf8mb4_unicode_ci']) extends \Illuminate\Database\MySqlConnection {
+    public function getServerVersion():string{return '8.0.32';}
+    public function isMaria(){return false;}
+};
+$mysql->useDefaultSchemaGrammar();$blueprint=new \Illuminate\Database\Schema\Blueprint($mysql,'domains_conversion_runs');$blueprint->create();$definitions['domains_conversion_runs']($blueprint);
+expect(str_contains(implode(";\n",$blueprint->toSql()),'`summary` longtext not null'),'MySQL summary supports plans over 64 KB');
 Journal::install();
+$largeSummary=json_encode(['pending_expiry_review'=>array_fill(0,1500,['id'=>24,'name'=>'pending.example.com','expires'=>'2027-10-18'])],JSON_THROW_ON_ERROR);
+expect(strlen($largeSummary)>65535,'Large fixture exceeds MySQL TEXT capacity');
+DB::table('domains_conversion_runs')->insert(['id'=>1,'source_digest'=>str_repeat('0',64),'plan_digest'=>str_repeat('0',64),'state'=>'staging','summary'=>$largeSummary,'audit'=>Inputs::encrypt([])]);
+Journal::install();same($largeSummary,DB::table('domains_conversion_runs')->value('summary'),'Repeated install retains a complete large plan');DB::table('domains_conversion_runs')->delete();
 DB::table('domains_conversion_runs')->insert(['id'=>2,'source_digest'=>str_repeat('0',64),'plan_digest'=>str_repeat('0',64),'state'=>'staging','summary'=>'{}','audit'=>Inputs::encrypt([])]);conversionRefuses(fn()=>$converter->run(),'Foreign journal row refuses','Invalid conversion journal ownership');DB::table('domains_conversion_runs')->delete();
 DB::table('domains_conversion_map')->insert(['target_table'=>'domains_domains','source_id'=>21,'target_id'=>21,'body'=>Inputs::encrypt([]),'digest'=>str_repeat('0',64)]);conversionRefuses(fn()=>$converter->run(),'Orphan map refuses','Invalid conversion journal ownership');DB::table('domains_conversion_map')->delete();Schema::drop('domains_conversion_map');
 conversionRefuses(fn()=>$converter->run(),'Partial journal DDL refuses dry run','Partial conversion journal DDL');
@@ -35,6 +47,7 @@ conversionRefuses(fn()=>$converter->run(true,$marker,static function($phase){if(
 conversionRefuses(fn()=>$converter->run(true,$marker,static function($phase)use($server){if($phase==='native_written'){DB::table($server->getTable())->where('id',$server->id)->update(['extension'=>'Enom']);}}),'Native changes verified before completion','Native target readback mismatch');same(0,Domain::count(),'Native readback failure rolls back ledger and native changes');
 conversionRefuses(fn()=>$converter->run(true,$marker,static function($phase){if($phase==='native_written'){DB::table('settings')->where('key','domains_billing_enabled')->update(['value'=>'1']);}}),'Native setting gate verified before completion','Native setting readback mismatch');
 $result=$converter->run(true,$marker);same($dry['plan_digest'],$result['plan_digest'],'Dry/apply parity');expect($result['complete'],'Apply completion marker');ConversionGate::requireComplete();
+DB::enableQueryLog();DB::flushQueryLog();for($i=0;$i<3;$i++){ConversionGate::requireComplete();}same([],DB::getQueryLog(),'Completed gate makes no further schema or row queries');DB::disableQueryLog();
 same($source,Planner::sourceDigest(),'Native money, source, services and preferences unchanged');same('Domains',$server->fresh()->extension,'Server ID retained and cut over');
 same('4.25',(string)DB::table('credits')->value('amount'),'Native credit retained');same(0,(int)DB::table('notification_preferences')->value('mail_enabled'),'Customized reminder opt-out retained');same('retained payload',DB::table('failed_jobs')->value('payload'),'Failed job retained');
 $mapping=(new \Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue(new PriceCatalogue(new PricingRules)))->mapping($multi->fresh());same('co.uk',$mapping['tld']->tld,'Multi-level native product keeps canonical neutral slug');

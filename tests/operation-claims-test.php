@@ -1,7 +1,13 @@
 <?php
 // Synthetic Enom 444f31c claim/seal regressions; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureEnding = 'example.com';
 require __DIR__.'/Support/operation-fixture.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
+$createOperation = $new;
+$new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1) use ($createOperation) {
+    return $createOperation(reservedFixtureName($name), $paid, $setup, $action, $term);
+};
 use App\Models\{Invoice, InvoiceTransaction};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, OperationPreflight};
@@ -11,9 +17,9 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainOperations, InvoiceBinding, OperationClaims};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
-$assertNoSend($new('unpaid.com', false)); $assertNoSend($new('setup.com', true, false));
-$op = $new('ordinary.com'); $result = $engine->execute($op->id);
-same('uncertain', $result->state, 'Unknown response holds obligation'); same('ordinary.com', $result->domain->reservation_name, 'Unknown holds name');
+$assertNoSend($new('unpaid.example.com', false)); $assertNoSend($new('setup.example.com', true, false));
+$op = $new('ordinary.example.com'); $result = $engine->execute($op->id);
+same('uncertain', $result->state, 'Unknown response holds obligation'); same('ordinary.example.com', $result->domain->reservation_name, 'Unknown holds name');
 same('99.00', $writer->last->authorizedCost->amount, 'Known cost above paid retail is allowed: no dispatch margin floor');
 same('possibly_sent', $result->attempt['execution']['send_state'], 'Normalized execution retained');
 $assertNoSend($result, 'uncertain'); commerceReject(fn () => $engine->consume($writer->last, $writer->context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($writer->last->binding)));
@@ -21,14 +27,14 @@ $forged = clone $writer->last; commerceReject(fn () => $engine->consume($forged,
 foreach (['execution', 'dispatch_attempted_at', 'claim_key', 'seal'] as $key) {
     $attempt = $result->attempt; unset($attempt[$key]); commerceReject(fn () => $result->fresh()->update(['attempt' => $attempt]));
 }
-$op = $new('preseal.com'); $preflight->fail = true; $result = $assertNoSend($op); $preflight->fail = false;
+$op = $new('preseal.example.com'); $preflight->fail = true; $result = $assertNoSend($op); $preflight->fail = false;
 same('absent', $result->attempt['seal'], 'Failure before seal retains absent marker'); expect(!array_key_exists('execution', $result->attempt), 'Preseal execution stays absent');
-$op = $new('postseal.com'); $writer->fail = true; $result = $engine->execute($op->id); $writer->fail = false;
+$op = $new('postseal.example.com'); $writer->fail = true; $result = $engine->execute($op->id); $writer->fail = false;
 same('uncertain', $result->state, 'Lost response is uncertain'); expect(array_key_exists('execution', $result->attempt) && $result->attempt['execution'] === null, 'Postseal recorded-null differs from absent');
 $assertNoSend($result, 'uncertain');
-$op = $new('ack.com'); $writer->disposition = Disposition::Accepted; same('uncertain', $engine->execute($op->id)->state, 'Ack is not business completion'); $writer->disposition = Disposition::Unknown;
+$op = $new('ack.example.com'); $writer->disposition = Disposition::Accepted; same('uncertain', $engine->execute($op->id)->state, 'Ack is not business completion'); $writer->disposition = Disposition::Unknown;
 foreach (['reversal', 'generation', 'reservation', 'owner', 'pause', 'payload', 'cancel'] as $change) {
-    $op = $new('changed-'.$change.'.com');
+    $op = $new('changed-'.$change.'.example.com');
     $preflight->during = static function ($claimed, $domain) use ($change, $bindings, $user) {
         match ($change) {
             'reversal' => InvoiceTransaction::create(['invoice_id' => $claimed->invoice_id, 'amount' => '-0.01', 'fee' => '0.00', 'status' => 'succeeded']),
@@ -41,10 +47,10 @@ foreach (['reversal', 'generation', 'reservation', 'owner', 'pause', 'payload', 
         };
     };
     $result = $assertNoSend($op); same('absent', $result->attempt['seal'], 'Authority changes block final seal');
-    $preflight->during = null; if ($change === 'pause') { $bindings->setProcessing($op->server_id, true); }
+    $preflight->during = null; if ($change === 'pause') { $bindings->setProcessing($op->server_id, true, syntheticActivation()); }
 }
 foreach (['capability', 'premium', 'short', 'old'] as $change) {
-    $op = $new('invalid-'.$change.'.com');
+    $op = $new('invalid-'.$change.'.example.com');
     if ($change === 'capability') { $preflight->supported = false; } elseif ($change === 'premium') { $preflight->premium = null; } elseif ($change === 'short') { $preflight->freshSeconds = 24; } else { $preflight->ageSeconds = 1; }
     $assertNoSend($op); $preflight->supported = true; $preflight->premium = false; $preflight->freshSeconds = 120; $preflight->ageSeconds = 0;
 }

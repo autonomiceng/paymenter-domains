@@ -19,7 +19,7 @@ function adoptedRenewalFixture(Environment $environment = Environment::Live, boo
             'term' => 1, 'currency' => 'USD', 'amount' => '10.00', 'state' => 'rejected', 'policy' => [], 'payload' => [],
             'attempt' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent']]);
     } : null); extract($f);
-    attachHolding($f); $bindings->setProcessing($binding->serverId, true); $domain->refresh(); $service->update(['status' => 'active']);
+    attachHolding($f); $bindings->setProcessing($binding->serverId, true, syntheticActivation()); $domain->refresh(); $service->update(['status' => 'active']);
     \App\Models\Setting::updateOrCreate(['key'=>'credits_auto_use','settingable_type'=>null], ['value'=>false,'type'=>'boolean']);
 $state = (object) ['name' => '', 'expiry' => '10/20/2027 5:00:00 AM', 'day' => '10/20/2027',
     'price' => '8.95', 'balance' => '100.00', 'owner' => 'account-enom', 'id' => '123', 'auto' => '0',

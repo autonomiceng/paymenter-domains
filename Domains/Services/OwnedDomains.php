@@ -51,11 +51,13 @@ final readonly class OwnedDomains
             && $op->started_at===null && $op->request_fingerprint===null && $op->completed_at===null
             && in_array($service?->status,['pending','active'],true) && !$service->cancellation
             && in_array($d->status,['registration_pending','transfer_pending'],true)) {
-            $setup['contacts']=$op->safe_code==='contact_details_required';
             $setup['nameservers']=$op->action==='register'||$d->registrar_key==='namesilo';
             $setup['privacy']=$caps?->privacy===PrivacyMode::Free;
             $setup['required']=!isset($op->policy['owner_setup']) && ($setup['nameservers'] || $setup['privacy']);
         }
+        if ($caps && $op?->state==='held' && $op->safe_code==='contact_details_required' && ContactRecovery::provenUnsent($op)
+            && in_array($service?->status,['pending','active'],true) && !$service->cancellation
+            && in_array($d->status,['registration_pending','transfer_pending'],true)) { $setup['contacts']=true; }
         if ($setup['required']||$setup['contacts']) { if($status==='Processing'){$status='Needs attention';} $actions['setup']=route('domains.domains.setup',$d->id); }
         $transfer=['open'=>false,'received'=>false,'paid'=>false,'deadline'=>null,'held'=>false,'unchecked'=>false,'phase'=>'held'];
         if ($op?->action==='transfer' && $d->status==='transfer_pending') {
@@ -170,7 +172,9 @@ final readonly class OwnedDomains
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';
         return new OwnedDomain($d->domain,$status,$tone,$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
             $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, registrationBadge:$badge, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
-            renewNow:$renewNow);
+            renewNow:$renewNow,
+            renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
+            autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[]);
     }
     /** Existing cycle visibility is independent of eligibility to request a new invoice. */
     private function renewNow(Domain $d, bool $forms): array
@@ -179,8 +183,8 @@ final readonly class OwnedDomains
             return $d->operations()->where('action', 'renew')->where('authority_generation', $d->authority_generation)->limit(1)->exists() ? ['status' => 'review'] : [];
         }
         try {
-            if ($cycle = self::renewalCycle($d)) { return $cycle; }
-            $retained = self::renewalCycle($d, true) ?? [];
+            if ($cycle = self::renewalCycle($d, now: $this->clock->now())) { return $cycle; }
+            $retained = self::renewalCycle($d, true, $this->clock->now()) ?? [];
             if (!$forms) { return $retained; }
             try {
                 $options = ($this->billing ?? app(DomainBilling::class))->requestOptions($d);
@@ -189,7 +193,7 @@ final readonly class OwnedDomains
         } catch (\Throwable) { return ['status' => 'review']; }
     }
     /** This cycle as billing sees it: null while a new request is possible, else its pending invoice or an owner status. */
-    public static function renewalCycle(Domain $d, bool $retained = false): ?array
+    public static function renewalCycle(Domain $d, bool $retained = false, ?\DateTimeImmutable $now = null): ?array
     {
         $key = RenewalCycles::key($d);
         $cycle = $d->operations()->where('action', 'renew')
@@ -201,6 +205,7 @@ final readonly class OwnedDomains
             $invoice = $l['invoices']->firstWhere('id', $cycle->invoice_id);
             if ($invoice?->status === 'cancelled' && (int) $invoice->user_id === (int) $d->user_id) { return ['status' => 'cancelled']; }
             try { $invoice = DomainBilling::existingInvoice($cycle, $l); } catch (\Throwable) { return ['status' => 'review']; }
+            if ($invoice->status === 'pending' && DomainBilling::expired($d, $now ?? app(Clock::class)->now())) { return ['status' => 'cancelled']; }
             return match (true) {
                 $cycle->state === 'awaiting_payment' && $invoice->status === 'pending' => ['invoice' => route('invoices.show', $invoice)],
                 $invoice->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => ['status' => 'paid'],

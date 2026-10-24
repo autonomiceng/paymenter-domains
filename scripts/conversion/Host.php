@@ -16,12 +16,12 @@ final class Host
         foreach(['Enom','Domains']as$name){if(file_exists($app.'/extensions/Servers/'.$name)||is_link($app.'/extensions/Servers/'.$name)){throw new \DomainException('Park both registrar runtimes outside the active extension directory.');}}
         $ancestors=[getmypid()];$pid=getmypid();while($pid>1){$status=self::contents('/proc/'.$pid.'/status');if(!preg_match('/^PPid:\s+(\d+)/m',$status,$m)){throw new \DomainException('Process ancestry unavailable.');}$pid=(int)$m[1];$ancestors[]=$pid;}
         // The manager's effective view includes loaded instances, aliases, templates and drop-ins.
-        $names=[];foreach(['list-unit-files','list-units']as$verb){
+        $names=[];$states=[];foreach(['list-unit-files','list-units']as$verb){
             $args=[$verb,'--type=service','--type=timer','--type=socket','--type=path','--all','--no-legend','--no-pager','--plain'];
             foreach(explode("\n",self::systemctl($args))as$line){if(trim($line)===''){continue;}$name=preg_split('/\s+/',trim($line))[0];
-                if(!preg_match('/^[a-zA-Z0-9_.@-]+\.(service|timer|socket|path)$/D',$name)){throw new \DomainException('Unsupported effective unit name.');}$names[$name]=true;}}
+                if(!preg_match('/^[a-zA-Z0-9_.@-]+\.(service|timer|socket|path)$/D',$name)){throw new \DomainException('Unsupported effective unit name.');}$names[$name]=true;if($verb==='list-unit-files'){$states[$name]=preg_split('/\s+/',trim($line))[1]??null;}}}
         if(!$names){throw new \DomainException('Effective unit inventory unavailable.');}$files=[];
-        foreach(array_keys($names)as$name){$files[$name]=self::systemctl(['show','--property=Id,Names,FragmentPath,DropInPaths,ExecStart,WorkingDirectory,Triggers,TriggeredBy','--',$name]);}
+        foreach(array_keys($names)as$name){$files[$name]=self::definition($name,unitFileState:$states[$name]??null);}
         $processes=[];foreach(glob('/proc/[0-9]*/cmdline')?:[]as$path){$dir=dirname($path);if(in_array((int)basename($dir),$ancestors,true)){continue;}
             $command=@file_get_contents($path);if($command===false){if(!is_dir($dir)){continue;}throw new \DomainException('Process inventory inaccessible.');}
             if($command===''){continue;}$cwd=@readlink($dir.'/cwd');if($cwd===false){if(!is_dir($dir)){continue;}throw new \DomainException('Process working directory inaccessible.');}$processes[]=['command'=>$command,'cwd'=>$cwd];}
@@ -33,6 +33,15 @@ final class Host
             foreach(new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir,\FilesystemIterator::SKIP_DOTS))as$file){if($file->isLink()||!$file->isFile()){throw new \DomainException('Unsupported cron spool.');}$cron[]=self::contents($file->getPathname());}}
         if(!$spools){throw new \DomainException('Standard all-user cron spool must be inspectable.');}
         self::quiescent($app,$units,$files,$processes,$cron);Inputs::maintenance($units);
+    }
+    public static function template(string $name): bool
+    { return preg_match('/@\.(service|timer|socket|path)$/D',$name)===1; }
+    /** Templates have definitions but no running state; instances retain the manager's effective properties. */
+    public static function definition(string $name,?\Closure $inspect=null,?string $unitFileState=null): string
+    {
+        if(self::template($name)&&in_array($unitFileState,['masked','masked-runtime'],true)){return 'UnitFileState='.$unitFileState;}
+        $args=self::template($name)?['cat','--',$name]:['show','--property=Id,Names,FragmentPath,DropInPaths,ExecStart,WorkingDirectory,Triggers,TriggeredBy','--',$name];
+        return $inspect?$inspect($args):self::systemctl($args);
     }
     private static function systemctl(array $args): string
     {
@@ -52,7 +61,7 @@ final class Host
         $related=[];foreach($files as$file=>$content){if(str_contains($content,$app)||preg_match('/^user@.*\.service$/D',basename($file))||preg_match('/(?:php(?:[0-9.]+)?(?:-fpm)?|nginx|apache2?|httpd|caddy|frankenphp|cron|anacron|run-parts)/i',basename($file).' '.$content)){$related[basename($file)]=true;}}
         do{$before=count($related);foreach($files as$file=>$content){$name=basename($file);preg_match_all('/^(?:Triggers|TriggeredBy|Names)=(.*)$/m',$content,$m);
                 $edges=preg_split('/\s+/',implode(' ',$m[1]));if(isset($related[$name])||array_intersect($edges,array_keys($related))){$related[$name]=true;foreach($edges as$edge){if($edge!==''){$related[$edge]=true;}}}}}while(count($related)>$before);
-        foreach(array_keys($related)as$name){if(!in_array($name,$listed,true)){throw new \DomainException('Application unit omitted from stopped inventory.');}}
+        foreach(array_keys($related)as$name){if(!self::template($name)&&!in_array($name,$listed,true)){throw new \DomainException('Application unit omitted from stopped inventory.');}}
         foreach($processes as$process){$command=str_replace("\0",' ',$process['command']);
             if(preg_match('/systemd\s+--user(?:\s|$)/',$command)||str_contains($command,$app)||$process['cwd']===$app||str_starts_with($process['cwd'],$app.'/')||preg_match('/(?:^|[\/\s])(?:php(?:[0-9.]+)?(?:-fpm)?|nginx|apache2?|httpd|caddy|frankenphp|artisan|horizon)(?:\s|$|:)/i',$command)){throw new \DomainException('Application/web process still active on dedicated host.');}}
         foreach($cron as$content){foreach(explode("\n",$content)as$line){if(trim($line)!==''&&!str_starts_with(ltrim($line),'#')&&!preg_match('/^[A-Z_]+=/',trim($line))){throw new \DomainException('All-user cron must be empty on supported host.');}}}

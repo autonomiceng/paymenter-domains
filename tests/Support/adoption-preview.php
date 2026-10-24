@@ -30,7 +30,7 @@ function adoptionFixture(Environment $environment = Environment::Test): array
     }, fn (AccountBinding $b, array $c) => new Driver(new Client($b, $c['uid'], $c['token'], $wire), ['com']));
     $bindings = new AccountBindings($registry);
     $binding = $bindings->configure($tld->server_id, 'enom', $environment, ['uid' => 'account-enom', 'token' => 'synthetic-secret']);
-    if ($environment === Environment::Live) { $bindings->confirmLiveSite($tld->server_id, rtrim(config('app.url'), '/')); $bindings->setProcessing($tld->server_id, true); }
+    if ($environment === Environment::Live) { $bindings->confirmLiveSite($tld->server_id, rtrim(config('app.url'), '/')); $bindings->setProcessing($tld->server_id, true, syntheticActivation()); }
     $mapping = new AdoptionMapping($native, $prices, $clock); $reader = new AdoptionReader($bindings, $mapping, $clock, $wire);
     $target = new Target('example.com', $service->id, $owner->id, $tld->server_id, $environment);
     $context = new StaffContext($staff->id, 'Reviewed synthetic import mapping');

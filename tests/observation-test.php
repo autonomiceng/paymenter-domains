@@ -54,7 +54,7 @@ foreach([1,2] as $turn){
 }
 config(['domains.enom_test_daily_call_cap'=>$capConfig]);same('refreshed',$work->tick(1)[$d->server_id],'Restored capacity recovers without staff resume');
 // Separately authorized correction: immutable link and appended readback progress, never closure.
-$bindings->setProcessing($d->server_id,true);$op=$management->request($user,$d->id,'auto_renew_off',[],$key(),$driver,correction:$original->operation_key);
+$bindings->setProcessing($d->server_id, true, syntheticActivation());$op=$management->request($user,$d->id,'auto_renew_off',[],$key(),$driver,correction:$original->operation_key);
 same('auto_renew',$op->policy['management']['correction_link']['section'],'Frozen section link');same('succeeded',$management->run($op->id,$driver)->state,'Separate correction execution');
 $clock->instant=$clock->now()->modify('+1 minute');$observer->run($d->id);
 same('readback_confirmed_awaiting_review',$d->fresh()->observation['corrections'][0]['state'],'Readback projection never closes correction');
@@ -72,7 +72,7 @@ DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$
 $state->during=function()use($work,$d,$job,$priorTries){same('read_deferred',$work->tick(1)[$d->server_id],'Observation yields during management preparation');same($priorTries,DB::table('domains_observation_work')->where('id',$job->id)->value('tries'),'Busy authority spends no observation try');};
 same('succeeded',$management->run($race->id,$driver)->state,'Live management claim consumes and sends after deferred observation');
 // Exhausted pre-acquisition history cannot suppress a new completed-acquisition phase.
-$bindings->setProcessing($d->server_id,true);$clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);$sellers->change('com',3,$d->server_id,true,true,$now);[$pending]=$prepare('followup-after-exhaustion.com');$pendingDomain=$pending->domain()->firstOrFail();$work->tick(1);
+$bindings->setProcessing($d->server_id, true, syntheticActivation());$clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);$sellers->change('com',3,$d->server_id,true,true,$now);[$pending]=$prepare('followup-after-exhaustion.com');$pendingDomain=$pending->domain()->firstOrFail();$work->tick(1);
 $pendingJob=DB::table('domains_observation_work')->where('domain_id',$pendingDomain->id)->sole();DB::table('domains_observation_work')->where('id',$pendingJob->id)->update(['safe_code'=>'budget_exhausted','tries'=>5]);
 same('succeeded',$reconcile->run($pending->id)->state,'Actual completion after pending work exhausted');
 for($i=0;$i<3;$i++){$clock->instant=$clock->now()->modify('+301 seconds');(new ObservationWork($observer,$clock,$budget))->tick(1);}

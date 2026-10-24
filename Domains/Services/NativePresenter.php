@@ -30,7 +30,12 @@ final readonly class NativePresenter
         $ops=Operation::where('invoice_id',$invoiceId)->where('currency',$invoice->currency_code)->whereIn('invoice_item_id',\App\Models\InvoiceItem::where('invoice_id',$invoiceId)->select('id'))->orderBy('id')->limit(250)->get();
         $dtos=$this->services($owner,$ops->pluck('service_id')->unique()->all());$result=[];
         foreach($ops as $op){$dto=$dtos[(int)$op->service_id]??null;if($dto&&isset($items[$op->invoice_item_id])&&$this->line($items[$op->invoice_item_id],$op)
-                &&Domain::whereKey($op->domain_id)->where('service_id',$op->service_id)->where('user_id',$owner->id)->where('account_fingerprint',$op->account_fingerprint)->where('authority_generation',$op->authority_generation)->exists()){$result[(int)$op->invoice_item_id]=$dto;}}
+                &&Domain::whereKey($op->domain_id)->where('service_id',$op->service_id)->where('user_id',$owner->id)->where('account_fingerprint',$op->account_fingerprint)->where('authority_generation',$op->authority_generation)->exists()){
+                if($op->action!=='renew'||$invoice->status!=='pending'||($dto->renewNow['invoice']??null)!==route('invoices.show',$invoice)){
+                    $dto=new OwnedDomain(...[...get_object_vars($dto),'renewalDue'=>null]);
+                }
+                $result[(int)$op->invoice_item_id]=$dto;
+            }}
         return $result;
     }
     private function line(\App\Models\InvoiceItem $item,Operation $op): bool

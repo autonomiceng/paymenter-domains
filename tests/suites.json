@@ -109,6 +109,7 @@
     "tests/owned-pages-test.php",
     "tests/owner-actions-test.php",
     "tests/owner-renewal-test.php",
+    "tests/owner-auto-renew-test.php",
     "tests/owner-management-test.php",
     "tests/owner-management-namesilo-test.php",
     "tests/staff-domains-test.php",

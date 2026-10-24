@@ -66,7 +66,7 @@ DB::beginTransaction(); $tld->refresh()->update(['register_enabled' => false]); 
 same([], $store->endings()[0]['terms'], 'Committed owned TLD withdrawal forgets cached display');
 $tld->refresh()->update(['register_enabled' => true]);
 $bindings->setProcessing($tld->server_id, false); same([], $store->endings(), 'Account writer invalidates immediately');
-$bindings->setProcessing($tld->server_id, true);
+$bindings->setProcessing($tld->server_id, true, syntheticActivation());
 $policy = SalesPolicy::where('tld', 'com')->sole();
 $sellers->change('com', $policy->revision, null, false, false, $now); same([], $store->endings(), 'Seller writer invalidates immediately');
 $sellers->change('com', $policy->revision + 1, $tld->server_id, true, true, $now);

@@ -18,3 +18,9 @@ function same(mixed $expected, mixed $actual, string $message): void
 {
     expect($expected === $actual, $message);
 }
+
+/** Synthetic fixtures explicitly accept processing without installing a provider runtime. */
+function syntheticActivation(): Closure
+{
+    return static fn () => null;
+}

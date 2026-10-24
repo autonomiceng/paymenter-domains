@@ -22,7 +22,22 @@ $billing=new DomainBilling($bindings,$guard,$clock);$owners=new OwnedDomains($cl
 same('<Synthetic & Company> Registration',$dto->registrationBadge,'Trimmed configured company badge');same('Off',$dto->renewal,'DNR badge');same('Registration adopted',$dto->progress[0]['label'],'Adoption activity');same($old->fresh()->number,$dto->history[0]['number'],'Batch native invoice number');same('Paid',$dto->history[0]['status'],'Historical invoice label');same(null,$dto->plannedRenewalDue,'No future due CTA for DNR');
 same(route('invoices.show',$old->fresh()),$dto->history[0]['url'],'Historical URL uses native number route key despite numeric ID collision');
 $html=view('domains::show',['domain'=>$dto])->render();
-expect(str_contains($html,'&lt;Synthetic &amp; Company&gt; Registration'),'Company escaped in actual customer Blade');expect(str_contains($html,'No renewal invoices or renewal reminders are scheduled.'),'Pinned renewal-off copy');expect(str_contains($html,'Registration adopted'),'Adoption visible in activity');
+expect(str_contains($html,'&lt;Synthetic &amp; Company&gt; Registration'),'Company escaped in actual customer Blade');expect(str_contains($html,'This domain is set to cancel when it expires on'),'Approved cancellation copy');expect(str_contains($html,'Registration adopted'),'Adoption visible in activity');
+same('cancellation',$dto->renewalOff,'Native cancellation takes precedence over adopted stop');
+DB::transaction(function()use($d,$bindings):void {
+$l=\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d);$l['cancel']=collect();
+$l['domain']=clone $l['domain'];$policy=$l['domain']->renewal_policy;
+$l['domain']->renewal_policy=[...$policy,'owner_auto_renew'=>false,'renewals_stopped'=>true];
+same('staff',\Paymenter\Extensions\Servers\Domains\Services\RenewalStop::offReason($l),'Staff takes precedence over adopted and owner');
+$l['domain']->renewal_policy=[...$policy,'owner_auto_renew'=>false];
+expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalStop::blocked($l),'Original adopted do-not-renew is a hard stop without cancellation');
+same('adopted',\Paymenter\Extensions\Servers\Domains\Services\RenewalStop::offReason($l),'Adopted reason when no cancellation or staff stop');
+try{\Paymenter\Extensions\Servers\Domains\Services\DomainBilling::requireAuthority($l,$bindings,true);expect(false,'Adopted manual authority refused');}
+catch(\Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e){same(\Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::LifecycleNotReady,$e->reason,'Adopted authority refuses for lifecycle');}
+});
+$preference=new \Paymenter\Extensions\Servers\Domains\Services\OwnerAutoRenew($clock);
+$refused=false;try{$preference->set($owner,$d->id,true);}catch(DomainException){$refused=true;}expect($refused,'Adopted DNR switch cannot be toggled');
+same([],$owners->present($d)->autoRenew,'Adopted hard stop hides switch');same([],$owners->present($d)->renewNow,'Adopted hard stop hides manual request');
 $text=strip_tags(preg_replace('~<(script|style)\b[^>]*>.*?</\1>~si','',$html));foreach(['Enom','NameSilo','account-enom','synthetic-secret','provider_domain_id','account_fingerprint']as$private){expect(!str_contains($text,$private),'Customer excludes registrar/private identity');}
 $money=scenarioMoney();$clock->time=new DateTimeImmutable('2027-10-21T00:00:00Z');$expired=$owners->present($d,false);same('Registry expiry reached',$expired->status,'Read-only expired display');same($dto->history,$expired->history,'Expired history remains accessible');same('example.com',$d->fresh()->reservation_name,'Expired name stays reserved');same($money,scenarioMoney(),'Presentation never rewrites finances');
 try{$owners->owned($other,$d->id);expect(false,'Cross-owner detail must refuse');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}
@@ -49,7 +64,7 @@ $issued=$owners->present($d->fresh(),false);same('2027-10-13',$issued->renewalDu
 $issuedHtml=view('domains::show',['domain'=>$issued])->render();expect(str_contains($issuedHtml,'Renewal invoice issued'),'Actual issued-debt label');expect(!str_contains($issuedHtml,'An invoice will be issued'),'Issued debt never promises a second invoice');
 $c=App\Models\ServiceCancellation::create(['service_id'=>$service->id,'type'=>'end_of_period','reason'=>'Stop the next renewal after issued debt']);
 $stopped=$owners->present($d->fresh(),false);same('Off',$stopped->renewal,'Later stop turns future renewal off');same(false,$stopped->originalDoNotRenew,'Later stop is distinct from original DNR');same('pending',$stopped->renewalInvoice['state'],'Issued debt remains visible after later stop');
-$stoppedHtml=view('domains::show',['domain'=>$stopped])->render();expect(str_contains($stoppedHtml,'Existing renewal invoices keep their own payment and reminder rules.'),'Later stop qualifies issued invoice reminders');expect(!str_contains($stoppedHtml,'No renewal invoices or renewal reminders are scheduled.'),'Later stop never promises suppression of issued reminders');
+$stoppedHtml=view('domains::show',['domain'=>$stopped])->render();expect(str_contains($stoppedHtml,'Contact support to keep it.'),'Later stop asks for support');expect(!str_contains($stoppedHtml,'No renewal invoices or renewal reminders are scheduled.'),'Later stop never promises suppression of issued reminders');
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
 $paid=$owners->present($d->fresh(),false);same(null,$paid->plannedRenewalDue,'Paid issued cycle never projects a new invoice');same('paid',$paid->renewalInvoice['state'],'Paid debt presented distinctly');
 $paidHtml=view('domains::show',['domain'=>$paid])->render();expect(str_contains($paidHtml,'Renewal payment received'),'Actual paid renewal label');expect(!str_contains($paidHtml,'An invoice will be issued'),'Paid cycle never promises another invoice');
