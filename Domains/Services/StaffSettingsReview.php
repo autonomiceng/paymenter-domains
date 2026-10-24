@@ -11,7 +11,7 @@ final class StaffSettingsReview
     public const KEY='domains_staff_settings_audit';
     public const KEYS='domains_staff_review_keys';
     public const HISTORY_LIMIT=50;
-    public const ACTIONS=['test_renewal'=>'Review TEST renewal acceptance','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
+    public const ACTIONS=['test_management'=>'Review TEST management acceptance','test_renewal'=>'Review TEST renewal acceptance','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
         'tld_settings'=>'Review TLD availability','seller'=>'Select seller','publish'=>'Publish prices','import'=>'Import accepted ending','acceptance'=>'Review catalogue acceptance','history'=>'Review history acceptance','enroll_sandbox'=>'Enroll NameSilo OTE key','configure'=>'Verify identity','probe'=>'Read balance','processing'=>'Change processing','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
     private array $verified=[];
     private array $before=[];

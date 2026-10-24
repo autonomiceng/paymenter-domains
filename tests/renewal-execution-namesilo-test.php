@@ -31,6 +31,22 @@ for ($cycle=0;$cycle<2;$cycle++) {
         $wire->during=$failRead; same('queued',$engine->run($renewal->id,$writer)->state,'Required NameSilo read'.$nth.' outage stays retryable');
         same(0,$writes,'No write during required subread outage'); $wire->during=null; Cache::flush();
     } $wire->commands=[]; }
+    if($cycle===0){
+        require_once __DIR__.'/Support/staff-panel.php';
+        $staff=staffUser(['admin.domains.view','admin.domains.manage','admin.domains.operations.release']);
+        Illuminate\Support\Facades\Auth::login($staff);$wire->auto='Yes';Cache::flush();
+        same('held',$engine->run($renewal->id,$writer)->state,'NameSilo auto-renew refusal is held before dispatch');
+        same('provider_auto_renew_unconfirmed',$renewal->fresh()->safe_code,'NameSilo included admission code');
+        same([],($renewal->fresh()->attempt??[]),'NameSilo refusal has no attempt');same(0,$writes,'No premature NameSilo send');
+        $guidance='Check auto-renew for this domain at NameSilo and turn it off if it is on. Then choose Release unsent hold; the renewal engine will check it again before sending.';
+        expect(in_array($guidance,Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::review($renewal->fresh()),true),'Unsent review names release rather than completion reads');
+        $fresh=$renewal->fresh();$ticket=Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket($staff->id,$holding->id,$fresh->id,'release',Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($fresh,$holding->fresh()),$clock);
+        (new Paymenter\Extensions\Servers\Domains\Services\StaffOperations($clock))->run($staff,$holding->id,$fresh->id,'release',$ticket,'Corrected provider auto-renew and reviewed unsent renewal');
+        same('queued',$renewal->fresh()->state,'NameSilo staff release queues original paid renewal');same(null,$renewal->fresh()->safe_code,'NameSilo refusal cleared');
+        expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($renewal->fresh())['auto_renew']),'Queued virgin renewal has no sent-attempt recovery instruction');
+        expect(!isset($renewal->fresh()->policy['renewal_execution']),'Released renewal has no stale hold alert or credit-candidate flag');
+        same(0,$writes,'NameSilo release grants no dispatch');$wire->auto='No';$wire->commands=[];Cache::flush();Illuminate\Support\Facades\Auth::login($user);
+    }
     same('pending',$engine->run($renewal->id,$writer)->state,'No-ID renewal acknowledged after all required reads recover');
     same(8,count($wire->commands),'Full status, margin, flags and balance repeated before send');
     same($year.'-10-18',$holding->fresh()->provider_expires_at->format('Y-m-d'),'Acknowledgement is not expiry');

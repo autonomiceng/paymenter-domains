@@ -88,8 +88,8 @@ class Operation extends Model
             $deferrals=$old['capacity_deferrals']??[];
             $validDeferrals=!array_key_exists('capacity_deferrals',$old)||(is_array($deferrals)&&array_is_list($deferrals)&&count($deferrals)<=5
                 &&!array_filter($deferrals,static fn($at)=>!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/D',$at)));
-            $safeCapReset=$operation->getOriginal('state')==='running'&&$operation->state==='held'&&$operation->safe_code==='enom_test_call_cap'
-                &&$operation->action==='register'&&$operation->started_at===null&&$operation->request_fingerprint===null&&$operation->lease_expires_at===null
+            $safeCapReset=$operation->getOriginal('state')==='running'&&$operation->state==='held'&&in_array($operation->safe_code,['enom_test_call_cap','enom_test_transfer_call_cap'],true)
+                &&in_array($operation->action,['register','transfer'],true)&&$operation->started_at===null&&$operation->request_fingerprint===null&&$operation->lease_expires_at===null
                 &&$operation->provider_order_id===null&&!array_key_exists('actual',$operation->cost??[])&&!array_key_exists('execution',$operation->cost??[])
                 &&!array_key_exists('dispatch_attempted_at',$operation->policy??[])
                 &&is_array($lastRefusal)&&$lastRefusal===['phase'=>$phase,'refused_at'=>$lastRefusal['refused_at']??null,
@@ -104,7 +104,7 @@ class Operation extends Model
             $retryFunding=$newFunding;unset($retryFunding['claim'],$retryFunding['seal']);
             $freshClaim=$newFunding['claim']??null;
             $safeTestRetry=$operation->getOriginal('state')==='queued'&&$operation->state==='running'&&$operation->safe_code===null
-                &&$operation->action==='register'&&$operation->registrar_key==='enom'&&$oldRefusals!==[]&&$oldRefusals===$newRefusals
+                &&in_array($operation->action,['register','transfer'],true)&&$operation->registrar_key==='enom'&&$oldRefusals!==[]&&$oldRefusals===$newRefusals
                 &&in_array($operation->getOriginal('safe_code'),[null,'write_rate_limited'],true)
                 &&($old['seal']??null)==='absent'&&($old['send_state']??null)==='definitely_unsent'
                 &&(!isset($old['claim_key'])||(is_string($old['claim_key'])&&preg_match('/^[a-f0-9]{32}$/D',$old['claim_key'])&&($new['claim_key']??null)!==$old['claim_key']))
@@ -118,10 +118,10 @@ class Operation extends Model
                 &&(!array_key_exists('claim',$oldFunding)||$freshClaim===$oldFunding['claim']);
             if($safeCapReset) {
                 $allowed=$phase==='purchase'
-                    ?['test_call_refusals','claim_key','seal','send_state','capacity_deferrals','dispatch_attempted_at','authorized_cost','registration_admission']
+                    ?['test_call_refusals','claim_key','seal','send_state','capacity_deferrals','dispatch_attempted_at','authorized_cost',$operation->action==='transfer'?'transfer_admission':'registration_admission']
                     :['test_call_refusals','claim_key','seal','send_state','capacity_deferrals'];
                 $safeCapReset=($old['send_state']??null)===($phase==='purchase'?'possibly_sent':'definitely_unsent')
-                    &&($phase==='purchase'?($old['seal']??null)==='sealed'&&isset($old['dispatch_attempted_at'],$old['authorized_cost'],$old['registration_admission']):($old['seal']??null)==='absent')
+                    &&($phase==='purchase'?($old['seal']??null)==='sealed'&&isset($old['dispatch_attempted_at'],$old['authorized_cost'],$old[$operation->action==='transfer'?'transfer_admission':'registration_admission']):($old['seal']??null)==='absent')
                     &&($phase!=='purchase'||\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::purchaseUnconsumed($operation->account_fingerprint,(int)$operation->id))
                     &&$validDeferrals&&!array_diff(array_keys($old),$allowed)
                     &&!array_intersect(array_keys($old),['execution','evidence','charge','order_candidates','provider_reference','registration','corrections','reconciliation','terminal']);

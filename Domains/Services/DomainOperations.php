@@ -56,20 +56,20 @@ final class DomainOperations
                 if ($this->writer instanceof RegistrationBridge && !AcquisitionSetup::ready($route)) { return $route; }
                 if (in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { $this->writer->reserve(); }
             }
-            catch (WriteHeld $held) { return $held->reason==='write_rate_limited'?$route:$this->claims->holdUnclaimed($id, $held->reason); }
+            catch (WriteHeld $held) { return $held->reason==='write_rate_limited'?$route:$this->claims->holdUnclaimed($id, $route->action==='transfer'&&$route->registrar_key==='enom'&&$held->reason==='usd_balance_required'?'enom_test_transfer_usd_balance_required':$held->reason); }
         }
-        if (EnomTestRegistration::applies($route)) {
+        if (EnomTestRegistration::applies($route)||EnomTestTransfer::applies($route)) {
             try {
                 $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$route->server_id)->first();
                 if(!$account) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
                 $binding = CatalogueAcceptances::binding($account);
-                if(!EnomTestRegistration::enabled($binding)) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
+                if(!($route->action==='transfer'?EnomTestTransfer::enabled($binding):EnomTestRegistration::enabled($binding))) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
                 if(($reason=EnomTestRegistration::localHoldReason($binding,$route))!==null){return $this->claims->holdUnclaimed($id,$reason);}
                 return EnomTestCalls::withPurchase($binding,fn()=> $this->executeClaimed($id,$entry,$binding),(int)$route->id);
-            } catch (EnomTestCallLimit) { return $this->claims->holdUnclaimed($id,'enom_test_call_cap'); }
+            } catch (EnomTestCallLimit) { return $this->claims->holdUnclaimed($id,$route->action==='transfer'?'enom_test_transfer_call_cap':'enom_test_call_cap'); }
             catch (ReadDeferred) { return $route->fresh(); }
             catch (WriteHeld $held) { return $this->claims->holdUnclaimed($id,$held->reason); }
-            catch (\Throwable) { return $this->claims->holdUnclaimed($id,'enom_test_setup_required'); }
+            catch (\Throwable) { return $this->claims->holdUnclaimed($id,$route->action==='transfer'?'enom_test_transfer_setup_required':'enom_test_setup_required'); }
         }
         return $this->executeClaimed($id,$entry);
     }

@@ -14,14 +14,14 @@ $clock->at = new DateTimeImmutable('2026-10-18T12:00:00Z');
 $binding = new AccountBinding('enom', 1, Environment::Test, 'offline');
 $context = fn (int $budget = 8) => new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+1 hour'), new RequestBudget($budget), $clock);
 $wire = new class implements Transport {
-    public array $data = []; public array $calls = []; public bool $fail = false; public bool $reject = false; public ?ReadCommand $failCommand = null;
+    public array $data = []; public array $calls = []; public bool $fail = false; public bool $reject = false; public ?ReadCommand $failCommand = null; public ?ReadCommand $rejectCommand = null;
     public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
     {
         $this->calls[] = [$command, $parameters];
         if ($this->fail || $this->failCommand === $command) { throw new RuntimeException('private-token'); }
         if (str_starts_with($this->data[$command->name] ?? '', '<interface-response>')) { return $this->data[$command->name]; }
-        return '<interface-response><Command>'.$command->value.'</Command><ErrCount>'.($this->reject ? '1' : '0').'</ErrCount><Done>true</Done>'.($this->data[$command->name] ?? '').'</interface-response>';
+        return '<interface-response><Command>'.$command->value.'</Command><ErrCount>'.(($this->reject || $this->rejectCommand === $command) ? '1' : '0').'</ErrCount><Done>true</Done>'.($this->data[$command->name] ?? '').'</interface-response>';
     }
 };
 $driver = new Driver(new Client($binding, 'offline', 'private-token', $wire), ['com']);
@@ -160,6 +160,18 @@ foreach ([ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Expired] as
     same(Disposition::Unknown, $driver->quote($annual, $context())->disposition, 'Every required renewal read failure reports Unknown');
 }
 $wire->failCommand = null;
+foreach (['transport', 'provider'] as $failure) {
+    foreach ([ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Expired] as $index => $failed) {
+        $wire->failCommand = $failure === 'transport' ? $failed : null; $wire->rejectCommand = $failure === 'provider' ? $failed : null; $before = count($wire->calls);
+        $result = $driver->renewalAssessment($annual, $context());
+        same([Disposition::Unknown, $failure === 'transport' ? SendState::PossiblySent : SendState::Sent, RenewalStatus::Unknown, null, null],
+            [$result->disposition, $result->sendState, $result->evidence()->renewal, $result->evidence()->quote, $result->evidence()->domain],
+            'First failed renewal prerequisite preserves unresolved result without financial proof');
+        same(array_slice([ReadCommand::Info, ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Expired], 0, $index + 2),
+            array_column(array_slice($wire->calls, $before), 0), 'Failed renewal prerequisite stops before Check/expired inventory follow-ups');
+    }
+}
+$wire->failCommand = null; $wire->rejectCommand = null;
 $execution = new PersistedExecution($binding, new Query('example.com', Action::Register, 1), 'original', Disposition::Accepted, SendState::Sent, '9001');
 $attempt = fn (Action $action = Action::Register, ?Money $expected = null, ExecutionRecord $record = ExecutionRecord::Recorded) => new AttemptEvidence(
     $binding, new Query('example.com', $action, 1), 'original', 1, $record, SendState::Sent, $clock->now(), $clock->now(),

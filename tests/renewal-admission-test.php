@@ -54,7 +54,18 @@ $check = static function (?RenewalRequest $r = null) use ($service, $request, $s
     static function (Closure $hook) use ($state) { $state->during = $hook; });
 $decision = $check(); same(RenewalCode::Admitted, $decision->code, 'Ordinary known-cost renewal admitted');
 same(RenewalStatus::Ordinary, $decision->status, 'Ordinary state retained'); same('8.9500', $decision->cost->amount, 'Exact cost retained');
-same(8, count($state->calls), 'Bounded actual read sequence');
+$admissionReads = [ReadCommand::Info, ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Balance];
+same($admissionReads, $state->calls, 'Ordinary renewal uses exactly six fresh reads');
+foreach (['owner' => ['foreign', RenewalCode::Owner, 4], 'id' => ['999', RenewalCode::Owner, 5],
+    'expiry' => ['10/19/2027 5:00:00 AM', RenewalCode::Anchor, 5],
+    'same_day_expiry' => ['10/18/2027 5:00:01 AM', RenewalCode::Anchor, 5]] as $case => [$value, $code, $count]) {
+    $field = $case === 'same_day_expiry' ? 'expiry' : $case; $saved = $state->$field;
+    $state->duringCommand = ReadCommand::Check; $state->during = static function () use ($state, $field, $value) { $state->$field = $value; };
+    same($code, $check()->code, 'Drift between admission identities refuses '.$case);
+    same(array_slice($admissionReads, 0, $count), $state->calls, 'Identity drift stops at the required fresh proof '.$case);
+    $state->$field = $saved;
+}
+$state->duringCommand = null;
 $state->captured = true;
 $capturedDecision = $check();
 same(RenewalCode::Admitted, $capturedDecision->code, 'Captured flat GetExtendInfo and Check v2 pass full admission');
@@ -103,7 +114,7 @@ same(RenewalCode::Changed, $check($request(3))->code, 'Multi-year ordinary read 
 $state->duringCommand = null;
 $clock->instant = new DateTimeImmutable('2027-10-18T12:00:00Z'); $decision = $check();
 same(RenewalCode::Admitted, $decision->code, 'Exact expiry boundary admits proven one-year grace'); same(RenewalStatus::Grace, $decision->status, 'Grace from provider inventory');
-same(9, count($state->calls), 'Grace read budget bounded');
+same([ReadCommand::Info, ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Expired, ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Balance], $state->calls, 'Grace retains inventory and both fresh identities in seven reads');
 $state->hold = 'True'; same(RenewalCode::Admitted, $check()->code, 'Inventory-proven grace may retain registrar hold'); $state->hold = 'False';
 $graceOff = new RenewalAdmission($authority, $renewBindings, new RenewalAcceptance($binding, true, true, 25), $clock);
 Cache::flush(); same(RenewalCode::Grace, $graceOff->check($request())->code, 'Grace defaults closed');

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 function hrtime(bool $asNumber=false): mixed { if($hook=$GLOBALS['enomWire']['before']??null){$GLOBALS['enomWire']['before']=null;$hook();}return $GLOBALS['enomWire']['nanoseconds']??0; }
 function curl_init(): object|false { $GLOBALS['enomWire']['inits']++;return $GLOBALS['enomWire']['initFail']?false:new \stdClass; }
-function curl_setopt_array($h,array $options): bool { $GLOBALS['enomWire']['options']=$options;return !$GLOBALS['enomWire']['configFail']; }
+function curl_setopt_array($h,array $options): bool { $GLOBALS['enomWire']['options']=$options;if($hook=$GLOBALS['enomWire']['configure']??null){$hook();}return !$GLOBALS['enomWire']['configFail']; }
 function curl_exec($h): bool
 {
     $fake=&$GLOBALS['enomWire'];parse_str($fake['options'][CURLOPT_POSTFIELDS],$form);$fake['forms'][]=$form;

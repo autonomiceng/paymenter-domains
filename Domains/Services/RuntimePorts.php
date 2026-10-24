@@ -18,12 +18,12 @@ final class RuntimePorts
     public function registered(Account $account): bool
     {
         if(isset($this->factories[$account->account_fingerprint])){return true;}
-        try{return EnomTestRegistration::enabled(CatalogueAcceptances::binding($account))||EnomTestRenewal::enabled(CatalogueAcceptances::binding($account));}catch(\Throwable){return false;}
+        try{return EnomTestRegistration::enabled(CatalogueAcceptances::binding($account))||(EnomTestRenewal::enabled(CatalogueAcceptances::binding($account))||EnomTestManagement::enabled(CatalogueAcceptances::binding($account))||EnomTestTransfer::enabled(CatalogueAcceptances::binding($account)));}catch(\Throwable){return false;}
     }
     private function composition(Account $account): array
     {
         $binding=CatalogueAcceptances::binding($account);
-        $factory=$this->factories[$account->account_fingerprint]??((EnomTestRegistration::enabled($binding)||EnomTestRenewal::enabled($binding))?EnomTestRegistration::factory($binding):null)
+        $factory=$this->factories[$account->account_fingerprint]??((EnomTestRegistration::enabled($binding)||(EnomTestRenewal::enabled($binding)||EnomTestManagement::enabled($binding)||EnomTestTransfer::enabled($binding)))?EnomTestRegistration::factory($binding):null)
             ??throw new \DomainException('Runtime provider acceptance is required.');
         $ports=$factory(CatalogueAcceptances::binding($account));
         foreach(self::TYPES as $key=>$type){if(!($ports[$key]??null) instanceof $type){throw new \DomainException('Incomplete runtime composition.');}}
@@ -32,6 +32,8 @@ final class RuntimePorts
         return $ports;
     }
     public function accepted(Account $account): bool {try{$this->composition($account);return true;}catch(\Throwable){return false;}}
+    public function recordDiscoveryAccepted(Account $account): bool
+    { return $this->accepted($account)&&(isset($this->factories[$account->account_fingerprint])||!TestCatalogue::testDeployment(CatalogueAcceptances::binding($account))||EnomTestManagement::accepted(CatalogueAcceptances::binding($account))); }
     /** Local composition and feature facts only; these never confer processing or provider acceptance. */
     public function acquisitionGates(Account $account): array
     {

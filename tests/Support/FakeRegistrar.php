@@ -36,6 +36,8 @@ final class FakeRegistrar implements RegistrarDriver
     {
         Query::requireName($name); return $this->read('domain', $context);
     }
+    public function readRenewalDomain(string $name, RequestContext $context): DriverResult
+    { return $this->readDomain($name, $context); }
     public function renewalAssessment(Query $query, RequestContext $context): DriverResult
     {
         if ($query->action !== Action::Renew) { throw new \InvalidArgumentException('Renewal assessment requires renew action.'); }

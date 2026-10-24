@@ -42,10 +42,18 @@ class RegistrarSetup extends Page
             if ($a?->registrar_key==='enom' && $a->environment==='test' && config('domains.enom_writes.registration')===true) {
                 $facts['Enom TEST registration']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRegistration::reason();
             }
+            if($a?->registrar_key==='enom'&&$a->environment==='test'&&config('domains.enom_writes.transfer')===true){
+                $facts['Enom TEST inbound transfer']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::reason();
+            }
             if($a?->registrar_key==='enom'&&$a->environment==='test'&&config('domains.enom_writes.renewal')===true){
                 $facts['Enom TEST renewal']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::reason();
                 try{$facts['TEST renewal acceptance']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::accepted(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a))?'Accepted':'Not accepted';}
                 catch(\Throwable){$facts['TEST renewal acceptance']='Unavailable';}
+            }
+            if($a?->registrar_key==='enom'&&$a->environment==='test'&&config('domains.enom_writes.management')===true){
+                $facts['Enom TEST management']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::reason();
+                try{$facts['TEST management acceptance']=\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::accepted(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a))?'Accepted':'Not accepted';}
+                catch(\Throwable){$facts['TEST management acceptance']='Unavailable';}
             }
             $facts += \Paymenter\Extensions\Servers\Domains\Services\RuntimeHealth::for((int)$s->id);
             $facts += \Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule((int)$s->id);

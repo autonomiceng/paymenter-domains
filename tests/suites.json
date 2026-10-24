@@ -71,6 +71,8 @@
     "tests/native-renewal-guard-test.php",
     "tests/renewal-execution-test.php",
     "tests/enom-test-renewal-guards-test.php",
+    "tests/enom-test-management-guards-test.php",
+    "tests/enom-test-transfer-guards-test.php",
     "tests/renewal-safety-test.php",
     "tests/renewal-cycles-test.php",
     "tests/renewal-execution-namesilo-test.php",
@@ -153,6 +155,8 @@
     "tests/test_installed_package_enom_exchange.py",
     "tests/test_installed_package_enom_test.py",
     "tests/test_installed_package_enom_renewal.py",
+    "tests/test_installed_package_enom_management.py",
+    "tests/test_installed_package_enom_transfer.py",
     "tests/test_installed_package_namesilo.py",
     "tests/operation-clock-test.php",
     "tests/operation-rate-test.php",
@@ -256,7 +260,8 @@
     "tests/staff-watch-findings-test.php",
     "tests/staff-watch-summary-owners-test.php",
     "tests/watch-transfer-test.php",
-    "tests/runtime-health-test.php"
+    "tests/runtime-health-test.php",
+    "tests/staff-renewal-release-test.php"
   ],
   "ui": [],
   "runner": [

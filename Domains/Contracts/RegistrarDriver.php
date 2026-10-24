@@ -14,6 +14,8 @@ interface RegistrarDriver
     public function quote(Query $query, RequestContext $context): DriverResult;
     public function availability(Query $query, RequestContext $context): DriverResult;
     public function readDomain(string $name, RequestContext $context): DriverResult;
+    /** Fresh renewal ownership, expiry and auto-renew; other flags may remain unknown. */
+    public function readRenewalDomain(string $name, RequestContext $context): DriverResult;
     public function renewalAssessment(Query $query, RequestContext $context): DriverResult;
     public function reconcile(AttemptEvidence $attempt, RequestContext $context): ReconciliationResult;
 }

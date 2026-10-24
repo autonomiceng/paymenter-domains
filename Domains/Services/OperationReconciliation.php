@@ -51,7 +51,7 @@ final class OperationReconciliation
         if (!$covered) {
             if (!$callCapBlocked) {
                 return $this->claims->locked($id,function($op,$domain)use($stamp):Operation {
-                    if(!self::eligible($op)||self::stamp($op,$domain)!==$stamp||$op->safe_code!=='enom_test_reconciliation_call_cap'){return $op;}
+                    if(!self::eligible($op)||self::stamp($op,$domain)!==$stamp||!in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)){return $op;}
                     $policy=$op->policy;$policy['reconciliation']['reason']='reconciliation_required';
                     $op->update(['safe_code'=>'reconciliation_required','policy'=>$policy]);return $op;
                 });
@@ -60,8 +60,8 @@ final class OperationReconciliation
                 if (!self::eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
                 $policy = $op->policy;
                 $policy['reconciliation']['staff_alert'] = true;
-                $policy['reconciliation']['reason'] = 'enom_test_reconciliation_call_cap';
-                $op->update(['safe_code' => 'enom_test_reconciliation_call_cap', 'policy' => $policy]);
+                $policy['reconciliation']['reason'] = $op->action==='transfer'?'enom_test_transfer_reconciliation_call_cap':'enom_test_reconciliation_call_cap';
+                $op->update(['safe_code' => $policy['reconciliation']['reason'], 'policy' => $policy]);
                 return $op;
             });
         }
@@ -74,6 +74,7 @@ final class OperationReconciliation
             } catch (\Throwable) { return $op; }
             $policy = $op->policy; $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1;
             if ($op->action === 'transfer') {
+                if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)){$op->safe_code='reconciliation_required';}
                 $policy['reconciliation']['transfer_status'] = $transfer->value;
                 if ($op->state === 'held') { $op->update(['state' => 'uncertain', 'safe_code' => 'reconciliation_required']); }
                 if ($transferConflict) {

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
 /** Explicit local writers. Never clears attempt evidence, sends a request or releases paid uncertainty. */
 final class StaffOperationWrites
 {
@@ -14,18 +15,18 @@ final class StaffOperationWrites
     }
     public static function release(Operation $op,array $l,\DateTimeImmutable $now): void
     {
-        $testOnly=['enom_test_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required',
-            'write_rate_limited','registry_details_unsupported','usd_balance_required','enom_test_setup_required'];
-        $testRegistration=$op->action==='register'&&$op->registrar_key==='enom'&&($l['account']->environment??null)==='test'
-            &&EnomTestRegistration::deploymentEnabled();
+        $testOnly=['enom_test_call_cap','enom_test_transfer_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required',
+            'write_rate_limited','registry_details_unsupported','usd_balance_required','enom_test_transfer_usd_balance_required','enom_test_setup_required','enom_test_transfer_setup_required'];
+        $testRegistration=in_array($op->action,['register','transfer'],true)&&$op->registrar_key==='enom'&&($l['account']->environment??null)==='test'
+            &&($op->action==='transfer'?EnomTestTransfer::deploymentEnabled():EnomTestRegistration::deploymentEnabled());
         $ordinary=['staff_review_required','funding','processing','write_disabled','write_acceptance_required',
             'renewal_funding_or_authority','renewal_authority_invalid','transfer_setup_review_required'];
         $renewalCap=$op->action==='renew'&&$op->registrar_key==='enom'&&($l['account']->environment??null)==='test'&&EnomTestRenewal::enabled(CatalogueAcceptances::binding($l['account']))&&$op->safe_code==='enom_test_renewal_call_cap'&&($op->attempt??[])===[];
         $testRetry=$testRegistration&&OperationClaims::testCallRefusalRetryable($op);
         $testVirgin=$testRegistration&&in_array($op->safe_code,$testOnly,true)&&($op->attempt??[])===[];
         if($op->state!=='held'||!in_array($op->action,['register','transfer','renew'],true)
-            ||(!in_array($op->safe_code,$ordinary,true)&&!($testRetry||$testVirgin||$renewalCap))
-            ||($op->safe_code==='enom_test_call_cap'&&!$testRetry)) {
+            ||(!in_array($op->safe_code,$ordinary,true)&&!($testRetry||$testVirgin||$renewalCap||self::renewalAdmissionHold($op)))
+            ||(in_array($op->safe_code,['enom_test_call_cap','enom_test_transfer_call_cap'],true)&&!$testRetry)) {
             throw new \DomainException('This hold requires its original recovery or evidence path.'); }
         if($testRetry) { RefundProof::requireUnsent($op,$l['domain']); }
         else { self::virgin($op,$l); }
@@ -34,7 +35,15 @@ final class StaffOperationWrites
         else { RefundPayment::requireCurrent($op,$l);ContactSetup::validate($op);
             if($op->action==='transfer'&&(!TransferInputs::validCode($op->payload['epp']??null)||!($deadline=TransferInputs::deadline($op,$now))||$now>=$deadline)) {
                 throw new \DomainException('Verified transfer payment and saved code required.'); } }
-        $op->update(['state'=>'queued','safe_code'=>null]); // The normal engine must freshly admit; this grants no dispatch.
+        $policy=$op->policy??[];
+        if($op->action==='renew'){unset($policy['renewal_admission'],$policy['renewal_execution']);}
+        $op->update(['state'=>'queued','safe_code'=>null,'policy'=>$policy]); // The normal engine must freshly admit; this grants no dispatch.
+    }
+    /** Selected pre-dispatch refusals; identity, spend-pause and prior-outcome codes remain excluded. */
+    public static function renewalAdmissionHold(Operation $op): bool
+    {
+        return $op->action==='renew'&&in_array(RenewalCode::tryFrom($op->safe_code??''),
+            [RenewalCode::State,RenewalCode::Cost,RenewalCode::Owner,RenewalCode::AutoRenew,RenewalCode::Term],true);
     }
     public static function disposition(Operation $op,array $l): void
     {
@@ -50,7 +59,8 @@ final class StaffOperationWrites
     private static function virgin(Operation $op,array $l): void
     {
         if(($op->attempt??[])!==[]||$op->started_at!==null||$op->request_fingerprint!==null||$op->completed_at!==null
-            ||$op->lease_expires_at!==null||!FinancialAdjustments::unattemptedFunding($op)) { throw new \DomainException('An original attempt cannot be readmitted.'); }
+            ||$op->lease_expires_at!==null||!FinancialAdjustments::unattemptedFunding($op)
+            ||($op->action==='renew'&&!RenewalCycles::virgin($op))) { throw new \DomainException('An original attempt cannot be readmitted.'); }
         RefundProof::requireUnsent($op,$l['domain']);
     }
 }

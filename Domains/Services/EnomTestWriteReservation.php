@@ -10,12 +10,14 @@ final class EnomTestWriteReservation
     public static function run(AccountBinding $b,string $action,int $id,\Closure $work): mixed
     {
         if(self::$scope!==null&&self::$scope->fingerprint===$b->fingerprint&&self::$scope->action===$action&&self::$scope->id===$id){return $work();}
-        if(self::$scope!==null||$b->registrarKey!=='enom'||$b->environment!==Environment::Test||$id<1||$action!=='renewal'){throw new EnomTestCallLimit;}
+        if(self::$scope!==null||$b->registrarKey!=='enom'||$b->environment!==Environment::Test||$id<1||!in_array($action,['renewal','management'],true)){throw new EnomTestCallLimit;}
         self::$scope=(object)['fingerprint'=>$b->fingerprint,'action'=>$action,'id'=>$id,'day'=>null,'consumed'=>false];
         try{return $work();}finally{self::$scope=null;}
     }
     public static function active(AccountBinding $b,string $action): bool
     { return self::$scope!==null&&self::$scope->fingerprint===$b->fingerprint&&self::$scope->action===$action; }
+    public static function unconsumed(AccountBinding $b,string $action,int $id): bool
+    { return self::active($b,$action)&&self::$scope->id===$id&&self::$scope->day!==null&&!self::$scope->consumed; }
     public static function reserve(AccountBinding $b,string $action): void
     {
         if(self::$scope===null){return;}

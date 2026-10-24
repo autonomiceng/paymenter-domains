@@ -42,7 +42,8 @@ final class OperationTerminalProof
             && $op->authority_generation === $domain->authority_generation && $op->confirmed_expires_at === null && $op->provider_order_id === null
             && (
                 ($op->action === 'transfer' && ($a['terminal'] ?? null) === ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation]
-                    && !array_diff(array_keys($a), ['claim_key', 'seal', 'send_state', 'terminal', 'disposition', 'rejection_basis'])) || $op->action === 'register' || ($op->action === 'renew' && ($a['terminal']['operation_key'] ?? null) === $op->operation_key
+                    && !array_diff(array_keys($a), ['claim_key', 'seal', 'send_state', 'terminal', 'disposition', 'rejection_basis','test_call_refusals','capacity_deferrals'])
+                    &&(!array_intersect(['test_call_refusals','capacity_deferrals'],array_keys($a))||OperationClaims::testCallRefusalUnsent($op))) || $op->action === 'register' || ($op->action === 'renew' && ($a['terminal']['operation_key'] ?? null) === $op->operation_key
                 && ($a['terminal']['generation'] ?? null) === $op->authority_generation
                 && $op->safe_code === 'renewal_cancelled_unpaid' && ($a['terminal']['invoice_id'] ?? null) === $op->invoice_id))
             && ($a['disposition'] ?? null) === 'rejected' && ($a['rejection_basis'] ?? null) === 'definitely_unsent'

@@ -19,7 +19,7 @@ expect($pointerRefused, 'Retained adoption pointer without migration history ref
 DB::table('migrations')->insert((array) $pointerMigration);
 same(7,DB::table('migrations')->where('migration','like','2026_10_18_%')->count(),'All extension migrations recorded');
 $entry->upgraded('0.0.1');$entry->uninstalled();$entry->installed();
-Runtime::register();same(app(RuntimePorts::class),app(RuntimePorts::class),'One port authority');
+Runtime::register();same(app(RuntimePorts::class),app(RuntimePorts::class),'One port authority');expect(!app()->bound(\Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class),'Disabled TEST transfer preserves absent cart precheck');
 $entry->boot();$entry->boot();
 same(1,count(Event::getListeners('navigation')),'One public navigation authority');
 same(1,count(Event::getListeners('navigation.dashboard')),'One dashboard navigation authority');

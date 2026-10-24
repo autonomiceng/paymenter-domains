@@ -23,6 +23,7 @@ final class Runtime
             $app->bind(\Paymenter\Extensions\Servers\Domains\Contracts\DnsReader::class,
                 fn($a) => $a->make(DnsResolverSettings::class)->reader());
         }
+        if(EnomTestTransfer::deploymentEnabled()){$app->singletonIf(TransferPrecheck::class);}
         if(!$app->bound(Clock::class)){$app->singleton(Clock::class,SystemClock::class);}
         if(!$app->bound(ReadLimiter::class)){$app->singleton(ReadLimiter::class,fn($a)=>new AccountReadBudget($a->make(Clock::class),48));}
         if(!$app->bound(OwnerPorts::class)){$app->singleton(OwnerPorts::class,fn($a)=>new OwnerPorts(fn($binding)=>$a->make(RuntimePorts::class)->management($binding)));}
@@ -31,7 +32,7 @@ final class Runtime
             $a->make(ReadLimiter::class),$a->make(OwnerPorts::class),static function(array $l)use($a):bool {
                 try {
                     $a->make(AccountBindings::class)->requireProcessingLocked($l['server'],$l['account']);
-                    return $a->make(RuntimePorts::class)->accepted($l['account']);
+                    return $a->make(RuntimePorts::class)->recordDiscoveryAccepted($l['account']);
                 } catch (\Throwable) { return false; }
             }));
         $app->make(RuntimePorts::class)->registerInitialManagedRecordObservations(fn()=>$app->make(ObservationWork::class)->tick(1));

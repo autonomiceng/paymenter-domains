@@ -34,6 +34,8 @@ return static function ($op, $domain, $binding, Closure $compose, $clock, $state
         } else { $noSend($result, $money); }
     }
     // Both admission passes must stop their second physical read after the SAME absolute cap.
+    $admissionReads = [ReadCommand::Info, ReadCommand::RenewalInfo, ReadCommand::Check,
+        ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Balance];
     foreach (['first','refresh','stricter_250','stricter_250_refresh'] as $pass) {
         $reset(); [$engine,$writer] = $compose($binding); $money = $nativeMoney();
         $stricter = str_starts_with($pass, 'stricter_250'); $refresh = $pass === 'refresh' || $pass === 'stricter_250_refresh';
@@ -47,7 +49,10 @@ return static function ($op, $domain, $binding, Closure $compose, $clock, $state
             };
         } else { $state->during = $delay; }
         $result = $engine->run($op->id, $writer); $waiting = false; $noSend($result, $money);
-        same($refresh ? 9 : 1, count($state->calls), 'Late second physical read stopped: '.$pass);
+        same($entry->modify('+'.($stricter ? 251 : 271).' seconds')->format(DATE_ATOM),
+            $clock->now()->format(DATE_ATOM), 'Deadline delay reached: '.$pass);
+        same($refresh ? [...$admissionReads, ReadCommand::Info] : [ReadCommand::Info],
+            $state->calls, 'Late second physical read stopped: '.$pass);
     }
     // A 24-second final admitted wire returns its ID before entry+270, leaving persistence headroom.
     $reset(); [$engine,$writer,$completion] = $compose($binding); $wait = 245; $waiting = true; $money = $nativeMoney();

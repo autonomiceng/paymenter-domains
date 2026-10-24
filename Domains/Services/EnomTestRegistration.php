@@ -34,30 +34,30 @@ final class EnomTestRegistration
     /** Local predicates are checked before the worker claim; provider availability still uses the normal preflight. */
     public static function localHoldReason(AccountBinding $binding, Operation $op): ?string
     {
-        if($op->action!=='register'||$op->registrar_key!=='enom'||!self::enabled($binding)){return 'enom_test_setup_required';}
+        if(!in_array($op->action,['register','transfer'],true)||$op->registrar_key!=='enom'||!($op->action==='transfer'?EnomTestTransfer::enabled($binding):self::enabled($binding))){return $op->action==='transfer'?'enom_test_transfer_setup_required':'enom_test_setup_required';}
         $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
         if(!$protocol['batch_route']||$protocol['interval_seconds']<25||!self::protocolEvidence($binding,$protocol,false)){return 'write_acceptance_required';}
         try {
             $accepted=CatalogueAcceptances::load($binding);$domain=\Paymenter\Extensions\Servers\Domains\Models\Domain::findOrFail($op->domain_id);
             $parts=\Paymenter\Extensions\Servers\Domains\Data\CanonicalName::parse($domain->domain,array_keys($accepted->endings));
             $row=$accepted->endings[$parts['tld']]??null;
-            if(!$row||!in_array((int)$op->term,$row['register'],true)||$row['renew']!==[1]||!$row['renewal_safe']||!$row['registry']){return 'write_acceptance_required';}
+            if(!$row||!in_array((int)$op->term,$row[$op->action],true)||$row['renew']!==[1]||!$row['renewal_safe']||!$row['registry']){return 'write_acceptance_required';}
         } catch(\Throwable){return 'write_acceptance_required';}
-        return self::balanceEvidence($binding,false)?null:'usd_balance_required';
+        return self::balanceEvidence($binding,false)?null:($op->action==='transfer'?'enom_test_transfer_usd_balance_required':'usd_balance_required');
     }
     /** Pure: no credentials, queries, I/O, account mutation or feature inference from processing. */
     public static function factory(AccountBinding $binding): \Closure
     {
-        if (!self::enabled($binding) && !EnomTestRenewal::enabled($binding)) { throw new \DomainException(self::reason()); }
+        if (!self::enabled($binding) && !EnomTestRenewal::enabled($binding) && !EnomTestManagement::enabled($binding) && !EnomTestTransfer::enabled($binding)) { throw new \DomainException(self::reason()); }
         // USD comes only from the existing audited manual/preflight balance reads, bound to this fingerprint.
         // Route and spacing come from A6's actual TEST endpoint/command and worker request policy.
         $protocolAcceptance=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
         if(!$protocolAcceptance['batch_route']||$protocolAcceptance['interval_seconds']<25){throw new \DomainException('TEST registration acceptance evidence is unavailable.');}
         $usdProbe=static fn(AccountBinding $current,bool $lock):bool=>$binding->matches($current)&&self::balanceEvidence($current,$lock);
-        $protocolProbe=static fn(AccountBinding $current,bool $lock):bool=>$binding->matches($current)&&self::protocolEvidence($current,$protocolAcceptance,$lock);
-        return app(AccountBindings::class)->enomRuntimeFactory($binding,app(Clock::class),new WriteFeatures(registration:self::enabled($binding),renewal:EnomTestRenewal::enabled($binding)),
+        $protocolProbe=static fn(AccountBinding $current,bool $lock,?\Paymenter\Extensions\Servers\Domains\Data\Query $query=null):bool=>$binding->matches($current)&&self::protocolEvidence($current,$protocolAcceptance,$lock)&&($query?->action!==\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer||EnomTestTransfer::enabled($current));
+        return app(AccountBindings::class)->enomRuntimeFactory($binding,app(Clock::class),new WriteFeatures(registration:self::enabled($binding),transfer:EnomTestTransfer::enabled($binding),renewal:EnomTestRenewal::enabled($binding),management:EnomTestManagement::enabled($binding)),
             new WriteAcceptance($binding,true,$protocolAcceptance['batch_route'],$protocolAcceptance['interval_seconds'],null,$usdProbe,$protocolProbe),
-            EnomTestRenewal::enabled($binding)?EnomTestRenewal::acceptance($binding):new RenewalAcceptance($binding),new TransferPrecheck(new Rdap));
+            EnomTestRenewal::enabled($binding)?EnomTestRenewal::acceptance($binding):new RenewalAcceptance($binding),app(TransferPrecheck::class),EnomTestManagement::enabled($binding),true);
     }
     private static function protocolEvidence(AccountBinding $binding,array $protocol,bool $lock): bool
     {

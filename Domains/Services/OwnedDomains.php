@@ -92,7 +92,7 @@ final readonly class OwnedDomains
             if (!$label) { continue; }
             $state=match($entry->state) { 'awaiting_payment'=>'Awaiting payment','queued'=>'Queued — not sent yet','running','pending'=>'In progress',default=>'Unresolved' };
             if ($entry->state==='succeeded' && ManagementEvidence::resolved($entry,$d)) { $state=$entry->action==='auth_code_email'?'Email requested':'Confirmed'; }
-            if ($entry->state==='rejected' && ManagementEvidence::resolved($entry,$d)) { $state='Not applied'; }
+            if (($entry->state==='rejected'||$entry->state==='held'&&$entry->safe_code==='enom_test_management_call_cap') && ManagementEvidence::resolved($entry,$d)) { $state='Not applied'; }
             $progress[]=['label'=>$label,'state'=>$state];
         }
         foreach (array_slice($obs['corrections']??[],0,100) as $row) {

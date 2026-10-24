@@ -6,25 +6,25 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ManagementCommand,ReadCommand,RegistrationCommand};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomTestCallLimit,OperationClaims,RenewalAcceptance,Runtime,RuntimeComposition,TransferPrecheck,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomTestCallLimit,EnomTestTransfer,OperationClaims,RenewalAcceptance,Runtime,RuntimeComposition,TransferPrecheck,WriteAcceptance,WriteFeatures};
 
 /** Deployment opt-in only. Exchanges remain private inside the genuine engine-bound protocols. */
 final class RuntimeFactory
 {
     private readonly \SensitiveParameterValue $credentials;
-    private function __construct(private readonly AccountBinding $binding, #[\SensitiveParameter] \Closure $credentials)
+    private function __construct(private readonly AccountBinding $binding, #[\SensitiveParameter] \Closure $credentials, private readonly bool $testTransfer=false)
     { $this->credentials=new \SensitiveParameterValue($credentials); }
 
     /** Pure per-fingerprint factory: neither this call nor invoking its result decrypts or performs I/O. */
     public static function make(AccountBinding $binding, AccountBindings $bindings, Clock $clock, WriteFeatures $features,
         WriteAcceptance $accepted, RenewalAcceptance $renewalAccepted, TransferPrecheck $precheck,
-        #[\SensitiveParameter] \Closure $credentials, bool $managementAccepted=false): \Closure
+        #[\SensitiveParameter] \Closure $credentials, bool $managementAccepted=false, bool $testManagement=false): \Closure
     {
         if ($binding->registrarKey!=='enom') { throw new \InvalidArgumentException('Enom runtime binding required.'); }
-        $wire=new self($binding,$credentials);
+        $wire=new self($binding,$credentials,EnomTestTransfer::enabled($binding));
         return static fn()=>RuntimeComposition::make($binding,$bindings,$clock,$features,$accepted,$renewalAccepted,$precheck,
             new Registration($binding,$wire->exchange('registration')),new Transfer($binding,$wire->exchange('transfer')),
-            $wire->exchange('renewal'),new Management($binding,$wire->exchange('management')),$managementAccepted);
+            $wire->exchange('renewal'),new Management($binding,$wire->exchange('management')),$managementAccepted,testManagement:$testManagement);
     }
 
     /** Reuse the reviewed TEST Purchase route and worker request interval as acceptance evidence. */
@@ -81,8 +81,8 @@ final class RuntimeFactory
                     },
                 ];
                 if(!curl_setopt_array($handle,$options)){throw new \RuntimeException('Enom exchange incomplete.');}
-                $purchase=$named===RegistrationCommand::Purchase;
-                $reserved=$role==='renewal'?\Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::prepare($this->binding,$role):null;
+                $purchase=$named===RegistrationCommand::Purchase||$this->testTransfer&&$named===RegistrationCommand::Transfer;
+                $reserved=($role==='renewal'||$role==='management'&&$named instanceof ManagementCommand)?\Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::prepare($this->binding,$role):null;
                 $day=$reserved??\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::prepareSend($this->binding,$purchase);
                 $timeoutMs=intdiv($deadline-hrtime(true),1000000);
                 if($timeoutMs<1){

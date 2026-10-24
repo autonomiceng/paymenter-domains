@@ -24,8 +24,8 @@ final readonly class WriteAcceptance
         if (!$this->usdBalance || !$this->batchRoute || $this->intervalSeconds < 25 || $this->intervalSeconds > 86400) {
             throw new WriteHeld('write_acceptance_required');
         }
-        if ($this->protocolAcceptanceCheck && ($this->protocolAcceptanceCheck)($binding,$lock)!==true) { throw new WriteHeld('write_acceptance_required'); }
-        if ($this->localAcceptanceCheck && ($this->localAcceptanceCheck)($binding,$lock)!==true) { throw new WriteHeld('usd_balance_required'); }
+        if ($this->protocolAcceptanceCheck && ($this->protocolAcceptanceCheck)($binding,$lock,$query)!==true) { throw new WriteHeld('write_acceptance_required'); }
+        if ($this->localAcceptanceCheck && ($this->localAcceptanceCheck)($binding,$lock)!==true) { throw new WriteHeld($binding->registrarKey==='enom'&&$query->action===\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer?'enom_test_transfer_usd_balance_required':'usd_balance_required'); }
         $accepted = CatalogueAcceptances::load($binding, $lock);
         $parts = CanonicalName::parse($query->name, array_keys($accepted->endings));
         $row = $accepted->endings[$parts['tld']];

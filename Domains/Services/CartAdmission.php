@@ -70,7 +70,7 @@ final class CartAdmission
             if (!$this->native->mapping($product)) { continue; }
             $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $product->server_id)->firstOrFail();
             $binding = CatalogueAcceptances::binding($account);
-            if (EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::enabled($binding)) {
+            if (EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::enabled($binding) && !(($this->native->mapping($product)['action']??null)==='transfer'&&EnomTestTransfer::enabled($binding))) {
                 throw new \App\Exceptions\DisplayException('TEST domains are for preview. Checkout is unavailable; no order or payment was created. Remove TEST domain lines to check out other items.');
             }
             if (DB::transactionLevel() !== 1 || $this->order || (int) Auth::id() !== (int) $order->user_id
@@ -78,7 +78,7 @@ final class CartAdmission
                 throw new \DomainException('Domain checkout requires its native transaction and owner.');
             }
             $mapping = $this->validate($item, $product);
-            if ($mapping['action'] !== 'register' && EnomTestRegistration::enabled($binding)) {
+            if ($mapping['action'] !== 'register' && EnomTestRegistration::enabled($binding) && !EnomTestTransfer::enabled($binding)) {
                 throw new \App\Exceptions\DisplayException('TEST transfers are unavailable; no order or payment was created. Remove TEST transfer lines and check out registrations only.');
             }
             $name = $this->name($item, $mapping);

@@ -11,14 +11,15 @@ use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 function body(string $command, string $payload = ''): string { return '<interface-response><Command>'.$command.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$payload.'</interface-response>'; }
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');
 $wire = new class implements Transport {
-    public array $payloads = []; public array $calls = []; public bool $fail = false; public bool $reject = false;
+    public array $payloads = []; public array $calls = []; public bool $fail = false; public bool $reject = false; public ?ReadCommand $failCommand = null; public bool $cap = false; public ?ReadCommand $rejectCommand = null;
     public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
     {
         $this->calls[] = [$command, $parameters];
-        if ($this->fail) { throw new RuntimeException('synthetic-secret timeout'); }
+        if ($this->cap) { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit; }
+        if ($this->fail || $this->failCommand === $command) { throw new RuntimeException('synthetic-secret timeout'); }
         $result = body($command->value, $this->payloads[$command->name] ?? '');
-        return $this->reject ? str_replace('<ErrCount>0', '<ErrCount>1', $result) : $result;
+        return ($this->reject || $this->rejectCommand === $command) ? str_replace('<ErrCount>0', '<ErrCount>1', $result) : $result;
     }
 };
 $context = fn (int $budget = 20) => new RequestContext($binding, RequestOrigin::Background, new DateTimeImmutable('+1 hour'), new RequestBudget($budget));
@@ -286,5 +287,45 @@ foreach (['expiry' => ReadCommand::Expiry, 'renewalInfo' => ReadCommand::Renewal
     same('123', $read->facts()['provider_reference'], 'Private read retains proven provider identity');
     same(true, $read->facts()['owned'], 'Private facts carry positive ownership marker');
 }
+
+// Renewal snapshots retain fresh identity/auto-renew without inventing omitted flags.
+$wire->payloads['Info'] = $info; $wire->payloads['Renewal'] = '<RenewName>0</RenewName>';
+$wire->payloads['Lock'] = '<Reg-Lock>1</Reg-Lock>';
+$wire->payloads['Privacy'] = '<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>';
+$before = count($wire->calls); $narrow = $driver->readRenewalDomain('example.com', $context(2));
+same([ReadCommand::Info, ReadCommand::Renewal], array_column(array_slice($wire->calls, $before), 0), 'Narrow renewal reads exactly fresh identity then auto-renew');
+same([Disposition::Accepted, true, false, null, null, '123'], [$narrow->disposition, $narrow->evidence()->domain?->owned,
+    $narrow->evidence()->domain?->providerAutoRenew, $narrow->evidence()->domain?->privacy,
+    $narrow->evidence()->domain?->locked, $narrow->evidence()->domain?->providerReference], 'Omitted renewal flags remain independently unknown');
+$before = count($wire->calls); $generic = $driver->readDomain('example.com', $context(4));
+same([ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Lock, ReadCommand::Privacy], array_column(array_slice($wire->calls, $before), 0), 'Generic snapshot still fetches all flags');
+same([false, false, true], [$generic->evidence()->domain?->providerAutoRenew, $generic->evidence()->domain?->privacy,
+    $generic->evidence()->domain?->locked], 'Generic snapshot flags stay complete');
+foreach (['<RenewName>?</RenewName>', '<RenewName>0</RenewName><auto-renew>1</auto-renew>'] as $unknown) {
+    $wire->payloads['Renewal'] = $unknown;
+    same(null, $driver->readRenewalDomain('example.com', $context(2))->evidence()->domain?->providerAutoRenew, 'Unknown/conflicting renewal flags stay unknown');
+}
+$wire->payloads['Renewal'] = '<RenewName>0</RenewName>';
+foreach (['transport', 'provider'] as $failure) {
+    foreach ([ReadCommand::Renewal, ReadCommand::Lock, ReadCommand::Privacy] as $index => $failed) {
+        $wire->failCommand = $failure === 'transport' ? $failed : null; $wire->rejectCommand = $failure === 'provider' ? $failed : null; $before = count($wire->calls);
+        $failedRead = $driver->readDomain('example.com', $context());
+        same([Disposition::Unknown, $failure === 'transport' ? SendState::PossiblySent : SendState::Sent, true, null, null, null], [$failedRead->disposition, $failedRead->sendState,
+            $failedRead->evidence()->domain?->owned, $failedRead->evidence()->domain?->providerAutoRenew,
+            $failedRead->evidence()->domain?->privacy, $failedRead->evidence()->domain?->locked], 'First failed generic prerequisite preserves identity and unknown flags');
+        same(array_slice([ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Lock, ReadCommand::Privacy], 0, $index + 2),
+            array_column(array_slice($wire->calls, $before), 0), 'No generic flags after first failed prerequisite');
+    }
+}
+$wire->rejectCommand = null;
+$wire->failCommand = ReadCommand::Renewal; $before = count($wire->calls);
+$failedRead = $driver->readRenewalDomain('example.com', $context());
+same([Disposition::Unknown, SendState::PossiblySent, null], [$failedRead->disposition, $failedRead->sendState,
+    $failedRead->evidence()->domain?->providerAutoRenew], 'Failed narrow renewal cannot authorize auto-renew off');
+same([ReadCommand::Info, ReadCommand::Renewal], array_column(array_slice($wire->calls, $before), 0), 'Failed narrow renewal does no extra reads');
+$wire->failCommand = null; $wire->cap = true;
+try { $driver->readRenewalDomain('example.com', $context()); throw new LogicException('Expected typed cap'); }
+catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) {}
+$wire->cap = false;
 
 require __DIR__.'/Support/enom-captured-audit.php';

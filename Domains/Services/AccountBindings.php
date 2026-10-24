@@ -175,10 +175,10 @@ final class AccountBindings
         return $this->registry->reader($this->binding($account), $this->configuration($account, true), $balanceOnly);
     }
 
-    /** Bound real reads for the one targeted, paid TEST registration preflight. */
+    /** Bound real reads for one targeted, paid TEST acquisition preflight. */
     public function registrationPreflightReader(AccountBinding $expected): RegistrarDriver
     {
-        if(DB::transactionLevel()!==0||!EnomTestRegistration::enabled($expected)){
+        if(DB::transactionLevel()!==0||!(EnomTestRegistration::enabled($expected)||EnomTestTransfer::enabled($expected))){
             throw new \DomainException('TEST registration preflight is unavailable.');
         }
         $this->server($expected->serverId);$account=Account::where('server_id',$expected->serverId)->sole();
@@ -189,7 +189,7 @@ final class AccountBindings
     /** Pure opt-in factory. Plaintext is loaded only inside the private protocol exchange. */
     public function enomRuntimeFactory(AccountBinding $expected, \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,
         WriteFeatures $features, WriteAcceptance $accepted, RenewalAcceptance $renewalAccepted,
-        TransferPrecheck $precheck, bool $managementAccepted=false): \Closure
+        TransferPrecheck $precheck, bool $managementAccepted=false, bool $testManagement=false): \Closure
     {
         return \Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::make($expected,$this,$clock,$features,$accepted,
             $renewalAccepted,$precheck,function(bool $write)use($expected):array {
@@ -198,7 +198,7 @@ final class AccountBindings
                 $expected->requireMatch($this->binding($account));
                 if ($write&&!$account->processing_enabled) { throw new RuntimeIneligible(RuntimeReason::ProcessingOff); }
                 return $this->configuration($account,true);
-            },$managementAccepted);
+            },$managementAccepted,$testManagement);
     }
 
     /** Local credential/site validation only; never resolves a provider reader or sends a request. */
