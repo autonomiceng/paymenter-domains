@@ -33,8 +33,10 @@ synthetic asset URLs for HTML rendering only, with no asset delivery claim.
 
 Keep `test_installed_package_upgrade.py`'s pinned `e7881cf` scenario: it exercises
 seven-to-current additive migrations plus reinstall/uninstall/server-delete
-retention even when the rolling parent has no Domains changes. Its sole historical
-fixture patch adds the superseded observation index; it is separate from the
+retention even when the rolling parent has no Domains changes. Its archived foundation
+declares five tables; staff review keys and audit archives are absent until the current
+additive staff-audit migration runs. No current declaration is substituted into that baseline.
+Its sole historical fixture patch adds the superseded observation index; it is separate from the
 unpatched standing baseline and is not evidence for that historical index upgrade.
 
 The opt-in MariaDB category currently exercises native schema fresh/reinstall/

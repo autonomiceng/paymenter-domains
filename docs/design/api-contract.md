@@ -84,10 +84,12 @@ draft renew 263/264. Every other non-success code stays unknown. State-toggle ac
 250–256 do not apply to current read/purchase mappings. Refusals carry request, credential/account,
 funds or domain-state scope so future processing can hold account-wide problems.
 
-`RegistrarRequest` and transport/client execution accept reads only. `PurchaseMapping` exposes
-register/renew/transfer parameters with no dispatch path. `ResponseParser` can classify synthetic
-purchase evidence independently, without sending it. A later authorized write slice must introduce
-funding/ownership/premium/cost/prior-outcome admission before adding a purchase transport path.
+The standalone NameSilo API client accepts only read-only `RegistrarRequest` values.
+`PurchaseMapping` describes register/renew/transfer parameters and cannot dispatch them through
+that client. `ResponseParser` can classify synthetic purchase evidence without sending it.
+Separate engine-admitted writers consume one sealed, live grant after current funding,
+ownership, premium, cost, prior-outcome and account-acceptance checks. A mapping alone never
+grants dispatch authority; the renewal-specific acceptance contract is stated below.
 Availability collections normalize to lists and must cover exactly the requested names once;
 missing premium evidence is explicit null, never ordinary-name proof. On 2026-10-18, the
 [registration availability reference](https://www.namesilo.com/api-reference/pages?uid=domains/check-register-availability)
@@ -141,13 +143,15 @@ presence-based `retail_prices`. Parameters alone are not the authoritative contr
 workflow must read getDomainInfo, verify `auto_renew=No` and expected privacy, and removeAutoRenewal
 before accepting Paymenter renewal authority.
 
-**Renewal gate:** the task requires explicit `auto_renew=0` and privacy on all three purchase
-builders. Preserve those fields in a draft renewal mapping, but provide no purchase dispatch
-until support confirms their behavior or an approved readback/control sequence replaces that
-mapping. Support recommended explicit `auto_renew=0` on 2026-10-18; honoring it remains unproven.
-The admitted renewal writer sends it and completion requires fresh off readback plus charge/expiry proof.
-Undocumented parameters cannot enforce policy. Disable restores in API Manager and
-prove normal/grace eligibility independently. Renewal builder output alone is not safe fulfillment.
+**Renewal gate:** purchase mappings retain explicit `auto_renew=0` and privacy parameters;
+the standalone client cannot send them. The separate admitted renewal writer sends
+`renewDomain` with the exact name, annual term and `auto_renew=0`, without changing privacy.
+Its default-off renewal feature and binding-scoped USD, batch/rate and per-TLD annual-renewal
+acceptance must pass before the sealed engine grant can be consumed. Support recommended
+explicit `auto_renew=0` on 2026-10-18; parameter output alone does not prove it is honored.
+Completion requires fresh auto-renew-off readback plus unique charge and full-term expiry proof.
+Restores must be disabled in API Manager. NameSilo admission accepts only independently proven
+ordinary annual renewal; grace/redemption remain closed. Mapping output is not fulfillment.
 
 The provider confirms there is no idempotency key or maximum-price parameter. Future
 execution must admit one operation, retain pre-send order snapshots, correlate account/domain/action/

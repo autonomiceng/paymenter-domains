@@ -81,8 +81,9 @@ amounts stay unknown. Empty expired inventory never proves subject eligibility.
 `renewal-autopay-test.php` uses a synthetic saved-method gateway through native
 `ExtensionHelper::charge`: committed once-only attempts, scheduler/existing-invoice
 re-fetches, manual-invoice exclusion, full-credit settlement, insufficient-credit
-retention, current partial-payment remainder, thrown charges/customer notification,
-interrupted outcome persistence, immutable audit evidence and staff result facts.
+retention, current partial-payment remainder, decline notification, thrown charges retained
+as unknown without customer notification, interrupted outcome persistence, immutable audit
+evidence and staff result facts.
 It refuses missing/foreign agreements, missing/disabled gateways, changed methods,
 cancelled services, pending cancellation, Renewal Off, currency drift and settled debt.
 `renewal-autopay-admission-test.php` proves automatic and interactive native payment

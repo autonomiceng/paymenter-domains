@@ -44,8 +44,9 @@ Cross-version watch-table retention awaits a previous build containing those tab
 Staff TLD query coverage compares 25/100 rows and repeats each size with extra price terms, retaining fresh-grant revocation checks. Settings review coverage
 measures queries and encrypted-setting retrievals with 10/500 audit archives, exercises real archive rotation, exact unchanged-stamp replay refusals and
 transactional key rollback. Corrupt acceptance permits narrower terms and a sales pause while still refusing widening and restoration. Recent history is bounded
-independently of retained replay keys. The historical installed-package fixture adopts the unreleased review-key/archive declaration explicitly; it tests native
-uploads and additive migrations from that baseline, not conversion or automatic repair of superseded missing-table schemas.
+independently of retained replay keys. The historical installed-package fixture archives the original five-table foundation and seven migrations from `e7881cf`.
+Review keys and audit archives arrive through the later additive staff-audit migration; current declarations are not copied into the baseline. Its sole
+fixture patch adds the superseded observation index. It tests native uploads and additive migrations, not conversion or automatic repair of missing-table schemas.
 
 Installed default-held package acceptance also covers runtime candidate isolation for offline display rows and missing native invoice authority. It verifies
 retained reconciliation/refund selection, safe actionable warnings, shared UTC daily diagnostic slots, permission revocation and secret-free

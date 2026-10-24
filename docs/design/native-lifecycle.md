@@ -104,7 +104,9 @@ a typed date can pass validation and is discarded on update. This is an accepted
 editing capability, not a promise of normal native lifecycle editing. Native Recalculate Price
 still derives an acquisition-plan price (`P/app/Admin/Resources/ServiceResource.php:124–150`),
 so use owned audited **reprice holding**, **stop/resume renewal** and **retire unpaid acquisition**
-actions. Update renewal price and stop/resume renewal are implemented below. Unpaid acquisition retirement remains deferred; there is no owner-change action.
+actions. Update renewal price, stop/resume renewal and unpaid acquisition retirement are implemented.
+See [acquisition retirement](acquisition-retirement.md) for its separate proof and audit.
+There is no owner-change action.
 Since slice 2, every ordinary native price change requires an owned audited transition, even
 when its amount equals current retail (`D/Domains/Services/NativeDomainGuard.php:130–131`).
 Private exact-object projection authority selects the locked Service and planned values.
@@ -116,21 +118,21 @@ remain the write boundary; the native form-validation limitation above still app
 All managed product stock must be null, including withdrawn offers. Migrate old zero/positive
 values and refuse finite-stock configuration. Withdrawal removes acquisition prices, retaining
 product/plan identities; acquisition admission rechecks owned publication, seller, acceptance,
-price and eligibility under locks. Current publication still sets stock zero on withdrawal
-(`D/Domains/Services/NativeCatalogue.php:152–184`); the existing batch/price admission seam is
-`D/Domains/Services/CartAdmission.php:75–101`. All-null stock remains unimplemented until 3b.
-It prevents native cancellation increments from reviving a withdrawn offer; never throw on
-native cron's stock increment or depend on later republication to repair it.
+price and eligibility under locks. `NativeCatalogue` creates and withdraws products with
+null stock; `NativeStock` guards finite-stock saves and migration 000016 normalizes retained
+stock. Native increment/decrement preserves SQL null, so cancellation cannot revive a
+withdrawn offer or throw because of managed stock.
 
 Native unpaid cron may cancel old Pending acquisitions without a paid invoice and cancel their
 reachable pending invoices, including a shared hosting invoice. That native mixed-invoice policy
 is accepted (`P/app/Console/Commands/CronJob.php:124–138`). Native bulk invoice cancellation does
-not emit individual model events. Add after-commit wake-up plus a bounded durable sweep for
-owned retirement; cancelled native status alone is not release/refund proof. Retirement requires
-positively proven definitely-unsent, unfunded acquisition history and no provider/charge/claim
-ambiguity. Partial, processing or late money stays for review. Current reservation release still
-requires an acquisition account-credit marker (`D/Domains/Services/DomainReservations.php:30–71`);
-the separate unpaid retirement proof and release path are planned in 3b.
+not emit individual model events. A Service after-commit wake and the bounded runtime cursor
+inspect owned retirement; cancelled native status alone is not release/refund proof.
+Retirement requires positively proven definitely-unsent, unfunded acquisition history and no provider/charge/claim
+ambiguity. Partial, processing or late money stays for review. `AcquisitionRetirement` and
+`UnpaidAcquisitionProof` implement the separate unpaid release path without an account-credit
+marker. Staff retirement requires a fresh reviewed reason; automatic retirement additionally
+requires native service and invoice cancellation. Both retain the audit and cancellation intent.
 
 Refuse unsafe paid in-flight ServiceCancellation creation **before** its queued side effects,
 and unsafe native status changes, by locked state/proof regardless of caller. The native
@@ -138,8 +140,9 @@ immediate listener queues termination, cancels the service and pending invoices
 (`P/app/Listeners/CancellationCreatedListener.php:15–30`), while acquisition funding rejects
 cancellation records/cancelled services (`D/Domains/Services/InvoiceFunding.php:59–63,82–84`).
 Allowing that mutation can strand reconciliation; a terminate no-op alone is insufficient.
-End-of-period cancellation means **stop future renewal**, never registrar deletion: null expiry
-cannot reach dated termination, and the cancellation record stops owned billing
+Unpaid Pending acquisition cancellations normalize to immediate before native persistence.
+For completed holdings, end-of-period cancellation means **stop future renewal**, never registrar
+deletion: null expiry cannot reach dated termination, and the cancellation record stops owned billing
 (`D/Domains/Services/DomainBilling.php:93–99`). Preserve already-paid obligations for their
 existing evidence-based disposition; stopping renewal does not authorize a refund.
 
@@ -147,8 +150,10 @@ Late money or re-payment can set even a cancelled native service Active uncondit
 cancelled→Active queues no CreateJob (`P/app/Services/Service/RenewServiceService.php:18–28`).
 Record a durable discrepancy for staff review, keep terminal/refunded owned state non-spendable,
 and never reopen a released reservation or automatically credit excess money. Do not throw in
-the ordinary paid loop and block hosting/Credit siblings. Durable terminal projection and
-late-money review are still planned in 3b/4.
+the ordinary paid loop and block hosting/Credit siblings. Closed acquisitions retain an
+immutable payment snapshot; after-commit checks and the fair runtime sweep record distinct
+late-money or native Active
+discrepancies for staff review. They never reopen registrar work.
 
 Refund rules are unchanged: current full signed funding, exact eligible line, definitely-unsent
 negative proof, and one atomic account credit/refund marker. Acquisition credit rejects the
@@ -212,7 +217,8 @@ no core edits, global interception or runtime version gate.
   Retain scoped lifecycle/account guards and legacy Enom writer exclusion
   (`D/Domains/Services/NativeServerGuard.php:30–49`).
 
-All replacement slices above remain planned at this base. Owned credential-storage/migration
+The sequence above records the original qualification and removal gates; implemented
+retirement and cutover results are described here and below. Owned credential-storage/migration
 slices 6–7 are dropped. Global TrimStrings exceptions have already been replaced by owned raw
 POST decoding (`D/Domains/routes/owned.php:7–12`); do not reintroduce them. Passing current
 offline suites is not Option E cutover, provider, installed UI or database-concurrency acceptance.
@@ -257,8 +263,9 @@ have the same future-only meaning. Resume may delete only reviewed end-of-period
 cancellation and retained acquisition intent require review and cannot be cleared here. Neither
 action sends a registrar request, deletes a registration or changes registrar auto-renew.
 
-Owner change, native subscription/billing-agreement enrollment, upgrades and unpaid acquisition
-retirement remain deferred. These controls do not complete the later Option E removal gates.
+Owner change, native subscription/billing-agreement enrollment and upgrades remain unsupported.
+Unpaid acquisition retirement uses its separate reviewed action and proof; holding controls
+do not authorize it.
 
 Native cancellation edits/deletions keep Paymenter auditing when native auditing is enabled;
 owned actions additionally require their retained review reason. Disabling native auditing is
@@ -268,12 +275,6 @@ with immediate cancellation stays held for its existing evidence-based refund/re
 no automatic refund or registrar request is inferred. Management readback already bypasses send
 eligibility while retaining its original binding checks. Existing-debt reminders continue;
 month-out notices promise no new invoice while future renewals are stopped.
-
-Unpaid acquisition retirement is now implemented separately from holding changes; see
-[acquisition retirement](acquisition-retirement.md) for its locked proof, audit and late-money
-rules. This supersedes the unpaid-retirement deferral above. Managed stock is always null;
-withdrawal removes acquisition prices. Unpaid Pending native cancellations normalize to immediate.
-
 
 ## Paid-invoice override removed
 

@@ -126,8 +126,10 @@ row is acquired after either ledger row.
 
 Adopted authority requires both pointer directions, the exact original identity,
 matching live account/registrar/fingerprint, generation, provider ID and evidence
-digest. Matching TEST evidence is still ineligible. Register is the structural
-native route only. Adoption supplies no purchase admission, cost or payment proof.
+digest. TEST evidence cannot supply live structural authority. The exact retained original
+end-of-period cancellation is accepted structurally for a renewal-off adoption; renewal
+eligibility checks that intent separately. Register is the structural native route only.
+Adoption supplies no purchase admission, cost or payment proof.
 The acquisition invoice guard explicitly excludes adopted holdings.
 
 `HoldingAnchor` has two renewal-only branches: `adoption` and
@@ -194,11 +196,11 @@ nonpremium purchase fact, so the NameSilo cost check cannot establish authority.
 Enom uses the fresh provider premium fact. NameSilo needs a separately qualified
 cost/premium source before activation.
 
-Live-environment and do-not-renew checks currently belong to shared holding
-identity validation. They therefore refuse TEST and do-not-renew holdings for all
-holding consumers, including observation, management, refunds, unpaid retirement
-and staff review. Before activation, split structural identity validation from
-renewal eligibility and qualify each consumer's intended policy.
+Shared holding identity requires live-environment evidence and accepts the exact original
+renewal-off cancellation. Renewal-only eligibility separately blocks original do-not-renew
+intent, including issued obligations. Structural acceptance alone does not qualify
+management, refunds, unpaid retirement or staff resume/reprice; each consumer retains
+its own policy and acceptance requirements before activation.
 
 ## Fresh-preview confirmation
 
@@ -232,8 +234,9 @@ renewal billing may issue an invoice and apply credit when its gates pass. Ident
 replay returns the original holding without repricing, generation change or new reads.
 Different digest/actor refuses. A new preview of an already adopted name refuses.
 
-This first confirmation boundary refuses history links and renewal-off intent until
-their atomic workflow is qualified. Activation remains off: site qualification of simultaneous native edits, accepted
+Confirmation atomically links the verified native invoice history and retains effective
+renewal-off intent under the rules below. Pending debt and immediate/conflicting
+cancellations refuse. Activation remains off: site qualification of simultaneous native edits, accepted
 provider contract and non-renewal consumer policies remain open. The User deletion/checkout
 gap is closed; see `native-intent-storage.md`. NameSilo adoption remains unsupported.
 
@@ -242,9 +245,8 @@ notes. It warns about ordinary invoice creation and credit application after ado
 
 ## Atomic history and original renewal-off intent
 
-This boundary supersedes the temporary core refusal above. Confirmation links only
-verified same-owner paid/cancelled native invoices for the exact service. Any pending
-native debt still refuses. Links retain actor/reason, adoption ID, request digest and
+Confirmation links only verified same-owner paid/cancelled native invoices whose
+requested items reference the exact service. Any pending native debt still refuses. Links retain actor/reason, adoption ID, request digest and
 native row stamps; financial rows, references and statuses stay unchanged. A save
 veto or exception rolls every link, cancellation, projection and holding back.
 
