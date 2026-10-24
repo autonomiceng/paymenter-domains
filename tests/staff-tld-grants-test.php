@@ -42,8 +42,8 @@ for($n=4;$n<100;$n++){
 }
 $twentyFive=tldListCost($page,25);$hundred=tldListCost($page,100);
 same(array_slice($twentyFive,1,2),array_slice($hundred,1,2),'25 versus 100 rows reload grants a constant number of times');
-same(75,$hundred[3]-$twentyFive[3],'Each additional TLD loads saved prices once');
-expect($hundred[0]-$twentyFive[0]<=75*10,'Table facts use a small fixed query budget per additional row');
+same($twentyFive[3],$hundred[3],'Saved prices load once per page');
+same($twentyFive[0],$hundred[0],'No queries per additional row');
 foreach(\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$t->server_id)->get() as $ending){
     $prototype=Price::where('server_id',$t->server_id)->where('tld',$ending->tld)->where('action','register')->firstOrFail();
     foreach([2,4,5,6,7,8,9,10] as $term){$row=$prototype->replicate();$row->term=$term;$row->save();}

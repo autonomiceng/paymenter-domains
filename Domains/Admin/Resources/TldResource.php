@@ -31,33 +31,38 @@ class TldResource extends Resource
     {Staff::requireView();return TldFacts::bound(parent::getEloquentQuery())->with('server:id,name');}
     public static function table(Table $table): Table
     {
-        $grants=Staff::requireView();$facts=[];$demo=[];$sellers=[];
-        $row=static function(Tld $t)use(&$facts,$grants):array {
-            return $facts[$t->id]??=TldFacts::snapshot($t,$grants);
+        $grants=Staff::requireView();$pages=new \WeakMap();$demo=[];
+        // Facts for the whole rendered page in one batch of reads, so extra rows add no queries.
+        $row=static function(Tld $t,mixed $livewire)use($pages,$grants):array {
+            $records=method_exists($livewire,'getTableRecords')?$livewire->getTableRecords():collect([$t]);
+            $cached=$pages[$records]??[];
+            if(!isset($cached[$t->id])){
+                $page=collect(method_exists($records,'items')?$records->items():$records->all())->filter(fn($r)=>$r instanceof Tld);
+                if(!$page->contains('id',$t->id)){$page=collect([$t]);}
+                $cached+=TldFacts::page($page,$grants);$pages[$records]=$cached;
+            }
+            return $cached[$t->id];
         };
         $isDemo=static function(Tld $t)use(&$demo):bool {
             return $demo[$t->server_id]??=DemoData::is(Account::where('server_id',$t->server_id)->first());
         };
-        $seller=static function(Tld $t)use(&$sellers):?int {
-            return array_key_exists($t->tld,$sellers)?$sellers[$t->tld]:($sellers[$t->tld]=TldFacts::sellerId($t->tld));
-        };
-        $renewal=static fn(Tld $t)=>TldFacts::renewal($row($t)['prices']);
+        $renewal=static fn(Tld $t,mixed $livewire)=>TldFacts::renewal($row($t,$livewire)['prices']);
         return $table->columns([
             TextColumn::make('tld')->label('TLD')->prefix('.')->fontFamily(FontFamily::Mono)->searchable()->sortable()->extraAttributes(['style'=>'word-break:normal;overflow-wrap:normal']),
             TextColumn::make('account')->label('Registrar account')->state(fn(Tld $record)=>$record->server->name)
                 ->suffix(fn(Tld $record)=>$isDemo($record)?new \Illuminate\Support\HtmlString(' '.DemoData::tag(inline:true)->toHtml()):null)
-                ->description(fn(Tld $record)=>TldFacts::registrar($record->registrar_key).' · '.strtolower(TldFacts::pricing($record))
-                    .($seller($record)===(int)$record->server_id?' · new orders':''))->wrap(),
-            TextColumn::make('renewal')->label('Renewal price')->state(fn(Tld $record)=>$renewal($record)['retail']??Missing::LABEL)
+                ->description(fn(Tld $record,$livewire)=>TldFacts::registrar($record->registrar_key).' · '.strtolower(TldFacts::pricing($record))
+                    .($row($record,$livewire)['seller']===(int)$record->server_id?' · new orders':''))->wrap(),
+            TextColumn::make('renewal')->label('Renewal price')->state(fn(Tld $record,$livewire)=>$renewal($record,$livewire)['retail']??Missing::LABEL)
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
                 ->description(fn($state)=>$state===Missing::LABEL?'Sync TLD prices needed':null)->extraAttributes(['style'=>'white-space:nowrap']),
-            TextColumn::make('cost')->label('Cost')->visible($grants->costs)->state(fn(Tld $record)=>$renewal($record)['cost']??Missing::LABEL)
-                ->color(fn($state,Tld $record)=>$state===Missing::LABEL||TldFacts::costNote($renewal($record))?Missing::COLOR:null)
+            TextColumn::make('cost')->label('Cost')->visible($grants->costs)->state(fn(Tld $record,$livewire)=>$renewal($record,$livewire)['cost']??Missing::LABEL)
+                ->color(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL||TldFacts::costNote($renewal($record,$livewire))?Missing::COLOR:null)
                 ->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
-                ->description(fn($state,Tld $record)=>$state===Missing::LABEL?'No cost saved':TldFacts::costNote($renewal($record)))->extraAttributes(['style'=>'white-space:nowrap']),
-            TextColumn::make('holders')->label('Domains')->state(fn(Tld $record)=>TldFacts::holders($record)),
-            TextColumn::make('status')->label('Status')->badge()->state(fn(Tld $record)=>$row($record)['sales']['label'])
-                ->color(fn(Tld $record)=>$row($record)['sales']['tone'])->description(fn(Tld $record)=>$row($record)['sales']['reason']),
+                ->description(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL?'No cost saved':TldFacts::costNote($renewal($record,$livewire)))->extraAttributes(['style'=>'white-space:nowrap']),
+            TextColumn::make('holders')->label('Domains')->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['holders']),
+            TextColumn::make('status')->label('Status')->badge()->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['label'])
+                ->color(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['tone'])->description(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['reason']),
         ])->filters([SelectFilter::make('registrar_key')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo']),
             SelectFilter::make('server_id')->label('Registrar account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all())])
             ->recordUrl(fn($record)=>self::getUrl('view',['record'=>$record]))->defaultSort('tld')->paginated([25,50,100])

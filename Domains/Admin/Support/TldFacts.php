@@ -31,10 +31,43 @@ final class TldFacts
     public static function snapshot(Tld $tld, ?StaffGrants $grants = null): array
     {
         $grants ??= Staff::requireView();
-        $out=[];
         try{$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding(Account::where('server_id',$tld->server_id)->firstOrFail()));}catch(\Throwable){$accepted=null;}
-        try{$ruleHash=hash('sha256',json_encode((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($tld),JSON_THROW_ON_ERROR));}catch(\Throwable){$ruleHash=null;}
+        try{$ruleHash=self::ruleHash((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($tld));}catch(\Throwable){$ruleHash=null;}
         $saved=Price::where(['server_id'=>$tld->server_id,'account_fingerprint'=>$tld->account_fingerprint,'tld'=>$tld->tld])->orderBy('action')->orderBy('term')->get();
+        return self::build($tld,$grants,$accepted,$ruleHash,$saved,static fn():?int=>self::sellerId($tld->tld));
+    }
+    /** snapshot() for a page of TLD rows in a fixed number of reads: accounts, acceptances and default rules once per
+     * account; prices, sellers and domain counts once per page. Keyed by TLD id, each with 'seller' and 'holders' added. */
+    public static function page(\Illuminate\Support\Collection $tlds, ?StaffGrants $grants = null): array
+    {
+        $grants ??= Staff::requireView();
+        if($tlds->isEmpty()){return [];}
+        $servers=$tlds->pluck('server_id')->map(fn($id)=>(int)$id)->unique()->values()->all();$names=$tlds->pluck('tld')->unique()->values()->all();
+        $accounts=Account::whereIn('server_id',$servers)->orderBy('id')->get()->groupBy('server_id')->map->first();
+        $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;$accepted=[];$defaults=[];
+        foreach($servers as $id){
+            try{$accepted[$id]=CatalogueAcceptances::load(CatalogueAcceptances::binding($accounts[$id]??throw new \DomainException));}catch(\Throwable){$accepted[$id]=null;}
+            try{$defaults[$id]=$tlds->contains(fn(Tld $t)=>(int)$t->server_id===$id&&$t->use_default_rule)?self::ruleHash($rules->defaultRule($id)):null;}catch(\Throwable){$defaults[$id]=null;}
+        }
+        $key=static fn($row)=>(int)$row->server_id.'|'.$row->account_fingerprint.'|'.$row->tld;
+        $prices=Price::whereIn('server_id',$servers)->whereIn('tld',$names)->orderBy('action')->orderBy('term')->get()->groupBy($key);
+        $sellers=SalesPolicy::whereIn('tld',$names)->pluck('server_id','tld');
+        $holders=Domain::whereIn('server_id',$servers)->whereIn('tld',$names)->whereNotNull('reservation_name')
+            ->selectRaw('server_id, tld, account_fingerprint, count(*) as holders')->groupBy('server_id','tld','account_fingerprint')->get()->keyBy($key);
+        $out=[];
+        foreach($tlds as $t){
+            if($t->use_default_rule){$hash=$defaults[(int)$t->server_id];}else{try{$hash=self::ruleHash($rules->rule($t));}catch(\Throwable){$hash=null;}}
+            $seller=isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null;
+            $out[$t->id]=[...self::build($t,$grants,$accepted[(int)$t->server_id],$hash,$prices[$key($t)]??collect(),static fn():?int=>$seller),
+                'seller'=>$seller,'holders'=>(int)($holders[$key($t)]->holders??0)];
+        }
+        return $out;
+    }
+    private static function ruleHash(array $rule): string
+    {return hash('sha256',json_encode($rule,JSON_THROW_ON_ERROR));}
+    private static function build(Tld $tld, StaffGrants $grants, ?\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, ?string $ruleHash, $saved, \Closure $seller): array
+    {
+        $out=[];
         foreach($saved as $p){
             $unavailable=($p->eligibility['price_unavailable']??false)===true;
             $flags=[];
@@ -48,7 +81,7 @@ final class TldFacts
             if($grants->costs){$row['cost']=self::money($p->wholesale,4);}
             $out[]=$row;
         }
-        return ['prices'=>$out,'sales'=>self::saleStatus($tld,$saved,$accepted,$ruleHash,$out)];
+        return ['prices'=>$out,'sales'=>self::saleStatus($tld,$saved,$accepted,$ruleHash,$out,$seller)];
     }
     /** "Default pricing", "Fixed price" or "Custom markup" for a TLD row. */
     public static function pricing(Tld $t): string
@@ -138,13 +171,13 @@ final class TldFacts
     /** For sale or Not for sale, with the reason it is not for sale. */
     public static function salesState(Tld $t, ?StaffGrants $grants = null): array
     {return self::snapshot($t,$grants)['sales'];}
-    private static function saleStatus(Tld $t, $saved, ?\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, ?string $ruleHash, array $rows): array
+    private static function saleStatus(Tld $t, $saved, ?\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, ?string $ruleHash, array $rows, \Closure $seller): array
     {
         $off=static fn(string $reason):array=>['label'=>'Not for sale','tone'=>'gray','reason'=>$reason];
         $flagged=static fn(string $flag):bool=>collect($rows)->contains(fn($r)=>in_array($flag,$r['flags'],true));
         if($flagged('price_missing')){return $off('Price missing');}
         if(!$t->enabled||(!$t->register_enabled&&!$t->transfer_enabled)){return $off('Stopped by staff');}
-        if(self::sellerId($t->tld)===null){return $off('No registrar selected');}
+        if($seller()===null){return $off('No registrar selected');}
         if(!$t->renew_enabled){return $off('Renewals off for this registrar');}
         $action=$t->register_enabled?'register':'transfer';$term=$action==='register'?$t->min_years:1;
         $price=static fn($kind,$years)=>$saved->first(fn($p)=>$p->action===$kind&&$p->term===$years&&$p->currency==='USD');
