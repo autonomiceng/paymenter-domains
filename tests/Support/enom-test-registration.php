@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\{Auth,Cache,DB,Queue};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,DispatchSeal,Environment,ExecutionRecord,HistoryAcceptance,Query,RequestOrigin,SendState};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{OperationActions,RequestFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,EnomTestCalls,EnomTestCallLimit,EnomTestCallSchema,EnomTestRegistration,Installation,NativeCatalogue,ObservationWork,Runtime,RuntimePorts,RuntimeWork,StaffSettingsReview as Review,StaffSettingsWrites,Storefront};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
@@ -238,6 +239,10 @@ try{$capOp->fresh()->update(['attempt'=>[]]);throw new LogicException('Refusal h
 same(1,count($capOp->fresh()->attempt['test_call_refusals']??[]),'Cap refusal history remains append-only');
 same('Not sent: Enom test daily limit reached',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('enom_test_call_cap'),'Staff wording directs safe cap recovery and states the USD evidence requirement');
 expect(str_contains(EnomTestCalls::facts(),'Limit reached; Enom TEST requests are refused until 00:00 UTC'),'Staff sees the exhausted positive limit and reset time');
+$capViewer=Auth::user();Auth::setUser($staff);
+expect(OperationActions::relevant('release',$capOp->fresh()),'Retained registration cap proof offers release');
+same('release',RequestFacts::notice($capOp->fresh())['action']??null,'Retained registration cap notice offers release');
+Auth::setUser($capViewer);
 $capDomain=$capOp->domain->fresh();$releaseTicket=Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket((int)$staff->id,(int)$capDomain->id,(int)$capOp->id,'release',
     Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($capOp->fresh(),$capDomain),$clock);
 app(Paymenter\Extensions\Servers\Domains\Services\StaffOperations::class)->run($staff,(int)$capDomain->id,(int)$capOp->id,'release',$releaseTicket,'Capacity is available after review');

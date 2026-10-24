@@ -20,8 +20,10 @@ final class StaffReviewHistory
             if (!is_array($entry)) { $rows[]=['time'=>null,'event'=>'Staff action','sub'=>null,'by'=>'Staff']; continue; }
             $action=$entry['action']??null; $phase=$entry['phase']??null;
             if ($phase==='read_requested'&&isset($done[$entry['key']??''])) { continue; }
+            $contactUpdate=$action==='release'&&($entry['before']['reason']??null)==='contact_details_required'
+                &&($entry['after']['state']??null)==='held'&&($entry['after']['reason']??null)==='transfer_setup_review_required';
             $event=match($action) {
-                'hold'=>'Put on hold', 'release'=>'Hold released',
+                'hold'=>'Put on hold', 'release'=>$contactUpdate?'Contact details updated':'Hold released',
                 'recheck'=>$phase==='read_failed'?'Status check failed':'Status checked',
                 'resume_reads'=>'Status checked', 'resume_observation'=>'Sync resumed',
                 'disposition'=>'Request closed', 'refund'=>'Cancelled and refunded',
@@ -38,7 +40,7 @@ final class StaffReviewHistory
             $by=is_string($entry['actor_name']??null)&&$entry['actor_name']!=='' ? $entry['actor_name'] : 'Staff';
             // Actions without a reason field record their own name; that repeats the event, so it is not shown.
             $reason=$entry['reason']??null;
-            $sub=is_string($reason)&&$reason!==''&&$reason!==(StaffOperationReview::ACTIONS[$action]??null) ? $reason : null;
+            $sub=is_string($reason)&&$reason!==''&&$reason!==($contactUpdate?'Use updated account details':(StaffOperationReview::ACTIONS[$action]??null)) ? $reason : null;
             $rows[]=['time'=>$date?$date->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC':null,'event'=>$event,'sub'=>$sub,'by'=>$by];
         }
         return $rows;

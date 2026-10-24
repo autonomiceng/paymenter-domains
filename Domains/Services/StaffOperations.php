@@ -13,7 +13,14 @@ final readonly class StaffOperations
         $r=new StaffOperationReview((int)$actor->id,$domain,$operation,$action,$ticket,$reason,$this->clock);
         switch($action){
             case 'hold': $r->local(fn($op,$l)=>StaffOperationWrites::hold($op,$l));break;
-            case 'release': $r->local(fn($op,$l)=>StaffOperationWrites::release($op,$l,$this->clock->now()));break;
+            case 'release':
+                $op=\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($operation);
+                if($op->safe_code==='contact_details_required'){
+                    try{ContactRecovery::replace($actor,$operation,$reason,$r,$this->clock);}
+                    catch(ContactValidation $error){
+                        throw new StaffReviewRefused($error->missingMessage());
+                    }
+                }else{$r->local(fn($op,$l)=>StaffOperationWrites::release($op,$l,$this->clock->now()));}break;
             case 'disposition': $r->local(fn($op,$l)=>StaffOperationWrites::disposition($op,$l));break;
             case 'replacement': $r->local(fn($op,$l)=>RenewalReplacements::authorize($op,$l,$r,$this->clock));break;
             case 'refund': app(Refunds::class)->refundHeld($actor,$operation,'staff_review',$r);break;

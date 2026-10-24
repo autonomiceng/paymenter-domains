@@ -8,7 +8,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{ObservationRecords,OperationFailure,StaffOperationReview,StaffOperations,StaffReviewRefused,TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Services\{ObservationRecords,OperationFailure,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,TransferInputs};
 final class OperationActions
 {
     /** Toast titles, named for the action. */
@@ -21,6 +21,8 @@ final class OperationActions
     {
         $out=[];
         foreach(StaffOperationReview::ACTIONS as $name=>$label){
+            $contactRecovery=$name==='release'&&$op->action==='transfer'&&$op->safe_code==='contact_details_required';
+            if($contactRecovery){$label='Use updated account details';}
             $ticket=fn()=>StaffOperationReview::ticket((int)Auth::id(),(int)$op->domain_id,(int)$op->id,$name,$stamp,app(Clock::class));
             $action=Action::make($name)->label($label)->color($name==='refund'?'danger':'gray')
                 ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&self::relevant($name,$op));
@@ -33,11 +35,11 @@ final class OperationActions
                     Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(3)
                         ->rules(['regex:/\A[^\x00-\x1f\x7f]*\z/'])->validationMessages(['regex'=>'Use one line.'])]);
             }
-            $out[]=$action->action(function(array $data)use($op,$name,$label,$ticket){
+            $out[]=$action->action(function(array $data)use($op,$name,$label,$ticket,$contactRecovery){
                 try { $actor=Auth::user(); if(!$actor instanceof \App\Models\User){throw new \DomainException('Staff required.');}
                     $reason=in_array($name,self::REASON,true)?trim((string)($data['reason']??'')):$label;
                     app(StaffOperations::class)->run($actor,(int)$op->domain_id,(int)$op->id,$name,(string)($data['review_key']??$ticket()),$reason);
-                    Notification::make()->success()->title(self::DONE[$name])->send();
+                    Notification::make()->success()->title($contactRecovery?'Contact details updated':self::DONE[$name])->send();
                 }catch(StaffReviewRefused $error){Notification::make()->danger()->title(self::FAILED)->body($error->getMessage())->send();
                 }catch(\Throwable $error){
                     $code=OperationFailure::code($error);
@@ -68,7 +70,7 @@ final class OperationActions
         if(PaidUncertainty::summary($op)!==null&&!in_array($action,['recheck','resume_reads','resume_observation'],true)){return false;}
         return match($action){
             'hold'=>in_array($op->state,['queued','awaiting_payment','awaiting_code'],true),
-            'release'=>$op->state==='held' && !self::transferCutoff($op),
+            'release'=>StaffOperationWrites::canRelease($op,app(Clock::class)->now()),
             'refund'=>$op->state==='held',
             'credit'=>$op->state==='rejected'&&$op->funding_basis==='paid_invoice',
             'replacement'=>$op->action==='renew'&&$op->state==='rejected',

@@ -12,6 +12,13 @@ final class RequestFacts
         $grants ??= Staff::requireView();
         $out=['reason'=>Labels::requestStatus($op)['reason']];
         try {
+            if($op->state==='held'&&$op->safe_code==='contact_details_required'){
+                try{
+                    $l=StaffOperationWrites::releaseFacts($op);
+                    \Paymenter\Extensions\Servers\Domains\Services\ContactRecovery::requireReplacement($op,$l,
+                        \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($l['user']),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
+                }catch(\Paymenter\Extensions\Servers\Domains\Services\ContactValidation $error){$out['contact_missing']=$error->missingMessage();}
+            }
             $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
             $out['invoice']=$op->invoice_id ? 'Invoice #'.$op->invoice_id : null;
             $out['invoice_sub']=$op->invoice_id ? (array_key_exists('auto_pay',$f) ? Labels::autoPay($f['auto_pay_result']??$f['auto_pay']) : null) : 'No invoice linked';
@@ -83,7 +90,7 @@ final class RequestFacts
             $fix=is_string($reason)&&preg_match(self::ACCOUNT_CAUSES,$reason,$m) ? match(true) {
                 $m[1]==='orders paused'=>'Resume orders', str_contains($m[1],'balance')=>'Check balance',
                 str_ends_with($m[1],'off for this account')=>'Turn on', default=>'Open Registrars'} : null;
-            return ['title'=>($reason??Labels::reason(null)).'.','body'=>$facts['auto_renew']??$facts['admission']??null,'tone'=>'warning','action'=>'release',
+            return ['title'=>($reason??Labels::reason(null)).'.','body'=>$facts['contact_missing']??$facts['auto_renew']??$facts['admission']??null,'tone'=>'warning','action'=>OperationActions::relevant('release',$op)?'release':null,
                 'link'=>$fix?'registrars':null,'link_label'=>$fix];
         }
         return null;

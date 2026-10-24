@@ -57,10 +57,14 @@ final class InvoiceFunding
     /** Acquisition lifecycle under the same native prefix; renewal/complimentary authority is separate. */
     public function requireInitial(Operation $op, Domain $domain): array
     {
-        $paid = $this->requirePaid($op, $domain);
-        $service = $this->services->get($op->service_id); $plan = $this->plans->get($service->plan_id);
+        return self::requireInitialFacts($op,$this->facts($domain));
+    }
+
+    public static function requireInitialFacts(Operation $op,array $l): array
+    {
+        $paid=self::requirePaidFacts($op,$l);$service=$l['service'];$plan=$l['plan'];
         if (!in_array($service->status, [Service::STATUS_PENDING, Service::STATUS_ACTIVE], true)
-            || $this->cancellations->contains('service_id', $service->id) || !$plan
+            || $l['cancel']->contains('service_id', $service->id) || !$plan
             || $plan->priceable_type !== (new Product)->getMorphClass() || (int) $plan->priceable_id !== (int) $service->product_id
             || $plan->type !== 'recurring' || $plan->billing_unit !== 'year' || (int) $plan->billing_period !== 1) {
             throw new \DomainException('Acquisition lifecycle changed.');
@@ -86,17 +90,43 @@ final class InvoiceFunding
     public function requirePaid(Operation $op, Domain $domain): array
     {
         if (!$this->active || !isset(self::$contexts[$this]) || DB::connection() !== $this->connection || DB::transactionLevel() !== 1 || !$this->connection->getPdo()->inTransaction()) { throw new \LogicException('Funding snapshot expired.'); }
-        $invoice = $this->invoice; $items = $this->items; $transactions = $this->transactions;
-        $service = $this->services->get($op->service_id);
+        return self::requirePaidFacts($op,$this->facts($domain));
+    }
+
+    /** Detached native snapshots; callers cannot alter the private live funding context through them. */
+    public function initialFacts(Domain $domain): array
+    {
+        $copy=static function($row){
+            $snapshot=$row->withoutRelations();$snapshot->setRawAttributes($row->getAttributes(),true);return $snapshot;
+        };
+        return array_map(static fn($value)=>$value instanceof Collection?$value->map($copy):($value===null?null:$copy($value)),$this->facts($domain));
+    }
+
+    private function facts(Domain $domain): array
+    {
+        if (!$this->active || !isset(self::$contexts[$this]) || DB::connection() !== $this->connection || DB::transactionLevel() !== 1 || !$this->connection->getPdo()->inTransaction()) { throw new \LogicException('Funding snapshot expired.'); }
+        $service=$this->services->get($domain->service_id);
+        if(!$service){throw new \DomainException('Missing native service.');}
+        return ['domain'=>$domain,'service'=>$service,'product'=>$this->products->get($service->product_id),
+            'plan'=>$this->plans->get($service->plan_id),'orders'=>$this->orders,'cancel'=>$this->cancellations,
+            'invoices'=>collect([$this->invoice]),'items'=>$this->items,'transactions'=>$this->transactions];
+    }
+
+    public static function requirePaidFacts(Operation $op,array $l): array
+    {
+        $domain=$l['domain'];$invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
+        if(!$invoice){throw new \DomainException('Missing native invoice.');}
+        $items=$l['items']->where('invoice_id',$invoice->id);$transactions=$l['transactions']->where('invoice_id',$invoice->id);
+        $service = $l['service'];
         if (!$service) { throw new \DomainException('Missing native service.'); }
-        $order = $this->orders->get($service->order_id);
+        $order = $l['orders']->firstWhere('id',$service->order_id);
         if (!$order || (int) $order->user_id !== (int) $service->user_id) { throw new \DomainException('Holding native authority changed.'); }
         $item = $items->firstWhere('id', $op->invoice_item_id);
         if (!$item instanceof InvoiceItem || $op->funding_basis !== 'paid_invoice' || $invoice->status !== Invoice::STATUS_PAID
             || $service->status === Service::STATUS_CANCELLED || PricingRule::minor($op->amount) <= 0) {
             throw new \DomainException('Domain invoice binding is not funded.');
         }
-        $product = $this->products->get($service->product_id);
+        $product = $l['product'];
         if (!$product) { throw new \DomainException('Missing locked native product.'); }
         InvoiceBinding::requireIdentity($op, $domain, $service, $invoice, $item, $product);
         $total = $paid = 0; $transactionIds = [];

@@ -31,13 +31,8 @@ final class StaffOperationReview
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Staff review requires the outer writer transaction.');}
         $staff=$l['staff']??null; $op=$l['operations']->firstWhere('id',$this->operationId); $d=$l['domain'];
-        if(!$staff instanceof User || (int)$staff->id!==$this->actorId || !$staff->hasPermission('admin.domains.view')
-            || !$staff->hasPermission(self::permission($this->action))
-            || (!in_array($this->action,['recheck','resume_reads','resume_observation'],true)&&!$staff->hasPermission('admin.domains.manage'))
-            || (in_array($this->action,['refund','credit','replacement'],true)&&!$staff->hasPermission('admin.invoices.update'))
-            || ($this->action==='release'&&$op?->funding_basis==='complimentary'&&!$staff->hasPermission('admin.domains.fund'))) {
-            throw new StaffReviewRefused("You don't have permission to do this.");
-        }
+        if((int)$staff?->id!==$this->actorId){throw new StaffReviewRefused("You don't have permission to do this.");}
+        self::requirePermission($staff,$this->action,$op);
         if($op?->state==='succeeded' && ($this->action!=='resume_observation' || !ObservationRecords::stopped($d))){
             throw new StaffReviewRefused($this->action==='resume_observation' ? 'Sync is already running.' : 'This request is already completed.');
         }
@@ -48,11 +43,27 @@ final class StaffOperationReview
             || $op->server_id!==$d->server_id || $op->registrar_key!==$d->registrar_key || $op->account_fingerprint!==$d->account_fingerprint
             || $op->authority_generation!==$d->authority_generation || $op->authority_generation<1
             || !hash_equals($t['stamp'],self::stamp($op,$d))) { throw new StaffReviewRefused(self::CHANGED); }
-        $history=$op->policy['staff_actions']??[];
-        $limit=in_array($this->action,['recheck','resume_reads','resume_observation'],true)?($this->action==='recheck'?88:89):99;
-        if(!is_array($history)||!array_is_list($history)||count($history)>$limit
-            || array_filter($history,fn($a)=>($a['key']??null)===$t['key'])) { throw new StaffReviewRefused(self::CHANGED); }
+        $history=self::requireHistory($op,$this->action);
+        if(array_filter($history,fn($a)=>($a['key']??null)===$t['key'])){throw new StaffReviewRefused(self::CHANGED);}
         $this->verifiedTicket=$t; $this->before=self::state($op,$d);
+    }
+    /** Current role authority shared by offers and locked review; tickets stay write-boundary checks. */
+    public static function requirePermission(?User $staff,string $action,?Operation $op): void
+    {
+        if(!$staff instanceof User || !$staff->hasPermission('admin.domains.view')
+            || !$staff->hasPermission(self::permission($action))
+            || (!in_array($action,['recheck','resume_reads','resume_observation'],true)&&!$staff->hasPermission('admin.domains.manage'))
+            || (in_array($action,['refund','credit','replacement'],true)&&!$staff->hasPermission('admin.invoices.update'))
+            || ($action==='release'&&$op?->funding_basis==='complimentary'&&!$staff->hasPermission('admin.domains.fund'))) {
+            throw new StaffReviewRefused("You don't have permission to do this.");
+        }
+    }
+    public static function requireHistory(Operation $op,string $action): array
+    {
+        $history=$op->policy['staff_actions']??[];
+        $limit=in_array($action,['recheck','resume_reads','resume_observation'],true)?($action==='recheck'?88:89):99;
+        if(!is_array($history)||!array_is_list($history)||count($history)>$limit){throw new StaffReviewRefused(self::CHANGED);}
+        return $history;
     }
     public static function liveLease(Operation $op,Clock $clock): bool
     { return $op->state==='running' && $op->lease_expires_at!==null && $op->lease_expires_at>$clock->now(); }

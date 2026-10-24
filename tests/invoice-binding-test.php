@@ -127,6 +127,27 @@ DB::table('services')->where('id', $service->id)->update(['user_id' => $user->id
 DB::table('products')->where('id', $product->id)->update(['server_id' => $tlds[1]->server_id]); commerceReject($funded);
 DB::table('products')->where('id', $product->id)->update(['server_id' => $tlds[0]->server_id]);
 same(3620, $funded()['succeeded_net_minor'], 'Restored exact binding yields funding evidence only');
+// Read-only recovery snapshots cannot alter the live funding context's captured native rows.
+DB::table('invoices')->where('id',$invoiceId)->update(['status'=>'pending']);
+DB::transaction(static function()use($op):void{
+    $context=InvoiceFunding::lock($op->invoice_id);$domain=$op->fresh()->domain;
+    $facts=$context->initialFacts($domain);$facts['invoices']->first()->status='paid';
+    commerceReject(static fn()=>$context->requirePaid($op->fresh(),$domain));
+});
+DB::table('invoices')->where('id',$invoiceId)->update(['status'=>'paid']);
+$payment('-0.01');
+DB::transaction(static function()use($op):void{
+    $context=InvoiceFunding::lock($op->invoice_id);$domain=$op->fresh()->domain;
+    $facts=$context->initialFacts($domain);$facts['transactions']->last()->amount='0.00';
+    commerceReject(static fn()=>$context->requirePaid($op->fresh(),$domain));
+});
+$payment('0.01');
+DB::transaction(static function()use($op):void{
+    $context=InvoiceFunding::lock($op->invoice_id);$domain=$op->fresh()->domain;$facts=$context->initialFacts($domain);
+    $facts['items']->first()->price='9999.00';$facts['orders']->first()->user_id=0;
+    $facts['service']->user_id=0;$facts['product']->server_id=0;$facts['plan']->billing_period=99;
+    same(3620,$context->requirePaid($op->fresh(),$domain)['succeeded_net_minor'],'Detached rows preserve the live context');
+});
 $expired = DB::transaction(static function () use ($invoiceId) {
     $context = InvoiceFunding::lock($invoiceId); commerceReject(static fn () => clone $context); return $context;
 });

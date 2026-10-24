@@ -58,20 +58,21 @@ $page=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp
 $heading=(string)$page->instance()->getHeading();
 expect(str_contains($heading,'Request #'.$heldOp->id)&&str_contains($heading,'Under review'),'Heading carries the request pill');
 same([Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl()=>'Registrar requests','Request #'.$heldOp->id],$page->instance()->getBreadcrumbs(),'Breadcrumbs');
-$page->assertSee("Not sent: couldn't load the registrar account's settings.")->assertSeeInOrder(['Open Registrars','Release hold'])->assertSee('Details')->assertSee('History')
+// Retained expiry and actual charge in this display fixture cannot prove an unsent acquisition.
+$page->assertSee("Not sent: couldn't load the registrar account's settings.")->assertSee('Open Registrars')->assertDontSee('Release hold')->assertSee('Details')->assertSee('History')
     ->assertSee('Registrar account')->assertSee('NameSilo · Test')->assertSee('Request created')
     ->assertDontSee('Domain not found')->assertDontSee('No time recorded')->assertDontSee('Review actions')->assertDontSee('Saved evidence')->assertDontSee('Request type')->assertDontSee('Customer credit');
-$page->assertActionVisible('release')->assertActionVisible('refund')->assertActionHidden('hold')->assertSee('More');
+$page->assertActionHidden('release')->assertActionVisible('refund')->assertActionHidden('hold')->assertSee('More');
 same(['recheck'],array_values(array_filter(['recheck','resume_reads'],fn($a)=>Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::relevant($a,$heldOp->fresh()))),'One Check status at a time');
-// Each account cause names its own fix on Registrars, then Release hold.
+// Each account cause names its own fix; provider evidence keeps release hidden.
 $links=[];
 foreach(['configuration_unavailable','processing','balance','usd_balance_required','write_disabled','staff_review_required'] as $code){
     DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
     $n=RequestFacts::notice($heldOp->fresh()); $links[$code]=[$n['link']??null,$n['link_label']??null,$n['action']??null];
 }
-same(['configuration_unavailable'=>['registrars','Open Registrars','release'],'processing'=>['registrars','Resume orders','release'],
-    'balance'=>['registrars','Check balance','release'],'usd_balance_required'=>['registrars','Check balance','release'],
-    'write_disabled'=>['registrars','Turn on','release'],'staff_review_required'=>[null,null,'release']],$links,'Notice link per cause');
+same(['configuration_unavailable'=>['registrars','Open Registrars',null],'processing'=>['registrars','Resume orders',null],
+    'balance'=>['registrars','Check balance',null],'usd_balance_required'=>['registrars','Check balance',null],
+    'write_disabled'=>['registrars','Turn on',null],'staff_review_required'=>[null,null,null]],$links,'Notice link per cause');
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>'configuration_unavailable']);
 $facts=RequestFacts::for($heldOp->fresh());
 same(null,$facts['invoice']??null,'No invoice is Missing');

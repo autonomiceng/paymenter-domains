@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Models\{Product, Server, Service, User};
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 
 /** Local contact-only recovery. Never sends, refunds, releases a name or reinterprets a provider result. */
@@ -41,36 +42,29 @@ final class ContactRecovery
         });
     }
 
-    public static function replace(User $actor, int $operationId, string $reason): Operation
+    public static function replace(User $actor, int $operationId, string $reason, ?StaffOperationReview $review = null, ?Clock $clock = null): Operation
     {
         self::reason($reason);
+        if ($review && ($review->action !== 'release' || $review->operationId !== $operationId || $review->actorId !== (int) $actor->id)) {
+            throw new \LogicException('Contact review does not match recovery.');
+        }
         $hint = Operation::findOrFail($operationId); $ownerId = Domain::findOrFail($hint->domain_id)->user_id;
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Contact recovery owns its transaction.'); }
-        return DB::transaction(static function () use ($actor, $hint, $ownerId, $reason): Operation {
+        return DB::transaction(static function () use ($actor, $hint, $ownerId, $reason, $review, $clock): Operation {
             $users = User::whereKey([$actor->id, $ownerId])->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $currentActor = $users->get($actor->id); $owner = $users->get($ownerId);
             if (!$currentActor || !$owner || ((int) $actor->id !== (int) $ownerId && !$currentActor->hasPermission('admin.domains.manage'))) {
                 throw new \DomainException('Contact recovery unavailable.');
             }
+            if ($review) { $currentActor->setRelation('role', $currentActor->role()->lockForUpdate()->first()); }
             $funding = InvoiceFunding::lock($hint->invoice_id);
             [$domain, $operations] = self::lock($hint);
+            $locked = ['staff' => $currentActor, 'domain' => $domain, 'operations' => $operations];
+            $review?->check($locked);
             $op = $operations->firstWhere('id', $hint->id);
-            self::paidIdentity($funding, $op, $domain); self::unsent($op);
-            if (!in_array($op->action, ['register', 'transfer'], true) || $op->state !== 'held' || $op->safe_code !== 'contact_details_required'
-                || (int) $domain->user_id !== (int) $ownerId
-                || $domain->status !== ($op->action === 'register' ? 'registration_pending' : 'transfer_pending')
-                || $domain->provider_order_id !== null || $domain->provider_domain_id !== null || $domain->provider_expires_at !== null
-                || $operations->contains(static fn ($peer) => $peer->id !== $op->id && !in_array($peer->state, ['rejected', 'disposed'], true))) {
-                throw new \DomainException('Contact recovery unavailable.');
-            }
-            if ($op->action === 'transfer') {
-                if (!TransferInputs::contactsEditable($op, now()->toDateTimeImmutable())) { throw new \DomainException('Saved transfer inputs require review.'); }
-            }
-            $payload = $op->payload ?? []; $policy = $op->policy ?? [];
-            $history = $policy['contact_readmissions'] ?? [];
-            if (!is_array($history) || !array_is_list($history) || count($history) >= 10) { throw new \DomainException('Contact recovery limit reached.'); }
-            $contacts = ContactDetails::validate($op->registrar_key, ContactDetails::collect($owner));
-            RegistryInputs::validate($op->registrar_key, $domain->tld, $payload['registry_schema'] ?? null, $payload['registry'] ?? null);
+            $facts=$funding->initialFacts($domain)+['operations'=>$operations,'user'=>$owner];
+            $contacts=self::requireReplacement($op,$facts,ContactDetails::collect($owner),$clock?->now()??now()->toDateTimeImmutable());
+            $payload=$op->payload??[];$policy=$op->policy??[];$history=$policy['contact_readmissions']??[];
             $payload['contacts'] = $contacts; $payload['setup_required'] = false; $payload['setup_fields'] = []; $payload['registry_supported'] = true;
             $history[] = ['actor_id' => (int) $actor->id, 'owner_id' => (int) $ownerId, 'reason' => $reason,
                 'at' => now()->toIso8601String(), 'previous_code' => $op->safe_code];
@@ -79,8 +73,32 @@ final class ContactRecovery
             ContactSetup::recoveryWrite(static fn () => $op->update(['payload' => $payload, 'policy' => $policy,
                 'state' => $op->action === 'register' ? 'queued' : 'held',
                 'safe_code' => $op->action === 'register' ? null : 'transfer_setup_review_required']));
+            $review?->record($locked);
             return $op;
         });
+    }
+
+    /** Pure preflight shared by the read-only offer and the locked contact writer. */
+    public static function requireReplacement(Operation $op,array $l,array $ownerContacts,\DateTimeImmutable $now): array
+    {
+        $domain=$l['domain'];
+        if((int)$l['user']->id!==(int)$domain->user_id){throw new \DomainException('Contact ownership changed.');}
+        InvoiceFunding::requireInitialFacts($op,$l);
+        self::identity($op,$domain,$l['service'],$l['product']);self::unsent($op);
+        if (!in_array($op->action, ['register', 'transfer'], true) || $op->state !== 'held' || $op->safe_code !== 'contact_details_required'
+            || $domain->status !== ($op->action === 'register' ? 'registration_pending' : 'transfer_pending')
+            || $domain->provider_order_id !== null || $domain->provider_domain_id !== null || $domain->provider_expires_at !== null
+            || $l['operations']->contains(static fn ($peer) => $peer->id !== $op->id && !in_array($peer->state, ['rejected', 'disposed'], true))) {
+            throw new \DomainException('Contact recovery unavailable.');
+        }
+        if ($op->action === 'transfer') {
+            if (!TransferInputs::contactsEditable($op, $now)) { throw new \DomainException('Saved transfer inputs require review.'); }
+        }
+        $history=$op->policy['contact_readmissions']??[];
+        if(!is_array($history)||!array_is_list($history)||count($history)>=10){throw new \DomainException('Contact recovery limit reached.');}
+        $contacts=ContactDetails::validate($op->registrar_key,$ownerContacts);
+        RegistryInputs::validate($op->registrar_key,$domain->tld,$op->payload['registry_schema']??null,$op->payload['registry']??null);
+        return $contacts;
     }
 
     /** Contacts are non-billable. A proven-unsent management request can close with an audit, never credit. */
