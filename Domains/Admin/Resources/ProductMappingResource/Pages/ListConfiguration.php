@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\WatchActions;
 class ListConfiguration extends ListRecords
 {
     protected static string $resource=ProductMappingResource::class;
-    public function getTitle(): string{return 'Product domain mappings';}
-    public function getSubheading(): string{return 'New configurations start disabled. Saving or enabling does not run discovery or public checks. Review the saved mapping preview before enabling.';}
+    public function getTitle(): string{return 'Hosting products';}
+    public function getSubheading(): ?string{return null;}
     protected function getHeaderActions(): array{return [WatchActions::configuration('mapping',null)];}
 }

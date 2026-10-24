@@ -15,5 +15,4 @@ final class WatchQueries
         foreach(WatchRegistryObservation::whereIn('id',$latest)->orderBy('watch_id')->limit(1000)->cursor() as $record){try{$date=$record->facts['expiry']??null;if(is_string($date)&&substr($date,0,10)>=$today&&substr($date,0,10)<=$end){$ids[]=$record->watch_id;}}catch(\Throwable){}}
         return $query->whereIn('id',$ids);
     }
-    public static function observed(?string $dns): string{return match($dns){'platform'=>'Platform DNS','external'=>'External DNS',default=>'Unknown'};}
 }

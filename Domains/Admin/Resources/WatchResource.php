@@ -4,40 +4,56 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Tables\{Table,Columns\TextColumn,Filters\Filter,Filters\SelectFilter};
 use Filament\Forms\Components\TextInput;
+use Filament\Support\Enums\FontFamily;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\HtmlString;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{WatchReadResource,WatchQueries,WatchFindings};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag,WatchReadResource,WatchQueries,WatchFacts,WatchFindings};
+use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,ViewWatch};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProductMap};
 class WatchResource extends WatchReadResource
 {
     protected static ?string $model=WatchName::class;
-    protected static ?string $navigationLabel='Domain watch';
-    protected static ?string $modelLabel='domain watch';
-    protected static ?string $pluralModelLabel='Domain watch';
+    protected static ?string $navigationLabel='Domain monitoring';
+    protected static ?string $modelLabel='monitored domain';
+    protected static ?string $pluralModelLabel='Domain monitoring';
+    protected static ?string $breadcrumb='Domain monitoring';
     protected static ?string $slug='domain-watch';
     public static function getEloquentQuery(): Builder{return parent::getEloquentQuery()->with(['delegation','registry','work']);}
+    /** Missing in danger with its cause below; present values show $sub below. */
+    private static function fact(TextColumn $column,\Closure $fact): TextColumn
+    {
+        $value=fn($record,$livewire)=>$fact($record,$livewire);
+        return $column->state(fn($record,$livewire)=>$value($record,$livewire)['value']??Missing::LABEL)
+            ->color(fn($state,$record,$livewire)=>$state===Missing::LABEL?Missing::COLOR:($value($record,$livewire)['tone']??null))->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
+            ->description(fn($state,$record,$livewire)=>$state===Missing::LABEL?($value($record,$livewire)['cause']??null):($value($record,$livewire)['sub']??null));
+    }
+    /** Status and Expires within read at most CAP names; the indicator says so only when more exist. */
+    private static function capped(string $label): string{return WatchName::where('state','active')->count()>WatchFindings::CAP?$label.' (first 1,000 active domains)':$label;}
     public static function table(Table $table): Table
     {
+        $who=['platform'=>WatchFindings::company(),'external'=>'Other'];
         return $table->columns([
-            TextColumn::make('canonical_name')->label('Domain')->searchable()->sortable()->wrap()->formatStateUsing(fn(string $state)=>new HtmlString(str_replace(['.','-'],['.<wbr>','-<wbr>'],e($state))))->extraAttributes(['style'=>'overflow-wrap:anywhere;min-width:7rem;max-width:24rem']),
-            TextColumn::make('findings')->label('Findings')->badge()->wrap()->state(fn($record,$livewire)=>WatchFindings::labels($livewire->watchRow($record)['findings']))->color(fn(string $state)=>WatchFindings::color($state))->placeholder('No findings'),
-            TextColumn::make('user_id')->label('Customer')->visibleFrom('md')->wrap()->state(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['label'])->description(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['email'])->url(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['url'])->color(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['url']?'primary':null)->extraAttributes(['style'=>'overflow-wrap:break-word']),
-            TextColumn::make('state')->label('Watch state')->visibleFrom('md')->badge()->color('gray')->formatStateUsing(fn($state)=>match($state){'active'=>'Checking','paused'=>'Checks paused','retired'=>'Watch ended','linked'=>'Linked to registration',default=>'Needs review'}),
-            TextColumn::make('registration')->label('Registration')->visibleFrom('2xl')->formatStateUsing(fn($state)=>match($state){'external'=>'External Registration','platform'=>'Platform Registration',default=>'Unknown'})->placeholder('Unknown'),
-            TextColumn::make('delegation.dns')->label('Last observed DNS')->visibleFrom('lg')->formatStateUsing(fn($state)=>WatchQueries::observed($state))->placeholder('Unknown'),
-            TextColumn::make('work_due')->label('Next attempt')->visibleFrom('xl')->state(fn($record)=>$record->state==='active' && $record->work->min('due_at')?\Carbon\CarbonImmutable::createFromTimestampUTC($record->work->min('due_at')):null)->dateTime('M j, Y H:i')->placeholder('Not scheduled'),
+            DemoTag::apply(TextColumn::make('canonical_name')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>new HtmlString(str_replace(['.','-'],['.<wbr>','-<wbr>'],e($state))))
+                ->description(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['label'])->extraAttributes(['style'=>'overflow-wrap:anywhere;min-width:7rem;max-width:24rem'])),
+            TextColumn::make('status')->label('Status')->badge()->state(fn($record,$livewire)=>$livewire->watchRow($record)['status']['label'])->color(fn($record,$livewire)=>$livewire->watchRow($record)['status']['tone'])
+                ->description(fn($record,$livewire)=>$livewire->watchRow($record)['status']['reason']),
+            self::fact(TextColumn::make('registration')->label('Registrar')->visibleFrom('xl'),fn($record)=>['value'=>WatchFindings::who($record->registration),'cause'=>'Not recorded yet']),
+            self::fact(TextColumn::make('delegation.dns')->label('Nameservers')->visibleFrom('lg'),fn($record)=>['value'=>WatchFindings::who($record->delegation?->dns),'cause'=>'Not checked yet']),
+            self::fact(TextColumn::make('last_check')->label('Last check')->visibleFrom('md'),fn($record,$livewire)=>WatchFacts::lastCheck($record,$livewire->watchRow($record)['summary'])),
+            self::fact(TextColumn::make('expiry')->label('Expires')->visibleFrom('lg'),fn($record,$livewire)=>in_array('watch.no_coverage',$livewire->watchRow($record)['keys'],true)?['value'=>'']:WatchFacts::expires($livewire->watchRow($record)['summary'],$livewire->watchRow($record)['keys'],$record->state==='active')),
         ])->filters([
-            Filter::make('attention')->label('Needs attention · first 1,000 active names')->query(WatchFindings::filter(...)),
-            Filter::make('customer')->schema([TextInput::make('id')->label('Customer ID')->numeric()])->query(fn(Builder $query,array $data)=>ctype_digit((string)($data['id']??''))?$query->where('user_id',(int)$data['id']):$query),
-            SelectFilter::make('state')->options(['active'=>'Checking','paused'=>'Paused','retired'=>'Ended','linked'=>'Linked']),
-            SelectFilter::make('registration')->options(['external'=>'External','platform'=>'Platform']),
-            SelectFilter::make('expected_dns')->label('Expected DNS')->options(['platform'=>'Platform','external'=>'External']),
-            SelectFilter::make('observed')->label('Last observed DNS')->options(['platform'=>'Platform','external'=>'External'])->query(fn(Builder $query,array $data)=>isset($data['value'])?$query->whereHas('delegation',fn($query)=>$query->where('dns',$data['value'])):$query),
-            SelectFilter::make('product')->label('Source product')->options(fn()=>WatchProductMap::with('product')->get()->mapWithKeys(fn($m)=>[$m->product_id=>$m->product?->name??'Product #'.$m->product_id])->all())->query(fn(Builder $query,array $data)=>isset($data['value'])?$query->whereHas('sources',fn($query)=>$query->whereIn('map_id',WatchProductMap::where('product_id',$data['value'])->select('id'))):$query),
-            Filter::make('drift')->label('Expected platform / observed external')->query(fn(Builder $query)=>$query->where('expected_dns','platform')->whereHas('delegation',fn($query)=>$query->where('dns','external'))),
-            SelectFilter::make('expiry')->label('Recorded expiry · first 1,000 names within')->options(['7'=>'7 days','30'=>'30 days','90'=>'90 days'])->query(fn(Builder $query,array $data)=>WatchQueries::expiry($query,(int)($data['value']??0))),
-        ])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->defaultSort('canonical_name')->paginated([25,50])->defaultPaginationPageOption(25)->emptyStateHeading('No matching domains');
+            SelectFilter::make('status')->label('Status')->options(WatchFindings::STATUSES)->query(fn(Builder $query,array $data,$livewire)=>WatchFindings::filter($query,$data['value']??null,$livewire))
+                ->indicateUsing(fn(array $data)=>isset(WatchFindings::STATUSES[$data['value']??''])?(in_array($data['value'],['monitoring','problem'],true)?self::capped('Status: '.WatchFindings::STATUSES[$data['value']]):'Status: '.WatchFindings::STATUSES[$data['value']]):null),
+            Filter::make('customer')->label('Customer')->schema([TextInput::make('customer')->label('Customer')])->query(fn(Builder $query,array $data)=>WatchFindings::customer($query,$data['customer']??null))
+                ->indicateUsing(fn(array $data)=>trim((string)($data['customer']??''))!==''?'Customer: '.trim((string)$data['customer']):null),
+            SelectFilter::make('registration')->label('Registrar')->options($who),
+            SelectFilter::make('expected_dns')->label('Expected nameservers')->options($who),
+            SelectFilter::make('observed')->label('Nameservers')->options($who)->query(fn(Builder $query,array $data)=>isset($data['value'])?$query->whereHas('delegation',fn($query)=>$query->where('dns',$data['value'])):$query),
+            SelectFilter::make('product')->label('Hosting product')->options(fn()=>WatchProductMap::with('product')->get()->mapWithKeys(fn($m)=>[$m->product_id=>$m->product?->name??'Product #'.$m->product_id])->all())->query(fn(Builder $query,array $data)=>isset($data['value'])?$query->whereHas('sources',fn($query)=>$query->whereIn('map_id',WatchProductMap::where('product_id',$data['value'])->select('id'))):$query),
+            SelectFilter::make('expiry')->label('Expires within')->options(['7'=>'7 days','30'=>'30 days','90'=>'90 days'])->query(fn(Builder $query,array $data)=>WatchQueries::expiry($query,(int)($data['value']??0)))
+                ->indicateUsing(fn(array $data)=>in_array($data['value']??null,['7','30','90'],true)?self::capped('Expires within '.$data['value'].' days'):null),
+        ])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->defaultSort('canonical_name')->paginated([25,50])->defaultPaginationPageOption(25)->emptyStateHeading('No monitored domains');
     }
     public static function getPages(): array{return ['index'=>ListWatches::route('/'),'view'=>ViewWatch::route('/{record}')];}
 }

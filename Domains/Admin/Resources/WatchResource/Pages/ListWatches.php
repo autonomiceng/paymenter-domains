@@ -11,16 +11,17 @@ class ListWatches extends ListRecords
     protected static string $resource=WatchResource::class;
     /** Request-scoped projection of the visible page; protected, so never part of the Livewire snapshot. */
     protected ?array $visible=null;
-    protected ?array $attention=null;
-    public function getTitle(): string{return 'Domain watch';}
-    public function getSubheading(): string{return 'Saved public checks for hosting domains. Findings match what the customer sees; recorded evidence may be partial or out of date.';}
+    protected array $status=[];
+    public function getTitle(): string{return 'Domain monitoring';}
+    public function getSubheading(): ?string{return null;}
     /** @return list<int> */
-    public function attentionIds(): array{return $this->attention??=WatchFindings::attentionIds();}
+    public function statusIds(string $status): array{return $this->status[$status]??=WatchFindings::statusIds($status);}
     public function watchRow(WatchName $record): array
     {
         $records=$this->getTableRecords();
         if(($this->visible['records']??null)!==$records){$rows=collect(method_exists($records,'items')?$records->items():$records);
-            $this->visible=['records'=>$records,'findings'=>WatchFindings::batch($rows),'customers'=>WatchFindings::customers($rows->pluck('user_id')->unique()->all())];}
-        return ['findings'=>$this->visible['findings'][$record->id]??WatchFindings::batch([$record])[$record->id],'customer'=>$this->visible['customers'][$record->user_id]??WatchFindings::customers([$record->user_id])[$record->user_id]];
+            $this->visible=['records'=>$records,'summaries'=>WatchFindings::summaries($rows),'customers'=>WatchFindings::customers($rows->pluck('user_id')->unique()->all())];}
+        $row=$this->visible['summaries'][$record->id]??WatchFindings::summaries([$record])[$record->id];
+        return $row+['customer'=>$this->visible['customers'][$record->user_id]??WatchFindings::customers([$record->user_id])[$record->user_id],'status'=>WatchFindings::status($record,$row['keys'],$row['summary']?->expiry)];
     }
 }

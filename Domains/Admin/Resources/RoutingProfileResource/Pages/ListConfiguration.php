@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\WatchActions;
 class ListConfiguration extends ListRecords
 {
     protected static string $resource=RoutingProfileResource::class;
-    public function getTitle(): string{return 'DNS and routing profiles';}
-    public function getSubheading(): string{return 'New configurations start disabled. Saving or enabling does not run discovery or public checks. Review the saved profile details before enabling.';}
+    public function getTitle(): string{return 'DNS templates';}
+    public function getSubheading(): ?string{return null;}
     protected function getHeaderActions(): array{return [WatchActions::configuration('profile',null)];}
 }
