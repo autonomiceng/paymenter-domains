@@ -1,6 +1,7 @@
 <?php
 // Synthetic input-bounded policy reads; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/watch-notices.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
@@ -42,14 +43,14 @@ $postWatch = static function (bool $confirm = false) use ($request, $watchContro
 };
 // A page with distinct endings plus an owned native service exercises the shared batch projection.
 $watchIds = [$id];
-foreach (['second.co.uk', 'third-placeholder.net'] as $name) {
+foreach ([reservedFixtureName('second.example.test'), 'third-placeholder.net'] as $name) {
     $row = (array) DB::table('domains_watch_names')->where('id', $id)->first(); unset($row['id']);
     $watchIds[] = DB::table('domains_watch_names')->insertGetId([...$row, 'canonical_name' => $name]);
 }
 $managed = DB::table('domains_domains')->insertGetId(['service_id' => $service->id, 'user_id' => $owner->id,
     'server_id' => $tlds[0]->server_id, 'registrar_key' => 'enom', 'account_fingerprint' => $tlds[0]->account_fingerprint,
     'domain' => 'managed-placeholder.com', 'reservation_name' => 'managed-placeholder.com', 'sld' => 'managed-placeholder', 'tld' => 'com', 'status' => 'active']);
-foreach (['uk' => true, 'co.uk' => false, 'net' => false] as $ending => $enabled) {
+foreach (['test' => true, 'example.test' => false, 'net' => false] as $ending => $enabled) {
     DB::table('domains_sales_policies')->insert(['tld' => $ending, 'transfer_enabled' => $enabled]);
 }
 // The actual lookup column already has a unique index, not merely a transfer-enabled index.
@@ -121,18 +122,18 @@ foreach ([10, 1500] as $size) {
     [$warm, $counts] = $measure(fn () => $store->endings()); same($cold, $warm, 'Warm display parity');
     same(0, $counts['queries'], 'Warm display is query-free');
 }
-foreach (['Name.Co.Uk.' => ['domain' => 'name.co.uk', 'sld' => 'name', 'tld' => 'co.uk'], 'name.uk' => ['domain' => 'name.uk', 'sld' => 'name', 'tld' => 'uk']] as $input => $expected) {
+foreach (['Name.Example.Test.' => ['domain' => 'name.example.test', 'sld' => 'name', 'tld' => 'example.test'], 'name.test' => ['domain' => 'name.test', 'sld' => 'name', 'tld' => 'test']] as $input => $expected) {
     same($expected, PolicyEndings::parse($input), 'Longest suffix and normalization parity');
     same($expected['tld'], $store->check($input)['tld'], 'Check uses the same longest ending');
 }
-foreach (['name.unknown', 'sub.name.co.uk', 'sub.name.uk', 'sub.name.unknown', 'bad..com', 'xn--name.com'] as $input) {
+foreach (['name.unknown', 'sub.name.example.test', 'sub.name.test', 'sub.name.unknown', 'bad..com', 'xn--name.com'] as $input) {
     $message = static function (Closure $parse): string {
         try { $parse(); expect(false, 'Expected parse refusal'); } catch (InvalidArgumentException $e) { return $e->getMessage(); }
     };
-    same($message(fn () => CanonicalName::parse($input, ['com', 'co.uk', 'uk', 'net'])),
+    same($message(fn () => CanonicalName::parse($input, ['com', 'example.test', 'test', 'net'])),
         $message(fn () => PolicyEndings::parse($input)), 'Unknown/subdomain/syntax refusal parity');
 }
-same(['uk'], PolicyEndings::transferEnabled(['second.co.uk']), 'Summary keeps any enabled suffix even when the longer policy is disabled');
+same(['test'], PolicyEndings::transferEnabled(['second.example.test']), 'Summary keeps any enabled suffix even when the longer policy is disabled');
 same([], PolicyEndings::transferEnabled(['third-placeholder.net']), 'Disabled transfer ending omitted');
 // Warm display never becomes money authority, including raw changes without cache invalidation.
 $store->endings(); DB::table('domains_sales_policies')->where('tld', 'com')->update(['transfer_enabled' => false]);

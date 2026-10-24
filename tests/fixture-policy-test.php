@@ -33,3 +33,13 @@ foreach (['invoice-binding-test.php', 'management-privacy-test.php', 'owner-acti
             || str_ends_with($name, '-placeholder.com'), $fixture.' uses a reserved or explicit placeholder name: '.$name);
     }
 }
+
+// Captured reply shapes also carry synthetic DNS names in otherwise unused fields.
+foreach (['enom-captured-reads.php', 'enom-captured-renewal.php'] as $fixture) {
+    $replies = require __DIR__.'/Support/'.$fixture;
+    $count = preg_match_all('/<(dns[1-5]?)>([^<]+)<\/\1>/', implode("\n", $replies), $names);
+    expect($count > 0, $fixture.' must include nameservers for this policy check');
+    foreach ($names[2] as $name) {
+        same($name, reservedFixtureName($name), $fixture.' uses reserved nameservers');
+    }
+}

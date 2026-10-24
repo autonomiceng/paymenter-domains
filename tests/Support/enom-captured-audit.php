@@ -65,8 +65,12 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{AccountVerifier, Drive
         same(false, $availability->premium, 'Captured three False premium flags');
     }
     $nameservers = ManagementRead::nameservers($parsed['Nameservers']);
-    same(array_map(fn ($n) => 'dns'.$n.'.name-services.com', range(1, 5)), $nameservers, 'Captured repeated flat dns scalars');
-    same(true, ManagementRead::defaultDns($nameservers), 'Captured default DNS derives from returned names');
+    same(array_map(fn ($n) => 'dns'.$n.'.example.net', range(1, 5)), $nameservers, 'Captured repeated flat dns scalars');
+    same(false, ManagementRead::defaultDns($nameservers), 'Reserved fixture names are custom DNS');
+    same(true, ManagementRead::defaultDns(array_map(fn ($n) => 'dns'.$n.'.name-services.com', range(1, 5))),
+        'Production default DNS suffix remains recognized');
+    same(false, ManagementRead::defaultDns([...$nameservers, 'dns1.name-services.com']),
+        'One production default nameserver does not make a custom list default');
     $hosts = ManagementRead::records($parsed['Hosts'], 'dns');
     same(1, count($hosts), 'Captured singleton host normalized');
     same('*', $hosts[0]['name'], 'Captured wildcard host retained');

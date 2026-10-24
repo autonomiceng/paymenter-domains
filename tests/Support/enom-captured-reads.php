@@ -141,11 +141,11 @@ XML,
 XML,
     'Nameservers' => <<<'XML'
 <interface-response>
-<dns>dns1.name-services.com</dns>
-<dns>dns2.name-services.com</dns>
-<dns>dns3.name-services.com</dns>
-<dns>dns4.name-services.com</dns>
-<dns>dns5.name-services.com</dns>
+<dns>dns1.example.net</dns>
+<dns>dns2.example.net</dns>
+<dns>dns3.example.net</dns>
+<dns>dns4.example.net</dns>
+<dns>dns5.example.net</dns>
 <usedns>default</usedns>
 <nsstatus>Yes</nsstatus>
 <hostsnumlimit>15</hostsnumlimit>
@@ -354,7 +354,7 @@ XML,
 <interface-response>
 <getdomaininfo><domainname sld="example" tld="com" domainnameid="456">example.com</domainname>
 <multy-langsld /><status><expiration>10/22/2027 6:53:00 AM</expiration><deletebydate>10/22/2027 6:53:00 AM</deletebydate><deletetype /><restorable>True</restorable><renewbeforeexpiration /><registrar>eNom, Inc.</registrar><registrationstatus>Registered</registrationstatus><purchase-status>Paid</purchase-status><belongs-to party-id="{00000000-0000-0000-0000-000000000001}">synthetic-uid</belongs-to><escrowhold /><escrowliftdate /><auctionhold>False</auctionhold><auctionliftdate /></status>
-<parkingenabled>False</parkingenabled><services><entry name="dnsserver"><enomdns value="YES" isdotname="NO" /><service changable="1">1006</service><configuration changable="0" type="dns"><dns>dns1.name-services.com</dns><dns>dns2.name-services.com</dns><dns>dns3.name-services.com</dns><dns>dns4.name-services.com</dns><dns>dns5.name-services.com</dns></configuration></entry>
+<parkingenabled>False</parkingenabled><services><entry name="dnsserver"><enomdns value="YES" isdotname="NO" /><service changable="1">1006</service><configuration changable="0" type="dns"><dns>dns1.example.net</dns><dns>dns2.example.net</dns><dns>dns3.example.net</dns><dns>dns4.example.net</dns><dns>dns5.example.net</dns></configuration></entry>
 <entry name="dnssettings"><service changable="0">1021</service><configuration changable="1" type="host"><host><name>*</name><type>A</type><address>192.0.2.1</address><mxpref>10</mxpref><iseditable>1</iseditable></host></configuration></entry>
 <entry name="wsb"><service changable="1">1060</service></entry>
 <entry name="emailset"><service changable="1">1048</service></entry>
