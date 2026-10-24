@@ -19,6 +19,8 @@ class OperationResource extends Resource
     protected static ?int $navigationSort=2;
     protected static ?string $modelLabel='registrar request';
     protected static ?string $pluralModelLabel='registrar requests';
+    // Sentence case: Filament's default breadcrumb title-cases the plural label.
+    protected static ?string $breadcrumb='Registrar requests';
     protected static ?string $slug='registrar-requests';
     public static function canViewAny(): bool { return Staff::can(); }
     public static function canView(Model $record): bool { return Staff::can(); }

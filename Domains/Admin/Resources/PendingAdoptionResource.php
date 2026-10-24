@@ -13,6 +13,7 @@ class PendingAdoptionResource extends WatchReadResource
     protected static ?string $model=Domain::class;
     protected static ?string $navigationLabel='Adoption pending';
     protected static ?string $pluralModelLabel='Adoption pending';
+    protected static ?string $breadcrumb='Adoption pending';
     protected static ?string $slug='adoption-pending';
     public static function canViewAny(): bool{return Staff::can(Staff::ADOPT);}
     /** Imports waiting for review are Under review on the Domains list; old links land on that filter. */

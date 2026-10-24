@@ -20,6 +20,7 @@ class TldResource extends Resource
     protected static ?int $navigationSort=3;
     protected static ?string $modelLabel='TLD';
     protected static ?string $pluralModelLabel='TLDs';
+    protected static ?string $breadcrumb='TLDs & pricing';
     protected static ?string $slug='domain-tlds';
     public static function canViewAny(): bool {return Staff::can();}
     public static function canView(Model $record): bool {return Staff::can();}

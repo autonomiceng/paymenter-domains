@@ -22,6 +22,7 @@ class WatchResource extends WatchReadResource
     protected static ?string $modelLabel='monitored domain';
     protected static ?string $pluralModelLabel='Domain monitoring';
     protected static ?string $breadcrumb='Domain monitoring';
+    protected static ?string $breadcrumb='Domain monitoring';
     protected static ?string $slug='domain-watch';
     protected static ?SubNavigationPosition $subNavigationPosition=SubNavigationPosition::Top;
     /** Domains and Settings tabs on the list and Settings pages. */

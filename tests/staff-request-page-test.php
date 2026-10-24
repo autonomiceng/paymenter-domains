@@ -43,6 +43,7 @@ $list=Livewire::actingAs($viewer)->test(ListOperations::class)->assertSuccessful
     ->assertSee('Request #'.$heldOp->id)->assertSee('Oct 20, 2026 15:05 UTC')->assertSee('Synthetic registrar')
     ->assertSee('Under review')->assertSee('Old registrar needs approval')->assertSee('Registrar account')
     ->assertDontSee('Awaiting reconciliation')->assertDontSee('Requests appear when');
+same(['Registrar requests','List'],array_values($list->instance()->getBreadcrumbs()),'List breadcrumb in sentence case, like the title');
 $filter=static function(string $name,array $value){$p=Livewire::actingAs(Auth::user())->test(ListOperations::class)->filterTable($name,$value);
     return $p->set('tableDeferredFilters',$p->get('tableFilters'))->call('applyTableFilters');};
 $filter('status',['under_review'])->assertCanSeeTableRecords([$heldOp,$longOp])->assertCanNotSeeTableRecords([$doneOp]);

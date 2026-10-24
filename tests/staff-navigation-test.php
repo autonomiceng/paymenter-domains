@@ -22,6 +22,8 @@ $all=[DomainResource::class,OperationResource::class,TldResource::class,Registra
 $menu=array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()));usort($menu,fn($a,$b)=>[$a::getNavigationSort()??PHP_INT_MAX]<=>[$b::getNavigationSort()??PHP_INT_MAX]);
 same(['Domains','Registrar requests','TLDs & pricing','Registrars','Domain monitoring','DNS templates','Hosting products'],array_map(fn($c)=>$c::getNavigationLabel(),$menu),'Seven staff pages in order');
 foreach($menu as $c){same('Domains',$c::getNavigationGroup(),'One Domains group: '.$c);}
+// Resource breadcrumbs read like the menu, not Filament's title-cased plural label.
+foreach(array_filter($all,fn($c)=>is_subclass_of($c,\Filament\Resources\Resource::class)) as $c){same($c::getNavigationLabel(),$c::getBreadcrumb(),'Sentence-case breadcrumb: '.$c);}
 same(count($menu),count(array_unique(array_map(fn($c)=>$c::getNavigationIcon(),$menu))),'Each staff page has its own icon');
 same(['domains','registrar-requests','domain-tlds','registrar-setup','domain-watch','dns-routing-profiles','product-domain-mappings','public-suffix-list','dns-resolver'],
     [DomainResource::getSlug(),OperationResource::getSlug(),TldResource::getSlug(),RegistrarSetup::getSlug(),WatchResource::getSlug(),RoutingProfileResource::getSlug(),ProductMappingResource::getSlug(),PublicSuffixList::getSlug(),DnsResolver::getSlug()],'Slugs kept');

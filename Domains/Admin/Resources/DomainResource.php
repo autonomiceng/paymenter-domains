@@ -26,6 +26,7 @@ class DomainResource extends Resource
     protected static ?int $navigationSort = 1;
     protected static ?string $modelLabel = 'domain';
     protected static ?string $pluralModelLabel = 'domains';
+    protected static ?string $breadcrumb = 'Domains';
     protected static ?string $slug = 'domains';
     protected static ?string $recordTitleAttribute = 'domain';
     public static function canViewAny(): bool { return Staff::can(); }
