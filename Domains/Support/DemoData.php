@@ -29,15 +29,16 @@ final class DemoData
     {
         return Account::query()->whereIn('registrar_key', array_keys(self::ACCOUNTS))->get()->contains(static fn (Account $a): bool => self::is($a));
     }
-    /** A demo domain on the demo Enom account, while that account is off and a real Enom account runs in test mode: nothing syncs. */
-    public static function syncPaused(Domain $domain): bool
+    /** A domain on a paused demo registrar account: nothing syncs, so its synced values are Missing. Pass the account when it is loaded. */
+    public static function syncPaused(Domain $domain, ?Account $account = null): bool
     {
         if (!self::is($domain)) { return false; }
-        $account = Account::where('server_id', $domain->server_id)->first();
-        return $account !== null && $account->registrar_key === 'enom' && self::is($account) && !$account->processing_enabled
-            && Account::query()->where('registrar_key', 'enom')->where('environment', 'test')->get()->contains(static fn (Account $a): bool => !self::is($a));
+        $account ??= Account::where('server_id', $domain->server_id)->where('registrar_key', $domain->registrar_key)
+            ->where('account_fingerprint', $domain->account_fingerprint)->first();
+        return $account !== null && self::paused($account);
     }
-    /** A demo Enom account is paused while Enom runs in Test mode or real Enom writes are on. */
+    /** The one demo-paused rule, for client and staff pages: the demo runtime skips the demo Enom account while Enom runs
+     * in Test mode or real Enom writes are on. */
     public static function paused(Account $account): bool
     {
         return self::is($account) && $account->registrar_key === 'enom' && (config('domains.enom_identity.environment') === 'test'

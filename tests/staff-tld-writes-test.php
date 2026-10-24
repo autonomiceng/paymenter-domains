@@ -40,11 +40,11 @@ foreach([...$staleFirst,...array_values(array_diff(array_keys(Review::ACTIONS),$
 }
 foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>$writer->run($review('default_rule',$t->id,reason:$bad),$fixed,$now));}
 $r=$review('default_rule',$t->id,reason:str_repeat('🦦',500));$writer->run($r,$fixed,$now);same('fixed',(new PricingRules)->defaultRule($t->server_id)['mode'],'Default saved');
-expect(str_contains(TldFacts::salesState($t->fresh()),'publish required'),'Unpublished rule blocks ready status');
-expect(str_contains(implode(' ',array_column(TldFacts::prices($t->fresh()),'warning')),'Rule changed'),'Unpublished rule has visible alert');
+same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Prices not published'],TldFacts::salesState($t->fresh()),'Unpublished rule blocks ready status');
+$rows=TldFacts::prices($t->fresh());expect($rows&&collect($rows)->every(fn($r)=>in_array('unpublished',$r['flags'],true)),'Unpublished rule has visible alert');
 tldRefusal(fn()=>$writer->run($r,$fixed,$now),'Settings changed. Reload this page.'); // This write changed its stamp.
 same(1,count(TldFacts::history($t->server_id)),'Replay audit unchanged');
-expect(str_contains(implode(' ',TldFacts::history($t->server_id,999)),'Edit default rule'),'Shared default appears in sibling history');
+expect(in_array('Default pricing changed',array_column(TldFacts::history($t->server_id,999),'change'),true),'Shared default appears in sibling history');
 $same=['min_years'=>1,'max_years'=>3,'enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true];
 $writer->run($review('tld_settings',$t->id),$same,$now); // Settle the synthetic updated_at first.
 $stamp=Review::stamp($t->server_id,$t->id);$key=Review::ticket($u->id,$t->server_id,$t->id,'tld_settings',$stamp);
@@ -56,7 +56,7 @@ Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('tl
     ->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('Change refused')->body('This confirmation was already used. Reload this page.'))->assertSet('mountedActions',[]);
 $r=$review('publish',$t->id);$before=Price::where('server_id',$t->server_id)->pluck('revision','id')->all();$writer->run($r,[],$now);
 foreach(Price::where('server_id',$t->server_id)->get() as $p){same($before[$p->id]+1,$p->revision,'Revision incremented');same($p->action==='renew'?null:'below_cost',$p->hold_reason,'Margin rule');same('below_cost',$p->eligibility['staff_alert'],'Staff alert');}
-expect(str_contains(TldFacts::salesState($t->fresh()),'below cost'),'Below-cost sales never reported ready');
+same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($t->fresh()),'Below-cost sales never reported ready');
 same('1.00',$prices->renewal($t->server_id,$t->account_fingerprint,'com','USD',$now)->retail,'Below-cost renewal billed at configured retail');
 commerceReject(fn()=>$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now));
 $nativePage=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('publish')->assertActionMounted('publish');
@@ -105,7 +105,7 @@ $history=Review::historyRows(App\Models\Server::find($t->server_id));
 foreach(['verification_requested','verification_refused','connection_requested','connection_finished'] as $phase){expect(count(array_filter($history,fn($r)=>$r['phase']===$phase))>=1,'Requested and failed/finished phases retained');}
 $stamp=Review::stamp($t->server_id,$t->id);$unrelated=Price::where('server_id',$tlds[1]->server_id)->firstOrFail();$unrelated->update(['revision'=>$unrelated->revision+1]);
 same($stamp,Review::stamp($t->server_id,$t->id),'Unrelated registrar price refresh leaves review current');
-expect(str_contains(implode(' ',array_column(TldFacts::prices($t->fresh()),'warning')),'new sales held pending import'),'Acceptance changes disclose account import hold');
+expect(collect(TldFacts::prices($t->fresh()))->contains(fn($r)=>$r['action']!=='renew'&&in_array('needs_sync',$r['flags'],true)),'Acceptance changes disclose account import hold');
 $audit=App\Models\Server::find($t->server_id)->settings()->where('key',Review::KEY)->sole();expect($audit->encrypted,'Encrypted audit');
 $rows=json_decode($audit->value,true);foreach($rows as $row){expect(isset($row['actor_id'],$row['reason'],$row['before'],$row['after'],$row['at']),'Complete audit');}
 expect(!str_contains($audit->getRawOriginal('value'),'Synthetic reviewed change'),'Raw audit encrypted');

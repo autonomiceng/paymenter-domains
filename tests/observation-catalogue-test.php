@@ -49,7 +49,7 @@ same($failure,$facts,'Saved TLD facts expose the failure without a provider read
 DB::table('domains_observation_queues')->where('server_id',$ns)->update(['catalogue_hold'=>'catalogue_interrupted']);
 same(['code'=>'catalogue_interrupted','server_id'=>$ns,'account_fingerprint'=>$b->fingerprint,'at'=>null],Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::refreshFacts($ns),'Active interrupted claim takes precedence over an older audited read failure');
 DB::table('domains_observation_queues')->where('server_id',$ns)->update(['catalogue_hold'=>'read_failed']);
-expect(str_contains(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::refreshState($ns),'read_failed'),'Existing TLD refresh fact includes the cause');
+same('Sync failed: Registrar read failed',Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::refreshState($ns),'Existing TLD refresh fact includes the cause');
 $calls=$state->calls;$clock->instant=$now->modify('+1 day');(new ObservationWork($observer,$clock,$budget,new CatalogueSync($reads,$prices)))->tick(2);same($calls,$state->calls,'Vendor failure remains held across due time and restart');
 $state->fail=false;$work->resumeCatalogue($ns,'staff_catalogue_resume');
 DB::table('domains_read_budgets')->where('server_id',$ns)->update(['used'=>60,'window_at'=>$clock->now()->getTimestamp()*1000000]);$work->tick(2);same($calls,$state->calls,'Local quota denial sends nothing');
