@@ -73,6 +73,7 @@ final class ManagedPublicSignals
         try {
             $reader=new QuotaDnsReader($this->reader,$quota,$token,$this->clock);
             [$reading,$cursor,$sourceCursor]=(new DnsCollector($reader))->collect($ticket,new DnsContext($this->clock));
+            if ($reader->saturated && $reading->result()==='unknown') { $this->defer($ticket,($this->clock)());return false; }
             return $this->finish($ticket,$reading,($this->clock)(),$cursor,$sourceCursor,$reader->saturated);
         } finally { $quota->release($token); }
     }
