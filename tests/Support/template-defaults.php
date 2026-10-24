@@ -79,6 +79,14 @@ If we don\'t have it by then, we\'ll cancel the transfer and add {{ $amount }} t
     array (
       0 => 'Reminder: transfer code for {{ $domain }}',
     ),
+    'in_app_title' => 
+    array (
+      0 => 'Enter the transfer code for {{ $domain }}',
+    ),
+    'edit_preference_message' => 
+    array (
+      0 => 'Transfer code reminders',
+    ),
     'body' => 
     array (
       0 => 'We still need the transfer code for {{ $domain }}. Enter it by **{{ $deadline }}**.

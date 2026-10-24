@@ -6,7 +6,7 @@ $bootStarted=$lifecycleStarted;
 require __DIR__.'/Support/installed-app.php';
 $bootSeconds=(hrtime(true)-$bootStarted)/1e9;
 require __DIR__.'/Support/installed-upgrade.php';
-require_once __DIR__.'/Support/reminder-defaults.php';
+require_once __DIR__.'/Support/template-defaults.php';
 $traceTiming=static function(string $stage,int $started)use($lifecycleStarted,$bootSeconds):void {
     if(getenv('PACKAGE_TIMINGS')==='1'){
         fwrite(STDERR,json_encode(['timing'=>'package_lifecycle','phase'=>(string)getenv('PACKAGE_PHASE'),
@@ -33,14 +33,16 @@ function assertRetained(string $receipt): void
     $before=json_decode(file_get_contents($receipt),true,512,JSON_THROW_ON_ERROR);$after=retained();
     foreach($before as $table=>$rows){
         expect(array_key_exists($table,$after),'Retained table exists: '.$table);
-        // Only the two exact historical defaults may change, with the save timestamp.
+        // Only template fields still holding an exact earlier shipped default may change, with the save timestamp.
         // Every other raw value, row identity and multiplicity must survive.
+        $prior=[...priorReminderDefaults(),...priorWatchDefaults()];
+        $current=[...Paymenter\Extensions\Servers\Domains\Services\ReminderTemplates::definitions(),...Paymenter\Extensions\Servers\Domains\Services\WatchNoticeTemplates::definitions()];
         foreach($rows as &$row){
-            if($table==='notification_templates' && ($row['key']??null)==='domains_domain_expiring'){
+            if($table==='notification_templates' && isset($prior[$row['key']??null])){
                 $changed=false;
-                foreach(previousReminderDefaults() as $field=>$previous){
-                    if($row[$field]===$previous){
-                        $row[$field]=Paymenter\Extensions\Servers\Domains\Services\ReminderTemplates::definitions()['domains_domain_expiring'][$field];
+                foreach($prior[$row['key']] as $field=>$versions){
+                    if(array_key_exists($field,$row) && in_array($row[$field],$versions,true) && $row[$field]!==$current[$row['key']][$field]){
+                        $row[$field]=$current[$row['key']][$field];
                         $changed=true;
                     }
                 }
@@ -50,7 +52,14 @@ function assertRetained(string $receipt): void
         unset($row);
         $columns=array_fill_keys(array_keys($rows[0]??[]),true);
         $counts=array_count_values(array_map(fn($row)=>json_encode(array_intersect_key($row,$columns),JSON_THROW_ON_ERROR),$after[$table]));
-        foreach($rows as $row){$key=json_encode($row,JSON_THROW_ON_ERROR);expect(($counts[$key]??0)>0,'Retained raw rows unchanged: '.$table);$counts[$key]--;}
+        foreach($rows as $row){
+            $key=json_encode($row,JSON_THROW_ON_ERROR);
+            if(($counts[$key]??0)<1){
+                $match=array_values(array_filter($after[$table],fn($a)=>isset($row['id'])&&($a['id']??null)===$row['id']))[0]??[];
+                expect(false,'Retained raw rows unchanged: '.$table.' id '.($row['id']??'?').' '.($row['key']??'').' fields '.implode(',',array_keys(array_diff_assoc(array_map('json_encode',$row),array_map('json_encode',array_intersect_key($match,$columns))))));
+            }
+            $counts[$key]--;
+        }
     }
 }
 function seedPsl(): void
@@ -217,6 +226,7 @@ if($phase==='server-delete'){
         'in_app_enabled'=>'never','in_app_title'=>'Retained title','in_app_url'=>'/retained','edit_preference_message'=>'Retained preference',
     ]),'Seed custom email with exact previous in-app default');
     same(1,DB::table('notification_templates')->where('key','domains_domain_expired')->update(previousReminderDefaults()),'Other template keeps matching historical text as custom content');
+    same(1,DB::table('notification_templates')->where('key','domains_transfer_code_reminder')->update(['subject'=>'Retained operator transfer subject','updated_at'=>TEMPLATE_BEFORE_AT]),'Seed one edited transfer field beside shipped defaults');
     if(getenv('PACKAGE_STANDING_UPGRADE')){seedInstalledUpgrade();}
     file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
     file_put_contents((string)getenv('PACKAGE_MIGRATION_RECEIPT'),json_encode(DB::table('migrations')->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),JSON_THROW_ON_ERROR));
