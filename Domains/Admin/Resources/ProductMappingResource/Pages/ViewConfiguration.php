@@ -3,20 +3,32 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\ProductMappingResource\Pages;
 use Filament\Resources\Pages\ViewRecord;
-use Filament\Schemas\{Schema,Components\Section};
+use Filament\Schemas\{Schema,Components\Callout,Components\Grid,Components\Section};
 use Filament\Infolists\Components\TextEntry;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\ProductMappingResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{WatchActions,WatchFacts};
+use Filament\Support\Enums\FontFamily;
+use Livewire\Attributes\Locked;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{ProductMappingResource,RoutingProfileResource};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{MissingEntry,WatchActions,WatchFacts};
+use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
 class ViewConfiguration extends ViewRecord
 {
     protected static string $resource=ProductMappingResource::class;
+    /** The revision this page shows; writes from a stale page are refused. */
+    #[Locked] public int $revision=0;
+    public function mount(int|string $record): void{parent::mount($record);$this->revision=(int)$this->getRecord()->revision;}
     protected function fillForm(): void{$this->data=[];}
-    public function getTitle(): string{return 'Product domain mappings';}
-    protected function getHeaderActions(): array{return [WatchActions::configuration('mapping',$this->getRecord()),WatchActions::enable('mapping',$this->getRecord())];}
+    public function getTitle(): string{$r=$this->getRecord();return (string)($r->product?->name??'Product #'.$r->product_id);}
+    public function getBreadcrumbs(): array{return [ProductMappingResource::getUrl()=>'Hosting products',$this->getTitle()];}
+    protected function getHeaderActions(): array{return [WatchActions::enable('mapping',$this->getRecord(),$this->revision),WatchActions::configuration('mapping',$this->getRecord(),$this->revision)];}
     public function infolist(Schema $schema): Schema
     {
-        $r=$this->getRecord();$facts=['Saved revision'=>(string)$r->revision,'Product'=>'Product #'.$r->product_id,'Primary property'=>$r->property_key,'Discovery'=>$r->enabled?'Enabled':'Disabled','Default profile'=>$r->expected_ns_profile_id?'Profile #'.$r->expected_ns_profile_id:'None','Preview · sample of 25 services'=>WatchFacts::preview($r)];
-        $entries=[];foreach($facts as $label=>$value){$entries[]=TextEntry::make('fact_'.count($entries))->label($label)->state($value)->listWithLineBreaks()->extraAttributes(['style'=>'overflow-wrap:anywhere']);}
-        return $schema->components([Section::make('Saved configuration')->description('Saved local settings only. Default feature gates still apply.')->columnSpanFull()->columns(2)->schema($entries)]);
+        $r=$this->getRecord();$profile=$r->expected_ns_profile_id?WatchProfile::find($r->expected_ns_profile_id):null;$preview=WatchFacts::preview($r);
+        $entry=fn(string $label,mixed $value)=>TextEntry::make('fact_'.md5($label))->label($label)->state($value)->inlineLabel()->extraAttributes(['style'=>'overflow-wrap:anywhere']);
+        $settings=[$entry('Product',$this->getTitle()),$entry('Domain field',$r->property_key)->fontFamily(FontFamily::Mono),$entry('Monitoring',$r->enabled?'On':'Off'),
+            MissingEntry::apply($entry('DNS template',$profile?->name)->url($profile?RoutingProfileResource::getUrl('view',['record'=>$profile->id]):null),cause:$profile?null:'Choose one in Edit')];
+        $matched=match(true){$preview===null=>[Callout::make('Download the public suffix list to match domains.')->status('warning')],
+            $preview===[]=>[TextEntry::make('matched')->hiddenLabel()->state('No services use this product')->color('gray')],
+            default=>array_map(fn(array $row,int $i)=>TextEntry::make('matched_'.$i)->label($row['service'])->inlineLabel()->state($row['result'])->belowContent($row['domain'])->url($row['url'])->extraAttributes(['style'=>'overflow-wrap:anywhere']),$preview,array_keys($preview))};
+        return $schema->components([Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()->schema([Section::make('Settings')->columnSpan(1)->schema($settings),Section::make('Matched services')->columnSpan(1)->schema($matched)])]);
     }
 }

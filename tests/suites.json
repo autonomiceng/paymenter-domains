@@ -285,6 +285,7 @@
     "tests/staff-reason-test.php",
     "tests/staff-watch-findings-test.php",
     "tests/staff-watch-summary-owners-test.php",
+    "tests/staff-monitoring-test.php",
     "tests/watch-transfer-test.php",
     "tests/runtime-health-test.php",
     "tests/test_hook_attribution.py",
