@@ -115,3 +115,10 @@ foreach ([$client, $reply, $failure] as $private) {
     try { $copy = clone $private; throw new LogicException('Expected clone refusal'); } catch (LogicException $e) { expect(!str_contains($e->getMessage(), 'Expected'), 'Cloning refused'); }
 }
 echo "Enom protocol: bounded XML, context, redaction and read-only dispatch passed.\n";
+
+foreach (['host','record'] as $container) {
+    foreach (['A'=>' 8.8.8.8 ', 'CNAME'=>' target.example.com ', 'MX'=>' mail.example.com ', 'TXT'=>'  exact text  '] as $type=>$address) {
+        $reply=$parser->parse(ReadCommand::Hosts,envelope('GetHosts','<'.$container.'><address>'.$address.'</address><type>'.$type.'</type></'.$container.'>'));
+        same($type==='TXT'?$address:trim($address),$reply->value($container.'.address'),'Only TXT preserves address bytes in '.$container);
+    }
+}

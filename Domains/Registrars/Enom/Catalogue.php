@@ -20,7 +20,7 @@ final class Catalogue
         // Anything that is not even hostname-shaped is a malformed list and still voids the whole read.
         $add = static function (string $name) use (&$names): void {
             try { self::tld($name = strtolower($name)); $names[$name] = true; }
-            catch (\InvalidArgumentException $e) { if (!preg_match('/^[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63})*$/D', $name)) { throw $e; } }
+            catch (\InvalidArgumentException $e) { if (!preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/D', $name)) { throw $e; } }
         };
         $walk = function (array $node) use (&$walk, &$add): void {
             foreach ($node as $key => $value) {

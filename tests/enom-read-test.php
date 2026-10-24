@@ -329,3 +329,10 @@ catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) {}
 $wire->cap = false;
 
 require __DIR__.'/Support/enom-captured-audit.php';
+
+foreach (['-bad','bad-','-bad.com','com.bad-','bad.-label','bad.label-'] as $ending) {
+    $wire->payloads['Tlds']='<TLDList><TLD>com</TLD><TLD>'.$ending.'</TLD></TLDList>';
+    same('unknown',$driver->catalogue($context())->status,'Malformed label edge voids the entire catalogue: '.$ending);
+}
+$wire->payloads['Tlds']='<TLDList><TLD>com</TLD><TLD>xn--3ds443g</TLD><TLD>123</TLD><TLD>a.123</TLD></TLDList>';
+same(['com'],$driver->catalogue($context())->facts()['tlds'],'Hostname-shaped unsupported endings remain skippable');

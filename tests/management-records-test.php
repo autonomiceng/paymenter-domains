@@ -52,7 +52,8 @@ foreach(['CNAME','MX'] as $type){
     $undotted=[array_replace($dotted[0],['address'=>'Mail.Example.COM'])];
     same($dotted,$parseHosts($undotted),'Provider '.$type.' root dot supplied before strict validation');
     commerceReject(fn()=>I::validate('dns',['records'=>$undotted,'preimage_digest'=>I::digest([])],'example.com'));
-    foreach(['bad..example.com','mail.example.com..','-bad.example.com','bad-.example.com','bad_label.example.com','single',' mail.example.com','mail.example.com ',"mail.\texample.com", "mail.\nexample.com","mail.\x01example.com"] as $target){commerceReject(fn()=>$parseHosts([array_replace($dotted[0],['address'=>$target])]));commerceReject(fn()=>I::host(array_replace($dotted[0],['address'=>$target])));}
+    foreach([' Mail.Example.COM','Mail.Example.COM ',"\tMail.Example.COM.\n"] as $target){same($dotted,$parseHosts([array_replace($dotted[0],['address'=>$target])]),'Provider '.$type.' surrounding whitespace trimmed');commerceReject(fn()=>I::host(array_replace($dotted[0],['address'=>$target])));}
+    foreach(['bad..example.com','mail.example.com..','-bad.example.com','bad-.example.com','bad_label.example.com','single',"mail.\texample.com", "mail.\nexample.com","mail.\x01example.com"] as $target){commerceReject(fn()=>$parseHosts([array_replace($dotted[0],['address'=>$target])]));commerceReject(fn()=>I::host(array_replace($dotted[0],['address'=>$target])));}
     [$d,$driver]=$holding(placeholderComFixtureName('manage-provider-'.strtolower($type).'-placeholder.com'));
     $state->dns=$undotted;
     $op=$submit($d,$driver,'dns',['records'=>$dotted,'preimage_digest'=>I::digest($dotted)]);
@@ -77,6 +78,6 @@ foreach(['2001:0DB8:ABCD:0000:0000:0000:0000:0001','  2001:db8::1  ','mail.examp
     same($text,I::canonical('dns',[$row])[0]['address'],'Canonical TXT bytes exact');
     expect(I::digest([$row])!==I::digest([array_replace($row,['address'=>$text.' '])]),'TXT whitespace changes digest');
 }
-foreach(['URL'=>'https://EXAMPLE.com/a%20b','FRAME'=>'http://example.com/Case?ip=2001:db8::1'] as $type=>$text){$row=['name'=>'web','type'=>$type,'address'=>$text,'mx_pref'=>10];same([$row],$parseHosts([$row]),'Provider redirect bytes exact');same($text,I::canonical('dns',[$row])[0]['address'],'Canonical redirect bytes exact');foreach([' '.$text,$text.' '] as $bad){commerceReject(fn()=>$parseHosts([array_replace($row,['address'=>$bad])])) ;}}
+foreach(['URL'=>'https://EXAMPLE.com/a%20b','FRAME'=>'http://example.com/Case?ip=2001:db8::1'] as $type=>$text){$row=['name'=>'web','type'=>$type,'address'=>$text,'mx_pref'=>10];same([$row],$parseHosts([$row]),'Provider redirect bytes exact');same($text,I::canonical('dns',[$row])[0]['address'],'Canonical redirect bytes exact');foreach([' '.$text,$text.' '] as $bad){same([$row],$parseHosts([array_replace($row,['address'=>$bad])]),'Provider redirect surrounding whitespace trimmed');commerceReject(fn()=>I::host(array_replace($row,['address'=>$bad])));}}
 
 $nativeSuccessful=true;echo "management records passed\n";

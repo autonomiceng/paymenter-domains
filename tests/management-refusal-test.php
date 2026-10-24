@@ -12,6 +12,10 @@ $body='<interface-response><Command>PurchaseServices</Command><ErrCount>1</ErrCo
 same('rejected',$parse($body)->status,'Documented financial refusal');same('unknown',$parse(str_replace('</interface-response>','<OrderID>123</OrderID></interface-response>',$body))->status,'Order alongside refusal remains unknown');same('unknown',$parse(str_replace('524181','2400',$body))->status,'System code remains unknown');
 $nested='<transferorder><transferorderid>999</transferorderid></transferorder>';
 same('unknown',$parse(str_replace('</interface-response>',$nested.'</interface-response>',$body))->status,'Nested transfer order alongside refusal remains unknown');
+foreach (['transferorder'=>['transferorderid','999'],'domaininfo'=>['orderid','123'],'reactivatedomainname'=>['registryexpdate','2027-10-18']] as $container=>[$key,$value]) {
+    $repeated='<'.$container.'><'.$key.'/></'.$container.'><'.$container.'><'.$key.'>'.$value.'</'.$key.'></'.$container.'>';
+    same('unknown',$parse(str_replace('</interface-response>',$repeated.'</interface-response>',$body))->status,'Repeated '.$container.' never proves refusal');
+}
 [$d,$driver]=$holding('example.com');
 foreach ([false,true] as $ambiguous) {
     Illuminate\Support\Facades\Cache::flush();$state->calls=[];
