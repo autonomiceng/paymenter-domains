@@ -28,8 +28,10 @@ def hashes(root):
                 if entry.is_dir(follow_symlinks=False):
                     pending.append((entry.path, name+'/'))
                 elif entry.is_file(follow_symlinks=False):
-                    result[name] = hashlib.sha256(Path(entry.path).read_bytes()).hexdigest()
-    return dict(sorted(result.items(), key=lambda item: Path(item[0])))
+                    with open(entry.path, 'rb') as handle:
+                        result[name] = hashlib.sha256(handle.read()).hexdigest()
+    # Preserve relative Path component ordering without allocating Path objects.
+    return dict(sorted(result.items(), key=lambda item: item[0].split('/')))
 
 
 def git(source, *args):

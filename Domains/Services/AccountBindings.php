@@ -90,6 +90,21 @@ final class AccountBindings
         return $this->registry->reader($this->binding($account), $this->configuration($account, true), $balanceOnly);
     }
 
+    /** Pure opt-in factory. Plaintext is loaded only inside the private protocol exchange. */
+    public function enomRuntimeFactory(AccountBinding $expected, \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,
+        WriteFeatures $features, WriteAcceptance $accepted, RenewalAcceptance $renewalAccepted,
+        TransferPrecheck $precheck, bool $managementAccepted=false): \Closure
+    {
+        return \Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::make($expected,$this,$clock,$features,$accepted,
+            $renewalAccepted,$precheck,function(bool $write)use($expected):array {
+                OperationClaims::outside();$this->server($expected->serverId);
+                $account=Account::where('server_id',$expected->serverId)->sole();
+                $expected->requireMatch($this->binding($account));
+                if ($write&&!$account->processing_enabled) { throw new RuntimeIneligible(RuntimeReason::ProcessingOff); }
+                return $this->configuration($account,true);
+            },$managementAccepted);
+    }
+
     /** Local credential/site validation only; never resolves a provider reader or sends a request. */
     public function configurationAvailable(int $serverId): bool
     { return $this->configurationStatus($serverId) === 'matched'; }

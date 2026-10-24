@@ -679,3 +679,28 @@ per-owner batches, checks constant queries for 25 rows across 1/5/25 customers, 
 foreign-owner DNS/registry/source/native identities to verify isolation. Fresh watch-view
 permission is required. The attention filter evaluates the first 1,000 active names in four
 bounded batches; the cap bounds local decryption and response work, with no provider reads.
+
+### Focused iteration and timing evidence
+
+The PR boundary still runs `python3 scripts/test.py` with the pristine native dependency
+and pinned runtime cache configured. Use `--only` for exact registered test paths during
+focused iteration, for example:
+
+```sh
+python3 scripts/test.py --only tests/test_runner.py tests/test_native.py
+python3 scripts/test.py --only tests/test_installed_package_previous.py
+```
+
+The second command requires `PAYMENTER_TEST_APP`, just like the native suite. Selection
+keeps manifest order, deduplicates paths and never adds implicit lint. Unknown paths,
+invalid manifests and mixing `--only` with `--suite` fail. Category selection remains
+available through `--suite`. A focused pass is not full boundary acceptance: receipts
+record `only_tests`, `omitted_tests` and selected/omitted categories. `complete` describes
+the selected plan, including its dependency and runtime guards.
+
+Every command, including lint, prints a JSON timing row with its command index,
+execution `seconds` and integrity `guard_seconds`; indexed stdout/stderr files remain
+unchanged. Receipts also record setup, command scheduling and final-guard stage durations
+in `timings`. Its `run` value includes command execution and guards, excluding setup,
+receipt writing and cleanup. Parallel command/guard totals are summed worker time,
+not elapsed wall time. Measure full wall time around the runner separately.

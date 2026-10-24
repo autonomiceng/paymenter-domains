@@ -31,7 +31,7 @@ final readonly class RenewalCompletion
             } catch (\Throwable) { return null; }
         });
         if (!$capture) { return Operation::findOrFail($id); }
-        [$attempt, $stamp] = $capture; $proof = null; $covered = false;
+        [$attempt, $stamp] = $capture; $proof = null; $covered = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo';
         try {
             $ctx = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $ctx); $result->requireAttempt($attempt);
@@ -39,19 +39,26 @@ final readonly class RenewalCompletion
                 $facts = $result->result()->evidence();
                 $covered = $facts->domain?->owned === true && $facts->domain->expiry !== null
                     && ($facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null && count($facts->candidates) > 0));
-                $proof = ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
+                $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'
+                    && (!$facts->domain || !$facts->domain->binding->matches($attempt->binding)
+                        || $facts->domain->name !== $attempt->query->name || $facts->domain->owned !== true
+                        || $facts->domain->providerAutoRenew !== false);
+                $autoRenewConfirmed = $attempt->binding->registrarKey === 'namesilo' && !$autoRenewUnconfirmed;
+                $proof = $autoRenewUnconfirmed ? null : ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
             }
         } catch (\Throwable) {}
-        if (!$covered) { return Operation::findOrFail($id); }
-        return DB::transaction(function () use ($seed, $id, $stamp, $proof, $attempt) {
+        if (!$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed) { return Operation::findOrFail($id); }
+        return DB::transaction(function () use ($seed, $id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
             if (!$op || !$this->eligible($op) || $l['stamp'] !== $stamp || ($proof && $proof['provider_domain_id'] !== $d->provider_domain_id)) { return $op; }
             try { $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true); }
             catch (\Throwable) { return $op; }
-            $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + 1;
+            $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + ($covered ? 1 : 0);
             if (!$proof) {
-                $policy['renewal_execution']['reason'] = $policy['renewal_polls'] >= 5 ? 'poll_limit_reached' : 'original_attempt_unresolved';
-                $op->update(['policy' => $policy]); return $op;
+                $policy['renewal_execution']['reason'] = $autoRenewUnconfirmed ? 'provider_auto_renew_unconfirmed'
+                    : ($policy['renewal_polls'] >= 5 ? 'poll_limit_reached' : 'original_attempt_unresolved');
+                $op->update(['safe_code' => $autoRenewUnconfirmed ? 'provider_auto_renew_unconfirmed'
+                    : ($autoRenewConfirmed && $op->safe_code === 'provider_auto_renew_unconfirmed' ? null : $op->safe_code), 'policy' => $policy]); return $op;
             }
             $cost = $proof['charge']; $cap = $op->policy['renewal']['cost_cap'];
             $over = WriteMoney::compare($cost['amount'], $cap['amount']) > 0;

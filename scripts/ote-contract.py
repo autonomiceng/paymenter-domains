@@ -151,6 +151,8 @@ def main():
                 uncertain_env = dict(env, OTE_OUTPUT=str(uncertain_output), OTE_SELF_TEST_SCENARIO=scenario)
                 if scenario == 'interactive-route':
                     uncertain_env.update(OTE_REGISTRATION_CONTEXT='interactive')
+                if scenario in ('limited-budget', 'short-budget'):
+                    uncertain_env.update(OTE_REQUEST_LIMIT='28' if scenario == 'limited-budget' else '26')
                 refused = subprocess.run(argv, cwd=ROOT, env=uncertain_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
                 evidence = json.loads((uncertain_output/'receipt.json').read_text())
                 commands = [row['command'] for row in evidence['requests']]
@@ -181,7 +183,7 @@ def main():
                         raise ValueError('Unknown/premium singleton purchase guard failed')
                     continue
                 if scenario in ('limited-budget', 'short-budget'):
-                    limit = 28 if scenario == 'limited-budget' else 26
+                    limit = int(uncertain_env['OTE_REQUEST_LIMIT'])
                     if refused.returncode != 0 or evidence['request_count'] > limit or commands.count('renewDomain') != 0:
                         raise ValueError('Constrained request budget failed')
                     continue

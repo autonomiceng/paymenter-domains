@@ -433,8 +433,7 @@ Invoice binding now captures four native-owner contact roles and the exact accep
 in encrypted operation.payload. Later native profile edits never replace a held/queued snapshot.
 ContactSetup validates frozen values; its model guard permits only the internal audited recovery scope
 to change contact setup. That scope is privileged internal PHP, not a route authorization boundary.
-No registry-specific inputs are accepted: `.us/.ca/.eu` and nonempty/missing schemas stay off at
-publication and validation until separately accepted. An explicit empty ordinary schema is required.
+Registry publication stays off for `.us/.ca/.eu` and nonempty/missing schemas until separately accepted. Frozen NameSilo `.us` nexus validation is [preparation only](../testing-coverage-namesilo-prep.md); ordinary schemas must be explicitly empty.
 
 ContactRecovery owns its transaction: native users, full InvoiceFunding prefix for acquisitions
 (service/product for nonbillable contacts), server/account, domain, all operations in numeric order.

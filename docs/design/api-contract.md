@@ -104,8 +104,8 @@ prices also accept plain decimal lexemes with longer fractions, preserving every
 informational, never funded quote authority. Neutral Money and pricing admission limits are unchanged.
 `getPrices` requires a successful correlated envelope and at least one well-formed row. Each row
 requires all three positive exact prices. A valid TLD with a missing, null, zero or malformed price
-is quarantined as a whole row with unknown cost; valid rows remain usable. Invalid TLD keys and
-entirely unpriceable catalogues remain unknown. Quarantine never supplies a quote or a zero price.
+is quarantined as a whole row with unknown cost; valid rows remain usable. One invalid TLD key makes
+the whole reply unknown (no row is kept), as does an entirely unpriceable catalogue. Quarantine never supplies a quote or a zero price.
 The OTE runner additionally requires complete positive com/net rows before any write. See
 [catalogue quarantine and revision handling](catalogue.md).
 The optional OTE availability `renew` field is explicitly ignored by name: it is not an independently
@@ -144,7 +144,9 @@ before accepting Paymenter renewal authority.
 **Renewal gate:** the task requires explicit `auto_renew=0` and privacy on all three purchase
 builders. Preserve those fields in a draft renewal mapping, but provide no purchase dispatch
 until support confirms their behavior or an approved readback/control sequence replaces that
-mapping. Undocumented parameters cannot enforce policy. Disable restores in API Manager and
+mapping. Support recommended explicit `auto_renew=0` on 2026-10-18; honoring it remains unproven.
+The admitted renewal writer sends it and completion requires fresh off readback plus charge/expiry proof.
+Undocumented parameters cannot enforce policy. Disable restores in API Manager and
 prove normal/grace eligibility independently. Renewal builder output alone is not safe fulfillment.
 
 The provider confirms there is no idempotency key or maximum-price parameter. Future

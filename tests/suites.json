@@ -30,6 +30,7 @@
     "tests/watch-notice-plan-test.php"
   ],
   "native": [
+    "tests/enom-exchange-test.php",
     "tests/native-fixture-test.php",
     "tests/paymenter-upgrade-tripwire-test.php",
     "tests/raw-post-test.php",
@@ -146,6 +147,8 @@
     "tests/test_installed_package_upgrade.py",
     "tests/test_installed_package_previous.py",
     "tests/test_installed_package_acquisition.py",
+    "tests/test_installed_package_enom_exchange.py",
+    "tests/test_installed_package_namesilo.py",
     "tests/operation-clock-test.php",
     "tests/operation-rate-test.php",
     "tests/conversion-new-pin-test.php",

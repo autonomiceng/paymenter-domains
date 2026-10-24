@@ -4,7 +4,7 @@ NameSilo may return a successful catalogue with an ending missing registration p
 well-formed rows independently; retain an explicit malformed row as typed `CatalogueUnavailable`
 evidence. Require all three positive exact decimal prices for a usable row. A missing ending or
 failed read remains a read failure and retains prior evidence; it is not an explicit quarantine.
-An entirely malformed catalogue or invalid ending key remains unknown.
+An entirely malformed catalogue remains unknown, and one invalid ending key makes the whole reply unknown.
 
 For accepted endings, `CatalogueSync` imports valid rows and records quarantined endings separately
 from read/persistence failures. A persisted quarantine advances the scheduler cursor so other

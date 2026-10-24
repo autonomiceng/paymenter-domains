@@ -21,7 +21,9 @@ final class Registration extends RegistrationProtocol
         if (count(array_unique($roles)) !== 1) { throw new \DomainException('Registration requires one proven four-role profile.'); }
         $privacy = $payload['privacy'] ?? false;
         if (!is_bool($privacy)) { throw new \DomainException('Invalid privacy policy.'); }
-        $mapping = PurchaseMapping::register($op->query->name, $op->query->years, $privacy, $roles['registrant'], $payload['nameservers'] ?? []);
+        $parts = explode('.', $op->query->name);
+        $nexus = \Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::nameSiloNexus(end($parts), $payload['registry'] ?? null);
+        $mapping = PurchaseMapping::register($op->query->name, $op->query->years, $privacy, $roles['registrant'], $payload['nameservers'] ?? [], $nexus);
         $parser = new ResponseParser;
         $purchase = $parser->parse($this->request($op, $ctx, $origin, $mapping->command, $mapping->parameters()), $mapping, '');
         if (!in_array($purchase->outcome, [Outcome::Success, Outcome::Fallback], true)) {

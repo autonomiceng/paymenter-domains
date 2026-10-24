@@ -72,11 +72,16 @@ contactProperty($user, 'country', 'Duplicate'); same('', ContactDetails::collect
 config(['app.countries' => $countries]); contactProperty($user, 'country', 'US'); contactProperty($user, 'state', 'WA'); contactProperty($user, 'phone', "\t2065550100");
 $contactError(ContactDetails::collect($user), 'contacts.registrant.phone');
 contactProperty($user, 'phone', '(206) 555-0100');
-// Empty registry schema is explicit; .us/.ca/.eu and every nonempty/unknown schema remain OFF.
+// Publication remains off for registry endings; only frozen NameSilo .us nexus has preparation validation.
 foreach (['enom', 'namesilo'] as $registrar) {
     foreach (['us', 'ca', 'eu', 'co.us'] as $ending) {
         expect(!RegistryInputs::supported($registrar, $ending, []), 'Unaccepted registry gate');
-        contactReject(static fn () => RegistryInputs::validate($registrar, $ending, [], ['usnc' => 'C11', 'usap' => 'P3']));
+        $values=['usnc'=>'C11','usap'=>'P3'];
+        if($registrar==='namesilo' && $ending==='us'){
+            same($values,RegistryInputs::validate($registrar,$ending,[],$values),'Explicit frozen nexus preparation only');
+            $unpublished=clone $tlds[1];$unpublished->tld='us';
+            same(false,ContactSetup::capture($user,$unpublished)['registry_supported'],'Native capture still grants no .us acceptance');
+        }else{contactReject(static fn () => RegistryInputs::validate($registrar,$ending,[],$values));}
     }
     foreach ([null, [['name' => 'us_nexus', 'required' => true]]] as $schema) { contactReject(static fn () => RegistryInputs::validate($registrar, 'com', $schema, [])); }
     contactReject(static fn () => RegistryInputs::validate($registrar, 'com', [], ['command' => 'override']));

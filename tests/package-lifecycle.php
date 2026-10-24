@@ -96,7 +96,21 @@ if($phase==='server-delete'){
     assertRetained($receipt);require __DIR__.'/Support/installed-watch.php';seedInstalledWatch();
     file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
     echo "Installed watch observations, notices and adoption preview seeded with all gates off.\n";
-}elseif($phase==='acquisition'){
+}elseif($phase==='exchange-contracts'){
+    require __DIR__.'/Support/enom-wire.php';require __DIR__.'/Support/enom-exchange.php';
+}elseif(in_array($phase,['namesilo-registration','namesilo-renewal'],true)){
+    $installedFixture=true;$fixtureActivation=static fn()=>null;
+    foreach([\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::class,
+        \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Registration::class,
+        \Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class,
+        \Paymenter\Extensions\Servers\Domains\Services\RenewalWriter::class] as $type){
+        expect(str_starts_with((new ReflectionClass($type))->getFileName(),base_path('extensions/Servers/Domains/')),'NameSilo preparation uses installed ZIP runtime');
+    }
+    if($phase==='namesilo-registration'){
+        require __DIR__.'/Support/namesilo-registration-fixture.php';
+        require __DIR__.'/Support/namesilo-nexus.php';
+    }else{require __DIR__.'/renewal-execution-namesilo-test.php';}
+}elseif(in_array($phase,['acquisition','enom-exchange'],true)){
     require __DIR__.'/Support/runtime-acquisition.php';
 }elseif($phase==='seed'){
     require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';

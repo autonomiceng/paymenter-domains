@@ -358,6 +358,132 @@ class RunnerTests(unittest.TestCase):
                 runner.main()
             self.assertFalse(json.loads((output/'receipt.json').read_text())['complete'])
 
+    def test_fingerprint_keeps_root_empty_directories_and_link_metadata_without_following(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); tree = root/'Domains'; tree.mkdir()
+            (tree/'empty').mkdir(); (tree/'nested').mkdir()
+            (tree/'nested/.hidden').write_bytes(b'original')
+            outside = root/'outside'; outside.mkdir(); (outside/'file').write_bytes(b'outside')
+            (tree/'directory-link').symlink_to(outside, target_is_directory=True)
+            (tree/'broken').symlink_to(root/'missing'); (tree/'loop').symlink_to('loop')
+            os.mkfifo(tree/'pipe')
+            expected = {}
+            for path in [tree, *tree.rglob('*')]:
+                stat = path.lstat()
+                expected[str(path.relative_to(tree))] = (stat.st_ino, stat.st_mode, stat.st_size,
+                                                        stat.st_mtime_ns, stat.st_ctime_ns)
+            with mock.patch.object(runner, 'ROOT', root):
+                self.assertEqual(runner.runtime_fingerprint(), expected)
+                self.assertNotIn('directory-link/file', expected)
+                (tree/'nested/.hidden').chmod(0o400)
+                self.assertNotEqual(runner.runtime_fingerprint(), expected)
+
+    def test_lint_and_focused_receipts_include_timings_and_omissions(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
+            commands = [('lint', ['php', '-l', 'Domains/Probe.php']), ('provider', ['php', 'tests/probe-test.php'])]
+            suites = {'provider': ['tests/probe-test.php', 'tests/other-test.php'], 'native': ['tests/native-test.php']}
+            with mock.patch.object(runner, 'ROOT', root), \
+                 mock.patch.object(runner, 'execute', return_value=(b'ok', b'', 0, False)), \
+                 contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(runner.run(commands, {}, output, ['lint', 'provider'], suites,
+                                            only=['tests/probe-test.php']*2), 0)
+            receipt = json.loads((output/'receipt.json').read_text())
+            self.assertEqual(receipt['only_tests'], ['tests/probe-test.php'])
+            self.assertEqual(receipt['omitted_tests'], ['tests/other-test.php', 'tests/native-test.php'])
+            self.assertEqual(set(receipt['timings']), {'runtime_snapshot', 'commands', 'final_guards', 'run'})
+            self.assertTrue(all(seconds >= 0 for seconds in receipt['timings'].values()))
+            lines = [json.loads(line) for line in stdout.getvalue().splitlines() if line.startswith('{')]
+            rows = [row for row in lines if row.get('timing') == 'command']
+            self.assertEqual([row['index'] for row in rows], [0, 1])
+            self.assertEqual([row['kind'] for row in rows], ['lint', 'provider'])
+            for logged, saved in zip(rows, receipt['results']):
+                self.assertGreaterEqual(saved['guard_seconds'], 0)
+                for key in ['argv', 'seconds', 'guard_seconds', 'exit', 'timed_out']:
+                    self.assertEqual(logged[key], saved[key])
+
+    def test_only_paths_keep_manifest_order_and_native_fixture_requirements(self):
+        suites = runner.manifest()
+        cases = [(['tests/test_package.py'], ['package']),
+                 (['tests/test_schema_mariadb.py'], ['mariadb']),
+                 (['tests/test_package.py', 'tests/test_installed_package_previous.py', 'tests/test_package.py'],
+                  ['native', 'package'])]
+        for requested, selected in cases:
+            with self.subTest(requested=requested), tempfile.TemporaryDirectory() as temp, \
+                 mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine'}), \
+                 mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
+                 mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', '--only', *requested]), \
+                 mock.patch.object(runner.native, 'prepare', return_value={'source': 'digest'}) as native_prepare, \
+                 mock.patch.object(runner, 'prepare', return_value=(Path(temp)/'runtime', Path(temp)/'runtime/php', Path(temp)/'runtime/curl.so')) as php_prepare, \
+                 mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stdout(io.StringIO()):
+                (Path(temp)/'runtime').mkdir()
+                self.assertEqual(runner.main(), 0)
+                expected = [(kind, path) for kind, paths in suites.items() for path in paths if path in requested]
+                self.assertEqual([(kind, argv[-1]) for kind, argv in run.call_args.args[0]], expected)
+                self.assertEqual(run.call_args.args[3], selected)
+                if selected == ['mariadb']:
+                    php_prepare.assert_not_called()
+                else:
+                    php_prepare.assert_called_once_with(native='native' in selected)
+                self.assertEqual(native_prepare.call_count, int('native' in selected))
+                self.assertEqual(run.call_args.kwargs['only'], requested)
+                if 'native' in selected:
+                    self.assertEqual(run.call_args.args[1]['PAYMENTER_TEST_FIXTURE'], str(Path(temp)/'paymenter'))
+                    self.assertEqual(run.call_args.args[5], ('pristine', {'source': 'digest'}))
+
+    def test_only_unknown_paths_and_missing_native_source_refuse_before_preparing(self):
+        for path, message in [('tests/unregistered-test.php', 'Unregistered'),
+                              ('../tests/test_runner.py', 'Unregistered'),
+                              (str(ROOT/'tests/test_runner.py'), 'Unregistered'),
+                              ('tests/test_installed_package_previous.py', 'PAYMENTER_TEST_APP')]:
+            with self.subTest(path=path), tempfile.TemporaryDirectory() as temp, \
+                 mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': ''}), \
+                 mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
+                 mock.patch.object(runner.sys, 'argv', ['test.py', '--only', path]), \
+                 mock.patch.object(runner, 'prepare') as prepare, mock.patch.object(runner.native, 'prepare') as native_prepare, \
+                 contextlib.redirect_stderr(io.StringIO()), self.assertRaisesRegex(ValueError, message):
+                try:
+                    runner.main()
+                finally:
+                    prepare.assert_not_called(); native_prepare.assert_not_called()
+                    receipt = json.loads((Path(temp)/'receipt.json').read_text())
+                    self.assertFalse(receipt['complete']); self.assertEqual(receipt['only_tests'], [path])
+
+    def test_only_cannot_combine_with_suite_or_bypass_manifest_validation(self):
+        with mock.patch.object(runner.sys, 'argv', ['test.py', '--suite', 'runner', '--only', 'tests/test_runner.py']), \
+             mock.patch.object(runner.tempfile, 'mkdtemp') as output, contextlib.redirect_stderr(io.StringIO()), \
+             self.assertRaises(SystemExit):
+            try: runner.main()
+            finally: output.assert_not_called()
+        with tempfile.TemporaryDirectory() as temp, \
+             mock.patch.object(runner.sys, 'argv', ['test.py', '--only', 'tests/test_runner.py']), \
+             mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
+             mock.patch.object(runner, 'manifest', side_effect=ValueError('unregistered suite')), \
+             mock.patch.object(runner, 'prepare') as prepare, contextlib.redirect_stderr(io.StringIO()), \
+             self.assertRaisesRegex(ValueError, 'unregistered suite'):
+            try: runner.main()
+            finally: prepare.assert_not_called()
+
+    def test_default_boundary_keeps_every_registered_command_and_lint(self):
+        suites = runner.manifest()
+        with tempfile.TemporaryDirectory() as temp, \
+             mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
+             mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine'}), \
+             mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1']), \
+             mock.patch.object(runner.native, 'prepare', return_value={}), \
+             mock.patch.object(runner, 'prepare', return_value=(Path(temp)/'runtime', Path(temp)/'runtime/php', Path(temp)/'runtime/curl.so')), \
+             mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stdout(io.StringIO()):
+            (Path(temp)/'runtime').mkdir()
+            self.assertEqual(runner.main(), 0)
+        commands = run.call_args.args[0]
+        expected = [(kind, path) for kind, paths in suites.items() if kind != 'mariadb' for path in paths]
+        self.assertEqual([(kind, argv[-1]) for kind, argv in commands if kind != 'lint'], expected)
+        lint = [[str(ROOT/'scripts/php-test'), '-l', str(path.relative_to(ROOT))]
+                for area in ['Domains', 'tests'] for path in sorted((ROOT/area).rglob('*.php'))]
+        lint.append([str(ROOT/'scripts/php-test'), 'tests/php83-compatibility-test.php'])
+        self.assertEqual([argv for kind, argv in commands if kind == 'lint'], lint)
+        self.assertIsNone(run.call_args.kwargs['only'])
+
     def test_conventions_exceptions_are_empty(self):
         doc = (ROOT/'docs/paymenter-extension-conventions.md').read_text()
         section = doc.split('## Known exceptions\n', 1)[1].split('\n## ', 1)[0].strip()

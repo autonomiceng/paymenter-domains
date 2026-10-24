@@ -46,10 +46,10 @@ final class RenewalWriter implements AdmittedRegistrarDriver
             return new DriverResult($op->binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
                 new Evidence(renewalExecution: new RenewalEvidence($op->query, $ref)));
         }
-        // Documented renewal parameters only. Admission proves exact Active + UTC margin and auto-renew off.
+        // NameSilo support recommends the explicit flag; fresh completion readback remains mandatory.
         $mapping = PurchaseMapping::renew($op->query->name, $op->query->years, false);
         $environment = $op->binding->environment === \Paymenter\Extensions\Servers\Domains\Data\Environment::Live ? NameSiloEnvironment::Live : NameSiloEnvironment::Sandbox;
-        try{$body=$this->wire($op,$context,$environment->origin().'/apibatch','renewDomain',['domain'=>$op->query->name,'years'=>$op->query->years],$timeout);}catch(RenewalUnsent){return self::unsent($op);}
+        try{$body=$this->wire($op,$context,$environment->origin().'/apibatch','renewDomain',['domain'=>$op->query->name,'years'=>$op->query->years,'auto_renew'=>0],$timeout);}catch(RenewalUnsent){return self::unsent($op);}
         $reply = (new NameSiloParser)->parse(self::body($body), $mapping, '');
         if ($reply->outcome !== Outcome::Success) { return self::unknown($op); }
         return new DriverResult($op->binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,

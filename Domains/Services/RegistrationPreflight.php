@@ -26,7 +26,10 @@ final readonly class RegistrationPreflight implements SealPreflight
             try { \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers($servers); }
             catch (\InvalidArgumentException) { throw new WriteHeld('nameservers_required'); }
         } else {
-            try { \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::register($query->name, $query->years, $privacy, '1', $servers); }
+            try { $nexus = RegistryInputs::nameSiloNexus($domain->tld, $op->payload['registry'] ?? null); }
+            catch (\DomainException) { throw new WriteHeld('registry_details_unsupported'); }
+            if ($nexus && $privacy) { throw new WriteHeld('registry_details_unsupported'); }
+            try { \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::register($query->name, $query->years, $privacy, '1', $servers, $nexus); }
             catch (\InvalidArgumentException) { throw new WriteHeld('nameservers_required'); }
         }
         if ($this->profiles && $context->binding->registrarKey === 'namesilo') {

@@ -17,7 +17,10 @@ final class AcquisitionSetup
             } else {
                 $mapping='Paymenter\\Extensions\\Servers\\Domains\\Registrars\\NameSilo\\Api\\PurchaseMapping';
                 if ($op->action==='transfer') { $mapping::transfer($d->domain,'validation-only',$privacy,'1',$servers); }
-                else { $mapping::register($d->domain,(int)$op->term,$privacy,'1',$servers); }
+                else {
+                    $nexus=RegistryInputs::nameSiloNexus($d->tld,$op->payload['registry']??null);
+                    $mapping::register($d->domain,(int)$op->term,$privacy,'1',$servers,$nexus);
+                }
                 $servers=array_map('strtolower',$servers);
             }
         } catch (\InvalidArgumentException) { throw new SetupValidation(['nameservers']); }

@@ -14,7 +14,7 @@ $engine = new RenewalExecution($renewBindings,$authority,new RenewalAdmission($a
 $writes = 0;
 $writer = new RenewalWriter($binding,$features,$accepted,fn ()=>$engine,static function ($origin,$command,$params,$ms) use (&$writes) {
     same(0,Illuminate\Support\Facades\DB::transactionLevel(),'NameSilo wire outside locks'); same('https://ote.namesilo.com/apibatch',$origin,'Fixed background test route');
-    same('renewDomain',$command,'Named renewal only'); same(['domain'=>'native-history.com','years'=>1],$params,'Documented fixed annual renewal, no card/restore overrides');
+    same('renewDomain',$command,'Named renewal only'); same(['domain'=>'native-history.com','years'=>1,'auto_renew'=>0],$params,'Explicit annual renewal and auto-renew off, no card/restore overrides');
     $writes++; return json_encode(['request'=>['operation'=>'renewDomain'],'reply'=>['code'=>300,'detail'=>'synthetic','domain'=>'native-history.com','order_amount'=>'8.95']]);
 });
 $completion = new RenewalCompletion($renewBindings,$clock);
@@ -38,6 +38,7 @@ for ($cycle=0;$cycle<2;$cycle++) {
     Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,86400,'namesilo_renewal_v1'));
     same('namesilo_registration_v1',Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances::load($binding)->vocabulary,'Renewal acceptance preserves registration recovery');
     $clock->instant=$clock->now()->modify('+301 seconds');
+    if($cycle===0){ require __DIR__.'/Support/namesilo-renewal-readback.php'; }
     same('succeeded',$completion->run($renewal->id)->state,'Accepted renewal history and owned expiry complete no-ID renewal');
     same(null,$holding->fresh()->provider_domain_id,'No invented provider domain ID');
     same(false,array_key_exists('registration_admission',$renewal->fresh()->attempt),'Original nonpremium evidence remains on registration only');

@@ -85,6 +85,7 @@ final class ParserDiagnostics
                                 $categories[$field] = self::amountFailure(is_array($prices) ? $prices : [], $field);
                             }
                         }
+                        // passes is a per-field pass/fail map (true and false), not a list of successful checks.
                         $facts['catalogue_failures'][] = ['tld' => $label, 'categories' => $categories,
                             'passes' => array_intersect_key($checks, array_flip(['amount.registration', 'amount.transfer', 'amount.renew']))];
                     }
