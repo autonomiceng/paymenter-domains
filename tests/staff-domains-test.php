@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, Labels, RefundCandidates, RequestFacts, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries, Labels, RefundCandidates, RequestFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Policies\DomainPolicy;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 staffPanel(); [$held,$active,$long]=staffData();
@@ -56,14 +56,28 @@ expect(!$policy->update($wild,$held),'Wildcard cannot add staff writes in this s
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 staffDomainFilterLookalikes($viewer, $active);
 \Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();
-DB::table('domains_domains')->where('id',$active->id)->update(['provenance'=>'adoption_pending']);
-$pending=$active->fresh();expect($pending->adoptionPending(),'Pending provenance overrides stored active status');
-// Held transfers are Under review too, never Pending transfer.
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$pending,$held,$long]);
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['pending_transfer'])->assertCanNotSeeTableRecords([$pending,$held,$long]);
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active'])->assertCanNotSeeTableRecords([$pending]);
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active','under_review'])->assertCanSeeTableRecords([$pending]);
-same(['Under review','Import not confirmed'],[DomainFacts::status($pending)['label'],DomainFacts::status($pending)['reason']],'Pending import is Under review');
+DB::beginTransaction();
+try {
+    $peers=[];
+    foreach (['active','cancelled'] as $i=>$status) {
+        $peer=$active->replicate()->fill(['domain'=>'combined-'.$status.'.example.com','sld'=>'combined-'.$status,'service_id'=>1401+$i,'status'=>$status]);$peer->save();
+        $request=$active->operations()->sole()->replicate()->fill(['domain_id'=>$peer->id,'service_id'=>$peer->service_id,'operation_key'=>'combined-'.$status]);$request->save();$peers[$status]=$peer;
+    }
+    DB::table('domains_domains')->where('id',$active->id)->update(['provenance'=>'adoption_pending']);
+    $pending=$active->fresh();expect($pending->adoptionPending(),'Pending provenance overrides stored active status');
+    // Held transfers are Under review too, never Pending transfer.
+    staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['pending_transfer'])->assertCountTableRecords(0);
+    foreach ([['active'],['under_review'],['active','under_review']] as $groups) {
+        $included=in_array('active',$groups,true)?[$peers['active']]:[];
+        if(in_array('under_review',$groups,true)){$included=[...$included,$pending,$held,$long];}
+        $excluded=array_values(array_filter([$pending,$held,$long,...array_values($peers)],fn($d)=>!in_array($d->id,array_map(fn($r)=>$r->id,$included),true)));
+        staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',$groups)
+            ->assertCanSeeTableRecords($included)->assertCanNotSeeTableRecords($excluded)->assertCountTableRecords(count($included));
+        $expected=array_map(fn($d)=>$d->id,$included);sort($expected);
+        same($expected,DomainQueries::status(Domain::query(),$groups)->orderBy('id')->pluck('id')->all(),'SQL status selection matches exact native filter membership');
+    }
+    same(['Under review','Import not confirmed'],[DomainFacts::status($pending)['label'],DomainFacts::status($pending)['reason']],'Pending import is Under review');
+} finally {DB::rollBack();}
 DB::table('domains_domains')->where('id',$active->id)->update(['provenance'=>null]);
 $acquisition=$active->operations()->sole();$storedState=$acquisition->state;
 DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'needs_review']);

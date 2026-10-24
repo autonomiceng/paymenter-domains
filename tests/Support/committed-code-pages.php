@@ -15,6 +15,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery,HolderPricing,NativePresenter};
 // The parent fixture's code POST service, native session and both-holder checkout are used unchanged.
+$assertSessionCodeAbsent=static function(array $values,string $code):void {
+    expect(!str_contains(json_encode($values,JSON_THROW_ON_ERROR),substr(json_encode($code,JSON_THROW_ON_ERROR),1,-1)),'Transfer code is absent from session');
+};
 $controller=new OwnedDomainController($owners);
 $presenter=new NativePresenter($owners,$native,new HolderPricing($prices));
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
@@ -23,19 +26,26 @@ foreach([0,1]as$i){
     $user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');
     $committed=$newTransfer('committed-private-page-placeholder-'.$i.'.com',$i,true,false);
     $beforeEpp=$committed->fresh()->payload['epp']??null;$keyRequest=$req($committed->domain,'code');
+    $invalidCode="bad\nvalue";
     $json=Request::create('/domains/'.$committed->domain_id.'/code','POST',[],[],[],['CONTENT_TYPE'=>'application/json'],
-        json_encode(['_request_key'=>$keyRequest->request->get('_request_key'),'transfer_code'=>"bad\nvalue"],JSON_THROW_ON_ERROR));
+        json_encode(['_request_key'=>$keyRequest->request->get('_request_key'),'transfer_code'=>$invalidCode],JSON_THROW_ON_ERROR));
     $json->setUserResolver(fn()=>$user);$json->setLaravelSession($session);$jsonResult=$action->code($json,$committed->domain_id);
     same(302,$jsonResult->getStatusCode(),'Invalid JSON code returns the form');
     expect(!$json->json()->has('transfer_code'),'Invalid JSON code is scrubbed from the JSON bag');
-    expect(!str_contains(json_encode($session->all(),JSON_THROW_ON_ERROR),"bad\nvalue"),'Invalid JSON code is absent from session');
+    $assertSessionCodeAbsent($session->all(),$invalidCode);
     same($beforeEpp,$committed->fresh()->payload['epp']??null,'Invalid JSON code leaves saved transfer payload unchanged');
-    $sentinel=bin2hex(random_bytes(32));$r=$req($committed->domain,'code',['transfer_code'=>$sentinel]);
+    $sentinel=bin2hex(random_bytes(32));
+    foreach ([$invalidCode,$sentinel] as $control) {
+        $contaminated=$session->all();$contaminated['synthetic_leak']=['nested'=>['transfer_code'=>'prefix-'.$control.'-suffix']];
+        try{$assertSessionCodeAbsent($contaminated,$control);throw new LogicException('Contaminated session was accepted');}
+        catch(RuntimeException $error){same('Transfer code is absent from session',$error->getMessage(),'Session assertion rejects nested contaminated control');}
+    }
+    $r=$req($committed->domain,'code',['transfer_code'=>$sentinel]);
     $result=$action->code($r,$committed->domain_id);
     expect($result->getStatusCode()===302&&DB::transactionLevel()===0,'Real owner POST commits outside a test rollback');
     expect(($committed->fresh()->payload['epp']??null)===$sentinel,'Committed secret fixture exists');
     expect(!$r->request->has('transfer_code'),'Secret scrubbed from committed request');
-    expect(!str_contains(json_encode($session->all(),JSON_THROW_ON_ERROR),$sentinel),'Committed code absent from native session');
+    $assertSessionCodeAbsent($session->all(),$sentinel);
     expect(!str_contains(DB::table('domains_operations')->where('id',$committed->id)->value('payload'),$sentinel),'Committed code encrypted at rest');
     ContactRecovery::hold($committed->id);
     foreach(['show','setup','code']as$page){
@@ -55,7 +65,7 @@ foreach([0,1]as$i){
         expect(count($invoiceDtos)===1&&(reset($invoiceDtos)->transfer['received']??false)===true,'Native invoice presenter maps the committed operation');
         expect(!str_contains(json_encode($serviceDto,JSON_THROW_ON_ERROR),$sentinel),'Native service DTO excludes committed code');
         expect(!str_contains(json_encode($invoiceDtos,JSON_THROW_ON_ERROR),$sentinel),'Native invoice DTO excludes committed code');
-        expect(!str_contains(json_encode($session->all(),JSON_THROW_ON_ERROR),$sentinel),'Rendering never flashes code into session');
+        $assertSessionCodeAbsent($session->all(),$sentinel);
         if($page==='code'){
             expect($dto->transfer['received']&&substr_count($html,\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::CODE_SAVED)===1,'Real committed-code page acknowledges receipt');
             same(1,$dom->query('//input[@name="transfer_code"]')->length,'Unsent before-cutoff code editor is offered without prefill');
@@ -66,7 +76,7 @@ foreach([0,1]as$i){
     expect(str_contains($component->html(),'Auth code')&&str_contains($component->html(),'Saved')&&!str_contains($component->html(),'Customer has not entered it'),'Staff render positively confirms committed encrypted code receipt');
     expect(!str_contains($component->html(),$sentinel),'Same committed code absent from real staff markup');
     expect(!str_contains(json_encode($component->snapshot,JSON_THROW_ON_ERROR),$sentinel),'Same committed code absent from public Livewire state');
-    expect(!str_contains(json_encode($session->all(),JSON_THROW_ON_ERROR),$sentinel),'Same committed code absent from session after Livewire');
+    $assertSessionCodeAbsent($session->all(),$sentinel);
     $user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);$user->unsetRelation('properties');
 }
 Auth::setUser($user);storefrontViews();app('view')->getFinder()->flush();

@@ -126,6 +126,17 @@ $new=static function(string $name,string $action)use($user,$native,$tlds,$clock,
     }
     $state->query=OperationClaims::query($op,$op->domain);return $op->fresh();
 };
+foreach (['register'=>$closed,'transfer'=>$closedReverse] as $action=>$disabled) {
+    $clock->at=$clock->at->modify('+61 seconds'); Cache::flush();
+    $blocked=$new(placeholderComFixtureName('disabled-'.$action.'-placeholder.com'),$action);
+    $blocked->update(['state'=>'queued']); same('queued',$blocked->fresh()->state,'Disabled execution starts with queued paid work');
+    $before=[$state->reads,$state->rdap,$state->writes];
+    $disabled->operation($blocked); $result=$blocked->fresh();
+    same('held',$result->state,'Disabled '.$action.' action refuses execution');
+    same('write_disabled',$result->safe_code,'Disabled action names its exact gate');
+    same([],$result->attempt??[],'Disabled action stays unclaimed and unsealed');
+    same($before,[$state->reads,$state->rdap,$state->writes],'Disabled action performs zero provider reads or writes');
+}
 // Corruption must be refused by the selector before an engine can claim or read.
 $op=$new(placeholderComFixtureName('route-guards-placeholder.com'),'register');$attempt=$op->attempt;$readCount=$state->reads;
 $refused(fn()=>$transferPort->execute($op->id),'Acquisition operation binding changed.');
