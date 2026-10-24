@@ -92,7 +92,7 @@ $secret=$verified->value('value');$verified->update(['value'=>'invalid-encrypted
 $refuse(fn()=>app(SellerPolicies::class)->selection('com','register',1,new DateTimeImmutable));
 $refuse(fn()=>$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id));$verified->update(['value'=>$secret]);
 $before=count($GLOBALS['catalogueCalls']);
-Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('TEST');Livewire::actingAs($staff)->test(ViewTld::class,['record'=>$tld->id])->assertSee('Pricing for .com');
+Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('TEST');Livewire::actingAs($staff)->test(ViewTld::class,['record'=>$tld->id])->assertSee('Prices by registrar account');
 foreach(['pricing'=>'/domains/pricing','search'=>'/domains'] as $method=>$path){$request=Illuminate\Http\Request::create($path);$request->setLaravelSession($session);(new Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController($front))->$method($request)->render();}
 same($before,count($GLOBALS['catalogueCalls']),'Staff, pricing and search page rendering makes zero provider calls');
 same('available',$front->check('catalogue-check-placeholder.com')['status'],'Explicit search confirms ordinary availability');same($before+1,count($GLOBALS['catalogueCalls']),'Explicit search one Check');

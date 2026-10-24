@@ -2,38 +2,97 @@
 // Enom 444f31c TLD pricing layout; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages;
+use Filament\Actions\{Action,ActionGroup};
 use Filament\Resources\Pages\ViewRecord;
-use Filament\Schemas\{Schema,Components\Section};
+use Filament\Schemas\{Schema,Components\Grid,Components\Section};
 use Filament\Infolists\Components\TextEntry;
+use Illuminate\Support\HtmlString;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts,SettingsActions};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{MissingEntry,Staff,TldFacts,SettingsActions};
+use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Services\LifecyclePolicies;
+use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewTld extends ViewRecord
 {
     protected static string $resource=TldResource::class;
     public string $reviewStamp='';
+    /** Page names for the shared settings actions. Edit prices sits on the prices section and Edit on the grace rows. */
+    private const LABELS=['seller'=>'Change registrar','override'=>'Edit prices','tld_settings'=>'Edit terms','remove_override'=>'Use default pricing',
+        'default_rule'=>'Edit default pricing','publish'=>'Publish prices','lifecycle'=>'Edit grace and redemption'];
     public function mount(int|string $record): void
     {parent::mount($record);$this->reviewStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp((int)$this->getRecord()->server_id,(int)$this->getRecord()->id);}
+    /** @return array<string,Action> */
+    private function settings(): array
+    {
+        $out=[];
+        foreach(SettingsActions::make((int)$this->getRecord()->server_id,(int)$this->getRecord()->id,$this->reviewStamp) as $action){
+            $label=self::LABELS[$action->getName()]??null;
+            $out[$action->getName()]=$label?$action->label($label)->modalHeading($label):$action;
+        }
+        return $out;
+    }
     protected function getHeaderActions(): array
-    {return [\Filament\Actions\ActionGroup::make(SettingsActions::make((int)$this->getRecord()->server_id,(int)$this->getRecord()->id,$this->reviewStamp))->label('Pricing & seller')->button()];}
+    {
+        $actions=$this->settings();$seller=$actions['seller'];unset($actions['seller'],$actions['override'],$actions['lifecycle']);
+        return [$seller->color('primary'),ActionGroup::make(array_values($actions))->label('More')->button()->color('gray')];
+    }
+    public function overrideAction(): Action {return $this->settings()['override'];}
+    public function lifecycleAction(): Action {return $this->settings()['lifecycle'];}
     protected function fillForm(): void {$this->data=[];}
-    public function getTitle(): string {Staff::requireView();return 'Pricing for .'.$this->getRecord()->tld;}
+    public function getTitle(): string {Staff::requireView();return '.'.$this->getRecord()->tld;}
+    public function getHeading(): HtmlString
+    {
+        $sales=TldFacts::salesState($this->getRecord());
+        return new HtmlString('<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem"><span class="font-mono">'.e($this->getTitle()).'</span>'
+            .view('filament::components.badge',['color'=>$sales['tone'],'size'=>'lg','slot'=>new HtmlString(e($sales['label']))])->render().'</span>');
+    }
+    public function getSubheading(): ?string {return TldFacts::salesState($this->getRecord())['reason'];}
+    public function getBreadcrumbs(): array {return [$this->getResourceUrl()=>'TLDs & pricing',$this->getTitle()];}
+    private function button(?Action $action, string $label): ?HtmlString
+    {return $action?->isVisible()?new HtmlString($action->label($label)->link()->size('sm')->toHtml()):null;}
+    private static function link(): ?HtmlString
+    {return RegistrarSetup::canAccess()?new HtmlString('<a href="'.e(RegistrarSetup::getUrl()).'" class="fi-link fi-size-sm" style="font-size:.875rem;text-decoration:underline">Open Registrars</a>'):null;}
+    private static function entry(string $label, ?string $value, string|HtmlString|null $sub = null, ?string $color = null): TextEntry
+    {
+        $entry=TextEntry::make('fact_'.md5($label))->label($label)->state($value)->inlineLabel()->extraAttributes(['style'=>'overflow-wrap:anywhere']);
+        if($value!==null&&$sub!==null){$entry->belowContent($sub);}
+        return MissingEntry::apply($entry,cause:$value===null&&is_string($sub)?$sub:null,color:$color);
+    }
     public function infolist(Schema $schema): Schema
     {
-        $grants=Staff::requireView();$t=$this->getRecord();$prices=TldFacts::snapshot($t,$grants);
-        $facts=['Registrar / account'=>TldFacts::registrar($t->registrar_key).' · account #'.$t->server_id,
-            'Pricing'=>$t->use_default_rule?'Default rule':'TLD override',
-            'Rule settings'=>$grants->policy?TldFacts::rule($t):'Ask staff with pricing permissions','Seller for new sales'=>TldFacts::seller($t),
-            'Catalogue sales status'=>$prices['sales'],
-            'Renewal holders'=>TldFacts::holders($t).' · existing domains keep their holding registrar',
-            'Cost refresh'=>TldFacts::refreshState((int)$t->server_id),
-            ...\Paymenter\Extensions\Servers\Domains\Services\LifecyclePolicies::facts($t,now()->toDateTimeImmutable(),$grants->costs)];
-        $entries=[];foreach($facts as $label=>$value){$entries[]=TextEntry::make('fact_'.count($entries))->label($label)->state($value);}
+        $grants=Staff::requireView();$t=$this->getRecord();$snapshot=TldFacts::snapshot($t,$grants);
+        $sellerId=TldFacts::sellerId($t->tld);$seller=$sellerId===null?null:Account::where('server_id',$sellerId)->first();
+        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):null,$seller?'Existing domains stay with their registrar':'No registrar selected')
+                ->suffix($seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
+            self::entry('Terms',TldFacts::terms($t))];
+        $edit=$this->button($this->getAction('lifecycle',false),'Edit');
+        foreach(LifecyclePolicies::facts($t,now()->toDateTimeImmutable(),$grants->costs) as $label=>$fact){
+            $entry=self::entry($label,$fact['value'],$fact['sub']);
+            if($fact['help']){$entry->hintIcon('heroicon-m-question-mark-circle',$fact['help']);}
+            if($fact['edit']&&$edit){$entry->hint($edit);}
+            $sales[]=$entry;
+        }
+        $last=TldFacts::lastPrices((int)$t->server_id);$failure=TldFacts::syncFailure((int)$t->server_id,$last);
+        $until=collect($snapshot['prices'])->pluck('until')->filter()->min();
+        $valid=$until?'Valid until '.\Carbon\CarbonImmutable::parse($until)->utc()->format('M j, Y H:i').' UTC':null;
+        $stamp=static fn($at)=>$at->format('M j, Y H:i').' UTC';
+        if($failure){
+            $cause=e($failure['cause'].($failure['at']?' · '.$failure['at']:''));$link=self::link();
+            $sync=[self::entry('Last sync','Sync failed',new HtmlString($cause.($link?'<div>'.$link->toHtml().'</div>':'')),'danger')];
+            if($last){$sync[]=self::entry('Last good prices',$stamp($last),$valid);}
+        }else{
+            $sync=[self::entry('Last sync',$last?$stamp($last):null,$last?$valid:'Not synced yet')->hint($last?null:self::link())];
+        }
+        $override=$this->getAction('override',false);
         return $schema->components([
-            Section::make('TLD')->columns(2)->schema($entries)->columnSpanFull(),
-            Section::make('Prices')->description('Registration and transfer below cost are held with a staff alert. Renewals below cost are billed with a staff alert. Issued invoices keep their prices.')
-                ->schema([TextEntry::make('saved_prices')->hiddenLabel()->state(fn()=>TldFacts::table($t,$grants,$prices['prices']))->html()])->columnSpanFull(),
-            Section::make('Revision history')->description('Recent changes for this TLD and shared account settings: up to 50 entries from the current and latest archived batches. Older history is retained. Price publications include before and after revisions.')
-                ->schema([TextEntry::make('revisions')->hiddenLabel()->state(fn()=>TldFacts::history((int)$t->server_id,(int)$t->id)?:['No staff changes recorded'])->listWithLineBreaks()->bulleted()])->columnSpanFull(),
+            Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()->schema([
+                Section::make('Sales')->schema($sales)->columnSpan(1),
+                Section::make('Price sync')->schema($sync)->columnSpan(1)]),
+            Section::make('Prices by registrar account')->afterHeader($override?->isVisible()?new HtmlString($override->button()->color('gray')->toHtml()):null)
+                ->schema([TextEntry::make('prices')->label('Prices by registrar account')->hiddenLabel()->state(fn()=>TldFacts::accountsTable($t,$grants))->html()])->columnSpanFull(),
+            Section::make('History')
+                ->schema([TextEntry::make('history')->label('History')->hiddenLabel()->state(fn()=>TldFacts::historyTable(TldFacts::history((int)$t->server_id,(int)$t->id)))->html()])->columnSpanFull(),
         ]);
     }
 }

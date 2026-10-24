@@ -55,18 +55,32 @@ final class LifecyclePolicies
             $row->value=json_encode(['binding'=>$binding->fingerprint,'tld'=>$t->tld,'facts'=>$v],JSON_THROW_ON_ERROR);$row->save();
         });
     }
+    public const GRACE_HELP='Days after expiry when the domain can still be renewed at the normal price.';
+    public const REDEMPTION_HELP='Period after grace when the domain can only be restored, for a restore fee.';
+    /** Staff rows for the TLD page: label => value (null is Missing), sub (the cause when Missing), help and whether Edit applies. */
     public static function facts(Tld $t,\DateTimeImmutable $now,bool $costs): array
     {
         try{$a=Account::where('server_id',$t->server_id)->firstOrFail();$b=CatalogueAcceptances::binding($a);$v=self::read($b,$t->tld);}
         catch(\Throwable){$v=null;}
-        if($v===null){return ['Lifecycle facts'=>'Not verified · grace renewal and restore unavailable'];}
-        $out=['Grace renewal policy'=>LifecycleFacts::until($v,'grace',$now)?$v['grace_days'].' days · verified':'Unavailable · review support, age, currency and conflicts',
-            'Restore policy'=>LifecycleFacts::until($v,'restore',$now)?$v['restore_days'].' days · verified; execution disabled':'Unavailable · review support, age, currency and conflicts',
-            'Auto-renew only'=>$v['auto_renew_only']?'Yes':'No','Conflicting evidence'=>$v['conflicting']?'Yes · unavailable':'No',
-            'Policy verified'=>$v['verified_at'],'Policy source'=>$v['source']];
-        if($costs){foreach(['grace'=>'grace_extra','restore'=>'restore_fee'] as $prefix=>$amount){
-            $out[$prefix==='grace'?'Registrar extra grace charge':'Registrar restore fee']=$v[$amount].' '.$v[$prefix.'_currency'].' · verified '.$v[$prefix.'_verified_at'].' · '.$v[$prefix.'_source'];
-        }}
+        $row=static fn(?string $value,?string $sub,?string $help=null,bool $edit=false)=>compact('value','sub','help','edit');
+        if($v===null){return ['Renewal grace period'=>$row(null,'No lifecycle policy saved',self::GRACE_HELP,true),
+            'Redemption period'=>$row(null,'No lifecycle policy saved',self::REDEMPTION_HELP,true)];}
+        $period=static function(string $action)use($v,$now,$row):array {
+            $help=$action==='grace'?self::GRACE_HELP:self::REDEMPTION_HELP;
+            if($v['conflicting']){return $row(null,'Sources disagree',$help,true);}
+            if(!$v[$action.'_supported']||($action==='grace'&&$v['auto_renew_only'])){return $row('Not supported',null,$help,true);}
+            if($v[$action.'_currency']!=='USD'){return $row(null,'Fee not in USD',$help,true);}
+            if($v[$action.'_days']!==0&&LifecycleFacts::until($v,$action,$now)===null){return $row(null,'Policy out of date',$help,true);}
+            $days=(int)$v[$action.'_days'];
+            return $row($days.' '.($days===1?'day':'days'),'Updated '.(new \DateTimeImmutable($v['verified_at']))->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y'),$help,true);
+        };
+        $out=['Renewal grace period'=>$period('grace'),'Redemption period'=>$period('restore')];
+        if($v['auto_renew_only']){$out['Registry auto-renew only']=$row('Yes',null);}
+        if($costs){
+            $money=static fn(string $amount,string $currency)=>$currency.' '.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',PriceCatalogue::cost($amount));
+            if(PricingRule::units($v['grace_extra'],4)!==0){$out['Late renewal fee']=$row($money($v['grace_extra'],$v['grace_currency']),null);}
+            $out['Restore fee']=$row($money($v['restore_fee'],$v['restore_currency']),null);
+        }
         return $out;
     }
 }

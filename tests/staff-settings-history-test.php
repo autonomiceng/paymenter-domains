@@ -49,7 +49,7 @@ expect($writeMany[1]>0&&$readMany[1]>0,'Encrypted setting retrieval counter is a
 same(1,$readMany[1],'History display retrieves only the current encrypted native setting');
 DB::table(AuditArchives::TABLE)->where('id',DB::table(AuditArchives::TABLE)->min('id'))->update(['payload'=>'broken old ciphertext']);
 $review()->local(static fn()=>null);
-expect(!str_contains(implode(' ',TldFacts::history($server->id)),'unavailable'),'Old archives are retained without being loaded');
+expect(!str_contains(json_encode(TldFacts::history($server->id)),'unavailable'),'Old archives are retained without being loaded');
 expect(count(Review::historyRows($server))<=Review::HISTORY_LIMIT,'History display has an explicit entry bound');
 same($stamp,Review::stamp($t->server_id,$t->id),'Audit growth leaves the reviewed state unchanged');
 tldRefusal(fn()=>$first->local(static fn()=>null),'Review key used.');

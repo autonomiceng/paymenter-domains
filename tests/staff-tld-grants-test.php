@@ -51,10 +51,10 @@ foreach(\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$t->
 same($twentyFive,tldListCost($page,25),'Four versus twelve price rows have identical 25-row query cost');
 same($hundred,tldListCost($page,100),'Four versus twelve price rows have identical 100-row query cost');
 echo 'TLD 25/100 rows: '.json_encode([$twentyFive,$hundred])." total/user/role/price queries\n";
-$page->assertSee('Cost <span',false)->assertSee('8.00 USD');
+$page->assertTableColumnVisible('cost')->assertSee('USD 8.00');
 expect(!str_contains(json_encode($page->snapshot),'StaffGrants'),'TLD grants never enter public component data');
 DB::table('roles')->where('id',$viewer->role_id)->update(['permissions'=>json_encode([Staff::VIEW])]);
-$page->call('$refresh')->assertSuccessful()->assertDontSee('Cost <span',false);
+$page->call('$refresh')->assertSuccessful()->assertTableColumnHidden('cost')->assertDontSee('USD 8.00');
 expect(!isset(TldFacts::prices($t)[0]['cost']),'Default TLD reader checks fresh cost grants');
 DB::table('roles')->where('id',$viewer->role_id)->update(['permissions'=>'[]']);$page->call('$refresh')->assertForbidden();
 same([Staff::VIEW,Staff::COSTS],$viewer->role->permissions,'TLD acting user retains a deliberately stale loaded role');

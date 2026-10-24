@@ -3,11 +3,14 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Resources\Resource;
+use Filament\Support\Enums\FontFamily;
 use Filament\Tables\{Columns\TextColumn,Filters\SelectFilter,Table};
 use Illuminate\Database\Eloquent\{Builder,Model};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
-use Paymenter\Extensions\Servers\Domains\Models\Tld;
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
+use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
+use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class TldResource extends Resource
 {
     protected static ?string $model=Tld::class;
@@ -28,25 +31,46 @@ class TldResource extends Resource
     {Staff::requireView();return TldFacts::bound(parent::getEloquentQuery())->with('server:id,name');}
     public static function table(Table $table): Table
     {
-        $grants=Staff::requireView();$facts=[];
+        $grants=Staff::requireView();$facts=[];$demo=[];$sellers=[];
         $row=static function(Tld $t)use(&$facts,$grants):array {
             return $facts[$t->id]??=TldFacts::snapshot($t,$grants);
         };
+        $isDemo=static function(Tld $t)use(&$demo):bool {
+            return $demo[$t->server_id]??=DemoData::is(Account::where('server_id',$t->server_id)->first());
+        };
+        $seller=static function(Tld $t)use(&$sellers):?int {
+            return array_key_exists($t->tld,$sellers)?$sellers[$t->tld]:($sellers[$t->tld]=TldFacts::sellerId($t->tld));
+        };
+        $renewal=static fn(Tld $t)=>TldFacts::renewal($row($t)['prices']);
         return $table->columns([
-            TextColumn::make('tld')->label('TLD')->prefix('.')->searchable()->sortable()->extraAttributes(['style'=>'word-break:normal;overflow-wrap:normal'])
-                ->description(fn($record)=>new \Illuminate\Support\HtmlString(e($record->use_default_rule?'Default rule':'TLD override').'<br>'.e($row($record)['sales']).'<br>Seller: '.e(TldFacts::seller($record))))->wrap(),
-            TextColumn::make('registrar_key')->label('Registrar / account')->formatStateUsing(fn($state)=>TldFacts::registrar($state))
-                ->description(fn($record)=>'Account #'.$record->server_id.' · '.$record->server->name),
-            TextColumn::make('holders')->label('Renewal holders')->state(fn($record)=>TldFacts::holders($record)),
-            TextColumn::make('renewal')->label('Annual renewal')->state(fn($record)=>collect($row($record)['prices'])->firstWhere('action','Renewal')['retail']??'Unknown')
-                ->formatStateUsing(fn($state)=>new \Illuminate\Support\HtmlString('<span style="white-space:nowrap">'.e($state).'</span>'))
-                ->description(function($record)use($grants,$row){$renewal=collect($row($record)['prices'])->firstWhere('action','Renewal');return new \Illuminate\Support\HtmlString(
-                    ($grants->costs?'Cost <span style="white-space:nowrap">'.e($renewal['cost']??'Unknown').'</span><br>':'').e(($renewal['warning']??'None')==='None'?'':$renewal['warning']));})->wrap(),
-            TextColumn::make('refresh')->label('Cost refresh')->visibleFrom('xl')->state(fn($record)=>TldFacts::refreshState((int)$record->server_id))->wrap(),
+            TextColumn::make('tld')->label('TLD')->prefix('.')->fontFamily(FontFamily::Mono)->searchable()->sortable()->extraAttributes(['style'=>'word-break:normal;overflow-wrap:normal']),
+            TextColumn::make('account')->label('Registrar account')->state(fn(Tld $record)=>$record->server->name)
+                ->suffix(fn(Tld $record)=>$isDemo($record)?new \Illuminate\Support\HtmlString(' '.DemoData::tag(inline:true)->toHtml()):null)
+                ->description(fn(Tld $record)=>TldFacts::registrar($record->registrar_key).' · '.strtolower(TldFacts::pricing($record))
+                    .($seller($record)===(int)$record->server_id?' · new orders':''))->wrap(),
+            TextColumn::make('renewal')->label('Renewal price')->state(fn(Tld $record)=>$renewal($record)['retail']??Missing::LABEL)
+                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
+                ->description(fn($state)=>$state===Missing::LABEL?'Sync TLD prices needed':null)->extraAttributes(['style'=>'white-space:nowrap']),
+            TextColumn::make('cost')->label('Cost')->visible($grants->costs)->state(fn(Tld $record)=>$renewal($record)['cost']??Missing::LABEL)
+                ->color(fn($state,Tld $record)=>$state===Missing::LABEL||TldFacts::costNote($renewal($record))?Missing::COLOR:null)
+                ->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
+                ->description(fn($state,Tld $record)=>$state===Missing::LABEL?'No cost saved':TldFacts::costNote($renewal($record)))->extraAttributes(['style'=>'white-space:nowrap']),
+            TextColumn::make('holders')->label('Domains')->state(fn(Tld $record)=>TldFacts::holders($record)),
+            TextColumn::make('status')->label('Status')->badge()->state(fn(Tld $record)=>$row($record)['sales']['label'])
+                ->color(fn(Tld $record)=>$row($record)['sales']['tone'])->description(fn(Tld $record)=>$row($record)['sales']['reason']),
         ])->filters([SelectFilter::make('registrar_key')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo']),
-            SelectFilter::make('server_id')->label('Account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all())])
+            SelectFilter::make('server_id')->label('Registrar account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all())])
             ->recordUrl(fn($record)=>self::getUrl('view',['record'=>$record]))->defaultSort('tld')->paginated([25,50,100])
-            ->emptyStateHeading('No TLDs yet')->emptyStateDescription('Accepted catalogue imports appear here. New sales stay off until selected.');
+            ->emptyStateHeading('No TLDs yet')->emptyStateDescription(null);
+    }
+    /** Accounts whose last price sync failed, with the stored cause in words. */
+    public static function syncFailures(): array
+    {
+        $out=[];
+        foreach(Account::query()->whereIn('server_id',\App\Models\Server::where('extension','Domains')->where('type','server')->select('id'))->orderBy('server_id')->get() as $a){
+            if($failure=TldFacts::syncFailure((int)$a->server_id)){$out[]=['account'=>(string)\App\Models\Server::whereKey($a->server_id)->value('name'),...$failure];}
+        }
+        return $out;
     }
     public static function getPages(): array
     {return ['index'=>ListTlds::route('/'),'view'=>ViewTld::route('/{record}')];}
