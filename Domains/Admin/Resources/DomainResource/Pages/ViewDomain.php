@@ -62,6 +62,7 @@ class ViewDomain extends ViewRecord
     {
         $entry=TextEntry::make('fact_'.md5($label))->label($label)->state($fact['value'])->inlineLabel()
             ->extraAttributes(['style'=>'overflow-wrap:anywhere'])->belowContent($fact['sub'])->url($fact['url']);
+        if (is_array($fact['value'])) { $entry->listWithLineBreaks(); }
         if ($fact['help']) { $entry->hintIcon('heroicon-m-question-mark-circle',$fact['help']); }
         if ($fact['demo']) { $entry->suffix(DemoData::tag(inline:true)); }
         return MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['tone']);

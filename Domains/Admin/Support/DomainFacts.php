@@ -7,14 +7,14 @@ use Illuminate\Support\Facades\{DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, OperationResource};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar, DomainStates, ObservationRecords, ObservationWork, RenewalReplacements, RenewalStop};
+use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar, DomainStates, ObservationRecords, ObservationWork, OwnedDomains, RenewalReplacements, RenewalStop};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Request-local allowlisted projection. Never cache across actors, call providers or serialize models.
- * Each fact is ['value'=>?string,'sub'=>?string,'url'=>?string,'tone'=>?string,'help'=>?string,'demo'=>bool].
+ * Each fact is ['value'=>string|list<string>|null,'sub'=>?string,'url'=>?string,'tone'=>?string,'help'=>?string,'demo'=>bool].
  * A null value is Missing; a row that does not apply is absent. */
 final class DomainFacts
 {
-    public const REGISTRATION=['Expires','Registrar','In registrar account','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'];
+    public const REGISTRATION=['Expires','Registrar','In registrar account','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'];
     public const BILLING=['Customer','Service','Auto-renew','Renewal price','Renewal invoices','Next invoice','Open invoice'];
     public const HELP=['Transfer lock'=>'Registrar lock that blocks transfers to another registrar.',
         'Registrar auto-renew'=>"The registrar's own auto-renew. Keep it off: Beco renews after the customer pays."];
@@ -44,6 +44,8 @@ final class DomainFacts
             $facts=$observation['facts']??[];
             $unread=self::unread($d,$sync);
             $f['In registrar account']=self::fact(($observation['record_hold']['reason']??null)==='ownership_drift'?'No':self::flag($facts['owned']??null,'Yes','No'),sub:isset($facts['owned'])?null:$unread);
+            $nameservers=OwnedDomains::storedNameservers($observation);
+            $f['Nameservers']=self::fact($nameservers,sub:$nameservers?null:$unread,demo:$nameservers&&$account&&DemoData::is($account));
             $f['Transfer lock']=self::fact(self::flag($facts['locked']??null),sub:isset($facts['locked'])?null:$unread,help:self::HELP['Transfer lock']);
             $f['WHOIS privacy']=self::fact(self::flag($facts['privacy']??null),sub:isset($facts['privacy'])?null:$unread);
             $f['Registrar auto-renew']=self::fact(self::flag($facts['auto_renew']??null),sub:isset($facts['auto_renew'])?null:$unread,help:self::HELP['Registrar auto-renew']);
@@ -181,6 +183,6 @@ final class DomainFacts
     /** Links to pages the current panel may not register resolve to no link. */
     private static function url(\Closure $make): ?string { try { return $make(); } catch (\Throwable) { return null; } }
     private static function flag(mixed $value, string $on='On', string $off='Off'): ?string { return is_bool($value)?($value?$on:$off):null; }
-    private static function fact(?string $value, ?string $sub=null, ?string $url=null, ?string $tone=null, ?string $help=null, bool $demo=false): array
+    private static function fact(string|array|null $value, ?string $sub=null, ?string $url=null, ?string $tone=null, ?string $help=null, bool $demo=false): array
     { return ['value'=>$value===''?null:$value,'sub'=>$sub===''?null:$sub,'url'=>$url,'tone'=>$tone,'help'=>$help,'demo'=>$demo]; }
 }

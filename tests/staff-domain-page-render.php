@@ -28,6 +28,8 @@ DB::table('domains_observation_work')->insert(['server_id'=>$failed->server_id,'
 // Resume sync acts through the domain's latest request.
 $synced=$active->operations()->sole()->replicate(); $synced->fill(['domain_id'=>$failed->id,'service_id'=>$failed->service_id,'operation_key'=>'render-sync-failed']); $synced->save();
 $noExpiry=$copy('no-expiry.example.com',['provider_expires_at'=>null]);
+$withNs=$copy('nameservers.example.com',[]); $p=$withNs->observation;
+$p['sections']['nameservers']=['operation_key'=>'render-ns','at'=>'2026-10-20T15:05:00Z','facts'=>['nameservers'=>['ns1.example.net','ns2.example.net','ns3.example.net']]]; $withNs->update(['observation'=>$p]);
 $review=$copy('import-review.example.com',[]); DB::table('domains_domains')->where('id',$review->id)->update(['provenance'=>'adoption_pending']);
 $order=$copy('new-order.example.com',['status'=>'registration_pending','authority_generation'=>1]);
 $op=$active->operations()->sole()->replicate(); $op->fill(['domain_id'=>$order->id,'service_id'=>$order->service_id,'operation_key'=>'render-order',
@@ -42,7 +44,7 @@ $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $loadingStyles=\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles();
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $user=staffUser([Staff::VIEW,Staff::ADOPT_PREVIEW,'admin.domains.manage',AcquisitionRetirement::PERMISSION,'admin.domains.operations.resume_observation']); Auth::setUser($user);
-foreach (['list'=>[ListDomains::class,[]],'active'=>[ViewDomain::class,['record'=>$active->id]],'sync-failed'=>[ViewDomain::class,['record'=>$failed->id]],
+foreach (['list'=>[ListDomains::class,[]],'active'=>[ViewDomain::class,['record'=>$active->id]],'nameservers'=>[ViewDomain::class,['record'=>$withNs->id]],'sync-failed'=>[ViewDomain::class,['record'=>$failed->id]],
     'demo-paused'=>[ViewDomain::class,['record'=>$demo->id]],'missing-expiry'=>[ViewDomain::class,['record'=>$noExpiry->id]],
     'under-review'=>[ViewDomain::class,['record'=>$review->id]],'pending-order'=>[ViewDomain::class,['record'=>$order->id]]] as $name=>[$class,$params]) {
     $test=Livewire::actingAs($user)->test($class,$params)->assertSuccessful();
