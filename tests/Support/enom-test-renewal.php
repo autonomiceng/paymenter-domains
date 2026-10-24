@@ -116,7 +116,7 @@ foreach([[],['9002','9003'],['9002']] as $ids){
 }
 
 require __DIR__.'/enom-renewal-replacement.php';
-Auth::setUser($staff);$count=count($GLOBALS['enomWire']['forms']);\Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->assertSee('Enom TEST renewal');same($count,count($GLOBALS['enomWire']['forms']),'Staff page makes zero provider calls');
+Auth::setUser($staff);$count=count($GLOBALS['enomWire']['forms']);\Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->assertSeeInOrder(['Setup checklist','Renewals','On','DNS, nameservers and contacts']);same($count,count($GLOBALS['enomWire']['forms']),'Staff page makes zero provider calls');
 $continued=json_decode(file_get_contents($receipt.'.renewal'),true,512,JSON_THROW_ON_ERROR);$continued['race_operation']=$ops['race']->id;$continued['issuance_domain']=$holders['issuance']->id;$continued['user']=$user->id;$continued['money']=$money();$continued['used']=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');file_put_contents($receipt.'.renewal',json_encode($continued,JSON_THROW_ON_ERROR));
 file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));$nativeSuccessful=true;
 echo "Installed TEST renewal: native payment, cap, unique charge/expiry, restart and uncertainty passed.\n";

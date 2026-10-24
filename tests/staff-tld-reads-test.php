@@ -22,7 +22,7 @@ foreach([[],[Staff::COSTS],[Staff::VIEW],[Staff::VIEW,Staff::COSTS]] as $permiss
     $u=staffUser($permissions);Auth::setUser($u);$can=in_array(Staff::VIEW,$permissions,true);$cost=$can&&in_array(Staff::COSTS,$permissions,true);
     $list=Livewire::actingAs($u)->test(ListTlds::class);$setup=Livewire::actingAs($u)->test(RegistrarSetup::class);$account=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]);
     if(!$can){$list->assertForbidden();$setup->assertForbidden();$account->assertForbidden();continue;}
-    $list->assertCanSeeTableRecords($tlds);$setup->assertSuccessful()->assertSee('Enom')->assertSee('NameSilo')->assertSee('Status');$account->assertSuccessful()->assertSee('Setup')->assertSee('Catalogue acceptance');
+    $list->assertCanSeeTableRecords($tlds);$setup->assertSuccessful()->assertSee('Enom')->assertSee('NameSilo')->assertSee('Status');$account->assertSuccessful()->assertSee('Setup checklist')->assertSee('Supported TLDs')->assertDontSee('Catalogue acceptance');
     $detail=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSuccessful()->assertSet('data',[])
         ->assertSee('Revision history')->assertSee('Refresh failed or interrupted')->assertSee('existing domains keep their holding registrar');
     $body=$detail->html().$setup->html().$account->html().json_encode($detail->snapshot).json_encode($setup->snapshot).json_encode($account->snapshot);
@@ -71,7 +71,7 @@ $unknown=Price::where('server_id',$t->server_id)->where('action','register')->wh
 $unknown->update(['wholesale'=>null,'hold_reason'=>'unknown_price','revision'=>$unknown->revision+1]);
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('Cost unknown · held');
 expect(str_contains(json_encode(TldFacts::prices($t)),'Unknown'),'Unknown cost remains explicit');
-$calls=$reads->calls;Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Unavailable');Livewire::actingAs($u)->test(RegistrarSetup::class)->assertSuccessful();same($calls,$reads->calls,'No reader factory on GET');
+$calls=$reads->calls;Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Sync failed')->assertSee('Saved prices are kept.')->assertDontSee('Unavailable');Livewire::actingAs($u)->test(RegistrarSetup::class)->assertSuccessful();same($calls,$reads->calls,'No reader factory on GET');
 DB::table('domains_tlds')->where('id',$tlds[1]->id)->update(['account_fingerprint'=>str_repeat('f',64)]);
 Livewire::actingAs($u)->test(ListTlds::class)->assertCanNotSeeTableRecords([$tlds[1]]);
 $open=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id]);$u->role->update(['permissions'=>[]]);$open->call('$refresh')->assertForbidden();

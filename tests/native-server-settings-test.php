@@ -58,15 +58,14 @@ $panel=Filament\Facades\Filament::getCurrentPanel();$panel->pages([RegistrarSetu
 Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel):void {RegistrarSetup::registerRoutes($panel);RegistrarAccount::registerRoutes($panel);BalancesPage::registerRoutes($panel);});
 app('router')->getRoutes()->refreshNameLookups();
 $writer=new StaffSettingsWrites(app(NativeCatalogue::class),app(SellerPolicies::class),$bindings,true);app()->instance(StaffSettingsWrites::class,$writer);
-$processingAction=static fn(Server $s)=>TestAction::make('processing_'.$s->id)->schemaComponent('account_'.$s->id,'content');
-$unconfigured=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$first->id])->assertActionDisabled($processingAction($first))
-    ->assertActionExists($processingAction($first),fn($action)=>$action->getTooltip()==='Configure and verify this account first.');
+$processingAction=static fn(Server $s)=>setupAction('processing',$s->id);
+$unconfigured=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$first->id])->assertActionDoesNotExist($processingAction($first))->assertDontSee('Resume orders');
 $unconfigured->mountAction($processingAction($first))->assertActionNotMounted($processingAction($first));
 $configure=static function(Server $s,string $registrar,string $secret)use($staff):void {
-    $name=TestAction::make('configure_'.$s->id)->schemaComponent('account_'.$s->id,'content');
+    $name=setupAction('configure',$s->id);
     $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($name)->assertActionMounted($name);
     $data=['registrar'=>$registrar,'environment'=>'test','reason'=>'Verify the original synthetic account',...($registrar==='enom'?['uid'=>'synthetic-enom','token'=>$secret]:['api_key'=>$secret])];
-    $page->setActionData($data)->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded');
+    $page->setActionData($data)->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
 };
 $configure($first,'enom','PRIVATE-ORIGINAL-ENOM');$configure($second,'namesilo','PRIVATE-ORIGINAL-NAMESILO');
 foreach([$first,$second] as $server){
@@ -109,11 +108,11 @@ foreach([$first,$second] as $server){
     same('42.17',DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->value('amount'),'Held display retains original balance history');
     $pause=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionEnabled($processingAction($server));
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);
-    $disabled=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionDisabled($processingAction($server));
+    $disabled=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionHidden($processingAction($server));
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
     $health=RuntimeHealth::for($server->id);$healthNeedle=$a->registrar_key==='namesilo'?'saved settings no longer match this NameSilo binding':'saved settings no longer match the verified account';$recoveryNeedle=$a->registrar_key==='namesilo'?'Restore the original saved settings':'re-enter credentials for the original account';expect(str_contains($health['Registrar configuration'],$healthNeedle),'Hold covers credential and digest settings');expect(str_contains($health['Registrar configuration'],$recoveryNeedle),'Local health gives actionable hold');
     // The account shows Connection failed with its cause; Balance is Missing with the same cause and Add funds stays available.
-    Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('Connection failed')->assertSee("Couldn't load the account's settings")->assertSee('Missing')
+    Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('Connection failed')->assertSee('Credentials changed')->assertSee('Missing')
         ->assertSee('Add funds')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
     Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Connection failed')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
     // A positively verified different account still cannot repurpose the retained binding.
@@ -127,7 +126,7 @@ foreach([$first,$second] as $server){
     serverSettingsReject(fn()=>$bindings->reader($server->id));same(null,RegistrarBalances::facts($a,$clock->now())['balance'],'Digest-only changes also hide the balance');$digest->update(['value'=>$savedDigest]);
     $bindings->setProcessing($server->id,true,static fn()=>null);$server->refresh()->update(['enabled'=>false]);
     same(false,$a->fresh()->processing_enabled,'Native disable pauses the retained account');
-    expect(str_contains(RuntimeHealth::for($server->id)['Registrar configuration'],'Re-enable it in Servers, then resume processing in Registrar setup'),'Disabled-server health names its actual recovery path');same(null,RegistrarBalances::facts($a,$clock->now())['balance'],'Disabled account hides balance');
+    expect(str_contains(RuntimeHealth::for($server->id)['Registrar configuration'],'Re-enable it in Servers, then resume orders on the account page'),'Disabled-server health names its actual recovery path');same(null,RegistrarBalances::facts($a,$clock->now())['balance'],'Disabled account hides balance');
     serverSettingsReject(fn()=>$bindings->reader($server->id));$server->refresh()->update(['enabled'=>true]);same(false,$a->fresh()->processing_enabled,'Re-enable does not resume spending');
     foreach([Server::class,Extension::class] as $model){
         foreach(['extension'=>'Enom','type'=>'other','id'=>999999] as $field=>$value){$s=$model::findOrFail($server->id);$s->$field=$value;serverSettingsReject(fn()=>$s->save());}

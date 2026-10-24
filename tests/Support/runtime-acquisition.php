@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{Cache,DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,Capabilities,CostUnit,Disposition,DriverResult,Environment,Evidence,Money,QuoteEvidence,ResultReason,SendState};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AcquisitionPort,AcquisitionPorts,ActivationFacts,CartAdmission,CatalogueAcceptances,CheckoutEligibility,InvoiceBinding,NativeCatalogue,OperationClaims,PriceCatalogue,Rdap,Refunds,RegistrarRegistry,RegistrationProfiles,RenewalAcceptance,RuntimeComposition,RuntimePorts,RuntimeWork,SellerPolicies,TransferInputs,TransferPrecheck,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AcquisitionPort,AcquisitionPorts,CartAdmission,CatalogueAcceptances,CheckoutEligibility,InvoiceBinding,NativeCatalogue,OperationClaims,PriceCatalogue,Rdap,Refunds,RegistrarRegistry,RegistrationProfiles,RenewalAcceptance,RuntimeComposition,RuntimePorts,RuntimeWork,SellerPolicies,TransferInputs,TransferPrecheck,WriteAcceptance,WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Registration,Transfer,Management};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 expect(!is_link(base_path('extensions/Servers/Domains')),'Acquisition tests use extracted ZIP bytes');
@@ -109,9 +109,9 @@ expect(!$wrong->accepted($account),'Wrong acquisition binding is incomplete even
 same(['register'=>null,'transfer'=>null],$wrong->acquisitionGates($account),'Wrong binding has no action readiness');
 $old=new RuntimePorts;$legacy=$composition;$legacy['acquisition']=(new ReflectionProperty($registrationPort,'engine'))->getValue($registrationPort);
 $old->register($binding->fingerprint,fn()=>$legacy);expect(!$old->accepted($account),'Legacy single-engine acquisition is refused');
-app()->instance(RuntimePorts::class,$closed);$facts=ActivationFacts::all()['enom']['Server #'.$binding->serverId];
-expect(isset($facts['Registration feature off'],$facts['Transfer composition review required']),'Staff readiness describes the exact per-action gates');
-expect(str_contains($facts['Transfer composition review required'],'This is not provider acceptance or processing authority.'),'Readiness grants no processing authority');
+app()->instance(RuntimePorts::class,$closed);$rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account,['label'=>'Active','reason'=>null]),null,'label');
+same(['Off',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::SERVER_CONFIG],[$rows['Registrations']['value'],$rows['Registrations']['cause']],'Setup checklist names a feature that is off in server config');
+same('On',$rows['Transfers']['value'],'Setup checklist describes the exact per-action gates');
 app()->instance(RuntimePorts::class,$ports);
 $inputs=new TransferInputs($clock,new Refunds($clock));
 $new=static function(string $name,string $action)use($user,$native,$tlds,$clock,$state,$inputs):Operation{

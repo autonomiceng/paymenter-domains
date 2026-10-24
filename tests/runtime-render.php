@@ -36,7 +36,7 @@ foreach(['staff-domains'=>[ListDomains::class,[]],'staff-domain'=>[ViewDomain::c
 }
 foreach([false,true] as $enabled){
     if(!$enabled){$bindings->setProcessing($t->server_id,true,static fn()=>null);} // Seed an already enabled synthetic account before the actual pause action.
-    $action=\Filament\Actions\Testing\TestAction::make('processing_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content');
+    $action=setupAction('processing',$t->server_id);
     $test=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($action)->assertActionMounted($action)->setActionData(['enabled'=>$enabled,'reason'=>'Review installed processing change']);
     $test->call('$refresh');$render($test,'staff-processing-'.($enabled?'enable':'disable'));
     if(!$enabled){$test->setActionData(['enabled'=>false,'confirmed'=>true,'reason'=>'Review installed processing change'])->callMountedAction()->assertRedirect(RegistrarAccount::getUrl(['account'=>$t->server_id]));expect(!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->value('processing_enabled'),'Native pause persisted');$render(Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$t->server_id]),'staff-processing-saved');}

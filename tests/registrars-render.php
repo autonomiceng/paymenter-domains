@@ -6,9 +6,10 @@ use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{PublicSuffixList as PslPage,RegistrarAccount,RegistrarSetup};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceReads,CatalogueAcceptances};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceReads,CatalogueAcceptances,StaffSettingsReview};
 $out=$argv[1]??'';expect(is_dir($out)&&is_writable($out),'Output directory required');
 $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');Filament::getCurrentPanel()->viteTheme([])->theme(new HtmlString(''))->brandName('Paymenter');
 $save=function(string $name,$test)use($out,$css):void{
@@ -23,5 +24,9 @@ $save=function(string $name,$test)use($out,$css):void{
 // Show a read balance one cent below Due in 30 days, after the test's failed read.
 $clock->instant=$clock->instant->modify('+2 minutes');BalanceReads::record(CatalogueAcceptances::binding($enom),new Money('7.99','USD'),$clock->now(),'manual');
 $save('list',Livewire::actingAs($staff)->test(RegistrarSetup::class));
-foreach(['account-enom-test'=>$enom->server_id,'account-namesilo-test'=>$silo->server_id,'account-not-connected'=>$empty->id] as $name=>$id){$save($name,Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$id]));}
+// Accounts render for staff with every setup permission and the public suffix list, so all buttons show.
+Paymenter\Extensions\Servers\Domains\Services\PslSchema::install();Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class,new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites(app(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class),app(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class),app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class),true));
+$full=staffUser([Staff::VIEW,Staff::POLICY,...array_map([StaffSettingsReview::class,'permission'],array_keys(StaffSettingsReview::ACTIONS)),PslPage::VIEW,PslPage::MANAGE]);
+foreach(['account-enom-test'=>$enom->server_id,'account-namesilo-test'=>$silo->server_id,'account-not-connected'=>$empty->id] as $name=>$id){$save($name,Livewire::actingAs($full)->test(RegistrarAccount::class,['account'=>$id]));}
 echo "Registrars list and account pages rendered\n";$nativeSuccessful=true;

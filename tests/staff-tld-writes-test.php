@@ -18,9 +18,9 @@ $fixed=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'1.00
 foreach(array_keys(Review::ACTIONS) as $action){
     $page=Livewire::actingAs($u)->test(in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true)?RegistrarAccount::class:ViewTld::class,
         in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true)?['account'=>$t->server_id]:['record'=>$t->id]);
-    $name=in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true)?\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content'):$action;
+    $name=in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true)?setupAction($action,$t->server_id):$action;
     if(in_array($action,['test_renewal','test_management','live_renewal','live_management'],true)){$page->assertActionDoesNotExist($name);continue;} // Deployment opt-in is off.
-    if($action==='enroll_sandbox'){$page->assertActionDisabled($name);continue;}
+    if($action==='enroll_sandbox'){$page->assertActionDoesNotExist($name);continue;}
     $page->mountAction($name)->assertActionMounted($name)->setActionData(['reason'=>'x'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);
 }
 // Every settings action is hidden without its own permission, even with view/manage access.
@@ -28,7 +28,7 @@ $u->role->update(['permissions'=>[Staff::VIEW,Staff::POLICY]]);
 foreach(array_keys(Review::ACTIONS) as $action){
     $setup=in_array($action,['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox','test_renewal','test_management','live_renewal','live_management','renewal_billing'],true);
     $page=Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id]);
-    if($setup){$page->assertActionDoesNotExist(\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content'));}else{$page->assertActionHidden($action);}
+    if(in_array($action,['configure','processing'],true)){$page->assertActionHidden(setupAction($action,$t->server_id));}elseif($setup){$page->assertActionDoesNotExist(setupAction($action,$t->server_id));}else{$page->assertActionHidden($action);}
 }
 $u->role->update(['permissions'=>$permissions]);
 $staleFirst=['processing','delivery_review','alert_review'];

@@ -10,12 +10,14 @@ require_once __DIR__.'/Support/accounts.php';
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,DB,Route};
 use Livewire\Livewire;
+use Filament\Actions\Testing\TestAction;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList as PslPage;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\{ActivationStatus,RegistrarAccount,RegistrarBalances as BalancesPage,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceReads,BalanceSchema,CatalogueAcceptances,ContactDetails,EnomTestCallSchema,EnomTestCalls,ObservationSchema,RegistrarBalances};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceReads,BalanceSchema,CatalogueAcceptances,ContactDetails,EnomTestCallSchema,EnomTestCalls,ObservationSchema,RegistrarBalances,ReminderSchedules,ReminderSchema,StaffSettingsReview};
 extract(commerceFixture(true));$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now);
 app()->instance(AccountBindings::class,$bindings);app()->instance(Clock::class,$clock);app()->instance(RegistrarBalances::class,new RegistrarBalances($bindings,$clock,new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock)));BalanceSchema::install();ObservationSchema::install();EnomTestCallSchema::install();
 $enom=Account::where('server_id',$tlds[0]->server_id)->sole();$silo=Account::where('server_id',$tlds[1]->server_id)->sole();
@@ -48,6 +50,7 @@ $staff=staffUser([Staff::VIEW]);Auth::setUser($staff);
 same('Registrars',RegistrarSetup::getNavigationLabel(),'Registrars navigation label');
 foreach([BalancesPage::class,ActivationStatus::class,RegistrarAccount::class] as $page){expect(!$page::shouldRegisterNavigation(),$page.' is not in navigation');}
 Livewire::actingAs($staff)->test(BalancesPage::class)->assertRedirect(RegistrarSetup::getUrl());
+Livewire::actingAs($staff)->test(ActivationStatus::class)->assertRedirect(RegistrarSetup::getUrl());
 Livewire::actingAs(staffUser([]))->test(RegistrarSetup::class)->assertForbidden();
 // List page.
 $list=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful()->assertSee('Registrars')->assertSee('Add registrar account')->assertSee('Accounts');
@@ -67,13 +70,52 @@ foreach(['Enom test account','Active','Check balance','Account','Registrar','Eno
 $html=$page->html();
 foreach(['https://cp.enom.com/','Registrars'] as $needle){expect(str_contains($html,$needle),'Account page: '.$needle);}
 foreach(['Server #','Unknown','Enom TEST daily calls','Verified user ID','Retained domains','Environment',"\u{2014}"] as $needle){expect(!str_contains($html,$needle),'Account page never shows: '.$needle);}
-// System checks: a failing check shows in danger with its cause; passing checks stay plain.
+// Setup checklist, renewal section and header actions for staff who can change settings.
+ReminderSchema::install();ReminderSchedules::enroll((int)$enom->server_id);
+$admin=staffUser([Staff::VIEW,Staff::POLICY,...array_map([StaffSettingsReview::class,'permission'],array_keys(StaffSettingsReview::ACTIONS))]);
+// Setup buttons show only when they can run: bind a writer that can reach the registrar.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class,new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites(app(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class),app(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class),app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class),true));
+$page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful();
+foreach(['Setup checklist','API connection','Connected','Test connection','Supported TLDs','.com','TLD prices','Sync TLD prices','Registrations','Transfers','Renewals','DNS, nameservers and contacts',
+    'Renewal invoices','Turn on','Renewal invoices and reminders','Invoice issued','21 days before expiry','Invoice due','7 days before expiry','Reminder emails',
+    '60, 30, 7 and 1 days before, 3 days after','Customer can renew early','Edit invoices','Edit reminders','Pause orders','More','Edit API credentials','View price history',
+    'System checks','Background worker','Not running','Payment events'] as $needle){$page->assertSee($needle);}
+$html=$page->html();
+foreach(['Catalogue acceptance','Account binding','Worker cadence','Native server settings','Registrar setup','(defaults)','Read capacity','Runtime account','Notification safety',
+    'Verify identity','Read balance','Enable processing','Pause processing','Missing Paymenter records','Transfer watch relinks','Start after payment','Change recorded','Confirm'] as $needle){
+    expect(!str_contains($html,$needle),'Account page never shows: '.$needle);}
+// A cause shows under a value only when there is a problem: a synced price or a valid invoice day has none.
+$enomAccount=Account::where('server_id',$enom->server_id)->sole();
+$rows=array_column([...Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($enomAccount,Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::status(App\Models\Server::findOrFail($enom->server_id),$enomAccount)),
+    ...Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals((int)$enom->server_id)],null,'label');
+foreach(['TLD prices','Invoice issued','Invoice due'] as $label){expect($rows[$label]['value']!==null&&$rows[$label]['cause']===null,'No Missing cause under a set value: '.$label);}
+expect(!str_contains($html,'Saved invoice days are invalid'),'Valid invoice days show no invalid-days cause');
+$pause=$page->mountAction('processing_'.$enom->server_id)->assertActionMounted('processing_'.$enom->server_id)->instance()->getMountedAction();
+same('Pause orders?',$pause->getModalHeading(),'Pause orders dialog heading');same('New registrar requests on this account wait until you resume.',$pause->getModalDescription(),'Pause orders dialog says what happens');
+// System checks: failing checks first in danger or warning with their cause; passing checks collapse.
+// Service listeners present, invoice-paid listener gone: paid orders wait for the scheduler.
+foreach(['saving','updating','updated'] as $event){Illuminate\Support\Facades\Event::listen('eloquent.'.$event.': '.App\Models\Service::class,static fn()=>null);}
 Illuminate\Support\Facades\Event::forget(App\Events\Invoice\Paid::class);
 $flat=$page->instance()->content(\Filament\Schemas\Schema::make($page->instance()))->getFlatComponents();
 $check=static fn(string $label)=>array_values(array_filter($flat,fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry&&$e->getLabel()===$label))[0];
-expect(str_starts_with($check('Start after payment')->getState(),'Paused · the invoice-paid listener is missing.'),'Failing check keeps its cause');
-same('danger',$check('Start after payment')->getColor($check('Start after payment')->getState()),'Failing check is danger');
-same(null,$check('Native server settings')->getColor($check('Native server settings')->getState()),'Passing check is plain');
+same('Delayed',$check('Payment events')->getState(),'Missing paid listener delays paid orders');
+same('warning',$check('Payment events')->getColor('Delayed'),'Delayed payment events warn');
+same('Not running',$check('Background worker')->getState(),'No worker run recorded');
+same('danger',$check('Background worker')->getColor('Not running'),'A stopped worker is danger');
+$passing=array_values(array_filter($flat,fn($e)=>$e instanceof \Filament\Schemas\Components\Section&&$e->getHeading()==='Passing checks'))[0];
+expect($passing->isCollapsed(),'Passing checks start collapsed');
+$inside=array_map(fn($e)=>$e->getLabel(),array_filter($passing->getChildSchema()->getFlatComponents(),fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry));
+expect(in_array('Domain editor',$inside,true)&&!in_array('Payment events',$inside,true)&&!in_array('Background worker',$inside,true),'Only passing checks collapse');
+// Public suffix list row: shown with the list permission; never downloaded is a failing check with Download now and Change source.
+$page->assertDontSee('Public suffix list');
+Paymenter\Extensions\Servers\Domains\Services\PslSchema::install();Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
+$psl=Livewire::actingAs(staffUser([Staff::VIEW,PslPage::VIEW,PslPage::MANAGE]))->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Public suffix list')->assertSee('Not downloaded')
+    ->assertActionVisible(TestAction::make('psl_download')->schemaComponent('system_checks','content'))->assertActionVisible(TestAction::make('psl_source')->schemaComponent('system_checks','content'))
+    ->assertActionDoesNotExist(TestAction::make('psl_accept')->schemaComponent('system_checks','content'));
+$flat=$psl->instance()->content(\Filament\Schemas\Schema::make($psl->instance()))->getFlatComponents();
+same('danger',array_values(array_filter($flat,fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry&&$e->getLabel()==='Public suffix list'))[0]->getColor('Not downloaded'),'A list never downloaded is danger');
+Livewire::actingAs(staffUser([Staff::VIEW,PslPage::VIEW]))->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Not downloaded')
+    ->assertActionDoesNotExist(TestAction::make('psl_download')->schemaComponent('system_checks','content'))->assertActionDoesNotExist(TestAction::make('psl_source')->schemaComponent('system_checks','content'));
 DB::table(EnomTestCallSchema::TABLE)->insert(['day'=>EnomTestCalls::day(),'used'=>50]);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('50 of 50')->assertSee('Resets 00:00 UTC');
 config(['domains.enom_test_daily_call_cap'=>'many']);
@@ -98,6 +140,12 @@ Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Orders pause
 // Check balance: a failed read and the one-minute wait use the new toasts.
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction('check_balance')->assertNotified("Couldn't check balance");
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction('check_balance')->assertNotified('Wait a minute before checking again.');
+// Pause orders, then the Resume orders button and dialog (runtime-worker covers the resume write on a full install).
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])
+    ->callAction('processing_'.$enom->server_id,['confirmed'=>true,'reason'=>'Synthetic pause check'])->assertNotified('Orders paused');
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Orders paused')->assertSee('Resume orders')->assertDontSee('Pause orders')
+    ->mountAction('processing_'.$enom->server_id)->assertActionMounted('processing_'.$enom->server_id)
+    ->tap(fn($t)=>same(['Resume orders?','Registrar requests on this account start sending again.'],[$t->instance()->getMountedAction()->getModalHeading(),$t->instance()->getMountedAction()->getModalDescription()],'Resume orders dialog'));
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>999999])->assertNotFound();
 Livewire::actingAs(staffUser([]))->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertForbidden();
 echo "Registrars list and account page passed\n";$nativeSuccessful=true;

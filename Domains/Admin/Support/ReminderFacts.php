@@ -15,6 +15,24 @@ final class ReminderFacts
             .($r->operation_id?' · Request #'.$r->operation_id:''))->all();
         return ['Renewal and notification alerts'=>$result?:['No open saved alerts; a reminder check may still be needed']];
     }
+    /** "Reminder emails" row for the account page: On or Off, with the days below. */
+    public static function emails(int $server):array
+    {
+        $r=Schema::hasTable('domains_reminder_schedules')?DB::table('domains_reminder_schedules')->where('server_id',$server)->first():null;
+        $binding=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server)->value('account_fingerprint');
+        $days=static function(?string $v,array $default,bool $before):array {
+            if($v===null){return $default;}
+            try{$values=json_decode($v,true,8,JSON_THROW_ON_ERROR);}catch(\JsonException){return [];}
+            if($before){rsort($values,SORT_NUMERIC);}else{sort($values,SORT_NUMERIC);}
+            return $values;
+        };
+        $list=static fn(array $v):string=>count($v)>1?implode(', ',array_slice($v,0,-1)).' and '.end($v):(string)($v[0]??'');
+        $before=$days($r?->before_days,[60,30,7,1],true);$after=$days($r?->after_days,[3],false);
+        $sub=implode(', ',array_filter([$before?$list($before).' days before':null,$after?$list($after).' '.(count($after)===1&&$after[0]==1?'day':'days').' after':null]));
+        $changed=$r&&$r->account_fingerprint!==$binding;
+        return ['label'=>'Reminder emails','value'=>$r&&$r->enabled&&!$changed?'On':'Off','tone'=>$r&&$r->enabled&&!$changed?'success':null,
+            'cause'=>$changed?'Paused: account changed':($sub!==''?$sub:null),'action'=>null,'help'=>null];
+    }
     public static function schedule(int $server):array
     {
         Staff::requireView();if(!Schema::hasTable('domains_reminder_schedules')){return [];}

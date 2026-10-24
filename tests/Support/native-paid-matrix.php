@@ -140,14 +140,14 @@ $notice='Required Service listeners are missing in this process: Service saving 
 same($notice,RuntimeHealth::site()['Paymenter payment events'],'Runtime health describes current process');
 Illuminate\Support\Facades\Auth::login($staff);
 expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events']),'Process notice lives with registrar setup, not on each domain');
-$setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertSee($notice);
-same(1,substr_count(html_entity_decode($setup->html(),ENT_QUOTES),$notice),'Registrar account System checks show the fact once');
+$setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertSeeInOrder(['System checks','Payment events','Missing',$check='Service listeners are missing. Restart the queue worker.']);
+same(1,substr_count(html_entity_decode($setup->html(),ENT_QUOTES),$check),'Registrar account System checks show the fact once');
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$missing->domain_id])->assertDontSee($notice);
 foreach($saving as$listener){Event::listen($savingEvent,$listener);}
 same([],NativePaidHooks::serviceMissing(),'Real saving guards restored');
 same('Available',RuntimeHealth::site()['Paymenter payment events'],'Healthy runtime fact clears');
 expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events']),'Healthy domain fact clears');
-Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertDontSee($notice);
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertDontSee($check);
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$missing->domain_id])->assertDontSee($notice);
 $manual($missing);$work->operation($missing->id);
 same($before+1,$writer->calls,'Actual saving guards allow one recovered send: '.$missing->fresh()->state.' / '.$missing->fresh()->safe_code);

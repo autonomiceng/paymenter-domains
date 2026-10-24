@@ -29,11 +29,11 @@ $review=static function(string $action,?int $tld=null)use($server,$staff):Review
 };
 $write=static function(string $action,array $data=[],?int $tld=null)use($review,$settings):void {$settings->run($review($action,$tld),$data);};
 $refuse=static function(callable $work):void {try{$work();throw new LogicException('Refusal required');}catch(DomainException|RuntimeException|InvalidArgumentException $e){expect($e->getMessage()!=='Refusal required','Expected safe refusal');}};
-$action=static fn(string $name)=>Filament\Actions\Testing\TestAction::make($name.'_'.$server->id)->schemaComponent('account_'.$server->id,'content');
+$action=static fn(string $name)=>setupAction($name,$server->id);
 $before=count($GLOBALS['catalogueCalls']);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction($action('configure'))->setActionData([
     'registrar'=>'enom','environment'=>'test','uid'=>'catalogue-uid','token'=>'catalogue-token','reason'=>'Verify synthetic TEST catalogue'])
-    ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded');
+    ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
 same($before+1,count($GLOBALS['catalogueCalls']),'Configure one authenticated read');
 $a=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($a);
 $before=count($GLOBALS['catalogueCalls']);$refuse(fn()=>$bindings->reader($server->id));same($before,count($GLOBALS['catalogueCalls']),'No acceptance means no reader or read');
@@ -72,7 +72,7 @@ try{$write('import',['ending'=>'com']);expect(false,'Malformed staff import must
 $write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 $before=count($GLOBALS['catalogueCalls']);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction($action('import'))->setActionData(['ending'=>'com','reason'=>'Import accepted annual TEST baseline'])
-    ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded');
+    ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
 same(['GetTLDList','GetTLDDetails','GetExtAttributes','PE_GetProductPrice','PE_GetProductPrice'],array_column(array_slice($GLOBALS['catalogueCalls'],$before),'Command'),'Annual import is exactly five reviewed bounded reads');
 $tld=Tld::where('server_id',$server->id)->sole();same(false,$tld->enabled,'Import leaves ending unpublished');
 $before=count($GLOBALS['catalogueCalls']);DB::table('domains_runtime_turns')->where('server_id',$server->id)->update(['due_at'=>0]);app(Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class)->tick();

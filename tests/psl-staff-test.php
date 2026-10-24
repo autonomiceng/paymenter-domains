@@ -65,21 +65,21 @@ $rights=[Staff::VIEW,Page::VIEW,Page::MANAGE];$staff=staffUser($rights);Auth::se
 $setRights=function($permissions)use($staff){$staff->role()->first()->update(['permissions'=>$permissions]);};
 $setRights([]);same(false,Page::canAccess(),'Default deny');Livewire::actingAs($staff)->test(Page::class)->assertForbidden();
 $setRights([Staff::VIEW,Page::MANAGE]);same(false,Page::canAccess(),'Manage cannot view alone');
-$setRights([Staff::VIEW,Page::VIEW]);Livewire::actingAs($staff)->test(Page::class)->assertSee('Not downloaded yet')->assertActionHidden('update')->assertActionHidden('source');same(0,$count,'GET no fetch');
-$setRights($rights);$confirmation=Livewire::actingAs($staff)->test(Page::class)->mountAction('update')->assertActionMounted('update');
-same('This uses the one update allowed in any 24 hours.',$confirmation->instance()->getMountedAction()->getModalDescription(),'Native confirmation wording');same(0,$count,'Confirmation does not fetch');
-$page=Livewire::actingAs($staff)->test(Page::class)->assertSee('MPL-2.0')->assertActionEnabled('update');
+$setRights([Staff::VIEW,Page::VIEW]);Livewire::actingAs($staff)->test(Page::class)->assertSee('Not downloaded yet')->assertActionHidden('psl_download')->assertActionHidden('psl_source');same(0,$count,'GET no fetch');
+$setRights($rights);
+$page=Livewire::actingAs($staff)->test(Page::class)->assertSee('MPL-2.0')->assertActionEnabled('psl_download');
+expect(!$page->instance()->getCachedHeaderActions()[0]->isConfirmationRequired(),'Download now has no dialog');same(0,$count,'Showing Download now does not fetch');
 $update=$page->instance()->getCachedHeaderActions()[0]->getActionFunction();
-$setRights([Staff::VIEW,Page::VIEW]);$page->assertActionHidden('update');same(0,$count,'Fresh manage revoked');
+$setRights([Staff::VIEW,Page::VIEW]);$page->assertActionHidden('psl_download');same(0,$count,'Fresh manage revoked');
 $denied=false;try{$update();}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Cached update callback rechecks manage');
-$setRights($rights);$page=Livewire::actingAs($staff)->test(Page::class)->mountAction('source')->setActionData(['url'=>'https://mirror.example.com/list']);
-$source=$page->instance()->getCachedHeaderActions()[1]->getActionFunction();
+$setRights($rights);$page=Livewire::actingAs($staff)->test(Page::class)->mountAction('psl_source')->setActionData(['url'=>'https://mirror.example.com/list']);
+$source=$page->instance()->getCachedHeaderActions()[2]->getActionFunction();
 $setRights([Staff::VIEW,Page::VIEW]);same(Lists::SOURCE,$list->source(),'Revoked source stays saved');
 $denied=false;try{$source(['url'=>'https://mirror.example.com/list']);}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Cached source callback rechecks manage');
 $setRights($rights);
-Livewire::actingAs($staff)->test(Page::class)->mountAction('source')->setActionData(['url'=>'http://mirror.example.com/list'])->callMountedAction()->assertHasActionErrors(['url']);
-Livewire::actingAs($staff)->test(Page::class)->mountAction('source')->setActionData(['url'=>'https://mirror.example.com/list'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Public suffix list source saved');same(0,$count,'Saving source no network');
-Livewire::actingAs($staff)->test(Page::class)->callAction('update')->assertNotified('A validated list was saved.')->assertActionDisabled('update')->assertSee('Next update allowed:');
+Livewire::actingAs($staff)->test(Page::class)->mountAction('psl_source')->setActionData(['url'=>'http://mirror.example.com/list'])->callMountedAction()->assertHasActionErrors(['url']);
+Livewire::actingAs($staff)->test(Page::class)->mountAction('psl_source')->setActionData(['url'=>'https://mirror.example.com/list'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Source saved');same(0,$count,'Saving source no network');
+Livewire::actingAs($staff)->test(Page::class)->callAction('psl_download')->assertNotified('List updated')->assertActionHidden('psl_download')->assertSee('Next update allowed:');
 same(1,$count,'Native manual fetched once');same('Current',PslFacts::state($list),'Current state');
 $before=DB::table('domains_psl_snapshots')->where('state','current')->first();
 $source(['url'=>'https://after-complete.example.com/list']);
@@ -115,10 +115,10 @@ $clock->at++;$job->handle($failedList);same(2,$failures,'Failed download becomes
 
 $clock->at+=30*86400+1;Livewire::actingAs($staff)->test(Page::class)->assertSee('Out of date warning');
 $clock->at+=60*86400;Livewire::actingAs($staff)->test(Page::class)->assertSee('New discovery paused');
-DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'rules_lost_private']);Livewire::actingAs($staff)->test(Page::class)->assertSee('More than 5%');
+DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'rules_lost_private']);Livewire::actingAs($staff)->test(Page::class)->assertSee('Many rules were removed. Review them before using this list.');
 DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'dns_failed']);
-same('dns_failed',PslFacts::rows($list)['Last attempt result'],'Page facts preserve the DNS failure code');
-Livewire::actingAs($staff)->test(Page::class)->assertSee('dns_failed');
+same("Couldn't download: the source name didn't resolve.",PslFacts::rows($list)['Last attempt result'],'Page facts keep a DNS failure apart from an unsafe address');
+Livewire::actingAs($staff)->test(Page::class)->assertSee("Couldn't download: the source name didn't resolve.");
 $page=Livewire::actingAs($staff)->test(Page::class);$setRights([Staff::VIEW,Page::MANAGE]);$page->call('$refresh')->assertForbidden();
 // The native migrator/retained-history preflight must neither replace lost data nor repair partial installs.
 $setRights($rights);$entry->upgraded('0.1.0');$entry->uninstalled();same(1,DB::table('domains_psl_snapshots')->count(),'Lifecycle retains snapshot');

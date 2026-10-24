@@ -8,16 +8,20 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\AccountStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountSpendingHolds,EnomTestCalls,RegistrarBalances};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountSpendingHolds,EnomTestCalls,NameSiloSandbox,RegistrarBalances};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Facts shared by the Registrars list and the registrar account page. Values are null when Missing; 'cause' says why. */
 final class RegistrarFacts
 {
     public const DUE_HELP='Registrar cost of renewals due in the next 30 days, plus open renewal requests not sent yet, whatever their date.';
     /** Warning text colour for sub-lines such as "Low balance", in both themes. */
-    public const STYLE='<style>.domains-warn{color:var(--warning-600)}.dark .domains-warn{color:var(--warning-400)}</style>';
-    public static function warn(string $text): HtmlString
-    { return new HtmlString('<span class="domains-warn">'.e($text).'</span>'); }
+    public const STYLE='<style>.domains-warn{color:var(--warning-600)}.dark .domains-warn{color:var(--warning-400)}.domains-err{color:var(--danger-600)}.dark .domains-err{color:var(--danger-400)}'
+        // One label width on the account page, so values line up with and without a button.
+        .'@media (min-width:40rem){.domains-account .fi-in-entry.fi-in-entry-has-inline-label{grid-template-columns:14rem minmax(0,1fr)}.domains-account .fi-in-entry-has-inline-label .fi-in-entry-content-col{grid-column:auto}}</style>';
+    public static function warn(string $text): HtmlString { return self::tone($text,'warning'); }
+    /** A sub-line in the danger or warning colour. */
+    public static function tone(string $text,string $tone): HtmlString
+    { return new HtmlString('<span class="domains-'.($tone==='danger'?'err':'warn').'">'.e($text).'</span>'); }
     /** External link to the registrar's funding page. */
     public static function fundsLink(string $url): HtmlString
     {
@@ -27,7 +31,13 @@ final class RegistrarFacts
     public static function status(Server $server, ?Account $account): array
     {
         $configuration=app(AccountBindings::class)->configurationStatus((int)$server->id);
+        if ($configuration==='configuration_unavailable'&&$account&&NameSiloSandbox::enrolled($account)&&!NameSiloSandbox::enabled()) {
+            return AccountStatus::for($configuration,true,AccountStatus::TEST_MODE_OFF);
+        }
         if ($configuration!=='matched'||!$account) { return AccountStatus::for($configuration); }
+        // The worker's last turn used other credentials than the saved ones.
+        $turn=Schema::hasTable('domains_runtime_turns')?DB::table('domains_runtime_turns')->where('server_id',$server->id)->value('account_fingerprint'):null;
+        if ($turn!==null&&$turn!==$account->account_fingerprint) { return AccountStatus::for('configuration_unavailable'); }
         if (DemoData::paused($account)) { return AccountStatus::for($configuration,false,AccountStatus::DEMO_PAUSED); }
         $held=AccountSpendingHolds::query(Operation::where('server_id',$server->id))->where('state','uncertain')->orderBy('id')->value('id');
         if ($held!==null) { return AccountStatus::for($configuration,false,'Request #'.$held.' unconfirmed'); }

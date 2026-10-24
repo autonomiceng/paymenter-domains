@@ -3,19 +3,18 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
 use App\Models\Server;
-use Filament\Actions\Action;
+use Filament\Actions\{Action,ActionGroup};
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
-use Filament\Schemas\{Schema,Components\Actions,Components\Section};
+use Filament\Schemas\{Schema,Components\Actions,Components\Flex,Components\Group,Components\Section};
 use Filament\Support\Enums\FontFamily;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{MissingEntry,RegistrarFacts,ReminderAction,ReminderFacts,SettingsActions,Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,MissingEntry,PslActions,RegistrarFacts,ReminderAction,SettingsActions,Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,EnomLive,EnomTestCalls,EnomTestManagement,EnomTestRegistration,EnomTestRenewal,EnomTestTransfer,
-    RegistrarBalances as Balances,RenewalBillingSettings,RuntimeHealth,StaffSettingsReview,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,EnomTestCalls,RegistrarBalances as Balances,StaffSettingsReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** One registrar account (a Domains server): status, balance and setup. Reached from the Registrars list. */
 class RegistrarAccount extends Page
@@ -49,13 +48,21 @@ class RegistrarAccount extends Page
     public function getBreadcrumbs(): array { return [RegistrarSetup::getUrl()=>'Registrars',$this->getTitle()]; }
     protected function getHeaderActions(): array
     {
-        return [Action::make('check_balance')->label('Check balance')->visible(RegistrarFacts::connected($this->record(),$this->status()))->action(fn()=>$this->checkBalance())];
+        $id=$this->account;$setup=fn(string $name)=>SettingsActions::setup($id,$this->reviewStamp,$name);
+        $actions=[Action::make('check_balance')->label('Check balance')->visible(RegistrarFacts::connected($this->record(),$this->status()))->action(fn()=>$this->checkBalance())];
+        if (!$this->record()) { return [...$actions,$setup('configure'),$setup('enroll_sandbox')]; }
+        return [...$actions,$setup('processing'),ActionGroup::make([$setup('configure'),
+            Action::make('price_history')->label('View price history')->color('gray')->visible(fn()=>Staff::can(Staff::POLICY))->modalHeading('Price history')
+                ->modalSubmitAction(false)->modalCancelActionLabel('Close')->schema(fn()=>[TextEntry::make('history')->hiddenLabel()->state(TldFacts::history($id)?:['No changes yet'])->listWithLineBreaks()])])
+            ->label('More')->button()->color('gray')->icon('heroicon-m-chevron-down')->iconPosition('after')];
     }
+    /** Rebuild the page after a System checks action changed what it shows. */
+    private function resetContent(): void { unset($this->cachedSchemas['content']); }
     public function checkBalance(): void
     {
         Staff::requireView();$code=app(Balances::class)->refresh($this->account);$live=$this->record()?->environment==='live';
         $toast=Notification::make()->title(match($code){'refreshed'=>'Balance updated','rate_limited'=>'Wait a minute before checking again.',default=>"Couldn't check balance"})
-            ->body(match($code){'configuration_unavailable'=>'Check the API connection under Setup.',
+            ->body(match($code){'configuration_unavailable'=>'Check the API connection in the Setup checklist.',
                 'test_call_refused'=>$live?'Enom API limit reached. Try again later.':self::testRefusal(),default=>null});
         match($code){'refreshed'=>$toast->success(),'rate_limited'=>$toast->warning(),default=>$toast->danger()};
         $toast->send();
@@ -68,13 +75,44 @@ class RegistrarAccount extends Page
     public function content(Schema $schema): Schema
     {
         Staff::requireView();$s=$this->server();$a=$this->record();
-        $sections=[Section::make('Account')->schema($this->accountEntries($s,$a))->extraAttributes(['class'=>'domains-facts'])->columnSpanFull()];
-        if ($a) { $sections[]=$this->setup($s,$a); }
-        else { $sections[]=Section::make('Setup')->key('account_'.$s->id)->schema([Actions::make([...SettingsActions::make((int)$s->id,null,$this->reviewStamp,true),ReminderAction::make((int)$s->id)])])->columnSpanFull(); }
-        $checks=[];foreach(RuntimeHealth::site() as $label=>$value){$failing=preg_match('/^(Paused|Unavailable|Required) /',$value)===1;
-            $checks[]=TextEntry::make('check_'.count($checks))->label($label)->state($value)->inlineLabel()->color($failing?'danger':null)->icon($failing?'heroicon-m-exclamation-triangle':null);}
-        $sections[]=Section::make('System checks')->schema($checks)->columnSpanFull();
+        $sections=[Section::make('Account')->schema($this->accountEntries($s,$a))->extraAttributes(['class'=>'domains-facts domains-account'])->columnSpanFull()];
+        $system=AccountChecklist::system();
+        if (Staff::can(PslActions::VIEW)) { $psl=PslActions::row(fn()=>$this->resetContent());$system[in_array($psl['tone'],['danger','warning'],true)?'failing':'passing'][]=$psl; }
+        if ($a) {
+            $runtime=AccountChecklist::runtime($a);$system[$runtime['value']===null?'failing':'passing'][]=$runtime;
+            $id=(int)$s->id;
+            $renewals=$this->rows('renewal',AccountChecklist::renewals($id),false);
+            $renewals[]=Actions::make([SettingsActions::setup($id,$this->reviewStamp,'renewal_billing'),ReminderAction::make($id)]);
+            // Kept for contracts with no other staff path: transaction history, email claims and email checks.
+            $more=Actions::make(SettingsActions::make($id,null,$this->reviewStamp,true,['history','delivery_review','alert_review']));
+            $sections[]=Group::make([
+                Section::make('Setup checklist')->schema($this->rows('setup',AccountChecklist::setup($a,$this->status())))->columnSpanFull(),
+                Section::make('Renewal invoices and reminders')->schema($renewals)->columnSpanFull(),
+                Section::make('Other settings')->schema([$more])->collapsible()->collapsed()->columnSpanFull(),
+            ])->key('account_'.$id)->extraAttributes(['class'=>'domains-account'])->columnSpanFull();
+        }
+        $checks=$this->rows('check',$system['failing'],false);
+        if ($system['passing']) { $checks[]=Section::make('Passing checks')->schema($this->rows('pass',$system['passing'],false))->collapsible()->collapsed()->compact(); }
+        $sections[]=Section::make('System checks')->schema($checks)->key('system_checks')->extraAttributes(['class'=>'domains-account'])->columnSpanFull();
         return $schema->components($sections);
+    }
+    /** Fact rows with an optional button each: Missing shows in danger with its cause. */
+    private function rows(string $prefix,array $rows,bool $buttons=true): array
+    {
+        $out=[];
+        foreach ($rows as $i=>$r) {
+            $entry=MissingEntry::apply(TextEntry::make($prefix.'_'.$i)->label($r['label'])->state($r['value'])->inlineLabel(),cause:$r['value']===null?$r['cause']:null,color:$r['tone']==='success'?null:$r['tone']);
+            if ($r['value']!==null&&$r['cause']!==null) { $entry->belowContent($r['tone']==='danger'||$r['tone']==='warning'?RegistrarFacts::tone($r['cause'],$r['tone']):$r['cause']); }
+            if ($r['tone']==='success') { $entry->icon('heroicon-m-check-circle')->iconColor('success'); }
+            if ($r['help']) { $entry->hintIcon('heroicon-m-question-mark-circle',$r['help']); }
+            if (!empty($r['buttons'])) { $out[]=Flex::make([$entry,Actions::make($r['buttons'])->grow(false)])->from('md'); }
+            elseif ($buttons&&$r['action']) {
+                $action=SettingsActions::setup($this->account,$this->reviewStamp,$r['action']);
+                if ($r['action']==='renewal_billing') { $action->name('renewal_billing_on_'.$this->account)->label('Turn on'); }
+                $out[]=Flex::make([$entry,Actions::make([$action])->grow(false)])->from('md');
+            } else { $out[]=$entry; }
+        }
+        return $out;
     }
     private function accountEntries(Server $s, ?Account $a): array
     {
@@ -82,6 +120,11 @@ class RegistrarAccount extends Page
         if (!$a) { return [$fact('registrar','Registrar',null,'Account not set up yet'),TextEntry::make('domains')->label('Domains')->state((string)\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count())->inlineLabel()]; }
         $entries=[$fact('registrar','Registrar',TldFacts::registrar($a->registrar_key)),$fact('mode','Mode',RegistrarFacts::mode($a))];
         if ($a->registrar_key==='enom') { $entries[]=$fact('api_user','API user',RegistrarFacts::apiUser($a),'Identity not verified yet')->fontFamily(FontFamily::Mono); }
+        if ($a->registrar_key==='enom'&&$a->environment==='live') {
+            try { $fingerprint=CatalogueAcceptances::binding($a)->fingerprint; } catch (\Throwable) { $fingerprint=null; }
+            // Operators copy it into domains.enom_live.accounts (release-runbook.md).
+            $entries[]=$fact('fingerprint','Live account fingerprint',$fingerprint,"Saved credentials can't be read")->fontFamily(FontFamily::Mono)->copyable();
+        }
         if (RegistrarFacts::connected($a,$this->status())) {
             $b=RegistrarFacts::balance($a);
             $below=$b['value']===null?[e($b['cause'])]:array_filter([e('Checked '.$b['checked']),$b['low']?RegistrarFacts::warn('Low balance'):null]);
@@ -100,40 +143,5 @@ class RegistrarAccount extends Page
         }
         $entries[]=$fact('last_sync','Last sync',RegistrarFacts::lastSync($s),'Not synced yet');
         return $entries;
-    }
-    /** Setup facts and actions for this account. */
-    private function setup(Server $s, Account $a): Section
-    {
-        $facts=['Catalogue acceptance'=>TldFacts::acceptance($a),
-            'Connection'=>app(StaffSettingsWrites::class)->connectionAvailable($a->registrar_key)?'Not tested this visit':'Unavailable'];
-        $facts += $a->registrar_key==='namesilo'?app(AccountBindings::class)->sandboxFacts($a):['Account binding'=>'Verified · immutable'];
-        $test=$a->registrar_key==='enom'&&$a->environment==='test';
-        if ($test&&config('domains.enom_writes.registration')===true) { $facts['Enom TEST registration']=EnomTestRegistration::reason(); }
-        if ($test&&config('domains.enom_writes.transfer')===true) { $facts['Enom TEST inbound transfer']=EnomTestTransfer::reason(); }
-        if ($test&&config('domains.enom_writes.renewal')===true) {
-            $facts['Enom TEST renewal']=EnomTestRenewal::reason();
-            try { $facts['TEST renewal acceptance']=EnomTestRenewal::accepted(CatalogueAcceptances::binding($a))?'Accepted':'Not accepted'; }
-            catch (\Throwable) { $facts['TEST renewal acceptance']='Unavailable'; }
-        }
-        if ($test&&config('domains.enom_writes.management')===true) {
-            $facts['Enom TEST management']=EnomTestManagement::reason();
-            try { $facts['TEST management acceptance']=EnomTestManagement::accepted(CatalogueAcceptances::binding($a))?'Accepted':'Not accepted'; }
-            catch (\Throwable) { $facts['TEST management acceptance']='Unavailable'; }
-        }
-        if ($a->registrar_key==='enom'&&$a->environment==='live') {
-            try {
-                $live=CatalogueAcceptances::binding($a);
-                $facts['Live account fingerprint']=$live->fingerprint;
-                $facts += EnomLive::facts($live);
-                $facts['Live renewal acceptance']=!EnomLive::enabled($live,'renewal')?'Inactive while deployment is off or unavailable':(EnomTestRenewal::accepted($live)?'Accepted':'Not accepted');
-                $facts['Live management acceptance']=!EnomLive::enabled($live,'management')?'Inactive while deployment is off or unavailable':(EnomTestManagement::accepted($live)?'Accepted':'Not accepted');
-            } catch (\Throwable) { $facts['Live actions']='Unavailable'; }
-        }
-        $facts += RenewalBillingSettings::facts((int)$s->id);
-        $facts += array_diff_key(RuntimeHealth::for((int)$s->id),['Registrar configuration'=>1,'Last worker turn'=>1]);
-        $facts += ReminderFacts::schedule((int)$s->id);
-        $entries=[];foreach ($facts as $label=>$value) { $entries[]=TextEntry::make('s'.$s->id.'_'.count($entries))->label($label)->state((string)$value); }
-        return Section::make('Setup')->key('account_'.$s->id)->columns(2)->schema([...$entries,
-            Actions::make([...SettingsActions::make((int)$s->id,null,$this->reviewStamp,true),ReminderAction::make((int)$s->id)])->columnSpanFull()])->columnSpanFull();
     }
 }

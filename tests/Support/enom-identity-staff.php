@@ -16,14 +16,14 @@ same(['enom'],app(RegistrarRegistry::class)->keys(),'Production boot registers o
 expect(app(StaffSettingsWrites::class)->connectionAvailable(),'Production boot wires staff reads');
 tldPanel();$staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 $server=Server::create(['name'=>'Synthetic identity account','type'=>'server','extension'=>'Domains','enabled'=>true]);
-$action=static fn(string $name)=>Filament\Actions\Testing\TestAction::make($name.'_'.$server->id)->schemaComponent('account_'.$server->id,'content');
+$action=static fn(string $name)=>setupAction($name,$server->id);
 $configure=static function(#[SensitiveParameter] array $input, bool $success=true, ?string $message=null)use($staff,$action,$server):void {
     $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction($action('configure'))->assertActionMounted($action('configure'));
     expect(empty($page->get('mountedActions.0.data.uid'))&&empty($page->get('mountedActions.0.data.token')),'Never prefill saved secrets');
     $page->setActionData(['registrar'=>'enom','environment'=>'test','uid'=>'secret-uid','token'=>'secret-token','reason'=>'Verify synthetic account identity',...$input])
         ->callMountedAction()->assertHasNoActionErrors()->assertNotified($message!==null
-            ?Filament\Notifications\Notification::make()->danger()->title('Change refused')->body($message)
-            :($success?'Change recorded':'Change refused'))->assertSet('mountedActions',[]);
+            ?Filament\Notifications\Notification::make()->danger()->title("Couldn't save")->body($message)
+            :($success?'Saved':"Couldn't save"))->assertSet('mountedActions',[]);
 };
 Log::spy();config(['domains.enom_test_daily_call_cap'=>0]);$calls=count($GLOBALS['identityCalls']);
 $configure([],false,'Enom TEST request refused before sending. '.Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::facts());
@@ -33,13 +33,13 @@ $a=Account::where('server_id',$server->id)->sole();same('secret-uid',$a->stable_
 expect(!str_contains($a->getRawOriginal('stable_identity'),'secret-uid'),'UID encrypted at rest');
 foreach($server->settings()->whereIn('key',['domains_credentials','domains_verified_credentials'])->get() as $s){expect($s->encrypted,'Secrets encrypted before first save');expect(!str_contains($s->getRawOriginal('value'),'secret-token'),'No plaintext token');}
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('API user')->assertSee('secret-uid')->assertSee('Test')->assertSee('Orders paused')->assertDontSee('secret-token');
-$calls=count($GLOBALS['identityCalls']);$page->mountAction($action('probe'))->setActionData(['reason'=>'Read synthetic account balance'])->callMountedAction()->assertNotified('Change recorded');same($calls+1,count($GLOBALS['identityCalls']),'Separate balance probe exactly one call');
+$calls=count($GLOBALS['identityCalls']);$page->mountAction($action('probe'))->setActionData(['reason'=>'Read synthetic account balance'])->callMountedAction()->assertNotified('Balance updated');same($calls+1,count($GLOBALS['identityCalls']),'Separate balance probe exactly one call');
 same('9876.54',DB::table('domains_registrar_balances')->where('server_id',$server->id)->value('amount'),'Balance read works before catalogue acceptance');
 $GLOBALS['identityMode']='html';$calls=count($GLOBALS['identityCalls']);
 $configure([],false,'Enom did not confirm this account. Nothing was saved. Try again later.');
 same($calls+1,count($GLOBALS['identityCalls']),'Unavailable identity makes one attempt');
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction($action('probe'))->setActionData(['reason'=>'Check unavailable balance response'])->callMountedAction()
-    ->assertNotified(Filament\Notifications\Notification::make()->danger()->title('Change refused')->body('Enom did not confirm the balance. The last saved balance was kept.'));
+    ->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't save")->body('Enom did not confirm the balance. The last saved balance was kept.'));
 same($calls+2,count($GLOBALS['identityCalls']),'Unavailable probe makes one attempt');
 same('9876.54',DB::table('domains_registrar_balances')->where('server_id',$server->id)->value('amount'),'Failed probe retains last amount');
 $GLOBALS['identityMode']='credentials';

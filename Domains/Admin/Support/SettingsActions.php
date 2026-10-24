@@ -13,8 +13,8 @@ final class SettingsActions
     private const NOT_ENROLLED='If no Enrollment row appears and Account binding reads “Not configured”, nothing was enrolled.';
     private const UNAVAILABLE_RECOVERY='If Enrollment reads “Unavailable”, an account record exists, but its current OTE enrollment cannot be confirmed. Do not make another enrollment attempt on this server. If it is off, re-enable it in Servers; ask the installation administrator to check that OTE enrollment is enabled on this site, then reload. If it remains unavailable and this account was enrolled, ask them to restore the original saved enrollment settings. If it was never enrolled, use a fresh Domains server for a new key.';
     private const RETRY_GUIDANCE='For “Not configured”, confirm the server is enabled and fresh, OTE enrollment is enabled, your permissions are current, and the key is not already enrolled on this site before submitting another review. Submitting another review may send another OTE key check.';
-    public const SAVED_OUTCOME_UNKNOWN='One OTE key check was sent and NameSilo accepted the key; its balance was not saved. Enrollment may have been saved, but its outcome could not be confirmed. Reload Registrar setup. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. '.self::NOT_ENROLLED.' '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE;
-    public const GENERIC_OUTCOME_UNKNOWN='Enrollment did not finish normally, and its outcome could not be confirmed. An OTE key check may or may not have been sent. If it was sent, NameSilo may or may not have accepted the key. Reload Registrar setup. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. '.self::NOT_ENROLLED.' '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE;
+    public const SAVED_OUTCOME_UNKNOWN='One OTE key check was sent and NameSilo accepted the key; its balance was not saved. Enrollment may have been saved, but its outcome could not be confirmed. Reload the account page. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. '.self::NOT_ENROLLED.' '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE;
+    public const GENERIC_OUTCOME_UNKNOWN='Enrollment did not finish normally, and its outcome could not be confirmed. An OTE key check may or may not have been sent. If it was sent, NameSilo may or may not have accepted the key. Reload the account page. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. '.self::NOT_ENROLLED.' '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE;
     public static function description(string $name): string
     {
         if(config('domains.enom_identity.environment')==='live'&&in_array($name,['acceptance','import'],true)){
@@ -39,14 +39,18 @@ final class SettingsActions
             'import'=>'Reads one accepted TEST ending from Enom and imports current costs and registry requirements. Publish prices and select a seller separately. Processing stays off; withdrawn registration, transfer and renewal support stay off. Costs expire 60 minutes after the read; re-import before continuing preview. An annual registration and renewal baseline takes five reads; each additional accepted term or transfer adds up to one. Existing TEST cart lines for this ending are removed.',
             'acceptance'=>config('domains.enom_writes.transfer')===true?'Accept only independently verified exact terms. For Enom TEST, review Purchase / TP_CreateOrder at the fixed TEST route and request interval below. Annual transfers also need accepted registry details, the transfer ending policy, processing and a recent successful USD balance read. Any change holds new sales on this account until a new import and removes its TEST cart lines. Retained holders keep accepted annual renewal support.':'Accept only independently verified exact terms. For opted-in Enom TEST, also review and accept the Purchase route and request interval shown below. Any change holds new sales for every TLD on this account until a new import and removes its TEST cart lines. Retained holders keep accepted annual renewal support.',
             'history'=>'Accept only a verified complete USD history contract for this action. Revocation stops new reconciliation reads; saved attempts and financial evidence stay retained.',
-            'enroll_sandbox'=>'Sends one read-only balance request to NameSilo OTE to check whether the key works. The balance is not saved. NameSilo does not confirm which account owns the key; the account label is entered by staff and remains unconfirmed. If the check succeeds, the key is saved encrypted as an immutable OTE enrollment on this server. Processing starts off and no catalogue terms are accepted. The next worker tick may send one scheduled daily read through /apibatch/getAccountBalance; NameSilo has not confirmed OTE support for this route. An unsupported reply appears as Read failed; another daily attempt is no sooner than the next day. Later scheduled reads are limited to one per day. Read balance and Registrar balances → Refresh now can each make one separate OTE balance request and save the result in Registrar balances. Each key can be enrolled once on this site. To change the key or label, use a different OTE key on a fresh Domains server. Holdings, acceptances and operations stay with the old enrollment.',
+            'enroll_sandbox'=>'Sends one read-only balance request to NameSilo OTE to check whether the key works. The balance is not saved. NameSilo does not confirm which account owns the key; the account label is entered by staff and remains unconfirmed. If the check succeeds, the key is saved encrypted as an immutable OTE enrollment on this server. Processing starts off and no catalogue terms are accepted. The next worker tick may send one scheduled daily read through /apibatch/getAccountBalance; NameSilo has not confirmed OTE support for this route. An unsupported reply appears as Read failed; another daily attempt is no sooner than the next day. Later scheduled reads are limited to one per day. Check balance can make one separate OTE balance request and show the result on the account page. Each key can be enrolled once on this site. To change the key or label, use a different OTE key on a fresh Domains server. Holdings, acceptances and operations stay with the old enrollment.',
             'configure'=>'Sends one account read to check the supplied credentials, then saves them encrypted. The verified account cannot change. Saving pauses processing until it is re-enabled.',
-            'probe'=>'Reads the balance once with saved credentials and saves it to Registrar balances. For NameSilo OTE, a successful read shows the key still authenticates; it does not confirm account ownership. This does not enable processing, purchases or new sales.',
+            'probe'=>'Reads the balance once with saved credentials and shows it on the account page. For NameSilo OTE, a successful read shows the key still authenticates; it does not confirm account ownership. This does not enable processing, purchases or new sales.',
         };
     }
-    public static function make(int $server,?int $tld,string $stamp,bool $setup=false): array
+    /** One account setup action, keyed by its name (e.g. "processing"). */
+    public static function setup(int $server,string $stamp,string $name): Action
+    { return self::make($server,null,$stamp,true,[$name])[0]; }
+    public static function make(int $server,?int $tld,string $stamp,bool $setup=false,?array $only=null): array
     {
         $out=[];$names=$setup?['enroll_sandbox','configure','probe','acceptance','import','history','test_renewal','test_management','live_renewal','live_management','processing','renewal_billing','delivery_review','alert_review']:['default_rule','override','remove_override','tld_settings','lifecycle','seller','publish'];
+        if($only!==null){$names=array_values(array_intersect($names,$only));}
         $target=fn()=>\App\Models\Server::find($server)?->name ?? 'Server #'.$server;
         foreach($names as $name){
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp))];
@@ -152,27 +156,60 @@ final class SettingsActions
             }
             $fields[]=Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:/\A[^\x00-\x1f\x7f]*\z/'])->helperText('Use one line. Do not include credentials.');
             $processing=fn()=>(bool)Account::where('server_id',$server)->value('processing_enabled');
-            $cannotEnable=fn()=>$name==='processing'&&!$processing()&&(!Account::where('server_id',$server)->exists()||app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class)->configurationStatus($server)!=='matched');$label=$name==='processing'?fn()=>$processing()?'Pause processing…':'Enable processing…':Review::ACTIONS[$name];
-            $out[]=Action::make($name.($setup?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
-                ->disabled(fn(Action $action)=>$cannotEnable()||($name==='enroll_sandbox'&&(!\Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::enabled()||Account::where('server_id',$server)->exists()))||($name==='configure'&&($selected=(string)($action->getRawData()['registrar']??''))!=='namesilo'&&!app(StaffSettingsWrites::class)->connectionAvailable($selected!==''?$selected:null))||($name==='probe'&&!app(StaffSettingsWrites::class)->connectionAvailable((string)Account::where('server_id',$server)->value('registrar_key'))))
-                ->tooltip(fn()=>$cannotEnable()?(Account::where('server_id',$server)->value('registrar_key')==='namesilo'?'Unavailable: this server may be off, OTE enrollment may be off on this site, or saved enrollment settings may have changed. If the server is off, re-enable it in Servers. Ask the installation administrator to check the site setting. If this account was enrolled, ask them to restore the original saved enrollment settings; otherwise use a fresh Domains server for a new key.':'Configure and verify this account first.'):($name==='enroll_sandbox'?'Available only on a fresh Domains server when OTE enrollment is enabled on this site.':null))
-                ->visible(fn()=>($name!=='lifecycle'||Staff::can(Staff::COSTS))&&(!str_starts_with($name,'live_')||(config('domains.enom_live.'.substr($name,5))===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','live')->exists()))&&Staff::can(Staff::POLICY)&&Staff::can(Review::permission($name))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
-                ->requiresConfirmation()->modalHeading($name==='processing'?fn()=>($processing()?'Pause':'Enable').' processing for '.$target().'?':$label)
-                ->modalDescription($name==='processing'?fn()=>$processing()?'Stops new registrar work for this account. Domains, invoices and queued work are kept; requests already sent keep reconciling.':self::description($name):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'NameSilo identity verification is unavailable. This account cannot be connected.':self::description($name):self::description($name)))->modalSubmitActionLabel($name==='processing'?fn()=>$processing()?'Confirm pause':'Confirm enable':'Confirm')->schema($fields)
-                ->action(function(#[\SensitiveParameter] array $data,$livewire)use($name,$server,$tld,$target){
+            $cannotEnable=fn()=>$name==='processing'&&!$processing()&&(!Account::where('server_id',$server)->exists()||app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class)->configurationStatus($server)!=='matched');
+            $registrar=fn()=>Account::where('server_id',$server)->value('registrar_key');
+            // Setup buttons that can't run are hidden, not disabled (layout.md section 6).
+            $blocked=fn()=>$cannotEnable()||($name==='enroll_sandbox'&&(!\Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::enabled()||Account::where('server_id',$server)->exists()))
+                ||($name==='configure'&&!app(StaffSettingsWrites::class)->connectionAvailable($registrar()))||($name==='probe'&&!app(StaffSettingsWrites::class)->connectionAvailable((string)$registrar()));
+            $on=fn()=>self::accepted($server,$name);
+            $label=$setup?fn()=>self::setupLabel($name,$processing(),$registrar()!==null,$on()):Review::ACTIONS[$name];
+            $out[]=Action::make($name.($setup?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':($setup&&in_array($name,['import'],true)?'primary':'gray'))->modalWidth('lg')
+                ->visible(fn()=>!($setup&&$blocked())&&($name!=='lifecycle'||Staff::can(Staff::COSTS))&&(!str_starts_with($name,'live_')||(config('domains.enom_live.'.substr($name,5))===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','live')->exists()))&&Staff::can(Staff::POLICY)&&Staff::can(Review::permission($name))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
+                ->requiresConfirmation()->modalHeading($setup?fn()=>self::setupHeading($name,$processing(),$registrar()!==null,$on()):$label)
+                ->modalDescription($name==='processing'?fn()=>$processing()?'New registrar requests on this account wait until you resume.':'Registrar requests on this account start sending again.':($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?"NameSilo accounts can't be connected with API credentials.":self::description($name):self::description($name)))
+                ->modalSubmitActionLabel($setup?fn()=>self::submitLabel($name,$processing(),$registrar()!==null,$on()):'Confirm')->schema($fields)
+                ->action(function(#[\SensitiveParameter] array $data,$livewire)use($name,$server,$tld,$setup){
                     try{$r=new Review((int)Auth::id(),$server,$tld,$name,(string)($data['review_key']??''),trim((string)($data['reason']??'')));
                         app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
-                        Notification::make()->success()->title($name==='processing'?($account->processing_enabled?'Processing enabled':'Processing paused').' for '.$target():($name==='enroll_sandbox'?'OTE key enrolled':'Change recorded'))
-                            ->body($name==='processing'?null:($name==='probe'?'Balance updated.':($name==='enroll_sandbox'?'NameSilo OTE accepted the key in one read-only balance request. That balance was not saved; account ownership is unconfirmed, processing is off and no catalogue terms are accepted. The next worker tick may send one scheduled daily balance read; check Registrar balances for its result. Later scheduled reads are limited to one per day. Reload this page before another change.':'Reload this page before another change.')))->send();
+                        Notification::make()->success()->title(match(true){$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
+                                $name==='enroll_sandbox'=>'Account connected',$setup=>'Saved',default=>'Change recorded'})
+                            ->body($name==='processing'||$name==='probe'?null:($name==='enroll_sandbox'?'NameSilo OTE accepted the key in one read-only balance request. That balance was not saved; account ownership is unconfirmed, orders are paused and no TLDs are chosen. The next worker run may read the balance once; check Balance on this page for its result. Later scheduled reads are limited to one per day. Reload this page before another change.':'Reload this page before another change.'))->send();
                         if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$server]));}
                     }catch(\Throwable $error){
                         $message=self::refusal($error,$name,$data,$server);
                         if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains staff setting failed.',['action'=>$name,'exception_class'=>$error::class]);}
-                        Notification::make()->danger()->title($name==='enroll_sandbox'&&in_array($message,[self::SAVED_OUTCOME_UNKNOWN,self::GENERIC_OUTCOME_UNKNOWN],true)?'Enrollment outcome unknown':'Change refused')->body($message)->send();}
+                        Notification::make()->danger()->title(match(true){$name==='enroll_sandbox'&&in_array($message,[self::SAVED_OUTCOME_UNKNOWN,self::GENERIC_OUTCOME_UNKNOWN],true)=>"Couldn't confirm the connection",
+                            $setup=>"Couldn't save",default=>'Change refused'})->body($message)->send();}
                     finally{$livewire->mountedActions=[];}
                 });
         }
         return $out;
+    }
+    /** Renewals and DNS management are on when their saved acceptance is current. */
+    private static function accepted(int $server,string $name): bool
+    {
+        if(!preg_match('/^(test|live)_(renewal|management)$/',$name,$m)){return false;}
+        try{$b=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Account::where('server_id',$server)->firstOrFail());
+            return $m[2]==='renewal'?\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::accepted($b):\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::accepted($b);}
+        catch(\Throwable){return false;}
+    }
+    private static function setupLabel(string $name,bool $processing,bool $connected,bool $on): string
+    {
+        return match(true){$name==='processing'=>$processing?'Pause orders':'Resume orders',$name==='configure'=>$connected?'Edit API credentials':'Connect account',
+            $name==='enroll_sandbox'=>'Connect NameSilo test account',$name==='probe'=>'Test connection',$name==='acceptance'=>'Edit',$name==='import'=>'Sync TLD prices',
+            $name==='renewal_billing'=>'Edit invoices',str_ends_with($name,'_renewal')||str_ends_with($name,'_management')=>$on?'Turn off':'Turn on',default=>Review::ACTIONS[$name]};
+    }
+    /** Dialog title: what the button does, as a question. */
+    private static function setupHeading(string $name,bool $processing,bool $connected,bool $on): string
+    {
+        $feature=str_ends_with($name,'_renewal')?'renewals':(str_ends_with($name,'_management')?'DNS, nameservers and contacts':null);
+        return match(true){$feature!==null=>($on?'Turn off ':'Turn on ').$feature.'?',$name==='acceptance'=>'Edit supported TLDs?',$name==='renewal_billing'=>'Edit renewal invoices?',
+            $name==='history'||str_ends_with($name,'_review')=>Review::ACTIONS[$name].'?',default=>self::setupLabel($name,$processing,$connected,$on).'?'};
+    }
+    private static function submitLabel(string $name,bool $processing,bool $connected,bool $on): string
+    {
+        return match(true){$name==='processing'=>$processing?'Pause orders':'Resume orders',$name==='enroll_sandbox'||($name==='configure'&&!$connected)=>'Connect',
+            $name==='probe'=>'Test connection',$name==='import'=>'Sync',str_ends_with($name,'_renewal')||str_ends_with($name,'_management')=>$on?'Turn off':'Turn on',default=>'Save'};
     }
     /** Staff text for a refused settings change; never echoes unrecognized exception text. */
     public static function refusal(\Throwable $error,string $name,array $data=[],int $server=0): string
@@ -186,12 +223,12 @@ final class SettingsActions
             $registrar=TldFacts::registrar((string)$account?->registrar_key);
             $imports=$binding && \Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled($binding);
             $test=$binding && \Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::testDeployment($binding);
-            $remedy=$imports ? "In Registrar setup for account #{$error->serverId}, use Import accepted ending for {$error->tld} to refresh costs, then try again."
-                : ($test ? 'Import accepted ending is unavailable for this account; ask the installation administrator to restore TEST catalogue import and refresh costs before trying again.'
+            $remedy=$imports ? "On the account page for account #{$error->serverId}, use Sync TLD prices to refresh {$error->tld} costs, then try again."
+                : ($test ? 'Sync TLD prices is unavailable for this account; ask the installation administrator to restore TEST catalogue import and refresh costs before trying again.'
                     : "Check Cost refresh on .{$error->tld} for account #{$error->serverId}; wait for fresh costs from its scheduled catalogue read, or ask the installation administrator to restore reads if refresh failed or was interrupted.");
             return "Cannot select {$registrar} account #{$error->serverId} for .{$error->tld}: its {$action} cost for {$term} expired at {$expiry}. ".$remedy;
         }
-        if($error instanceof EnomTestCallLimit&&Account::where('server_id',$server)->value('environment')==='live'){return 'Live Enom request refused before sending. Earlier reads may have been sent. Check the live site, account binding and daily limits in Registrar setup.';}
+        if($error instanceof EnomTestCallLimit&&Account::where('server_id',$server)->value('environment')==='live'){return 'Live Enom request refused before sending. Earlier reads may have been sent. Check the live site, account binding and daily limits on the account page.';}
         return $error instanceof EnomTestCallLimit
                 ?'Enom TEST request refused before sending. '.($name==='import'?'Earlier reads in this import may have been sent and counted. ':'')
                     .EnomTestCalls::refusedFacts()
@@ -225,7 +262,7 @@ final class SettingsActions
                 'Sandbox key check failed.'=>'Nothing was enrolled or saved. At most one OTE key check may have been sent, and NameSilo did not confirm the key: it may be wrong or unusable in OTE, or the reply may be missing or unclear. No balance was saved. Check the OTE key and try again; another submission may send another OTE key check.',
                 'Sandbox enrollment could not be saved.'=>self::SAVED_OUTCOME_UNKNOWN,
                 'namesilo_identity_unavailable'=>'NameSilo identity verification is unavailable. This account cannot be connected.',
-                'Review key used.'=>$name==='enroll_sandbox'?'This enrollment confirmation was already used, so this submission sent no new OTE key check. An earlier submission may still be finishing. Wait for it to finish, then reload Registrar setup. This page cannot show whether that submission is still running. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. If no Enrollment row appears and Account binding reads “Not configured” after the earlier submission finishes, nothing was enrolled. '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE:'This confirmation was already used. Reload this page.',
+                'Review key used.'=>$name==='enroll_sandbox'?'This enrollment confirmation was already used, so this submission sent no new OTE key check. An earlier submission may still be finishing. Wait for it to finish, then reload the account page. This page cannot show whether that submission is still running. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. If no Enrollment row appears and Account binding reads “Not configured” after the earlier submission finishes, nothing was enrolled. '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE:'This confirmation was already used. Reload this page.',
                 'Independent lifecycle verification required.'=>'Verify the lifecycle facts and check the confirmation box. Nothing was saved.',
                 'Lifecycle verification cannot be in the future.'=>'Enter verification times at or before now. Nothing was saved.',
                 'Explicit renewal billing confirmation required.'=>'Check the review box to continue. Nothing was saved.',
@@ -234,9 +271,9 @@ final class SettingsActions
                 'Valid billing calendar required.'=>'Issue days must be more than due days. Issue days can be at most 365 and due days at least 1. Nothing was saved.',
                 'Renewal billing unchanged.'=>'Renewal billing is unchanged. Nothing was saved.',
                 'Independent TEST management review required.'=>'Check the box confirming the supported TEST management actions, endpoint and request interval. Nothing was saved.',
-                'TEST management deployment is unavailable.'=>'TEST management is unavailable for this account or deployment. Reload Registrar setup and check the Enom TEST management row. Nothing was saved.',
+                'TEST management deployment is unavailable.'=>'TEST management is unavailable for this account or deployment. Reload the account page and check the DNS, nameservers and contacts row. Nothing was saved.',
                 'Independent TEST renewal review required.'=>'Check the box confirming the TEST Extend route, request interval and USD balance. Nothing was saved.',
-                'TEST renewal deployment is unavailable.'=>'TEST renewal is unavailable for this account or deployment. Reload Registrar setup and check the TEST renewal row. Nothing was saved.',
+                'TEST renewal deployment is unavailable.'=>'TEST renewal is unavailable for this account or deployment. Reload the account page and check the Renewals row. Nothing was saved.',
                 'Review the Enom TEST Purchase / TP_CreateOrder route and request interval before accepting acquisition terms.'=>'Check the box confirming the Enom TEST Purchase / TP_CreateOrder route and request interval, then try again. Nothing was saved.',
                 'Enom TEST acquisition route acceptance is unavailable.'=>'Enom TEST acquisition acceptance is unavailable on this deployment; contact the deployment administrator. Nothing was saved.',
                 'Review the Enom TEST Purchase route and request interval before accepting registration terms.'=>'Check the box confirming the Enom TEST Purchase route and request interval, then try again. Nothing was saved.',
