@@ -128,6 +128,7 @@ final class PurchaseAttempt
                 $available = $client->read(RegistrarRequest::availability([$data['name']], false), $context);
                 $row = $available->value('available', [])[0] ?? [];
                 $category = $healthy && $absent && $empty && !$facts->candidates && $available->outcome === Outcome::Success
+                    && $wire->latest('checkRegisterAvailability') !== []
                     && ($row['domain'] ?? null) === $data['name'] && ($row['premium'] ?? null) === false
                     ? 'not_registered' : 'ambiguous';
             }

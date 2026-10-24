@@ -72,6 +72,7 @@ $probe = static function (string $scenario): array {
             }
             if ($scenario === 'registered-history-shape' && $command === 'listOrders') { unset($body['request']['ip']); }
             if ($scenario === 'registered-detail-shape' && $command === 'orderDetails') { unset($body['request']['ip']); }
+            if ($scenario === 'availability-shape' && $command === 'checkRegisterAvailability') { unset($body['request']['ip']); }
             return new TransportResponse(200, json_encode($body, JSON_THROW_ON_ERROR));
         };
         $wire = new GuardedTransport('offline-secret-token', true, $out, $fake, static fn () => 21, 10);
@@ -118,6 +119,13 @@ $probe = static function (string $scenario): array {
             same('Success', $info['read_outcome'], 'Malformed success still passes the production parser');
             same(false, $info['read_validated'], 'Structural refusal invalidates production facts');
         }
+        if ($scenario === 'availability-shape') {
+            $availability = $wire->receipt['requests'][array_key_last($wire->receipt['requests'])];
+            same('checkRegisterAvailability', $availability['command'], 'Fresh availability is the final read');
+            same('Success', $availability['read_outcome'], 'Malformed availability passes the production parser');
+            same(false, $availability['read_validated'], 'Malformed availability is not validated evidence');
+            same([], $wire->latest('checkRegisterAvailability'), 'Malformed availability is absent from the success cache');
+        }
         same($category, $wire->receipt['reconciliation']['category'], 'Exactly one durable closed category');
         same(false, $wire->receipt['reconciliation']['adopted'], 'No native financial completion or adoption');
         $receipt = file_get_contents($out.'/receipt.json');
@@ -153,7 +161,7 @@ foreach (['registered' => 'registered_in_account', 'absent' => 'not_registered',
     'absence-order-claim' => 'ambiguous', 'absence-domain-claim' => 'ambiguous', 'absence-extra-reply' => 'ambiguous',
     'absence-extra-request' => 'ambiguous', 'absence-extra-envelope' => 'ambiguous', 'absence-decode' => 'ambiguous',
     'absence-http' => 'ambiguous', 'registered-shape' => 'ambiguous', 'registered-missing-ip' => 'ambiguous',
-    'registered-history-shape' => 'ambiguous', 'registered-detail-shape' => 'ambiguous',
+    'registered-history-shape' => 'ambiguous', 'registered-detail-shape' => 'ambiguous', 'availability-shape' => 'ambiguous',
     'stale-shape' => 'ambiguous', 'stale-throw' => 'ambiguous'] as $scenario => $expected) {
     [$category] = $probe($scenario); same($expected, $category, 'Closed category for '.$scenario);
 }
