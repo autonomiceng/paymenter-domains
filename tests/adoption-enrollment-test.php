@@ -34,7 +34,32 @@ same('committed',$a->fresh()->state,'Enrollment failure never rolls back committ
 same('active',$watch->fresh()->state,'Failed enrollment atomically retains external target'); same('watch',$source->fresh()->state,'Failed relink rolls source back');same(0,DB::table(ManagedPublicWorkSchema::TABLE)->count(),'Failure leaves no partial managed work');
 // Staff profile edits do not require an unbounded watch revision fan-out.
 DB::transaction(fn()=>$profile->fill(['nameservers'=>['ns3.platform.test'],'enabled'=>false,'revision'=>3,'reason'=>'Reviewed routing change'])->save());DB::transaction(fn()=>$profile->fill(['enabled'=>true,'revision'=>4,'reason'=>'Reviewed current routing profile'])->save());
-$fail=false; $enrollment=new AdoptionEnrollment($clock);$enrollment->repair($d->id);
+$fail=false; $enrollment=new AdoptionEnrollment($clock);
+// Simulate a database ignoring a required work insert without raising an exception.
+foreach([[ManagedPublicWorkSchema::TABLE,"new.kind='delegation'"],[ManagedPublicWorkSchema::TABLE,"new.kind='points'"],['domains_observation_queues','1'],['domains_observation_work','1']] as [$table,$condition]){
+    DB::statement('CREATE TRIGGER refuse_enrollment BEFORE INSERT ON "'.$table.'" WHEN '.$condition.' BEGIN SELECT RAISE(IGNORE); END');
+    $refused=false;
+    try{$enrollment->repair($d->id);}catch(DomainException){$refused=true;}
+    finally{DB::statement('DROP TRIGGER refuse_enrollment');}
+    expect($refused,'Missing required '.$table.' '.$condition.' must refuse enrollment');
+    expect(!isset($d->fresh()->observation['adoption_enrollment']),'Missing work never commits enrollment marker');
+    same(['active','watch',0],[$watch->fresh()->state,$source->fresh()->state,DB::table(ManagedPublicWorkSchema::TABLE)->count()],'Missing work rolls back relink and partial work');
+}
+// Retained rows with the right unique key but another identity also refuse.
+foreach(['domains_observation_queues','domains_observation_work',ManagedPublicWorkSchema::TABLE] as $table){
+    $row=match($table){
+        'domains_observation_queues'=>['server_id'=>$d->server_id,'account_fingerprint'=>str_repeat('f',64)],
+        'domains_observation_work'=>['server_id'=>$d->server_id,'account_fingerprint'=>str_repeat('f',64),'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>'holding','due_at'=>$now],
+        default=>['domain_id'=>$d->id,'user_id'=>$other->id,'generation'=>$d->authority_generation,'account_fingerprint'=>$d->account_fingerprint,'kind'=>'delegation','due_at'=>$now,'target_stamp'=>str_repeat('f',64)],
+    };
+    $id=DB::table($table)->insertGetId($row);$retained=DB::table($table)->where('id',$id)->first();$refused=false;
+    try{$enrollment->repair($d->id);}catch(DomainException){$refused=true;}
+    expect($refused,'Conflicting retained '.$table.' identity must refuse');
+    expect(!isset($d->fresh()->observation['adoption_enrollment']),'Conflicting work cannot consume marker');
+    same((array)$retained,(array)DB::table($table)->where('id',$id)->first(),'Conflicting work is retained without repair');
+    DB::table($table)->where('id',$id)->delete();
+}
+$enrollment->repair($d->id);
 same('linked',$watch->fresh()->state,'Watch becomes retained tombstone');same(false,$watch->fresh()->notice_preferences['expiry'],'External expiry notice resolved');same(true,$watch->fresh()->notice_preferences['dns'],'Independent DNS preference preserved');
 same($observationId,$watch->fresh()->last_observation_id,'Original NS history pointer retained without fresh-copy claims');same(1,WatchDnsObservation::count(),'No fabricated managed DNS facts');
 same('retired',$source->fresh()->state,'Prior source retained');$linked=WatchSource::where('state','managed_link')->sole();same($hosting->id,(int)$linked->service_id,'Same hosting service relinked');same($d->id,(int)$linked->managed_domain_id,'Managed owner target');

@@ -69,21 +69,35 @@ final readonly class AdoptionEnrollment
             }
             if (!Schema::hasTable(ManagedPublicWorkSchema::TABLE)) { throw new \DomainException('Managed public DNS enrollment schema is unavailable.'); }
             foreach (['delegation', 'points'] as $kind) {
-                DB::table(ManagedPublicWorkSchema::TABLE)->insertOrIgnore(['domain_id' => $d->id, 'user_id' => $d->user_id,
+                $identity = ['domain_id' => $d->id, 'user_id' => $d->user_id,
                     'generation' => $d->authority_generation, 'account_fingerprint' => $d->account_fingerprint, 'kind' => $kind,
-                    'due_at' => $this->clock->now()->getTimestamp(), 'profile_id' => $profile?->id, 'profile_revision' => $profile?->revision,
+                    'profile_id' => $profile?->id, 'profile_revision' => $profile?->revision,
                     'origin_watch_id' => $watch?->id, 'origin_observation_id' => $watch?->last_observation_id,
                     'target_stamp' => AdoptionMapping::stamp([$d->id, $d->user_id, $d->service_id, $d->domain, $d->account_fingerprint,
-                        $d->authority_generation, $d->confirmed_revision, $profile?->id, $profile?->revision]),
-                    'safe_code' => 'awaiting_acceptance']);
+                        $d->authority_generation, $d->confirmed_revision, $profile?->id, $profile?->revision])];
+                $this->ensure(ManagedPublicWorkSchema::TABLE, ['domain_id' => $d->id, 'generation' => $d->authority_generation, 'kind' => $kind],
+                    $identity, ['due_at' => $this->clock->now()->getTimestamp(), 'safe_code' => 'awaiting_acceptance']);
             }
             if (!Schema::hasTable('domains_observation_queues')) { throw new \DomainException('Managed observation schema is unavailable. Retry after installation.'); }
-            DB::table('domains_observation_queues')->insertOrIgnore(['server_id' => $d->server_id, 'account_fingerprint' => $d->account_fingerprint]);
-            DB::table('domains_observation_work')->insertOrIgnore(['server_id' => $d->server_id, 'account_fingerprint' => $d->account_fingerprint,
-                'domain_id' => $d->id, 'generation' => $d->authority_generation, 'phase' => 'holding', 'due_at' => $this->clock->now()->getTimestamp()]);
+            $this->ensure('domains_observation_queues', ['server_id' => $d->server_id],
+                ['server_id' => $d->server_id, 'account_fingerprint' => $d->account_fingerprint]);
+            $this->ensure('domains_observation_work', ['domain_id' => $d->id, 'generation' => $d->authority_generation, 'phase' => 'holding'],
+                ['server_id' => $d->server_id, 'account_fingerprint' => $d->account_fingerprint,
+                    'domain_id' => $d->id, 'generation' => $d->authority_generation, 'phase' => 'holding'], ['due_at' => $this->clock->now()->getTimestamp()]);
             if (!$d->update(['observation' => [...($d->observation ?? []), 'adoption_enrollment' => ['adoption_id' => $d->adoption_id,
                 'generation' => $d->authority_generation, 'at' => $this->clock->now()->format(DATE_ATOM), 'watch_id' => $watch?->id,
                 'sources' => $linked, 'public_dns' => 'awaiting_acceptance', 'registrar_observation' => 'enrolled']]])) { throw new \DomainException('Adoption enrollment marker was not retained.'); }
         });
+    }
+    /** A duplicate key is reusable only when its retained identity matches this enrollment. */
+    private function ensure(string $table, array $key, array $identity, array $initial = []): void
+    {
+        DB::table($table)->insertOrIgnore([...$identity, ...$initial]);
+        $row = DB::table($table)->where($key)->lockForUpdate()->first();
+        foreach ($identity as $field => $expected) {
+            if (!$row || ($expected === null ? $row->$field !== null : $row->$field === null || (string) $row->$field !== (string) $expected)) {
+                throw new \DomainException('Required adoption work was not retained with its expected identity.');
+            }
+        }
     }
 }
