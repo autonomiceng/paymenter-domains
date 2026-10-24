@@ -33,8 +33,8 @@ $render=static function($test,string $name)use($out,$css){
     $html=str_replace('</body>','<template id="fixture-action-state" data-state="'.e(json_encode($state,JSON_THROW_ON_ERROR)).'"></template></body>',$html);
     expect(!str_contains($html,'account-enom'),'No synthetic credential');writeRenderArtifact($out.'/'.$name.'.html',$html);
 };
-$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSee(['TLD','Registrar / account','Renewal holders','Annual renewal','.com']);$render($list,'tlds');
-$view=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee(['Prices','Revision history','Pricing &amp; seller'],false);$render($view,'tld-revisions');
+$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSee(['TLD','Registrar account','Domains','Renewal price','.com']);$render($list,'tlds');
+$view=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee(['Prices by registrar account','History','More'],false);$render($view,'tld-revisions');
 $render(Livewire::actingAs($u)->test(RegistrarSetup::class),'setup-both');$render(Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]),'setup-account');$strings=[];
 // TLD page actions, then the account actions this Enom TEST fixture shows. Live and test renewal or DNS changes
 // and NameSilo enrollment do not appear for it: their server config is off.
