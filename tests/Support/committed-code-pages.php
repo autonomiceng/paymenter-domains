@@ -16,7 +16,9 @@ use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery,HolderPricing,NativePresenter};
 // The parent fixture's code POST service, native session and both-holder checkout are used unchanged.
 $assertSessionCodeAbsent=static function(array $values,string $code):void {
-    expect(!str_contains(json_encode($values,JSON_THROW_ON_ERROR),substr(json_encode($code,JSON_THROW_ON_ERROR),1,-1)),'Transfer code is absent from session');
+    $encoded=json_encode($values,JSON_THROW_ON_ERROR);
+    $needle=substr(json_encode($code,JSON_THROW_ON_ERROR),1,-1);
+    expect(!str_contains($encoded,$needle)&&!str_contains($encoded,substr(json_encode($needle,JSON_THROW_ON_ERROR),1,-1)),'Transfer code is absent from session');
 };
 $controller=new OwnedDomainController($owners);
 $presenter=new NativePresenter($owners,$native,new HolderPricing($prices));
@@ -36,9 +38,12 @@ foreach([0,1]as$i){
     same($beforeEpp,$committed->fresh()->payload['epp']??null,'Invalid JSON code leaves saved transfer payload unchanged');
     $sentinel=bin2hex(random_bytes(32));
     foreach ([$invalidCode,$sentinel] as $control) {
-        $contaminated=$session->all();$contaminated['synthetic_leak']=['nested'=>['transfer_code'=>'prefix-'.$control.'-suffix']];
-        try{$assertSessionCodeAbsent($contaminated,$control);throw new LogicException('Contaminated session was accepted');}
-        catch(RuntimeException $error){same('Transfer code is absent from session',$error->getMessage(),'Session assertion rejects nested contaminated control');}
+        $nested=['nested'=>['transfer_code'=>'prefix-'.$control.'-suffix']];
+        foreach ([$nested,json_encode($nested,JSON_THROW_ON_ERROR)] as $value) {
+            $contaminated=$session->all();$contaminated['synthetic_leak']=$value;
+            try{$assertSessionCodeAbsent($contaminated,$control);throw new LogicException('Contaminated session was accepted');}
+            catch(RuntimeException $error){same('Transfer code is absent from session',$error->getMessage(),'Session assertion rejects nested or serialized contaminated control');}
+        }
     }
     $r=$req($committed->domain,'code',['transfer_code'=>$sentinel]);
     $result=$action->code($r,$committed->domain_id);

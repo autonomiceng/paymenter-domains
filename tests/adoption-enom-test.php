@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 require __DIR__.'/Support/adoption-wire.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RequestContext, RequestBudget, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{AdoptionReadCommand, AdoptionTransport, Client, ReadCommand};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{AdoptionReadCommand, AdoptionTransport, Client, ManagementCommand, ReadCommand, RegistrationCommand};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader;
 
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');
@@ -25,6 +25,16 @@ foreach (ReadCommand::cases() as $command) {
     if (AdoptionReadCommand::tryFrom($command->value) !== null) { continue; }
     $refuse(fn () => $gate->send(Environment::Test, $command, [], 'synthetic-uid', 'synthetic-secret', 25000),
         DomainException::class, 'Adoption command refused.');
+}
+// Modeled writes and strings are refused by the typed boundary before the allowlist.
+foreach ([...RegistrationCommand::cases(), ...ManagementCommand::cases(),
+    'SetContacts', 'SetDNS', 'SetNS', 'SetWPPSInfo', 'GetAuthInfo', 'SendAuthInfo', 'GetPOP3', 'GetEmailForward', 'GetWhoisContact'] as $command) {
+    $before = count($wire->calls);
+    try {
+        $gate->send(Environment::Test, $command, ['SLD'=>'example','TLD'=>'com'], 'synthetic-uid', 'synthetic-secret', 25000);
+        throw new LogicException('Expected non-read command type refusal');
+    } catch (TypeError $error) { same(TypeError::class, $error::class, 'Non-read commands require a type refusal'); }
+    same($before, count($wire->calls), 'Non-read command never reaches wire: '.(is_string($command) ? $command : $command->value));
 }
 foreach ([['Command' => 'SetRenew'], ['SLD' => 'example', 'TLD' => 'com', 'Command' => 'Purchase']] as $parameters) {
     $refuse(fn () => $gate->send(Environment::Test, ReadCommand::Info, $parameters, 'synthetic-uid', 'synthetic-secret', 25000),
