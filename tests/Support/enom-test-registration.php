@@ -255,7 +255,7 @@ expect(Paymenter\Extensions\Servers\Domains\Services\OperationClaims::testCallRe
 $exhausted=clone $capOp->fresh();$attempt=$exhausted->attempt;$attempt['capacity_deferrals']=array_fill(0,6,$clock->now()->format(DATE_ATOM));$exhausted->setAttribute('attempt',$attempt);
 expect(!Paymenter\Extensions\Servers\Domains\Services\OperationClaims::testCallRefusalRetryable($exhausted),'Six capacity deferrals exhaust the TEST retry budget');
 Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($exhausted,$capDomain);
-try{Paymenter\Extensions\Servers\Domains\Services\StaffOperationWrites::release($exhausted,['account'=>$a],$clock->now());throw new LogicException('Exhausted TEST retries cannot be released.');}catch(DomainException){}
+try{Paymenter\Extensions\Servers\Domains\Services\StaffOperationWrites::release($exhausted,['account'=>$a,'domain'=>$capDomain],$clock->now());throw new LogicException('Exhausted TEST retries cannot be released.');}catch(DomainException $e){same('An original attempt cannot be readmitted.',$e->getMessage(),'Exhausted TEST retries refuse readmission with complete domain facts');}
 same('held',$capOp->fresh()->state,'Exhausted TEST capacity proof remains held and refundable');
 $clock->at=$clock->at->modify('+300 seconds');
 $releaseTicket=Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket((int)$staff->id,(int)$capDomain->id,(int)$capOp->id,'release',
