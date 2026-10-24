@@ -76,8 +76,12 @@ DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>nu
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('No registrar selected')->assertSee('Change registrar');
 expect(str_contains($text($page->html()),'Registrar for new orders Missing'),'No registrar for new orders is Missing');
 $clean($page->html(),'TLD page no registrar');
-$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful();expect(!str_contains($text($list->html()),'new orders'),'List: no account takes new orders');
+same(['label'=>'Not for sale','tone'=>'gray','reason'=>'No registrar selected'],TldFacts::salesState($enom->fresh()),'No registrar for new orders is not for sale');
+$page->assertSee('Not for sale')->assertDontSee('For sale');
+$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('No registrar selected')->assertDontSee('For sale');
+expect(!str_contains($text($list->html()),'new orders'),'List: no account takes new orders');
 $clean($list->html(),'List no registrar');
+DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>$enom->server_id]);
 
 // Saved grace and redemption policy.
 $server=App\Models\Server::findOrFail($enom->server_id);$at='2026-10-17T09:00:00Z';

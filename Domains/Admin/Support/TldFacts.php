@@ -144,6 +144,7 @@ final class TldFacts
         $flagged=static fn(string $flag):bool=>collect($rows)->contains(fn($r)=>in_array($flag,$r['flags'],true));
         if($flagged('price_missing')){return $off('Price missing');}
         if(!$t->enabled||(!$t->register_enabled&&!$t->transfer_enabled)){return $off('Stopped by staff');}
+        if(self::sellerId($t->tld)===null){return $off('No registrar selected');}
         if(!$t->renew_enabled){return $off('Renewals off for this registrar');}
         $action=$t->register_enabled?'register':'transfer';$term=$action==='register'?$t->min_years:1;
         $price=static fn($kind,$years)=>$saved->first(fn($p)=>$p->action===$kind&&$p->term===$years&&$p->currency==='USD');
