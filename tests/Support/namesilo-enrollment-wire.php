@@ -2,6 +2,7 @@
 // Synthetic, socket-free OTE evidence; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api;
+function hrtime(bool $asNumber=false): int {return 0;}
 function curl_init(): object {return new \stdClass;}
 function curl_setopt_array($handle,array $options): bool {$GLOBALS['enrollmentOptions']=$options;return true;}
 function curl_getinfo($handle,int $option): int {return 200;}

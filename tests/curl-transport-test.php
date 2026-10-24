@@ -6,6 +6,7 @@ require dirname(__FILE__).'/bootstrap.php';
 // Exercise redaction even when the host includes arguments in exception traces.
 ini_set('zend.exception_ignore_args', '0');
 
+function hrtime(bool $asNumber=false): int { return 0; }
 function curl_init(): object { ++$GLOBALS['curlFake']['inits']; return new \stdClass; }
 function curl_setopt_array($handle, array $options): bool { $GLOBALS['curlFake']['options'] = $options; return true; }
 function curl_exec($handle): bool

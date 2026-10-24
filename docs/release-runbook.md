@@ -259,3 +259,25 @@ ordinary renewal, original charge/expiry reconciliation and pre-send refusals. I
 production access or spending approval. Qualify the actual account, rates, site and shared database
 before enabling production. Spend limits bound admitted costs; a provider charge discrepancy still
 requires staff review and never permits a second write. Retained reservations are not actual charges.
+
+### Deployment request policy
+
+`domains.provider_send_guard` defaults to `null`. A deployment may supply a callable
+`fn(string $registrar, string $environment, string $command, \DateTimeImmutable $utcNow): void`
+to audit or refuse each physical registrar request. The final `Services\ProviderSendGuard` class
+exposes `CONTRACT = 1` and `beforeSend(string $registrar, string $environment, string $command): void`;
+its docblock lists every exact command string. All built-in physical senders call this method. Registrar names are `enom` and `namesilo`;
+environments are `test` (including NameSilo OTE) and `live`. The instant comes from the extension
+clock converted to UTC. Workers retain their monotonic deadlines. No credentials, parameters or responses
+are supplied. Throwing or invalid configuration refuses the send and discards the exception.
+Enom uses its existing not-sent call-refusal path, retaining retryable operation evidence.
+Existing conservative call reservations remain charged, including refused sends. Null adds no policy.
+The callback must finish promptly. Both registrars deduct it from the monotonic request budget
+and refuse the send if the remaining budget is exhausted.
+
+The policy covers Enom identity/balance enrollment, named reads (catalogue, retained adoption,
+observation, reconciliation and Check balance), plus runtime acquisition, renewal, management
+and ancillary reads. NameSilo's shared read transport covers key enrollment, Check balance,
+catalogue, adoption, observation and reconciliation through interactive and background routes.
+NameSilo purchase protocols still require an explicitly supplied exchange and have no built-in
+physical sender. A deployment supplying such an exchange owns its send policy too.

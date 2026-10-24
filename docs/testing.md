@@ -721,3 +721,8 @@ receipt writing and cleanup. Parallel command/guard totals are summed worker tim
 not elapsed wall time. Measure full wall time around the runner separately.
 
 `native-paid-baseline-test.php` is the single entrypoint for the shared paid-processing matrix.
+
+`provider-send-guard-test.php` checks all three physical registrar senders with synthetic cURL,
+all named command routes, UTC metadata, default-null sends and closed failure paths.
+`provider-send-guard-operation-test.php` checks a funded native registration's guard refusal,
+retained unsent evidence, staff release and later one-time dispatch without changing its debt.

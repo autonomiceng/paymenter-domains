@@ -300,7 +300,9 @@
     "tests/staff-renewal-release-test.php",
     "tests/user-deletion-test.php",
     "tests/lifecycle-policy-test.php",
-    "tests/acquisition-binding-test.php"
+    "tests/acquisition-binding-test.php",
+    "tests/provider-send-guard-test.php",
+    "tests/provider-send-guard-operation-test.php"
   ],
   "ui": [],
   "runner": [
