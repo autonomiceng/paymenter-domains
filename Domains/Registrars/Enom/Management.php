@@ -29,10 +29,7 @@ final class Management extends ManagementProtocol
             throw $e;
         }
         if($cmd===R::Balance){
-            $value=$reply->value('availablebalance');$money=null;
-            if($reply->status==='success'&&is_string($value)&&preg_match('/^(?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\.[0-9]{1,2})?$/D',$value)){
-                try{$money=new \Paymenter\Extensions\Servers\Domains\Data\Money(str_replace(',','',$value).(str_contains($value,'.')?'':'.00'),'USD');}catch(\InvalidArgumentException){}
-            }
+            $money=Balance::read($reply);
             \Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($this->binding,$money,$c->now(),'preflight',$money?null:'read_failed');
         }
         return $reply;
@@ -89,9 +86,8 @@ final class Management extends ManagementProtocol
             if($s['allowed']!==true||$s['exists']===null||($a==='privacy_purchase'?$s['exists']!==false:$s['exists']!==true)){throw new \DomainException('Privacy precondition unavailable.');}
             if(in_array($a,['privacy_purchase','privacy_renew'],true)) {
                 if((!$billing&&$s['cost']===null)||($a==='privacy_renew'&&(!$s['expiry']||isset($p['privacy_terms'])&&$p['privacy_terms']['base']!==$s['expiry']))){throw new \DomainException('Privacy cost or expiry unknown.');}
-                if(!$billing){$balance=$this->get($r,$c,R::Balance,[])->value('availablebalance');
-                if(!is_string($balance)||!preg_match('/^(?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\.[0-9]{1,2})?$/D',$balance)
-                    || \Paymenter\Extensions\Servers\Domains\Services\WriteMoney::compare(str_replace(',','',$balance).(str_contains($balance,'.')?'':'.00'),$s['cost'])<0){throw new \DomainException('Privacy balance unknown or insufficient.');}}
+                if(!$billing){$balance=Balance::read($this->get($r,$c,R::Balance,[]));
+                    if($balance===null||\Paymenter\Extensions\Servers\Domains\Services\WriteMoney::compare($balance->amount,$s['cost'])<0){throw new \DomainException('Privacy balance unknown or insufficient.');}}
                 $base=$a==='privacy_renew'?$s['expiry']:$c->now()->format('Y-m-d');
                 $p['privacy_terms']=['base'=>$a==='privacy_renew'?$base:null,'expected'=>\Carbon\CarbonImmutable::parse($base)->addYearNoOverflow()->format('Y-m-d'),'cost'=>$s['cost']];
             }

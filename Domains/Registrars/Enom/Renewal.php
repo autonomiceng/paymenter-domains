@@ -44,7 +44,8 @@ final class Renewal
     }
     public static function limits(ProtocolResult $extend): ?array
     {
-        if ($extend->status !== 'success') { return null; }
+        // Only the captured flat GetExtendInfo shape supplies limits and price evidence.
+        if ($extend->status !== 'success' || $extend->value('getextendinfo') !== null) { return null; }
         $hold = Driver::flag($extend->value('registrarhold'));
         $maximum = $extend->value('maxextension');
         return $hold !== null && is_string($maximum) && preg_match('/^(?:[1-9]|10)$/D', $maximum)

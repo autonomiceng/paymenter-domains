@@ -32,11 +32,11 @@ $registry->register('enom', ['uid', 'token'], $verifier, fn (AccountBinding $acc
 [$verified] = $registry->verify('enom', 1, Environment::Test, ['uid' => 'synthetic-uid', 'token' => 'synthetic-secret']);
 $driver = $registry->reader($verified, ['uid' => 'synthetic-uid', 'token' => 'synthetic-secret']);
 expect($driver instanceof Driver && $binding->matches($driver->binding()), 'Neutral registry returns bound read-only driver');
-foreach (['0' => '0.00', '1,234.50' => '1234.50', '12.3' => '12.3'] as $input => $amount) {
+foreach (['0' => '0.00', '1,234.50' => '1234.50', '12.3' => '12.3', '999,999,999,999,999,999.99'=>'999999999999999999.99'] as $input => $amount) {
     $wire->payloads['Balance'] = '<AvailableBalance>'.$input.'</AvailableBalance>';
     $result = $driver->balance($context()); same($amount, $result->evidence()->balance?->amount, 'Source grouped USD balance exact');
 }
-foreach (['', '-1', '1,23.00', '1e3', '1.234'] as $bad) {
+foreach (['', '-1', '1,23.00', '1e3', '1.234', '9999999999999999999.00', '999,999,999,999,999,999,999.00'] as $bad) {
     $wire->payloads['Balance'] = '<AvailableBalance>'.$bad.'</AvailableBalance>';
     $result = $driver->balance($context()); same(Disposition::Unknown, $result->disposition, 'Bad balance unknown'); same(null, $result->evidence()->balance, 'Unknown is never zero');
 }
@@ -221,6 +221,17 @@ same('2027-04-03', $driver->expiry('example.com', $context())->facts()['expiry']
 $wire->payloads['Expiry'] = '<RegistryExpDate>bad</RegistryExpDate>'; same('unknown', $driver->expiry('example.com', $context())->status, 'Invalid GetDomainExp not acknowledged');
 $wire->payloads['RenewalInfo'] = '<Expiration>2027-04-03</Expiration><RegistrarHold>false</RegistrarHold><MaxExtension>9</MaxExtension>';
 $facts = $driver->renewalInfo('example.com', $context())->facts(); same(9, $facts['max_extension'], 'Bounded renewal maximum'); same(false, $facts['registrar_hold'], 'Known false hold'); same(null, $facts['grace_eligible'], 'Restorable/expiry never infer ordinary grace');
+$savedRenewal=$wire->payloads['RenewalInfo'];$savedExpiry=$wire->payloads['Expiry'];
+foreach (['','<Expiration>bad</Expiration>','<Expiration>2027-04-03</Expiration><Expiration>2028-04-03</Expiration>'] as $expiryPayload) {
+    $wire->payloads['RenewalInfo']=$expiryPayload.'<RegistrarHold>false</RegistrarHold><MaxExtension>9</MaxExtension>';
+    $wire->payloads['Expiry']=$expiryPayload;
+    foreach(['renewalInfo','expiry'] as $read) {
+        $result=$driver->$read('example.com',$context());
+        same('unknown',$result->status,'Missing, invalid or ambiguous expiry cannot acknowledge '.$read);
+        same([],$result->facts(),'Unknown expiry exposes no successful facts');
+    }
+}
+$wire->payloads['RenewalInfo']=$savedRenewal;$wire->payloads['Expiry']=$savedExpiry;
 $wire->payloads['Info'] = str_replace(['example.com', 'TLD="com"'], ['example.co.uk', 'TLD="co.uk"'], $info);
 $before = count($wire->calls); $driver->contacts('example.co.uk', $context());
 same(['SLD' => 'example', 'TLD' => 'co.uk'], end($wire->calls)[1], 'Explicit longest compound suffix reaches named command');

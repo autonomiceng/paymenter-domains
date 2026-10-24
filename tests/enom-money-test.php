@@ -7,7 +7,7 @@ require_once __DIR__.'/Support/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, CostUnit, DispatchSeal, Discrepancy, Disposition,
     DriverResult, Environment, Evidence, ExecutionRecord, ExpiryPrecision, Money, PersistedExecution, Query, QuoteEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, RenewalStatus, SendState};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, ResponseParser, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, OrderCharge, Pricing};
 $clock = new class implements Clock { public DateTimeImmutable $at; public function now(): DateTimeImmutable { return $this->at; } };
 $clock->at = new DateTimeImmutable('2026-10-18T12:00:00Z');
@@ -82,6 +82,15 @@ $renew = new Query('example.com', Action::Renew, 2);
 $result = $driver->renewalAssessment($renew, $context(3));
 same(RenewalStatus::Ordinary, $result->evidence()->renewal, 'Owned precise future expiry and limits establish ordinary provider state');
 same('17.9000', $result->evidence()->quote?->cost?->amount, 'Documented annual renewal price gives exact selected total');
+foreach(['<RegistrarHold>True</RegistrarHold>','<Price>99.00</Price>','<Currency>EUR</Currency>','<MaxExtension>1</MaxExtension>',''] as $wrapped) {
+    $wire->data['RenewalInfo']=$extend.'<GetExtendInfo>'.$wrapped.'</GetExtendInfo>';
+    $reply=(new ResponseParser)->parse(ReadCommand::RenewalInfo,'<interface-response><Command>GetExtendInfo</Command><ErrCount>0</ErrCount><Done>true</Done>'.$wire->data['RenewalInfo'].'</interface-response>');
+    same(null,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Renewal::limits($reply),'Wrapped renewal facts never supply flat limits');
+    $assessment=$driver->renewalAssessment($renew,$context(3))->evidence();
+    same(RenewalStatus::Unknown,$assessment->renewal,'Unsupported wrapped renewal evidence stays unknown');
+    same(null,$assessment->quote,'Conflicting wrapped evidence never supplies a quote');
+}
+$wire->data['RenewalInfo']=$extend;
 same('2028-10-13T06:14:00+00:00', $result->evidence()->domain?->expiry?->value, 'Pacific date reconciles against authenticated precise UTC next day');
 same(ExpiryPrecision::Instant, $result->evidence()->domain?->expiry?->precision, 'No date precision lost');
 foreach (['foreign' => str_replace('offline', 'other', $info), 'date' => str_replace('10/12/2028 11:14:00 PM', '10/12/2028', $info)] as $fault => $payload) {

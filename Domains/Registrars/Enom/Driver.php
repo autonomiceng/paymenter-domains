@@ -206,10 +206,11 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         [, $parts, $domain] = $this->identity($name, $context);
         if ($domain?->owned !== true) { return $this->result(null); }
         $reply = $this->read(ReadCommand::RenewalInfo, $parts, $context);
-        if ($reply->status !== 'success') { return $this->result(null); }
+        $expiry = Expiry::read($reply);
+        if ($expiry === null) { return $this->result(null); }
         $maximum = $reply->value('maxextension');
         return $this->result(['name' => $name, 'owned' => true, 'provider_reference' => $domain->providerReference,
-            'expiry' => Expiry::read($reply), 'registrar_hold' => self::flag($reply->value('registrarhold')),
+            'expiry' => $expiry, 'registrar_hold' => self::flag($reply->value('registrarhold')),
             'max_extension' => is_string($maximum) && preg_match('/^[0-9]{1,2}$/D', $maximum) && (int) $maximum <= 10 ? (int) $maximum : null,
             'grace_eligible' => null]);
     }
