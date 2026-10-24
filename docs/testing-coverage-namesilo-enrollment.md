@@ -62,8 +62,9 @@ the fresh-server retained-table guard with a prefixed extension table. The insta
 verified ZIP runtime bytes without the source autoloader. Existing full-suite coverage retains
 native upgrade/reinstall, processing and provider boundary checks.
 
-Focused mutation checks remove each new guard and exercise the shared scenario. Redundant
-checks are reviewed against their independent refusing layer; none grants enrollment.
+The shared offline scenario covers enrollment success and refusal paths in native and installed ZIP runs.
+Historical verification records 13 selected mutations killed, plus a Unicode-label mutation.
+This does not establish exhaustive mutation coverage of every guard.
 These offline tests make no real registrar calls and do not establish provider ownership, live
 acceptance, shared-database race behavior or permission to purchase domains.
 The installed default-account review asserts the saved ending, registration and renewal terms, and registry evidence.
