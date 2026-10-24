@@ -35,7 +35,7 @@ class MonitoringSettings extends Page
                     ->rules([fn()=>function($attribute,$value,$fail): void{try{new DohEndpoint($value,DohEndpoint::IP);}catch(\Throwable){$fail('Use an HTTPS URL with a public hostname.');}}]),
                 TextInput::make('ip')->label('Bootstrap IP')->required()->maxLength(45)->default(fn()=>$saved()?->ip??DohEndpoint::IP)
                     ->helperText('Default: '.DohEndpoint::IP.". The resolver's public IP.")
-                    ->rules([fn()=>function($attribute,$value,$fail): void{if(!is_string($value)||!filter_var($value,FILTER_VALIDATE_IP,FILTER_FLAG_GLOBAL_RANGE)){$fail('Use a public IPv4 or IPv6 address.');}}]),
+                    ->rules([fn()=>function($attribute,$value,$fail): void{try{if(!is_string($value)){throw new \InvalidArgumentException;}new DohEndpoint(DohEndpoint::URL,$value);}catch(\InvalidArgumentException){$fail('Use a public IPv4 or IPv6 address.');}}]),
             ])->action(function(array $data): void{
                 self::requireManage();app(DnsResolverSettings::class)->save($data['url'],$data['ip']);
                 unset($this->cachedSchemas['content']);Notification::make()->title('Resolver saved')->success()->send();
