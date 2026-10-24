@@ -7,7 +7,7 @@ use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use App\Models\ServiceCancellation;
 use Filament\Support\Enums\FontFamily;
-use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\{Filter, SelectFilter};
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\{Builder, Model};
 use Illuminate\Support\Facades\DB;
@@ -77,6 +77,10 @@ class DomainResource extends Resource
                     return in_array($days,[7,30,60,90],true) ? $query->whereDate('provider_expires_at','>=',CarbonImmutable::today())
                         ->whereDate('provider_expires_at','<=',CarbonImmutable::today()->addDays($days)) : $query;
                 }),
+            // The account page's Domain alerts row links here with this filter and the account.
+            Filter::make('alerts')->label('Open alerts')->toggle()
+                ->query(fn(Builder $query)=>$query->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_obligation_alerts as a')
+                    ->whereColumn('a.domain_id','domains_domains.id')->whereNull('a.resolved_at'))),
         ])->recordUrl(fn(Domain $record)=>static::getUrl('view',['record'=>$record]))
             ->defaultSort('domain')->paginated([25,50,100])->defaultPaginationPageOption(25)
             ->emptyStateHeading('No domains yet')->emptyStateDescription(null);

@@ -2,7 +2,9 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Filament\Actions\Action;
 use Illuminate\Support\Facades\{DB,Schema};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
@@ -96,6 +98,16 @@ final class AccountChecklist
     {
         return app(RuntimePorts::class)->registered($a)?self::row('Registrar runtime','Available')
             :self::row('Registrar runtime',null,'danger','Registrar runtime is not set up in the deployment. Registrations, transfers, renewals and DNS changes stay off.');
+    }
+    /** Domains on this account with an open alert, linked to the Domains list filtered to them. Each domain page shows its alert next to the row it concerns. */
+    public static function alerts(Account $a): array
+    {
+        $count=Schema::hasTable('domains_obligation_alerts')?DB::table('domains_obligation_alerts as a')->join('domains_domains as d','d.id','=','a.domain_id')
+            ->where('d.server_id',$a->server_id)->whereNull('a.resolved_at')->distinct()->count('a.domain_id'):0;
+        if ($count===0) { return self::row('Domain alerts','None','success'); }
+        try { $url=DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$a->server_id],'alerts'=>['isActive'=>true]]]); } catch (\Throwable) { $url=null; }
+        return [...self::row('Domain alerts',$count.' domain'.($count===1?'':'s'),'warning','Open each domain to see the cause.'),
+            'buttons'=>[Action::make('domain_alerts')->label('View domains')->link()->size('sm')->url($url)->visible($url!==null)]];
     }
     /** Domain monitoring is on only when the runtime composes it; then its checks need the queue WatchWork::queueReady() accepts. */
     private static function queueTooShort(): bool

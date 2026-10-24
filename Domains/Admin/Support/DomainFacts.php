@@ -18,6 +18,30 @@ final class DomainFacts
     public const BILLING=['Customer','Service','Auto-renew','Renewal price','Renewal invoices','Next invoice','Open invoice'];
     public const HELP=['Transfer lock'=>'Registrar lock that blocks transfers to another registrar.',
         'Registrar auto-renew'=>"The registrar's own auto-renew. Keep it off: Beco renews after the customer pays."];
+    /** Open alerts by kind: the row each concerns, its cause, and 'missing' (the row becomes Missing), 'danger' or 'warning'.
+     * Paid after the order closed shows in the status and the page notice instead. */
+    public const ALERTS=[
+        'unknown_expiry'=>['Expires','Expiry missing','missing'],
+        'transfer_watch_relink'=>['Registrar','Domain monitoring needs relinking after the transfer','warning'],
+        'operation_review'=>['Registrar','Registrar request needs review','warning'],
+        'unknown_payment_time'=>['Registrar','Transfer payment time missing','danger'],
+        'observation_review'=>['Last sync','Sync needs review before resuming','warning'],
+        'native_identity_missing'=>['Service','Customer, order or service missing','missing'],
+        'acquisition_retirement_review'=>['Service','Unpaid order needs review. The name stays reserved.','warning'],
+        'unknown_price'=>['Renewal price','Renewal price missing','missing'],
+        'unknown_cost'=>['Renewal price','Cost missing','danger'],
+        'below_cost'=>['Renewal price','Below cost','danger'],
+        'renewal_unpaid'=>['Renewal invoices','Unpaid renewal invoice cancelled','warning'],
+        'held_obligation'=>['Renewal invoices','Renewal on hold','warning'],
+        'invalid_invoice'=>['Renewal invoices','Renewal invoice needs review','warning'],
+        'credit_notice_overdue'=>['Renewal invoices','Account credit notice overdue','warning'],
+        'schedule_binding'=>['Renewal invoices','Reminder account changed','warning'],
+        'delivery_uncertain'=>['Renewal invoices','Reminder email handoff not confirmed','warning'],
+        'template_failed'=>['Renewal invoices','Reminder email template failed','warning'],
+        'reminder_failed'=>['Renewal invoices','Renewal reminder check failed','warning'],
+        'missing_obligation'=>['Next invoice','Renewal invoice missing','missing'],
+        'missing_execution'=>['Next invoice','Complimentary renewal request missing','missing'],
+    ];
     public const UNREADABLE="Can't read saved data. Check the app encryption key.";
     public const UNREADABLE_RENEWAL="Can't read renewal settings";
     /** Statuses where the registration exists, so its dates and registrar settings apply. */
@@ -78,6 +102,22 @@ final class DomainFacts
         $invoice=DB::table('domains_operations as o')->join('invoices as i','i.id','=','o.invoice_id')->where('o.domain_id',$d->id)
             ->where('o.service_id',$d->service_id)->where('i.status','pending')->orderByDesc('i.id')->value('i.id');
         if ($invoice) { $f['Open invoice']=self::fact('Invoice #'.$invoice,url:self::invoiceUrl((int)$invoice)); }
+        return self::alerts($d,$f);
+    }
+    /** Puts each open alert on the row it concerns. When that row does not apply, the alert goes to Service or Registrar without making it Missing. */
+    private static function alerts(Domain $d, array $f): array
+    {
+        if (!Schema::hasTable('domains_obligation_alerts')) { return $f; }
+        foreach (DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->orderBy('id')->pluck('code')->unique() as $code) {
+            if (!isset(self::ALERTS[$code])) { continue; }
+            [$row,$cause,$tone]=self::ALERTS[$code];
+            if (!isset($f[$row])) { $row=in_array($row,self::BILLING,true)?'Service':'Registrar'; $tone=$tone==='missing'?'danger':$tone; }
+            $fact=$f[$row];
+            if ($tone==='missing'&&$fact['value']!==null) { $f[$row]=self::fact(null,sub:$cause,tone:'danger'); continue; }
+            $fact['sub']=implode(' · ',array_unique(array_filter([$fact['sub'],$cause])));
+            $fact['tone']=$tone==='missing'||$fact['tone']==='danger'?'danger':$tone;
+            $f[$row]=$fact;
+        }
         return $f;
     }
     /** The domain pill and reason. $renewalOff and $late are passed by the list, which batches them. */

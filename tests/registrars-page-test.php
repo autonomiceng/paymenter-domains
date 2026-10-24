@@ -112,6 +112,16 @@ $text=html_entity_decode(strip_tags($short->html()),ENT_QUOTES);
 same(1,substr_count($text,'Queue timeout too short'),'Queue timeout said once');same(1,substr_count($text,"Domain monitoring can't run. Use an asynchronous queue with retry_after of 180 seconds or more."),'Its cause said once');
 config(['queue.connections.database.retry_after'=>180]);Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertDontSee('Queue timeout too short')->assertSee('Not running');
 config(['queue'=>$queue]);app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\WatchWork::class);
+// Open domain alerts: a count row per account that links to the Domains list filtered to those domains.
+same('None',$check('Domain alerts')->getState(),'No open domain alerts');
+$alerted=Domain::where('sld','registrars-due-placeholder')->sole();
+Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($alerted,'native_identity_missing',time());
+$alerts=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id]);
+$row=array_values(array_filter($alerts->instance()->content(\Filament\Schemas\Schema::make($alerts->instance()))->getFlatComponents(),fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry&&$e->getLabel()==='Domain alerts'))[0];
+same(['1 domain','warning'],[$row->getState(),$row->getColor('1 domain')],'One domain with an open alert is a warning');
+$filtered=Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$enom->server_id],'alerts'=>['isActive'=>true]]]);
+$alerts->assertActionVisible(TestAction::make('domain_alerts')->schemaComponent('system_checks','content'))->assertSee('View domains')->assertSeeHtml('href="'.e($filtered).'"');
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertDontSee('View domains');
 $passing=array_values(array_filter($flat,fn($e)=>$e instanceof \Filament\Schemas\Components\Section&&$e->getHeading()==='Passing checks'))[0];
 expect($passing->isCollapsed(),'Passing checks start collapsed');
 $inside=array_map(fn($e)=>$e->getLabel(),array_filter($passing->getChildSchema()->getFlatComponents(),fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry));

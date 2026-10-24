@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{L
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainFacts, HoldingActions, Staff};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, WatchAudit};
-use Paymenter\Extensions\Servers\Domains\Services\{ObservationRecords, StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, ObservationRecords, StaffHoldingReview};
 staffPanel(); [$held,$active,$long]=staffData(); Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Data\SystemClock);
@@ -151,6 +151,21 @@ $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active'
 same(array_keys(Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::SET),array_keys(DomainResource::statusOptions()),'Status filter has the nine statuses');
 $importer=staffUser([Staff::VIEW,Staff::ADOPT_PREVIEW]);
 Livewire::actingAs($importer)->test(ListDomains::class)->assertActionVisible('adopt')->assertActionHasLabel('adopt','Import domain');
+
+// Open alerts: every recorded kind shows on the row it concerns with its cause. Missing kinds make the row Missing.
+same(['acquisition_late_money'],array_values(array_diff(array_keys(ObligationAlerts::LABELS),array_keys(DomainFacts::ALERTS))),'Every alert kind has a row; late payment shows in the status and notice');
+ObligationAlerts::record($active->fresh(),'native_identity_missing',time());
+same([null,'Service #'.$active->service_id.' not found · Customer, order or service missing','danger'],[$value($active,'Service'),$sub($active,'Service'),DomainFacts::for($active->fresh())['Service']['tone']],'Missing records alert on the Service row');
+ObligationAlerts::record($active->fresh(),'missing_obligation',time());
+same([null,'Renewal invoice missing'],[$value($active,'Next invoice'),$sub($active,'Next invoice')],'Missing renewal invoice makes Next invoice Missing');
+ObligationAlerts::record($active->fresh(),'renewal_unpaid',time());
+same(['On','Unpaid renewal invoice cancelled','warning'],[$value($active,'Renewal invoices'),$sub($active,'Renewal invoices'),DomainFacts::for($active->fresh())['Renewal invoices']['tone']],'Review alerts keep the value and add the cause');
+ObligationAlerts::record($active->fresh(),'observation_review',time());
+same(['Oct 20, 2026 15:05 UTC','Sync needs review before resuming'],[$value($active,'Last sync'),$sub($active,'Last sync')],'Sync review alert on Last sync');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Service','Missing','Customer, order or service missing'])->assertSee('Unpaid renewal invoice cancelled');
+$filter(Livewire::actingAs($viewer)->test(ListDomains::class),'alerts',true)->assertCanSeeTableRecords([$active])->assertCanNotSeeTableRecords([$held,$long]);
+DB::table('domains_obligation_alerts')->update(['resolved_at'=>time()]);
+same(['Service #'.$active->service_id.' not found','On'],[$sub($active,'Service'),$sub($active,'Renewal invoices')??$value($active,'Renewal invoices')],'Resolved alerts leave the rows');
 
 // Adoption pending leaves navigation and its route opens the Under review filter.
 same(false,PendingAdoptionResource::shouldRegisterNavigation(),'Adoption pending is not in navigation');

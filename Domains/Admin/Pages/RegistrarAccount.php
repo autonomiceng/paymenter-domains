@@ -80,6 +80,7 @@ class RegistrarAccount extends Page
         if (Staff::can(PslActions::VIEW)) { $psl=PslActions::row(fn()=>$this->resetContent());$system[in_array($psl['tone'],['danger','warning'],true)?'failing':'passing'][]=$psl; }
         if ($a) {
             $runtime=AccountChecklist::runtime($a);$system[$runtime['value']===null?'failing':'passing'][]=$runtime;
+            $alerts=AccountChecklist::alerts($a);$system[$alerts['tone']==='success'?'passing':'failing'][]=$alerts;
             $id=(int)$s->id;
             $renewals=$this->rows('renewal',AccountChecklist::renewals($id),false);
             $renewals[]=Actions::make([SettingsActions::setup($id,$this->reviewStamp,'renewal_billing'),ReminderAction::make($id)]);
