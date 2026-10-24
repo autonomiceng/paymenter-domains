@@ -22,11 +22,13 @@
 @endif
 <section id="overview" class="domains-panel domains-section"><h2 class="domains-h2">Overview</h2><dl class="domains-facts"><div class="domains-fact"><dt>Auto-renew</dt><dd>{{ $domain->setupPending?'Paused until verification':$domain->renewal }}</dd></div>@if ($domain->renewalPrice && $domain->renewal !== 'Off' && !$domain->setupPending)<div class="domains-fact"><dt>Renewal price</dt><dd>{{ $domain->renewalPrice }}/yr</dd></div>@endif</dl></section>
 @if ($domain->renewalInvoice)<section class="domains-panel domains-section">
-@if ($domain->renewalInvoice['state'] === 'pending')<h2 class="domains-h2">Renewal invoice issued</h2><p>Payment due @include('domains::partials.date', ['date' => $domain->renewalInvoice['due']]). See your invoice for payment details.</p>
+@if ($domain->renewalInvoice['state'] === 'pending')<h2 class="domains-h2">Renewal invoice issued</h2><p>Payment due @include('domains::partials.date', ['date' => $domain->renewalInvoice['due']]). See your invoice for payment details.</p>@isset($domain->renewNow['invoice'])<a class="domains-btn domains-btn--primary" href="{{ $domain->renewNow['invoice'] }}">View renewal invoice</a>@endisset
 @elseif ($domain->renewalInvoice['state'] === 'paid')<h2 class="domains-h2">Renewal payment received</h2><p>Renewal is awaiting confirmation. The confirmed expiry above will update when it completes.</p>
+@elseif ($domain->renewalInvoice['state'] === 'cancelled')<h2 class="domains-h2">Renewal invoice cancelled</h2><p>{{ \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerRenewalController::CANCELLED }}</p>
 @else<h2 class="domains-h2">Renewal under review</h2><p>Contact support if you need an update on this renewal.</p>@endif</section>
 @elseif ($domain->plannedRenewalDue)<section class="domains-panel domains-section"><h2 class="domains-h2">Next renewal</h2><p>Renewal due @include('domains::partials.date', ['date' => $domain->plannedRenewalDue]). An invoice will be issued when billing checks pass.</p></section>@endif
 @if ($domain->history)<section class="domains-panel domains-section"><h2 class="domains-h2">Historical invoices</h2><ul>@foreach ($domain->history as $invoice)<li><a href="{{ $invoice['url'] }}">Invoice {{ $invoice['number'] }}</a> · {{ $invoice['status'] }}</li>@endforeach</ul></section>@endif
+@include('domains::partials.owner-renew')
 @include('domains::partials.owner-management')
 @unless ($domain->setupPending)
 @include('domains::partials.activity')

@@ -75,3 +75,89 @@ all captured read commands, pinning ownership, contact roles, nullable flags,
 expiry, grouped available balance, catalogue capabilities, Check v2 and DNS shapes.
 The captured WPPS dollar price is normalized only in the privacy reader; malformed
 amounts stay unknown. Empty expired inventory never proves subject eligibility.
+
+## 2026-10-22 — Scheduled renewal Auto Pay
+
+`renewal-autopay-test.php` uses a synthetic saved-method gateway through native
+`ExtensionHelper::charge`: committed once-only attempts, scheduler/existing-invoice
+re-fetches, manual-invoice exclusion, full-credit settlement, insufficient-credit
+retention, current partial-payment remainder, thrown charges/customer notification,
+interrupted outcome persistence, immutable audit evidence and staff result facts.
+It refuses missing/foreign agreements, missing/disabled gateways, changed methods,
+cancelled services, pending cancellation, Renewal Off, currency drift and settled debt.
+`renewal-autopay-admission-test.php` proves automatic and interactive native payment
+reach the same paid-invoice funding and synthetic registrar admission state.
+`renewal-autopay-adopted-test.php` retains a committed adopted Renewal Off intent
+with a saved method and proves no new debt or charge. Existing renewal/refund/staff
+release suites cover retained collection audit through those paths.
+
+Collection evidence is not a registrar attempt or payment grant. An uncertain charge
+is never retried automatically; native invoice transactions remain the funding proof.
+These offline SQLite fixtures establish sequential/interleaved behavior, not real
+gateway delivery, SMTP delivery or paired shared-database concurrency.
+
+## 2026-10-22 — Auto Pay collection outcomes
+
+The renewal Auto Pay tests now separate a definite gateway decline from an unknown
+response. A false return requests the native payment-failed notification. An exception
+records an unknown result, logs a warning without customer data, and sends no
+payment-failed notification. Neither outcome retries automatically.
+
+Uncertain, unknown and submitted collection block unpaid retirement and replacement.
+The tests retain cancelled debt from the earlier implementation and refuse a new
+invoice while collection is unresolved. A definite decline permits retirement and a
+manual replacement. Late payment still funds the original invoice. Registrar admission
+checks native paid funding separately from the saved-method collection result.
+
+Gateway acceptance records a write-once submission. Staff facts combine that result
+with the current invoice status through processing, failed payment, cancellation and
+late success. Tests also switch to a second valid same-owner agreement before collection,
+exercise repeated settlement, and complete a renewal before billing the next cycle.
+These tests use synthetic gateways and offline SQLite; live delivery and shared-database
+concurrency remain unverified.
+
+## Staff renewal billing and owner requests
+
+Supersedes the note above that there is no staff editor: Registrar setup → **Review renewal
+billing** now sets both switches and the issue/due calendar through an audited staff review
+(`renewal-billing-settings-test.php`). Calendar changes apply to invoices issued afterwards;
+`renewal-billing-test.php` confirms an issued renewal invoice and its operation stay unchanged.
+
+`owner-renewal-test.php` covers **Renew now** on an active native domain page. With owner
+requests off there is no form and a direct POST refuses with plain copy and creates no debt.
+With them on, terms run from 1 year up to the ten-year registry horizon, and the form is offered
+until the day before the due date. Malformed and out-of-horizon terms, foreign owners, replayed
+or mismatched form keys and paused processing create nothing. A request redirects to the invoice
+for the requested term; a duplicate returns the same invoice, a different term refuses, and the
+page then links the issued invoice. From the due date the form is hidden and requests refuse.
+Owner copy never shows internal reasons. No registrar job is queued.
+
+With auto-renew off (renewal stopped), billing refuses manual requests, so the page offers no
+form and a direct POST refuses with generic copy and creates nothing; turning it on restores
+the form. Once a cycle has an invoice that is neither payable nor replaceable, the page shows
+one status instead of the form: payment received, under review, or invoice cancelled (a direct
+POST then gets the cancelled copy). After staff retire the unpaid invoice, the form returns and
+a request issues a replacement invoice; payment history on the retired invoice keeps it in review.
+TLD minimum and maximum years are not applied to renewals: billing and the form both cap terms
+only by the ten-year registry horizon.
+
+
+## Owner renewal eligibility and retained cycles
+
+`owner-renewal-test.php` checks the page and POST against the same billing eligibility.
+Processing off, paused spending, unresolved anchors, unresolved prior operations, nonstandard
+pricing and inactive holdings hide new requests without creating debt. Pending, paid, cancelled
+and held cycles remain visible when manual requests or renewal are off, a service is suspended,
+a domain needs review, the request cutoff has passed or the saved calendar is invalid. A retired
+unpaid cycle still shows its cancelled status when a replacement cannot be requested.
+
+Payment links and retained due dates use billing's existing-invoice validation. Raw database
+fixtures cover missing items, extra invoice members, wrong currency, amount, dates, owner and
+operation bindings. Each shows review without a payment link or new debt; guarded model edits
+are not used to create these inconsistent retained rows.
+
+`adoption-customer-test.php` creates real renewal invoices. It checks the adopted owner page
+and POST after unpaid retirement and after a paid, unsent renewal is refunded and approved for
+replacement. Both offer the permitted request, return the replacement invoice and preserve the
+old evidence. Duplicate submits return the same invoice and show one current-cycle panel.
+These offline SQLite checks do not establish production locking or provider acceptance.

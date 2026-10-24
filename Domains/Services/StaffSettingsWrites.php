@@ -17,6 +17,7 @@ final class StaffSettingsWrites
         $clock=app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)?app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class):new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;$now??=$clock->now();$r->input($data);
         if($r->action==='test_management'){EnomTestManagement::review($r,$data);return;}
         if($r->action==='test_renewal'){EnomTestRenewal::review($r,$data);return;}
+        if($r->action==='renewal_billing'){RenewalBillingSettings::save($r,$data);return;}
         if($r->action==='enroll_sandbox'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Sandbox contract confirmation required.');}
             if(!is_string($data['label']??null)||array_diff(array_keys($data),['environment','label','api_key','confirmed','reason','review_key'])){throw new \DomainException('Invalid sandbox enrollment input.');}

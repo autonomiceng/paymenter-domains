@@ -6,7 +6,11 @@ require __DIR__.'/Support/storefront.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext;
 use Paymenter\Extensions\Servers\Domains\Models\Adoption;
-use Paymenter\Extensions\Servers\Domains\Services\{OwnedDomains, OwnerPorts};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, OwnedDomains, OwnerPorts, RenewalCycles, Refunds, StaffOperationReview, StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
+use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController, OwnerRenewalController};
+use Illuminate\Http\Request;
 extract(adoptionCommitFixture()); require dirname(__DIR__).'/Domains/routes/owned.php'; storefrontViews();
 $old=App\Models\Invoice::create(['user_id'=>$owner->id,'currency_code'=>'USD','status'=>'paid','number'=>'H-100']);
 $old->items()->create(['reference_type'=>$service->getMorphClass(),'reference_id'=>$service->id,'description'=>'Historical registration','quantity'=>1,'price'=>'13.00']);
@@ -14,7 +18,7 @@ DB::table('invoices')->where('id',$old->id)->update(['number'=>'H-100']);
 $collision=App\Models\Invoice::create(['user_id'=>$owner->id,'currency_code'=>'USD','status'=>'paid']);DB::table('invoices')->where('id',$collision->id)->update(['number'=>(string)$old->id]);
 $r=$reader->preview($target,new StaffContext($staff->id,'Verified original customer',true));$a=Adoption::findOrFail($r->previewId);$d=$commit->confirm($a->request_key,$a->request_digest,$staff);
 config(['settings.company_name'=>' <Synthetic & Company> ']);
-$owners=new OwnedDomains($clock,new OwnerPorts());$dto=$owners->present($d,false);
+$billing=new DomainBilling($bindings,$guard,$clock);$owners=new OwnedDomains($clock,new OwnerPorts(),billing:$billing);$dto=$owners->present($d,false);
 same('<Synthetic & Company> Registration',$dto->registrationBadge,'Trimmed configured company badge');same('Off',$dto->renewal,'DNR badge');same('Registration adopted',$dto->progress[0]['label'],'Adoption activity');same($old->fresh()->number,$dto->history[0]['number'],'Batch native invoice number');same('Paid',$dto->history[0]['status'],'Historical invoice label');same(null,$dto->plannedRenewalDue,'No future due CTA for DNR');
 same(route('invoices.show',$old->fresh()),$dto->history[0]['url'],'Historical URL uses native number route key despite numeric ID collision');
 $html=view('domains::show',['domain'=>$dto])->render();
@@ -37,10 +41,9 @@ foreach (['2027-10-13T00:30:00+05:30'=>null,'2027-10-12T23:30:00-07:00'=>'2027-1
  $clock->time=new DateTimeImmutable($local);$projected=$owners->present($d->fresh(),false);
  same($due,$projected->plannedRenewalDue,'Presentation uses actual billing clock date '.$local);
 }
-$clock->time=new DateTimeImmutable('2027-09-25T00:00:00Z');$invoice=App\Models\Invoice::create(['user_id'=>$owner->id,'currency_code'=>'USD','status'=>'pending','due_at'=>'2027-10-13']);
-$item=$invoice->items()->create(['reference_type'=>null,'reference_id'=>null,'description'=>'Issued renewal','quantity'=>1,'price'=>'10.00']);
-\Paymenter\Extensions\Servers\Domains\Models\Operation::create(['domain_id'=>$d->id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,'account_fingerprint'=>$d->account_fingerprint,
- 'authority_generation'=>$d->authority_generation,'base_expires_at'=>$d->provider_expires_at,'operation_key'=>'presentation-issued','invoice_id'=>$invoice->id,'invoice_item_id'=>$item->id,'action'=>'renew','term'=>1,'state'=>'awaiting_payment','currency'=>'USD','amount'=>'10.00','policy'=>['calendar'=>['due'=>'2027-10-13']]]);
+$clock->time=new DateTimeImmutable('2027-09-25T00:00:00Z');
+$product->server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
+$invoice=$billing->invoice($d->id,$owner);$op=Operation::where('invoice_id',$invoice->id)->sole();
 $product->server->settings()->updateOrCreate(['key'=>'domains_due_days'],['value'=>10,'type'=>'string']);
 $issued=$owners->present($d->fresh(),false);same('2027-10-13',$issued->renewalDue,'Issued due remains frozen after setting edit');same(null,$issued->plannedRenewalDue,'Issued debt hides projected replacement date');
 $issuedHtml=view('domains::show',['domain'=>$issued])->render();expect(str_contains($issuedHtml,'Renewal invoice issued'),'Actual issued-debt label');expect(!str_contains($issuedHtml,'An invoice will be issued'),'Issued debt never promises a second invoice');
@@ -50,4 +53,46 @@ $stoppedHtml=view('domains::show',['domain'=>$stopped])->render();expect(str_con
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
 $paid=$owners->present($d->fresh(),false);same(null,$paid->plannedRenewalDue,'Paid issued cycle never projects a new invoice');same('paid',$paid->renewalInvoice['state'],'Paid debt presented distinctly');
 $paidHtml=view('domains::show',['domain'=>$paid])->render();expect(str_contains($paidHtml,'Renewal payment received'),'Actual paid renewal label');expect(!str_contains($paidHtml,'An invoice will be issued'),'Paid cycle never promises another invoice');
+// The adopted page uses the current cycle for both retained debt and replacement requests.
+foreach(['WatchDnsSchema','ManagedPublicWorkSchema','ManagedPublicSchema','WatchScheduleSchema','WatchNoticeSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
+$c->delete();$session=app('request')->session();$controller=new OwnerRenewalController($owners,$billing);
+$request=static function(string $method,string $path,array $data=[])use($owner,$session):Request {
+    $r=Request::create($path,$method,$data);$r->setUserResolver(fn()=>$owner);$r->setLaravelSession($session);return $r;
+};
+$page=static fn()=>(new OwnedDomainController($owners))->show($request('GET','/domains/'.$d->id),$d->id)->render();
+$post=static function()use($controller,$request,$d){$r=$request('POST','/domains/'.$d->id.'/renew',['years'=>'1']);
+    $r->request->set('_request_key',FormKeys::issue($r,'owner:'.$d->id.':renew'));return $controller->renew($r,$d->id);};
+$debt=static fn()=>serialize([scenarioMoney(),Operation::where('domain_id',$d->id)->get()->map->getRawOriginal()->all()]);
+DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);
+$cycles=new RenewalCycles($bindings,$clock);$cycles->retireUnpaid($op->id);
+same(['state'=>'cancelled'],$owners->present($d->fresh(),false)->renewalInvoice,'Adopted retired cycle remains visible without forms');
+config(['settings.credits_auto_use'=>false]);
+foreach(['unpaid','refund'] as $replacementCase){
+    $before=$debt();$dto=$owners->present($d->fresh());$html=$page();
+    same([],$dto->renewalInvoice,'Adopted replaceable cycle does not suppress form: '.$replacementCase);
+    expect(isset($dto->renewNow['url'])&&str_contains($html,'Create renewal invoice'),'Adopted replacement request visible: '.$replacementCase);
+    expect(!str_contains($html,'Renewal under review')&&!str_contains($html,'Renewal invoice cancelled'),'Adopted replacement page has no stale cycle status: '.$replacementCase);
+    same($before,$debt(),'Adopted replacement page is read-only: '.$replacementCase);
+    $response=$post();$replacement=Operation::where('domain_id',$d->id)->where('action','renew')->orderByDesc('id')->firstOrFail();
+    same($op->operation_key.':replacement:'.($replacementCase==='unpaid'?1:2),$replacement->operation_key,'Adopted replacement has its own cycle key: '.$replacementCase);
+    same(route('invoices.show',$replacement->invoice_id),$response->getTargetUrl(),'Adopted POST returns replacement invoice: '.$replacementCase);
+    $after=$debt();same($response->getTargetUrl(),$post()->getTargetUrl(),'Adopted replacement POST retry returns same invoice: '.$replacementCase);same($after,$debt(),'Adopted retry creates no duplicate debt: '.$replacementCase);
+    $html=$page();same(1,substr_count($html,'>Renewal invoice issued<'),'One adopted pending cycle panel: '.$replacementCase);
+    expect(str_contains($html,'View renewal invoice')&&!str_contains($html,'Create renewal invoice'),'Adopted current debt replaces request form: '.$replacementCase);
+    $item=App\Models\InvoiceItem::findOrFail($replacement->invoice_item_id);$rawItem=$item->getRawOriginal();
+    DB::table('invoice_items')->where('id',$item->id)->update(['price'=>'0.01']);$html=$page();
+    expect(str_contains($html,'Renewal under review')&&!str_contains($html,'View renewal invoice')&&!str_contains($html,'Create renewal invoice'),'Adopted invalid retained item shows review: '.$replacementCase);
+    DB::table('invoice_items')->where('id',$item->id)->update($rawItem);
+
+    if($replacementCase==='refund'){break;}
+    // A real native payment and staff refund preserve the old debt before replacement review.
+    App\Helpers\ExtensionHelper::addPayment($replacement->invoice_id,null,$replacement->amount);
+    $replacement->fresh()->update(['state'=>'held']);
+    DB::table('roles')->where('id',$staff->role_id)->update(['permissions'=>json_encode([...$permissions,'admin.invoices.update','admin.invoice_transactions.create','admin.domains.operations.replacement'])]);
+    (new Refunds($clock))->refundHeld($staff->fresh(),$replacement->id,'staff_review');
+    $ticket=StaffOperationReview::ticket($staff->id,$d->id,$replacement->id,'replacement',StaffOperationReview::stamp($replacement->fresh(),$d->fresh()),$clock);
+    (new StaffOperations($clock))->run($staff->fresh(),$d->id,$replacement->id,'replacement',$ticket,'Allow replacement after unsent renewal refund');
+    $reviewedId=$replacement->id;$reviewed=$replacement->fresh()->getRawOriginal();
+}
+same($reviewed,Operation::findOrFail($reviewedId)->getRawOriginal(),'Adopted replacement retains reviewed refund evidence');
 $nativeSuccessful=true;echo "Adopted customer badge, original invoices, renewal-off, expiry and safe escaped Blade passed\n";

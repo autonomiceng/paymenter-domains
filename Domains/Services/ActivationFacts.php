@@ -40,7 +40,7 @@ final class ActivationFacts
         if(!$a->processing_enabled){$facts['Processing off']='Registrar setup → Processing: requires current staff review, complete account-bound runtime ports and shared workers. Enabling a native server alone does not enable processing.';}
         $s=Server::find($a->server_id);$settings=$s?->settings()->whereIn('key',['domains_billing_enabled','domains_manual_renewals_enabled'])->pluck('value','key');
         foreach(['domains_billing_enabled'=>'Billing off','domains_manual_renewals_enabled'=>'Manual renewal billing off'] as $setting=>$label){
-            if(!filter_var($settings?->get($setting,false),FILTER_VALIDATE_BOOLEAN)){$facts[$label]='Deployment: independently approve issuance and set native server setting '.$setting.' to true (no staff form; default off). Display fixtures cannot authorize billing. A completed acquisition or adoption anchor, active native authority and the invoice calendar are still required.';}
+            if(!filter_var($settings?->get($setting,false),FILTER_VALIDATE_BOOLEAN)){$facts[$label]='Registrar setup → Review renewal billing: independently approve issuance before turning on native server setting '.$setting.' (default off). Display fixtures cannot authorize billing. A completed acquisition or adoption anchor, active native authority and the invoice calendar are still required.';}
         }
         try{CatalogueAcceptances::load(CatalogueAcceptances::binding($a));}
         catch(\Throwable){$facts['No accepted catalogue']='Registrar setup → Catalogue acceptance: independently verify exact USD terms, registry fields and safe annual renewal, then import prices. In TLDs, review action flags, pricing, selected seller and publication.';}

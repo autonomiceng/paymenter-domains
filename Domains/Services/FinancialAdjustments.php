@@ -54,9 +54,17 @@ final readonly class FinancialAdjustments
     /** An audit is retained history, never an attempt or funding grant. Unknown facts still refuse admission. */
     public static function unattemptedFunding(Operation $op): bool
     {
+        return RenewalAutoPay::unattempted($op) && self::registrarUnattemptedFunding($op);
+    }
+    /** Collection is separate from registrar dispatch; callers must verify current native funding. */
+    public static function registrarUnattemptedFunding(Operation $op): bool
+    {
         if (($op->funding ?? []) === []) { return true; }
         try {
-            if ($op->funding_basis !== 'paid_invoice' || array_keys($op->funding) !== ['financial_adjustments']) { return false; }
+            // Saved-method collection evidence grants no registrar attempt or funding authority.
+            $funding = $op->funding;
+            if ($op->action === 'renew') { unset($funding['auto_pay'], $funding['auto_pay_result']); }
+            if ($op->funding_basis !== 'paid_invoice' || ($funding !== [] && array_keys($funding) !== ['financial_adjustments'])) { return false; }
             self::history($op); return true;
         } catch (\Throwable) { return false; }
     }

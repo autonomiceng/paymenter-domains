@@ -12,7 +12,7 @@ final readonly class RuntimeDispatch
     public function current(Operation $op): bool
     {
         ConversionGate::requireComplete();$d=Domain::find($op->domain_id);$a=Account::where('server_id',$op->server_id)->first();
-        if ($d && $op->action === 'renew' && in_array($op->state, ['awaiting_payment', 'queued'], true) && RenewalCycles::virgin($op) && RenewalStop::adopted(RenewalStop::read($d))) { ObligationAlerts::record($d, 'operation_review', $this->clock->now()->getTimestamp(), (int) $op->id); return false; }
+        if ($d && $op->action === 'renew' && in_array($op->state, ['awaiting_payment', 'queued'], true) && RenewalCycles::registrarVirgin($op) && RenewalStop::adopted(RenewalStop::read($d))) { ObligationAlerts::record($d, 'operation_review', $this->clock->now()->getTimestamp(), (int) $op->id); return false; }
         if($d&&!$d->adoptionPending()&&!($op->attempt['legacy_retained']??false)&&$a&&$a->account_fingerprint===$op->account_fingerprint&&$d->account_fingerprint===$op->account_fingerprint&&$d->authority_generation===$op->authority_generation){return true;}
         if($d){ObligationAlerts::record($d,'operation_review',$this->clock->now()->getTimestamp(),(int)$op->id);}return false;
     }

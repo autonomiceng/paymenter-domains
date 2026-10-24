@@ -23,6 +23,7 @@ final class SettingsActions
             'alert_review'=>'Record an independent check of a notification failure. A continuing failure reopens the alert; this action sends no message.',
             'delivery_review'=>'Record an independently checked notification outcome. This retains the original handoff claim and never sends the notification again.',
             'processing'=>'Registrar purchases and renewals can start for this account. Enable only after reviewing its accepted provider features and worker configuration.',
+            'renewal_billing'=>'Scheduled renewal invoices are issued from the issue day until the due day for domains with renewal on. Owner requests let a customer ask for a renewal invoice for an active domain at any time before the due day. Both still need processing on and a confirmed registration expiry. Turning either off stops new invoices only; issued invoices stay payable. Calendar changes apply to invoices issued later; issued invoices keep their dates, term and amount.',
             'default_rule'=>'Changes the default for this account. Publish each affected TLD next. Existing invoices keep their prices.',
             'override'=>'Changes this TLD only. Publish prices next. Registration and transfer below cost are held; renewals below cost are billed. Both alert staff.',
             'remove_override'=>'Uses this account’s default rule. Publish prices next. Existing invoices keep their prices.',
@@ -39,7 +40,7 @@ final class SettingsActions
     }
     public static function make(int $server,?int $tld,string $stamp,bool $setup=false): array
     {
-        $out=[];$names=$setup?['enroll_sandbox','configure','probe','acceptance','import','history','test_renewal','test_management','processing','delivery_review','alert_review']:['default_rule','override','remove_override','tld_settings','seller','publish'];
+        $out=[];$names=$setup?['enroll_sandbox','configure','probe','acceptance','import','history','test_renewal','test_management','processing','renewal_billing','delivery_review','alert_review']:['default_rule','override','remove_override','tld_settings','seller','publish'];
         $target=fn()=>\App\Models\Server::find($server)?->name ?? 'Server #'.$server;
         foreach($names as $name){
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp))];
@@ -95,6 +96,14 @@ final class SettingsActions
             if($name==='processing'){
                 $fields[]=Hidden::make('enabled')->default(fn()=>!Account::where('server_id',$server)->value('processing_enabled'));
                 $fields[]=Checkbox::make('confirmed')->label(fn()=>'I reviewed '.$target().' and confirm this change')->accepted()->required();
+            }
+            if($name==='renewal_billing'){
+                $billing=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::read($server);
+                $fields[]=Checkbox::make('scheduled')->label('Issue scheduled renewal invoices')->default(fn()=>$billing()['scheduled']);
+                $fields[]=Checkbox::make('manual')->label('Let owners request renewal invoices')->default(fn()=>$billing()['manual']);
+                $fields[]=TextInput::make('issue_days')->label('Issue invoices this many days before expiry')->integer()->minValue(2)->maxValue(365)->required()->default(fn()=>$billing()['issue_days']??21)->helperText('Default 21. Must be more than the due days; at most 365.');
+                $fields[]=TextInput::make('due_days')->label('Invoices fall due this many days before expiry')->integer()->minValue(1)->maxValue(364)->required()->default(fn()=>$billing()['due_days']??7)->helperText('Default 7. At least 1.');
+                $fields[]=Checkbox::make('confirmed')->label(fn()=>'I reviewed renewal billing for '.$target())->accepted()->required();
             }
             if($name==='enroll_sandbox'){
                 $fields[]=Hidden::make('environment')->default('test');
@@ -181,6 +190,11 @@ final class SettingsActions
                 'Sandbox enrollment could not be saved.'=>self::SAVED_OUTCOME_UNKNOWN,
                 'namesilo_identity_unavailable'=>'NameSilo identity verification is unavailable. This account cannot be connected.',
                 'Review key used.'=>$name==='enroll_sandbox'?'This enrollment confirmation was already used, so this submission sent no new OTE key check. An earlier submission may still be finishing. Wait for it to finish, then reload Registrar setup. This page cannot show whether that submission is still running. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. If no Enrollment row appears and Account binding reads “Not configured” after the earlier submission finishes, nothing was enrolled. '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE:'This confirmation was already used. Reload this page.',
+                'Explicit renewal billing confirmation required.'=>'Check the review box to continue. Nothing was saved.',
+                'Invalid renewal billing input.'=>'Reload this page and try again. Nothing was saved.',
+                'Invalid renewal timing.'=>'Enter whole numbers of days. Nothing was saved.',
+                'Valid billing calendar required.'=>'Issue days must be more than due days. Issue days can be at most 365 and due days at least 1. Nothing was saved.',
+                'Renewal billing unchanged.'=>'Renewal billing is unchanged. Nothing was saved.',
                 'Independent TEST management review required.'=>'Check the box confirming the supported TEST management actions, endpoint and request interval. Nothing was saved.',
                 'TEST management deployment is unavailable.'=>'TEST management is unavailable for this account or deployment. Reload Registrar setup and check the Enom TEST management row. Nothing was saved.',
                 'Independent TEST renewal review required.'=>'Check the box confirming the TEST Extend route, request interval and USD balance. Nothing was saved.',

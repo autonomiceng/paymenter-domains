@@ -51,7 +51,7 @@ final readonly class OwnedDomainController
         abort_if($page==='code'&&!isset($domain->actions['code']),404);
         abort_if($page==='setup'&&!isset($domain->actions['setup']),404);
         $keys=[];
-        foreach (['setup','recovery','code',...OwnerActionController::ACTIONS] as $action) {
+        foreach (['setup','recovery','code','renew',...OwnerActionController::ACTIONS] as $action) {
             $keys[$action]=\Paymenter\Extensions\Servers\Domains\Http\FormKeys::issue($request,'owner:'.$id.':'.$action);
         }
         return view('domains::'.$page,compact('domain','summary','keys'));

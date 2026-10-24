@@ -11,11 +11,14 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
  * renewal: On or Off for an active domain's local renewal preference; otherwise —,
  * or Paused during setup. This does not describe the registrar's auto-renew setting.
  * plannedRenewalDue: projected future due date for an adopted domain, separate from renewalDue.
+ * renewNow: eligible owner renewal request: url, terms and last request date
+ * (order_by, Y-m-d), or only invoice for this cycle's issued pending invoice, or only status
+ * (cancelled, paid or review) when this cycle can be neither requested nor paid, independent of new-request switches; otherwise empty.
  */
 final readonly class OwnedDomain
 {
     public function __construct(public string $name, public string $status, public string $tone,
         public ?string $expiry, public string $renewal, public ?string $renewalPrice,
         public array $actions, public array $progress, public array $setup, public array $transfer,
-        public array $management, public bool $testEnvironment, public bool $changesUnavailable = false, public ?string $renewalDue = null, public bool $setupPending = false, public ?string $registrationBadge = null, public bool $adopted = false, public ?string $plannedRenewalDue = null, public array $history = [], public array $renewalInvoice = [], public bool $originalDoNotRenew = false) {}
+        public array $management, public bool $testEnvironment, public bool $changesUnavailable = false, public ?string $renewalDue = null, public bool $setupPending = false, public ?string $registrationBadge = null, public bool $adopted = false, public ?string $plannedRenewalDue = null, public array $history = [], public array $renewalInvoice = [], public bool $originalDoNotRenew = false, public array $renewNow = []) {}
 }

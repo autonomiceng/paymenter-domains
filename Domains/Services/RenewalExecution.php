@@ -30,7 +30,7 @@ final class RenewalExecution
                 $op->update(['state' => 'uncertain', 'lease_expires_at' => null, 'safe_code' => 'stale_claim',
                     'policy' => [...$op->policy, 'renewal_execution' => ['staff_alert' => true, 'reason' => 'stale_claim', 'refundable_later' => false]]]); return null;
             }
-            if (!$op || $op->action !== 'renew' || !in_array($op->state, ['awaiting_payment', 'queued'], true) || !RenewalCycles::virgin($op)) { return null; }
+            if (!$op || $op->action !== 'renew' || !in_array($op->state, ['awaiting_payment', 'queued'], true) || !RenewalCycles::registrarVirgin($op)) { return null; }
             if (isset($op->policy['renewal_admission']['until']) && new \DateTimeImmutable($op->policy['renewal_admission']['until']) > $this->clock->now()) { return null; }
             if ($op->funding_basis === 'paid_invoice' && $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'pending') { return null; }
             try { $this->configured($l); } catch (\Throwable) { $this->hold($op, RenewalCode::Acceptance->value, true); return null; }
@@ -58,7 +58,7 @@ final class RenewalExecution
             [$descriptor, $context] = DB::transaction(function () use ($seed, $id, $binding, $name, $stamp, $ready, $until, $writer, $admissionClaim,$reservedContext) {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
                 if ($l['stamp'] !== $stamp || !$op || ($op->policy['renewal_admission']['key'] ?? null) !== $admissionClaim
-                    || new \DateTimeImmutable($op->policy['renewal_admission']['until']) <= $this->clock->now() || !RenewalCycles::virgin($op) || !in_array($op->state, ['awaiting_payment', 'queued'], true)) { throw new \DomainException('Renewal changed.'); }
+                    || new \DateTimeImmutable($op->policy['renewal_admission']['until']) <= $this->clock->now() || !RenewalCycles::registrarVirgin($op) || !in_array($op->state, ['awaiting_payment', 'queued'], true)) { throw new \DomainException('Renewal changed.'); }
                 $funding = $this->current($op, $l); $writer->requirePolicy($binding, $this->features, $this->accepted);
                 $cap = $op->policy['renewal']['cost_cap'] ?? null;
                 if (!$cap || $cap['currency'] !== 'USD' || WriteMoney::compare($ready->cost->amount, (new Money($cap['amount'], 'USD'))->amount) > 0) {
@@ -81,7 +81,7 @@ final class RenewalExecution
             });
         } catch (\Throwable $error) {
             DB::transaction(function () use ($seed, $id, $admissionClaim, $error, $refusals) { $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
-                if ($op && RenewalCycles::virgin($op) && ($op->policy['renewal_admission']['key'] ?? null) === $admissionClaim) {
+                if ($op && RenewalCycles::registrarVirgin($op) && ($op->policy['renewal_admission']['key'] ?? null) === $admissionClaim) {
                     $reason = $error instanceof RenewalRefused ? $error->reason : ($error instanceof ReadDeferred?RenewalCode::Rate:RenewalCode::Changed);
                     $retry = in_array($reason, [RenewalCode::Rate, RenewalCode::Reads, RenewalCode::Balance, RenewalCode::Changed, RenewalCode::Acceptance], true);
                     $policy = $op->policy; unset($policy['renewal_admission']); $op->update(['policy' => $policy]);
