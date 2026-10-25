@@ -56,6 +56,7 @@ final readonly class RuntimeWork
                 DB::table('domains_runtime_turns')->insertOrIgnore(['server_id'=>$a->server_id,'account_fingerprint'=>$a->account_fingerprint]);
             },(int)$a->server_id);
         }
+        $balanceAccounts=[];
         // Advance only the selected turn, before work: one failed account cannot pin all other accounts.
         for($turn=0;$turn<8;$turn++){
             $row=DB::transaction(function(){
@@ -64,11 +65,7 @@ final readonly class RuntimeWork
             });if(!$row){break;}
             $a=Account::where('server_id',$row->server_id)->first();
             if(!$a||$a->account_fingerprint!==$row->account_fingerprint){continue;}
-            $this->attempt('registrar_balance',function()use($a):void {
-                $binding=CatalogueAcceptances::binding($a);
-                $test=EnomTestRegistration::enabled($binding)||EnomTestManagement::enabled($binding)||EnomTestTransfer::enabled($binding)||EnomTestRenewal::enabled($binding);
-                if(!$test){app(RegistrarBalances::class)->daily($a);}
-            },(int)$a->server_id);
+            $balanceAccounts[]=$a;
             $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->where('id','>',$row->operation_cursor)
                 ->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])->orderBy('id')->limit(25)->get();
             foreach($ops as $op){if($op->action==='transfer'){$this->transferPayment($op);}$this->attempt('operation',fn()=>$this->enqueue((int)$op->id),(int)$op->id);}
@@ -85,5 +82,13 @@ final readonly class RuntimeWork
         foreach(ObservationCandidates::next('timeout') as $ids){foreach($ids as $id){$this->attempt('timeout',fn()=>app(TransferInputs::class)->expireMissingCode((int)$id),(int)$id);}}
         $this->attempt('reminders',fn()=>app(Reminders::class)->sweep());
         $this->attempt('watch_public_checks',fn()=>app(WatchWork::class)->tick());
+        // Dispatch every selected account and independent producer before optional registrar I/O.
+        foreach($balanceAccounts as $a){
+            $this->attempt('registrar_balance',function()use($a):void {
+                $binding=CatalogueAcceptances::binding($a);
+                $test=EnomTestRegistration::enabled($binding)||EnomTestManagement::enabled($binding)||EnomTestTransfer::enabled($binding)||EnomTestRenewal::enabled($binding);
+                if(!$test){app(RegistrarBalances::class)->daily($a);}
+            },(int)$a->server_id);
+        }
     }
 }

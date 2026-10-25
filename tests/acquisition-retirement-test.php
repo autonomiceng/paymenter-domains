@@ -14,6 +14,23 @@ same(null,$solo->domain->fresh()->reservation_name,'Unfunded retirement releases
 same('Order cancelled: not paid',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason($solo->fresh()->safe_code),'Retired request has a clear staff reason');same(null,$solo->fresh()->funding,'No account credit fabricated');$retirement->inspect($solo->domain_id);
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('unpaid-solo-placeholder.com'));commerceCheckout($user,$cart);
 $again=Domain::where('reservation_name','unpaid-solo-placeholder.com')->sole()->operations()->sole();expect($again->domain_id!==$solo->domain_id,'Fresh checkout can reserve retired name');
+// Late-money read faults cannot suppress either unpaid closure or the review fallback.
+$lateFault=false;$lateFaults=0;$lateLogs=[];
+DB::connection()->beforeExecuting(static function($sql)use(&$lateFault,&$lateFaults):void {
+    if($lateFault&&str_contains($sql,'from "service_cancellations"')){$lateFault=false;$lateFaults++;throw new RuntimeException('PRIVATE-late-money-detail');}
+});
+\Illuminate\Support\Facades\Log::listen(static function($event)use(&$lateLogs):void {
+    if($event->message==='Domains acquisition late-money inspection deferred.'){$lateLogs[]=$event->context;}
+});
+foreach([false,true] as $paidFixture){
+    $isolated=$new(placeholderComFixtureName('late-fault-'.($paidFixture?'paid':'unpaid').'-placeholder.com'),paid:$paidFixture);$cancel($isolated);
+    $lateFault=true;$retirement->inspect($isolated->domain_id);expect(!$lateFault,'Late-money fault reached');
+    if(!$paidFixture){same('rejected',$isolated->fresh()->state,'Late-money failure still retires unpaid acquisition');same(null,$isolated->domain->fresh()->reservation_name,'Late-money failure releases unfunded reservation');}
+    else{expect(DB::table('domains_obligation_alerts')->where('domain_id',$isolated->domain_id)->where('code','acquisition_retirement_review')->whereNull('resolved_at')->exists(),'Late-money failure still records retirement proof refusal');expect($isolated->domain->fresh()->reservation_name!==null,'Paid acquisition stays reserved');}
+    $retirement->inspect($isolated->domain_id);
+    same(['domain_id'=>(int)$isolated->domain_id,'exception_class'=>RuntimeException::class],$lateLogs[array_key_last($lateLogs)],'Late-money diagnostic exposes class and owned ID only');
+}
+same(2,$lateFaults,'Both late-money paths tested');same(2,count($lateLogs),'One diagnostic per failed inspection');
 // Native full cron, shared hosting invoice, no invoice model events and all-null stock.
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('unpaid-mixed-placeholder.com'));$hosting=commerceHosting();
 $cart->items()->create(['product_id'=>$hosting->id,'plan_id'=>$hosting->plans()->sole()->id,'quantity'=>1,'config_options'=>[],'checkout_config'=>[]]);commerceCheckout($user,$cart);

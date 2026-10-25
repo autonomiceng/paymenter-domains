@@ -74,7 +74,12 @@ final class TestCatalogue
                         app(SellerPolicies::class)->selection($mapping['tld']->tld, $mapping['action'], $mapping['term'], app(Clock::class)->now());
                         continue;
                     }
-                } catch (\DomainException|\Illuminate\Database\Eloquent\ModelNotFoundException) { /* Withdraw only ineligible lines. */ }
+                } catch (\Throwable $error) {
+                    if (!$error instanceof \DomainException && !$error instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
+                        try { \Illuminate\Support\Facades\Log::warning('Domains cart eligibility failed.', ['cart_item_id' => (int)$item->id, 'exception_class' => $error::class]); }
+                        catch (\Throwable) { /* Continue withdrawing unverified lines if diagnostics fail. */ }
+                    }
+                }
                 $item->delete();
             }
         });

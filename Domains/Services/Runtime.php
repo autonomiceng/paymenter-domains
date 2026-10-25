@@ -62,8 +62,8 @@ final class Runtime
         Event::listen('navigation.dashboard',fn()=>['name'=>'Domains','url'=>route('domains.domains.index'),'icon'=>'ri-global','priority'=>12,'spa'=>false]);
         foreach(['Domain','Operation'] as $model){Gate::policy('Paymenter\\Extensions\\Servers\\Domains\\Models\\'.$model,'Paymenter\\Extensions\\Servers\\Domains\\Policies\\'.$model.'Policy');}
         NativePaidHooks::boot();
-        app()->booted(static function():void {foreach(NativePaidHooks::notices()as$feature=>$notice){if($notice!=='Available'){logger()->warning('Domains hook unavailable.',[
-            'feature'=>$feature,'notice'=>$notice,...HookDiagnostics::context($feature==='Start after payment'?[\App\Events\Invoice\Paid::class]:NativePaidHooks::serviceMissing())]);}}});
+        app()->booted(static function():void {foreach(NativePaidHooks::notices()as$feature=>$notice){if($notice!=='Available'){
+            HookDiagnostics::unavailable($feature,$notice,$feature==='Start after payment'?[\App\Events\Invoice\Paid::class]:NativePaidHooks::serviceMissing());}}});
         foreach(['saved','deleted']as$event) {
             Event::listen('eloquent.'.$event.': '.\App\Models\Service::class,static function($service):void {
                 $product=(int)$service->product_id;

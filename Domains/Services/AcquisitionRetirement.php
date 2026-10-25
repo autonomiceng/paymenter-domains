@@ -55,7 +55,10 @@ final readonly class AcquisitionRetirement
     {
         try{
             $d=Domain::find($id);if(!$d){return;}
-            $this->lateMoney($d);
+            try{$this->lateMoney($d);}catch(\Throwable $e){
+                try{Log::warning('Domains acquisition late-money inspection deferred.',['domain_id'=>$id,'exception_class'=>$e::class]);}
+                catch(\Throwable){ /* Independent retirement still runs if diagnostics fail. */ }
+            }
             if($d->operations()->where('safe_code',UnpaidAcquisitionProof::CODE)->exists()){return;}
             $service=Service::find($d->service_id);
             if($d->reservation_name===null||!in_array($d->status,['registration_pending','transfer_pending'],true)||!$service

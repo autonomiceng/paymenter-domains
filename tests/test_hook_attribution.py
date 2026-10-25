@@ -40,6 +40,10 @@ def main():
         phase('duplicate')
         for mode in ('console', 'http'):
             phase('healthy', mode)
+            dedup = mode+'-dedup.sqlite'
+            shutil.copyfile(root/'seed.sqlite', root/dedup)
+            phase('dedup-first', mode, dedup)
+            phase('dedup-second', mode, dedup)
             database = mode+'.sqlite'
             shutil.copyfile(root/'seed.sqlite', root/database)
             phase('missing', mode, database)

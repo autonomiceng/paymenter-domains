@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-/** Process-local diagnostics. No operation or financial state is written. */
+/** Hook diagnostics. No operation or financial state is written. */
 final class HookDiagnostics
 {
     private static array $deferred=[];
@@ -25,6 +25,15 @@ final class HookDiagnostics
         $release=config('app.release')??env('RELEASE_ID');
         if(is_string($release)&&preg_match('/^[a-z0-9._:+-]{1,128}$/iD',$release)){$context['release']=$release;}
         return $context;
+    }
+    /** Shared five-minute window: new HTTP and console processes cannot flood the log. */
+    public static function unavailable(string $feature,string $notice,array $missing): void
+    {
+        $context=self::context($missing);$scope=$context;unset($scope['pid']);
+        $key='domains:hook-warning:'.hash('sha256',json_encode([$feature,$notice,$scope],JSON_THROW_ON_ERROR));
+        try{if(!\Illuminate\Support\Facades\Cache::add($key,true,300)){return;}}
+        catch(\Throwable){ /* A broken cache must not suppress the hook diagnostic. */ }
+        logger()->warning('Domains hook unavailable.',['feature'=>$feature,'notice'=>$notice,...$context]);
     }
     private static function command(): ?string
     {

@@ -90,7 +90,20 @@ foreach(Domain::orderBy('id')->get() as $i=>$d){
     $clock->instant=new DateTimeImmutable('2027-10-21T12:00:00Z');expect(app(Reminders::class)->remind($d->id),'Installed expired notice sends');$mail=Mail::queued(\Paymenter\Extensions\Servers\Domains\Mail\DomainNotice::class)->last();$mailPairs[$i][]=str_replace([$d->domain,url('/domains/'.$d->id)],['example.com','DOMAIN_URL'],$mail->render());
 }
 same($mailPairs[0],$mailPairs[1],'Actual installed holder planners produce identical normalized renewal/expired emails');
-Queue::fake();$clock->instant=$now;app(RuntimeWork::class)->tick();$turns=DB::table('domains_runtime_turns')->orderBy('turn')->get();same(2,$turns->count(),'Every account enrolled');Queue::assertPushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class);expect($turns[0]->turn>0&&$turns[1]->turn>0,'Independent durable turns');
+Queue::fake();$clock->instant=$now;
+$balances=app(\Paymenter\Extensions\Servers\Domains\Services\RegistrarBalances::class);$balanceOrder=[];
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RegistrarBalances::class,new class($balanceOrder) {
+    public function __construct(private array &$seen){}
+    public function daily($account): void {
+        Queue::assertPushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class);
+        same(2,DB::table('domains_runtime_turns')->whereNotNull('finished_at')->count(),'Every account dispatch finishes before a balance read');
+        $this->seen[]=(int)$account->server_id;
+        if(count($this->seen)===1){throw new RuntimeException('PRIVATE-balance-detail');}
+    }
+});
+try{app(RuntimeWork::class)->tick();same(2,count(array_unique($balanceOrder)),'A failed first balance does not block the next account');}
+finally{app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RegistrarBalances::class,$balances);}
+$turns=DB::table('domains_runtime_turns')->orderBy('turn')->get();same(2,$turns->count(),'Every account enrolled');Queue::assertPushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class);expect($turns[0]->turn>0&&$turns[1]->turn>0,'Independent durable turns');
 $queued=Queue::pushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class)->count();foreach(Queue::pushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class) as $job){app(\Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class)->enqueue($job->operationId);}same($queued,Queue::pushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class)->count(),'Durable operation backoff suppresses repeated dispatch');
 $before=$turns->pluck('turn')->all();app(RuntimeWork::class)->tick();same($before,DB::table('domains_runtime_turns')->orderBy('turn')->pluck('turn')->all(),'No early repeated account turn');
 $clock->instant=$now->modify('+61 seconds');app(RuntimeWork::class)->tick();expect(DB::table('domains_runtime_turns')->min('turn')>max($before),'Interrupted/due turns continue rotation');

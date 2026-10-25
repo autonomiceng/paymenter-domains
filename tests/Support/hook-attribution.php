@@ -15,6 +15,7 @@ if($phase==='seed'){
     }
     Illuminate\Support\Facades\Queue::swap($queue);
     same(0,$writer->calls,'Seed sends nothing');
+    \Illuminate\Support\Facades\Schema::create('cache',static function($t):void{$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration');});
     file_put_contents($root.'/operations.json',json_encode($ops,JSON_THROW_ON_ERROR));
     DB::statement("VACUUM INTO '".str_replace("'","''",$database)."'");
     echo "Seed: retained paid registration and transfer, zero sends.\n";$nativeSuccessful=true;return;
@@ -39,6 +40,7 @@ $request=Illuminate\Http\Request::create('/domains/pricing?token=PRIVATE-QUERY')
 if($mode==='http'){$app->instance('request',$request);}
 $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,static function():void{
     config(['app.release'=>'hook-test-f1e670c','hashing.bcrypt.rounds'=>4,'audit.enabled'=>false]);
+    if(str_starts_with((string)getenv('HOOK_PHASE'),'dedup-')){config(['cache.default'=>'database']);}
 });
 $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\RegisterFacades::class,static function()use(&$logs,&$artisanStarts):void{
     set_exception_handler(static function(Throwable $error):never{fwrite(STDERR,$error::class.': '.$error->getMessage()."\n".$error->getTraceAsString()."\n");exit(1);});
@@ -53,7 +55,7 @@ $app->booted(static function():void{
     $hot=storage_path('framework/domains-hook-assets');file_put_contents($hot,'http://assets.example.test');
     app(Illuminate\Foundation\Vite::class)->useHotFile($hot);
 });
-if($phase==='missing'){
+if(in_array($phase,['missing','dedup-first','dedup-second'],true)){
     $app->booted(static function():void{
         same([],NativePaidHooks::serviceMissing(),'Full provider boot is healthy before deliberate removal');
         Event::forget('eloquent.saving: '.Service::class);
@@ -73,9 +75,25 @@ $warnings=array_values(array_filter($logs,static fn($log)=>$log['message']==='Do
 $expectedContext=['missing_events'=>['eloquent.saving: '.Service::class],'mode'=>$mode,'pid'=>getmypid(),
     ...($mode==='console'?['command'=>'schedule:work']:['request_path'=>'/domains/pricing']),'release'=>'hook-test-f1e670c'];
 $notice='Required Service listeners are missing in this process: Service saving model event. New registrations and transfers run here wait until a healthy process picks them up.';
+if(str_starts_with($phase,'dedup-')){
+    same(['Service saving model event'],NativePaidHooks::serviceMissing(),'Fresh dedup process has the same missing hook');
+    same($phase==='dedup-first'?1:0,count($warnings),'Shared cache bounds warnings across fresh processes');
+    echo "Shared hook warning window: $phase/$mode.\n";$nativeSuccessful=true;return;
+}
 if($phase==='missing'){
     same(['Service saving model event'],NativePaidHooks::serviceMissing(),'Only saving removed after provider boot');
     same([['message'=>'Domains hook unavailable.','context'=>['feature'=>'Paymenter payment events','notice'=>$notice,...$expectedContext]]],$warnings,'Exact attributed boot warning');
+    $bootWarnings=static function()use(&$logs):array{return array_values(array_filter($logs,static fn($log)=>$log['message']==='Domains hook unavailable.'));};
+    // Each new Runtime represents another application boot sharing the same cache.
+    (new Runtime)->boot();(new Runtime)->boot();same(1,count($bootWarnings()),'Repeated boots deduplicate the same hook warning');
+    Event::forget(App\Events\Invoice\Paid::class);
+    (new Runtime)->boot();(new Runtime)->boot();same(2,count($bootWarnings()),'Payment hook warning is deduplicated independently');
+    same(['Paymenter payment events','Start after payment'],array_column(array_column($bootWarnings(),'context'),'feature'),'Both unavailable features retain diagnostics');
+    try{
+        Carbon\Carbon::setTestNow(now()->addSeconds(301));
+        (new Runtime)->boot();same(4,count($bootWarnings()),'Hook warnings reappear after the bounded diagnostic window');
+    }finally{Carbon\Carbon::setTestNow();}
+    Event::listen(App\Events\Invoice\Paid::class,[NativePaidHooks::class,'paid']);
     echo 'Candidate warning: '.json_encode($warnings[0],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n";
 }else{
     same([],NativePaidHooks::serviceMissing(),'Healthy full boot has required Service hooks');
