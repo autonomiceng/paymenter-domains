@@ -108,6 +108,21 @@ foreach($changes as $change){
 $incomplete=$valid;unset($incomplete['grace_days']);$assertRefusal(fn()=>$writer->run($review(),[...$incomplete,'verified'=>true],$now),'Complete lifecycle facts required.');
 same($unchanged,serialize(DB::table('settings')->get()),'Every refused field leaves facts and audit unchanged');
 same('Reload and check current permissions, saved facts and acceptance.',SettingsActions::refusal(new RuntimeException('Unexpected synthetic detail'),'lifecycle'),'Unknown failure keeps the generic fallback');
+// Binding drift must not break the modal or permit unseen policy defaults to be saved.
+$account=Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole();
+DB::table('domains_accounts')->where('server_id',$t->server_id)->update(['stable_identity'=>encrypt('changed-placeholder-account',false)]);
+$beforeDrift=serialize(DB::table('settings')->orderBy('id')->get());
+$page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction($action)->assertActionMounted($action);
+same(null,$page->get('mountedActions.0.data.grace_days'),'Unreadable lifecycle has no invented default');
+$page->setActionData([...$valid,'verified'=>true,'reason'=>'Review changed account binding'])->callMountedAction()->assertNotified('Change refused');
+same($beforeDrift,serialize(DB::table('settings')->orderBy('id')->get()),'Refused drifted form preserves lifecycle settings and audit');
+// Even if the binding is repaired after opening, a fresh review of the saved facts is required.
+$page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction($action)->assertActionMounted($action);
+DB::table('domains_accounts')->where('server_id',$t->server_id)->update(['stable_identity'=>$account->getRawOriginal('stable_identity')]);
+$page->setActionData([...$valid,'verified'=>true,'reason'=>'Refuse unseen restored policy'])->callMountedAction()->assertNotified('Change refused');
+same($beforeDrift,serialize(DB::table('settings')->orderBy('id')->get()),'Repair after opening cannot save unseen lifecycle facts');
+$page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction($action)->assertActionMounted($action);
+same($valid['grace_days'],(int)$page->get('mountedActions.0.data.grace_days'),'Fresh review after repair shows saved lifecycle facts');
 
 // Every malformed field is tested against a complete, positive baseline.
 foreach(Facts::FIELDS as $missing){$v=$valid;unset($v[$missing]);commerceReject(fn()=>Facts::validate($v));same(null,Facts::until($v,'grace',$now),'Missing '.$missing.' never offers grace');}

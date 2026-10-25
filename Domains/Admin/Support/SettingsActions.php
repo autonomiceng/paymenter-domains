@@ -82,8 +82,9 @@ final class SettingsActions
             }
             if($name==='lifecycle'){
                 $saved=self::cached(static function()use($server,$tld){
-                    $a=Account::where('server_id',$server)->firstOrFail();$t=Tld::findOrFail($tld);
-                    return \Paymenter\Extensions\Servers\Domains\Services\LifecyclePolicies::read(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a),$t->tld)??[];
+                    try{$a=Account::where('server_id',$server)->firstOrFail();$t=Tld::findOrFail($tld);
+                    return \Paymenter\Extensions\Servers\Domains\Services\LifecyclePolicies::read(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a),$t->tld)??[];}
+                    catch(\Throwable){return [];}
                 });
                 foreach(['grace_days'=>'Post-expiry grace days','restore_days'=>'Restore days'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->integer()->minValue(0)->maxValue(365)->validationMessages(['integer'=>self::LIFECYCLE_DAYS,'min'=>self::LIFECYCLE_DAYS,'max'=>self::LIFECYCLE_DAYS])->required()->default(fn()=>$saved()[$key]??null);}
                 foreach(['grace_supported'=>'Grace renewal supported','restore_supported'=>'Restore supported','auto_renew_only'=>'Auto-renew only','conflicting'=>'Sources conflict'] as $key=>$label){$fields[]=Checkbox::make($key)->label($label)->default(fn()=>$saved()[$key]??false);}
