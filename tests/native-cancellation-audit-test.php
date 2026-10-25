@@ -39,4 +39,17 @@ foreach($audits as$audit){same($actor->id,(int)$audit->user_id,'Native audit act
 same('Native audited reason edit',$audits->firstWhere('event','updated')->new_values['reason'],'Native audit records updated reason');
 same($op->service_id,(int)$audits->firstWhere('event','deleted')->old_values['service_id'],'Native deletion retains service identity');
 same('active',$op->domain->service->fresh()->status,'Native end-period row deletion never mutates registrar/native status');
+// Eloquent accepts the case alias and SQLite applies it after the ordinary status key.
+DB::table('services')->where('id',$op->service_id)->update(['status'=>'pending']);
+$aliasControl=$op->domain->service->fresh();$aliasControl->forceFill(['status'=>'active','STATUS'=>'suspended'])->save();
+same('suspended',$aliasControl->fresh()->status,'Eloquent carries a status alias through to the native SQL update');
+foreach(['STATUS','services.status']as$alias){foreach(['cancelled','suspended']as$status){
+    $guarded=$new(placeholderComFixtureName('reactivation-alias-'.strtolower(str_replace('.','-',$alias)).'-'.$status.'-placeholder.com'));
+    $service=$guarded->domain->service->fresh();same('pending',$service->status,'Paid acquisition still awaits its native activation');
+    $refused=false;try{$service->forceFill(['status'=>'active',$alias=>$status])->save();}
+    catch(\Illuminate\Validation\ValidationException $e){$refused=true;same(NativeCancellation::MESSAGE,$e->errors()['status'][0],'Unsafe status alias reaches the cancellation guard');}
+    expect($refused,'Reactivation cannot conceal a '.$status.' status alias');
+    same('pending',$service->fresh()->status,'Refused aliased reactivation retains native status');
+    $service->fresh()->update(['status'=>'active']);same('active',$service->fresh()->status,'Plain native activation remains writable');
+}}
 echo "Native cancellation create/update/delete remain vanilla and use native audit history.\n";$nativeSuccessful=true;

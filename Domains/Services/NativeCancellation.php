@@ -37,7 +37,6 @@ final class NativeCancellation
         Service::updating(static function(Service $s):void {
             if($s->isDirty('status')&&$s->status==='active'&&!NativeDomainGuard::identityProjection($s)){
                 foreach(array_unique(array_filter(array_column(NativeIdentity::rows($s),'id'))) as $id){self::guard((int)$id,'reactivation');}
-                return;
             }
             // Active is native paid billing state, regardless of caller or registrar progress.
             $unsafe=['cancelled','suspended'];$attrs=$s->getAttributes();$aliases=$attrs;unset($aliases['status']);
