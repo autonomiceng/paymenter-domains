@@ -82,4 +82,5 @@ same(0,storefrontDom($html)->query('//input[@name="transfer_code"]')->length,'Pr
 require __DIR__.'/Support/late-contact-pages.php';
 foreach(['show','setup','code','index','transfer']as$route){$r=Illuminate\Support\Facades\Route::getRoutes()->getByName('domains.domains.'.$route);expect(in_array('auth',$r->gatherMiddleware(),true)&&in_array('web',$r->gatherMiddleware(),true),'Dormant routes have native auth/session boundary');}
 require __DIR__.'/Support/owned-tone-cases.php';
+require __DIR__.'/Support/owned-list-sorts.php';
 $nativeSuccessful=true;echo "Owned DTO, native controllers, real Blade, held/correction/capability and ownership checks passed.\n";
