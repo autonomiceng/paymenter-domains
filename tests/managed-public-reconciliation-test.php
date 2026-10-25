@@ -24,17 +24,23 @@ expect($signals->enqueue($id,$uid,$now),'Current generation repaired');expect(DB
 DB::table(ManagedPublicWorkSchema::TABLE)->where('generation',0)->update(['retired_at'=>null]);
 $hints=$sweep->due($now);same(2,count($hints),'At most two kinds per owner');same(['delegation','points'],array_column($hints,'kind'),'No RDAP kind');
 // A permanently broken native marker must not consume both owner hints forever.
-$marker=$product->settings()->where('key','domains_action')->sole();$savedMarker=$marker->getRawOriginal();
-DB::table('settings')->where('id',$marker->id)->delete();
-$second=(array)$d->fresh()->getRawOriginal();$second['id']=2000;$second['domain']='second-placeholder.com';$second['reservation_name']='second-placeholder.com';$second['sld']='second-placeholder';$second['service_id']=2000;
-DB::table('domains_domains')->insert($second);
-foreach(['delegation','points']as$kind) { $copy=(array)$work;unset($copy['id']);$copy['domain_id']=2000;$copy['kind']=$kind;DB::table(ManagedPublicWorkSchema::TABLE)->insert($copy); }
-foreach(['delegation','points']as$kind) { expect(!$signals->observe($id,$uid,$kind),'Broken marker safely yields dispatch turn'); }
-$blocked=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)->get();
-foreach($blocked as$row) { same(null,$row->retired_at,'Unavailable authority retained for repair');same(1,(int)$row->attempts,'Unavailable capture advances failure count');expect($row->due_at>=$now+900,'Unavailable capture backs off');same('authority_unavailable',$row->safe_code,'Unavailable authority has distinct safe reason'); }
-same([2000,2000],array_column($sweep->due($now),'domain_id'),'Other holding of same owner gets next dispatch turn');
-DB::table('settings')->insert($savedMarker);DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',2000)->delete();DB::table('domains_domains')->where('id',2000)->delete();
-DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)->update(['due_at'=>$now,'backoff_until'=>null]);
+foreach(['domains_action','domains_tld_id']as$markerKey) {
+    $marker=$product->settings()->where('key',$markerKey)->sole();$savedMarker=$marker->getRawOriginal();
+    DB::table('settings')->where('id',$marker->id)->delete();
+    $second=(array)$d->fresh()->getRawOriginal();$second['id']=2000;$second['domain']='second-placeholder.com';$second['reservation_name']='second-placeholder.com';$second['sld']='second-placeholder';$second['service_id']=2000;
+    DB::table('domains_domains')->insert($second);
+    foreach(['delegation','points']as$kind) { $copy=(array)$work;unset($copy['id']);$copy['domain_id']=2000;$copy['kind']=$kind;DB::table(ManagedPublicWorkSchema::TABLE)->insert($copy); }
+    foreach(['delegation','points']as$kind) { expect(!$signals->observe($id,$uid,$kind),'Broken marker safely yields dispatch turn'); }
+    $blocked=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)->get();
+    same(2,$blocked->count(),'Both current-generation kinds retained');
+    foreach($blocked as$row) { same(null,$row->retired_at,'Unavailable authority retained for repair');same(1,(int)$row->attempts,'Unavailable capture advances failure count');expect($row->due_at>=$now+900,'Unavailable capture backs off');same('authority_unavailable',$row->safe_code,'Unavailable authority has distinct safe reason'); }
+    foreach(['delegation','points']as$kind) { expect(!$signals->observe($id,$uid,$kind),'Unavailable marker respects retry backoff'); }
+    same([1,1],$blocked->map(fn($row)=>(int)DB::table(ManagedPublicWorkSchema::TABLE)->where('id',$row->id)->value('attempts'))->all(),'Early retry never advances failure count');
+    same([2000,2000],array_column($sweep->due($now),'domain_id'),'Other holding of same owner gets next dispatch turn');
+    DB::table('settings')->insert($savedMarker);DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',2000)->delete();DB::table('domains_domains')->where('id',2000)->delete();
+    expect($signals->enqueue($id,$uid,$now),'Restored native marker permits reconciliation');
+    DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)->update(['due_at'=>$now,'backoff_until'=>null,'attempts'=>0]);
+}
 $fake->answers['example.com|NS']=managedNs();expect($signals->observe($id,$uid,'delegation'),'Apex without any hosting source observed');same(['example.com|NS'],$fake->calls,'No registrar inventory or hosting lookup required');
 same(0,$sweep->sweep($now,1),'Completed pass resets daily cursor');same($now+86400,(int)DB::table(PublicDnsQuota::TABLE)->value('sweep_due_at'),'Daily revisit durable');
 same(0,$sweep->sweep($now+1),'No unbounded repeat pass');

@@ -704,6 +704,9 @@ can still be the regression check for a runtime change. `--only` does not expand
 dependencies. For adoption and registrar seams, use the [source triggers and complete
 focused command](testing-coverage/adoption-focused.md), including the unchanged
 `tests/adoption-preview-test.php` mid-read change matrix.
+For native marker identity and public enrollment, use the [native identity focused
+command](testing-coverage/native-identity-focused.md), including shared transfer and
+conversion consumers and separately recorded MariaDB scenarios.
 
 The PR boundary still runs `python3 scripts/test.py` with the pristine native dependency
 and pinned runtime cache configured. Use `--only` for exact registered test paths during

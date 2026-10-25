@@ -27,6 +27,17 @@ function assertTransferWatch(array $f,$op,int $now): void
     extract($f);same('succeeded',$op->state,'Relink failure never rewrites confirmed acquisition');same('active',$watch->fresh()->state,'Audit failure rolls whole relink back');same('watch',$source->fresh()->state,'No partial source change');same('open',DB::table('domains_watch_notices')->where('id',$notice)->value('state'),'No partial notice suppression');
     same(1,DB::table('domains_obligation_alerts')->where('code','transfer_watch_relink')->whereNull('resolved_at')->count(),'Deferred relink is staff visible');
     $failure->enabled=false;
+    $product=App\Models\Service::findOrFail($op->domain->service_id)->product;
+    foreach(['domains_action','domains_tld_id']as$key) {
+        $marker=$product->settings()->where('key',$key)->sole()->getRawOriginal();
+        DB::table('settings')->where('id',$marker['id'])->delete();
+        try {
+            same(null,(new ManagedPublicEnrollment)->reconcile((int)$op->domain_id,(int)$op->domain->user_id,$now,transferOnly:true),'Unavailable native marker defers transfer relink');
+            same(false,(new Paymenter\Extensions\Servers\Domains\Services\TransferWatchEnrollment)->repair((int)$op->domain_id,(int)$op->domain->user_id,$now),'Unavailable native marker retains repair');
+            same(1,DB::table('domains_obligation_alerts')->where('code','transfer_watch_relink')->whereNull('resolved_at')->count(),'Unavailable marker retains staff finding');
+            same('active',$watch->fresh()->state,'Unavailable marker leaves predecessor watch active');
+        } finally { DB::table('settings')->insert($marker); }
+    }
     DB::table('domains_accounts')->where('server_id',$op->server_id)->update(['environment'=>'test']);
     same(false,(new Paymenter\Extensions\Servers\Domains\Services\TransferWatchEnrollment)->repair((int)$op->domain_id,(int)$op->domain->user_id,$now),'TEST never changes an external watch');same('active',$watch->fresh()->state,'TEST retains watch notices');
     same(null,(new ManagedPublicEnrollment)->reconcile((int)$op->domain_id,(int)$op->domain->user_id,$now,transferOnly:true),'Locked TEST guard refuses relink');

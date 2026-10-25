@@ -1,0 +1,188 @@
+# Native identity and managed public focused checks
+
+Changes to native marker identity or managed public enrollment require the existing
+source consumers even when their test files are unchanged. Keep controlled writer
+refusals as `DomainException`; missing or duplicate native marker rows must leave
+public observation work available for repair and normal retry backoff. Transfer-only
+relink retains its null/deferred result and unresolved staff finding. Other invalid
+authority still follows the existing retirement path.
+
+| Source trigger | Consumer paths to inspect |
+| --- | --- |
+| `Services/HoldingNativeIdentity.php`, including its marker refusal subtype | Both `HoldingLocks` and `HoldingIdentityLock`, their writer/adoption/native model consumers and fixtures; preserve missing action, missing ending and duplicate-marker writer assertions. |
+| `Services/ManagedPublicEnrollment.php` | Managed public observers, reconciliation, scheduler/health and transfer relink; preserve `transfer-completion-test.php` and its `Support/transfer-watch.php` fixture. |
+| `scripts/conversion/EvidenceHost.php` | Conversion application preflight, protected evidence collection, collector CLI and development-source packaging exclusions. |
+| Changed test files or shared support fixtures | The tests themselves, every requiring registered consumer, fixture policy and runner discovery checks. |
+
+The conservative lexical inventory contains 297 registered tests, including the
+[adoption and registrar focused checks](adoption-focused.md). It follows class imports,
+requires, shared fixtures, route registration and source/package collectors. An import
+or route reference qualifies for this conservative selection; it does not establish
+that the changed marker branch executes in that test. No suite category is selected
+as a substitute for this dependency inventory.
+
+The command below selects the 294 offline tests (281 regular and 13 installed) through
+the existing selector. Run installed tests with the full resource slot. The three
+MariaDB scenario registrations are recorded separately below; they require a supplied
+MariaDB environment and are not included in offline pass counts.
+
+```sh
+python3 scripts/test.py --jobs 4 --only \
+  tests/acquisition-binding-test.php tests/acquisition-payment-review-test.php \
+  tests/acquisition-retirement-refusals-test.php tests/acquisition-retirement-staff-test.php \
+  tests/acquisition-retirement-test.php tests/adopted-complimentary-test.php \
+  tests/adopted-renewal-deadline-test.php tests/adopted-renewal-history-test.php \
+  tests/adopted-renewal-refusals-test.php tests/adopted-renewal-test.php \
+  tests/adopted-test-environment-test.php tests/adoption-commit-test.php \
+  tests/adoption-consequences-test.php tests/adoption-customer-test.php \
+  tests/adoption-enom-test.php tests/adoption-enrollment-test.php \
+  tests/adoption-intent-test.php tests/adoption-preview-guards-test.php \
+  tests/adoption-preview-test.php tests/adoption-renewal-intent-test.php \
+  tests/adoption-storage-test.php tests/api-test.php \
+  tests/balance-recording-rule-test.php tests/binding-test.php \
+  tests/cart-admission-test.php tests/catalogue-sync-test.php \
+  tests/catalogue-test.php tests/contact-setup-test.php \
+  tests/conversion-app-native-test.php tests/conversion-app-policy-test.php \
+  tests/conversion-evidence-test.php tests/conversion-guards-test.php \
+  tests/conversion-new-pin-test.php tests/conversion-retired-pin-test.php \
+  tests/conversion-test.php tests/curl-transport-test.php \
+  tests/customer-tags-test.php tests/demo-data-test.php \
+  tests/doh-settings-test.php tests/domain-counts-test.php \
+  tests/domain-page-test.php tests/domain-portal-test.php \
+  tests/domain-summaries-test.php tests/domain-summary-managed-test.php \
+  tests/domains-list-rows-test.php tests/domains-list-test.php \
+  tests/enom-catalogue-test.php tests/enom-curl-test.php \
+  tests/enom-exchange-test.php tests/enom-identity-test.php \
+  tests/enom-money-test.php tests/enom-pricing-test.php \
+  tests/enom-protocol-test.php tests/enom-read-test.php \
+  tests/enom-test-management-guards-test.php tests/enom-test-renewal-guards-test.php \
+  tests/enom-test-transfer-guards-test.php tests/evidence-dates-upgrade-test.php \
+  tests/fixture-policy-test.php tests/glossary-sweep-test.php \
+  tests/holding-adoption-test.php tests/holding-identity-lock-test.php \
+  tests/holding-identity-writers-test.php tests/holding-provenance-test.php \
+  tests/invoice-binding-test.php tests/lifecycle-policy-test.php \
+  tests/managed-public-confirmation-test.php tests/managed-public-observer-test.php \
+  tests/managed-public-overflow-test.php tests/managed-public-quota-test.php \
+  tests/managed-public-reconciliation-test.php tests/managed-public-relink-test.php \
+  tests/managed-public-source-drift-test.php tests/managed-public-stamp-test.php \
+  tests/managed-public-storage-test.php tests/managed-public-upgrade-test.php \
+  tests/management-deadline-test.php tests/management-namesilo-boundary-test.php \
+  tests/management-namesilo-contacts-test.php tests/management-namesilo-test.php \
+  tests/management-preparation-test.php tests/management-privacy-retirement-test.php \
+  tests/management-privacy-test.php tests/management-records-test.php \
+  tests/management-refusal-test.php tests/management-test.php \
+  tests/missing-test.php tests/mobile-overflow-test.php \
+  tests/namesilo-enrollment-test.php tests/namesilo-only-holder-test.php \
+  tests/namesilo-pricing-test.php tests/namesilo-read-test.php \
+  tests/native-cancellation-audit-test.php tests/native-catalogue-test.php \
+  tests/native-identity-cascade-test.php tests/native-identity-orphans-test.php \
+  tests/native-identity-readiness-test.php tests/native-identity-test.php \
+  tests/native-lifecycle-test.php tests/native-paid-baseline-test.php \
+  tests/native-projection-test.php tests/native-renewal-guard-test.php \
+  tests/native-server-settings-test.php tests/native-service-refusal-holding-test.php \
+  tests/native-service-refusal-test.php tests/native-stock-test.php \
+  tests/observation-budget-test.php tests/observation-catalogue-test.php \
+  tests/observation-namesilo-test.php tests/observation-records-test.php \
+  tests/observation-test.php tests/operation-claim-lifecycle-test.php \
+  tests/operation-claims-test.php tests/operation-clock-test.php \
+  tests/operation-contacts-test.php tests/operation-rate-test.php \
+  tests/operation-recovery-test.php tests/operation-service-index-test.php \
+  tests/ote-normal-completion-test.php tests/ote-purchase-evidence-test.php \
+  tests/ote-reconciliation-test.php tests/ote-renewal-probe-test.php \
+  tests/owned-pages-test.php tests/owner-actions-test.php \
+  tests/owner-auto-renew-test.php tests/owner-declutter-test.php \
+  tests/owner-help-test.php tests/owner-management-namesilo-test.php \
+  tests/owner-management-test.php tests/owner-record-errors-test.php \
+  tests/owner-records-test.php tests/owner-renewal-test.php \
+  tests/paired-driver-test.php tests/paymenter-upgrade-tripwire-test.php \
+  tests/php83-compatibility-test.php tests/policy-ending-reads-test.php \
+  tests/pricing-rules-test.php tests/provider-send-guard-operation-test.php \
+  tests/provider-send-guard-test.php tests/psl-rebaseline-test.php \
+  tests/psl-review-staff-test.php tests/psl-staff-test.php \
+  tests/psl-test.php tests/rdap-quota-test.php \
+  tests/reconciliation-authority-test.php tests/reconciliation-enom-history-test.php \
+  tests/reconciliation-namesilo-test.php tests/reconciliation-provider-test.php \
+  tests/reconciliation-recovery-test.php tests/reconciliation-test.php \
+  tests/refund-evidence-test.php tests/refund-renewals-test.php \
+  tests/refunds-test.php tests/registrar-balances-test.php \
+  tests/registrars-page-test.php tests/registration-enom-test.php \
+  tests/registration-nameservers-test.php tests/registration-namesilo-profile-test.php \
+  tests/registration-namesilo-test.php tests/reminder-form-test.php \
+  tests/reminder-review-test.php tests/reminder-safety-test.php \
+  tests/reminder-transfer-test.php tests/reminders-test.php \
+  tests/renewal-admission-test.php tests/renewal-autopay-admission-test.php \
+  tests/renewal-autopay-adopted-test.php tests/renewal-autopay-test.php \
+  tests/renewal-billing-settings-test.php tests/renewal-billing-test.php \
+  tests/renewal-completion-test.php tests/renewal-cycles-test.php \
+  tests/renewal-deadline-test.php tests/renewal-execution-namesilo-test.php \
+  tests/renewal-execution-test.php tests/renewal-namesilo-test.php \
+  tests/renewal-read-recovery-test.php tests/renewal-safety-test.php \
+  tests/reservation-test.php tests/runtime-health-test.php \
+  tests/runtime-install-test.php tests/runtime-lifecycle-test.php \
+  tests/runtime-notices-test.php tests/runtime-presenter-test.php \
+  tests/runtime-records-test.php tests/runtime-wire-management-test.php \
+  tests/runtime-wire-registration-test.php tests/runtime-wire-renewal-test.php \
+  tests/runtime-worker-test.php tests/schema-identifiers-test.php \
+  tests/schema-test.php tests/seller-policy-test.php \
+  tests/seller-switch-lifecycle-enom-register-test.php tests/seller-switch-lifecycle-enom-transfer-test.php \
+  tests/seller-switch-lifecycle-namesilo-register-test.php tests/seller-switch-lifecycle-namesilo-transfer-test.php \
+  tests/seller-switch-lifecycle-test.php tests/seller-switch-namesilo-renewal-test.php \
+  tests/seller-switch-renewal-test.php tests/settings-refusal-test.php \
+  tests/staff-adopt-commit-test.php tests/staff-adoption-test.php \
+  tests/staff-audit-upgrade-test.php tests/staff-contact-release-test.php \
+  tests/staff-domain-page-test.php tests/staff-domains-list-test.php \
+  tests/staff-domains-test.php tests/staff-hold-release-audit-test.php \
+  tests/staff-holding-test.php tests/staff-monitoring-test.php \
+  tests/staff-navigation-test.php tests/staff-operation-actions-test.php \
+  tests/staff-operation-lease-test.php tests/staff-operation-privacy-test.php \
+  tests/staff-operation-reads-test.php tests/staff-operation-transfers-test.php \
+  tests/staff-operations-test.php tests/staff-reason-test.php \
+  tests/staff-recovery-copy-test.php tests/staff-release-parity-test.php \
+  tests/staff-renewal-release-parity-test.php tests/staff-renewal-release-test.php \
+  tests/staff-request-page-test.php tests/staff-review-history-test.php \
+  tests/staff-settings-history-test.php tests/staff-table-grants-test.php \
+  tests/staff-tld-actions-test.php tests/staff-tld-grants-test.php \
+  tests/staff-tld-page-test.php tests/staff-tld-reads-test.php \
+  tests/staff-tld-writes-test.php tests/staff-transfer-release-parity-test.php \
+  tests/staff-ui-polish-test.php tests/staff-watch-findings-test.php \
+  tests/staff-watch-summary-owners-test.php tests/staff-watch-test.php \
+  tests/status-pages-test.php tests/status-pill-test.php \
+  tests/status-sets-test.php tests/storefront-cache-test.php \
+  tests/storefront-test.php tests/terminal-proof-test.php \
+  tests/test_conversion_evidence_cli.py tests/test_conversion_mariadb_guards.py \
+  tests/test_hook_attribution.py tests/test_installed_namesilo_enrollment.py \
+  tests/test_installed_package.py tests/test_installed_package_acquisition.py \
+  tests/test_installed_package_enom_exchange.py tests/test_installed_package_enom_live.py \
+  tests/test_installed_package_enom_management.py tests/test_installed_package_enom_renewal.py \
+  tests/test_installed_package_enom_test.py tests/test_installed_package_enom_transfer.py \
+  tests/test_installed_package_fresh.py tests/test_installed_package_namesilo.py \
+  tests/test_installed_package_previous.py tests/test_installed_package_upgrade.py \
+  tests/test_package.py tests/test_runner.py \
+  tests/transfer-completion-namesilo-test.php tests/transfer-completion-test.php \
+  tests/transfer-dispatch-namesilo-test.php tests/transfer-dispatch-refusals-test.php \
+  tests/transfer-dispatch-test.php tests/transfer-input-contacts-test.php \
+  tests/transfer-input-evidence-test.php tests/transfer-inputs-test.php \
+  tests/transfer-precheck-test.php tests/transfer-safety-namesilo-test.php \
+  tests/transfer-status-test.php tests/user-deletion-test.php \
+  tests/watch-discovery-work-test.php tests/watch-dns-confirmation-test.php \
+  tests/watch-dns-observer-test.php tests/watch-dns-storage-test.php \
+  tests/watch-maintenance-test.php tests/watch-notice-delivery-test.php \
+  tests/watch-notice-managed-claim-test.php tests/watch-notice-managed-test.php \
+  tests/watch-notice-negative-test.php tests/watch-notice-overflow-test.php \
+  tests/watch-notice-pages-test.php tests/watch-notice-priority-test.php \
+  tests/watch-notice-snapshot-test.php tests/watch-notice-staff-delivery-test.php \
+  tests/watch-registry-observer-test.php tests/watch-registry-work-test.php \
+  tests/watch-scheduler-test.php tests/watch-storage-test.php \
+  tests/watch-transfer-test.php tests/write-boundary-test.php \
+  tests/write-bridge-test.php tests/write-preflight-test.php
+```
+
+MariaDB registrations in the static dependency inventory:
+
+- `tests/test_conversion_mariadb.py`
+- `tests/test_schema_mariadb.py`
+- `tests/test_user_deletion_mariadb.py`
+
+These checks remain separate from live provider, shared-database, installed-theme and
+production acceptance. Keep the explicit list synchronized with new direct or shared
+fixture consumers; do not infer coverage from changed test filenames alone.

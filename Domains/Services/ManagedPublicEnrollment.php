@@ -16,6 +16,7 @@ final class ManagedPublicEnrollment
             $changed=false;
             try { $l=HoldingLocks::take($seed,additionalServices:$peek->pluck('service_id')->all());HoldingAnchor::resolve($l);
                 if ($transferOnly && (!in_array($l['domain']->provenance,[null,'purchased','converted_purchase'],true) || $l['account']->environment!=='live' || !$l['operations']->contains(fn($op)=>$op->action==='transfer' && $op->state==='succeeded' && $op->authority_generation===$l['domain']->authority_generation))) { return null; } }
+            catch (HoldingNativeMarkersUnavailable $e) { if ($transferOnly) { return null; } throw $e; }
             catch (\DomainException) { return null; }
             if (!ManagedPublicTarget::valid($l,$now)) { return null; }$d=$l['domain'];
             $maps=WatchProductMap::whereKey($peek->pluck('map_id'))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
