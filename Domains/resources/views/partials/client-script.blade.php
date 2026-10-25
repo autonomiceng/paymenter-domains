@@ -55,7 +55,7 @@
         };
         // A record row's Delete adds a hidden delete field; Cancel takes it back out.
         const deleting = row => !!row.querySelector('input[name$="[_delete]"]');
-        const filled = row => [...row.querySelectorAll('input:not([type=hidden]), select')].some(field => field.value.trim() !== '');
+        const filled = row => [...row.querySelectorAll('input:not([type=hidden]), select')].some(field => field.value !== '');
         const removed = () => [...form.querySelectorAll('tr[data-record]')].filter(row => deleting(row) || !filled(row)).map(row => row.dataset.record);
         let added = [];
         const needed = () => {

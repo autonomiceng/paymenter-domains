@@ -34,6 +34,6 @@
 <button type="submit" class="domains-btn domains-btn--primary">Save</button>
 @php($confirmOpen = ($section['retry']['confirm'] ?? false) && $section['retry']['action'] === $cap)
 @include('domains::partials.owner-confirm', ['id'=>$cap, 'open'=>$confirmOpen, 'cancel'=>$domain->actions['show'].'?edit='.$cap.'#edit-'.$cap, 'title'=>'Delete records?', 'button'=>'Save and delete',
-    'facts'=>[['label'=>'Records to delete', 'slot'=>'removed', 'value'=>$confirmOpen ? collect($draft['records'] ?? [])->keys()->filter(fn ($i) => ($draft['records'][$i]['_delete'] ?? '') === '1' && isset($section['records'][$i]))->map(fn ($i) => $describe($section['records'][$i]))->values()->all() : []]],
+    'facts'=>[['label'=>'Records to delete', 'slot'=>'removed', 'value'=>$confirmOpen ? collect($draft['records'] ?? [])->keys()->filter(fn ($i) => \Paymenter\Extensions\Servers\Domains\Services\OwnerRecordInput::removed($draft['records'][$i]) && isset($section['records'][$i]))->map(fn ($i) => $describe($section['records'][$i]))->values()->all() : []]],
     'risk'=>'Anything that uses these records, like your website or email, can stop working.'])
 </form>

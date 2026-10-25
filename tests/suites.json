@@ -141,6 +141,7 @@
     "tests/staff-operation-transfers-test.php",
     "tests/staff-operation-privacy-test.php",
     "tests/owner-records-test.php",
+    "tests/owner-record-confirmation-test.php",
     "tests/owner-record-errors-test.php",
     "tests/staff-tld-reads-test.php",
     "tests/staff-tld-page-test.php",
