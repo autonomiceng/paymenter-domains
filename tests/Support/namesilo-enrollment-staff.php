@@ -63,6 +63,7 @@ unset($nativeEdit);gc_collect_cycles();
 
 $action=static fn(string $name,Server $server)=>setupAction($name,$server->id);
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($action('enroll_sandbox',$s))->assertActionMounted($action('enroll_sandbox',$s));
+$page->assertSchemaComponentExists('label',checkComponentUsing:fn($field)=>str_contains((string)$field->toHtml(),'sandbox-west')&&str_contains((string)$field->toHtml(),'Do not enter personal data')&&!str_contains((string)$field->toHtml(),'login email'));
 expect(empty($page->get('mountedActions.0.data.api_key')),'No saved secret prefill');$n=$GLOBALS['enrollmentCalls'];
 $page->setActionData([...$input,'api_key'=>'synthetic-ote-key','reason'=>'Enroll a sandbox account']);
 expect(str_contains($page->instance()->getMountedAction()->getModalDescription(),'The balance is not saved.'),'Enrollment copy says the key-check balance is discarded');

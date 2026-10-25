@@ -305,7 +305,8 @@
     "tests/provider-send-guard-test.php",
     "tests/provider-send-guard-operation-test.php",
     "tests/staff-hold-release-audit-test.php",
-    "tests/watch-notice-staff-delivery-test.php"
+    "tests/watch-notice-staff-delivery-test.php",
+    "tests/staff-recovery-copy-test.php"
   ],
   "ui": [],
   "runner": [

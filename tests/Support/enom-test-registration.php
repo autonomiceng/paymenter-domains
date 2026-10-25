@@ -35,7 +35,7 @@ $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>false,'renew
 $write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id);
 same(7,count($GLOBALS['enomWire']['forms']),'Identity, probe and annual import total seven reads');same(7,(int)DB::table(EnomTestCallSchema::TABLE)->value('used'),'Every setup call counted');same(50,EnomTestCalls::limit(),'Default cap fifty');
 same('7 / 50 used today (UTC), shared by all Enom TEST accounts. Every reserved request counts, including ones that failed, timed out or were stopped before sending.',EnomTestCalls::facts(),'Staff sees current shared TEST call usage');
-same(EnomTestCalls::facts().' Calls remain today, so a counter error or UTC day change refused it; you can retry.',EnomTestCalls::refusedFacts(),'Refusal facts explain a refusal while calls remain');
+same(EnomTestCalls::facts().' Calls remain today, but a counter error or UTC day change refused the request. Ask the deployment administrator to repair the counter if the refusal continues after the UTC day changes.',EnomTestCalls::refusedFacts(),'Refusal facts explain a refusal while calls remain');
  $catalogueUsed=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');config(['domains.enom_test_daily_call_cap'=>$catalogueUsed+1]);$beforeImport=count($GLOBALS['enomWire']['forms']);
 try{$write('import',['ending'=>'com']);throw new LogicException('A mid-import TEST cap refusal must reach staff.');}catch(EnomTestCallLimit){}
 same($catalogueUsed+1,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'Mid-import cap leaves its earlier read counted');

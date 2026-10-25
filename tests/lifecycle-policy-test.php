@@ -7,7 +7,7 @@ require __DIR__.'/Support/lifecycle-facts.php';
 use Illuminate\Support\Facades\{Auth,DB,Schema};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,LifecycleFacts as Facts,LifecyclePolicies as Policies,PricingRule,PriceCatalogue,StaffSettingsReview as Review,StaffSettingsWrites};
 extract(commerceFixture(true));tldPanel();Carbon\Carbon::setTestNow($now);$t=$tlds[0];$server=App\Models\Server::findOrFail($t->server_id);
@@ -20,6 +20,28 @@ $permissions=[Staff::VIEW,Staff::COSTS,Staff::POLICY,Review::permission('lifecyc
 $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($native,$sellers,$bindings);app()->instance(StaffSettingsWrites::class,$writer);
 $review=static fn()=>new Review($u->id,$t->server_id,$t->id,'lifecycle',Review::ticket($u->id,$t->server_id,$t->id,'lifecycle',Review::stamp($t->server_id,$t->id)),'Verify registrar lifecycle facts');
 $action='lifecycle';
+
+// Field defaults share one lazy read per form, including an empty policy.
+$fields=static function(string $name)use($t):array{
+    $action=SettingsActions::make((int)$t->server_id,(int)$t->id,'unused',false,[$name])[0];$out=[];
+    foreach($action->getSchema(\Filament\Schemas\Schema::make())->getComponents(withHidden:true) as $field){if($field instanceof \Filament\Forms\Components\Field){$out[$field->getName()]=$field;}}
+    return $out;
+};
+$reading=false;$reads=0;$policyReads=0;
+DB::listen(static function($query)use(&$reading,&$reads,&$policyReads,$key):void{if($reading&&str_starts_with(strtolower($query->sql),'select')){$reads++;if(in_array($key,$query->bindings,true)){$policyReads++;}}});
+$reading=true;$empty=$fields('lifecycle');same(0,$reads,'Building lifecycle fields is lazy');
+foreach(Facts::FIELDS as $field){$empty[$field]->getDefaultState();}
+same(1,$policyReads,'All sixteen empty lifecycle defaults share one settings read');
+foreach(Facts::FIELDS as $field){$empty[$field]->getDefaultState();}
+same(1,$policyReads,'An empty policy is cached too');$reading=false;
+storeLifecycleFixture($b,$valid);$reading=true;same(null,$empty['grace_days']->getDefaultState(),'An open form retains its empty snapshot');
+$fresh=$fields('lifecycle');foreach(Facts::FIELDS as $field){same($valid[$field],$fresh[$field]->getDefaultState(),'A fresh form reads current '.$field);}
+same(2,$policyReads,'A fresh form reads the newly saved policy once');$reading=false;
+$server->settings()->where('key',$key)->delete();
+foreach(['default_rule'=>['mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'],'override'=>['mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'],'seller'=>['seller','register','transfer']] as $name=>$names){
+    $form=$fields($name);$reads=0;$reading=true;$form[$names[0]]->getDefaultState();$first=$reads;expect($first>0,$name.' uses real saved facts');
+    foreach($names as $field){$form[$field]->getDefaultState();}same($first,$reads,$name.' defaults share the first read');$reading=false;
+}
 
 // An unchanged retained installation has no lifecycle settings and no implied support.
 same(null,$saved(),'Old native settings have no inferred lifecycle facts');same(['grace'=>false,'restore'=>false],$cap(true),'Missing evidence closes both capabilities even with future acceptance');
@@ -38,6 +60,54 @@ commerceReject(fn()=>$writer->run(new Review($u->id,$t->server_id,$t->id,'lifecy
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('Restore fee')->assertSee('USD 80.00')->assertSee('Redemption period')->assertSee('30 days');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction($action);
 same($valid['grace_verified_at'],$page->get('mountedActions.0.data.grace_verified_at'),'Reopening never refreshes verification time');
+
+// Real invalid submissions show field guidance and preserve saved facts and audit.
+$guidance=[
+    'Complete lifecycle facts required.'=>'Complete all lifecycle fields. Nothing was saved.',
+    'Independent lifecycle verification required.'=>'Verify the lifecycle facts and check the confirmation box. Nothing was saved.',
+    'Lifecycle verification cannot be in the future.'=>'Enter verification times at or before now. Nothing was saved.',
+    'Invalid lifecycle input.'=>'Reload the lifecycle form and check its fields. Nothing was saved.',
+    'Invalid lifecycle support.'=>'Check the grace, restore, auto-renew and conflicting-source flags. Nothing was saved.',
+    'Lifecycle days must be between 0 and 365.'=>'Enter whole numbers from 0 to 365 for grace and restore days. Nothing was saved.',
+    'Invalid lifecycle charge.'=>'Enter valid non-negative grace and restore charges with at most four decimal places. Nothing was saved.',
+    'Invalid lifecycle currency.'=>'Enter three uppercase letters for grace and restore currencies, for example USD. Nothing was saved.',
+    'Lifecycle verification requires a date and time with UTC offset.'=>'Include a date, time and UTC offset in policy, grace and restore verification times. Nothing was saved.',
+    'Invalid lifecycle verification time.'=>'Enter valid policy, grace and restore verification dates and times. Nothing was saved.',
+    'Enter a one-line lifecycle source between 5 and 500 characters.'=>'Enter one-line policy, grace and restore sources from 5 to 500 characters. Nothing was saved.',
+    'Conflicting lifecycle settings require repair.'=>'Ask an administrator to repair duplicate lifecycle settings before retrying. Nothing was saved.',
+];
+$unchanged=serialize(DB::table('settings')->get());
+foreach([['grace_currency'=>'usd'],['verified_at'=>'2026-10-18T12:00:00']] as $change){
+    $message=isset($change['grace_currency'])?'Invalid lifecycle currency.':'Lifecycle verification requires a date and time with UTC offset.';
+    Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction($action)
+        ->setActionData([...$valid,...$change,'verified'=>true,'reason'=>'Check invalid lifecycle fields'])->callMountedAction()->assertHasNoActionErrors()
+        ->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('Change refused')->body($guidance[$message]));
+    same($unchanged,serialize(DB::table('settings')->get()),'Invalid submission saves no facts or audit');
+}
+foreach(['grace_days','restore_days'] as $field){
+    $invalid=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction($action)
+        ->setActionData([...$valid,$field=>366,'verified'=>true,'reason'=>'Check invalid lifecycle days'])->callMountedAction()
+        ->assertHasActionErrors([$field=>'max']);
+    same([$guidance['Lifecycle days must be between 0 and 365.']],$invalid->errors()->get('mountedActions.0.data.'.$field),'The field error sent to the form gives day-range guidance');
+    same($unchanged,serialize(DB::table('settings')->get()),'Invalid day range saves no facts or audit');
+}
+$assertRefusal=static function(\Closure $attempt,string $message)use($guidance):void{
+    try{$attempt();throw new LogicException('Invalid lifecycle change must refuse');}catch(DomainException $failure){
+        same($message,$failure->getMessage(),'Real writer refuses the expected field');same($guidance[$message],SettingsActions::refusal($failure,'lifecycle'),'Safe field guidance');
+    }
+};
+$changes=[['extra_field'=>true],['grace_supported'=>1]];
+foreach(['grace_days','restore_days'] as $field){$changes[]=[$field=>-1];}
+foreach(['grace_extra','restore_fee'] as $field){$changes[]=[$field=>'-1'];}
+foreach(['grace_currency','restore_currency'] as $field){$changes[]=[$field=>'usd'];}
+foreach(['','grace_','restore_'] as $prefix){$changes[]=[$prefix.'source'=>"bad\nsource"];$changes[]=[$prefix.'verified_at'=>'2026-10-18T12:00:00'];$changes[]=[$prefix.'verified_at'=>'2026-02-30T12:00:00Z'];}
+foreach($changes as $change){
+    try{$writer->run($review(),[...$valid,...$change,'verified'=>true],$now);throw new LogicException('Invalid lifecycle field must refuse');}
+    catch(DomainException $failure){expect(isset($guidance[$failure->getMessage()]),'Every lifecycle refusal is allowlisted');same($guidance[$failure->getMessage()],SettingsActions::refusal($failure,'lifecycle'),'All sibling fields have safe guidance');}
+}
+$incomplete=$valid;unset($incomplete['grace_days']);$assertRefusal(fn()=>$writer->run($review(),[...$incomplete,'verified'=>true],$now),'Complete lifecycle facts required.');
+same($unchanged,serialize(DB::table('settings')->get()),'Every refused field leaves facts and audit unchanged');
+same('Reload and check current permissions, saved facts and acceptance.',SettingsActions::refusal(new RuntimeException('Unexpected synthetic detail'),'lifecycle'),'Unknown failure keeps the generic fallback');
 
 // Every malformed field is tested against a complete, positive baseline.
 foreach(Facts::FIELDS as $missing){$v=$valid;unset($v[$missing]);commerceReject(fn()=>Facts::validate($v));same(null,Facts::until($v,'grace',$now),'Missing '.$missing.' never offers grace');}
@@ -98,7 +168,7 @@ storeLifecycleFixture($b,$valid);$row=$row->fresh();$row->encrypted=false;$row->
 // Simulate a damaged retained database that lost the native unique index.
 Schema::table('settings',fn($table)=>$table->dropUnique(['key','settingable_id','settingable_type']));
 storeLifecycleFixture($b,$valid);$duplicate=$server->settings()->create(['key'=>$key,'value'=>'duplicate','encrypted'=>true,'type'=>'string']);
-same(null,$saved(),'Duplicate evidence refuses');commerceReject(fn()=>$writer->run($review(),[...$valid,'verified'=>true],$now));$duplicate->delete();
+same(null,$saved(),'Duplicate evidence refuses');$assertRefusal(fn()=>$writer->run($review(),[...$valid,'verified'=>true],$now),'Conflicting lifecycle settings require repair.');$duplicate->delete();
 Schema::table('settings',fn($table)=>$table->unique(['key','settingable_id','settingable_type']));
 DB::table($t->getTable())->where('id',$t->id)->update(['account_fingerprint'=>$other->fingerprint]);same(null,$saved(),'Corrupt TLD account refuses');
 DB::table($t->getTable())->where('id',$t->id)->update(['account_fingerprint'=>$b->fingerprint]);$t->refresh();
@@ -108,8 +178,8 @@ expect($cap()['grace'],'Restored binding revalidates; no terminal marker');
 $before=serialize(DB::table('settings')->get());
 commerceReject(fn()=>$writer->run($review(),[...$valid,'verified'=>true,'restore_accepted'=>true],$now));
 foreach([['grace_days'=>1.5],['restore_days'=>true],['grace_days'=>'30.0']] as $change){commerceReject(fn()=>$writer->run($review(),[...$valid,...$change,'verified'=>true],$now));}
-foreach([false,'1',null] as $verified){commerceReject(fn()=>$writer->run($review(),[...$valid,'verified'=>$verified],$now));}
-foreach(['verified_at','grace_verified_at','restore_verified_at'] as $field){commerceReject(fn()=>$writer->run($review(),[...$valid,$field=>$now->modify('+1 second')->format(DATE_ATOM),'verified'=>true],$now));}
+foreach([false,'1',null] as $verified){$assertRefusal(fn()=>$writer->run($review(),[...$valid,'verified'=>$verified],$now),'Independent lifecycle verification required.');}
+foreach(['verified_at','grace_verified_at','restore_verified_at'] as $field){$assertRefusal(fn()=>$writer->run($review(),[...$valid,$field=>$now->modify('+1 second')->format(DATE_ATOM),'verified'=>true],$now),'Lifecycle verification cannot be in the future.');}
 same($before,serialize(DB::table('settings')->get()),'Refused writes leave settings and audit unchanged');
 $stale=$review();$writer->run($review(),[...$valid,'conflicting'=>true,'verified'=>true],$now);same(['grace'=>false,'restore'=>false],$cap(true),'Conflict disables both');
 commerceReject(fn()=>$writer->run($stale,[...$valid,'verified'=>true],$now));

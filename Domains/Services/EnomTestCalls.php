@@ -105,9 +105,9 @@ final class EnomTestCalls
             if($limit===0){return 'Daily limit is 0; all Enom TEST requests are refused. '.$used.' used today (UTC).';}
             $summary=$used.' / '.$limit.' used today (UTC), shared by all Enom TEST accounts. Every reserved request counts, including ones that failed, timed out or were stopped before sending.';
             return $used>=$limit?$summary.' Limit reached; Enom TEST requests are refused until 00:00 UTC or until the deployment raises the limit.':$summary;
-        } catch (\Throwable) { return 'Enom TEST call counter unavailable; all Enom TEST requests are refused until it can be read.'; }
+        } catch (\Throwable) { return 'Enom TEST call counter unavailable; all Enom TEST requests are refused until the counter can be read and updated. Ask the deployment administrator to repair it.'; }
     }
     /** Staff refusal facts; explains a refusal while calls remain (counter error or UTC day change). */
     public static function refusedFacts(): string
-    { return self::facts().(self::callsRemain()?' Calls remain today, so a counter error or UTC day change refused it; you can retry.':''); }
+    { return self::facts().(self::callsRemain()?' Calls remain today, but a counter error or UTC day change refused the request. Ask the deployment administrator to repair the counter if the refusal continues after the UTC day changes.':''); }
 }

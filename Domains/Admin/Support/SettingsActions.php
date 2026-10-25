@@ -15,6 +15,16 @@ final class SettingsActions
     private const RETRY_GUIDANCE='For “Not configured”, confirm the server is enabled and fresh, OTE enrollment is enabled, your permissions are current, and the key is not already enrolled on this site before submitting another review. Submitting another review may send another OTE key check.';
     public const SAVED_OUTCOME_UNKNOWN='One OTE key check was sent and NameSilo accepted the key; its balance was not saved. Enrollment may have been saved, but its outcome could not be confirmed. Reload the account page. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. '.self::NOT_ENROLLED.' '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE;
     public const GENERIC_OUTCOME_UNKNOWN='Enrollment did not finish normally, and its outcome could not be confirmed. An OTE key check may or may not have been sent. If it was sent, NameSilo may or may not have accepted the key. Reload the account page. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. '.self::NOT_ENROLLED.' '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE;
+    private const LIFECYCLE_DAYS='Enter whole numbers from 0 to 365 for grace and restore days. Nothing was saved.';
+    /** Keep one snapshot per form, including empty arrays and absent rows. */
+    private static function cached(\Closure $read): \Closure
+    {
+        $loaded=false;$value=null;
+        return static function()use($read,&$loaded,&$value){
+            if(!$loaded){$value=$read();$loaded=true;}
+            return $value;
+        };
+    }
     private static function missingIdentity(): \Filament\Schemas\Components\Text
     { return \Filament\Schemas\Components\Text::make('Missing: saved account identity cannot be read. Restore the saved identity before accepting provider actions.'); }
     public static function description(string $name): string
@@ -57,7 +67,7 @@ final class SettingsActions
         foreach($names as $name){
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp))];
             if(in_array($name,['default_rule','override'],true)){
-                $rule=static function()use($tld,$name,$server){try{return $tld&&$name==='override'?(new PricingRules)->rule(Tld::findOrFail($tld)):(new PricingRules)->defaultRule($server);}catch(\Throwable){return \Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT;}};
+                $rule=self::cached(static function()use($tld,$name,$server){try{return $tld&&$name==='override'?(new PricingRules)->rule(Tld::findOrFail($tld)):(new PricingRules)->defaultRule($server);}catch(\Throwable){return \Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT;}});
                 $fields[] = Select::make('mode')->label('Pricing mode')->options(['markup_percent'=>'Percentage markup','markup_amount'=>'Amount markup','fixed'=>'Fixed annual retail'])->required()->default(fn()=>$rule()['mode']);
                 $fields[] = TextInput::make('markup')->label('Markup')->default(fn()=>$rule()['markup'])->required()->maxLength(12);
                 $fields[] = Select::make('round_up')->label('Round up')->options(['none'=>'None','whole'=>'Whole dollar','half'=>'Half dollar','ending_99'=>'Ending .99'])->default(fn()=>$rule()['round_up'])->required();
@@ -70,11 +80,11 @@ final class SettingsActions
                 $fields[]=Checkbox::make('verified')->label('I verified widened terms or restored sales against current acceptance');
             }
             if($name==='lifecycle'){
-                $saved=static function()use($server,$tld){
+                $saved=self::cached(static function()use($server,$tld){
                     $a=Account::where('server_id',$server)->firstOrFail();$t=Tld::findOrFail($tld);
                     return \Paymenter\Extensions\Servers\Domains\Services\LifecyclePolicies::read(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a),$t->tld)??[];
-                };
-                foreach(['grace_days'=>'Post-expiry grace days','restore_days'=>'Restore days'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->integer()->minValue(0)->maxValue(365)->required()->default(fn()=>$saved()[$key]??null);}
+                });
+                foreach(['grace_days'=>'Post-expiry grace days','restore_days'=>'Restore days'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->integer()->minValue(0)->maxValue(365)->validationMessages(['integer'=>self::LIFECYCLE_DAYS,'min'=>self::LIFECYCLE_DAYS,'max'=>self::LIFECYCLE_DAYS])->required()->default(fn()=>$saved()[$key]??null);}
                 foreach(['grace_supported'=>'Grace renewal supported','restore_supported'=>'Restore supported','auto_renew_only'=>'Auto-renew only','conflicting'=>'Sources conflict'] as $key=>$label){$fields[]=Checkbox::make($key)->label($label)->default(fn()=>$saved()[$key]??false);}
                 foreach([''=>'Policy','grace_'=>'Extra grace charge','restore_'=>'Restore fee'] as $prefix=>$label){
                     if($prefix!==''){
@@ -88,7 +98,7 @@ final class SettingsActions
                 $fields[]=Checkbox::make('verified')->label('I independently verified these windows, support flags and registrar charges')->accepted()->required();
             }
             if($name==='seller'){
-                $policy=static fn()=>\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',Tld::findOrFail($tld)->tld)->first();
+                $policy=self::cached(static fn()=>\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',Tld::findOrFail($tld)->tld)->first());
                 $fields[]=Select::make('seller')->label('Seller account')->options(fn()=>Account::orderBy('server_id')->get()->mapWithKeys(fn($a)=>[$a->server_id=>TldFacts::registrar($a->registrar_key).' · account #'.$a->server_id])->all())->placeholder('No seller')->default(fn()=>$policy()?->server_id);
                 $fields[]=Checkbox::make('register')->label('Allow registrations')->default(fn()=>$policy()?->register_enabled??false);$fields[]=Checkbox::make('transfer')->label('Allow transfers')->default(fn()=>$policy()?->transfer_enabled??false);
             }
@@ -154,7 +164,7 @@ final class SettingsActions
             }
             if($name==='enroll_sandbox'){
                 $fields[]=Hidden::make('environment')->default('test');
-                $fields[]=TextInput::make('label')->label('Account label (staff-entered, unconfirmed)')->helperText('For example, the OTE login email. One line, up to 128 bytes (non-ASCII characters count as more), with no leading or trailing spaces. Never enter an API key. NameSilo does not confirm this label. Staff can see it on this page, and it cannot be changed later.')->required()->maxLength(128);
+                $fields[]=TextInput::make('label')->label('Account label (staff-entered, unconfirmed)')->helperText('For example, sandbox-west. Do not enter personal data or an API key. One line, up to 128 bytes (non-ASCII characters count as more), with no leading or trailing spaces. NameSilo does not confirm this label. Staff can see it on this page, and it cannot be changed later.')->required()->maxLength(128);
                 $fields[]=TextInput::make('api_key')->label('NameSilo OTE API key')->password()->autocomplete('new-password')->required()->maxLength(256);
                 $fields[]=Checkbox::make('confirmed')->label('I accept OTE-only enrollment without provider-confirmed account ownership')->accepted()->required();
             }
@@ -248,7 +258,7 @@ final class SettingsActions
                 'Pause processing on every legacy Enom server before installing or enabling Domains.'=>'Pause processing on every legacy Enom server first.',
                 'TEST catalogue reads are unavailable.'=>'TEST catalogue import is available only for Enom TEST accounts on a deployment that enables it. No provider call was made.',
                 'Catalogue ending is not accepted.'=>'Accept this TLD before importing. No provider call was made.',
-                'Catalogue import unavailable.'=>'Import did not complete. No prices changed; Enom TEST reads may have been made. Reload and check acceptance and permissions.'
+                'Catalogue import unavailable.'=>'Import did not complete. Check saved prices and sale availability. Enom TEST reads may have been made. Reload and check acceptance and permissions.'
                     .($error instanceof \Paymenter\Extensions\Servers\Domains\Services\CatalogueImportFailure?' · '.$error->failureCode:''),
                 'Connection checks are unavailable.'=>$name==='configure'&&($data['registrar']??null)==='namesilo'?'NameSilo identity verification is unavailable. This account cannot be connected.':'Connection checks are unavailable. No provider call was made.',
                 'identity_credentials_refused'=>'Enom refused the user ID or API token. Check both for the selected environment.',
@@ -272,6 +282,16 @@ final class SettingsActions
                 'Sandbox enrollment could not be saved.'=>self::SAVED_OUTCOME_UNKNOWN,
                 'namesilo_identity_unavailable'=>'NameSilo identity verification is unavailable. This account cannot be connected.',
                 'Review key used.'=>$name==='enroll_sandbox'?'This enrollment confirmation was already used, so this submission sent no new OTE key check. An earlier submission may still be finishing. Wait for it to finish, then reload the account page. This page cannot show whether that submission is still running. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. If no Enrollment row appears and Account binding reads “Not configured” after the earlier submission finishes, nothing was enrolled. '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE:'This confirmation was already used. Reload this page.',
+                'Complete lifecycle facts required.'=>'Complete all lifecycle fields. Nothing was saved.',
+                'Invalid lifecycle input.'=>'Reload the lifecycle form and check its fields. Nothing was saved.',
+                'Invalid lifecycle support.'=>'Check the grace, restore, auto-renew and conflicting-source flags. Nothing was saved.',
+                'Lifecycle days must be between 0 and 365.'=>self::LIFECYCLE_DAYS,
+                'Invalid lifecycle charge.'=>'Enter valid non-negative grace and restore charges with at most four decimal places. Nothing was saved.',
+                'Invalid lifecycle currency.'=>'Enter three uppercase letters for grace and restore currencies, for example USD. Nothing was saved.',
+                'Lifecycle verification requires a date and time with UTC offset.'=>'Include a date, time and UTC offset in policy, grace and restore verification times. Nothing was saved.',
+                'Invalid lifecycle verification time.'=>'Enter valid policy, grace and restore verification dates and times. Nothing was saved.',
+                'Enter a one-line lifecycle source between 5 and 500 characters.'=>'Enter one-line policy, grace and restore sources from 5 to 500 characters. Nothing was saved.',
+                'Conflicting lifecycle settings require repair.'=>'Ask an administrator to repair duplicate lifecycle settings before retrying. Nothing was saved.',
                 'Independent lifecycle verification required.'=>'Verify the lifecycle facts and check the confirmation box. Nothing was saved.',
                 'Lifecycle verification cannot be in the future.'=>'Enter verification times at or before now. Nothing was saved.',
                 'Explicit renewal billing confirmation required.'=>'Check the review box to continue. Nothing was saved.',
