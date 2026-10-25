@@ -132,6 +132,12 @@ function fixtureIpAllowed(string $ip, string $fixture = ''): bool
         $reserved = inet_pton($network);
         if (strlen($bytes) === strlen($reserved) && strncmp($bytes, $reserved, $prefix) === 0) { return true; }
     }
+    // Exact public IPv6 fixture keeps real global-address admission and IPv6 pinning covered offline.
+    if ($fixture === 'psl-transport-test.php' && $ip === '2606:4700:4700::1111') { return true; }
+    // Deliberately unsafe DNS answers exercise refusal before any transport dispatch.
+    if ($fixture === 'psl-test.php' && $ip === '127.0.0.1') { return true; }
+    if ($fixture === 'psl-transport-test.php' && in_array($ip, ['127.0.0.1', '10.0.0.1',
+        '169.254.169.254', '100.64.0.1', '192.168.0.1', '::1', 'fc00::1', '::ffff:8.8.8.8'], true)) { return true; }
     // Deliberate invalid glue inputs belong only to this field-error fixture.
     return $fixture === 'owner-record-errors-test.php' && in_array($ip, ['127.0.0.1', '::ffff:8.8.8.8'], true);
 }
@@ -150,7 +156,12 @@ foreach (['127.0.0.1', '::ffff:8.8.8.8'] as $ip) {
     expect(fixtureIpAllowed($ip, 'owner-record-errors-test.php'), 'Existing negative glue fixture is permitted only in its error test');
     expect(!fixtureIpAllowed($ip, 'owner-record-confirmation-test.php'), 'Negative glue exception does not allow positive confirmation fixtures');
 }
-foreach (['owner-record-confirmation-test.php', 'owner-record-errors-test.php'] as $fixture) {
+expect(fixtureIpAllowed('2606:4700:4700::1111', 'psl-transport-test.php'), 'Exact IPv6 pin fixture is permitted');
+foreach (['', 'psl-test.php', 'owner-record-confirmation-test.php'] as $fixture) {
+    expect(!fixtureIpAllowed('2606:4700:4700::1111', $fixture), 'IPv6 pin exception stays in its transport fixture');
+}
+expect(!fixtureIpAllowed('2606:4700:4700::1001', 'psl-transport-test.php'), 'IPv6 exception does not allow neighboring public addresses');
+foreach (['owner-record-confirmation-test.php', 'owner-record-errors-test.php', 'psl-test.php', 'psl-transport-test.php'] as $fixture) {
     $ips = fixtureIpLiterals(file_get_contents(__DIR__.'/'.$fixture));
     expect($ips !== [], $fixture.' must contain IP literals for this policy check');
     foreach ($ips as $ip) { expect(fixtureIpAllowed($ip, $fixture), $fixture.' uses a permitted IP fixture: '.$ip); }

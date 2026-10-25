@@ -18,13 +18,13 @@ namespace Paymenter\Extensions\Servers\Domains\Services {
 namespace {
     require __DIR__.'/bootstrap.php';
     use Paymenter\Extensions\Servers\Domains\Services\{PslTransport,PslFailure,PslValidator};
-    $ips=[['ip'=>'93.184.216.34']]; $t=new PslTransport(null,function($host)use(&$ips){return $ips;});
+    $ips=[['ip'=>'8.8.8.8']]; $t=new PslTransport(null,function($host)use(&$ips){return $ips;});
     $url='https://psl.example.com/list';
     $refuse=function($code, $run) { try{$run();expect(false,'Must refuse '.$code);}catch(PslFailure $e){same($code,$e->safeCode,'Safe transport code '.$code.', got '.$e->safeCode);} };
     same('synthetic',$t->fetch($url,['If-None-Match: "v0"'])['body'],'Fake sender runs');
     foreach([CURLOPT_FOLLOWLOCATION=>false,CURLOPT_MAXREDIRS=>0,CURLOPT_PROXY=>'',CURLOPT_NOPROXY=>'*',CURLOPT_VERBOSE=>false,
         CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,
-        CURLOPT_RESOLVE=>['psl.example.com:443:93.184.216.34'],CURLOPT_HTTPHEADER=>['Accept: text/plain','If-None-Match: "v0"']]as$key=>$value){same($value,$options[$key],'Transport policy '.$key);}
+        CURLOPT_RESOLVE=>['psl.example.com:443:8.8.8.8'],CURLOPT_HTTPHEADER=>['Accept: text/plain','If-None-Match: "v0"']]as$key=>$value){same($value,$options[$key],'Transport policy '.$key);}
     expect($options[CURLOPT_CONNECTTIMEOUT_MS]<=10000&&$options[CURLOPT_CONNECTTIMEOUT_MS]>0,'10s connect');
     expect($options[CURLOPT_TIMEOUT_MS]<=30000&&$options[CURLOPT_TIMEOUT_MS]>0,'30s total');
     foreach(['http://psl.example.com/list','https://127.0.0.1/list','https://[::1]/','https://user@psl.example.com/',
@@ -32,8 +32,8 @@ namespace {
         'https://psl.example.com/?token=x','https://psl.example.com/#fragment',"https://psl.example.com/\n",'https://psl.example.com/\\file']as$bad){
         $before=$executions; $refuse('source_invalid',fn()=>$t->fetch($bad,[])); same($before,$executions,'Unsafe URL zero exchanges');
     }
-    foreach(['127.0.0.1','10.0.0.1','169.254.169.254','100.64.0.1','192.168.0.1','::1','fc00::1','::ffff:93.184.216.34']as$ip){
-        $ips=[['ip'=>'93.184.216.34'],[str_contains($ip,':')?'ipv6':'ip'=>$ip]]; $before=$executions;
+    foreach(['127.0.0.1','10.0.0.1','169.254.169.254','100.64.0.1','192.168.0.1','::1','fc00::1','::ffff:8.8.8.8']as$ip){
+        $ips=[['ip'=>'8.8.8.8'],[str_contains($ip,':')?'ipv6':'ip'=>$ip]]; $before=$executions;
         $refuse('endpoint_unsafe',fn()=>$t->fetch($url,[]));same($before,$executions,'Mixed unsafe DNS zero exchanges');
     }
     foreach([[],false]as$records){
@@ -48,7 +48,7 @@ namespace {
     same(1,$started,'Failed DNS never invokes send admission');
     $ips=[['ip'=>'127.0.0.1']];$refuse('endpoint_unsafe',fn()=>$t->fetch($url,[],function()use(&$started){$started++;}));
     same(1,$started,'Unsafe endpoint never invokes send admission');
-    $ips=[['ip'=>'93.184.216.34']];$before=$executions;
+    $ips=[['ip'=>'8.8.8.8']];$before=$executions;
     $refuse('superseded',fn()=>$t->fetch($url,[],static function(){throw new PslFailure('superseded');}));
     same($before,$executions,'Refused send admission makes zero exchanges');
     (new PslTransport(function()use(&$started){same(2,$started,'Admission before injected exchange');return ['status'=>200,'body'=>''];}))

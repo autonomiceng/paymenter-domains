@@ -23,7 +23,7 @@ $lastNetwork=$psl->status()->last_network_fetch_at;$result=$dns->update();
 same($lastNetwork,$psl->status()->last_network_fetch_at,'Failed DNS is not a network fetch');
 same('dns_failed',$result,'DNS failure retains its cause');same('dns_failed',$psl->status()->last_result,'DNS cause persisted');
 same(null,$psl->nextAllowedAt(),'DNS failure does not lock out manual retry');
-$unsafe = new PSL($clock,new PslTransport(null,fn()=>[['ip'=>'93.184.216.34'],['ip'=>'127.0.0.1']]),$v);
+$unsafe = new PSL($clock,new PslTransport(null,fn()=>[['ip'=>'8.8.8.8'],['ip'=>'127.0.0.1']]),$v);
 same('endpoint_unsafe',$unsafe->update(),'Non-global answer still refused');
 same($lastNetwork,$psl->status()->last_network_fetch_at,'Unsafe DNS is not a network fetch');
 same(false, $psl->discoveryAllowed(), 'No initial discovery'); same(false, $psl->staleWarning(), 'No warning without copy'); same(null, $psl->revision(), 'No revision');
@@ -99,7 +99,7 @@ $stalled=new PSL($clock,new PslTransport(null,function()use($clock,$psl):array {
     $clock->at+=119;same('rate_limited',$psl->update(),'Pending lease protects manual admission through 119 seconds');
     same('rate_limited',$psl->update(true),'Pending lease protects scheduled admission through 119 seconds');
     $clock->at++;same('identical',$psl->update(),'Expired DNS lease can be replaced at 120 seconds');
-    $clock->at++;return [['ip'=>'93.184.216.34']];
+    $clock->at++;return [['ip'=>'8.8.8.8']];
 }),$v);
 same('superseded',$stalled->update(),'Superseded DNS attempt cannot send');
 same($dispatchAt,$psl->status()->last_network_fetch_at,'Only replacement dispatch records network time');
