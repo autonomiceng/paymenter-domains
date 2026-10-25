@@ -71,7 +71,7 @@ foreach([0,1]as$i){
             same(['nameservers'=>implode("\n",$invalid),'privacy'=>'1'],$session->get('_old_input'),'Setup retains only submitted nonsecret fields');
             expect(!isset($registration->fresh()->policy['owner_setup']),'Invalid settings never freeze');
         }
-        $us=clone $registration->domain;$us->domain='synthetic-placeholder.us';$us->tld='us';
+        $us=clone $registration->domain;$us->domain=reservedFixtureName('synthetic.example.com');$us->tld='us';
         try{Paymenter\Extensions\Servers\Domains\Services\AcquisitionSetup::validate($us,$registration,['ns1.example.com','ns2.example.com'],true);expect(false,'Restricted privacy refused');}
         catch(Paymenter\Extensions\Servers\Domains\Services\SetupValidation $e){same(['privacy'],$e->fields,'Restricted privacy has a safe field error');}
         storefrontViews();app('view')->share('errors',$session->get('errors'));
