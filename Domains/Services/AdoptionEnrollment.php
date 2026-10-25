@@ -13,6 +13,8 @@ final readonly class AdoptionEnrollment
     {
         OperationClaims::outside(); $seed = Domain::findOrFail($id);
         if ($seed->provenance !== 'adopted') { return; }
+        $prior = $seed->observation['adoption_enrollment'] ?? [];
+        if (($prior['adoption_id'] ?? null) === $seed->adoption_id && ($prior['generation'] ?? null) === $seed->authority_generation) { return; }
         $discovery = WatchSource::where('user_id', $seed->user_id)->where('registrable_name', $seed->domain)->where('state', 'watch')->orderBy('id')->limit(101)->get();
         if ($discovery->count() > 100) { throw new \DomainException('Adoption source enrollment requires staff review.'); }
         DB::transaction(function () use ($seed, $discovery): void {

@@ -137,6 +137,17 @@ foreach (['pending', 'uncertain', 'running'] as $sentState) {
     DB::table('domains_operations')->where('id', $op->id)->update(['state' => $sentState]);
     expect($dispatch->current($op->fresh()), 'DNR retains original '.$sentState.' outcome reconciliation');
 }
+$retainedCancellation=$c->getRawOriginal();$retainedAdoption=$a->getRawOriginal();
+foreach(['type'=>'immediate','service_id'=>$service->id+999,'reason'=>'Changed original renewal stop']as$field=>$value){
+    $candidate=$c->fresh();$refused=false;
+    try{$candidate->update([$field=>$value]);}catch(Illuminate\Validation\ValidationException $e){
+        same('This cancellation records the original adoption renewal stop and must be retained. Review the domain adoption history.',$e->errors()['reason'][0]??null,'Retained cancellation update has its exact refusal');$refused=true;
+    }
+    expect($refused,'Original cancellation '.$field.' update is guarded');
+    same($retainedCancellation,$c->fresh()->getRawOriginal(),'Update refusal retains cancellation bytes');
+    same($retainedAdoption,$a->fresh()->getRawOriginal(),'Update refusal retains adoption identity');
+    same($money,scenarioMoney(),'Update refusal retains financial history');
+}
 $refusedDelete = false; try { $c->delete(); } catch (Illuminate\Validation\ValidationException) { $refusedDelete = true; }
 expect($refusedDelete, 'Original adoption cancellation deletion is guarded');
 same(1, ServiceCancellation::count(), 'Original renewal stop retained');

@@ -98,6 +98,15 @@ same('New reason for unavailable account', $view->instance()->reviewReason, 'Ear
 same('account_unconfirmed', $view->instance()->review['code'], 'Unavailable account label is specific');
 DB::table('domains_accounts')->where('server_id', $binding->serverId)->update(['environment' => $bindingRow->environment]);
 new \Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext($staff->id, str_repeat('é', 500));
+foreach(['2026-02-30','2026-13-01','2026-00-10','2026-01-00','2025-02-29']as$bad){
+    same('Unconfirmed',\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\AdoptDomain::when($bad),'Impossible expiry stays unconfirmed');
+}
+same('Feb 29, 2028',\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\AdoptDomain::when('2028-02-29'),'Valid leap date retained');
+same('Oct 20, 2027 06:14 UTC',\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\AdoptDomain::when('2027-10-19T23:14:00-07:00'),'Instant display retains UTC conversion');
+foreach([str_repeat('é',501),"line\nbreak","line\u{2028}break","line\u{2029}break",'   ',"valid\xff"]as$bad){
+    $refused=false;try{new \Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext($staff->id,$bad);}catch(InvalidArgumentException){$refused=true;}
+    expect($refused,'StaffContext refuses overlimit, control, blank and malformed reasons');
+}
 expect($view->instance()->getRelationManagers() === [], 'Adoption page omits unrelated request history');
 DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode([Staff::VIEW])]);
 $view->call('$refresh')->assertForbidden();

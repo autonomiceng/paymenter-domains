@@ -21,9 +21,9 @@ $preview = function () use ($reader, $target, $context): Adoption {
     return Adoption::findOrFail($r->previewId);
 };
 $confirm = fn ($a, $actor = null, $digest = null) => $commit->confirm($a->request_key, $digest ?? $a->request_digest, $actor ?? $staff);
-$refuse = function (callable $call, string $label): void {
+$refuse = function (callable $call, string $label, string $expected): void {
     $money = scenarioMoney(); $domains = Domain::count(); $ops = Operation::count(); $c = ServiceCancellation::count();
-    $yes = false; try { $call(); } catch (DomainException|LogicException $e) { $yes = true; }
+    $yes = false; try { $call(); } catch (DomainException|LogicException $e) { $yes = true; same($expected, $e->getMessage(), $label.' exact refusal'); }
     expect($yes, $label); same($money, scenarioMoney(), $label.' retains finances');
     same([$domains, $ops, $c], [Domain::count(), Operation::count(), ServiceCancellation::count()], $label.' no authority or cancellation');
 };
@@ -33,7 +33,7 @@ $hostService = Service::create(['user_id' => $owner->id, 'order_id' => $hostOrde
     'plan_id' => $hosting->plans()->sole()->id, 'quantity' => 1, 'price' => '5.00', 'currency_code' => 'USD', 'status' => 'active']);
 $hostInvoice = Invoice::create(['user_id' => $owner->id, 'currency_code' => 'USD', 'status' => 'paid']);
 InvoiceItem::create(['invoice_id' => $hostInvoice->id, 'reference_type' => $hostService->getMorphClass(), 'reference_id' => $hostService->id, 'description' => 'Unrelated hosting', 'quantity' => 1, 'price' => '5.00']);
-$a = $preview(); $refuse(fn () => $confirm($a), 'Activation defaults OFF');
+$a = $preview(); $refuse(fn () => $confirm($a), 'Activation defaults OFF', 'Adoption is not enabled yet.');
 config(['domains.adoption.enabled' => true]);
 // A valid preview cannot acquire a first holding for an owner with deletion requested.
 $intentTable=\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::TABLE;
@@ -42,16 +42,16 @@ try{$confirm($a);}catch(DomainException $e){same(\Paymenter\Extensions\Servers\D
 finally{DB::table($intentTable)->where('user_id',$owner->id)->delete();}
 expect($blocked,'Marked owner cannot confirm valid adoption');same(0,Domain::count(),'Marked adoption creates no holding');same($before,scenarioMoney(),'Marked adoption preserves native money');
 
-$refuse(fn () => $confirm($a, $other), 'Another actor cannot use request key');
-$refuse(fn () => $confirm($a, digest: str_repeat('f', 64)), 'Digest change refused');
+$refuse(fn () => $confirm($a, $other), 'Another actor cannot use request key', 'Adoption request changed. Verify again.');
+$refuse(fn () => $confirm($a, digest: str_repeat('f', 64)), 'Digest change refused', 'Adoption request changed. Verify again.');
 $clock->time = $a->observed_at->toDateTimeImmutable()->modify('+120 seconds');
-$refuse(fn () => $confirm($a), 'Evidence expires at 120 seconds');
+$refuse(fn () => $confirm($a), 'Evidence expires at 120 seconds', 'Verification details changed or expired. Verify again.');
 $clock->time = $a->observed_at->toDateTimeImmutable()->modify('-1 second');
-$refuse(fn () => $confirm($a), 'Future evidence refused');
+$refuse(fn () => $confirm($a), 'Future evidence refused', 'Verification details changed or expired. Verify again.');
 $clock->time = new DateTimeImmutable('2026-10-19T00:00:00Z');
 foreach ($permissions as $permission) {
     DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode(array_values(array_diff($permissions, [$permission])))]);
-    $refuse(fn () => $confirm($a), 'Revoked '.$permission.' refused');
+    $refuse(fn () => $confirm($a), 'Revoked '.$permission.' refused', 'You do not have permission to adopt registrations.');
     DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode($permissions)]);
 }
 foreach ([['orders', $order->id, 'user_id', $other->id], ['services', $service->id, 'user_id', $other->id],
@@ -59,16 +59,16 @@ foreach ([['orders', $order->id, 'user_id', $other->id], ['services', $service->
     ['services', $service->id, 'status', 'suspended'], ['services', $service->id, 'quantity', 2], ['services', $service->id, 'expires_at', '2027-10-20'],
     ['domains_prices', Price::where('server_id', $tld->server_id)->where('action', 'renew')->sole()->id, 'revision', 999]] as [$table, $id, $field, $value]) {
     $old = DB::table($table)->where('id', $id)->value($field); DB::table($table)->where('id', $id)->update([$field => $value]);
-    $refuse(fn () => $confirm($a), 'Changed '.$table.'.'.$field.' refused');
+    $refuse(fn () => $confirm($a), 'Changed '.$table.'.'.$field.' refused', $table === 'domains_prices' ? 'Verification details changed or expired. Verify again.' : ($field === 'status' ? 'mapping_unconfirmed' : 'Holding native authority changed.'));
     DB::table($table)->where('id', $id)->update([$field => $old]);
 }
 $settings = $service->product->server->settings()->where('key', 'domains_credentials')->sole();
 $old = $settings->getRawOriginal('value'); DB::table('settings')->where('id', $settings->id)->update(['value' => 'unreadable']);
-$refuse(fn () => $confirm($a), 'Credential revision refused'); DB::table('settings')->where('id', $settings->id)->update(['value' => $old]);
-config(['app.url' => 'https://different.invalid']); $refuse(fn () => $confirm($a), 'Copied site refused'); config(['app.url' => 'https://domains-tests.invalid']);
+$refuse(fn () => $confirm($a), 'Credential revision refused', 'Registrar configuration could not be verified.'); DB::table('settings')->where('id', $settings->id)->update(['value' => $old]);
+config(['app.url' => 'https://different.invalid']); $refuse(fn () => $confirm($a), 'Copied site refused', 'Registrar configuration could not be verified.'); config(['app.url' => 'https://domains-tests.invalid']);
 $foreignInvoice = Invoice::create(['user_id' => $other->id, 'currency_code' => 'USD', 'status' => 'paid']);
 $foreignItem = InvoiceItem::create(['invoice_id' => $foreignInvoice->id, 'reference_type' => $service->getMorphClass(), 'reference_id' => $service->id, 'description' => 'Foreign owner history', 'quantity' => 1, 'price' => '1.00']);
-$refuse(fn () => $confirm($a), 'Foreign invoice added after preview refused');
+$refuse(fn () => $confirm($a), 'Foreign invoice added after preview refused', 'unresolved_debt');
 DB::table('invoice_items')->where('id', $foreignItem->id)->delete(); DB::table('invoices')->where('id', $foreignInvoice->id)->delete();
 $lateInvoice = Invoice::create(['user_id' => $other->id, 'currency_code' => 'USD', 'status' => 'pending']);
 $injectDebt = true;
@@ -78,16 +78,16 @@ DB::listen(static function ($query) use (&$injectDebt, $lateInvoice, $service): 
         InvoiceItem::create(['invoice_id' => $lateInvoice->id, 'reference_type' => $service->getMorphClass(), 'reference_id' => $service->id, 'description' => 'Serialized coverage change', 'quantity' => 1, 'price' => '1.00']);
     }
 });
-$refuse(fn () => $confirm($a), 'Related invoice coverage changing after invoice read aborts before service locks');
+$refuse(fn () => $confirm($a), 'Related invoice coverage changing after invoice read aborts before service locks', 'Adoption invoice coverage changed. Verify again.');
 same(false, $injectDebt, 'Serialized debt interleaving was exercised');
 DB::table('invoices')->where('id', $lateInvoice->id)->delete();
 $collision = adoptionPendingFixture($hostService, $binding, ['domain' => 'other-placeholder.com', 'sld' => 'other-placeholder', 'reservation_name' => 'other-placeholder.com', 'provider_domain_id' => '123']);
-$refuse(fn () => $confirm($a), 'Provider identity collision added after preview refused');
+$refuse(fn () => $confirm($a), 'Provider identity collision added after preview refused', 'Registration identity needs staff review.');
 DB::table('domains_domains')->where('id', $collision->id)->delete();
 $payloads = $wire->payloads;
 foreach ($payloads as $key => $value) { $wire->payloads[$key] = str_replace(['10/19/2027', '11:14:00 PM'], ['10/18/2026', '5:00:30 PM'], $value); }
 $expiring = $preview(); $clock->time = $clock->time->modify('+60 seconds');
-$refuse(fn () => $confirm($expiring), 'Registrar expiry crossing inside preview lifetime refused');
+$refuse(fn () => $confirm($expiring), 'Registrar expiry crossing inside preview lifetime refused', 'Verification details changed or expired. Verify again.');
 $clock->time = new DateTimeImmutable('2026-10-19T00:00:00Z'); $wire->payloads = $payloads;
 $before = scenarioMoney(); $calls = count($wire->calls); $ops = Operation::count(); $nativeIds = [$order->id, $service->id, $owner->id, $product->id, $plan->id];
 $queries = []; DB::listen(function ($q) use (&$queries): void { $queries[] = strtolower($q->sql); });
@@ -135,7 +135,7 @@ DB::table('services')->where('id', $service->id)->update(['status' => 'pending']
 $pending = adoptionPendingFixture($service, $binding, ['reservation_name' => null]);
 $a2 = $preview(); $before = scenarioMoney();
 $late = true; Service::updated(static function (Service $s) use (&$late): void { if ($late) { $late = false; throw new DomainException('Injected native projection failure'); } });
-$refuse(fn () => $confirm($a2), 'Late projection failure rolls whole adoption back');
+$refuse(fn () => $confirm($a2), 'Late projection failure rolls whole adoption back', 'Injected native projection failure');
 same('preview', $a2->fresh()->state, 'Rollback retains preview'); same(null, $pending->fresh()->adoption_id, 'Rollback retains pending proof absence');
 same(null, $pending->fresh()->reservation_name, 'Rollback does not acquire pending reservation');
 $promoted = $confirm($a2); same($pending->id, $promoted->id, 'Pending ID preserved');
@@ -167,7 +167,7 @@ DB::listen(static function($query)use(&$lateHoldingRead):void{
     if(str_starts_with($sql,'select ')&&(str_contains($sql,'from "domains_domains"')||str_contains($sql,'from "domains_adoptions"'))){$lateHoldingRead=true;}
 });
 ServiceCancellation::creating(static function()use(&$cancellationOrder,&$lateHoldingRead):void{$cancellationOrder[]=$lateHoldingRead;});
-$late=true;$refuse(fn()=>$confirm($a2),'Converted DNR late projection rolls back');
+$late=true;$refuse(fn()=>$confirm($a2),'Converted DNR late projection rolls back', 'Injected native projection failure');
 same(0,ServiceCancellation::where('service_id',$service->id)->count(),'Rollback leaves no native cancellation');
 $converted=$confirm($a2);
 same([false,false],$cancellationOrder,'Converted holding cancellation precedes domain/adoption reads on rollback and success');

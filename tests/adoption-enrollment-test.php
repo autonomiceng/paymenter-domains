@@ -59,7 +59,29 @@ foreach(['domains_observation_queues','domains_observation_work',ManagedPublicWo
     same((array)$retained,(array)DB::table($table)->where('id',$id)->first(),'Conflicting work is retained without repair');
     DB::table($table)->where('id',$id)->delete();
 }
-$enrollment->repair($d->id);
+// A late save veto occurs only after all required work has been staged.
+$staged=[];$failMarker=true;
+Domain::updating(static function(Domain $row)use(&$staged,&$failMarker){
+    if($failMarker&&isset($row->observation['adoption_enrollment'])){
+        $staged=[DB::table(ManagedPublicWorkSchema::TABLE)->count(),DB::table('domains_observation_queues')->count(),DB::table('domains_observation_work')->count()];
+        return false;
+    }
+});
+$refused=false;try{$enrollment->repair($d->id);}catch(DomainException $e){same('Adoption enrollment marker was not retained.',$e->getMessage(),'Exact late-save refusal');$refused=true;}
+expect($refused,'Late enrollment marker veto refuses');same([2,1,1],$staged,'Marker veto follows every work insert');
+same(['active','watch',0,0,0],[$watch->fresh()->state,$source->fresh()->state,DB::table(ManagedPublicWorkSchema::TABLE)->count(),DB::table('domains_observation_queues')->count(),DB::table('domains_observation_work')->count()],'Late veto rolls back relink and every work family');
+expect(!isset($d->fresh()->observation['adoption_enrollment']),'Late veto cannot consume enrollment marker');
+$failMarker=false;
+// The account cursor repairs the adoption after both early and late enrollment failures.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
+app()->instance(AdoptionEnrollment::class,$enrollment);
+$neighbor=Domain::create(['user_id'=>$other->id,'server_id'=>$d->server_id,'service_id'=>$hosting->id,'registrar_key'=>$d->registrar_key,'account_fingerprint'=>$d->account_fingerprint,'domain'=>'neighbor-placeholder.com','sld'=>'neighbor-placeholder','tld'=>'com','status'=>'cancelled']);
+DB::table('domains_runtime_turns')->insert(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'domain_cursor'=>$neighbor->id,'due_at'=>0]);
+$runtime=new \Paymenter\Extensions\Servers\Domains\Services\RuntimeWork($clock,new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts);
+$runtime->tick();same(0,(int)DB::table('domains_runtime_turns')->value('domain_cursor'),'Exhausted cursor wraps for earlier adopted row');
+expect(!isset($d->fresh()->observation['adoption_enrollment']),'First turn only wraps cursor');
+DB::table('domains_runtime_turns')->update(['due_at'=>0]);$runtime->tick();
+same(null,$neighbor->fresh()->observation,'Non-adopted neighbor never acquires adoption marker');
 same('linked',$watch->fresh()->state,'Watch becomes retained tombstone');same(false,$watch->fresh()->notice_preferences['expiry'],'External expiry notice resolved');same(true,$watch->fresh()->notice_preferences['dns'],'Independent DNS preference preserved');
 same($observationId,$watch->fresh()->last_observation_id,'Original NS history pointer retained without fresh-copy claims');same(1,WatchDnsObservation::count(),'No fabricated managed DNS facts');
 same('retired',$source->fresh()->state,'Prior source retained');$linked=WatchSource::where('state','managed_link')->sole();same($hosting->id,(int)$linked->service_id,'Same hosting service relinked');same($d->id,(int)$linked->managed_domain_id,'Managed owner target');
@@ -67,6 +89,18 @@ same('active',$foreign->fresh()->state,'Other owner watch unchanged');same(2,DB:
 foreach(DB::table(ManagedPublicWorkSchema::TABLE)->get()as$work){same('awaiting_acceptance',$work->safe_code,'DNS execution remains dormant');same((int)$observationId,(int)$work->origin_observation_id,'NS episode origin retained');same($d->authority_generation,(int)$work->generation,'Managed generation stamped');same(4,(int)$work->profile_revision,'Enrollment uses the locked current routing revision');}
 $old=DB::table('domains_watch_work')->where('watch_id',$watch->id)->orderBy('id')->get();same($workBefore->pluck('id')->all(),$old->pluck('id')->all(),'Old DNS work IDs retained');same([7,7],$old->pluck('cursor')->all(),'Old DNS cursors retained');
 expect(!$checks->finish($inflight,new DnsReading('delegation','external'),$now+3),'Old in-flight watch result cannot project after adoption');expect(!$checks->enroll($watch->id,$owner->id,$now+4),'Managed name never re-enrolls as external watch');
-$auditCount=WatchAudit::count();$marker=$d->fresh()->observation;$enrollment->repair($d->id);$commit->confirm($a->request_key,$a->request_digest,$staff);
+$auditCount=WatchAudit::count();$marker=$d->fresh()->observation;
+$queries=[];DB::listen(static function($q)use(&$queries):void{$queries[]=$q->sql;});
+$enrollment->repair($d->id);
+same(1,count($queries),'Current seed marker skips discovery and all native locks');
+// Each mismatched seed field reaches discovery, but the locked current marker still wins.
+$staleField=null;
+Domain::retrieved(static function(Domain $row)use(&$staleField,$d):void{
+    if($staleField!==null&&DB::transactionLevel()===0&&(int)$row->id===(int)$d->id){
+        $prior=$row->observation;$prior['adoption_enrollment'][$staleField]=-1;$row->observation=$prior;$staleField=null;
+    }
+});
+foreach(['adoption_id','generation']as$field){$staleField=$field;$queries=[];$enrollment->repair($d->id);expect(count($queries)>1,'Changed seed '.$field.' cannot skip locked recheck');same($marker,$d->fresh()->observation,'Locked marker retains original enrollment');}
+$commit->confirm($a->request_key,$a->request_digest,$staff);
 same($auditCount,WatchAudit::count(),'Repair/replay does not duplicate relink audit');same($marker,$d->fresh()->observation,'Repair/replay preserves original enrollment');same(2,DB::table(ManagedPublicWorkSchema::TABLE)->count(),'No duplicate managed work');same($calls,count($wire->calls),'Relink/repair never performs network');same($money,scenarioMoney(),'Relink never changes finances');
 $nativeSuccessful=true;echo "Postcommit adoption relink, atomic managed enrollment, NS history and durable repair passed\n";

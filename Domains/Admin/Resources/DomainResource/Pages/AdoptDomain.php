@@ -122,8 +122,11 @@ class AdoptDomain extends Page
         if ($value === null || $value === '') { return 'Unconfirmed'; }
         try {
             $utc = new \DateTimeZone('UTC');
-            return preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $value) ? \DateTimeImmutable::createFromFormat('!Y-m-d', $value, $utc)->format('M j, Y')
-                : (new \DateTimeImmutable($value))->setTimezone($utc)->format('M j, Y H:i').' UTC';
+            if (preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $value)) {
+                $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value, $utc);
+                return $date && $date->format('Y-m-d') === $value ? $date->format('M j, Y') : 'Unconfirmed';
+            }
+            return (new \DateTimeImmutable($value))->setTimezone($utc)->format('M j, Y H:i').' UTC';
         } catch (\Throwable) { return 'Unconfirmed'; }
     }
     private function customerLabel(): string
