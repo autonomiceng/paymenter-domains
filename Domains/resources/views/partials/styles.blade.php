@@ -15,7 +15,7 @@
     --e-warn: color-mix(in srgb, hsl(var(--color-warning)) 78%, black);
     --e-bad: color-mix(in srgb, hsl(var(--color-error)) 80%, black);
     --e-quiet: hsl(var(--color-muted));
-    max-width: 72rem; margin-inline: auto; color: var(--e-fg); overflow-wrap: break-word;
+    max-width: 72rem; margin-inline: auto; color: var(--e-fg); overflow-wrap: anywhere;
 }
 .dark .domains {
     --e-ok: color-mix(in srgb, hsl(var(--color-success)) 80%, white);
