@@ -30,8 +30,22 @@ same('suppressed',DB::table('domains_watch_deliveries')->find($pending)->state,'
 expect(WatchNotice::whereKey($drift->id)->where('state','open')->exists(),'Portal condition survives opt-out');
 $state=WatchNotices::state(Pref::scope($uid,'example.com'));same(['ns_changed'],$state['portal']['dns'],'Retained portal facts');
 try { DB::transaction(fn()=>Pref::save($uid,'example.com',1,1,true,true));expect(false,'Stale revision must refuse'); } catch(DomainException) {}
+$pausedMailId=$delivery->reserve($drift->id,'mail',$now+903);expect($pausedMailId!==null,'Paused preference retains suppressed mail claim');
+$pausedMail=DB::table('domains_watch_deliveries')->where('notice_id',$drift->id)->where('channel','mail')->sole();
+same('preference_off',$pausedMail->safe_code,'Paused mail is preference-suppressed');same('suppressed',$pausedMail->state,'Paused mail stays unhanded');
 $p=Pref::read($uid,'example.com');DB::transaction(fn()=>Pref::save($uid,'example.com',$p['account']['revision'],$p['target']['revision'],true,true));
-$next=$delivery->reserve($drift->id,'mail',$now+904);expect($next!==null,'Separate drift mail claim');expect(!$delivery->handoff($next,$now+904),'One owner/name mail per UTC day');
+foreach(['target_or_preference_changed','registration_managed','daily_mail_limit']as$code){
+    DB::table('domains_watch_deliveries')->where('id',$pending)->update(['safe_code'=>$code]);
+    same(null,$delivery->reserve($drift->id,'app',$now+904),'Re-enable preserves other suppression reasons: '.$code);
+}
+DB::table('domains_watch_deliveries')->where('id',$pending)->update(['safe_code'=>'preference_off']);
+$revived=$delivery->reserve($drift->id,'app',$now+904);same($pending,$revived,'Re-enabled notice reuses its preference-suppressed app identity');
+same(null,DB::table('domains_watch_deliveries')->find($pending)->safe_code,'Revived claim clears preference suppression');
+expect($delivery->handoff($revived,$now+904),'Re-enabled app hands off once');
+expect($delivery->reserve($drift->id,'app',$now+904)===null,'Accepted revived claim never replays');
+same('accepted',DB::table('domains_watch_deliveries')->find($mail)->state,'Re-enable preserves accepted mail');
+same('uncertain',DB::table('domains_watch_deliveries')->find($app)->state,'Re-enable preserves uncertain app');
+$next=$delivery->reserve($drift->id,'mail',$now+904);same((int)$pausedMail->id,$next,'Re-enabled mail reuses its preference-suppressed identity');expect(!$delivery->handoff($next,$now+904),'One owner/name mail per UTC day');
 // A capped lower-priority claim remains eligible next day with fresh complete proof.
 $tomorrow=$now+86400;noticeDns($f,$tomorrow);noticeDns($f,$tomorrow+900);$tomorrow+=900;$planner->plan('watch',$id,$uid,$tomorrow+2);
 expect($delivery->handoff($next,$tomorrow+2),'Capped drift mail eligible next day');same(2,Mail::queued(NoticeMail::class)->count(),'Exactly one mail on each day');

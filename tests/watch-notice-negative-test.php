@@ -56,6 +56,29 @@ expect($delivery->handoff($claim,$at),'Current edited template rendered at hando
 DB::transaction(fn()=>Pref::save($uid,'example.com',$p['account']['revision'],$p['target']['revision'],true,false));
 expect(!$delivery->handoff($claim,$at),'Per-target pause suppresses reserved app');expect(WatchNotice::find($n->id)->state==='open','Pause keeps portal history');
 $p=Pref::read($uid,'example.com');DB::transaction(fn()=>Pref::save($uid,'example.com',$p['account']['revision'],$p['target']['revision'],true,true));
+// Channels excluded by the episode never prepare a disabled or broken template.
+[$n,$at]=$new();$data=$n->data;$data['channels']=['app'];$n->update(['data'=>$data]);
+$template->update(['mail_enabled'=>'force']);config(['settings.mail_disable'=>true]);
+$health=WatchAudit::where('event','notice_health')->count();$claims=DB::table('domains_watch_deliveries')->count();
+same(null,$delivery->reserve($n->id,'mail',$at),'App-only episode skips unavailable forced mail');
+same($health,WatchAudit::where('event','notice_health')->count(),'Unplanned mail creates no render health failure');
+same($claims,DB::table('domains_watch_deliveries')->count(),'Unplanned mail consumes no claim');
+expect($delivery->reserve($n->id,'app',$at)!==null,'App-only episode still reserves app');
+config(['settings.mail_disable'=>false]);$template->update(['mail_enabled'=>'choice_on']);
+[$n,$at]=$new();$data=$n->data;$data['channels']=['mail'];$n->update(['data'=>$data]);
+$template->update(['in_app_body'=>'@php throw new \RuntimeException("Unplanned app render"); @endphp']);
+$health=WatchAudit::where('event','notice_health')->count();
+same(null,$delivery->reserve($n->id,'app',$at),'Mail-only episode skips broken app rendering');
+same($health,WatchAudit::where('event','notice_health')->count(),'Unplanned app creates no render health failure');
+expect($delivery->reserve($n->id,'mail',$at)!==null,'Mail-only episode still reserves mail');
+$template->update(['in_app_body'=>'{{ $domain }} {{ $date }}']);
+// The locked membership recheck still refuses a plan changed during preparation.
+[$n,$at]=$new();$changed=false;
+NotificationTemplate::retrieved(static function()use(&$changed,$n):void {
+    if($changed){return;}$changed=true;$data=$n->fresh()->data;$data['channels']=[];$n->update(['data'=>$data]);
+});
+same(null,$delivery->reserve($n->id,'app',$at),'Changed channel plan refuses under lock');
+same(0,DB::table('domains_watch_deliveries')->where('notice_id',$n->id)->count(),'Changed plan consumes no claim');
 // Queue accepted then threw: durable uncertainty forbids replay even if native queue accepted.
 [$n,$at]=$new();$fake=Mail::getFacadeRoot();$count=0;
 Mail::swap(new class($fake,$count) {

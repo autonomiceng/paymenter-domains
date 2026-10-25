@@ -50,7 +50,7 @@ final class WatchNoticeDelivery
     {
         if (!$this->enabled || $now<0 || DB::transactionLevel()!==0 || !in_array($channel,['mail','app'],true)) { return null; }
         // Render errors do not acquire a delivery key; the planner's health signal remains inspectable.
-        $n=WatchNotice::find($noticeId);$user=$n?User::find($n->user_id):null;if (!$n || !$user) { return null; }
+        $n=WatchNotice::find($noticeId);$user=$n?User::find($n->user_id):null;if (!$n || !$user || !in_array($channel,$n->data['channels'],true)) { return null; }
         try { $prepared=self::prepare($n,$channel,$user); } catch (\Throwable) { $this->renderFailure($n,$channel,$now);return null; }
         return DB::transaction(function()use($n,$channel,$now,$prepared,$resend):?int {
             $t=WatchNoticeTarget::capture($n->target_kind,(int)($n->watch_id??$n->managed_domain_id),$n->user_id,$now);if (!$t) { return null; }
@@ -69,6 +69,10 @@ final class WatchNoticeDelivery
                         'event'=>'notice_claim_relinked','reason'=>'Unhanded channel follows managed registration','data'=>['predecessor_notice_id'=>$prior->notice_id,'notice_id'=>$n->id], 'created_at'=>gmdate('Y-m-d H:i:s',$now)]);
                     DB::table('domains_watch_deliveries')->where('id',$prior->id)->update(['notice_id'=>$n->id,'state'=>$on?'reserved':'suppressed','safe_code'=>$on?null:'preference_off']);
                     return $on?(int)$prior->id:null;
+                }
+                if ($prior->notice_id==$n->id && $prior->state==='suppressed' && $prior->safe_code==='preference_off' && $on) {
+                    DB::table('domains_watch_deliveries')->where('id',$prior->id)->update(['state'=>'reserved','safe_code'=>null]);
+                    return (int)$prior->id;
                 }
                 return $prior->state==='reserved' && $prior->notice_id==$n->id?(int)$prior->id:null;
             }
