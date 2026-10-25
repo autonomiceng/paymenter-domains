@@ -31,7 +31,10 @@ final class AcquisitionPaymentReview
         if(!AcquisitionPaymentReviews::allowed($staff)||self::count($d)===0){return [];}
         return [Action::make('review_late_payment')->label('Record payment review')->color('warning')->modalWidth('lg')
             ->modalDescription('Confirm that you checked the invoice, its payments and account credit. This records your review and clears the reviewed payment alerts.')
-            ->schema([Hidden::make('review_key')->default(fn()=>app(AcquisitionPaymentReviews::class)->ticket($staff,(int)$d->id)),
+            ->schema([Hidden::make('review_key')->default(function()use($staff,$d):string{
+                    try{return app(AcquisitionPaymentReviews::class)->ticket($staff,(int)$d->id);}
+                    catch(\DomainException){return '';}
+                }),
                 Checkbox::make('confirmed')->label('I reconciled the invoice, payments and account credit')->accepted()->required(),
                 Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(3)
                     ->rules(['regex:/\\A[^\\x00-\\x1f\\x7f]*\\z/'])->validationMessages(['regex'=>'Use one line.'])])

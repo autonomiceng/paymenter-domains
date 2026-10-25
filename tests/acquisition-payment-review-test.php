@@ -68,6 +68,17 @@ foreach(['register','transfer'] as $action){
     Livewire::actingAs($reviewer)->test(ViewDomain::class,['record'=>$op->domain_id])->assertActionDoesNotExist('review_late_payment');
     $retirement->inspect($op->domain_id);same(0,$pending($op),'Second reviewed cycle stays resolved');
 }
+// An orphan alert can be displayed even when there is no request for a review ticket.
+$orphan=$new(placeholderComFixtureName('late-review-orphan-placeholder.com'),paid:false);
+$retirement->retire($orphan->domain_id,$staff,$ticket($orphan),'Close unpaid orphan review fixture');
+ObligationAlerts::record($orphan->domain->fresh(),'acquisition_late_money',$clock->now()->getTimestamp(),null,'missing-operation');
+same(1,$pending($orphan),'Orphan late-money alert needs staff attention');$orphanMoney=$nativeMoney();
+$page=Livewire::actingAs($reviewer)->test(ViewDomain::class,['record'=>$orphan->domain_id])->mountAction('review_late_payment')->assertActionMounted('review_late_payment');
+same('',$page->get('mountedActions.0.data.review_key'),'Unavailable review ticket leaves an empty key');
+$page->setActionData(['confirmed'=>true,'reason'=>'Check orphan payment evidence'])->callMountedAction()->assertNotified("Couldn't record payment review");
+same(1,$pending($orphan),'Refused orphan review retains the unresolved alert');
+same([],$orphan->domain->fresh()->renewal_policy['acquisition_payment_reviews']??[],'Refused orphan review records no audit');
+same($orphanMoney,$nativeMoney(),'Refused orphan review changes no financial rows');
 // Real status-change hooks distinguish a new reactivation from another observation.
 Paymenter\Extensions\Servers\Domains\Services\AcquisitionRetirement::boot();
 foreach([false,true]as$paid){
