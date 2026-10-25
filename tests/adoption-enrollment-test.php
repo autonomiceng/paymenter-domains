@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/adoption-confirm.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
 use App\Models\{Order, Product, Server, Service};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, WatchAudit, WatchName, WatchProfile, WatchProductMap, WatchSource, WatchDnsObservation};
@@ -32,6 +33,18 @@ $r=$reader->preview($target,$context); same('ready',$r->code,'Watch peer does no
 $d=$commit->confirm($a->request_key,$a->request_digest,$staff);
 same('committed',$a->fresh()->state,'Enrollment failure never rolls back committed adoption');
 same('active',$watch->fresh()->state,'Failed enrollment atomically retains external target'); same('watch',$source->fresh()->state,'Failed relink rolls source back');same(0,DB::table(ManagedPublicWorkSchema::TABLE)->count(),'Failure leaves no partial managed work');
+// A retained watch cannot drift from its mapped profile while adopted enrollment retries.
+foreach (['active','paused'] as $state) {
+    DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>$state]);
+    foreach ([['ns_profile_id'=>null,'profile_revision'=>0],['notice_preferences'=>['dns'=>false]]] as $edit) {
+        $retained=$watch->fresh()->getAttributes();$refused=false;
+        try { DB::transaction(fn()=>$watch->fresh()->fill([...$edit,'revision'=>$watch->fresh()->revision+1])->save()); }
+        catch (DomainException $e) { same('Managed holdings cannot have active external watches.',$e->getMessage(),'Exact awaiting-enrollment refusal');$refused=true; }
+        expect($refused,'Adopted '.$state.' watch must refuse edits while awaiting enrollment');
+        same($retained,$watch->fresh()->getAttributes(),'Refused edit preserves the repairable watch');
+    }
+}
+DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'active']);
 // Staff profile edits do not require an unbounded watch revision fan-out.
 DB::transaction(fn()=>$profile->fill(['nameservers'=>['ns3.platform.test'],'enabled'=>false,'revision'=>3,'reason'=>'Reviewed routing change'])->save());DB::transaction(fn()=>$profile->fill(['enabled'=>true,'revision'=>4,'reason'=>'Reviewed current routing profile'])->save());
 $fail=false; $enrollment=new AdoptionEnrollment($clock);
@@ -75,7 +88,7 @@ $failMarker=false;
 // The account cursor repairs the adoption after both early and late enrollment failures.
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 app()->instance(AdoptionEnrollment::class,$enrollment);
-$neighbor=Domain::create(['user_id'=>$other->id,'server_id'=>$d->server_id,'service_id'=>$hosting->id,'registrar_key'=>$d->registrar_key,'account_fingerprint'=>$d->account_fingerprint,'domain'=>'neighbor-placeholder.com','sld'=>'neighbor-placeholder','tld'=>'com','status'=>'cancelled']);
+$neighbor=Domain::create(['user_id'=>$other->id,'server_id'=>$d->server_id,'service_id'=>$hosting->id,'registrar_key'=>$d->registrar_key,'account_fingerprint'=>$d->account_fingerprint,'domain'=>placeholderComFixtureName('neighbor-placeholder.com'),'sld'=>'neighbor-placeholder','tld'=>'com','status'=>'cancelled']);
 DB::table('domains_runtime_turns')->insert(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'domain_cursor'=>$neighbor->id,'due_at'=>0]);
 $runtime=new \Paymenter\Extensions\Servers\Domains\Services\RuntimeWork($clock,new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts);
 $runtime->tick();same(0,(int)DB::table('domains_runtime_turns')->value('domain_cursor'),'Exhausted cursor wraps for earlier adopted row');

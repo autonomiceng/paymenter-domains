@@ -8,9 +8,9 @@ final class WatchManagedTarget
 {
     public const MANAGED = ['active', 'grace', 'expired'];
     public const PROGRESS = ['registration_pending', 'transfer_pending'];
-    public static function exists(int $owner, string $name): bool
+    public static function exists(int $owner, string $name, bool $includePending = true): bool
     {
-        return Domain::where('user_id',$owner)->where('reservation_name',$name)->whereIn('status',[...self::MANAGED,...self::PROGRESS])
+        return Domain::where('user_id',$owner)->where('reservation_name',$name)->whereIn('status',$includePending ? [...self::MANAGED,...self::PROGRESS] : self::MANAGED)
             ->where(fn($q)=>$q->whereNull('provenance')->orWhere('provenance','<>','adoption_pending'))
             ->whereHas('service',fn($q)=>$q->where('user_id',$owner))->exists();
     }

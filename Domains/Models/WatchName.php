@@ -26,8 +26,8 @@ final class WatchName extends WatchRecord
             throw new \DomainException('Managed registration requires a linked tombstone.');
         }
         if (in_array($this->state, ['active','paused'], true)
-            && (!$this->exists || !in_array($this->getRawOriginal('state'), ['active','paused'], true))
-            && WatchManagedTarget::exists((int)$this->user_id,$this->canonical_name)) {
+            && WatchManagedTarget::exists((int)$this->user_id,$this->canonical_name,
+                includePending: !$this->exists || !in_array($this->getRawOriginal('state'), ['active','paused'], true))) {
             throw new \DomainException('Managed holdings cannot have active external watches.');
         }
         if ($this->managed_domain_id !== null) {

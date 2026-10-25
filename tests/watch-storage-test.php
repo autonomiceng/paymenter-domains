@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php'; require __DIR__.'/Support/staff-panel.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
 use App\Models\{Category,Currency,Product,Plan,Server,Service,Order,User};
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,WatchProductMap,WatchName,WatchSource,WatchAudit};
@@ -68,7 +69,7 @@ $another=DB::transaction(fn()=>WatchName::create([...$nameData,'user_id'=>$other
 same(2,WatchName::where('canonical_name','example.com')->count(),'Canonical names are owner-scoped');
 watchRefused(fn()=>WatchName::create($nameData),'Owner/name unique');
 foreach ([['origin'=>'staff_manual'],['canonical_name'=>'Example.com'],['canonical_name'=>'127.0.0.1'],['canonical_name'=>'a_b.com'],['psl_revision'=>'bad'],['state'=>'unmanaged'],['registration'=>'unmanaged'],['expected_dns'=>'unmanaged'],['registration'=>'platform'],['state'=>'linked']] as $bad) {
-    watchRefused(fn()=>WatchName::create([...$nameData,'canonical_name'=>'unused-placeholder.com',...$bad]),'Watch invariant');
+    watchRefused(fn()=>WatchName::create([...$nameData,'canonical_name'=>placeholderComFixtureName('unused-placeholder.com'),...$bad]),'Watch invariant');
 }
 $plain=WatchName::findOrFail($watch->id);$stale=WatchName::findOrFail($watch->id);
 DB::transaction(fn()=>$plain->fill(['state'=>'paused','revision'=>2])->save());
@@ -92,7 +93,7 @@ $staleSource=$source->fresh();DB::transaction(fn()=>$source->fill(['revision'=>2
 watchRefused(fn()=>$staleSource->retire('Stale source'),'Retirement preserves optimistic revision check');
 $source->retire('Owner changed');same(null,$source->fresh()->service_id,'Retirement releases active service key');same(null,$source->fresh()->watch_id,'Retirement clears watch target');
 $audit=WatchAudit::where('event','source_retired')->firstOrFail();same($service->id,$audit->data['service_id'],'Retained original service association');same($watch->id,$audit->data['watch_id'],'Retained former watch target');
-foreach (['hostname'=>'changed.example.com','registrable_name'=>'changed-placeholder.com','map_id'=>$map->id+1,'map_revision'=>999,'source_digest'=>str_repeat('b',64),'last_seen_at'=>1800000002] as $field=>$value) {
+foreach (['hostname'=>'changed.example.com','registrable_name'=>placeholderComFixtureName('changed-placeholder.com'),'map_id'=>$map->id+1,'map_revision'=>999,'source_digest'=>str_repeat('b',64),'last_seen_at'=>1800000002] as $field=>$value) {
     $source->refresh();watchRefused(fn()=>$source->fill([$field=>$value,'revision'=>$source->revision+1])->save(),'Retired source history cannot change');
 }
 same($owner->id,$source->fresh()->user_id,'Retired owner retained');
@@ -126,7 +127,7 @@ watchRefused(fn()=>WatchSource::create($linkedData),'Native and ledger customer 
 DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>'adoption_pending','provenance'=>'adoption_pending']);
 watchRefused(fn()=>WatchSource::create($linkedData),'Adoption pending is not managed authority');
 DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>'active','provenance'=>null]);
-watchRefused(fn()=>WatchName::create([...$nameData,'user_id'=>$other->id,'canonical_name'=>'linked-placeholder.com','state'=>'linked','managed_domain_id'=>$domain->id]),'Linked tombstone exact canonical reservation');
+watchRefused(fn()=>WatchName::create([...$nameData,'user_id'=>$other->id,'canonical_name'=>placeholderComFixtureName('linked-placeholder.com'),'state'=>'linked','managed_domain_id'=>$domain->id]),'Linked tombstone exact canonical reservation');
 foreach (['registration_rejected','transfer_rejected','cancelled','unknown'] as $failed) {
     DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>$failed]);
     watchRefused(fn()=>WatchSource::create($linkedData),'Failed holdings cannot suppress the public watch');
