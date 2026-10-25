@@ -15,6 +15,17 @@ same(1,$dom->query('//tbody/tr')->length,'Hosting domain joins the one Domains l
 same('At your registrar',trim($dom->query('td[@data-label="Renewal"]',$row)->item(0)?->textContent??''),'Hosting row renews at its registrar');expect(str_starts_with(trim($dom->query('td[1]/*[contains(@class,"domains-cell-sub")]',$row)->item(0)?->textContent??''),'Hosting: '),'Hosting row names its service');
 expect(!str_contains($html,'Related to your hosting')&&!str_contains($html,'No domains yet'),'No separate hosting section and no empty state beside a hosting row');expect(str_contains($html,'example.com'),'Related name is visible');expect(!str_contains($list->index($request($other))->render(),'example.com'),'Foreign list is empty');
 $queries=0;DB::listen(static function()use(&$queries){$queries++;});$view=$controller->show($request($owner),'watch',$id);$before=$queries;$html=$view->render();same($before,$queries,'Detail Blade queries no tables');expect(!str_contains($html,'Connection details unavailable')&&!str_contains($html,'Not pointed to'),'Unknown connection never claims empty and shows no unknown-only chip');
+$dom=storefrontDom($html);$text=static fn(DOMNode $node)=>trim($node->textContent);
+$nameservers='//li[@id="nameservers"]/span[@class="domains-row__v"]';
+same(1,$dom->query('//li[@id="nameservers"]')->length,'One initial Nameservers row');
+same(1,$dom->query($nameservers)->length,'One Nameservers value');
+same(['Missing'],array_map($text,iterator_to_array($dom->query($nameservers.'/span[@class="domains-missing"]'))),'Initial Nameservers value is Missing');
+same(['Shows after the first check'],array_map($text,iterator_to_array($dom->query($nameservers.'/span[@class="domains-sub"]'))),'Initial Nameservers names the pending first check');
+$expires='//section[@id="renewal"]//dl[@class="domains-card"]/div[dt[starts-with(normalize-space(.),"Expires")]]';
+same(1,$dom->query($expires)->length,'One initial Renewal Expires row');
+same(1,$dom->query($expires.'/dd')->length,'One Expires value');
+same(['Missing'],array_map($text,iterator_to_array($dom->query($expires.'/dd/span[@class="domains-missing"]'))),'Initial expiry value is Missing');
+same(['Check at your registrar'],array_map($text,iterator_to_array($dom->query($expires.'/dd/span[@class="domains-sub"]'))),'Initial expiry names its registrar cause');
 $beforeState=DB::table('domains_watch_work')->get()->toJson();$list->index($request($owner))->render();$controller->show($request($owner),'watch',$id)->render();same($beforeState,DB::table('domains_watch_work')->get()->toJson(),'GET never enrolls or queues public work');
 app('view')->getFinder()->addLocation($fixture.'/themes/default/views');HostingDomainRow::boot();Auth::setUser($owner);$v=view('services.show',['service'=>$service,'fields'=>[]]);app('view')->callComposer($v);$fields=$v->getData()['fields'];same(1,count($fields),'One compact hosting Domain row');expect(str_contains((string)$fields[0]['text'],url('/domains/checks/watch/'.$id)),'Hosting row links owned watch detail');
 Auth::setUser($other);$v=view('services.show',['service'=>$service,'fields'=>[]]);app('view')->callComposer($v);same([],$v->getData()['fields'],'Hosting composer refuses foreign owner');
