@@ -23,14 +23,15 @@ final class Management extends ManagementProtocol
     { $p=CanonicalName::parse($r->name,[substr($r->name,strpos($r->name,'.')+1)]); return ['SLD'=>$p['sld'],'TLD'=>$p['tld']]; }
     private function get(ManagementRequest $r, RequestContext $c, R $cmd, ?array $p=null): ProtocolResult
     {
+        $remaining=$c->budget->remaining();
         try { $reply=(new ResponseParser)->parse($cmd,$this->read($r,$c,$cmd->value,$p??$this->parts($r))); }
         catch (\Throwable $e) {
-            if($cmd===R::Balance&&!$e instanceof \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred){\Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($this->binding,null,$c->now(),'preflight','read_failed');}
+            if($cmd===R::Balance&&$c->budget->remaining()<$remaining&&!$e instanceof \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred&&!$e instanceof \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit){\Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($this->binding,null,$c->now(),'preflight','read_failed');}
             throw $e;
         }
         if($cmd===R::Balance){
             $money=Balance::read($reply);
-            \Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($this->binding,$money,$c->now(),'preflight',$money?null:'read_failed');
+            if($money||$c->budget->remaining()<$remaining){\Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($this->binding,$money,$c->now(),'preflight',$money?null:'read_failed');}
         }
         return $reply;
     }

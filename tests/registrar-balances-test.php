@@ -76,7 +76,7 @@ foreach ([new \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred('Synth
         public int $calls=0;
         public function __construct(private AccountBinding $account,private Throwable $failure){}
         public function binding():AccountBinding{return $this->account;}
-        public function balance(RequestContext $c):DriverResult{$this->calls++;throw $this->failure;}
+        public function balance(RequestContext $c):DriverResult{$c->claimRead($this->account);$this->calls++;throw $this->failure;}
         public function accountCapabilities(RequestContext $c):Capabilities{throw new LogicException('Unused');}
         public function quote(\Paymenter\Extensions\Servers\Domains\Data\Query $q,RequestContext $c):DriverResult{throw new LogicException('Unused');}
         public function availability(\Paymenter\Extensions\Servers\Domains\Data\Query $q,RequestContext $c):DriverResult{throw new LogicException('Unused');}
@@ -85,6 +85,7 @@ foreach ([new \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred('Synth
         public function renewalAssessment(\Paymenter\Extensions\Servers\Domains\Data\Query $q,RequestContext $c):DriverResult{throw new LogicException('Unused');}
         public function reconcile(\Paymenter\Extensions\Servers\Domains\Data\AttemptEvidence $a,RequestContext $c):\Paymenter\Extensions\Servers\Domains\Data\ReconciliationResult{throw new LogicException('Unused');}
     };
+    $context=new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new RequestBudget(1),$clock);
     try{BalanceReads::read($throwing,$context,'preflight');throw new LogicException('Expected exact balance exception');}
     catch(Throwable $caught){expect($caught===$failure,'Balance exception identity is preserved');}
     same(1,$throwing->calls,'Throwing balance is called exactly once');
@@ -94,6 +95,66 @@ foreach ([new \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred('Synth
         same('read_failed',$row($a)->last_error_code,'Ordinary throw records failure');same('preflight',$row($a)->source,'Failure records attempted source');
     }else{same($before,(array)$row($a),'Local deferral and TEST cap retain the entire last successful row');}
 }
+// Refusals before a new read preserve every field of the last successful balance.
+BalanceReads::record($binding,new Money('7.99','USD'),$clock->now(),'manual');
+foreach(['budget','deadline','binding'] as $refusal){
+    $budget=new RequestBudget(1);$budget->consume();
+    $localReader=$refusal==='binding'?new FakeRegistrar($other,new Capabilities($other,[]),new DriverResult($other,Disposition::Unknown,SendState::PossiblySent,ResultReason::Unverified)):$failedReader;
+    $c=new RequestContext($binding,RequestOrigin::Interactive,
+        $clock->now()->modify($refusal==='deadline'?'-1 second':'+25 seconds'),$refusal==='budget'?$budget:new RequestBudget(1),$clock);
+    $before=(array)$row($a);
+    $refused=false;try{BalanceReads::read($localReader,$c,'preflight');}catch(RuntimeException|DomainException|Paymenter\Extensions\Servers\Domains\Data\AccountBindingMismatch){$refused=true;}
+    expect($refused,'Local '.$refusal.' refusal expected');
+    same($before,(array)$row($a),'Local '.$refusal.' refusal never invalidates saved balance');
+}
+$noWire=new class implements Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport {
+    public int $calls=0;
+    public function send(Environment $environment,Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand $command,array $parameters,string $uid,string $token,int $timeoutMs):string{$this->calls++;throw new LogicException('Local refusal must not send');}
+};
+$readDriver=new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding,'account-enom','synthetic-token',$noWire),['com']);
+foreach(['budget','deadline'] as $refusal){
+    $c=new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify($refusal==='deadline'?'-1 second':'+25 seconds'),new RequestBudget($refusal==='budget'?0:1),$clock);
+    $before=(array)$row($a);same(Disposition::Unknown,BalanceReads::read($readDriver,$c,'preflight')->disposition,'Local driver refusal returns an unknown result');
+    same($before,(array)$row($a),'Returned local '.$refusal.' refusal retains successful balance');
+}
+same(0,$noWire->calls,'Returned local refusals make no physical requests');
+BalanceReads::read($readDriver,new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new RequestBudget(1),$clock),'preflight');
+same(1,$noWire->calls,'Transport failure consumes exactly one physical read');same('read_failed',$row($a)->last_error_code,'Consumed transport failure invalidates balance');
+BalanceReads::record($binding,new Money('7.99','USD'),$clock->now(),'manual');
+$claimed=new RequestBudget(1);$thrown=null;
+try{BalanceReads::read($readDriver,new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),$claimed,$clock,stopOnReadFailure:true),'renewal');}
+catch(DomainException $e){$thrown=$e;}
+expect($thrown!==null&&$thrown->getMessage()==='Registrar read failed.','Consumed read exception propagates through balance recording');
+same(0,$claimed->remaining(),'Throwing balance consumed one read');
+same('read_failed',$row($a)->last_error_code,'Consumed exception invalidates a successful balance');
+same('renewal',$row($a)->source,'Consumed exception records its attempted source');same('7.99',$row($a)->amount,'Consumed exception retains the last known amount');
+BalanceReads::record($binding,new Money('7.99','USD'),$clock->now(),'manual');
+same(null,$row($a)->last_error_code,'Returned failure control begins with a successful balance');
+BalanceReads::read($failedReader,new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new RequestBudget(1),$clock),'preflight');
+same('read_failed',$row($a)->last_error_code,'A newly consumed failed read still invalidates balance');
+// Paid privacy reaches balance only after two successful reads; earlier budget use is not a balance read.
+$managementCalls=[];$managementFailure='';
+$management=new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management($binding,static function($origin,$command)use(&$managementCalls,&$managementFailure):string{
+    $managementCalls[]=$command;
+    if($command==='GetBalance'&&$managementFailure==='throw'){throw new RuntimeException('Synthetic balance transport failure');}
+    if($command==='GetBalance'&&$managementFailure==='cap'){throw new Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit;}
+    $body=match($command){
+        'GetDomainInfo'=>'<GetDomainInfo><DomainName DomainNameID="456">privacy.example</DomainName><Status><Belongs-To>account-enom</Belongs-To></Status></GetDomainInfo>',
+        'GetWPPSInfo'=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSPrice>1.00</WPPSPrice></GetWPPSInfo>',
+        'GetBalance'=>$managementFailure==='malformed'?'<AvailableBalance>bad</AvailableBalance>':'<AvailableBalance>8.00</AvailableBalance>',
+        default=>throw new LogicException('Unexpected balance fixture command'),
+    };return '<interface-response><Command>'.$command.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';
+});
+$privacy=new Paymenter\Extensions\Servers\Domains\Data\ManagementRequest($binding,'synthetic-balance','privacy.example','privacy_purchase',[],providerId:'456');
+foreach(['budget','cap','throw','malformed','success'] as $mode){
+    BalanceReads::record($binding,new Money('7.99','USD'),$clock->now(),'manual');$before=(array)$row($a);$managementCalls=[];$managementFailure=$mode;
+    $refused=false;try{$management->prepare($privacy,new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new RequestBudget($mode==='budget'?2:3),$clock));}catch(RuntimeException|DomainException){$refused=true;}
+    same($mode!=='success',$refused,'Management balance refusal matches the physical read result');
+    same($mode==='budget'?['GetDomainInfo','GetWPPSInfo']:['GetDomainInfo','GetWPPSInfo','GetBalance'],$managementCalls,'Privacy reaches the intended balance boundary');
+    if(in_array($mode,['budget','cap'],true)){same($before,(array)$row($a),'Management local '.$mode.' refusal retains successful balance');}
+    else{same($mode==='success'?null:'read_failed',$row($a)->last_error_code,'Management records only completed or failed physical balance reads');}
+}
+BalanceReads::record($binding,null,$clock->now(),'preflight','read_failed');
 BalanceReads::record($binding,new Money('8.00','USD'),$clock->now()->modify('-1 second'),'manual');
 same('read_failed',$row($a)->last_error_code,'Old completion cannot replace newer failure');
 $rate=Price::where('server_id',$a->server_id)->where('action','renew')->sole();$saved=$rate->wholesale;
@@ -144,6 +205,34 @@ $cancel->update(['type'=>'immediate']);same(0,$forecast()['count'],'Immediate ca
 $off->update(['status'=>'retired']);same(0,$forecast()['count'],'Retired holding excluded');
 $off->update(['status'=>'active']);$off->service->update(['status'=>'cancelled']);same(0,$forecast()['count'],'Cancelled service excluded');
 $otherDomain=$make(placeholderComFixtureName('balance-other-placeholder.com'),'2026-11-01',$b);same(0,$forecast()['count'],'Forecast respects second server');$otherDomain->update(['billing_managed'=>false]);
+// One bounded forecast chunk batches cancellation and invoice reads for both obligation paths.
+$queryCount=static function()use($forecast):int{DB::enableQueryLog();DB::flushQueryLog();$forecast();$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
+DB::beginTransaction();
+$bounded=[];$bounded[]=$make(placeholderComFixtureName('forecast-bounded-first-placeholder.com'));$renew($bounded[0]);
+$oneChunk=$queryCount();
+for($i=1;$i<25;$i++){$h=$make(placeholderComFixtureName('forecast-bounded-'.$i.'-placeholder.com'));$bounded[]=$h;$renew($h,$i%2?'awaiting_payment':'held',$i%2?[]:$proof);}
+$manyChunk=$queryCount();same($oneChunk,$manyChunk,'Forecast read count stays bounded across one chunk of obligations');
+same(13,$forecast()['count'],'Issued and unproven sent obligations retain their distinct forecast semantics');
+// Retained adoption stops are loaded once for the same bounded chunk.
+Paymenter\Extensions\Servers\Domains\Services\AdoptionSchema::install();
+Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();
+Paymenter\Extensions\Servers\Domains\Services\HoldingAdoptionSchema::install();
+$adoptStop=static function(Domain $h,bool $stop)use($clock,$user):void{
+    $record=new Paymenter\Extensions\Servers\Domains\Models\Adoption([...$h->only(['service_id','user_id','server_id','registrar_key','account_fingerprint','authority_generation']),
+        'request_key'=>'forecast-adoption-'.$h->id,'request_digest'=>str_repeat('b',64),'domain_id'=>$h->id,'state'=>'committed','origin'=>'staff','environment'=>'test',
+        'actor_id'=>$user->id,'reason'=>'Synthetic retained forecast stop','do_not_renew'=>$stop,'cancellation_id'=>$stop?999999:null,
+        'evidence'=>['version'=>1,'registrar_key'=>$h->registrar_key,'environment'=>'test','resulting_generation'=>$h->authority_generation],
+        'observed_at'=>$clock->now(),'valid_until'=>$clock->now()->modify('+1 hour'),'committed_at'=>$clock->now()]);
+    $aid=DB::table('domains_adoptions')->insertGetId($record->getAttributes());
+    DB::table('domains_domains')->where('id',$h->id)->update(['provenance'=>'adopted','adoption_id'=>$aid]);
+};
+$adoptStop($bounded[0],false);$oneAdoption=$queryCount();
+foreach(array_slice($bounded,1) as $i=>$h){$adoptStop($h,$i===0);}
+same($oneAdoption,$queryCount(),'One chunk batches original adoption stops');same(12,$forecast()['count'],'Original adopted renewal stop blocks its issued obligation');
+for($i=25;$i<101;$i++){$h=$make(placeholderComFixtureName('forecast-bounded-'.$i.'-placeholder.com'));$bounded[]=$h;$renew($h);}
+expect($queryCount()<=2*$manyChunk+2,'Forecast read count grows by chunks across the 100-domain boundary');
+same(88,$forecast()['count'],'The next chunk includes every additional open obligation exactly once');
+DB::rollBack();same(0,$forecast()['count'],'Forecast fixture rollback preserves prior holdings');
 // Daily and manual reads use the same provider-login limiter, without requiring write activation.
 $readState=(object)['calls'=>0,'fail'=>false,'readers'=>[]];$registry=new RegistrarRegistry;
 $verify=new class implements AccountVerifier {public function verify(Environment $e,array $c):string{return $c['token'];}};

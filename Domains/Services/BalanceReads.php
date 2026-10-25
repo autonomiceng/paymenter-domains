@@ -11,16 +11,17 @@ final class BalanceReads
 {
     public static function read(RegistrarDriver $reader, RequestContext $context, string $source): DriverResult
     {
+        $remaining = $context->budget->remaining();
         try {
             $result = $reader->balance($context);
             $context->binding->requireMatch($result->binding);
         } catch (\Throwable $e) {
             // A local quota refusal did not read the provider and cannot invalidate its last result.
-            if(!$e instanceof ReadDeferred&&!$e instanceof EnomTestCallLimit){self::record($context->binding,null,$context->now(),$source,'read_failed');}
+            if($context->budget->remaining()<$remaining&&!$e instanceof ReadDeferred&&!$e instanceof EnomTestCallLimit){self::record($context->binding,null,$context->now(),$source,'read_failed');}
             throw $e;
         }
         $money = $result->disposition === Disposition::Accepted ? $result->evidence()->balance : null;
-        self::record($context->binding,$money,$context->now(),$source,$money?null:'read_failed');
+        if($money||$context->budget->remaining()<$remaining){self::record($context->binding,$money,$context->now(),$source,$money?null:'read_failed');}
         return $result;
     }
     public static function record(AccountBinding $binding, ?Money $money, \DateTimeImmutable $at, string $source, ?string $error=null): void
