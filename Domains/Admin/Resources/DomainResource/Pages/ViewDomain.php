@@ -9,7 +9,7 @@ use Filament\Schemas\Components\{Callout, Grid, Section};
 use Filament\Schemas\Schema;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainFacts, HoldingActions, MissingEntry, OperationActions, RegistrarFacts, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainFacts, HoldingActions, MissingEntry, OperationActions, RegistrarFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
 {
@@ -32,7 +32,7 @@ class ViewDomain extends ViewRecord
         $d=$this->getRecord(); $renewal=HoldingActions::make($d);
         $more=array_values(array_filter($renewal,fn(Action $a)=>$a->getName()==='reprice'));
         // Import domain for a pending import sits in the page notice.
-        return [...AcquisitionActions::make($d),
+        return [...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),
             ...array_filter($renewal,fn(Action $a)=>$a->getName()!=='reprice'),
             ...($more?[ActionGroup::make($more)->label('More')->button()->color('gray')]:[])];
     }

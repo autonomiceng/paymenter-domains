@@ -35,6 +35,10 @@ final class NativeCancellation
             self::retained($c);
         });
         Service::updating(static function(Service $s):void {
+            if($s->isDirty('status')&&$s->status==='active'&&!NativeDomainGuard::identityProjection($s)){
+                foreach(array_unique(array_filter(array_column(NativeIdentity::rows($s),'id'))) as $id){self::guard((int)$id,'reactivation');}
+                return;
+            }
             // Active is native paid billing state, regardless of caller or registrar progress.
             $unsafe=['cancelled','suspended'];$attrs=$s->getAttributes();$aliases=$attrs;unset($aliases['status']);
             if(NativeDomainGuard::identityProjection($s)){return;}
@@ -109,6 +113,10 @@ final class NativeCancellation
                 self::refuse('This domain changed while you were saving. Reload the page and try again.',(int)$seed->id,$kind);
             }
             $acquisitions=$ops->whereIn('action',['register','transfer']);$allTerminal=$acquisitions->isNotEmpty();
+            if($kind==='reactivation'){
+                foreach($domains as $d){AcquisitionRetirement::prepareReactivation($d,$acquisitions,$service->status);}
+                return;
+            }
             if($acquisitions->isEmpty()){
                 // A converted holding may retain only a converter-sealed historical renewal.
                 // Require its authenticated current billing anchor, including later renewals; never a state label.

@@ -39,7 +39,7 @@ final class ObligationAlerts
         if(!isset(self::LABELS[$code])){throw new \InvalidArgumentException('Unknown obligation alert.');}
         $key=self::key($d,$code,$operationId,$identity);
         $q=DB::table('domains_obligation_alerts')->where('alert_key',$key);$old=(clone $q)->first();
-        if($old){$q->update(['last_seen'=>$now,'resolved_at'=>null]);}
+        if($old){$q->update(['last_seen'=>$now,...($code==='acquisition_late_money'?[]:['resolved_at'=>null])]);}
         else{DB::table('domains_obligation_alerts')->insert(['alert_key'=>$key,'domain_id'=>$d->id,'generation'=>$d->authority_generation,'code'=>$code,
             'operation_id'=>$operationId,'first_seen'=>$now,'last_seen'=>$now]);}
         return $key;

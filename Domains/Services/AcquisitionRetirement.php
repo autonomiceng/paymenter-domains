@@ -50,7 +50,7 @@ final readonly class AcquisitionRetirement
             ||!is_int($t['until']??null)||$t['until']<=$this->clock->now()->getTimestamp()||!is_string($t['stamp']??null)
             ||!hash_equals($t['stamp'],StaffHoldingReview::stamp($l))){throw new \DomainException('Order changed. Reload this page and review it again.');}
     }
-    /** After-commit optimization only. The account-fair domain cursor is the durable recovery path. */
+    /** Sweeps recover financial changes and missed native status observations. */
     public function inspect(int $id): void
     {
         try{
@@ -81,7 +81,7 @@ final readonly class AcquisitionRetirement
             $status=Invoice::whereKey($op->invoice_id)->value('status');
             $transactions=InvoiceTransaction::where('invoice_id',$op->invoice_id)->orderBy('id')->get();
             if(!self::activity($op,$service,$status,$transactions)){return false;}
-            $key=ObligationAlerts::key($seed,'acquisition_late_money',(int)$op->id,self::identity($service,$status,$transactions));
+            $key=ObligationAlerts::key($seed,'acquisition_late_money',(int)$op->id,self::identity($seed,$service,$status,$transactions));
             return !DB::table('domains_obligation_alerts')->where('alert_key',$key)->whereNull('resolved_at')->exists();
         });
         if(!$hit){return;}
@@ -97,13 +97,28 @@ final readonly class AcquisitionRetirement
                 }
                 if(!self::closed($op,$d,$service,$cancelled)||!self::activity($op,$service,$status,$transactions)){continue;}
                 // Existing alert identities distinguish later activity from repeated observations.
-                $identity=self::identity($service,$status,$transactions);
+                $identity=self::identity($d,$service,$status,$transactions);
                 ObligationAlerts::record($d,'acquisition_late_money',$this->clock->now()->getTimestamp(),(int)$op->id,$identity);
             }
         });
     }
-    private static function identity(?string $service,?string $invoice,\Illuminate\Support\Collection $transactions): string
-    {return hash('sha256',json_encode([$service,$invoice,self::payments($transactions)],JSON_THROW_ON_ERROR));}
+    private static function identity(Domain $d,?string $service,?string $invoice,\Illuminate\Support\Collection $transactions): string
+    {
+        $basis=[$service,$invoice,self::payments($transactions)];
+        // The native guard retains each reactivation before its status SQL.
+        if($service==='active'&&isset($d->renewal_policy['late_payment_service_event'])){$basis[]=$d->renewal_policy['late_payment_service_event'];}
+        return hash('sha256',json_encode($basis,JSON_THROW_ON_ERROR));
+    }
+    /** Caller holds the native service prefix, domains and operations before the status SQL. */
+    public static function prepareReactivation(Domain $d,\Illuminate\Support\Collection $ops,string $service): void
+    {
+        if($service==='active'||!$ops->where('domain_id',$d->id)->contains(fn($op)=>self::closed($op,$d,$service,false))){return;}
+        $event=bin2hex(random_bytes(16));
+        if(!$d->update(['renewal_policy'=>[...($d->renewal_policy??[]),'late_payment_service_event'=>$event]])
+            ||($d->fresh()->renewal_policy['late_payment_service_event']??null)!==$event){
+            throw new \DomainException('Domain reactivation could not be recorded. Reload this page and try again.');
+        }
+    }
     private static function closed($op,Domain $d,?string $service,bool $cancelled): bool
     {
         if(isset($op->policy['native_acquisition_closure'])){return true;}

@@ -4,13 +4,17 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\{Invoice,InvoiceTransaction,Service};
 use Filament\Schemas\Components\Section;
+use Filament\Actions\Action;
+use Filament\Forms\Components\{Checkbox,Hidden,Textarea};
+use Filament\Notifications\Notification;
 use Filament\Infolists\Components\TextEntry;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\{DB,Schema};
+use Illuminate\Support\Facades\{Auth,DB,Log,Schema};
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Services\AcquisitionPaymentReviews;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
-/** Read-only projection of the existing durable discrepancy, with no financial disposition. */
+/** Retained payment discrepancy and audited acknowledgement, with no financial disposition. */
 final class AcquisitionPaymentReview
 {
     public const DESCRIPTION='A payment, or a reactivated Paymenter service, was recorded after this domain order closed. Check the invoice, its payments and any account credit already given before contacting the customer. Nothing is sent to the registrar, a released name is not reserved again, and no credit is added automatically.';
@@ -21,6 +25,28 @@ final class AcquisitionPaymentReview
     }
     public static function count(Domain $d): int
     {if(!Schema::hasTable('domains_obligation_alerts')){return 0;}return DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','acquisition_late_money')->whereNull('resolved_at')->count();}
+    public static function actions(Domain $d): array
+    {
+        $actor=Auth::user();$staff=$actor instanceof \App\Models\User?\App\Models\User::with('role')->find($actor->id):null;
+        if(!AcquisitionPaymentReviews::allowed($staff)||self::count($d)===0){return [];}
+        return [Action::make('review_late_payment')->label('Record payment review')->color('warning')->modalWidth('lg')
+            ->modalDescription('Confirm that you checked the invoice, its payments and account credit. This records your review and clears the reviewed payment alerts.')
+            ->schema([Hidden::make('review_key')->default(fn()=>app(AcquisitionPaymentReviews::class)->ticket($staff,(int)$d->id)),
+                Checkbox::make('confirmed')->label('I reconciled the invoice, payments and account credit')->accepted()->required(),
+                Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(3)
+                    ->rules(['regex:/\\A[^\\x00-\\x1f\\x7f]*\\z/'])->validationMessages(['regex'=>'Use one line.'])])
+            ->action(function(array $data,$livewire)use($d):void {
+                try{
+                    $actor=Auth::user();if(!$actor instanceof \App\Models\User){throw new \DomainException('Current staff permissions required. Reload this page.');}
+                    app(AcquisitionPaymentReviews::class)->review($actor,(int)$d->id,(string)($data['review_key']??''),trim((string)($data['reason']??'')),($data['confirmed']??false)===true);
+                    Notification::make()->success()->title('Payment review recorded')->send();
+                    $livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$d->id]));
+                }catch(\Throwable $e){
+                    Log::warning('Domains payment review refused.',['domain_id'=>$d->id,'exception_class'=>$e::class]);
+                    Notification::make()->danger()->title("Couldn't record payment review")->body('Reload the page, check the current invoice, payments and account credit, then review again.')->send();
+                }finally{$livewire->mountedActions=[];}
+            })];
+    }
     public static function section(Domain $d): array
     {
         Staff::requireView();if(!Schema::hasTable('domains_obligation_alerts')){return [];}
