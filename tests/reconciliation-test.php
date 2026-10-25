@@ -7,6 +7,88 @@ require_once __DIR__.'/Support/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, Disposition, DriverResult, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances, ReconciliationEvidence, RenewalAuthority};
+// Exercise optional read failures through the real Client and RequestContext admission.
+require_once __DIR__.'/Support/WireLimit.php';
+$dnsFault = (object) ['cap' => false];
+$dnsWire = new class($wire, $observation, $dnsFault) implements \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport {
+    public function __construct(private $inner, private $state, private $fault) {}
+    public function send(\Paymenter\Extensions\Servers\Domains\Data\Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
+        if ($command !== ReadCommand::Nameservers) { return $this->inner->send($env, $command, $parameters, $uid, $token, $timeoutMs); }
+        $this->state->calls[] = $command;
+        if ($this->fault->cap) { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit; }
+        return '<interface-response><Command>GetDNS</Command><ErrCount>0</ErrCount><Done>true</Done><dns>ns1.provider.example</dns><dns>ns2.provider.example</dns></interface-response>';
+    }
+};
+$dnsRegistry = new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
+$dnsRegistry->register('enom', ['token'], $verify, fn ($b, $c) => new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
+    new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b, 'account-enom', $c['token'], $dnsWire), [$fixtureEnding]));
+$dnsBindings = new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($dnsRegistry);
+$dnsReconcile = new \Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation($claims, $dnsBindings, $clock);
+$proofCommands = [ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Lock, ReadCommand::Privacy, ReadCommand::Info, ReadCommand::Expiry, ReadCommand::Order];
+foreach (['cap', 'deferred', 'observed'] as $fault) {
+    [$op, $binding] = $prepare(reservedFixtureName('dns-'.$fault.'.example.com'));
+    $dnsFault->cap = $fault === 'cap';
+    $attempt = ReconciliationEvidence::attempt($op, $op->domain, $binding);
+    $limiter = new WireLimit($fault === 'deferred' ? 7 : 8);
+    $context = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,
+        \Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background, $clock->now()->modify('+250 seconds'),
+        new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(25), $clock, $limiter);
+    $facts = $dnsBindings->reader($binding->serverId)->reconcile($attempt, $context)->result()->evidence();
+    $proof = ReconciliationEvidence::completion($attempt, $facts, $clock->now());
+    expect($proof !== null, 'Optional registration DNS '.$fault.' retains completion proof');
+    same(['9001', ['amount' => '8.95', 'currency' => 'USD'], '2027-10-18', '456', 'captured_order'],
+        [$proof['order_reference'], $proof['charge'], $proof['expiry'], $proof['provider_domain_id'], $proof['source']], 'Registration retains original financial and domain proof: '.$fault);
+    same([null, 'unknown', false], [$facts->transferReference, $facts->transfer->value, $facts->historyComplete], 'Registration retains original evidence: '.$fault);
+    $expectedCommands = $fault === 'deferred' ? $proofCommands : [...$proofCommands, ReadCommand::Nameservers];
+    same([$expectedCommands, 8, $fault === 'deferred' ? 7 : 8], [$observation->calls, $limiter->calls, $limiter->released], 'Exact registration proof wires and final admission: '.$fault);
+    same($fault === 'observed' ? ['ns1.provider.example', 'ns2.provider.example'] : null, $facts->domain->nameservers?->nameservers, 'Only successful GetDNS supplies observed values: '.$fault);
+    if ($fault === 'observed') { same(['observed', 'enom_getdns'], [$facts->domain->nameservers->state, $facts->domain->nameservers->source], 'GetDNS provenance retained'); }
+    $observation->calls = []; $limiter = new WireLimit($fault === 'deferred' ? 7 : 8);
+    $savedBindings = app()->getBindings();
+    $runtimeClass = \Paymenter\Extensions\Servers\Domains\Services\Runtime::class;
+    $limiterClass = \Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class;
+    $savedInstances = [];
+    foreach ([$runtimeClass, $limiterClass] as $class) { if (app()->bound($class)) { $savedInstances[$class] = app($class); } }
+    app()->instance($runtimeClass, new stdClass); app()->instance($limiterClass, $limiter);
+    try {
+        $money = $nativeMoney(); $writes = $writer->calls;
+        $result = $dnsReconcile->run($op->id);
+        same('succeeded', $result->fresh()->state, 'Registration persists proven completion after DNS '.$fault);
+        same($proof, $result->attempt['reconciliation'], 'Persisted proof is the original proof: '.$fault);
+        same(['9001', ['amount' => '8.95', 'currency' => 'USD'], '2027-10-18', '456'],
+            [$result->provider_order_id, $result->cost['actual'], $result->confirmed_expires_at->format('Y-m-d'), $result->domain->fresh()->provider_domain_id], 'Persisted order, USD charge, expiry and domain ID: '.$fault);
+        same($fault === 'observed' ? 'observed' : null, $result->domain->fresh()->observation['nameservers']['state'] ?? null, 'No invented observed DNS: '.$fault);
+        same([$money, $writes], [$nativeMoney(), $writer->calls], 'Registration preserves native money and never purchases again: '.$fault);
+        same([$expectedCommands, 8], [$observation->calls, $limiter->calls], 'Persistence uses exact proof reads: '.$fault);
+        $retained = [$result->fresh()->getRawOriginal(), $result->domain->fresh()->getRawOriginal()];
+        $dnsReconcile->run($op->id); $engine->execute($op->id);
+        same([$expectedCommands, 8, $money, $writes, $retained], [$observation->calls, $limiter->calls, $nativeMoney(), $writer->calls,
+            [$result->fresh()->getRawOriginal(), $result->domain->fresh()->getRawOriginal()]], 'Completed registration repeat adds no I/O or writes: '.$fault);
+    } finally {
+        foreach ([$runtimeClass, $limiterClass] as $class) {
+            app()->offsetUnset($class);
+            if (isset($savedBindings[$class])) { app()->bind($class, $savedBindings[$class]['concrete'], $savedBindings[$class]['shared']); }
+            if (isset($savedInstances[$class])) { app()->instance($class, $savedInstances[$class]); }
+        }
+    }
+}
+[$op, $binding] = $prepare(reservedFixtureName('dns-unproven.example.com')); $dnsFault->cap = false;
+$observation->fault = 'zero';
+$attempt = \Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence::attempt($op, $op->domain, $binding);
+$context = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding, \Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,
+    $clock->now()->modify('+250 seconds'), new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(25), $clock);
+$facts = $dnsBindings->reader($binding->serverId)->reconcile($attempt, $context)->result()->evidence();
+same(null, \Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence::completion($attempt, $facts, $clock->now()), 'Missing charge cannot prove completion');
+same(null, $facts->domain->nameservers, 'Unproven completion never enriches DNS');
+expect(!in_array(ReadCommand::Nameservers, $observation->calls, true), 'Missing financial proof never reads DNS');
+[$op, $binding] = $prepare(reservedFixtureName('dns-preproof.example.com')); $dnsFault->cap = false;
+$attempt = ReconciliationEvidence::attempt($op, $op->domain, $binding); $limiter = new WireLimit(6);
+$context = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,
+    \Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background, $clock->now()->modify('+250 seconds'),
+    new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(25), $clock, $limiter);
+try { $dnsBindings->reader($binding->serverId)->reconcile($attempt, $context); throw new LogicException('Pre-proof refusal was swallowed'); }
+catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred) {}
+same([array_slice($proofCommands, 0, 6), 7, 6], [$observation->calls, $limiter->calls, $limiter->released], 'Pre-proof refusal still escapes before order/DNS');
 // The captured ID identifies the order even when its local clock has no accepted zone.
 [$op, $binding] = $prepare(reservedFixtureName('local-clock.example.com'));
 $observation->billDate = '10/18/2026 6:02:00 AM'; // UTC-6 fits; LA interprets this one hour late.

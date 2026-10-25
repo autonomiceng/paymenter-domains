@@ -322,13 +322,15 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             && ($attempt->query->action === Action::Register
                 || ($attempt->query->action === Action::Transfer && $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Completed))
             && $domain?->owned === true) {
-            $reply = $this->read(ReadCommand::Nameservers, $this->parts($attempt->query->name), $context);
-            $nameservers = self::readNameservers($reply, $context->now());
-            if ($nameservers) {
-                $domain = new DomainSnapshot($domain->binding, $domain->name, $domain->owned, $domain->expiry,
-                    $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference,
-                    active: $domain->active, nameservers: $nameservers);
-            }
+            try {
+                $reply = $this->read(ReadCommand::Nameservers, $this->parts($attempt->query->name), $context);
+                $nameservers = self::readNameservers($reply, $context->now());
+                if ($nameservers) {
+                    $domain = new DomainSnapshot($domain->binding, $domain->name, $domain->owned, $domain->expiry,
+                        $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference,
+                        active: $domain->active, nameservers: $nameservers);
+                }
+            } catch (\Throwable) { /* Optional readback cannot discard proven completion. */ }
         }
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown,
             SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference)));
