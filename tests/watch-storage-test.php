@@ -23,8 +23,9 @@ $service=Service::create(['user_id'=>$owner->id,'order_id'=>$order->id,'product_
 $writer=new WatchMappings;$denied=false;try{$writer->save($owner,$product->id,'domain',0,'Unauthorized');}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Watch permissions default deny');
 $map=$writer->save($staff,$product->id,'primary_domain',0,'Map primary hostname');
 $mapRaw=DB::table('domains_watch_product_maps')->where('id',$map->id)->value('reason');
+expect(str_starts_with($mapRaw,'encrypted:v1:'),'New mapping ciphertext has a version');
 expect($mapRaw!=='Map primary hostname'&&!str_contains($mapRaw,'Map primary hostname'),'Mapping reason is encrypted at rest');
-same('Map primary hostname',Illuminate\Support\Facades\Crypt::decryptString($mapRaw),'Mapping reason uses application encryption');
+same('Map primary hostname',Illuminate\Support\Facades\Crypt::decryptString(substr($mapRaw,strlen('encrypted:v1:'))),'Mapping reason uses application encryption');
 expect(!array_key_exists('reason',$map->toArray()),'Mapping reason hidden from serialization');
 DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['reason'=>'Legacy mapping reason']);
 same('Legacy mapping reason',$map->fresh()->reason,'Legacy mapping remains readable');
@@ -32,7 +33,7 @@ DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['reason'=
 $audit=WatchAudit::sole();same('Map primary hostname',$audit->reason,'Audit reason round trips');
 $raw=DB::table('domains_watch_audit')->where('id',$audit->id)->value('reason');
 expect($raw!=='Map primary hostname'&&!str_contains($raw,'Map primary hostname'),'Audit reason is encrypted at rest');
-same('Map primary hostname',Illuminate\Support\Facades\Crypt::decryptString($raw),'Reason uses application encryption');
+same('Map primary hostname',Illuminate\Support\Facades\Crypt::decryptString(substr($raw,strlen('encrypted:v1:'))),'Reason uses application encryption');
 expect(!array_key_exists('reason',$audit->toArray()),'Reason hidden from model serialization');
 DB::table('domains_watch_audit')->where('id',$audit->id)->update(['reason'=>'Legacy plain reason']);
 same('Legacy plain reason',$audit->fresh()->reason,'Existing plain audit remains readable');
@@ -133,6 +134,12 @@ foreach (['registration_rejected','transfer_rejected','cancelled','unknown'] as 
 }
 foreach (['registration_pending','transfer_pending'] as $pending) {
     DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>$pending]);
+    if($pending==='registration_pending'){
+        foreach([['state'=>'paused'],['state'=>'active'],['display_name'=>'Reviewed external registration'],['ns_profile_id'=>42,'profile_revision'=>2],['notice_preferences'=>['dns'=>false]]]as$edit){
+            $another->refresh();DB::transaction(fn()=>$another->fill([...$edit,'revision'=>$another->revision+1])->save());
+            foreach($edit as$field=>$value){same($value,$another->fresh()->$field,'Existing watch can update '.$field.' during acquisition');}
+        }
+    }
     $progress=DB::transaction(fn()=>WatchSource::create($linkedData));$progress->retire('Pending acquisition source progress verified');
     watchRefused(fn()=>$another->fill(['state'=>'linked','managed_domain_id'=>$domain->id,'registration'=>'platform','revision'=>$another->revision+1])->save(),'Pending acquisition cannot claim platform registration');
     $another->refresh();DB::transaction(fn()=>$another->fill(['state'=>'linked','managed_domain_id'=>$domain->id,'registration'=>null,'revision'=>$another->revision+1])->save());
@@ -151,6 +158,29 @@ foreach (['grace','expired'] as $managedStatus) {
     same('platform',$another->fresh()->registration,'Managed grace and expired holdings retain platform registration');
 }
 foreach ([$watch,$map,$source,$audit] as $row) {watchRefused(fn()=>$row->delete(),'History cannot delete');}
+// All three retained reason models share the versioned ciphertext contract.
+$profile=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Synthetic profile','nameservers'=>['ns1.example.test'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$staff->id,'reason'=>'Profile reason']));
+foreach([$map->fresh(),$audit->fresh(),$profile]as$row){
+    $table=$row->getTable();$id=$row->id;$original=$row->getRawOriginal('reason');$reason=$row->reason;
+    expect(str_starts_with($original,'encrypted:v1:'),'New '.$table.' ciphertext is versioned');
+    $old=\Illuminate\Support\Facades\Crypt::encryptString($reason);
+    foreach([$old=>$reason,'Legacy retained reason'=>'Legacy retained reason']as$bytes=>$expected){
+        DB::table($table)->where('id',$id)->update(['reason'=>$bytes]);same($expected,$row->fresh()->reason,'Old ciphertext and plaintext stay readable in '.$table);
+        same($bytes,DB::table($table)->where('id',$id)->value('reason'),'Legacy reads never rewrite retained bytes');
+    }
+    foreach(['encrypted:v1:','encrypted:v1:'.substr($old,0,12)]as$damaged){
+        DB::table($table)->where('id',$id)->update(['reason'=>$damaged]);$refused=false;
+        try{$row->fresh()->reason;}catch(Illuminate\Contracts\Encryption\DecryptException){$refused=true;}
+        expect($refused,'Truncated versioned '.$table.' ciphertext cannot become plaintext');
+    }
+    foreach([$original,$old]as$bytes){
+        DB::table($table)->where('id',$id)->update(['reason'=>$bytes]);
+        $encrypter=$row::currentEncrypter();$row::encryptUsing(new Illuminate\Encryption\Encrypter(str_repeat('z',32),'AES-256-CBC'));
+        $refused=false;try{$row->fresh()->reason;}catch(Illuminate\Contracts\Encryption\DecryptException){$refused=true;}finally{$row::encryptUsing($encrypter);}
+        expect($refused,'Wrong key refuses old and versioned '.$table.' ciphertext');
+    }
+    DB::table($table)->where('id',$id)->update(['reason'=>$original]);
+}
 $entry->upgraded('0.1.0');$entry->uninstalled();WatchSchema::verify();
 DB::table('migrations')->where('migration','2026_10_19_000009_create_watch_storage')->delete();
 $refused=false;try{$entry->installed();}catch(DomainException $e){$refused=str_contains($e->getMessage(),'watch storage history');}expect($refused,'Missing watch migration history refuses reinstall');

@@ -11,6 +11,7 @@ final class LegacyEncryptedString implements CastsAttributes
     public function get(Model $model, string $key, mixed $value, array $attributes): ?string
     {
         if ($value === null) { return null; }
+        if (str_starts_with($value, 'encrypted:v1:')) { return $model::currentEncrypter()->decryptString(substr($value, 13)); }
         try { return $model::currentEncrypter()->decryptString($value); }
         catch (DecryptException $error) {
             $envelope = json_decode(base64_decode($value, true) ?: '', true);
@@ -20,5 +21,5 @@ final class LegacyEncryptedString implements CastsAttributes
         }
     }
     public function set(Model $model, string $key, mixed $value, array $attributes): ?string
-    { return $value === null ? null : $model::currentEncrypter()->encryptString($value); }
+    { return $value === null ? null : 'encrypted:v1:'.$model::currentEncrypter()->encryptString($value); }
 }

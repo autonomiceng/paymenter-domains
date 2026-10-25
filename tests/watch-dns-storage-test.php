@@ -10,7 +10,7 @@ $f = dnsFixture(); extract($f); $now = 1800000000;
 WatchDnsSchema::install(); WatchDnsSchema::verify();
 $profileRaw=DB::table('domains_watch_profiles')->where('id',$profile->id)->value('reason');
 expect($profileRaw!=='Synthetic composition'&&!str_contains($profileRaw,'Synthetic composition'),'Profile reason is encrypted at rest');
-same('Synthetic composition',Illuminate\Support\Facades\Crypt::decryptString($profileRaw),'Profile reason uses application encryption');
+same('Synthetic composition',Illuminate\Support\Facades\Crypt::decryptString(substr($profileRaw,strlen('encrypted:v1:'))),'Profile reason uses application encryption');
 expect(!array_key_exists('reason',$profile->toArray()),'Profile reason hidden from serialization');
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['reason'=>'Legacy profile reason']);
 same('Legacy profile reason',$profile->fresh()->reason,'Legacy profile remains readable');
