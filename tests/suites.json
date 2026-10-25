@@ -214,6 +214,7 @@
     "tests/adopted-test-environment-test.php",
     "tests/adopted-renewal-history-test.php",
     "tests/adopted-complimentary-test.php",
+    "tests/balance-recording-rule-test.php",
     "tests/registrar-balances-test.php",
     "tests/registrars-page-test.php",
     "tests/management-deadline-test.php",

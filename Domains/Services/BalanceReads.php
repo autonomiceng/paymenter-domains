@@ -16,13 +16,22 @@ final class BalanceReads
             $result = $reader->balance($context);
             $context->binding->requireMatch($result->binding);
         } catch (\Throwable $e) {
-            // A local quota refusal did not read the provider and cannot invalidate its last result.
-            if($context->budget->remaining()<$remaining&&!$e instanceof ReadDeferred&&!$e instanceof EnomTestCallLimit){self::record($context->binding,null,$context->now(),$source,'read_failed');}
+            self::recordRead($context->binding,$context,$remaining,$source,error:$e);
             throw $e;
         }
         $money = $result->disposition === Disposition::Accepted ? $result->evidence()->balance : null;
-        if($money||$context->budget->remaining()<$remaining){self::record($context->binding,$money,$context->now(),$source,$money?null:'read_failed');}
+        self::recordRead($context->binding,$context,$remaining,$source,$money);
         return $result;
+    }
+    /** Local refusals retain the last balance; accepted money may come from a cached read. */
+    public static function recordRead(AccountBinding $binding, RequestContext $context, int $remaining, string $source, ?Money $money=null, ?\Throwable $error=null): void
+    {
+        $consumed=$context->budget->remaining()<$remaining;
+        if($error!==null){
+            if(!$consumed||$error instanceof ReadDeferred||$error instanceof EnomTestCallLimit){return;}
+            $money=null;
+        }
+        if($money||$consumed){self::record($binding,$money,$context->now(),$source,$money?null:'read_failed');}
     }
     public static function record(AccountBinding $binding, ?Money $money, \DateTimeImmutable $at, string $source, ?string $error=null): void
     {

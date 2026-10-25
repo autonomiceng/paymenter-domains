@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
+use Paymenter\Extensions\Servers\Domains\Services\BalanceReads;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, Capabilities, Capability, ManagementRequest, ManagementResult, PrivacyMode, RequestContext, Support};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ManagementCommand as M, ProtocolResult, ReadCommand as R, ResponseParser};
 final class Management extends ManagementProtocol
@@ -26,12 +27,11 @@ final class Management extends ManagementProtocol
         $remaining=$c->budget->remaining();
         try { $reply=(new ResponseParser)->parse($cmd,$this->read($r,$c,$cmd->value,$p??$this->parts($r))); }
         catch (\Throwable $e) {
-            if($cmd===R::Balance&&$c->budget->remaining()<$remaining&&!$e instanceof \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred&&!$e instanceof \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit){\Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($this->binding,null,$c->now(),'preflight','read_failed');}
+            if($cmd===R::Balance){BalanceReads::recordRead($this->binding,$c,$remaining,'preflight',error:$e);}
             throw $e;
         }
         if($cmd===R::Balance){
-            $money=Balance::read($reply);
-            if($money||$c->budget->remaining()<$remaining){\Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($this->binding,$money,$c->now(),'preflight',$money?null:'read_failed');}
+            BalanceReads::recordRead($this->binding,$c,$remaining,'preflight',Balance::read($reply));
         }
         return $reply;
     }
