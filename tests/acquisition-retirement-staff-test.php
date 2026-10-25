@@ -54,7 +54,7 @@ same(3,DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domai
 DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->update(['resolved_at'=>time()]);
 $lateLocks=0;$countTransactions=true;$retirement->inspect($staffOp->domain_id);$countTransactions=false;
 expect($lateLocks>0,'Resolved late-money alert receives a locked recheck');
-same(1,DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->whereNull('resolved_at')->count(),'Current resolved identity reopens');
+same(0,DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->whereNull('resolved_at')->count(),'Same reviewed late-money identity stays resolved after locked recheck');
 DB::table('invoices')->where('id',$staffOp->invoice_id)->update(['status'=>'paid']);
 DB::transaction(fn()=>(new App\Services\Invoice\ProcessPaidInvoiceService)->handle(App\Models\Invoice::findOrFail($staffOp->invoice_id)));same('active',$staffOp->domain->service->fresh()->status,'Late native paid activation never throws');same(null,$staffOp->domain->service->fresh()->expires_at,'Late native paid activation keeps null expiry');$retirement->inspect($staffOp->domain_id);same('rejected',$staffOp->fresh()->state,'Late activation never reopens work');
 same(4,DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->where('code','acquisition_late_money')->count(),'Native service and invoice status changes retain new late-money evidence');
