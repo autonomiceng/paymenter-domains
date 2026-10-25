@@ -18,6 +18,19 @@ $list=function(?callable $queries=null)use($viewer){
     $instance=$page->instance();return [$instance->getTable()->getColumns(),$instance->getTableRecords()->keyBy('id'),count($log)];
 };
 
+// Duplicate staff account names remain distinguishable in filters and rows.
+App\Models\Server::whereIn('id',[$held->server_id,$active->server_id])->update(['name'=>'Shared account']);
+$accountsPage=Livewire::actingAs($viewer)->test(ListDomains::class);
+$options=$accountsPage->instance()->getTable()->getFilter('server_id')->getOptions();
+foreach([$held,$active] as $domain){
+    same('Shared account · #'.$domain->server_id,$options[$domain->server_id],'Filter keeps account ID');
+    $accountsPage->filterTable('server_id',$domain->server_id)->assertCanSeeTableRecords([$domain]);
+    $other=$domain->id===$held->id?$active:$held;$accountsPage->assertCanNotSeeTableRecords([$other]);
+    $record=$accountsPage->instance()->getTableRecords()->firstWhere('id',$domain->id);
+    same('Shared account · #'.$domain->server_id,$accountsPage->instance()->getTable()->getColumn('server_id')->record($record)->getState(),'Registrar row keeps account ID');
+}
+unset($accountsPage);
+
 // Auto-renew applies to every domain state (status-model.md 3, rules 1 and 4): pending and under-review rows show On, Off or Missing, never blank.
 $cases=['registration pending'=>['registration_pending','register','queued',null],'transfer pending'=>['transfer_pending','transfer','queued',null],
     'awaiting payment'=>['registration_pending','register','awaiting_payment',null],'held request'=>['transfer_pending','transfer','held','transfer_needs_action'],

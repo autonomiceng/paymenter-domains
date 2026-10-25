@@ -62,7 +62,7 @@ class DomainResource extends Resource
                 null=>Missing::LABEL,true=>'Off',false=>'On'})
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
                 ->description(fn($state)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:null),
-            TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?->name??Missing::LABEL)
+            TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?$record->server->name.' · #'.$record->server_id:Missing::LABEL)
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
                 ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?'Registrar account not found':(self::REGISTRARS[$record->registrar_key]??null)),
         ])->filters([
@@ -70,7 +70,7 @@ class DomainResource extends Resource
                 ->query(fn(Builder $query,array $data)=>DomainQueries::status($query,$data['values']??[])),
             SelectFilter::make('server_id')->label('Registrar account')->options(function(): array {
                 if (!Staff::can()) { return []; }
-                return \App\Models\Server::whereIn('id',Account::query()->pluck('server_id'))->orderBy('name')->pluck('name','id')->all();
+                return \App\Models\Server::whereIn('id',Account::query()->pluck('server_id'))->orderBy('name')->orderBy('id')->get(['id','name'])->mapWithKeys(fn($server)=>[$server->id=>$server->name.' · #'.$server->id])->all();
             }),
             SelectFilter::make('expiring')->label('Expires within')->options(['7'=>'7 days','30'=>'30 days','60'=>'60 days','90'=>'90 days'])
                 ->query(function(Builder $query,array $data) {

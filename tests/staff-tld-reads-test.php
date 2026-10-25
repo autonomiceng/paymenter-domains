@@ -46,6 +46,11 @@ DB::table('domains_prices')->where('server_id',$t->server_id)->update(['account_
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Sync TLD prices needed'],TldFacts::salesState($wrong),'Matching TLD/price corruption cannot borrow the current account acceptance');
 DB::table('domains_prices')->where('server_id',$t->server_id)->update(['account_fingerprint'=>$t->account_fingerprint]);
 same(['com'],array_column($store->endings(),'tld'),'Healthy selected ending is on sale');
+foreach(['register','transfer'] as $action){
+    $offer=$store->offer('com',$action,1);
+    same($t->server_id,$offer['selection']->serverId,'Healthy '.$action.' offer retains selected account');
+    same($action,$native->mapping($offer['product'],$offer['plan'])['action'],'Healthy '.$action.' offer is usable');
+}
 $calls=$reads->calls;$t->update(['renew_enabled'=>false]);
 $renewalOff=['label'=>'Not for sale','tone'=>'gray','reason'=>'Renewals off for this registrar'];
 same($renewalOff,TldFacts::salesState($t->fresh()),'Renewal-off explains the switch even with valid current prices');
