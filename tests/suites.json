@@ -117,6 +117,7 @@
     "tests/storefront-cache-test.php",
     "tests/policy-ending-reads-test.php",
     "tests/owned-pages-test.php",
+    "tests/owned-list-query-count-test.php",
     "tests/owner-actions-test.php",
     "tests/owner-renewal-test.php",
     "tests/owner-auto-renew-test.php",
