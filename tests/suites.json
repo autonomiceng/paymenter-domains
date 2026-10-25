@@ -269,6 +269,7 @@
     "tests/staff-review-history-test.php",
     "tests/staff-tld-grants-test.php",
     "tests/watch-registry-work-test.php",
+    "tests/watch-registry-demo-test.php",
     "tests/watch-registry-observer-test.php",
     "tests/rdap-quota-test.php",
     "tests/watch-dns-confirmation-test.php",

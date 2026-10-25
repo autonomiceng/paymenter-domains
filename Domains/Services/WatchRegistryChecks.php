@@ -49,6 +49,9 @@ final class WatchRegistryChecks
                 $q->update($this->failure($t,(int)$w->attempts,$now,'deadline')); return false;
             }
             if ($r['reason']==='deferred') { $q->update(['claim'=>null,'lease_until'=>null,'due_at'=>max($now+60,$endpointUntil),'safe_code'=>$w->safe_code??'budget_exhausted']); return false; }
+            $prior=WatchRegistryObservation::where('watch_id',$t->watchId)->where('user_id',$t->userId)->latest('id')->first();
+            unset($r['offline_demo']);
+            if (($prior?->facts['offline_demo']??null)===true) { $r['offline_demo']=true; }
             $r['presentation_stamp']=$t->presentationStamp;
             $facts=$r['result']==='facts'; $urgent=$facts && self::urgent($r['expiry'],$now);
             $row=WatchRegistryObservation::create(['watch_id'=>$t->watchId,'user_id'=>$t->userId,'stamp'=>$t->stamp,'source_cursor'=>$t->sourceCursor,
