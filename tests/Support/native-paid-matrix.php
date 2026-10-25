@@ -143,7 +143,7 @@ same('awaiting_payment',$missing->fresh()->state,'Missing hooks preserve unsent 
 same('paid',Invoice::findOrFail($missing->invoice_id)->status,'Native payment remains paid');
 same($money,nativeFinancialSnapshot($missing),'Deferred paid work preserves native and financial state');
 same($operation,$missing->fresh()->getRawOriginal(),'Deferred work preserves operation bytes');
-$notice='Required Service listeners are missing in this process: Service saving model event. New registrations and transfers run here wait until a healthy process picks them up.';
+$notice='Required Service listeners are missing in this process: Service saving model event. New registrations and transfers that run here wait until a healthy process picks them up.';
 same($notice,NativePaidHooks::notices()['Paymenter payment events'],'Payment events notice describes current process');
 Illuminate\Support\Facades\Auth::login($staff);
 expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events']),'Process notice lives with registrar setup, not on each domain');

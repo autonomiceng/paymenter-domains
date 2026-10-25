@@ -74,7 +74,7 @@ same($mode==='console',$app->runningInConsole(),'Boot mode matches the kernel');
 $warnings=array_values(array_filter($logs,static fn($log)=>$log['message']==='Domains hook unavailable.'));
 $expectedContext=['missing_events'=>['eloquent.saving: '.Service::class],'mode'=>$mode,'pid'=>getmypid(),
     ...($mode==='console'?['command'=>'schedule:work']:['request_path'=>'/domains/pricing']),'release'=>'hook-test-f1e670c'];
-$notice='Required Service listeners are missing in this process: Service saving model event. New registrations and transfers run here wait until a healthy process picks them up.';
+$notice='Required Service listeners are missing in this process: Service saving model event. New registrations and transfers that run here wait until a healthy process picks them up.';
 if(str_starts_with($phase,'dedup-')){
     same(['Service saving model event'],NativePaidHooks::serviceMissing(),'Fresh dedup process has the same missing hook');
     same($phase==='dedup-first'?1:0,count($warnings),'Shared cache bounds warnings across fresh processes');
