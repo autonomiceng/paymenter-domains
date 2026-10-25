@@ -11,7 +11,7 @@ $observer->run($d->id);
 foreach(['dns'=>['records'=>[['name'=>'@','type'=>'A','address'=>'8.8.8.8']],'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest([])],
     'srv'=>['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>0,'weight'=>0,'port'=>443,'target'=>'sip.example.com.']],'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest([],'srv')],
     'glue_add'=>['host'=>'ns1.record-errors-placeholder.com','ip'=>'8.8.8.8']]as$action=>$payload){Illuminate\Support\Facades\Cache::flush();same('succeeded',$management->run($submit($d,$driver,$action,$payload)->id,$driver)->state,'Proven editable state');}
-Illuminate\Support\Facades\Cache::flush();same('succeeded',$management->run($submit($d,$driver,'glue_add',['host'=>'ns2.record-errors-placeholder.com','ip'=>'1.1.1.1'])->id,$driver)->state,'Second known host');
+Illuminate\Support\Facades\Cache::flush();same('succeeded',$management->run($submit($d,$driver,'glue_add',['host'=>'ns2.record-errors-placeholder.com','ip'=>'8.8.8.8'])->id,$driver)->state,'Second known host');
 \Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $observer=new \Paymenter\Extensions\Servers\Domains\Services\DomainObservation($readBindings,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),$ports);
 $observer->run($d->id);

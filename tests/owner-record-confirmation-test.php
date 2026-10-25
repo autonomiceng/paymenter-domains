@@ -16,7 +16,7 @@ expect(str_contains($script, 'deleting(row) || !filled(row)'), 'Removed rows use
 expect(str_contains($script, '!deleting(row) && filled(row)'), 'Retained rows use the same submitted-field predicate');
 $cases=[
     'dns'=>[
-        'records'=>[['name'=>'@','type'=>'TXT','address'=>'<original> & text'],['name'=>'www','type'=>'A','address'=>'1.1.1.1']],
+        'records'=>[['name'=>'@','type'=>'TXT','address'=>'<original> & text'],['name'=>'www','type'=>'A','address'=>'8.8.8.8']],
         'cleared'=>['name'=>'','type'=>'','address'=>'','mx_pref'=>null,'_source'=>'0','host_id'=>99],
         'kept'=>['name'=>'0','type'=>'TXT','address'=>'   ','mx_pref'=>0],
         'description'=>'@ TXT <original> & text',

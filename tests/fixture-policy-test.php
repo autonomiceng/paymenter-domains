@@ -111,6 +111,51 @@ foreach (['invoice-binding-test.php', 'management-privacy-test.php', 'owner-acti
     }
 }
 
+/** Known IP fixture strings have no escapes; PHP tokens make quote spelling irrelevant. */
+function fixtureIpLiterals(string $source): array
+{
+    $ips = [];
+    foreach (token_get_all($source) as $token) {
+        if (!is_array($token) || $token[0] !== T_CONSTANT_ENCAPSED_STRING) { continue; }
+        $literal = substr($token[1], 1, -1);
+        if (filter_var($literal, FILTER_VALIDATE_IP) !== false) { $ips[] = strtolower($literal); }
+    }
+    return array_values(array_unique($ips));
+}
+
+function fixtureIpAllowed(string $ip, string $fixture = ''): bool
+{
+    if ($ip === '8.8.8.8') { return true; }
+    $bytes = @inet_pton($ip);
+    if ($bytes === false) { return false; }
+    foreach (['192.0.2.0' => 3, '198.51.100.0' => 3, '203.0.113.0' => 3, '2001:db8::' => 4] as $network => $prefix) {
+        $reserved = inet_pton($network);
+        if (strlen($bytes) === strlen($reserved) && strncmp($bytes, $reserved, $prefix) === 0) { return true; }
+    }
+    // Deliberate invalid glue inputs belong only to this field-error fixture.
+    return $fixture === 'owner-record-errors-test.php' && in_array($ip, ['127.0.0.1', '::ffff:8.8.8.8'], true);
+}
+
+$ipProbe = <<<'SOURCE'
+<?php $ips = ['1.1.1.1', "1.1.1.1", '9.9.9.9', "9.9.9.9"];
+SOURCE;
+same(['1.1.1.1', '9.9.9.9'], fixtureIpLiterals($ipProbe), 'IP literals are discovered independently of PHP quote spelling');
+foreach (['8.8.8.8', '192.0.2.1', '198.51.100.255', '203.0.113.0', '2001:db8::1', '2001:0db8:ffff::1'] as $ip) {
+    expect(fixtureIpAllowed($ip), 'Permitted public fixture or documentation range accepted: '.$ip);
+}
+foreach (['1.1.1.1', '9.9.9.9', '192.0.3.1', '198.51.101.1', '203.0.114.1', '2001:db9::1', '127.0.0.1', '::ffff:8.8.8.8'] as $ip) {
+    expect(!fixtureIpAllowed($ip), 'Other public addresses and unscoped negative fixtures are refused: '.$ip);
+}
+foreach (['127.0.0.1', '::ffff:8.8.8.8'] as $ip) {
+    expect(fixtureIpAllowed($ip, 'owner-record-errors-test.php'), 'Existing negative glue fixture is permitted only in its error test');
+    expect(!fixtureIpAllowed($ip, 'owner-record-confirmation-test.php'), 'Negative glue exception does not allow positive confirmation fixtures');
+}
+foreach (['owner-record-confirmation-test.php', 'owner-record-errors-test.php'] as $fixture) {
+    $ips = fixtureIpLiterals(file_get_contents(__DIR__.'/'.$fixture));
+    expect($ips !== [], $fixture.' must contain IP literals for this policy check');
+    foreach ($ips as $ip) { expect(fixtureIpAllowed($ip, $fixture), $fixture.' uses a permitted IP fixture: '.$ip); }
+}
+
 // Captured reply shapes also carry synthetic DNS names in otherwise unused fields.
 foreach (['enom-captured-reads.php', 'enom-captured-renewal.php'] as $fixture) {
     $replies = require __DIR__.'/Support/'.$fixture;
