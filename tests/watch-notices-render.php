@@ -15,7 +15,7 @@ $base=['name'=>str_repeat('a',63).'.example','kind'=>'watch','id'=>$id,'editable
 // One summary per state, as DomainSummaries would build it: the pill, dates and nameservers the page reads.
 $with=static function(array $states,array $more=[])use($summary,$id){$status=DomainStates::watch($states,'2027-01-15',true);
     return new DomainSummary(...[...get_object_vars($summary),'name'=>str_repeat('a',63).'.example','stateKeys'=>$states,'statusState'=>$status[0]??null,'statusReason'=>$status[1]??null,'expiry'=>'2027-06-01','daysLeft'=>200,
-        'nameservers'=>['nameservers'=>['ns1.beco.example','ns2.beco.example'],'at'=>'2027-01-10T08:00:00Z'],'noticeDates'=>['dns'=>1800000000],
+        'nameservers'=>['nameservers'=>['ns1.hosting.example','ns2.hosting.example'],'at'=>'2027-01-10T08:00:00Z'],'noticeDates'=>['dns'=>1800000000],
         'relatedServices'=>[['label'=>'Web hosting','url'=>'/services/1']],'relatedOverflow'=>0,'urls'=>[...$summary->urls,'compareTransfer'=>'/domains/checks/watch/'.$id.'/transfer','support'=>'/tickets/create'],...$more]);};
 $moved=['nameservers'=>['nameservers'=>['ns1.elsewhere.example','ns2.elsewhere.example'],'at'=>'2027-01-15T08:00:00Z']];
 $cases=['active'=>[$with([]),[]],'expiring'=>[$with([],['expiry'=>'2026-11-01','daysLeft'=>9]),['notices'=>[['kind'=>'expiring','date'=>'November 1, 2026','company'=>'Example Hosting']]]],

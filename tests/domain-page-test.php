@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController;
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainPage, DomainSummary, OwnedDomain};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaryStrings, OwnerHelp};
 
+config(['settings.company_name'=>'Example Hosting']);
 storefrontViews();CarbonImmutable::setTestNow('2026-10-23 12:00:00');\Carbon\Carbon::setTestNow('2026-10-23 12:00:00');
 app('view')->share('keys',array_fill_keys(['setup','recovery','code','renew','auto-renew',...OwnerActionController::ACTIONS],str_repeat('a',64)));
 app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
@@ -18,7 +19,7 @@ $management=static function(array $more=[]):array {
     foreach(['nameservers'=>'Nameservers','dns'=>'DNS records','glue'=>'Glue records','ds'=>'DNSSEC','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','contacts'=>'Contacts','auth_code_email'=>'Auth code','auto_renew_off'=>'Renewal settings']as$cap=>$label){
         $m[$cap]=['label'=>$label,'url'=>'/domains/1/manage/'.$cap,'actions'=>[$cap=>'/domains/1/manage/'.$cap]];
     }
-    $m['nameservers']+=['max'=>12,'defaults'=>true,'defaultServers'=>['ns1.beco.example','ns2.beco.example'],'current'=>['ns1.host.example','ns2.host.example']];
+    $m['nameservers']+=['max'=>12,'defaults'=>true,'defaultServers'=>['ns1.hosting.example','ns2.hosting.example'],'current'=>['ns1.host.example','ns2.host.example']];
     $m['dns']+=['records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.1'],['name'=>'www','type'=>'CNAME','address'=>'@']],'digest'=>str_repeat('b',64),'recordCheckHeld'=>false];
     $m['glue']+=['records'=>[],'recordCheckHeld'=>false];$m['glue']['actions']=['glue_add'=>'/domains/1/manage/glue_add'];
     $m['ds']+=['records'=>[],'recordCheckHeld'=>false];$m['ds']['actions']=['ds_add'=>'/domains/1/manage/ds_add','ds_delete'=>'/domains/1/manage/ds_delete'];
@@ -74,7 +75,7 @@ foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records
 // Editors open in a dialog; without script the link opens it on the server.
 same(1,$dom->query('//li[@id="nameservers"]//a[@data-dialog-open][@href="/domains/1?edit=nameservers#edit-nameservers"]')->length,'Change opens the editor');
 same(1,$dom->query('//li[@id="nameservers"]//dialog[@id="edit-nameservers"][not(@open)]//textarea[@name="nameservers"]')->length,'Editor dialog closed by default');
-foreach(['Nameservers, one per line','2 to 12, like ns1.example.com.','Use Beco nameservers','>Save<','Change nameservers?','If the new nameservers aren’t set up, your website and email stop working.']as$t){expect(str_contains($html,$t),'Nameservers dialog: '.$t);}
+foreach(['Nameservers, one per line','2 to 12, like ns1.example.com.','Use the default nameservers','>Save<','Change nameservers?','If the new nameservers aren’t set up, your website and email stop working.']as$t){expect(str_contains($html,$t),'Nameservers dialog: '.$t);}
 foreach(['Turn off transfer lock?','Anyone with the auth code can then move '.$name.' to another registrar.']as$t){expect(str_contains($html,$t),'Lock dialog: '.$t);}
 same(1,$dom->query('//li[@id="lock"]//form[@data-confirm]//dialog[not(@open)]//button[@name="confirmed"][normalize-space(.)="Turn off"]')->length,'Lock off confirms in a dialog');
 foreach(['Email the auth code?','We’ll email it to the owner.']as$t){expect(str_contains($html,$t),'Auth code dialog: '.$t);}
@@ -146,16 +147,16 @@ same([null,null],[$card($dom,'Auto-renew'),$card($dom,'Next invoice')],'No renew
 $saved=new OwnedDomain(...[...get_object_vars($pending),'transfer'=>['open'=>true,'received'=>true,'phase'=>'editing']]);
 $dom=storefrontDom($render($saved));same('Saved View transfer',$card($dom,'Auth code'),'Saved auth code');same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'No notice once saved');
 $setup=static fn(array $s,array $t=[])=>$domain(['status'=>'Action required','tone'=>'warn','renewal'=>'','management'=>[],'actions'=>['show'=>'/domains/1','setup'=>'/domains/1/setup'],'setup'=>$s,'transfer'=>$t]);
-same('Choose nameservers before registration starts, or we use Beco nameservers. Choose nameservers',$norm(storefrontDom($render($setup(['defaults'=>true,'contacts'=>false])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameservers setup notice');
+same('Choose nameservers before registration starts, or we use Example Hosting nameservers. Choose nameservers',$norm(storefrontDom($render($setup(['defaults'=>true,'contacts'=>false])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameservers setup notice');
 same('Finish setup to start registration. Finish setup',$norm(storefrontDom($render($setup(['defaults'=>false,'contacts'=>true])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Setup notice');
 same('The auth code deadline passed. Update your details so we can finish the transfer. Update details',$norm(storefrontDom($render($setup(['defaults'=>false,'contacts'=>true],['phase'=>'cutoff','open'=>false,'received'=>false])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Cutoff notice');
 $import=$domain(['status'=>'Under review','tone'=>'info','renewal'=>'','management'=>[],'renewNow'=>[],'autoRenew'=>[],'setupPending'=>true]);
 same('We’re confirming this domain. Changes and renewals start after that. Contact support if it expires soon.',$norm(storefrontDom($render($import))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Import notice');
 $moved=$domain();$dom=storefrontDom($render($moved,$summary($moved,['stateKeys'=>['domain.active','watch.ns_changed'],'noticeDates'=>['dns'=>1792540800]])));
-same($name.' stopped using Beco nameservers on Oct 21, 2026. Change nameservers',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameserver change notice');
+same($name.' stopped using Example Hosting nameservers on Oct 21, 2026. Change nameservers',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameserver change notice');
 same('/domains/1?edit=nameservers#edit-nameservers',$dom->query('//div[contains(@class,"domains-notice")]/a')->item(0)?->getAttribute('href'),'Nameserver change opens the editor');
 $moved=$domain(['management'=>[]]);$dom=storefrontDom($render($moved,$summary($moved,['stateKeys'=>['watch.ns_changed']])));
-same($name.' stopped using Beco nameservers. Contact support',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameserver change without a date or an editor');
+same($name.' stopped using Example Hosting nameservers. Contact support',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameserver change without a date or an editor');
 $demo=$domain(['management'=>[],'demo'=>true,'syncPaused'=>true]);$html=$render($demo,$summary($demo,['demo'=>true]));$dom=storefrontDom($html);
 same(1,$dom->query('//div[contains(@class,"domains-notice")]')->length,'One notice');
 same('Sync paused: the demo registrar is off. Nameservers show when it resumes. Contact support',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Demo sync paused notice');

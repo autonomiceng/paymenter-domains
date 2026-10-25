@@ -58,12 +58,12 @@ $write=static function(string $action,array $data=[],?int $tld=null)use($setting
 };
 $write('configure',['registrar'=>'enom','environment'=>'live','uid'=>'live-uid','token'=>'LIVE-SECRET-TOKEN']);
 $a=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($a);
-$bindings->confirmLiveSite($server->id,'https://my.becotech.com');
+$bindings->confirmLiveSite($server->id,'https://billing.example.com');
 $deny=static function(callable $work):void {try{$work();throw new LogicException('Expected refusal');}catch(DomainException){}};
 $actions=['catalogue','registration','renewal','management'];
 foreach($actions as $action){same(false,Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($binding,$action),'Live actions default off');}
 $accountConfig=['fingerprint'=>$binding->fingerprint,'daily_call_cap'=>1000,'daily_spend_limit_usd'=>'100.00'];
-config(['domains.enom_live.site'=>'https://my.becotech.com','domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);
+config(['domains.enom_live.site'=>'https://billing.example.com','domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);
 foreach($actions as $action){config(['domains.enom_live.'.$action=>true]);}
 expect($ports->accepted($a->fresh()),'Valid live composition is available');
 foreach($actions as $action){
@@ -89,12 +89,12 @@ $typedRefusal(fn()=>(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Ap
 config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);$typedRefusal(fn()=>EnomLiveCalls::read('unbound-live-uid'));
 same($wireBefore,count($GLOBALS['enomWire']['forms']),'Physical guards send no fake requests');
 $before=count($GLOBALS['enomWire']['forms']);
-foreach(['https://stage.example.com',null,'http://my.becotech.com'] as $site){
+foreach(['https://stage.example.com',null,'http://billing.example.com'] as $site){
     config(['domains.enom_live.site'=>$site]);expect(!$ports->accepted($a->fresh()),'Site mismatch refuses composition');
     $deny(fn()=>Paymenter\Extensions\Servers\Domains\Services\EnomLiveCalls::reserve($binding));
 }
-config(['domains.enom_live.site'=>'https://my.becotech.com','app.url'=>'https://copied.example.com']);expect(!$ports->accepted($a->fresh()),'Copied application URL refuses live composition');$deny(fn()=>EnomLiveCalls::reserve($binding));config(['app.url'=>'https://my.becotech.com']);
-DB::table('domains_accounts')->where('server_id',$server->id)->update(['live_site'=>'https://copied.example.com']);expect(!$ports->accepted($a->fresh()),'Retained site must match deployment');$deny(fn()=>EnomLiveCalls::reserve($binding));DB::table('domains_accounts')->where('server_id',$server->id)->update(['live_site'=>'https://my.becotech.com']);
+config(['domains.enom_live.site'=>'https://billing.example.com','app.url'=>'https://copied.example.com']);expect(!$ports->accepted($a->fresh()),'Copied application URL refuses live composition');$deny(fn()=>EnomLiveCalls::reserve($binding));config(['app.url'=>'https://billing.example.com']);
+DB::table('domains_accounts')->where('server_id',$server->id)->update(['live_site'=>'https://copied.example.com']);expect(!$ports->accepted($a->fresh()),'Retained site must match deployment');$deny(fn()=>EnomLiveCalls::reserve($binding));DB::table('domains_accounts')->where('server_id',$server->id)->update(['live_site'=>'https://billing.example.com']);
 config(['domains.enom_live.accounts'=>['live-uid'=>[...$accountConfig,'fingerprint'=>str_repeat('f',64)]]]);
 expect(!$ports->accepted($a->fresh()),'Wrong account binding refuses composition');
 config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);

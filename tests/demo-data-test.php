@@ -24,17 +24,25 @@ foreach ([
     'request policy'=>$operation(['offline_demo'=>true],'invoice'),
     'request funding basis'=>$operation([],'offline_demo'),
     'watch reason'=>new ManagedPublicConfig(['reason'=>'offline_demo']),
-    'demo Enom account'=>$account('enom','beco-demo-enom'),
-    'demo NameSilo account'=>$account('namesilo','beco-demo-namesilo'),
+    'demo Enom account'=>$account('enom','demo-enom'),
+    'demo NameSilo account'=>$account('namesilo','demo-namesilo'),
     'hosting watch registry facts'=>$watch(['result'=>'facts','offline_demo'=>true]),
 ] as $marker=>$model) { expect(DemoData::is($model),'Demo marker: '.$marker); }
+// Existing encrypted identities remain demo records; only canonical values are written by new seeds.
+same(['enom'=>'demo-enom','namesilo'=>'demo-namesilo'],DemoData::ACCOUNTS,'Neutral seed identities');
+$legacy=['enom'=>hex2bin('6265636f2d64656d6f2d656e6f6d'),'namesilo'=>hex2bin('6265636f2d64656d6f2d6e616d6573696c6f')];
+foreach ($legacy as $key=>$identity) {
+    expect(DemoData::is($account($key,$identity)),'Prior identity remains demo: '.$key);
+    expect(!DemoData::is($account($key,$identity.'-other')),'Prior identity requires an exact match: '.$key);
+    expect(!DemoData::is($account($key==='enom'?'namesilo':'enom',$identity)),'Prior identity stays with its registrar: '.$key);
+}
 // Real records are never tagged.
 foreach ([
     'domain'=>$domain(['checkout'=>['invoice_id'=>9]]), 'domain without snapshot'=>new Domain,
     'domain with a false marker'=>$domain(['offline_demo'=>false]),
     'request'=>$operation(['dispatch_attempted_at'=>'2026-10-01T00:00:00+00:00'],'invoice'),
     'watch'=>new ManagedPublicConfig(['reason'=>'Customer asked for checks']),
-    'Enom account'=>$account('enom','reseller-account'), 'NameSilo account'=>$account('namesilo','Beco-Demo-NameSilo'),
+    'Enom account'=>$account('enom','reseller-account'), 'NameSilo account'=>$account('namesilo','Demo-NameSilo'),
     'hosting watch'=>$watch(['result'=>'facts']), 'unchecked hosting watch'=>$watch(null),
     'no record'=>null, 'other object'=>new stdClass,
 ] as $real=>$model) { expect(!DemoData::is($model),'Real record: '.$real); }
@@ -53,7 +61,7 @@ expect((bool)preg_match('/\.domains-missing\s*\{[^}]*color:\s*var\(--e-bad\)/',$
 
 // Staff: entries and columns add the tag after the name only for demo records.
 staffPanel();
-$demo=$account('enom','beco-demo-enom');$real=$account('enom','reseller-account');
+$demo=$account('enom','demo-enom');$real=$account('enom','reseller-account');
 $facts=renderFacts([DemoTag::apply(TextEntry::make('demo')->label('Registrar')->state('OFFLINE DEMO Enom (synthetic)')->model($demo)),
     DemoTag::apply(TextEntry::make('real')->label('Registrar')->state('Enom reseller')->model($real))]);
 same(1,substr_count($facts['html'],'domains-demo-tag'),'Only the demo entry carries the tag');
@@ -67,7 +75,13 @@ FoundationSchema::install();
 same('',DemoTag::banner(),'No banner on a system without demo accounts');
 fixtureAccount(1,'enom','reseller-account');
 same('',DemoTag::banner(),'Real accounts do not raise the banner');
-fixtureAccount(2,'enom','beco-demo-enom');
+fixtureAccount(2,'enom',$legacy['enom']);
 $banner=storefrontDom(DemoTag::banner());
 same('Test system. Records tagged Demo are seeded examples.',preg_replace('/\s+/',' ',trim($banner->query('//*[@role="note"]')->item(0)?->textContent??'')),'Banner text');
+$stored=Account::where('server_id',2)->sole();
+expect(DemoData::present(),'Prior encrypted demo identity raises the banner');
+config(['domains.enom_identity.environment'=>'test']);
+expect(DemoData::paused($stored->fresh()),'Prior encrypted demo identity keeps its paused rule');
+fixtureAccount(3,'enom',DemoData::ACCOUNTS['enom']);
+expect(DemoData::is(Account::where('server_id',3)->sole()),'New seed uses the canonical demo identity');
 $nativeSuccessful=true;echo "Demo data checks passed.\n";

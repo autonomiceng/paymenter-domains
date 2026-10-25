@@ -11,7 +11,12 @@ final class DemoData
     public const TOOLTIP = 'Demo data. Seeded for testing. Nothing is sent to a registrar and no money moves.';
     public const TEST_TOOLTIP = 'Test registration. Made in the registrar\'s test environment. It is not a real domain and no money moves.';
     public const BANNER = 'Test system. Records tagged Demo are seeded examples.';
-    public const ACCOUNTS = ['enom' => 'beco-demo-enom', 'namesilo' => 'beco-demo-namesilo'];
+    public const ACCOUNTS = ['enom' => 'demo-enom', 'namesilo' => 'demo-namesilo'];
+    // Exact prior identities remain readable; new seeds use ACCOUNTS.
+    private const LEGACY_ACCOUNT_DIGESTS = [
+        'enom' => '2ae8d6b65218901fdcaec38a725a9a79412852e9c96b5183f583a7d6858db828',
+        'namesilo' => 'b0dce7e4120b7a3e71c57aa7c3d8870af8129535efd0961c5deb28291b507465',
+    ];
     private const MARKER = 'offline_demo';
     public static function is(mixed $model): bool
     {
@@ -26,7 +31,11 @@ final class DemoData
     }
     private static function account(Account $account): bool
     {
-        try{return isset(self::ACCOUNTS[$account->registrar_key]) && $account->stable_identity === self::ACCOUNTS[$account->registrar_key];}
+        try {
+            $key=$account->registrar_key;$identity=$account->stable_identity;
+            return isset(self::ACCOUNTS[$key]) && ($identity === self::ACCOUNTS[$key]
+                || (is_string($identity) && hash('sha256',$identity) === self::LEGACY_ACCOUNT_DIGESTS[$key]));
+        }
         catch(\Throwable){return false;}
     }
     /** True while a seeded demo registrar account exists. Accounts are few, so each is checked directly. */

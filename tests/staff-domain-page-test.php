@@ -105,19 +105,19 @@ $p=$active->fresh()->observation;unset($p['record_hold']);$active->fresh()->upda
 DB::table('domains_domains')->where('id',$active->id)->update(['last_synced_at'=>'2026-10-20 15:05:00']);
 same('Oct 20, 2026 15:05 UTC',$value($active,'Last sync'),'Last sync time');
 require_once __DIR__.'/Support/accounts.php';
-$demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'enom','beco-demo-enom'),'domain'=>'beco-demo-held.com','sld'=>'beco-demo-held','tld'=>'com','user_id'=>$customer->id,'service_id'=>499,
+$demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'enom','demo-enom'),'domain'=>'demo-held.test','sld'=>'demo-held','tld'=>'test','user_id'=>$customer->id,'service_id'=>499,
     'status'=>'active','provider_expires_at'=>today()->addDays(200)->format('Y-m-d'),'snapshot'=>['offline_demo'=>true],'observation'=>['facts'=>[]],'renewal_policy'=>[]]);
 config(['domains.enom_identity.environment'=>'test']);
 same(['Paused','Demo registrar is off while Enom Test mode is on'],[$value($demo,'Last sync'),$sub($demo,'Last sync')],'Demo registrar paused under Enom Test mode');
 same('Enom · Test · orders paused',$sub($demo,'Registrar'),'Registrar sub-line says orders paused');
 same([null,'Sync paused'],[$value($demo,'Registrar auto-renew'),$sub($demo,'Registrar auto-renew')],'Unread registrar facts name the paused sync');
 same([null,'Sync paused',false],[$value($demo,'Nameservers'),$sub($demo,'Nameservers'),DomainFacts::for($demo->fresh())['Nameservers']['demo']],'Demo without stored nameservers names the paused sync, with no Demo tag on Missing');
-$storeNs($demo,['ns1.beco-demo.test','ns2.beco-demo.test']);
-same([['ns1.beco-demo.test','ns2.beco-demo.test'],true],[$value($demo,'Nameservers'),DomainFacts::for($demo->fresh())['Nameservers']['demo']],'Demo nameservers keep the Demo tag');
+$storeNs($demo,['ns1.demo.test','ns2.demo.test']);
+same([['ns1.demo.test','ns2.demo.test'],true],[$value($demo,'Nameservers'),DomainFacts::for($demo->fresh())['Nameservers']['demo']],'Demo nameservers keep the Demo tag');
 config(['domains.enom_identity.environment'=>'live','domains.enom_writes.registration'=>false,'domains.enom_writes.renewal'=>false]);
 same(null,$value($demo,'Last sync'),'Demo registrar runs when Enom Test mode is off');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$demo->id])->assertSee('Demo');
-Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('beco-demo-held')->assertCanSeeTableRecords([$demo])->assertSeeHtml('domains-demo-tag');
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('demo-held.test')->assertCanSeeTableRecords([$demo])->assertSeeHtml('domains-demo-tag');
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertCanSeeTableRecords([$active])->assertDontSeeHtml('domains-demo-tag');
 
 // Saved data that cannot be decrypted gives one danger notice.

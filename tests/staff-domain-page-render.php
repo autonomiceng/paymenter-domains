@@ -39,7 +39,7 @@ $op=$active->operations()->sole()->replicate(); $op->fill(['domain_id'=>$order->
 $alerted=$copy('alerts.example.com',[]);
 foreach(['native_identity_missing','renewal_unpaid','observation_review','missing_obligation'] as $code){Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($alerted,$code,time());}
 require_once __DIR__.'/Support/accounts.php';
-$demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'enom','beco-demo-enom'),'domain'=>'beco-demo-held.com','sld'=>'beco-demo-held','tld'=>'com',
+$demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'enom','demo-enom'),'domain'=>'demo-held.test','sld'=>'demo-held','tld'=>'test',
     'user_id'=>$customer->id,'service_id'=>699,'status'=>'active','provider_expires_at'=>today()->addDays(200)->format('Y-m-d'),
     'snapshot'=>['offline_demo'=>true],'observation'=>['facts'=>[]],'renewal_policy'=>[]]);
 config(['domains.enom_identity.environment'=>'test']);

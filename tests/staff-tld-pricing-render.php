@@ -17,7 +17,7 @@ Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domai
 // Several registrar accounts: Enom takes new orders, the NameSilo account is demo data.
 DB::table('extensions')->where('id',$enom->server_id)->update(['name'=>'Enom TEST identity check']);
 DB::table('extensions')->where('id',$silo->server_id)->update(['name'=>'OFFLINE DEMO NameSilo (synthetic)']);
-DB::table('domains_accounts')->where('server_id',$silo->server_id)->update(['stable_identity'=>Illuminate\Support\Facades\Crypt::encryptString('beco-demo-namesilo')]);
+DB::table('domains_accounts')->where('server_id',$silo->server_id)->update(['stable_identity'=>Illuminate\Support\Facades\Crypt::encryptString('demo-namesilo')]);
 Domain::create(['server_id'=>$enom->server_id,'registrar_key'=>'enom','account_fingerprint'=>$enom->account_fingerprint,
     'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);
 $permissions=[Staff::VIEW,Staff::COSTS,Staff::POLICY];foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
@@ -32,7 +32,7 @@ $render=static function(string $class,array $params,string $name)use($u,$out,$cs
     $html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);
     $html=preg_replace('~src="https?://[^\"]+"~','src="data:image/svg+xml;base64,'.base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#64748b"/></svg>').'"',$html);
     $html=str_replace('</head>','<style>'.$css.'</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>',$html);
-    expect(!str_contains($html,'account-enom')&&!str_contains($html,'beco-demo-namesilo'),'No synthetic account identity');
+    expect(!str_contains($html,'account-enom')&&!str_contains($html,'demo-namesilo'),'No synthetic account identity');
     expect(!str_contains($html,"\u{2014}"),'No em dashes in rendered page');
     writeRenderArtifact($out.'/'.$name.'.html',$html);
 };

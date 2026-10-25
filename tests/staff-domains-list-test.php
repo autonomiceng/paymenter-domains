@@ -35,7 +35,7 @@ same(['Missing',DomainFacts::UNREADABLE_RENEWAL],[$cell->getState(),$cell->getDe
 DB::table('domains_domains')->where('id',$held->id)->update(['renewal_policy'=>Domain::find($active->id)->getRawOriginal('renewal_policy')]);
 
 // One demo-paused definition: the list, the page and the customer view agree, and the list row says why sync stops.
-$demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'enom','beco-demo-enom'),'domain'=>'beco-demo-held.com','sld'=>'beco-demo-held','tld'=>'com',
+$demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'enom','demo-enom'),'domain'=>'demo-held.test','sld'=>'demo-held','tld'=>'test',
     'user_id'=>$viewer->id,'service_id'=>499,'status'=>'active','provider_expires_at'=>today()->addDays(200)->format('Y-m-d'),'snapshot'=>['offline_demo'=>true],
     'observation'=>['facts'=>[]],'renewal_policy'=>[]]);
 foreach (['test'=>true,'live'=>false] as $environment=>$paused) {

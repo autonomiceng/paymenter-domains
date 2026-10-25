@@ -29,7 +29,7 @@ if(in_array(getenv('PACKAGE_PHASE'), ['identity','catalogue','catalogue-retained
         static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>getenv('PACKAGE_PHASE')!=='identity']));
 }
 if(getenv('PACKAGE_PHASE')==='enom-live'){
-    $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,static fn()=>config(['domains.enom_identity.environment'=>'live','app.url'=>'https://my.becotech.com']));
+    $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,static fn()=>config(['domains.enom_identity.environment'=>'live','app.url'=>'https://billing.example.com']));
 }
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 config(['hashing.bcrypt.rounds'=>4,'audit.enabled'=>false,'settings.mail_disabled'=>true,

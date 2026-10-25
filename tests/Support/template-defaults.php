@@ -103,7 +103,7 @@ return $prior;
 
 function priorWatchDefaults(): array
 {
-return array (
+$prior=array (
   'domains_watch_expiring' => 
   array (
     'name' => 
@@ -213,4 +213,17 @@ return array (
     ),
   ),
 );
+
+// Exact nameserver defaults from the following release.
+$prior['domains_watch_ns_changed']['name'][]='Monitoring alert: nameservers changed';
+$prior['domains_watch_ns_changed']['subject'][]='Nameservers changed for {{ $domain }}';
+$prior['domains_watch_ns_changed']['in_app_title'][]='Nameservers changed for {{ $domain }}';
+$prior['domains_watch_ns_changed']['in_app_body'][]='As of {{ $date }}, {{ $domain }} no longer uses {{ $company }} nameservers. If you didn’t expect this, contact support.';
+$prior['domains_watch_ns_changed']['body'][]='<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%"><tr><td style="color:#1f2937;padding:0 0 16px;font-family:Arial,sans-serif;font-size:18px;line-height:26px;font-weight:bold;overflow-wrap:anywhere">Nameservers changed for {{ $domain }}</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px;overflow-wrap:anywhere">As of {{ $date }}, {{ $domain }} no longer uses {{ $company }} nameservers. If you didn’t expect this, contact support.</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px"><a href="{{ $domain_url }}" style="color:#2563eb;text-decoration:underline">View domain</a></td></tr><tr><td style="color:#1f2937;font-family:Arial,sans-serif;font-size:14px;line-height:22px">You get this because monitoring alerts are on. Turn them off on the domain page.</td></tr></table>';
+$prior['domains_watch_ns_restored']['name'][]=hex2bin('4d6f6e69746f72696e6720616c6572743a206e616d6573657276657273206261636b20746f204265636f');
+$prior['domains_watch_ns_restored']['subject'][]='{{ $domain }} uses {{ $company }} nameservers again';
+$prior['domains_watch_ns_restored']['in_app_title'][]='{{ $domain }} uses {{ $company }} nameservers again';
+$prior['domains_watch_ns_restored']['in_app_body'][]='As of {{ $date }}, {{ $domain }} uses {{ $company }} nameservers again.';
+$prior['domains_watch_ns_restored']['body'][]='<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%"><tr><td style="color:#1f2937;padding:0 0 16px;font-family:Arial,sans-serif;font-size:18px;line-height:26px;font-weight:bold;overflow-wrap:anywhere">{{ $domain }} uses {{ $company }} nameservers again</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px;overflow-wrap:anywhere">As of {{ $date }}, {{ $domain }} uses {{ $company }} nameservers again.</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px"><a href="{{ $domain_url }}" style="color:#2563eb;text-decoration:underline">View domain</a></td></tr><tr><td style="color:#1f2937;font-family:Arial,sans-serif;font-size:14px;line-height:22px">You get this because monitoring alerts are on. Turn them off on the domain page.</td></tr></table>';
+return $prior;
 }

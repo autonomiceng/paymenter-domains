@@ -241,7 +241,7 @@ if($phase==='server-delete'){
     if(class_exists(Paymenter\Extensions\Servers\Domains\Services\EnomLive::class)){
         $oldLiveConfig=config('domains.enom_live');$oldIdentity=config('domains.enom_identity.environment');$oldUrl=config('app.url');
         if(getenv('PACKAGE_STANDING_UPGRADE')){
-            $live=Account::where('environment','live')->sole();same('https://my.becotech.com',$live->live_site,'Baseline retained a bound live identity');
+            $live=Account::where('environment','live')->sole();same('https://billing.example.com',$live->live_site,'Baseline retained a bound live identity');
             config(['domains.enom_identity.environment'=>'live','app.url'=>$live->live_site,'domains.enom_live.site'=>$live->live_site,
                 'domains.enom_live.accounts'=>[$live->stable_identity=>['fingerprint'=>$live->account_fingerprint,'daily_call_cap'=>1000,'daily_spend_limit_usd'=>'100.00']]]);
         }

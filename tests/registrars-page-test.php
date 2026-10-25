@@ -40,7 +40,7 @@ same('https://cp.enom.com/',RegistrarBalances::fundsUrl('enom','test'),'Enom fun
 // A server without an account, a disabled server and a seeded demo account.
 $empty=App\Models\Server::create(['name'=>'Spare account','extension'=>'Domains','type'=>'server','enabled'=>true]);
 $off=App\Models\Server::create(['name'=>'Old account','extension'=>'Domains','type'=>'server','enabled'=>false]);
-$demoId=(int)App\Models\Server::max('id')+1;fixtureAccount($demoId,'namesilo','beco-demo-namesilo');$demo=Account::where('server_id',$demoId)->sole();
+$demoId=(int)App\Models\Server::max('id')+1;fixtureAccount($demoId,'namesilo','demo-namesilo');$demo=Account::where('server_id',$demoId)->sole();
 App\Models\Server::whereKey($demo->server_id)->update(['name'=>'Demo NameSilo']);
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 staffPanel();$panel=Filament::getCurrentPanel();$pages=[RegistrarSetup::class,RegistrarAccount::class,BalancesPage::class,ActivationStatus::class,PslPage::class];$panel->pages($pages);

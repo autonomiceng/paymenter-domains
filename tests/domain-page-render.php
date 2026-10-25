@@ -14,7 +14,7 @@ $m=[];
 foreach(['nameservers'=>'Nameservers','dns'=>'DNS records','glue'=>'Glue records','ds'=>'DNSSEC','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','contacts'=>'Contacts','auth_code_email'=>'Auth code']as$cap=>$label){
     $m[$cap]=['label'=>$label,'url'=>'/domains/1/manage/'.$cap,'actions'=>[$cap=>'/domains/1/manage/'.$cap]];
 }
-$m['nameservers']+=['max'=>12,'defaults'=>true,'defaultServers'=>['ns1.beco.example','ns2.beco.example'],'current'=>['ns1.beco.example','ns2.beco.example']];
+$m['nameservers']+=['max'=>12,'defaults'=>true,'defaultServers'=>['ns1.hosting.example','ns2.hosting.example'],'current'=>['ns1.hosting.example','ns2.hosting.example']];
 $m['dns']+=['records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.1'],['name'=>'www','type'=>'CNAME','address'=>'@'],['name'=>'@','type'=>'MX','address'=>'mail.example.com']],'digest'=>str_repeat('b',64),'recordCheckHeld'=>false];
 $m['glue']+=['records'=>[],'recordCheckHeld'=>false];$m['glue']['actions']=['glue_add'=>'/domains/1/manage/glue_add'];
 $m['ds']+=['records'=>[],'recordCheckHeld'=>false];$m['ds']['actions']=['ds_add'=>'/domains/1/manage/ds_add'];
@@ -32,7 +32,7 @@ $summary=static fn(OwnedDomain $d,array $more=[])=>new DomainSummary($d->name,nu
     'urls'=>['detail'=>'/domains/1','support'=>'/tickets/create'],...$more]);
 $paused=$m;$paused['dns']['records']=null;$paused['ds']['records']=null;
 $cases=[
-    'active'=>[$domain('beco-example.com'),['daysLeft'=>129]],
+    'active'=>[$domain('example.com'),['daysLeft'=>129]],
     'auto-renew-off'=>[$domain('renewal-off.example',['renewal'=>'Off','renewalOff'=>'owner','autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>false],'expiry'=>'2027-01-20']),['daysLeft'=>89,'renewalOff'=>true,'renewalDueAt'=>null]],
     'demo-sync-paused'=>[$domain('demo-paused.example',['demo'=>true,'syncPaused'=>true,'management'=>$paused]),['daysLeft'=>129,'demo'=>true]],
     'test-mode'=>[$domain('test-expiring.example',['testEnvironment'=>true,'expiry'=>'2026-11-02']),['daysLeft'=>10,'testEnvironment'=>true,'renewalDueAt'=>null,'renewalInvoiceMissing'=>true,'renewalIssueAt'=>'2026-10-03']],
