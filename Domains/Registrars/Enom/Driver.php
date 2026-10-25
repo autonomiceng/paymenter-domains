@@ -322,15 +322,28 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             && ($attempt->query->action === Action::Register
                 || ($attempt->query->action === Action::Transfer && $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Completed))
             && $domain?->owned === true) {
+            $reply = null;
             try {
-                $reply = $this->read(ReadCommand::Nameservers, $this->parts($attempt->query->name), $context);
+                // The general read wrapper neutralizes RuntimeException; optional enrichment must expose unexpected failures.
+                $reply = $this->client->read(ReadCommand::Nameservers, $this->parts($attempt->query->name), $context);
+            } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) {
+                // Expected local admission failures cannot discard proven completion.
+            } catch (\DomainException $error) {
+                // RequestContext uses this exact base exception for a refused provider read.
+                if ($error::class !== \DomainException::class || $error->getMessage() !== 'Registrar read failed.') { throw $error; }
+            } catch (\RuntimeException $error) {
+                // Keep known request capacity failures neutral without hiding programming errors.
+                if ($error::class !== \RuntimeException::class || !in_array($error->getMessage(),
+                    ['Registrar request budget exhausted.', 'Registrar request deadline reached.'], true)) { throw $error; }
+            }
+            if ($reply !== null) {
                 $nameservers = self::readNameservers($reply, $context->now());
                 if ($nameservers) {
                     $domain = new DomainSnapshot($domain->binding, $domain->name, $domain->owned, $domain->expiry,
                         $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference,
                         active: $domain->active, nameservers: $nameservers);
                 }
-            } catch (\Throwable) { /* Optional readback cannot discard proven completion. */ }
+            }
         }
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown,
             SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference)));
@@ -342,6 +355,6 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         if (is_string($rows)) { $rows = [$rows]; }
         if (!is_array($rows) || !array_is_list($rows) || count(array_filter($rows, 'is_string')) !== count($rows)) { return null; }
         try { return NameserverEvidence::observed($rows, 'enom_getdns', $observedAt); }
-        catch (\Throwable) { return null; }
+        catch (\InvalidArgumentException) { return null; }
     }
 }
