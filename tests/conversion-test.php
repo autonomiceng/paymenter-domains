@@ -16,6 +16,13 @@ $mapperProbe=new Planner($evidence);$mapperProbe->plan();
 DB::table('products')->where('id',$retiredProduct->id)->update(['name'=>'Unrecognized product']);conversionRefuses(fn()=>Mapper::native($mapperProbe),'Retired product shape must be exact','Unreviewed native product');DB::table('products')->where('id',$retiredProduct->id)->update(['name'=>$retiredBefore['name']]);
 $serviceBefore=(array)DB::table('services')->where('id',$services[21]->id)->first();DB::table('services')->where('id',$services[21]->id)->update(['product_id'=>$retiredProduct->id,'plan_id'=>$retiredPlan->id]);conversionRefuses(fn()=>Mapper::native($mapperProbe),'Retired product cannot have live services','Unreviewed native product');DB::table('services')->where('id',$services[21]->id)->update($serviceBefore);
 $retiredPrice=$retiredPlan->prices()->create(['currency_code'=>'USD','price'=>'0.00','setup_fee'=>0]);conversionRefuses(fn()=>Mapper::native($mapperProbe),'Retired plan cannot have a sale price','Unreviewed native product');$retiredPrice->delete();
+DB::table('notification_templates')->where('id',$legacyTransferTemplate->id)->update(['in_app_body'=>'{{ $invoice->id }}']);
+try{
+    conversionRefuses(fn()=>$converter->run(),'Unsupported collided transfer template','Retained template requires unsupported data or legacy route.');
+    same(true,(bool)$legacyTransferTemplate->fresh()->enabled,'Unsupported collided transfer template stays enabled');
+}finally{DB::table('notification_templates')->where('id',$legacyTransferTemplate->id)->update(['in_app_body'=>$legacyTransferBefore['in_app_body']]);}
+same($legacyTransferBefore,(array)DB::table('notification_templates')->where('id',$legacyTransferTemplate->id)->first(),'Collided transfer template fixture restored');
+same($neutralTransferBefore,(array)DB::table('notification_templates')->where('id',$neutralTransferTemplate->id)->first(),'Collision refusal retains neutral template');
 conversionRefuses(fn()=>$converter->run(true),'Missing backup marker','Apply requires a prior backup marker');same(0,Domain::count(),'Missing backup writes nothing');
 $marker=$backup();$markerBody=json_decode(file_get_contents($marker),true);
 same(Inputs::selectedRevision(),$markerBody['revision'],'Backup binds selected revision');
