@@ -59,12 +59,55 @@ $css=file_get_contents(__DIR__.'/../Domains/resources/views/partials/styles.blad
 expect((bool)preg_match('/\.domains-demo-tag\s*\{[^}]*display:\s*inline-flex[^}]*white-space:\s*nowrap/',$css),'Demo tag stays on one line and wraps as a unit');
 expect((bool)preg_match('/\.domains-missing\s*\{[^}]*color:\s*var\(--e-bad\)/',$css),'Missing uses the danger colour');
 
+// Tag colours follow the light and dark themes on staff/native pages (inline) and client pages (stylesheet).
+// The cascade model covers class and descendant-class selectors only; inline style declarations win.
+$styleText=static fn(string $html)=>implode("\n",array_map(fn($n)=>$n->textContent,iterator_to_array(storefrontDom($html)->query('//style'))));
+$color=static function(string $css,string $inlineStyle,array $ancestors,array $classes): ?string {
+    if (preg_match('/(?:^|;)\s*color\s*:\s*([^;]+)/',$inlineStyle,$c)) { return trim($c[1]); }
+    preg_match_all('/([^{}]+)\{([^{}]*)\}/',(string)preg_replace('~/\*.*?\*/~s','',$css),$rules,PREG_SET_ORDER);
+    $best=null;$bestSpecificity=-1;
+    foreach ($rules as [, $selectors, $body]) {
+        if (!preg_match('/(?:^|;|\s)color\s*:\s*([^;]+)/',$body,$c)) { continue; }
+        foreach (explode(',',$selectors) as $selector) {
+            $parts=preg_split('/\s+/',trim($selector));
+            if (array_filter($parts,fn($p)=>!preg_match('/^(\.[\w-]+)+$/',$p))) { continue; }
+            $parts=array_map(fn($p)=>explode('.',ltrim($p,'.')),$parts);
+            $specificity=count(array_merge(...$parts));
+            if (array_diff(array_pop($parts),$classes)) { continue; }
+            $i=0;foreach ($ancestors as $ancestor) { if ($i<count($parts) && !array_diff($parts[$i],$ancestor)) { $i++; } }
+            if ($i<count($parts)) { continue; }
+            if ($specificity>=$bestSpecificity) { $best=trim($c[1]);$bestSpecificity=$specificity; }
+        }
+    }
+    return $best;
+};
+$clientCss=view('domains::partials.styles')->render();
+expect(str_contains($clientCss,'domains-demo-tag'),'Client stylesheet renders once for the colour checks');
+$want=['Demo'=>['light'=>'#c2410c','dark'=>'#fdba74'],'Test'=>['light'=>'#475569','dark'=>'#cbd5e1']];
+$expected=[];$actual=[];
+foreach ([false,true] as $test) {
+    $variant=$test?'Test':'Demo';
+    $surfaces=['inline without client stylesheet'=>[DemoData::tag(inline:true,test:$test)->toHtml(),''],
+        'inline with client stylesheet'=>[DemoData::tag(inline:true,test:$test)->toHtml(),$clientCss],
+        'client'=>[DemoData::tag(test:$test)->toHtml(),$clientCss]];
+    foreach ($surfaces as $surface=>[$html,$pageCss]) {
+        $node=storefrontDom($html)->query('//span[contains(@class,"domains-demo-tag")]')->item(0);
+        foreach (['light','dark'] as $mode) {
+            $ancestors=array_values(array_filter([$mode==='dark'?['dark']:null,$pageCss===''?null:['domains']]));
+            $key=$variant.' '.$mode.' '.$surface;
+            $expected[$key]=$want[$variant][$mode];
+            $actual[$key]=$color($styleText($pageCss)."\n".$styleText($html),(string)$node?->getAttribute('style'),$ancestors,explode(' ',(string)$node?->getAttribute('class')));
+        }
+    }
+}
+same($expected,$actual,'Demo and Test tag colours follow light and dark: '.json_encode(array_diff_assoc($actual,$expected)));
+
 // Staff: entries and columns add the tag after the name only for demo records.
 staffPanel();
 $demo=$account('enom','demo-enom');$real=$account('enom','reseller-account');
 $facts=renderFacts([DemoTag::apply(TextEntry::make('demo')->label('Registrar')->state('OFFLINE DEMO Enom (synthetic)')->model($demo)),
     DemoTag::apply(TextEntry::make('real')->label('Registrar')->state('Enom reseller')->model($real))]);
-same(1,substr_count($facts['html'],'domains-demo-tag'),'Only the demo entry carries the tag');
+same(1,storefrontDom($facts['html'])->query('//span[contains(concat(" ",@class," ")," domains-demo-tag ")]')->length,'Only the demo entry carries the tag');
 expect(str_contains($facts['html'],DemoData::TOOLTIP),'Staff tag has the tooltip');
 $column=static fn($record)=>DemoTag::apply(TextColumn::make('name'))->record($record)->getSuffix();
 expect(str_contains((string)$column($demo)?->toHtml(),'>Demo'),'Demo column suffix');
