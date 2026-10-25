@@ -9,6 +9,11 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObser
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 ObservationSchema::install();$observer=new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports);
 same('refreshed',$observer->run($d->id),'Complete initial record inventory');
+// Rendered-script contract only. The offline runner does not execute browser events.
+$script=$page();
+expect(str_contains($script, "row.querySelectorAll('input:not([type=hidden]):not(:disabled), select:not(:disabled)')"),'Removal checks exclude disabled inputs and selects omitted from submission');
+expect(str_contains($script, 'deleting(row) || !filled(row)'), 'Removed rows use the shared submitted-field predicate');
+expect(str_contains($script, '!deleting(row) && filled(row)'), 'Retained rows use the same submitted-field predicate');
 $cases=[
     'dns'=>[
         'records'=>[['name'=>'@','type'=>'TXT','address'=>'<original> & text'],['name'=>'www','type'=>'A','address'=>'1.1.1.1']],
