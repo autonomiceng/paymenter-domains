@@ -13,7 +13,7 @@ use Illuminate\Log\Events\MessageLogged;
 $logs=[];Event::listen(MessageLogged::class,static function($e)use(&$logs):void{$logs[]=['level'=>$e->level,'message'=>$e->message,'context'=>$e->context];});
 $op=$held('staff-unicode-reason-placeholder.com');
 $write=fn(string $reason)=>$service->run($staff,$op->domain_id,$op->id,'release',$ticket($op->fresh(),'release'),$reason);
-foreach([str_repeat('é',4),str_repeat('é',501),"abcde\xff","line\nbreak"] as $bad){
+foreach([str_repeat('é',4),str_repeat('é',501),"abcde\xff","line\nbreak","line\u{2028}break","line\u{2029}break"] as $bad){
     $before=$op->fresh()->getRawOriginal();commerceReject(fn()=>$write($bad));same($before,$op->fresh()->getRawOriginal(),'Invalid Unicode reason changes nothing');
 }
 $reason=str_repeat('🦦',500);
@@ -78,6 +78,7 @@ expect(!str_contains(json_encode($history),'PRIVATE-')&&!str_contains(json_encod
 foreach([1,5,10] as $min){
     StaffReason::require(str_repeat('é',$min),$min,500);
     StaffReason::require(str_repeat('🦦',500),$min,500);
+    foreach(["abcde\u{2028}break","abcde\u{2029}break"]as$separator){commerceReject(fn()=>StaffReason::require($separator,$min,500));}
     commerceReject(fn()=>StaffReason::require(str_repeat('é',$min-1),$min,500));
     commerceReject(fn()=>StaffReason::require(str_repeat('é',501),$min,500));
     commerceReject(fn()=>StaffReason::require("abcde\xff",$min,500));

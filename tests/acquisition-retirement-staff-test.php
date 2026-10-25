@@ -7,6 +7,24 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,DomainReservations,HoldingLocks,NativeCancellation,NativeIdentity,NativeIntentSchema,ReminderSchema,StaffHoldingReview,UnpaidAcquisitionProof};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionActions;
+// Background closure evidence must not invalidate a review of unchanged authority and money.
+$background=$new(placeholderComFixtureName('unpaid-background-placeholder.com'),paid:false);
+DB::table('services')->where('id',$background->service_id)->update(['status'=>'cancelled']);
+$key=$ticket($background);$money=$nativeMoney();$retirement->inspect($background->domain_id);
+expect(isset($background->fresh()->policy['native_acquisition_closure']),'Inspection retained background closure evidence');
+DB::table('domains_operations')->where('id',$background->id)->update(['updated_at'=>$clock->now()->modify('+1 minute')]);
+same($money,$nativeMoney(),'Background closure retains payment history');
+$retirement->retire($background->domain_id,$staff,$key,'Retire unchanged reviewed unpaid order');
+same(null,$background->domain->fresh()->reservation_name,'Background closure preserves usable staff review');
+// Every other policy field and all money/authority fields still invalidate the shared stamp.
+$control=$new(placeholderComFixtureName('unpaid-stamp-control-placeholder.com'),paid:false);
+$stamp=static fn()=>StaffHoldingReview::stamp(HoldingLocks::take($control->domain->fresh(),advisory:true));
+$before=$stamp();$saved=$control->getRawOriginal();
+foreach(['policy'=>[...$control->policy,'dispatch_attempted_at'=>'2026-10-19T00:00:00Z'],'funding'=>['payment'=>'changed'],'amount'=>'99.00','authority_generation'=>$control->authority_generation+1,'account_fingerprint'=>str_repeat('f',64),'state'=>'pending']as$field=>$value){
+    $copy=$control->fresh();$copy->$field=$value;DB::table('domains_operations')->where('id',$control->id)->update([$field=>$copy->getAttributes()[$field]]);
+    expect($before!==$stamp(),'Review stamp retains '.$field.' authority');
+    DB::table('domains_operations')->where('id',$control->id)->update([$field=>$saved[$field]]);
+}
 // Staff action, fresh identity/permission/reason snapshot and retained audit.
 $staffOp=$new(placeholderComFixtureName('unpaid-staff-placeholder.com'),paid:false);$key=$ticket($staffOp);
 foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>$retirement->retire($staffOp->domain_id,$staff,$ticket($staffOp),$bad));}

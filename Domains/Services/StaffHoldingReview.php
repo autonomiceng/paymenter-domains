@@ -17,8 +17,16 @@ final class StaffHoldingReview
     {
         $ids=$l['operations']->pluck('invoice_id')->filter();$itemIds=$l['operations']->pluck('invoice_item_id')->filter();$service=$l['service'];
         $raw=static fn($rows)=>$rows->map(fn($r)=>$r->getRawOriginal())->values()->all();
+        // Closure snapshots record a background observation, not a change in reviewed authority.
+        $operations=$l['operations']->map(static function($op):array {
+            $row=$op->getRawOriginal();$policy=$op->policy;
+            if(in_array($op->action,['register','transfer'],true)){
+                unset($policy['native_acquisition_closure'],$policy['native_acquisition_cancelled_at'],$row['updated_at']);
+            }
+            $row['policy']=$policy;return $row;
+        })->values()->all();
         return hash('sha256',json_encode([$l['domain']->getRawOriginal(),$service->getRawOriginal(),$l['server']->getRawOriginal(),
-            $l['account']->getRawOriginal(),$l['tld']->getRawOriginal(),$raw($l['prices']),$raw($l['operations']),
+            $l['account']->getRawOriginal(),$l['tld']->getRawOriginal(),$raw($l['prices']),$operations,
             $raw($l['cancel']->where('service_id',$service->id)),$raw($l['invoices']->whereIn('id',$ids)),
             $raw($l['items']->whereIn('id',$itemIds)),$raw($l['transactions']->whereIn('invoice_id',$ids)),
             is_int($l['tax'])?$l['tax']:$l['tax']->getRawOriginal(),config('settings.tax_enabled'),config('settings.tax_type')],JSON_THROW_ON_ERROR));

@@ -7,7 +7,7 @@ final class StaffReason
 {
     public static function require(string $reason,int $min=5,int $max=500): void
     {
-        if(!self::valid($reason,$min,$max)||$reason!==trim($reason)||preg_match('/[\x00-\x1f\x7f]/',$reason)){
+        if(!self::valid($reason,$min,$max)||$reason!==trim($reason)||preg_match('/[\x00-\x1f\x7f\x{2028}\x{2029}]/u',$reason)){
             throw new StaffReviewRefused('Enter a one-line reason between '.$min.' and '.$max.' characters.');
         }
     }
