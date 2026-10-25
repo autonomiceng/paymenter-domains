@@ -27,6 +27,20 @@ $cases = [
     'watch-notices' => ['summary' => $summary, 'name' => 'example.com', 'kind' => 'watch', 'id' => 1,
         'editable' => false, 'notices' => [], 'portal' => []],
 ];
+$recordManagement=[];
+foreach (['dns'=>[
+    ['name'=>'@','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10],
+    ['name'=>'www','type'=>'A','address'=>'8.8.4.4','mx_pref'=>10],
+], 'srv'=>[
+    ['service'=>'sip','protocol'=>'tcp','priority'=>0,'weight'=>0,'port'=>443,'target'=>'sip.example.com.'],
+    ['service'=>'xmpp','protocol'=>'tcp','priority'=>0,'weight'=>0,'port'=>5222,'target'=>'chat.example.com.'],
+]] as $cap=>$records) {
+    $recordManagement[$cap]=['label'=>strtoupper($cap).' records','records'=>$records,'digest'=>str_repeat('b',64),
+        'recordCheckHeld'=>false,'actions'=>[$cap=>'/domains/1/manage/'.$cap]];
+}
+$recordDomain=new OwnedDomain(...[...get_object_vars($domain),'management'=>$recordManagement]);
+writeRenderArtifact($out.'/show-records.html',view('domains::show',['domain'=>$recordDomain,
+    'keys'=>['dns'=>str_repeat('a',64),'srv'=>str_repeat('b',64)]])->render());
 foreach ($cases as $view => $data) {
     writeRenderArtifact($out.'/'.$view.'.html', view('domains::'.$view, $data)->render());
 }

@@ -98,6 +98,47 @@ same('@ A 192.0.2.1',$norm($x->query('//dialog[@id="edit-dns"]//dialog[@open]//*
 request()->query->set('edit','dns');$open=storefrontDom($render($d));request()->query->remove('edit');
 same(1,$open->query('//dialog[@id="edit-dns"][@open]')->length,'?edit opens the editor without script');
 
+// Enter uses the first enabled submit control; only an explicit Delete removes a row.
+foreach (['dns' => [
+    ['name'=>'@','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10],
+    ['name'=>'www','type'=>'CNAME','address'=>'example.com.','mx_pref'=>10],
+], 'srv' => [
+    ['service'=>'sip','protocol'=>'tcp','priority'=>0,'weight'=>0,'port'=>443,'target'=>'sip.example.com.'],
+    ['service'=>'xmpp','protocol'=>'tcp','priority'=>0,'weight'=>0,'port'=>5222,'target'=>'chat.example.com.'],
+]] as $cap => $records) {
+    $section=['label'=>strtoupper($cap).' records','records'=>$records,'digest'=>str_repeat('b',64),'actions'=>[$cap=>'/domains/1/manage/'.$cap]];
+    $recordDom=storefrontDom(view('domains::partials.owner-dns',['section'=>$section,'cap'=>$cap,'domain'=>$domain()])->render());
+    $buttons=$recordDom->query('//form//button[@type="submit"][not(@disabled)]');
+    $default=$buttons->item(0);
+    same('Save',trim($default?->textContent ?? ''),'Enter defaults to Save before any Delete: '.$cap);
+    same('true',$default->getAttribute('aria-hidden'),'Default Save is hidden from assistive technology: '.$cap);
+    same('-1',$default->getAttribute('tabindex'),'Default Save is outside the tab order: '.$cap);
+    expect(in_array('domains-sr',explode(' ',$default->getAttribute('class')),true),'Default Save uses visually hidden style: '.$cap);
+    $visible=$recordDom->query('//button[@type="submit"][normalize-space(.)="Save"][not(@aria-hidden)]');
+    same(1,$visible->length,'Visible Save remains: '.$cap);
+    foreach (['name','value'] as $attribute) { same($visible->item(0)->getAttribute($attribute),$default->getAttribute($attribute),'Save submitters have the same '.$attribute.': '.$cap); }
+    // Serialize successful controls, including only the selected submitter, as an ordinary form POST does.
+    $post=static function(DOMElement $submitter)use($recordDom):array {
+        $pairs=[];
+        foreach($recordDom->query('//form//input[not(@disabled)]|//form//select[not(@disabled)]|//form//button[@type="submit"]')as$control){
+            if($control->tagName==='button'&&$control!==$submitter||!$control->hasAttribute('name')){continue;}
+            $value=$control->tagName==='select'?$recordDom->query('option[@selected]',$control)->item(0)?->getAttribute('value'):$control->getAttribute('value');
+            $pairs[]=rawurlencode($control->getAttribute('name')).'='.rawurlencode($value??'');
+        }
+        parse_str(implode('&',$pairs),$payload);return $payload;
+    };
+    $saved=$post($default);
+    foreach($saved['records']as$record){expect(!isset($record['_delete']),'Implicit Save posts no deletion marker: '.$cap);}
+    same(2,count(\Paymenter\Extensions\Servers\Domains\Services\OwnerRecordInput::payload($cap,$saved,'example.com')['records']),'Implicit Save retains both records without script: '.$cap);
+    $deletes=$recordDom->query('//button[@data-delete-record]');same(2,$deletes->length,'Both explicit Delete controls remain: '.$cap);
+    foreach($deletes as$i=>$delete){
+        $deleted=$post($delete);
+        same([strval($i)],array_map('strval',array_keys(array_filter($deleted['records'],fn($r)=>isset($r['_delete'])))),'Explicit Delete selects only its own row: '.$cap);
+        $kept=\Paymenter\Extensions\Servers\Domains\Services\OwnerRecordInput::payload($cap,$deleted,'example.com')['records'];
+        same([array_map('strval',$records[1-$i])],$kept,'Explicit Delete retains the other row: '.$cap);
+    }
+}
+
 // Renewal card: active, auto-renew on.
 same('Mar 1, 2027',$card($dom,'Expires'),'Expires date');
 same('On Turn off',$card($dom,'Auto-renew'),'Auto-renew on');

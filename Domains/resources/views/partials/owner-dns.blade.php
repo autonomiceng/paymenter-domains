@@ -8,6 +8,8 @@
 @endphp
 <p class="domains-hint">{{ $isDns ? 'Use @ for the domain itself. Alias and mail targets end with a dot.' : 'Enter the service without the leading underscore, such as sip. The target ends with a dot.' }}</p>
 <form method="POST" action="{{ $section['actions'][$cap] }}" class="domains-owner-form domains-record-form" data-confirm data-confirm-when="records-removed" data-current="{{ count($section['records']) }}">
+{{-- Keep implicit submission on Save before the row Delete controls. --}}
+<button type="submit" class="domains-sr" aria-hidden="true" tabindex="-1">Save</button>
 @include('domains::partials.form-key', ['action' => $cap])
 <input type="hidden" name="preimage_digest" value="{{ $draft['digest'] ?? $section['digest'] }}">
 @foreach ($errors->keys() as $errorKey)
