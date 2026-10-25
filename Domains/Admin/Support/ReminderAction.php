@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Checkbox,Hidden,TextInput,Textarea};
 use Filament\Notifications\Notification;
@@ -21,7 +22,7 @@ final class ReminderAction
                 Checkbox::make('enabled')->label('Enable renewal and expiry reminders')->default(fn()=>(bool)$row()?->enabled),
                 TextInput::make('before')->label('Days before expiry')->default(fn()=>implode(',',json_decode($row()?->before_days??'[]',true)))->required()->maxLength(80),
                 TextInput::make('after')->label('Days after expiry')->default(fn()=>implode(',',json_decode($row()?->after_days??'[]',true)))->required()->maxLength(80),
-                Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->helperText('Use one line. Do not include credentials.')])
+                Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])->helperText('Use one line. Do not include credentials.')])
             ->action(function(array $data):void {
                 try{ReminderSchedules::save(Auth::user(),$server,(int)$data['revision'],(bool)$data['enabled'],(string)$data['before'],(string)$data['after'],trim((string)$data['reason']));Notification::make()->success()->title('Reminders saved')->send();}
                 catch(\Throwable){Notification::make()->danger()->title("Couldn't save reminders")->body('Check the days and try again.')->send();}

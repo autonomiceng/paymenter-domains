@@ -30,6 +30,22 @@ $page->callAction('readback', data: ['reason' => 'Verified native dedicated serv
     ->assertSee('Verified preview')->assertSee('No renewal')->assertActionDisabled('confirm')
     ->assertSee('Oct 20, 2027 06:14 UTC')->assertSee('Preview valid until')->assertDontSee('Expiry (UTC)')->assertDontSee('2027-10-20T06:14')
     ->assertSee('Confirmation is unavailable because adoption is switched off on this site');
+// Invalid reasons stay in the form and preserve the previous successful preview.
+$previewResolutions = 0;
+app()->beforeResolving(AdoptionReader::class, static function () use (&$previewResolutions): void { $previewResolutions++; });
+same($reader, app(AdoptionReader::class), 'Resolution probe uses the real preview reader');
+same(1, $previewResolutions, 'Resolution probe observes a real reader lookup');
+$previewResolutions = 0;
+$previousPreview = [$page->get('review'), $page->get('previewId'), $page->get('reason')];
+$previousEvidence = [Adoption::count(), count($wire->calls)];
+expect($previousPreview[1] !== null && $previousPreview[0]['code'] === 'ready', 'A successful preview exists before invalid input');
+foreach (["Verified\u{2028}customer", "Verified\u{2029}customer", "Verified\tcustomer", "Verified\x7fcustomer"] as $badReason) {
+    $page->callAction('readback', data: ['reason' => $badReason])->assertHasActionErrors(['reason' => 'regex']);
+    same($previousPreview, [$page->get('review'), $page->get('previewId'), $page->get('reason')], 'Reason field error preserves the previous preview');
+    same(0, $previewResolutions, 'Reason field error prevents even resolving the preview reader');
+    same($previousEvidence, [Adoption::count(), count($wire->calls)], 'Invalid reason reads no registrar and creates no preview');
+    $page->unmountAction();
+}
 $html = $page->html(); $a = Adoption::sole(); $page->assertSee($a->valid_until->setTimezone(new DateTimeZone('UTC'))->format('M j, Y H:i:s').' UTC');
 foreach ([$a->request_key, $a->request_digest, 'synthetic-secret', 'account-enom', 'provider_domain_id', 'account_fingerprint'] as $secret) { expect(!str_contains($html, $secret), 'Browser excludes private authority '.$secret); }
 $page->callAction('confirm', data: ['verified' => true]); same(0, Domain::count(), 'Default off UI cannot confirm');

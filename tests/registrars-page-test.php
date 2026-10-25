@@ -76,6 +76,11 @@ $admin=staffUser([Staff::VIEW,Staff::POLICY,...array_map([StaffSettingsReview::c
 // Setup buttons show only when they can run: bind a writer that can reach the registrar.
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class,new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites(app(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class),app(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class),app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class),true));
 $page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful();
+$reminderAction=TestAction::make('reminders_'.$enom->server_id)->schemaComponent('account_'.$enom->server_id,'content');
+$beforeInvalidReason=(array)DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->sole();
+$page->callAction($reminderAction,['reason'=>"Reviewed\u{2029}reminders"])->assertHasActionErrors(['reason'=>'regex']);
+same($beforeInvalidReason,(array)DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->sole(),'Reminder reason field error changes no schedule');
+$page->unmountAction();
 foreach(['Setup checklist','API connection','Connected','Test connection','Supported TLDs','.com','TLD prices','Sync TLD prices','Registrations','Transfers','Renewals','DNS, nameservers and contacts',
     'Renewal invoices','Turn on','Renewal invoices and reminders','Invoice issued','21 days before expiry','Invoice due','7 days before expiry','Reminder emails',
     '60, 30, 7 and 1 days before, 3 days after','Customer can renew early','Edit invoices','Edit reminders','Pause orders','More','Edit API credentials','View price history',

@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages;
+use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 
 use Filament\Actions\Action;
 use Filament\Forms\Components\{TextInput, Toggle};
@@ -38,7 +39,7 @@ class AdoptionPreview extends ViewRecord
             ->modalSubmitActionLabel('Read fresh preview')->schema([
                 TextInput::make('reason')->label('Reason')->required()->maxLength(500)
                     ->helperText('Explain how you confirmed that this name belongs to this customer and service. Use one line; leave out contact details and credentials.')
-                    ->rules(['regex:/\A[^\x00-\x1f\x7f]*\z/u'])->validationMessages(['regex' => 'Use one line without tabs or control characters.']),
+                    ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex' => 'Use one line without tabs or control characters.']),
                 Toggle::make('do_not_renew')->label('Do not renew')->default(false)
                     ->helperText('Recorded for review only. This preview does not cancel the service or change auto-renew at the registrar.'),
             ])->action(function (array $data): void {

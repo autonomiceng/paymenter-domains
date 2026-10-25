@@ -62,6 +62,10 @@ foreach(['register','transfer'] as $action){
     ObservationSchema::install();staffPanel();Auth::login($reviewer);
     $viewer=staffUser([Staff::VIEW]);Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$op->domain_id])->assertActionDoesNotExist('review_late_payment');
     $page=Livewire::actingAs($reviewer)->test(ViewDomain::class,['record'=>$op->domain_id])->mountAction('review_late_payment')->assertActionMounted('review_late_payment');
+    $beforeInvalidReason=$op->domain->fresh()->getRawOriginal();$pendingBefore=$pending($op);
+    $page->setActionData(['confirmed'=>true,'reason'=>"Reviewed\u{2029}payment"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
+    same($beforeInvalidReason,$op->domain->fresh()->getRawOriginal(),'Payment reason field error records no review');
+    same($pendingBefore,$pending($op),'Payment reason field error keeps alerts unresolved');
     $page->setActionData(['confirmed'=>true,'reason'=>'Reconciled later payment and account credit'])->callMountedAction()->assertNotified('Payment review recorded');
     same(0,$pending($op),'Real modal invokes acknowledgement');
     same(1,DB::table('domains_obligation_alerts')->where('domain_id',$op->domain_id)->where('code','template_failed')->whereNull('resolved_at')->count(),'Unrelated notification alert stays open');

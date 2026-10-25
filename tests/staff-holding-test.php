@@ -116,6 +116,10 @@ Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 staffPanel();Auth::login($staff);$pageClass=Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class;
 $page=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->assertSuccessful();
 foreach(['reprice','stop']as$action){$page->assertActionVisible($action)->mountAction($action)->assertActionMounted($action);$page->unmountAction();}
+$beforeInvalidReason=$d->fresh()->getRawOriginal();
+$page->callAction('stop',['reason'=>"Reviewed\u{2029}renewal"])->assertHasActionErrors(['reason'=>'regex']);
+same($beforeInvalidReason,$d->fresh()->getRawOriginal(),'Renewal reason field error changes no holding');
+$page->unmountAction();
 $stopPage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('stop');
 $stopPage->setActionData(['reason'=>'Stop through owned staff modal'])->callMountedAction()->assertNotified('Renewal stopped');same(true,$d->fresh()->renewal_policy['renewals_stopped'],'Actual modal invokes owned action');
 $resumePage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('resume')->assertActionMounted('resume');

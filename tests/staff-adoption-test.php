@@ -33,6 +33,10 @@ $view->callAction('preview', data: ['reason' => '', 'do_not_renew' => false])->a
 same(0, count($wire->calls), 'Required reason prevents wire');
 $before = [$service->fresh()->getAttributes(), Domain::findOrFail($id)->getRawOriginal(), App\Models\Invoice::count()];
 $view = Livewire::actingAs($staff)->test(AdoptionPreview::class, ['record' => $id]);
+$view->callAction('preview', data: ['reason' => "Reviewed\u{2029}mapping"])->assertHasActionErrors(['reason' => 'regex']);
+same([], $view->get('review'), 'Invalid reason leaves pending adoption preview unchanged');
+same(0, count($wire->calls), 'Invalid pending adoption reason reads nothing');
+$view->unmountAction();
 $view->callAction('preview', data: ['reason' => 'Reviewed synthetic service mapping', 'do_not_renew' => true])->assertHasNoActionErrors()
     ->assertSee('Rehearsal checks passed. A TEST account cannot verify a live registration.')->assertSee('None shown because do not renew was requested')->assertDontSee('renewal off')->assertSee('Expiry on file')->assertSee('Oct 20, 2027')->assertSee($owner->name)->assertSee('Oct 20, 2027 06:14 UTC')->assertSee('Adoption preview')->assertSee('USD')->assertSee('Requested for review; no cancellation has been created.')->assertActionDisabled('confirm')->assertDontSee('(UTC date)');
 same(4, count($wire->calls), 'Only explicit action makes bounded named readback'); same(1, Adoption::count(), 'Preview retains evidence');
@@ -98,6 +102,8 @@ same('New reason for unavailable account', $view->instance()->reviewReason, 'Ear
 same('account_unconfirmed', $view->instance()->review['code'], 'Unavailable account label is specific');
 DB::table('domains_accounts')->where('server_id', $binding->serverId)->update(['environment' => $bindingRow->environment]);
 new \Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext($staff->id, str_repeat('é', 500));
+new \Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext($staff->id, ' é ');
+new \Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext($staff->id, 'é');
 foreach(['2026-02-30','2026-13-01','2026-00-10','2026-01-00','2025-02-29']as$bad){
     same('Unconfirmed',\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\AdoptDomain::when($bad),'Impossible expiry stays unconfirmed');
 }

@@ -45,6 +45,8 @@ foreach($inputs as $action=>$input){
     if($action==='tld_settings'){same(1,(int)$defaults['min_years'],'Current minimum prefilled');same(3,(int)$defaults['max_years'],'Current maximum prefilled');}
     if($action==='seller'){same($t->server_id,(int)$defaults['seller'],'Current seller prefilled');expect($defaults['register']&&$defaults['transfer'],'Current seller actions prefilled');}
     if($action==='configure'){same('enom',$defaults['registrar'],'Bound registrar prefilled');same('test',$defaults['environment'],'Bound environment prefilled');expect(empty($defaults['token'])&&empty($defaults['uid']),'Credentials never prefilled');}
+    $page->setActionData([...$input,'reason'=>"Reviewed\u{2028}settings"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
+    same($key,$page->get('mountedActions.0.data.review_key'),'Settings reason error keeps the current review open');
     $page->setActionData([...$input,'reason'=>'Confirm native action with saved facts'])->callMountedAction()->assertHasNoActionErrors()->assertNotified($setup?($action==='probe'?'Balance updated':'Saved'):'Change recorded')->assertSet('mountedActions',[]);
     $review=new Review($u->id,$t->server_id,$ending,$action,$key,'Replay must refuse this native action');
     tldRefusal(fn()=>$writer->run($review,$input,$now),in_array($action,['tld_settings','probe'],true)?'Review key used.':'Settings changed. Reload this page.');

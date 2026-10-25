@@ -2,6 +2,7 @@
 // Enom444f31c operation action layout; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Hidden,Textarea};
 use Filament\Notifications\Notification;
@@ -33,7 +34,7 @@ final class OperationActions
             if(in_array($name,self::REASON,true)){
                 $action->schema([Hidden::make('review_key')->default($ticket),
                     Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(3)
-                        ->rules(['regex:/\A[^\x00-\x1f\x7f]*\z/'])->validationMessages(['regex'=>'Use one line.'])]);
+                        ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex'=>'Use one line.'])]);
             }
             $out[]=$action->action(function(array $data)use($op,$name,$label,$ticket,$contactRecovery){
                 try { $actor=Auth::user(); if(!$actor instanceof \App\Models\User){throw new \DomainException('Staff required.');}

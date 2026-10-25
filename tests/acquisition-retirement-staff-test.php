@@ -67,6 +67,9 @@ Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();staff
 $pageClass=Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class;
 $modalOp=$new(placeholderComFixtureName('unpaid-modal-placeholder.com'),paid:false);Auth::login($staff);
 $page=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$modalOp->domain_id])->mountAction('retire_unpaid')->assertActionMounted('retire_unpaid');
+$beforeInvalidReason=$modalOp->fresh()->getRawOriginal();
+$page->setActionData(['reason'=>"Reviewed\u{2028}closure"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
+same($beforeInvalidReason,$modalOp->fresh()->getRawOriginal(),'Closure reason field error changes no order');
 $page->setActionData(['reason'=>'Retire from real staff modal'])->callMountedAction()->assertNotified('Order cancelled')->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$modalOp->domain_id]));
 Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$modalOp->domain_id])->assertActionDoesNotExist('retire_unpaid');same(null,$modalOp->domain->fresh()->reservation_name,'Real modal invokes retirement');
 $paid=$new(placeholderComFixtureName('unpaid-refusal-placeholder.com'));Auth::login($staff);

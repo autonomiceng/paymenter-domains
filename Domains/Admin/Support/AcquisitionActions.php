@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Hidden,Textarea};
 use Filament\Notifications\Notification;
@@ -38,7 +39,7 @@ final class AcquisitionActions
             ->modalHeading('Cancel order?')->modalDescription(self::DESCRIPTION)->modalSubmitActionLabel('Cancel order')->modalWidth('lg')
             ->schema([Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,'retire_unpaid',$stamp,app(Clock::class))),
                 Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(3)
-                    ->rules(['regex:/\A[^\x00-\x1f\x7f]*\z/'])->validationMessages(['regex'=>'Use one line.'])])
+                    ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex'=>'Use one line.'])])
             ->action(function(array $data,$livewire)use($d):void {
                 try{
                     $actor=Auth::user();if(!$actor instanceof \App\Models\User){throw new \DomainException('Current staff permissions required. Reload this page.');}

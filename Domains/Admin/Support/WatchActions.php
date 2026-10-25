@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Forms\Components\{Select,Textarea,TextInput};
 use Filament\Notifications\Notification;
@@ -54,8 +55,8 @@ final class WatchActions
         $more=[self::action('watch',$id,$revision,'profile','Change DNS template',[
                 Select::make('profile')->label('DNS template')->options(fn()=>self::templates())->default($w->ns_profile_id)->required(),
                 Select::make('expected_dns')->label('Expected nameservers')->options(['platform'=>WatchFindings::company(),'external'=>'Other'])->default($w->expected_dns)])->modalDescription('Future checks compare against this DNS template.')->modalSubmitActionLabel('Save'),
-            self::action('watch',$id,$revision,'note','Add note',[Textarea::make('note')->label('Note')->required()->minLength(5)->maxLength(500)->rows(3)])->modalSubmitActionLabel('Add note'),
-            self::action('watch',$id,$revision,'retire','Stop monitoring',[Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)])
+            self::action('watch',$id,$revision,'note','Add note',[Textarea::make('note')->label('Note')->required()->minLength(5)->maxLength(500)->rows(3)->rules(['regex:'.StaffReason::SINGLE_LINE])])->modalSubmitActionLabel('Add note'),
+            self::action('watch',$id,$revision,'retire','Stop monitoring',[Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])])
                 ->color('danger')->requiresConfirmation()->modalHeading('Stop monitoring?')->modalDescription("Checks and alerts stop. The domain won't be added again automatically.")->modalSubmitActionLabel('Stop monitoring')];
         return [...$main,ActionGroup::make($more)->label('More')->button()->color('gray')];
     }

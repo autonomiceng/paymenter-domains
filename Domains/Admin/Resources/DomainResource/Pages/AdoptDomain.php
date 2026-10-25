@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{RefusalCode, Review, StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, AdoptionReader, AdoptionRefused};
+use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, AdoptionReader, AdoptionRefused, StaffReason};
 /** Native staff wizard. Request keys, digests and private evidence never leave the server. */
 class AdoptDomain extends Page
 {
@@ -58,7 +58,7 @@ class AdoptDomain extends Page
     {
         return Action::make('readback')->label('Read fresh preview')->visible(fn () => $this->target !== [] && $this->adoptedId === null)
             ->modalHeading('2. Read fresh registration facts')->modalSubmitActionLabel('Read fresh preview')->modalDescription('Read this exact name from the selected account. No charge occurs now. The preview expires after 120 seconds.')
-            ->schema([TextInput::make('reason')->label('Reason')->required()->maxLength(500)->rules(['regex:/\A[^\x00-\x1f\x7f]*\z/u'])
+            ->schema([TextInput::make('reason')->label('Reason')->required()->maxLength(500)->rules(['regex:'.StaffReason::SINGLE_LINE])
                 ->helperText('Explain how you verified this customer and service. Omit contacts and credentials.'),
                 Toggle::make('do_not_renew')->label('Do not renew')->helperText('At adoption, record an end-of-period cancellation. No renewal invoice, reminder or renewal request will be scheduled.')])
             ->action(function (array $data): void {

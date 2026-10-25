@@ -16,6 +16,9 @@ $write=fn(string $reason)=>$service->run($staff,$op->domain_id,$op->id,'release'
 foreach([str_repeat('é',4),str_repeat('é',501),"abcde\xff","line\nbreak","line\u{2028}break","line\u{2029}break"] as $bad){
     $before=$op->fresh()->getRawOriginal();commerceReject(fn()=>$write($bad));same($before,$op->fresh()->getRawOriginal(),'Invalid Unicode reason changes nothing');
 }
+$beforeInvalidReason=$op->fresh()->getRawOriginal();
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>"Reviewed\u{2028}refund"])->assertHasActionErrors(['reason'=>'regex']);
+same($beforeInvalidReason,$op->fresh()->getRawOriginal(),'Refund reason field error changes no operation');
 $reason=str_repeat('🦦',500);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>$reason])->assertHasNoActionErrors()->assertNotified('Cancelled and refunded');
 same($reason,$op->fresh()->policy['staff_actions'][0]['reason'],'500 Unicode characters retained');
@@ -74,6 +77,12 @@ $history=$unknown->fresh()->policy['staff_actions'];
 same(['read_requested','read_failed'],array_column($history,'phase'),'Unknown failed read never claims success');
 same('producer_failed',$history[1]['safe_code'],'Unknown failed read uses a closed reason');
 expect(!str_contains(json_encode($history),'PRIVATE-')&&!str_contains(json_encode($history),RuntimeException::class),'Read audit contains no raw exception');
+// Length-only callers retain their own character policies.
+same(true,StaffReason::valid("line\u{2028}break",1,1000),'Length-only validation keeps accepting line separators');
+same(true,StaffReason::valid("line\nbreak",1,1000),'Length-only validation keeps accepting ASCII controls');
+foreach([...array_map(chr(...),range(0,31)),"\x7f","\u{2028}","\u{2029}"] as $control){
+    commerceReject(fn()=>StaffReason::require('Reason'.$control.'text'));
+}
 // Shared validator preserves the distinct max-only adoption/PSL and ten-character resend rules.
 foreach([1,5,10] as $min){
     StaffReason::require(str_repeat('é',$min),$min,500);
