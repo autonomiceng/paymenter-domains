@@ -159,12 +159,17 @@ def main(scenario):
                 build.verify(upload, receipt)
                 run_env['PACKAGE_ZIP'] = str(upload)
                 package_seconds = time.monotonic() - package_started
-            timeout = (max(0.001, scenario_deadline - time.monotonic()) if scenario_deadline is not None
-                       else 120 if name in ['enom-test-renewal','enom-live'] else 45)
+            phase_limit = 120 if name in ['enom-test-renewal', 'enom-live'] else 45
+            timeout = phase_limit
             try:
+                if scenario_deadline is not None:
+                    remaining = scenario_deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError(f'Installed package {scenario} phase {name} exhausted the {scenario_timeout}-second scenario deadline')
+                    timeout = min(phase_limit, remaining)
                 subprocess.run([str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')], cwd=ROOT, env=run_env, check=True, timeout=timeout)
             except subprocess.TimeoutExpired as error:
-                if scenario_deadline is not None:
+                if scenario_deadline is not None and time.monotonic() >= scenario_deadline:
                     raise TimeoutError(f'Installed package {scenario} phase {name} exhausted the {scenario_timeout}-second scenario deadline') from error
                 raise TimeoutError(f'Installed package {scenario} phase {name} exceeded {timeout} seconds') from error
             finally:
