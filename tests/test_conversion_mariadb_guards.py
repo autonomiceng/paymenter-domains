@@ -1,4 +1,6 @@
 # MIT, Copyright (c) 2026 Autonomic Engineering. No Docker calls: ownership and refusal regressions.
+import ast
+from collections import Counter
 import contextlib
 import io
 import itertools
@@ -16,6 +18,14 @@ import test_schema_mariadb as schema_harness
 
 
 class MariaGuardTests(unittest.TestCase):
+    def test_remote_fixtures_use_reserved_test_namespace(self):
+        tree = ast.parse(Path(__file__).read_text())
+        hosts = Counter(node.value for node in ast.walk(tree)
+                        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                        and node.value.startswith(('tcp://' + 'remote.', 'ssh://' + 'remote.')))
+        # Covers host refusals, context metadata and the cleanup assertion together.
+        self.assertEqual(hosts, Counter({'tcp://' + 'remote.test': 4, 'ssh://' + 'remote.test': 1}))
+
     def environment(self, directory, **extra):
         return dict(TMPDIR=directory, PATH='/usr/bin:/bin', CONVERSION_MARIADB_PHP='/synthetic/php',
                     PAYMENTER_TEST_APP='/synthetic/app', CONVERSION_ENOM_CHECKOUT='/synthetic/source', **extra)
@@ -27,7 +37,7 @@ class MariaGuardTests(unittest.TestCase):
                 sentinels = {sig: lambda *args: None for sig in handlers}
                 for sig, handler in sentinels.items(): signal.signal(sig, handler)
                 try:
-                    environment = self.environment(directory, DOCKER_HOST='tcp://remote.invalid')
+                    environment = self.environment(directory, DOCKER_HOST='tcp://remote.test')
                     if outcome == 'setup_error': environment['TMPDIR'] = 'relative'
                     original_signal = signal.signal
                     installs = 0
@@ -60,21 +70,21 @@ class MariaGuardTests(unittest.TestCase):
         self.assertEqual(env['SCHEMA_PREFIX'], 'p_')
 
     def test_schema_remote_host_refuses_without_any_docker_call(self):
-        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_HOST='tcp://remote.invalid'), clear=True), \
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_HOST='tcp://remote.test'), clear=True), \
              mock.patch.object(schema_harness.shutil, 'which', return_value='/usr/bin/docker'), mock.patch.object(schema_harness.subprocess, 'run') as called, contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaisesRegex(ValueError, 'local Unix-socket'):
                 schema_harness.run()
             called.assert_not_called()
 
     def test_remote_host_refuses_without_any_docker_call(self):
-        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_HOST='tcp://remote.invalid'), clear=True), \
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_HOST='tcp://remote.test'), clear=True), \
              mock.patch.object(harness.shutil, 'which', return_value='/usr/bin/docker'), mock.patch.object(harness.subprocess, 'run') as called, contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaisesRegex(RuntimeError, 'local Unix-socket'):
                 harness.run()
             called.assert_not_called()
 
     def test_remote_context_only_reads_local_context_metadata(self):
-        context = subprocess.CompletedProcess([], 0, json.dumps([{'Endpoints': {'docker': {'Host': 'ssh://remote.invalid'}}}]).encode(), b'')
+        context = subprocess.CompletedProcess([], 0, json.dumps([{'Endpoints': {'docker': {'Host': 'ssh://remote.test'}}}]).encode(), b'')
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_CONTEXT='remote'), clear=True), \
              mock.patch.object(harness.shutil, 'which', return_value='/usr/bin/docker'), mock.patch.object(harness.subprocess, 'run', return_value=context) as called, contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaisesRegex(RuntimeError, 'Remote Docker contexts'):
@@ -86,7 +96,7 @@ class MariaGuardTests(unittest.TestCase):
         image_id = 'a'*64; container_id = 'b'*64
         def execute(argv, **kwargs):
             nonlocal owner, inspections
-            self.assertNotIn('tcp://remote.invalid', str(argv))
+            self.assertNotIn('tcp://remote.test', str(argv))
             if argv[:3] == ['docker', 'context', 'inspect']:
                 data = [{'Endpoints': {'docker': {'Host': 'unix:///synthetic/docker.sock'}}}]
             elif argv[:3] == ['docker', 'image', 'inspect']:
