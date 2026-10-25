@@ -67,12 +67,14 @@ final class WatchActions
     {
         $mapping=$kind==='mapping';
         return self::action($kind,(int)$row->id,$revision,'enable',$mapping?'Turn on monitoring':'Turn on')->requiresConfirmation()->modalSubmitActionLabel($mapping?'Turn on monitoring':'Turn on')
+            ->disabled(!$mapping&&$row->readProfile()===null)
             ->modalDescription($mapping?'Turn on monitoring for '.($row->product?->name??'Product #'.$row->product_id).'? Matched domains start being checked.':'Turn on '.$row->name.'? Monitoring checks start using it.')
             ->visible(fn()=>!$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
     }
     /** Add (no row) or Edit. Saving turns the row off until staff turn it on again. */
     public static function configuration(string $kind,WatchProfile|WatchProductMap|null $row,int $revision=0): Action
     {
+        if($kind==='profile'&&$row&&$row->readProfile()===null){return self::action($kind,(int)$row->id,$revision,'save','Edit')->color('gray')->disabled();}
         $fields=[];$lines=fn(string $name,string $label,array $value)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->helperText('One per line.')->maxLength(8192)->rows(2);
         if($kind==='mapping'){
             if(!$row){$fields[]=Select::make('product_id')->label('Hosting product')->options(fn()=>\App\Models\Product::whereHas('server',fn($q)=>$q->where('extension','<>','Domains'))->pluck('name','id')->all())->required();}

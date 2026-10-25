@@ -21,6 +21,11 @@ final class WatchProfile extends WatchRecord
         $this->nameservers = $profile->nameservers; $this->website_endpoints = $profile->website; $this->email_endpoints = $profile->email;
     }
     public function profile(): RoutingProfile { return new RoutingProfile($this->nameservers, $this->website_endpoints, $this->email_endpoints); }
+    /** Unreadable retained records cannot supply editable defaults. */
+    public function readProfile(): ?RoutingProfile
+    {
+        try{return $this->profile();}catch(\Throwable){return null;}
+    }
     protected static function booted(): void
     {
         parent::booted();

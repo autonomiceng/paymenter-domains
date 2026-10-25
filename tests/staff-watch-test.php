@@ -50,6 +50,31 @@ $t=Writes::ticket($manager->id,'profile',0,0,'save');$writes->run($manager,'prof
 // A mounted action cannot retain revoked permission.
 $mounted=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->mountAction('note');$manager->role->update(['permissions'=>[Staff::VIEW,Writes::VIEW]]);$auditBefore=WatchAudit::count();$mounted->setActionData(['note'=>'Revoked mounted role refusal'])->callMountedAction();same($auditBefore,WatchAudit::count(),'Revoked mounted action writes no audit');dnsRefused(fn()=>$run('note'),'Revoked role checked fresh',false);$manager->role->update(['permissions'=>[Staff::VIEW,Writes::VIEW,Writes::MANAGE]]);
 Auth::setUser($manager);Livewire::actingAs($manager)->test(ListMappings::class)->assertCanSeeTableRecords([$map]);Livewire::actingAs($manager)->test(ViewMapping::class,['record'=>$map->id])->assertSee('Settings')->assertSee('Matched services');Livewire::actingAs($manager)->test(ViewProfile::class,['record'=>$profile->id])->assertSee('Website records')->assertSee('Email records');
+// A retained template with a wrong JSON shape stays visible without editable defaults.
+$profileQuery=DB::table('domains_watch_profiles')->where('id',$profile->id);$profileOriginal=(array)(clone $profileQuery)->sole();
+$referencing=DB::table('domains_watch_product_maps')->where('expected_ns_profile_id',$profile->id);$mapsBefore=(clone $referencing)->get();$referencing->update(['enabled'=>false]);
+$validProfile=['name'=>'Restored template','nameservers'=>'ns1.platform.test','website_endpoints'=>'web.platform.test','email_endpoints'=>'mx.platform.test'];
+foreach(['nameservers','website_endpoints','email_endpoints'] as $field){
+    $badValues=$field==='nameservers'?['"ns.invalid.example"','[["ns.invalid.example"]]','null','{']:['"web.invalid.example"','[["web.invalid.example"]]','null','{'];
+    if($field!=='nameservers'){foreach(['exact','suffix','ips'] as $part){foreach(['"bad.invalid.example"','[[]]','7'] as $value){$badValues[]='{'.json_encode($part).':'.$value.'}';}}}
+    foreach($badValues as $bad){
+        $profileQuery->update([...$profileOriginal,$field=>$bad]);$profileBefore=(array)(clone $profileQuery)->sole();$auditBefore=WatchAudit::count();
+        $broken=Livewire::actingAs($manager)->test(ViewProfile::class,['record'=>$profile->id])->assertSuccessful()->assertSee('Unavailable')->assertSee(WatchFacts::TEMPLATE_UNAVAILABLE)->assertActionDisabled('save')->assertActionDisabled('enable');
+        $broken->mountAction('save')->assertActionNotMounted('save');
+        dnsRefused(fn()=>$writes->run($manager,'profile',$profile->id,'save',Writes::ticket($manager->id,'profile',$profile->id,(int)$profileOriginal['revision'],'save'),'Refuse unreadable saved records',$validProfile),'Unreadable template cannot be replaced by submitted defaults',false);
+        same($profileBefore,(array)(clone $profileQuery)->sole(),'Unreadable template is never rewritten: '.$field.' '.$bad);
+        same($auditBefore,WatchAudit::count(),'Unreadable template writes no audit');
+    }
+}
+$profileQuery->update($profileOriginal);
+$mounted=Livewire::actingAs($manager)->test(ViewProfile::class,['record'=>$profile->id])->mountAction('save')->assertActionMounted('save');
+$profileQuery->update(['email_endpoints'=>'{"exact":[[]]}']);$profileBefore=(array)(clone $profileQuery)->sole();$auditBefore=WatchAudit::count();
+$mounted->setActionData($validProfile)->callMountedAction()->assertSuccessful();
+Livewire::actingAs($manager)->test(ViewProfile::class,['record'=>$profile->id])->assertActionDisabled('save')->assertSee(WatchFacts::TEMPLATE_UNAVAILABLE);
+same($profileBefore,(array)(clone $profileQuery)->sole(),'Corruption after mounting preserves template');same($auditBefore,WatchAudit::count(),'Refused mounted template preserves audit');
+$profileQuery->update($profileOriginal);
+Livewire::actingAs($manager)->test(ViewProfile::class,['record'=>$profile->id])->assertActionEnabled('save')->mountAction('save')->assertActionMounted('save');
+foreach($mapsBefore as $savedMap){DB::table('domains_watch_product_maps')->where('id',$savedMap->id)->update((array)$savedMap);}
 $run('retire');same('retired',WatchName::find($id)->state,'Retire saves');same('Stopped',\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFindings::status(WatchName::find($id),[])['label'],'Ended watch reads Stopped');expect(!isset(WatchFacts::for(WatchName::find($id))['Checks']['Next check']),'Ended watch has no future checks');same(0,\Paymenter\Extensions\Servers\Domains\Models\WatchSource::where('watch_id',$id)->where('state','watch')->count(),'Retire releases active sources');dnsRefused(fn()=>$run('resume'),'Retired cannot resume',false);
 require_once __DIR__.'/Support/accounts.php';$account=fixtureAccount((int)\App\Models\Server::max('id')+1,'namesilo','PRIVATE-STAFF-ACCOUNT');$domains=[];foreach(['pending.example.com','active.example.com'] as $i=>$name){$domains[]=\Paymenter\Extensions\Servers\Domains\Models\Domain::create([...$account,'domain'=>$name,'sld'=>$i?'active':'pending','tld'=>'example.com','user_id'=>$uid,'service_id'=>1000+$i,'status'=>'active','provenance'=>'purchased','renewal_policy'=>[]]);}DB::table('domains_domains')->where('id',$domains[0]->id)->update(['status'=>'adoption_pending','provenance'=>'adoption_pending']);Auth::setUser($adopter);same([$domains[0]->id],PendingAdoptionResource::getEloquentQuery()->pluck('id')->all(),'Pending scope keeps only imports awaiting review');
 // Refused Livewire calls above never finish, so Livewire's redirector stays bound; a real request starts fresh.

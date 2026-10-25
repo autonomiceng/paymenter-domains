@@ -28,6 +28,7 @@ final class StaffWatchWrites
             $class=match($kind){'watch'=>WatchName::class,'profile'=>WatchProfile::class,'mapping'=>WatchProductMap::class,default=>throw new \DomainException('Reload and try again.')};
             $row=$id?$class::whereKey($id)->lockForUpdate()->firstOrFail():new $class;
             if(($row->exists?(int)$row->revision:0)!==($t['revision']??null)){throw new \DomainException('The saved details changed. Reload and try again.');}
+            if($kind==='profile'&&$row->exists&&$row->readProfile()===null){throw new \DomainException('Reload and try again.');}
             $before=$row->exists?$row->revision:0;$data=[];
             if($kind==='watch'){
                 if(!in_array($action,['pause','resume','profile','retire','read','note'],true) || $row->managed_domain_id!==null || $row->state==='linked'){throw new \DomainException('This watch cannot be changed.');}

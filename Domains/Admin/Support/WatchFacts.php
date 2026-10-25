@@ -14,6 +14,7 @@ final class WatchFacts
 {
     public const EVENTS=['staff_pause'=>'Monitoring paused','staff_resume'=>'Monitoring resumed','staff_profile'=>'DNS template changed','staff_retire'=>'Monitoring stopped','staff_read_requested'=>'Check requested','staff_note'=>'Note'];
     public const DECRYPT="Can't read saved data. Check the app encryption key.";
+    public const TEMPLATE_UNAVAILABLE='Saved DNS records cannot be read. Ask an administrator to restore this template.';
     private static function gate(): void{abort_unless(Staff::can(Writes::VIEW),403);}
     private static function fact(mixed $value,?string $sub=null,?string $tone=null,?string $url=null,?string $cause=null,bool $check=false): array{return compact('value','sub','tone','url','cause','check');}
     /** @return array{Domain:array<string,array>,Checks:array<string,array>} */
