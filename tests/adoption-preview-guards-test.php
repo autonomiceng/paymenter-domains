@@ -15,6 +15,25 @@ $diagnostics = [];
 \Illuminate\Support\Facades\Log::listen(static function ($event) use (&$diagnostics): void {
     if ($event->message === 'Domains adoption preview failed.') { $diagnostics[] = $event->context; }
 });
+$ownerChanged = false;
+$wire->during = static function () use (&$ownerChanged, $service, $other): void {
+    if ($ownerChanged) { return; }
+    $ownerChanged = true;
+    DB::table('services')->where('id', $service->id)->update(['user_id' => $other->id]);
+};
+$previews = Adoption::count();
+try {
+    $changed = $run();
+    expect($ownerChanged, 'Owner change occurred during provider readback');
+    same('changed', $changed->code, 'Post-read owner loss keeps the changed refusal, got '.$changed->code);
+    same([null, []], [$changed->previewId, $changed->details], 'Changed owner produces no reusable preview details');
+    same($previews, Adoption::count(), 'Changed owner evidence is not retained');
+    same([], $diagnostics, 'Expected post-read mapping refusal logs no private detail');
+} finally {
+    $wire->during = null;
+    DB::table('services')->where('id', $service->id)->update(['user_id' => $owner->id]);
+}
+same('ready', $run()->code, 'Fresh preview recovers after owner mapping is restored');
 $phase = null; $accountReads = 0; $capturedAccounts = 0; $afterRead = false; $faults = 0;
 DB::connection()->beforeExecuting(static function ($sql) use (&$phase, &$accountReads, &$capturedAccounts, &$afterRead, &$faults): void {
     if (str_contains($sql, 'from "domains_accounts"')) { $accountReads++; }

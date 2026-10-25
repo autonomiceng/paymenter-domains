@@ -35,7 +35,7 @@ final class AdoptionReader
             if ($captureDigest !== AdoptionMapping::stamp($this->comparable($after))) { return new Review('changed'); }
             // Reapply current site/credential/environment guard after the unlocked read.
             $this->bindings->adoptionReader($before['binding'], $this->clock, $this->wire);
-        } catch (\Throwable $e) { return self::refusal($e, 'changed'); }
+        } catch (\Throwable $e) { self::diagnostic($e); return new Review('changed'); }
         $facts = $read->facts(); $code = $facts['refusal'] ?? 'ready';
         if ($code === 'ready' && \Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id', $target->serverId)
             ->where('provider_domain_id', $facts['provider_id'])->where('domain', '!=', $target->name)->exists()) { $code = 'identity_unconfirmed'; }
@@ -73,10 +73,14 @@ final class AdoptionReader
     private function comparable(array $capture): array { unset($capture['binding']); return $capture; }
     private static function refusal(\Throwable $error, string $fallback): Review
     {
+        self::diagnostic($error);
+        return new Review(array_key_exists($error->getMessage(), Review::LABELS) ? $error->getMessage() : $fallback);
+    }
+    private static function diagnostic(\Throwable $error): void
+    {
         if (!$error instanceof \DomainException) {
             try { \Illuminate\Support\Facades\Log::warning('Domains adoption preview failed.', ['exception_class' => $error::class]); }
             catch (\Throwable) { /* Diagnostics must preserve the safe refusal. */ }
         }
-        return new Review(array_key_exists($error->getMessage(), Review::LABELS) ? $error->getMessage() : $fallback);
     }
 }

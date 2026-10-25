@@ -697,6 +697,14 @@ bounded batches; the cap bounds local decryption and response work, with no prov
 
 ### Focused iteration and timing evidence
 
+Select focused tests from changed source dependencies as well as changed test files.
+Follow direct assertions, imports/requires, shared fixtures and their transitive
+consumers, then include source-wide scanners of the changed bytes. An unchanged test
+can still be the regression check for a runtime change. `--only` does not expand
+dependencies. For adoption and registrar seams, use the [source triggers and complete
+focused command](testing-coverage/adoption-focused.md), including the unchanged
+`tests/adoption-preview-test.php` mid-read change matrix.
+
 The PR boundary still runs `python3 scripts/test.py` with the pristine native dependency
 and pinned runtime cache configured. Use `--only` for exact registered test paths during
 focused iteration, for example:
