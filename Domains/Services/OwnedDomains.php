@@ -113,11 +113,11 @@ final readonly class OwnedDomains
                 if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $management['nameservers']['defaults']=$d->registrar_key==='enom';
                     $management['nameservers']['defaultServers']=$d->registrar_key==='enom'?self::DEFAULT_NAMESERVERS:[];
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
-                    $management['nameservers']['current']=self::storedNameservers($obs); }
+                    $management['nameservers']['current']=self::storedNameservers($d); }
                 if (isset($management['contacts'])) { $management['contacts']['staged']=$d->registrar_key==='namesilo'; $management['contacts']['limits']=ContactDetails::limits($d->registrar_key); }
                 if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'admin contact':'owner'; }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
-                foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $value=$obs['sections'][$cap]['facts'][$fact]??$obs['facts'][$fact]??null; $management[$cap]['state']=is_bool($value)?$value:null; } }
+                foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
             }
             $records=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?OwnerRecords::forDomain($d):[];
             $recordCheckHeld=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?ObservationRecords::stopped($d):false;
@@ -212,10 +212,27 @@ final readonly class OwnedDomains
         } catch (\Throwable) { return ['status' => 'review']; }
     }
     /** Nameservers from the last confirmed registrar readback, in order, or null. Shared by the customer and staff domain pages. */
-    public static function storedNameservers(array $observation): ?array
+    public static function storedNameservers(Domain $d): ?array
     {
-        $current=$observation['sections']['nameservers']['facts']['nameservers']??null;
-        return is_array($current)&&$current&&array_is_list($current)&&count(array_filter($current,'is_string'))===count($current)?$current:null;
+        $evidence=ObservationProjection::nameservers($d);
+        return $evidence?->state==='observed'?$evidence->nameservers:null;
+    }
+    /** Confirmed changes take precedence over the last domain observation. Registration supplies no flags. */
+    public static function storedFlag(Domain $d, string $section, string $fact): ?bool
+    {
+        $read=$d->observation['sections'][$section]??null;
+        $value=null;
+        if (is_array($read) && ObservationProjection::matches($d,$read)) {
+            $facts=$read['facts']??[];
+            $value=$section==='privacy'?match($d->registrar_key) {
+                'enom'=>$facts['enabled']??null,
+                'namesilo'=>$facts['privacy']['enabled']??null,
+                default=>null,
+            }:($facts[$fact]??null);
+        }
+        $snapshot=$d->observation['facts']??null;
+        if ($value===null && is_array($snapshot) && ObservationProjection::matches($d,$snapshot)) { $value=$snapshot[$fact]??null; }
+        return is_bool($value)?$value:null;
     }
     /** This cycle as billing sees it: null while a new request is possible, else its pending invoice or an owner status. */
     public static function renewalCycle(Domain $d, bool $retained = false, ?\DateTimeImmutable $now = null): ?array

@@ -242,6 +242,14 @@ final class DomainManagement
             if (count($history) >= 20) { throw new \DomainException('Management read budget exhausted.'); }
             $op->update(['state' => $ok ? 'succeeded' : ($terminal?'rejected':'uncertain'), 'safe_code' => $email ? 'auth_email_accepted' : ($ok ? 'readback_confirmed' : ($refused?'management_provider_refused':'management_unconfirmed')),
                 'attempt' => [...$op->attempt, 'management_reads' => [...$history, $entry], ...($ack ? ['management_ack'=>$ack] : []),...($refused?['management_refusal'=>['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,'action'=>$op->action]]:[])], 'completed_at' => ($ok||$terminal) ? $this->clock->now() : null, 'lease_expires_at' => null]);
+            if ($ok && $confirmed && ManagementEvidence::resolved($op,$l['domain'])) {
+                $section=match($op->action) {
+                    'nameservers','lock'=>$op->action,
+                    'privacy_purchase','privacy_renew','privacy_enable','privacy_disable'=>'privacy',
+                    default=>null,
+                };
+                if ($section!==null) { $projection['sections'][$section]=ObservationProjection::section($l['domain'],$entry); }
+            }
             $projection['management_sequence']=$sequence; $l['domain']->update(['observation'=>$projection]);
             return $op;
         }, false, false);

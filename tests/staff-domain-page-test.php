@@ -36,7 +36,7 @@ same([null,'Not synced yet'],[$f['Last sync']['value'],$f['Last sync']['sub']],'
 $queries=static function(Domain $d):int{DB::enableQueryLog();DB::flushQueryLog();DomainFacts::for($d);$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
 $before=$queries($active->fresh());
 same([null,'Not synced yet'],[$f['Nameservers']['value'],$f['Nameservers']['sub']],'No stored nameservers is Missing with its cause');
-$storeNs=static function(Domain $d,mixed $servers){$p=$d->fresh()->observation;$p['sections']['nameservers']=['operation_key'=>'ns-read','at'=>'2026-10-20T15:05:00Z','facts'=>['nameservers'=>$servers]];$d->fresh()->update(['observation'=>$p]);};
+$storeNs=static function(Domain $d,mixed $servers){$p=$d->fresh()->observation;$p['sections']['nameservers']=['name'=>$d->domain,'generation'=>$d->authority_generation,'account_fingerprint'=>$d->account_fingerprint,'operation_key'=>'ns-read','at'=>'2026-10-20T15:05:00+00:00','facts'=>['nameservers'=>$servers]];$d->fresh()->update(['observation'=>$p]);};
 $storeNs($active,['ns1.example.net','ns2.example.net','ns3.example.net']);
 same(['ns1.example.net','ns2.example.net','ns3.example.net'],$value($active,'Nameservers'),'Stored nameservers in order');
 same(false,DomainFacts::for($active->fresh())['Nameservers']['demo'],'Ordinary nameservers have no Demo tag');

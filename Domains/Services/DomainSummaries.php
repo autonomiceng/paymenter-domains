@@ -77,13 +77,10 @@ final class DomainSummaries
                 $nameserverFact = null;
                 if ($kind === 'managed') {
                     $nameserverFact = self::checkedNameservers($rows, $jobs, $t, $c->services[$t->service_id], $stamp, $now);
-                    if (!$nameserverFact) {
-                        $stored = $t->observation['nameservers'] ?? null;
-                        if (is_array($stored) && ($stored['name'] ?? null) === $t->domain
-                            && ($stored['generation'] ?? null) === $t->authority_generation
-                            && ($stored['account_fingerprint'] ?? null) === $t->account_fingerprint) {
-                            $nameserverFact = NameserverEvidence::fromArray(array_intersect_key($stored, array_flip(['nameservers', 'state', 'source', 'at'])));
-                        }
+                    $stored = ObservationProjection::nameservers($t);
+                    if ($stored && (!$nameserverFact || ($stored->state === 'observed'
+                        && new \DateTimeImmutable($stored->at) >= new \DateTimeImmutable($nameserverFact->at)))) {
+                        $nameserverFact = $stored;
                     }
                 }
                 foreach (['dns'=>'delegation','website'=>'points','email'=>'points'] as $axis=>$family) {

@@ -22,11 +22,41 @@ final class ObservationProjection
         }
         return $observation;
     }
+    public static function matches(Domain $d, array $facts): bool
+    {
+        return ($facts['name'] ?? null) === $d->domain
+            && ($facts['generation'] ?? null) === $d->authority_generation
+            && ($facts['account_fingerprint'] ?? null) === $d->account_fingerprint;
+    }
+    public static function registrationNameservers(Domain $d): ?NameserverEvidence
+    {
+        $stored = $d->observation['nameservers'] ?? null;
+        return is_array($stored) && self::matches($d, $stored)
+            ? NameserverEvidence::fromArray(array_intersect_key($stored, array_flip(['nameservers', 'state', 'source', 'at']))) : null;
+    }
+    /** Confirmed management readback first, otherwise the identity-checked registration evidence. */
+    public static function nameservers(Domain $d): ?NameserverEvidence
+    {
+        $section=$d->observation['sections']['nameservers']??null;
+        if ($section!==null) {
+            if (!is_array($section) || !self::matches($d,$section)) { return null; }
+            return NameserverEvidence::fromArray([
+                'nameservers'=>$section['facts']['nameservers']??null, 'state'=>'observed',
+                'source'=>$d->registrar_key==='enom'?'enom_getdns':'namesilo_domain_info', 'at'=>$section['at']??null,
+            ]);
+        }
+        return self::registrationNameservers($d);
+    }
+    public static function section(Domain $d, array $read): array
+    {
+        return ['name'=>$d->domain, 'generation'=>$d->authority_generation, 'account_fingerprint'=>$d->account_fingerprint,
+            'operation_key'=>$read['operation_key'], 'at'=>$read['at'], 'facts'=>$read['facts']];
+    }
     public static function save(Domain $d, ?DomainSnapshot $facts, TransferStatus $transfer, \DateTimeImmutable $now): void
     {
         $p=$d->observation??[];
         if ($facts) {
-            $p['facts']=['name'=>$facts->name,'owned'=>$facts->owned,'expiry'=>$facts->expiry?->value,
+            $p['facts']=['name'=>$facts->name,'generation'=>$d->authority_generation,'account_fingerprint'=>$d->account_fingerprint,'owned'=>$facts->owned,'expiry'=>$facts->expiry?->value,
                 'precision'=>$facts->expiry?->precision->value,'source'=>$facts->expiry?->source,'timezone'=>$facts->expiry?->timezone,
                 'auto_renew'=>$facts->providerAutoRenew,'privacy'=>$facts->privacy,'locked'=>$facts->locked,'active'=>$facts->active,'at'=>$now->format(DATE_ATOM)];
             // Drift is diagnostic; confirmed expiry and the billing anchor never follow observations.
@@ -54,7 +84,13 @@ final class ObservationProjection
         $ops=$d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(101)->get();
         // Never treat a truncated history as a complete inventory. A fresh observation stands alone.
         if ($ops->count()>100) {
-            return ['known_glue'=>$glue];
+            foreach (['nameservers','lock','privacy'] as $kind) {
+                $saved=$d->observation['sections'][$kind]??null;
+                if (is_array($saved) && self::matches($d,$saved)) { $sections[$kind]=$saved; }
+            }
+            // Incomplete history cannot prove that acquisition nameservers are still current.
+            $sections['nameservers']??=[];
+            return [...$sections,'known_glue'=>$glue];
         }
         foreach ($ops as $op) {
             if ($op->authority_generation!==$d->authority_generation||!isset($op->policy['management'])||!ManagementEvidence::resolved($op,$d)) { continue; }
@@ -71,7 +107,7 @@ final class ObservationProjection
                 if ($kind==='glue') {
                     $host=$read['facts']['host']??null; if (!$host) { continue; }
                     if (($read['facts']['ip']??null)===null) { unset($glue[$host]); } else { $glue[$host]=$read['facts']['ip']; }
-                } else { $sections[$kind]=['operation_key'=>$op->operation_key,'at'=>$read['at'],'facts'=>$read['facts']]; }
+                } else { $sections[$kind]=self::section($d, $read); }
         }
         if (count($glue)>50) { unset($sections['dns'],$sections['srv'],$sections['ds']); }
         $sections['known_glue']=$glue; return $sections;

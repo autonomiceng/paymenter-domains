@@ -35,7 +35,7 @@ $registry = new RegistrarRegistry;
 $verify = new class implements AccountVerifier { public function verify(Environment $e, array $c): string { return $c['token']; } };
 $registry->register('enom', ['token'], $verify, fn ($binding, $c) => new Driver(new Client($binding, 'account-enom', $c['token'], $wire), [$fixtureEnding ?? 'com']));
 $readBindings = new AccountBindings($registry); $reconcile = new OperationReconciliation($claims, $readBindings, $clock);
-$prepare = static function (string $name, string $mode = 'accepted') use ($new, $claims, $preflight, $clock, $observation) {
+$prepare = static function (string $name, string $mode = 'accepted', ?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence $nameservers = null) use ($new, $claims, $preflight, $clock, $observation) {
     $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');
     $op = $new($name); [$claimed, $domain, $binding] = $claims->claim($op->id);
     if ($mode === 'preseal') { $clock->instant = $clock->now()->modify('+60 seconds'); }
@@ -44,7 +44,7 @@ $prepare = static function (string $name, string $mode = 'accepted') use ($new, 
     if ($mode === 'late') { $clock->instant = $clock->now()->modify('+361 seconds'); }
     if (!in_array($mode, ['absent', 'preseal'], true)) {
         $result = $mode === 'null' ? null : new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
-            new Evidence(registration: new RegistrationEvidence(OperationClaims::query($sealed, $domain), '9001', new DateEvidence('2027-10-17', ExpiryPrecision::Date, 'synthetic_purchase'), null, ['nameservers'])));
+            new Evidence(registration: new RegistrationEvidence(OperationClaims::query($sealed, $domain), '9001', new DateEvidence('2027-10-17', ExpiryPrecision::Date, 'synthetic_purchase'), null, $nameservers?->state === 'observed' ? [] : ['nameservers'], $nameservers)));
         $claims->finish($sealed, $result);
     }
     $observation->name = $name; $observation->years = $op->term; $observation->expiryYears = null; $observation->reference = '9001';

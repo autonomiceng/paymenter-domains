@@ -72,10 +72,12 @@ final class DomainFacts
             $facts=$observation['facts']??[];
             $unread=self::unread($d,$sync);
             $f['In registrar account']=self::fact(($observation['record_hold']['reason']??null)==='ownership_drift'?'No':self::flag($facts['owned']??null,'Yes','No'),sub:isset($facts['owned'])?null:$unread);
-            $nameservers=OwnedDomains::storedNameservers($observation);
+            $nameservers=OwnedDomains::storedNameservers($d);
             $f['Nameservers']=self::fact($nameservers,sub:$nameservers?null:$unread,demo:$nameservers&&$account&&DemoData::is($account));
-            $f['Transfer lock']=self::fact(self::flag($facts['locked']??null),sub:isset($facts['locked'])?null:$unread,help:self::help()['Transfer lock']);
-            $f['WHOIS privacy']=self::fact(self::flag($facts['privacy']??null),sub:isset($facts['privacy'])?null:$unread);
+            $locked=OwnedDomains::storedFlag($d,'lock','locked');
+            $f['Transfer lock']=self::fact(self::flag($locked),sub:$locked!==null?null:$unread,help:self::help()['Transfer lock']);
+            $privacy=OwnedDomains::storedFlag($d,'privacy','privacy');
+            $f['WHOIS privacy']=self::fact(self::flag($privacy),sub:$privacy!==null?null:$unread);
             $f['Registrar auto-renew']=self::fact(self::flag($facts['auto_renew']??null),sub:isset($facts['auto_renew'])?null:$unread,help:self::help()['Registrar auto-renew']);
         }
         $job=!Schema::hasTable('domains_observation_work')||($id=ObservationWork::currentId($d))===null?null:DB::table('domains_observation_work')->find($id);

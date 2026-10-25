@@ -29,7 +29,7 @@ DB::table('domains_observation_work')->insert(['server_id'=>$failed->server_id,'
 $synced=$active->operations()->sole()->replicate(); $synced->fill(['domain_id'=>$failed->id,'service_id'=>$failed->service_id,'operation_key'=>'render-sync-failed']); $synced->save();
 $noExpiry=$copy('no-expiry.example.com',['provider_expires_at'=>null]);
 $withNs=$copy('nameservers.example.com',[]); $p=$withNs->observation;
-$p['sections']['nameservers']=['operation_key'=>'render-ns','at'=>'2026-10-20T15:05:00Z','facts'=>['nameservers'=>['ns1.example.net','ns2.example.net','ns3.example.net']]]; $withNs->update(['observation'=>$p]);
+$p['sections']['nameservers']=['name'=>$withNs->domain,'generation'=>$withNs->authority_generation,'account_fingerprint'=>$withNs->account_fingerprint,'operation_key'=>'render-ns','at'=>'2026-10-20T15:05:00+00:00','facts'=>['nameservers'=>['ns1.example.net','ns2.example.net','ns3.example.net']]]; $withNs->update(['observation'=>$p]);
 $review=$copy('import-review.example.com',[]); DB::table('domains_domains')->where('id',$review->id)->update(['provenance'=>'adoption_pending']);
 $order=$copy('new-order.example.com',['status'=>'registration_pending','authority_generation'=>1]);
 $op=$active->operations()->sole()->replicate(); $op->fill(['domain_id'=>$order->id,'service_id'=>$order->service_id,'operation_key'=>'render-order',

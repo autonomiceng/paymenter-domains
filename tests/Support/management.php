@@ -51,9 +51,9 @@ $exchange=static function(string $origin,string $command,array $p,int $timeout)u
         if($state->fault==='empty_ack'){$body='';}}
     return $xml($command,$body);
 };
-$holding=static function(string $name)use($prepare,$reconcile,$state,$exchange,$wrongDomain){
+$holding=static function(string $name, ?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence $nameservers = null)use($prepare,$reconcile,$state,$exchange,$wrongDomain){
     expect($name !== $wrongDomain, 'Wrong-domain response remains distinct from the holding');
-    [$original,$binding]=$prepare($name);same('succeeded',$reconcile->run($original->id)->state,'Real uniquely completed registration anchor');$d=$original->domain()->firstOrFail();
+    [$original,$binding]=$prepare($name, 'accepted', $nameservers);same('succeeded',$reconcile->run($original->id)->state,'Real uniquely completed registration anchor');$d=$original->domain()->firstOrFail();
     $state->name=$name;$state->locked=true;$state->dns=[];$state->srv=[];$state->ds=[];$state->glue=[];$state->contacts=[];$state->calls=[];$state->fault='';$state->afterWrite=null;$state->during=null;$state->apply=true;Cache::flush();
     return [$d,new Management($binding,$exchange),$original];
 };
