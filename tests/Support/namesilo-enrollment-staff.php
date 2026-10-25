@@ -242,7 +242,7 @@ $corrupt=$fresh();Account::withVerifiedBindingWrite(fn()=>Account::create(['serv
 DB::table('domains_accounts')->where('server_id',$corrupt->id)->update(['stable_identity'=>'corrupt-ciphertext']);$corruptAccount=Account::where('server_id',$corrupt->id)->sole();
 same(false,NameSiloSandbox::enrolled($corruptAccount),'Undecryptable identity fails closed as not enrolled');
 $corruptStatus=Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::status($corrupt->fresh(),$corruptAccount);
-same(['Connection failed','Credentials changed'],[$corruptStatus['label'],$corruptStatus['reason']],'Corrupt retained identity shows Credentials changed');
+same(['Connection failed','Could not load account settings'],[$corruptStatus['label'],$corruptStatus['reason']],'Corrupt retained identity reports settings failure without assuming credential rotation');
 $corruptEnrollment=$attempt(['api_key'=>'corrupt-marker-key']);$corruptEnrollmentAccount=Account::where('server_id',$corruptEnrollment->id)->sole();
 $savedIdentity=$corruptEnrollmentAccount->getRawOriginal('stable_identity');
 DB::table('domains_accounts')->where('server_id',$corruptEnrollment->id)->update(['stable_identity'=>'corrupt-ciphertext']);

@@ -11,11 +11,37 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption};
 use Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances;
 extract(adoptionFixture());
 $run = fn () => $reader->preview($target, $context);
+$diagnostics = [];
+\Illuminate\Support\Facades\Log::listen(static function ($event) use (&$diagnostics): void {
+    if ($event->message === 'Domains adoption preview failed.') { $diagnostics[] = $event->context; }
+});
+$phase = null; $accountReads = 0; $capturedAccounts = 0; $afterRead = false; $faults = 0;
+DB::connection()->beforeExecuting(static function ($sql) use (&$phase, &$accountReads, &$capturedAccounts, &$afterRead, &$faults): void {
+    if (str_contains($sql, 'from "domains_accounts"')) { $accountReads++; }
+    if (($phase === 'mapping' && str_starts_with($sql, 'select * from "services"'))
+        || ($phase === 'binding' && str_contains($sql, 'from "domains_accounts"') && $accountReads === $capturedAccounts + 1)
+        || ($phase === 'recheck' && $afterRead && str_starts_with($sql, 'select * from "services"'))) {
+        $faults++; throw new RuntimeException('PRIVATE-database-detail');
+    }
+});
+$mapping->capture($target, $context); $capturedAccounts = $accountReads;
+foreach (['mapping' => 'mapping_unconfirmed', 'binding' => 'account_unconfirmed', 'recheck' => 'changed'] as $stage => $code) {
+    $phase = $stage; $accountReads = 0; $afterRead = false; $prior = count($diagnostics); $hits = $faults;
+    $wire->during = static function () use (&$afterRead): void { $afterRead = true; };
+    try { same($code, $run()->code, 'Unexpected '.$stage.' fault retains the fixed refusal'); }
+    finally { $phase = null; $wire->during = null; }
+    same($hits + 1, $faults, 'Fault was reached at '.$stage);
+    same([['exception_class' => RuntimeException::class]], array_slice($diagnostics, $prior), 'Only unexpected class is logged at '.$stage);
+    same('ready', $run()->code, 'Preview recovers after '.$stage.' fault');
+}
+$beforeDiagnostics = count($diagnostics);
+
 foreach ([['quantity', 2], ['currency_code', 'EUR'], ['plan_id', $product->plans()->where('billing_period', 3)->sole()->id]] as [$key, $value]) {
     $old = $service->fresh()->getAttribute($key); DB::table('services')->where('id', $service->id)->update([$key => $value]);
     $before = count($wire->calls); same('mapping_unconfirmed', $run()->code, 'Non-dedicated annual mapping refused: '.$key);
     same($before, count($wire->calls), 'Invalid mapping no wire'); DB::table('services')->where('id', $service->id)->update([$key => $old]);
 }
+same($beforeDiagnostics, count($diagnostics), 'Expected mapping refusals do not log infrastructure faults');
 DB::table('services')->where('id', $service->id)->update(['expires_at' => '2026-11-01']);
 $count = count($wire->calls); same('native_expiry_present', $run()->code, 'Native cron expiry must be qualified before preview'); same($count, count($wire->calls), 'Native expiry zero wire');
 DB::table('services')->where('id', $service->id)->update(['expires_at' => null]);

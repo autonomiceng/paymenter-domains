@@ -68,7 +68,7 @@ class AdoptDomain extends Page
                     $this->reason = $context->reason;
                     $result = app(AdoptionReader::class)->preview(new Target($t['name'], $t['service'], $t['customer'], $t['account'], Environment::from($t['environment'])), $context);
                     $this->review = $result->jsonSerialize(); $this->previewId = $result->previewId;
-                } catch (\Throwable) { $this->review = (new Review('preview_failed'))->jsonSerialize(); }
+                } catch (\Throwable $e) { $this->diagnostic($e, 'preview'); $this->review = (new Review('preview_failed'))->jsonSerialize(); }
                 unset($this->cachedSchemas['content']);
             });
     }
@@ -92,9 +92,17 @@ class AdoptDomain extends Page
                 try {
                     $d = app(AdoptionCommit::class)->confirm($a->request_key, $a->request_digest, Auth::user());
                     $this->adoptedId = (int) $d->id; $this->refusal = null;
-                } catch (\Throwable $e) { $this->refusal = self::refused($e); $this->previewId = null; $this->review = []; }
+                } catch (\Throwable $e) { $this->diagnostic($e, 'confirmation'); $this->refusal = self::refused($e); $this->previewId = null; $this->review = []; }
                 unset($this->cachedSchemas['content']);
             });
+    }
+    private function diagnostic(\Throwable $error, string $phase): void
+    {
+        if ($error instanceof AdoptionRefused) { return; }
+        try { \Illuminate\Support\Facades\Log::warning('Domains adoption action failed.', [
+            'phase' => $phase, 'exception_class' => $error::class, 'actor_id' => (int) Auth::id(),
+            'service_id' => $this->target['service'] ?? null, 'server_id' => $this->target['account'] ?? null, 'preview_id' => $this->previewId]); }
+        catch (\Throwable) { /* Diagnostics must preserve fixed browser text. */ }
     }
     /** One plain sentence for a disabled confirm action, in the order staff can act on it. */
     private function unavailable(): ?string

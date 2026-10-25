@@ -74,6 +74,29 @@ $when = new ReflectionMethod(AdoptDomain::class, 'when');
 foreach (['2027-10-20' => 'Oct 20, 2027', '2027-10-20T08:14:00+02:00' => 'Oct 20, 2027 06:14 UTC', '2027-10-20T06:14:00Z' => 'Oct 20, 2027 06:14 UTC', '' => 'Unconfirmed', 'not-a-date' => 'Unconfirmed'] as $raw => $shown) { same($shown, $when->invoke(null, $raw), 'Staff date '.$raw); }
 same('Unconfirmed', $when->invoke(null, null), 'Missing staff date');
 $page->callAction('readback', data: ['reason' => 'Rechecked after stale evidence', 'do_not_renew' => true])->assertHasNoActionErrors()->assertSee('Verified preview');
+
+$failures = [];
+\Illuminate\Support\Facades\Log::listen(static function ($event) use (&$failures): void {
+    if ($event->message === 'Domains adoption action failed.') { $failures[] = $event->context; }
+});
+$failedPreview = $page->get('previewId');
+app()->instance(AdoptionCommit::class, new class {
+    public function confirm(...$arguments): never { throw new RuntimeException('PRIVATE-confirmation-detail'); }
+});
+$page->callAction('confirm', data: ['verified' => true])->assertSee('outcome is unknown')->assertDontSee('PRIVATE-confirmation-detail');
+same([['phase' => 'confirmation', 'exception_class' => RuntimeException::class, 'actor_id' => $staff->id,
+    'service_id' => $service->id, 'server_id' => $binding->serverId, 'preview_id' => $failedPreview]], $failures, 'Confirmation logs only class and safe IDs');
+app()->instance(AdoptionCommit::class, $commit);
+app()->instance(AdoptionReader::class, new class {
+    public function preview(...$arguments): never { throw new RuntimeException('PRIVATE-preview-detail'); }
+});
+$page->callAction('readback', data: ['reason' => 'Check preview failure diagnostics'])->assertDontSee('PRIVATE-preview-detail');
+same('preview_failed', $page->get('review')['code'], 'Preview keeps fixed browser refusal');
+same(['phase' => 'preview', 'exception_class' => RuntimeException::class, 'actor_id' => $staff->id,
+    'service_id' => $service->id, 'server_id' => $binding->serverId, 'preview_id' => null], $failures[1], 'Preview logs only class and safe IDs');
+app()->instance(AdoptionReader::class, $reader);
+$page->callAction('readback', data: ['reason' => 'Rechecked after diagnostic failures', 'do_not_renew' => true])->assertSee('Verified preview');
+
 $calls = count($wire->calls); $money = scenarioMoney();
 $page->mountAction('confirm'); expect(str_contains((string) $page->instance()->getMountedAction()->getModalDescription(), 'Expiry: Oct 20, 2027 06:14 UTC'), 'Confirm modal shows UTC expiry');
 // The own-class container seam injects a postcommit enrollment failure without changing native services.

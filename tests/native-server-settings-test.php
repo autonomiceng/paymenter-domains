@@ -110,10 +110,15 @@ foreach([$first,$second] as $server){
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);
     $disabled=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionHidden($processingAction($server));
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
-    same(['label'=>'Connection failed','tone'=>'danger','reason'=>'Credentials changed'],RegistrarFacts::status($server->fresh(),$a->fresh()),'Hold covers credential and digest settings');
+    same(['label'=>'Connection failed','tone'=>'danger','reason'=>'Could not load account settings'],RegistrarFacts::status($server->fresh(),$a->fresh()),'Hold covers credential and digest settings');
     // The account shows Connection failed with its cause; Balance is Missing with the same cause and Add funds stays available.
-    Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('Connection failed')->assertSee('Credentials changed')->assertSee('Missing')
+    Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('Connection failed')->assertSee('Could not load account settings')->assertSee('Missing')
         ->assertSee('Add funds')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
+    $balanceState=(array)DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->sole();
+    try{Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->call('checkBalance')
+        ->assertNotified(\Filament\Notifications\Notification::make()->title("Couldn't check balance")
+            ->body('Check the account settings in the Setup checklist.')->danger());}
+    finally{DB::table(BalanceSchema::TABLE)->where('id',$balanceState['id'])->update($balanceState);}
     Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Connection failed')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
     // A positively verified different account still cannot repurpose the retained binding.
     serverSettingsReject(fn()=>$bindings->configure($server->id,$a->registrar_key,Environment::Test,$a->registrar_key==='enom'?['uid'=>'other-account','token'=>'PRIVATE-WRONG-ROTATION']:['api_key'=>'PRIVATE-WRONG-ROTATION']));
