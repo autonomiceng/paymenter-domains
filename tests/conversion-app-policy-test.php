@@ -63,4 +63,18 @@ $after=$before;$after['tables']['jobs']['digest']='b';appRefuses(fn()=>QuietWind
 $after=$before;$after['mutexes']=['present'];appRefuses(fn()=>QuietWindow::unchanged($before,$after),'Schedule mutex');
 appRefuses(fn()=>QuietWindow::unchanged($after,$before),'Schedule mutex');
 appRefuses(fn()=>AppHost::seconds(59),'at least 60');
+require dirname(__DIR__).'/scripts/conversion/EvidenceHost.php';
+$incomplete = sys_get_temp_dir().'/domains-evidence-host-'.bin2hex(random_bytes(8));
+mkdir($incomplete.'/bootstrap', 0700, true);
+file_put_contents($incomplete.'/bootstrap/app.php', '<?php throw new LogicException("Bootstrap must not load.");');
+set_error_handler(static function(int $severity, string $message): never { throw new ErrorException($message, 0, $severity); });
+try {
+    appRefuses(fn () => \DomainsConversion\EvidenceHost::boot($incomplete), 'Canonical app required.');
+    unlink($incomplete.'/bootstrap/app.php');
+    appRefuses(fn () => \DomainsConversion\EvidenceHost::boot($incomplete), 'Canonical app required.');
+} finally {
+    restore_error_handler();
+    if (is_file($incomplete.'/bootstrap/app.php')) { unlink($incomplete.'/bootstrap/app.php'); }
+    rmdir($incomplete.'/bootstrap'); rmdir($incomplete);
+}
 echo "App host policy allowed shapes and independent refusals passed.\n";

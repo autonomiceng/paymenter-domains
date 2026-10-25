@@ -19,7 +19,7 @@ final class EvidenceHost
     }
     public static function boot(string $path): void
     {
-        if(realpath($path)!==$path||!is_file($path.'/bootstrap/app.php')){throw new \DomainException('Canonical app required.');}
+        if(realpath($path)!==$path||!is_file($path.'/bootstrap/app.php')||!is_file($path.'/vendor/autoload.php')){throw new \DomainException('Canonical app required.');}
         foreach(['Enom','Domains']as$name){$p=$path.'/extensions/Servers/'.$name;if(file_exists($p)||is_link($p)){throw new \DomainException('Park registrar runtimes before collection.');}}
         $loader=require $path.'/vendor/autoload.php';$application=require $path.'/bootstrap/app.php';
         $application->beforeBootstrapping(\Illuminate\Foundation\Bootstrap\RegisterProviders::class,static function($app):void{

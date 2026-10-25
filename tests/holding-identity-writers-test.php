@@ -30,6 +30,28 @@ same('held', $management->fresh()->state, 'Drifted contact disposition made no m
 DB::table('orders')->where('id', $orderId)->update(['user_id' => $user->id]);
 $fund(); $holding();
 
+// Both marker identities refuse missing rows through the holding writer contract.
+foreach (['domains_action', 'domains_tld_id'] as $key) {
+    $marker = $service->product->settings()->where('key', $key)->sole()->getAttributes();
+    DB::table('settings')->where('id', $marker['id'])->delete();
+    try {
+        for ($retry = 0; $retry < 2; $retry++) {
+            try { $holding(); throw new LogicException('Marker drift accepted: '.$key); }
+            catch (DomainException $error) { same('Holding product markers changed.', $error->getMessage(), 'Controlled missing marker refusal: '.$key); }
+        }
+    } finally { DB::table('settings')->insert($marker); }
+    $holding();
+    // Native uniqueness prevents duplicate persistence. Exercise a duplicate captured prefix directly.
+    DB::transaction(function () use ($domain, $key): void {
+        $n = \Paymenter\Extensions\Servers\Domains\Services\HoldingNativeLocks::take($domain->user_id, $domain->service_id, seed: $domain);
+        $tld = \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $domain->server_id)->where('tld', $domain->tld)->sole();
+        \Paymenter\Extensions\Servers\Domains\Services\HoldingNativeIdentity::capture($domain, $n, $tld);
+        $n['markers']->push(clone $n['markers']->where('key', $key)->sole());
+        try { \Paymenter\Extensions\Servers\Domains\Services\HoldingNativeIdentity::capture($domain, $n, $tld); throw new LogicException('Duplicate accepted'); }
+        catch (DomainException $error) { same('Holding product markers changed.', $error->getMessage(), 'Controlled duplicate marker refusal: '.$key); }
+    });
+}
+
 $connection = DB::connection(); $original = $connection->getQueryGrammar();
 $trace = new class($connection) extends Illuminate\Database\Query\Grammars\SQLiteGrammar {
     public array $reads = [];

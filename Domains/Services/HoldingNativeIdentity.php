@@ -13,8 +13,11 @@ final class HoldingNativeIdentity
         $s = $n['service']; $p = $n['product']; $plan = $n['plan'];
         $order = $n['orders']->firstWhere('id', $s->order_id);
         $props = $n['properties']->where('key', 'domain'); $m = $n['markers'];
-        $action = $m->where('key', 'domains_action')->sole()->value;
-        $tldId = $m->where('key', 'domains_tld_id')->sole()->value;
+        foreach (['domains_action', 'domains_tld_id'] as $key) {
+            if ($m->where('key', $key)->count() !== 1) { throw new \DomainException('Holding product markers changed.'); }
+        }
+        $action = $m->where('key', 'domains_action')->first()->value;
+        $tldId = $m->where('key', 'domains_tld_id')->first()->value;
         $name = CanonicalName::parse($d->domain, [$d->tld]);
         if (!$order || (int) $order->user_id !== (int) $d->user_id || (int) $s->user_id !== (int) $d->user_id
             || (int) $n['user']->id !== (int) $d->user_id || (int) $s->id !== (int) $d->service_id
