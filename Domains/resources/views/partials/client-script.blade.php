@@ -1,6 +1,6 @@
 {{-- Shared progressive enhancement adapted from Enom 444f31c; MIT, Copyright (c) 2026 Autonomic Engineering. --}}
 @once
-<p class="domains-sr" aria-live="polite" id="domains-live"></p>
+<p class="domains-sr" aria-live="polite" id="domains-live" data-nameservers-filled="{{ ucfirst(\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers()).' filled in. Save to apply them.' }}"></p>
 @verbatim
 <script>
 (() => {
@@ -71,7 +71,7 @@
             event.preventDefault();
             servers.value = form.dataset.defaultServers; useDefault.disabled = false;
             servers.dispatchEvent(new Event('input', {bubbles: true})); servers.focus();
-            if (live) live.textContent = @js(ucfirst(\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers()).' filled in. Save to apply them.');
+            if (live) live.textContent = live.dataset.nameserversFilled;
         });
         servers?.addEventListener('input', event => { if (event.isTrusted && useDefault) useDefault.disabled = true; });
         form.addEventListener('submit', event => {

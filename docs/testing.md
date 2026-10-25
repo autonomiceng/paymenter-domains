@@ -21,6 +21,8 @@ Lint includes every runtime/test PHP file. Unknown, missing or explicit unimplem
 Default runs execute all implemented categories except native when no dependency is supplied;
 empty categories are reported as unimplemented. `--suite` selects categories; receipts disclose
 omissions. No UI suite exists yet. Synthetic provider tests do not establish provider acceptance.
+Native `test_client_scripts.py` requires Node.js on PATH. It renders the shared client script
+and every including view with real Blade, then syntax-checks each inline script with `node --check`.
 
 Clean environment and PHP settings disable URL streams, cURL execution, sockets, process launch
 and mail. Exception arguments are hidden by default; redaction cases explicitly enable them.

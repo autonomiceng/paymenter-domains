@@ -113,6 +113,7 @@
     "tests/observation-namesilo-test.php",
     "tests/observation-catalogue-test.php",
     "tests/storefront-test.php",
+    "tests/test_client_scripts.py",
     "tests/storefront-cache-test.php",
     "tests/policy-ending-reads-test.php",
     "tests/owned-pages-test.php",
@@ -321,6 +322,7 @@
     "tests/fixture-policy-test.php",
     "tests/php83-compatibility-test.php",
     "tests/test_runner.py",
+    "tests/test_blade_verbatim.py",
     "tests/test_native.py",
     "tests/test_conversion_inventory.py",
     "tests/test_conversion_mariadb_guards.py"
