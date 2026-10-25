@@ -38,6 +38,12 @@ function assertInstalledMigrationOrder(): void
     $expected=array_map(static fn($file)=>basename($file,'.php'),$files);
     $actual=DB::table('migrations')->whereIn('migration',$expected)->orderBy('id')->pluck('migration')->all();
     same($expected,$actual,'Installed migrations applied exactly once in filename order');
+    if(is_file(base_path('extensions/Servers/Domains/database/migrations/2026_10_24_000040_index_operation_services.php'))){
+        expect(Schema::hasIndex('domains_operations',['service_id']),'Installed upgrade indexes retained service operations');
+        $indexes=Schema::getIndexes('domains_operations');
+        for($i=0;$i<2;$i++){(require base_path('extensions/Servers/Domains/database/migrations/2026_10_24_000040_index_operation_services.php'))->up();}
+        same($indexes,Schema::getIndexes('domains_operations'),'Repeated installed additive migration retains indexes');
+    }
     if(class_exists(\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::class)){
         \Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::verify();
         same(0,DB::table(\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::TABLE)->count(),'Upgrade creates deletion storage without backfill');

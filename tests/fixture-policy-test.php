@@ -60,4 +60,11 @@ foreach ([__DIR__, __DIR__.'/Support'] as $directory) {
         }
     }
 }
+// Variable labels in the paired database fixture also use explicit placeholder opt-in.
+$deletionFixture=file_get_contents(__DIR__.'/Support/mariadb-user-deletion.php');
+expect(preg_match('/\$name\s*=\s*placeholderComFixtureName\(/',$deletionFixture)===1,
+    'MariaDB deletion fixture explicitly validates its generated .com placeholder');
+foreach(['intent','checkout','snapshot']as$case){
+    same($case.'-user-deletion-placeholder.com',placeholderComFixtureName($case.'-user-deletion-placeholder.com'),'Every deletion case uses a valid synthetic placeholder');
+}
 echo "Explicit synthetic fixture policy passed; no domain availability lookup.\n";

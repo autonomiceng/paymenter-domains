@@ -25,6 +25,26 @@ if($prefix!==''){config(['database.connections.mysql.prefix'=>$prefix]);DB::purg
 Queue::fake();
 if($phase==='seed'){
     extract(commerceFixture(true));$ids=[];
+    expect(Schema::hasIndex('domains_operations',['service_id']),'MariaDB service operations index exists');
+    DB::beginTransaction();
+    try{
+        for($i=1;$i<=200;$i++){
+            DB::table('domains_operations')->insert(['server_id'=>1,'registrar_key'=>'enom','domain_id'=>1000+$i,'service_id'=>2000+$i,
+                'operation_key'=>'service-index-'.$i,'action'=>'register','state'=>'held','currency'=>'USD']);
+        }
+        // Match the deletion read with no domain/invoice matches, plus its cancellation/adoption twins.
+        $queries=[
+            'user_deletion'=>\Paymenter\Extensions\Servers\Domains\Models\Operation::where(fn($q)=>$q->whereIn('domain_id',[])->orWhereIn('service_id',[2001])->orWhereIn('invoice_id',[]))->orderBy('id')->lockForUpdate()->select('id'),
+            'cancellation'=>\Paymenter\Extensions\Servers\Domains\Models\Operation::where('service_id',2001)->orderBy('id')->lockForUpdate(),
+            'adoption'=>\Paymenter\Extensions\Servers\Domains\Models\Operation::where(fn($q)=>$q->where('service_id',2001))->orderBy('id')->limit(101)->lockForUpdate(),
+        ];
+        foreach($queries as$kind=>$query){
+            $plan=DB::select('EXPLAIN '.$query->toSql(),$query->getBindings());
+            expect(count($plan)===1&&str_contains((string)$plan[0]->key,'domains_operations_service_id_index'),'MariaDB '.$kind.' selects service operations index');
+            echo 'Service operation EXPLAIN: '.json_encode(['query'=>$kind,'prefix'=>$prefix,'plan'=>$plan])."\n";
+        }
+    }finally{DB::rollBack();}
+
     foreach(['intent','checkout','snapshot']as$name){$ids[$name]=commerceUser()->id;}
     file_put_contents($root.'/owners.json',json_encode($ids,JSON_THROW_ON_ERROR));
     echo "Seeded real native MariaDB checkout fixtures.\n";$nativeSuccessful=true;return;
@@ -55,7 +75,7 @@ foreach(\Paymenter\Extensions\Servers\Domains\Models\Account::all()as$account){
     $binding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account);
     same(hash_hmac('sha256',$binding->fingerprint.json_encode($clean,JSON_THROW_ON_ERROR),(string)config('app.key')),$server->settings()->where('key','domains_verified_credentials')->sole()->value,'Synthetic credential contract survives native process boundary');
 }
-$name=$case.'-user-deletion-placeholder.com';
+$name=placeholderComFixtureName($case.'-user-deletion-placeholder.com');
 if($phase==='checkout'){
     $cart=commerceCart($user);commerceAdd($cart,$native->product(Tld::where('registrar_key','enom')->sole(),'register'),$name);
     $signal('ready');

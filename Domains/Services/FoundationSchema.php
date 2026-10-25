@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\{DB,Schema};
 
 final class FoundationSchema
 {
     private const TABLES = ['domains_domains', 'domains_operations', 'domains_tlds', 'domains_accounts', 'domains_prices'];
 
-    public static function install(): void
+    public static function install(bool $legacyServiceIndex = false): void
     {
         $present = array_filter(self::TABLES, static fn (string $table): bool => Schema::hasTable($table));
         if ($present !== [] && count($present) !== count(self::TABLES)) {
@@ -45,12 +45,13 @@ final class FoundationSchema
             if (Schema::hasColumn('domains_domains', 'provenance')) { $table->string('provenance', 32)->nullable(); }
             if (Schema::hasColumn('domains_domains', 'adoption_id')) { $table->unsignedBigInteger('adoption_id')->nullable(); }
         });
-        self::table('domains_operations', function (Blueprint $table) {
+        self::table('domains_operations', function (Blueprint $table) use ($legacyServiceIndex) {
             $table->id();
             self::binding($table, true);
             $table->unsignedBigInteger('authority_generation')->nullable();
             $table->unsignedBigInteger('domain_id')->index();
-            $table->unsignedBigInteger('service_id');
+            $service = $table->unsignedBigInteger('service_id');
+            if (!$legacyServiceIndex) { $service->index(); }
             $table->unsignedBigInteger('invoice_id')->nullable()->index();
             $table->unsignedBigInteger('invoice_item_id')->nullable();
             $table->string('operation_key', 191)->unique();
@@ -134,7 +135,12 @@ final class FoundationSchema
         foreach (self::TABLES as $table) {
             if (!Schema::hasTable($table)) { throw new \RuntimeException('Incomplete retained Domains schema.'); }
         }
-        self::install();
+        try { self::install(); }
+        catch (\RuntimeException $error) {
+            // Only a pending additive migration may verify the exact earlier index set.
+            if (!Schema::hasTable('migrations') || DB::table('migrations')->where('migration', '2026_10_24_000040_index_operation_services')->exists()) { throw $error; }
+            self::install(true);
+        }
     }
 
     private static function binding(Blueprint $table, bool $historical = false): void
