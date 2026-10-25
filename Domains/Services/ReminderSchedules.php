@@ -9,6 +9,15 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 /** Explicit enrollment and audited optimistic edits; installation never overwrites customizations. */
 final class ReminderSchedules
 {
+    /** Null means unreadable saved data, not an empty schedule. */
+    public static function storedDays(mixed $value):?array
+    {
+        if(!is_string($value)){return null;}
+        try{$days=json_decode($value,false,8,JSON_THROW_ON_ERROR);}catch(\JsonException){return null;}
+        if(!is_array($days)){return null;}
+        foreach($days as $day){if(!is_int($day)||$day<0||$day>365){return null;}}
+        return $days;
+    }
     public static function offsets(string $value):array
     {
         if(strlen($value)>200){throw new \InvalidArgumentException('Reminder schedule too long.');}$days=[];
@@ -39,6 +48,7 @@ final class ReminderSchedules
             $s=Server::whereKey($serverId)->lockForUpdate()->firstOrFail();$account=Account::where('server_id',$serverId)->lockForUpdate()->firstOrFail();
             $q=DB::table('domains_reminder_schedules')->where('server_id',$serverId);$old=(clone $q)->lockForUpdate()->first();
             if(!$old||$s->extension!=='Domains'||$old->account_fingerprint!==$account->account_fingerprint||(int)$old->revision!==$revision){throw new \DomainException('Reload the reminder schedule.');}
+            if(self::storedDays($old->before_days)===null||self::storedDays($old->after_days)===null){throw new \DomainException('Reload the reminder schedule.');}
             $audit=decrypt($old->audit);if(!is_array($audit)){throw new \DomainException('Reminder audit unavailable.');}
             $next=['enabled'=>$enabled,'before_days'=>json_encode($b),'after_days'=>json_encode($a)];
             $entry=['actor_id'=>(int)$u->id,'reason'=>$reason,'at'=>gmdate(DATE_ATOM),'revision'=>$revision+1,
