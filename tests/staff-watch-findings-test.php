@@ -77,4 +77,24 @@ same($page25,$spread,'Five customers cost the same as one customer');
 // Filament stacks the header as a column below 40rem; flex-basis there becomes height and pushes findings off the first screen.
 $header=file_get_contents(dirname(__DIR__).'/Domains/resources/views/staff/watch-header.blade.php');[$narrow,$wide]=explode('@media (min-width:40rem){',$header,2)+[1=>''];
 expect(!str_contains($narrow,'flex:1 1')&&substr_count($wide,'flex:1 1')===2,'Watch header flex bases apply only to the wide row layout');
+// Earlier unrelated registry history cannot consume a filtered watch's scan budget.
+$observation=(array)DB::table('domains_watch_registry')->where('watch_id',$w['expiring'])->first();unset($observation['id']);
+for($i=0;$i<1000;$i++){
+    $wid=$clone('domains_watch_names',$id,['canonical_name'=>'history'.$i.'.example']);
+    DB::table('domains_watch_registry')->insert([...$observation,'watch_id'=>$wid]);
+}
+$target=$clone('domains_watch_names',$id,['canonical_name'=>'filtered-expiry.example']);
+DB::table('domains_watch_registry')->insert([...$observation,'watch_id'=>$target]);
+Auth::setUser($editor);DB::enableQueryLog();DB::flushQueryLog();
+$incoming=WatchName::where('user_id',$uid)->where('state','active')->where('canonical_name','filtered-expiry.example');
+same([$target],Paymenter\Extensions\Servers\Domains\Admin\Support\WatchQueries::expiry($incoming,30)->pluck('id')->all(),'Incoming owner, state and name narrow the bounded expiry scan');
+$scans=array_values(array_filter(DB::getQueryLog(),fn($q)=>str_contains($q['query'],'max(id)')));DB::disableQueryLog();
+same(1,count($scans),'One bounded registry scan');
+same(2,substr_count($scans[0]['query'],'"canonical_name" = ?'),'Latest and outer registry scans both retain incoming filters');
+$later=$observation;$facts=json_decode(Crypt::decryptString($later['facts']),true,flags:JSON_THROW_ON_ERROR);$facts['expiry']=gmdate('Y-m-d',time()+100*86400);$later['facts']=Crypt::encryptString(json_encode($facts,JSON_THROW_ON_ERROR));
+DB::table('domains_watch_registry')->insert([...$later,'watch_id'=>$target]);
+$scoped=fn()=>WatchName::where('user_id',$uid)->where('state','active')->where('canonical_name','filtered-expiry.example');
+same([],Paymenter\Extensions\Servers\Domains\Admin\Support\WatchQueries::expiry($scoped(),30)->pluck('id')->all(),'Latest filtered facts supersede earlier expiring evidence');
+DB::table('domains_watch_registry')->insert([...$observation,'watch_id'=>$target]);
+same([$target],Paymenter\Extensions\Servers\Domains\Admin\Support\WatchQueries::expiry($scoped(),30)->pluck('id')->all(),'A later filtered expiry cycle is reconsidered');
 $nativeSuccessful=true;echo "Staff monitored domain status, Status filter, permission-checked customer identity and bounded queries passed (queries: 1 row {$one}, 25 rows {$many}, one render {$page25}, five customers {$spread}, filtered {$filtered}, owner batch {$batch}).\n";

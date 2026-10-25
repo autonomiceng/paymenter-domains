@@ -41,8 +41,25 @@ commerceReject(fn()=>$staffOp->fresh()->update(['policy'=>array_diff_key($staffO
 App\Models\InvoiceTransaction::create(['invoice_id'=>$staffOp->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'processing']);
 $retirement->inspect($staffOp->domain_id);same('rejected',$staffOp->fresh()->state,'Late money never reopens work');same(null,$staffOp->domain->fresh()->reservation_name,'Late money never steals back a reservation');
 same(1,DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->where('code','acquisition_late_money')->count(),'Late money durable review');
+$countTransactions=false;$lateLocks=0;
+Illuminate\Support\Facades\Event::listen(Illuminate\Database\Events\TransactionBeginning::class,static function()use(&$countTransactions,&$lateLocks){if($countTransactions){$lateLocks++;}});
+$countTransactions=true;$retirement->inspect($staffOp->domain_id);$retirement->inspect($staffOp->domain_id);$countTransactions=false;
+same(0,$lateLocks,'Repeated late-money identity avoids native locking transactions');
+foreach(['status'=>'succeeded','amount'=>'2.00'] as $field=>$value){
+    DB::table('invoice_transactions')->where('invoice_id',$staffOp->invoice_id)->update([$field=>$value]);
+    $lateLocks=0;$countTransactions=true;$retirement->inspect($staffOp->domain_id);$countTransactions=false;
+    expect($lateLocks>0,'Changed transaction '.$field.' takes locked late-money recheck');
+}
+same(3,DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->where('code','acquisition_late_money')->count(),'Payment status and amount each retain a distinct alert');
+DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->update(['resolved_at'=>time()]);
+$lateLocks=0;$countTransactions=true;$retirement->inspect($staffOp->domain_id);$countTransactions=false;
+expect($lateLocks>0,'Resolved late-money alert receives a locked recheck');
+same(1,DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->whereNull('resolved_at')->count(),'Current resolved identity reopens');
 DB::table('invoices')->where('id',$staffOp->invoice_id)->update(['status'=>'paid']);
 DB::transaction(fn()=>(new App\Services\Invoice\ProcessPaidInvoiceService)->handle(App\Models\Invoice::findOrFail($staffOp->invoice_id)));same('active',$staffOp->domain->service->fresh()->status,'Late native paid activation never throws');same(null,$staffOp->domain->service->fresh()->expires_at,'Late native paid activation keeps null expiry');$retirement->inspect($staffOp->domain_id);same('rejected',$staffOp->fresh()->state,'Late activation never reopens work');
+same(4,DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->where('code','acquisition_late_money')->count(),'Native service and invoice status changes retain new late-money evidence');
+$lateLocks=0;$countTransactions=true;$retirement->inspect($staffOp->domain_id);$retirement->inspect($staffOp->domain_id);$countTransactions=false;
+same(0,$lateLocks,'Repeated activated-service identity also skips locking');
 // Match the installed after-commit wake used by the original modal scenarios.
 AcquisitionRetirement::boot();
 // Real staff modal success and refusal use the same locked authority.

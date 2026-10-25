@@ -76,8 +76,13 @@ final readonly class AcquisitionRetirement
             ||(Schema::hasTable('domains_native_intents')&&DB::table('domains_native_intents')->where('service_id',$seed->service_id)->exists());
         // Quiet closed history never locks the owner's unrelated hosting/money rows.
         $hit=$seed->operations()->whereIn('action',['register','transfer'])->get()->contains(function($op)use($seed,$service,$cancelled){
-            return self::needsSnapshot($op,$service)||(self::closed($op,$seed,$service,$cancelled)&&self::activity($op,$service,
-                Invoice::whereKey($op->invoice_id)->value('status'),InvoiceTransaction::where('invoice_id',$op->invoice_id)->orderBy('id')->get()));
+            if(self::needsSnapshot($op,$service)){return true;}
+            if(!self::closed($op,$seed,$service,$cancelled)){return false;}
+            $status=Invoice::whereKey($op->invoice_id)->value('status');
+            $transactions=InvoiceTransaction::where('invoice_id',$op->invoice_id)->orderBy('id')->get();
+            if(!self::activity($op,$service,$status,$transactions)){return false;}
+            $key=ObligationAlerts::key($seed,'acquisition_late_money',(int)$op->id,self::identity($service,$status,$transactions));
+            return !DB::table('domains_obligation_alerts')->where('alert_key',$key)->whereNull('resolved_at')->exists();
         });
         if(!$hit){return;}
         DB::transaction(function()use($seed):void {
@@ -92,11 +97,13 @@ final readonly class AcquisitionRetirement
                 }
                 if(!self::closed($op,$d,$service,$cancelled)||!self::activity($op,$service,$status,$transactions)){continue;}
                 // Existing alert identities distinguish later activity from repeated observations.
-                $identity=hash('sha256',json_encode([$service,$status,$transactions->map(fn($t)=>[(int)$t->id,$t->status->value,(string)$t->amount])->values()->all()],JSON_THROW_ON_ERROR));
+                $identity=self::identity($service,$status,$transactions);
                 ObligationAlerts::record($d,'acquisition_late_money',$this->clock->now()->getTimestamp(),(int)$op->id,$identity);
             }
         });
     }
+    private static function identity(?string $service,?string $invoice,\Illuminate\Support\Collection $transactions): string
+    {return hash('sha256',json_encode([$service,$invoice,self::payments($transactions)],JSON_THROW_ON_ERROR));}
     private static function closed($op,Domain $d,?string $service,bool $cancelled): bool
     {
         if(isset($op->policy['native_acquisition_closure'])){return true;}

@@ -49,6 +49,18 @@ $points = $checks->begin($watch->id,$owner->id,'points',$now+4);
 expect($checks->finish($points,new DnsReading('points',website:false,email:false),$now+5),'Independent points success');
 $view = $projection->read($watch->id,$owner->id,$now+6);
 expect(!$view['website']['stale'] && $view['partial'],'DNS outage leaves good points but partial overall');
+// Shared source windows are validated once per projection, including a missing stamp.
+$watchReads=static function()use($projection,$watch,$owner,$now):int{
+    DB::enableQueryLog();DB::flushQueryLog();$projection->read($watch->id,$owner->id,$now+6);
+    $n=count(array_filter(DB::getQueryLog(),fn($q)=>str_contains($q['query'],'from "domains_watch_names"')));DB::disableQueryLog();return $n;
+};
+same(3,$watchReads(),'DNS, website and email share one current source stamp');
+DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'paused']);
+same(2,$watchReads(),'Null source stamps are cached for website and email too');
+DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'active']);
+DB::table('domains_watch_observations')->where('check_kind','points')->update(['source_cursor'=>1]);
+same(5,$watchReads(),'Distinct source cursors keep separate stamp validations');
+DB::table('domains_watch_observations')->where('check_kind','points')->update(['source_cursor'=>0]);
 DB::table('domains_watch_work')->where('kind','delegation')->update(['due_at'=>$now+6,'backoff_until'=>null]);
 $ticket = $checks->begin($watch->id,$owner->id,'delegation',$now+6);same(3600,$ticket->interval,'Expected-platform DNS-only hourly interval');
 $count = WatchDnsObservation::count();
