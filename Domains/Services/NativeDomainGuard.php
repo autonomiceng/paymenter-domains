@@ -137,7 +137,7 @@ final class NativeDomainGuard
         foreach (['id' => 'service_id', 'product_id' => 'product_id', 'plan_id' => 'plan_id', 'user_id' => 'user_id', 'order_id' => 'order_id'] as $key => $frozen) {
             if ((int) $service->getRawOriginal($key) !== ($c[$frozen] ?? null)) { throw new \DomainException('Unadmitted initial projection.'); }
         }
-        self::persist($service, $service->getRawOriginal(), $service->getDirty());
+        self::persist($service, $service->getDirty());
     }
 
     /** Confirmed adoption projects a retained native service without purchase or payment authority. */
@@ -148,7 +148,7 @@ final class NativeDomainGuard
             || ($e['native_identity'] ?? null) !== $lock->nativeIdentity($domain) || $s->isDirty()) {
             throw new \DomainException('Unadmitted adoption projection.');
         }
-        self::persist($s, $s->getRawOriginal(), ['status' => Service::STATUS_ACTIVE, 'price' => $e['retail']['annual_gross'], 'expires_at' => null]);
+        self::persist($s, ['status' => Service::STATUS_ACTIVE, 'price' => $e['retail']['annual_gross'], 'expires_at' => null]);
     }
 
     /** Caller holds HoldingLocks; retained retail is allowed only through this billing projection. */
@@ -159,7 +159,7 @@ final class NativeDomainGuard
         if (($locked['advisory'] ?? true) || $service->isDirty()) { throw new \DomainException('Holding native authority changed.'); }
         if ($domain->price_mode !== 'standard') { throw new \DomainException('Complimentary authority belongs to renewal execution.'); }
         $price = $this->quote($locked);
-        self::persist($service, $service->getRawOriginal(), ['price' => $price['annual_gross'], 'expires_at' => null]);
+        self::persist($service, ['price' => $price['annual_gross'], 'expires_at' => null]);
         return $price;
     }
 
@@ -178,7 +178,7 @@ final class NativeDomainGuard
     public static function completeInitial(InvoiceFunding $funding, Operation $op, Domain $domain): void
     {
         $service = $funding->initialService($op, $domain);
-        self::persist($service, $service->getRawOriginal(), ['status' => Service::STATUS_ACTIVE, 'expires_at' => null]);
+        self::persist($service, ['status' => Service::STATUS_ACTIVE, 'expires_at' => null]);
     }
 
     /** Existing unsent and full-funding checks remain mandatory for owned terminal projections. */
@@ -188,7 +188,7 @@ final class NativeDomainGuard
             || !$locked['operations']->contains(static fn ($row) => $row === $op)) { throw new \DomainException('No retained refund disposition.'); }
         RefundProof::requireUnsent($op, $locked['domain']); RefundPayment::requireCurrent($op, $locked);
         $service = $locked['service'];
-        self::persist($service, $service->getRawOriginal(), ['status' => Service::STATUS_CANCELLED, 'expires_at' => null]);
+        self::persist($service, ['status' => Service::STATUS_CANCELLED, 'expires_at' => null]);
     }
 
     /** Read-only guard check: a different instance, row, field, value or preimage grants nothing. */
@@ -210,11 +210,12 @@ final class NativeDomainGuard
     }
 
     /** Private issuance only after an owned writer's checks. One saving event consumes the grant. */
-    private static function persist(Service $service, array $before, array $values): void
+    private static function persist(Service $service, array $values): void
     {
-        if (DB::transactionLevel() !== 1 || !$service->exists || $service->getRawOriginal() !== $before) {
+        if (DB::transactionLevel() !== 1 || !$service->exists) {
             throw new \LogicException('Projection requires holding locks.');
         }
+        $before = $service->getRawOriginal();
         self::$projections ??= new \WeakMap;
         if (HookRegistration::claim(Service::getEventDispatcher(),self::class.'::persist')) {
             Service::saving(static function (Service $row): void {

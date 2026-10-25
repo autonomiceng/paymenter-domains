@@ -5,6 +5,7 @@ require __DIR__.'/Support/reconciliation-fixture.php';
 use App\Models\{Order, Role, Service};
 use Illuminate\Support\Facades\{DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Services\{HolderPricing, HoldingLocks, NativeDomainGuard, NativeIdentity, Refunds, RetailLine};
+same(2,(new ReflectionMethod(NativeDomainGuard::class,'persist'))->getNumberOfParameters(),'Projection accepts only the service and values; it owns its preimage');
 Queue::fake();
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot();
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class, $invoiceBinding);

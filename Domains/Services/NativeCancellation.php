@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Adoption,Domain,Operati
 final class NativeCancellation
 {
     private static ?\WeakMap $adoptions = null;
+    private static ?\WeakMap $intentTables = null;
     public const MESSAGE="This domain can't be cancelled or suspended while its registration or transfer is still being processed. Check its status on the Domains page.";
     public static function boot(): void
     {
@@ -36,12 +37,13 @@ final class NativeCancellation
         Service::updating(static function(Service $s):void {
             // Active is native paid billing state, regardless of caller or registrar progress.
             $unsafe=['cancelled','suspended'];$attrs=$s->getAttributes();$aliases=$attrs;unset($aliases['status']);
-            $stored=Service::find($s->getRawOriginal('id')??$s->id)?->status;
+            if(NativeDomainGuard::identityProjection($s)){return;}
             $proposed=array_map('strtolower',self::values($attrs,'status'));
-            if(NativeDomainGuard::identityProjection($s)
-                ||(!NativeIdentity::dirty($s,['status'])&&!array_diff(array_intersect($proposed,$unsafe),[(string)$stored])
+            if(!array_intersect($proposed,$unsafe)){return;}
+            $stored=Service::find($s->getRawOriginal('id')??$s->id)?->status;
+            if((!NativeIdentity::dirty($s,['status'])&&!array_diff(array_intersect($proposed,$unsafe),[(string)$stored])
                     &&!array_intersect(array_map('strtolower',self::values($aliases,'status')),$unsafe))
-                ||!array_intersect($proposed,$unsafe)){return;}
+                ){return;}
             foreach(array_unique(array_filter(array_column(NativeIdentity::rows($s),'id')))as$id){self::guard((int)$id,'status',closing:strtolower((string)$s->status)==='cancelled');}
         });
     }
@@ -74,7 +76,11 @@ final class NativeCancellation
     /** Add owned intent to cancellation checks without inventing a native cancellation row. */
     public static function withIntents(Collection $cancel,array $serviceIds,bool $advisory=false): Collection
     {
-        if(!Schema::hasTable('domains_native_intents')){return $cancel;}
+        self::$intentTables ??= new \WeakMap; $connection=DB::connection();
+        if(!isset(self::$intentTables[$connection])){
+            if(!Schema::hasTable('domains_native_intents')){return $cancel;}
+            self::$intentTables[$connection]=true;
+        }
         $rows=\Paymenter\Extensions\Servers\Domains\Models\NativeIntent::whereIn('service_id',$serviceIds)->orderBy('service_id')
             ->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         return $cancel->toBase()->concat($rows);
