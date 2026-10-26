@@ -34,6 +34,7 @@
 .domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-linkbtn { text-decoration: none; }
 .domains .domains-a:hover { text-decoration: underline; }
+.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }
 .domains .domains-back { display: inline-flex; align-items: center; gap: .25rem; font-size: .875rem; color: var(--e-muted); min-height: 2rem; }
 .domains .domains-back:hover { color: var(--e-fg); }
 .domains .domains-stack > * + * { margin-top: 1rem; }
