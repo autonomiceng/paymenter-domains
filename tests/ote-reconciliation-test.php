@@ -77,10 +77,10 @@ $probe = static function (array $headers, array $details, int $cap = 15, bool $f
         same(true, $wire->receipt['checks']['purchase_unresolved'] ?? null, 'Original uncertainty always retained');
         if ($inventoryFailure !== null) {
             same(true, $wire->receipt['checks']['aborted'] ?? null, 'Inventory failure recorded');
-            same(null, $wire->receipt['checks']['completed'] ?? null, 'Aborted probe never marked completed');
+            expect(!array_key_exists('completed',$wire->receipt['checks']), 'Aborted probe has no completion field');
         }
-        if ($wire->receipt['mismatches'] !== []) {
-            same(false, $wire->receipt['checks']['completed'] ?? false, 'Mismatched read shapes cannot complete diagnostics');
+        if ($inventoryFailure===null && $wire->receipt['mismatches'] !== []) {
+            same(false, $wire->receipt['checks']['completed'] ?? null, 'Mismatched read shapes cannot complete diagnostics');
         }
         same($nameBefore, $wire->domain, 'Inventory/order names never replace original transport scope');
         same('ambiguous', $facts['category'], 'Missing original identity/amount never resolves');
@@ -95,10 +95,11 @@ $probe = static function (array $headers, array $details, int $cap = 15, bool $f
         foreach (['contract-ote-123456789abc.com', 'unrelated-placeholder.com', '8.95', 'offline-secret-token', '901'] as $value) {
             expect(!str_contains($stored, $value), 'Scalar account/financial values omitted');
         }
-        return [$facts, $commands];
+        return [$facts, $commands, $wire->receipt['checks']];
     } finally { @unlink($output.'/receipt.json'); rmdir($output); }
 };
-[$facts, $commands] = $probe([], []);
+[$facts, $commands, $checks] = $probe([], []);
+same(true,$checks['completed']??null,'Known clean empty inventory completes diagnostics');
 same(0, $facts['consistent_registration_rows'], 'No match remains ambiguous');
 same(['listOrders', 'listDomains'], $commands, 'No speculative domain read or extra probe');
 same(true, $facts['inventory_empty'], 'Well-formed empty inventory is observed, never definitive absence');
@@ -115,7 +116,9 @@ same(['listOrders', 'listDomains'], $commands, 'Wrong window not followed');
 same(3, count($commands), 'Budget bounds detail exploration without retries');
 [$facts] = $probe([], [], failedOrders: true);
 same(false, $facts['orders_read_success'], 'Unknown history never means absent purchase');
-[$facts] = $probe([], [], inventory: ['domains' => null, 'pager' => ['page' => 1, 'pageSize' => 10]]);
+[$facts,,$checks] = $probe([], [], inventory: ['domains' => null, 'pager' => ['page' => 1, 'pageSize' => 10]]);
+same(false,$checks['completed']??null,'Known malformed non-aborted inventory explicitly fails completion');
+expect(!isset($checks['aborted']),'Malformed inventory completes the diagnostic read without aborting');
 same(null, $facts['inventory_empty'], 'Malformed inventory does not mean empty');
 foreach ([0, -1, 1.0, 'bad', 2] as $page) {
     [$facts] = $probe([], [], inventory: ['domains' => [], 'pager' => ['page' => $page, 'pageSize' => 10, 'total' => 0]]);
