@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, Do
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{AdoptDomain, AdoptionPreview, ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain};
-use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, Missing};
+use Paymenter\Extensions\Servers\Domains\Presentation\{DomainName, DomainStatus, Missing};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCancellation, ObservationWork, RenewalStop};
 class DomainResource extends Resource
 {
@@ -47,9 +47,9 @@ class DomainResource extends Resource
             ->where('late.code','acquisition_late_money')->whereNull('late.resolved_at');
         return $table->modifyQueryUsing(fn (Builder $query) => $query->select('domains_domains.*')->selectSub($late,'late_money')
             ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition:domains_operations.id,domains_operations.domain_id,domains_operations.action,domains_operations.state,domains_operations.safe_code,domains_operations.service_id,domains_operations.server_id,domains_operations.registrar_key,domains_operations.authority_generation,domains_operations.account_fingerprint']))->columns([
-            DemoTag::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)
+            DemoTag::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
                 ->description(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
-                ->extraAttributes(['style'=>'overflow-wrap:anywhere;max-width:24rem'])),
+                ->extraAttributes(['style'=>DomainName::CELL])),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::status($record,$livewire)['label'])
                 ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone'])->description(fn(Domain $record,$livewire)=>self::status($record,$livewire)['reason']
                     ??match(self::row($record,$livewire)['sync']){'failed'=>'Sync failed','paused'=>'Sync paused',default=>null}),

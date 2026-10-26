@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/staff-filter-lookalikes.php';
+require __DIR__.'/Support/domain-name-cell.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
@@ -22,6 +23,7 @@ DB::table('domains_operations')->where('id',$ops[2]->id)->update(['funding_basis
 $ops=Operation::orderBy('id')->get();
 $page=Livewire::actingAs($viewer)->test(ListOperations::class)->assertSuccessful()->assertCanSeeTableRecords($ops);
 expect(!str_contains($page->html().json_encode($page->snapshot),'PRIVATE-'),'Queue never serializes private evidence');
+assertDomainNameWraps($page->html(),$long->domain,'Requests list');
 foreach (['under_review'=>[$ops[0]], 'in_progress'=>[], 'failed'=>[$ops[2]], 'completed'=>[$ops[1]]] as $name=>$yes) {
     echo 'Filter '.$name."\n"; $p=Livewire::actingAs($viewer)->test(ListOperations::class)->filterTable('status',[$name]);
     $p->set('tableDeferredFilters',$p->get('tableFilters'))->call('applyTableFilters')->assertCanSeeTableRecords($yes)->assertCountTableRecords(count($yes));

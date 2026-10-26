@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
+require __DIR__.'/Support/domain-name-cell.php';
 use App\Models\Server;
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
@@ -27,6 +28,11 @@ $customer=trim($viewer->first_name.' '.$viewer->last_name)?:$viewer->email;
 $page->assertSee('Under review')->assertSee('Old registrar needs approval')->assertSee($customer)->assertSee('Offline registrar (synthetic)')->assertDontSee('Missing');
 $instance=$page->instance();$columns=$instance->getTable()->getColumns();
 $records=$instance->getTableRecords()->keyBy('id');
+foreach([$held,$active,$uncertain] as $domain){assertDomainNameWraps($page->html(),$domain->domain,'Domains list '.$domain->domain);}
+same('&lt;b&gt;.<wbr>x-<wbr>y',$columns['domain']->record($records[$active->id])->formatState('<b>.x-y')->toHtml(),'Domains list escapes the name before adding line breaks');
+$pending=\Paymenter\Extensions\Servers\Domains\Admin\Resources\PendingAdoptionResource::table(\Filament\Tables\Table::make($instance))->getColumn('domain');
+assertDomainNameWraps($pending->record($records[$uncertain->id])->toEmbeddedHtml(),$uncertain->domain,'Adoption pending list');
+same('&lt;b&gt;.<wbr>x-<wbr>y',$pending->formatState('<b>.x-y')->toHtml(),'Adoption pending list escapes the name before adding line breaks');
 foreach([[$held,'Old registrar needs approval'],[$uncertain,'Old registrar needs approval'],[$active,null]] as [$domain,$reason]){
     $record=$records[$domain->id];$column=$columns['status']->record($record);
     same('Under review',$column->getState(),'Held, uncertain and stored review share one status');
@@ -53,7 +59,7 @@ $column=$resolved->getTable()->getColumn('status')->record($record);
 same(['Under review',null],[$column->getState(),$column->getDescriptionBelow()],'Resolved latest acquisition never revives an older hold');
 // Fallback descriptions preserve retained rows when native records are missing.
 DB::table('domains_domains')->where('id',$held->id)->update(['user_id'=>999999,'server_id'=>999999]);
-$fallback=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSee($held->domain)->assertSee('Missing')->assertDontSee('#999999');
+$fallback=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSeeText($held->domain)->assertSee('Missing')->assertDontSee('#999999');
 $record=$fallback->instance()->getTableRecords()->keyBy('id')[$held->id];$columns=$fallback->instance()->getTable()->getColumns();
 same([null,'Missing'],[$columns['domain']->record($record)->getDescriptionBelow(),$columns['server_id']->record($record)->getState()],'Missing customer and registrar account keep the row');
 // Age grammar and exact staff copy; frozen timestamps avoid dependence on fixture business clocks.

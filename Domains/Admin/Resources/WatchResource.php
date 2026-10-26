@@ -6,9 +6,8 @@ use Filament\Tables\{Table,Columns\TextColumn,Filters\Filter,Filters\SelectFilte
 use Filament\Forms\Components\TextInput;
 use Filament\Support\Enums\FontFamily;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag,WatchReadResource,WatchFacts,WatchFindings};
-use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
+use Paymenter\Extensions\Servers\Domains\Presentation\{DomainName,Missing};
 use Filament\Navigation\NavigationItem;
 use Filament\Pages\Enums\SubNavigationPosition;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,MonitoringSettings,ViewWatch};
@@ -45,8 +44,8 @@ class WatchResource extends WatchReadResource
     {
         $who=['platform'=>WatchFindings::company(),'external'=>'Other'];
         return $table->columns([
-            DemoTag::apply(TextColumn::make('canonical_name')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>new HtmlString(str_replace(['.','-'],['.<wbr>','-<wbr>'],e($state))))
-                ->description(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['label'])->extraAttributes(['style'=>'overflow-wrap:anywhere;min-width:7rem;max-width:24rem'])),
+            DemoTag::apply(TextColumn::make('canonical_name')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
+                ->description(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['label'])->extraAttributes(['style'=>DomainName::CELL])),
             TextColumn::make('status')->label('Status')->badge()->state(fn($record,$livewire)=>$livewire->watchRow($record)['status']['label'])->color(fn($record,$livewire)=>$livewire->watchRow($record)['status']['tone'])
                 ->description(fn($record,$livewire)=>$livewire->watchRow($record)['status']['reason']),
             self::fact(TextColumn::make('registration')->label('Registrar')->visibleFrom('xl'),fn($record)=>['value'=>WatchFindings::who($record->registration),'cause'=>'Not recorded yet']),

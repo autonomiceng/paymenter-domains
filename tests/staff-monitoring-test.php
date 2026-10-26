@@ -1,7 +1,7 @@
 <?php
 // Domain monitoring, DNS templates and Hosting products staff pages over local synthetic evidence. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/Support/watch-notices.php';require __DIR__.'/Support/storefront.php';
+require __DIR__.'/Support/watch-notices.php';require __DIR__.'/Support/domain-name-cell.php';require __DIR__.'/Support/storefront.php';
 use Illuminate\Support\Facades\{Auth,Crypt,DB,Route};
 use Livewire\Livewire;
 use Filament\Facades\Filament;
@@ -22,6 +22,7 @@ $filter=fn($page,string $name)=>$page->instance()->getTable()->getFilter($name);
 
 // Unchecked: Monitoring, with Last check Missing and its cause.
 $list=Livewire::actingAs($manager)->test(ListWatches::class)->assertCanSeeTableRecords([$watch]);$clean($list->html(),'monitoring list');
+assertDomainNameWraps($list->html(),$watch->canonical_name,'Monitoring list');
 same('Domain monitoring',$list->instance()->getTitle(),'List title');same(null,$list->instance()->getSubheading(),'No list subheading');
 foreach(['canonical_name'=>'Domain','status'=>'Status','registration'=>'Registrar','delegation.dns'=>'Nameservers','last_check'=>'Last check','expiry'=>'Expires'] as $name=>$label){same($label,$column($list,$name)->getLabel(),'Column '.$name);}
 foreach(['findings','user_id','state','work_due'] as $gone){same(null,$column($list,$gone),'Old column '.$gone.' removed');}

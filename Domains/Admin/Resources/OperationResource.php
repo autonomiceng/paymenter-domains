@@ -39,8 +39,8 @@ class OperationResource extends Resource
             TextColumn::make('id')->label('Request')->formatStateUsing(fn($state)=>'Request #'.$state)->sortable()
                 ->suffix(fn(Operation $record)=>self::demo($record)?DemoData::tag(inline:true):null),
             TextColumn::make('domain.domain')->label('Domain')->searchable()->wrap()->fontFamily('mono')
-                ->formatStateUsing(fn($state)=>new \Illuminate\Support\HtmlString(str_replace(['.','-'],['.<wbr>','-<wbr>'],e($state))))
-                ->extraAttributes(['style'=>'min-width:10rem;max-width:16rem;overflow-wrap:anywhere']),
+                ->formatStateUsing(fn($state)=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainName::html((string)$state))
+                ->extraAttributes(['style'=>'overflow-wrap:break-word;min-width:11rem;max-width:16rem']),
             TextColumn::make('action')->label('Type')->formatStateUsing(fn($state)=>Labels::action($state)),
             TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>Labels::requestStatus($record)['tone'])
                 ->formatStateUsing(fn($record)=>Labels::requestStatus($record)['label'])->wrap()
