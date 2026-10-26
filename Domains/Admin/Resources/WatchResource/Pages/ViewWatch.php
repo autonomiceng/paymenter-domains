@@ -10,6 +10,7 @@ use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{MissingEntry,WatchActions,WatchFacts,WatchFindings};
+use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewWatch extends ViewRecord
 {
@@ -32,7 +33,7 @@ class ViewWatch extends ViewRecord
     public function getHeading(): HtmlString
     {
         $status=$this->facts()['status'];
-        return new HtmlString('<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem"><span class="font-mono" style="overflow-wrap:anywhere">'.str_replace(['.','-'],['.<wbr>','-<wbr>'],e($this->getTitle())).'</span>'
+        return new HtmlString('<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem"><span class="font-mono" style="overflow-wrap:anywhere">'.DomainName::html($this->getTitle())->toHtml().'</span>'
             .(DemoData::is($this->getRecord())?DemoData::tag(inline:true)->toHtml():'')
             .view('filament::components.badge',['color'=>$status['tone'],'size'=>'lg','slot'=>new HtmlString(e($status['label']))])->render().'</span>'.self::FACTS_STYLE);
     }

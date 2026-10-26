@@ -51,6 +51,7 @@ Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','mo
 // Monitored domain page: heading pill, header buttons, sections, one notice.
 $view=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);$page=$view->instance();$clean($view->html(),'monitored domain');
 expect(str_contains($page->getHeading()->toHtml(),'font-mono') && str_contains($page->getHeading()->toHtml(),'Problem found'),'Heading is the mono name and the pill');
+assertDomainNameWraps($page->getHeading()->toHtml(),$watch->canonical_name,'Monitored domain title','title');
 same('Expires in '.$days.' days',$page->getSubheading(),'Reason under the heading');
 same([WatchResource::getUrl()=>'Domain monitoring','example.com'],$page->getBreadcrumbs(),'Breadcrumb');
 foreach(['read'=>'Check now','pause'=>'Pause monitoring','profile'=>'Change DNS template','note'=>'Add note','retire'=>'Stop monitoring'] as $name=>$label){same($label,$page->getAction($name)?->getLabel(),'Action '.$name);}

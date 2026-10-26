@@ -10,6 +10,7 @@ use Filament\Schemas\Schema;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainFacts, HoldingActions, MissingEntry, OperationActions, RegistrarFacts, Staff};
+use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
 {
@@ -21,7 +22,7 @@ class ViewDomain extends ViewRecord
     public function getHeading(): HtmlString
     {
         $status=DomainFacts::status($this->getRecord());
-        return new HtmlString('<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem"><span class="font-mono" style="overflow-wrap:anywhere">'.e($this->getTitle()).'</span>'
+        return new HtmlString('<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem"><span class="font-mono" style="overflow-wrap:anywhere">'.DomainName::html($this->getTitle())->toHtml().'</span>'
             .(DemoData::is($this->getRecord())?DemoData::tag(inline:true)->toHtml():'')
             .view('filament::components.badge',['color'=>$status['tone'],'size'=>'lg','slot'=>new HtmlString(e($status['label']))])->render().'</span>'.self::FACTS_STYLE);
     }

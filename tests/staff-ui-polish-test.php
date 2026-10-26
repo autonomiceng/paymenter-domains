@@ -33,6 +33,7 @@ same('&lt;b&gt;.<wbr>x-<wbr>y',$columns['domain']->record($records[$active->id])
 $pending=\Paymenter\Extensions\Servers\Domains\Admin\Resources\PendingAdoptionResource::table(\Filament\Tables\Table::make($instance))->getColumn('domain');
 assertDomainNameWraps($pending->record($records[$uncertain->id])->toEmbeddedHtml(),$uncertain->domain,'Adoption pending list');
 same('&lt;b&gt;.<wbr>x-<wbr>y',$pending->formatState('<b>.x-y')->toHtml(),'Adoption pending list escapes the name before adding line breaks');
+assertDomainNameWraps(Livewire::actingAs($viewer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$uncertain->id])->instance()->getHeading()->toHtml(),$uncertain->domain,'Domain page title','title');
 foreach([[$held,'Old registrar needs approval'],[$uncertain,'Old registrar needs approval'],[$active,null]] as [$domain,$reason]){
     $record=$records[$domain->id];$column=$columns['status']->record($record);
     same('Under review',$column->getState(),'Held, uncertain and stored review share one status');
