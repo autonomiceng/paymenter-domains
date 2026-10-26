@@ -122,6 +122,16 @@ foreach(['test','live'] as $mode){
 }
 DB::table('domains_accounts')->where('id',$siloAccount->id)->update(['environment'=>'test']);
 
+$reminderQuery=DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id);$savedReminder=(array)(clone $reminderQuery)->sole();
+foreach([[[1],'1 day before, 1 day after'],[[0],'0 days before, 0 days after'],[[2],'2 days before, 2 days after'],[[1,2],'2 and 1 days before, 1 and 2 days after'],[[],null]] as [$days,$expected]){
+    $reminderQuery->update(['before_days'=>json_encode($days),'after_days'=>json_encode($days)]);
+    same($expected,Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::emails((int)$enom->server_id)['cause'],'Reminder day grammar: '.json_encode($days));
+    if($expected!==null){Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee($expected);}
+}
+$reminderQuery->update(['before_days'=>'{']);
+same('Saved reminder days cannot be read. Ask an administrator to restore the saved schedule.',Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::emails((int)$enom->server_id)['cause'],'Unreadable reminders retain their cause');
+$reminderQuery->update($savedReminder);Auth::setUser($admin);
+
 // A cause shows under a value only when there is a problem: a synced price or a valid invoice day has none.
 $enomAccount=Account::where('server_id',$enom->server_id)->sole();
 $rows=array_column([...Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($enomAccount,Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::status(App\Models\Server::findOrFail($enom->server_id),$enomAccount)),
