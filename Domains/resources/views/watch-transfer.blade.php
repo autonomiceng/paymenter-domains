@@ -18,7 +18,7 @@
 </div></section>
 @elseif ($state === 'changed')
 <div class="domains-notice domains-notice--warn" role="status"><span class="domains-notice__tx">{{ $strings['watch.transfer_changed'] }}</span></div>
-<a class="domains-btn domains-btn--primary" href="{{ route('domains.watch.transfer',$id) }}">Show new price</a>
+<a class="domains-btn domains-btn--primary" href="{{ route('domains.watch.transfer',$id) }}">Check again</a>
 @elseif ($state === 'unavailable' || !$canCheck)
 <div class="domains-notice domains-notice--warn" role="status"><span class="domains-notice__tx">{{ $strings['watch.transfer_unavailable'] }}</span></div>
 @else
