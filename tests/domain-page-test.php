@@ -220,5 +220,9 @@ same(1,$dom->query('//section[@id="history"]//a[@href="/invoices/7"][.="Renewal 
 
 // Every help popover the page uses has an anchor.
 foreach(['nameservers','dns','glue','ds','lock','privacy','auth_code_email','contacts','auto-renew']as$id){expect(isset(OwnerHelp::SECTIONS[$id]),'Help section: '.$id);}
+expect(str_contains($html, '.domains .domains-rows > .domains-row { position: relative;'), 'Help popovers anchor to the full managed row');
+expect(str_contains($html, '.domains .domains-card > div { position: relative;'), 'Card help anchors to the full card entry');
 
+expect(str_contains($html, '.domains .domains-ph { position: relative;'), 'Status help anchors to the full page header');
+expect(preg_match('/\\.domains \\.domains-help-pop \\{[^}]*white-space: normal;/s',$html)===1, 'Card help resets inherited label nowrap');
 $nativeSuccessful=true;echo "Client domain page checked.\n";

@@ -404,7 +404,7 @@
 .domains .domains-help-btn { display: inline-grid; place-items: center; inline-size: 1.5rem; block-size: 1.5rem; flex: none; border: 1px solid var(--e-line); border-radius: 999px; background: transparent; color: var(--e-muted); font-size: .8125rem; font-weight: 700; line-height: 1; cursor: help; }
 .domains .domains-help-btn:hover, .domains .domains-help-btn[aria-expanded="true"] { color: var(--e-fg); border-color: var(--e-accent); }
 .domains .domains-help-btn:focus-visible { outline: 2px solid var(--e-accent); outline-offset: 2px; }
-.domains .domains-help-pop { display: none; box-sizing: border-box; position: absolute; z-index: 20; top: 100%; left: 0; margin-top: .375rem; inline-size: max-content; max-inline-size: min(22rem, 100%); padding: .625rem .75rem; border: 1px solid var(--e-line); border-radius: .5rem; background: var(--e-panel); color: var(--e-fg); box-shadow: 0 .5rem 1.5rem rgb(0 0 0 / .25); font-size: .875rem; font-weight: 400; line-height: 1.375rem; }
+.domains .domains-help-pop { white-space: normal; display: none; box-sizing: border-box; position: absolute; z-index: 20; top: 100%; left: 0; margin-top: .375rem; inline-size: max-content; max-inline-size: min(22rem, 100%); padding: .625rem .75rem; border: 1px solid var(--e-line); border-radius: .5rem; background: var(--e-panel); color: var(--e-fg); box-shadow: 0 .5rem 1.5rem rgb(0 0 0 / .25); font-size: .875rem; font-weight: 400; line-height: 1.375rem; }
 .domains .domains-help[data-open] .domains-help-pop, .domains .domains-help:not([data-ready]):is(:hover, :focus-within) .domains-help-pop { display: block; }
 @media (prefers-reduced-motion: no-preference) { .domains .domains-help[data-open] .domains-help-pop { animation: domains-confirm-in .12s ease-out; } }
 .domains .domains-help-toc { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin-top: .5rem; }
@@ -419,7 +419,7 @@
 .domains .domains-transfer { max-width: 36rem; }
 .domains .domains-crumb a:hover { color: var(--e-fg); }
 .domains .domains-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.domains .domains-ph { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-bottom: 1.5rem; }
+.domains .domains-ph { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-bottom: 1.5rem; }
 .domains .domains-ph__sub { flex-basis: 100%; margin: -.5rem 0 0; color: var(--e-muted); font-size: .875rem; }
 .domains h1.domains-mono { font-size: 1.75rem; line-height: 1.2; font-weight: 600; overflow-wrap: anywhere; }
 .domains .domains-ph ~ .domains-notice { align-items: center; margin-bottom: 1.5rem; }
@@ -430,7 +430,7 @@
 .domains .domains-panel__h h2, .domains .domains-card, .domains .domains-card dd { margin: 0; }
 .domains .domains-rows { list-style: none; margin: 0; padding: 0; }
 .domains .domains-panel__b { padding: 1rem 1.25rem; }
-.domains .domains-rows > .domains-row { display: grid; grid-template-columns: 11.25rem minmax(0, 1fr) auto; gap: 1rem; align-items: center; padding: .875rem 1.25rem; border-bottom: 1px solid var(--e-line); }
+.domains .domains-rows > .domains-row { position: relative; display: grid; grid-template-columns: 11.25rem minmax(0, 1fr) auto; gap: 1rem; align-items: center; padding: .875rem 1.25rem; border-bottom: 1px solid var(--e-line); }
 .domains .domains-rows > .domains-row:last-child { border-bottom: 0; }
 .domains .domains-row > form { display: contents; }
 .domains .domains-row > dialog, .domains .domains-row > form > dialog { grid-column: 1 / -1; }
@@ -440,7 +440,7 @@
 .domains .domains-sub { display: block; margin-top: .1875rem; font-size: .75rem; font-weight: 400; color: var(--e-muted); }
 .domains .domains-linkbtn { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
 .domains .domains-inline { display: inline; margin: 0; }
-.domains .domains-card > div { display: flex; justify-content: space-between; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid var(--e-line); }
+.domains .domains-card > div { position: relative; display: flex; justify-content: space-between; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid var(--e-line); }
 .domains .domains-card > div:last-child { border-bottom: 0; }
 .domains .domains-card dt { display: inline-flex; align-items: center; gap: .375rem; font-size: .8125rem; font-weight: 500; color: var(--e-muted); }
 .domains .domains-card dd { min-width: 0; text-align: right; font-weight: 500; }

@@ -40,6 +40,7 @@ $cases=[
     'pending'=>[$domain('pending-transfer.example',['status'=>'Pending transfer','tone'=>'info','renewal'=>'','expiry'=>null,'management'=>[],'renewNow'=>[],'autoRenew'=>[],'progress'=>[['label'=>'Transfer','state'=>'In progress']],'history'=>[],
         'actions'=>['show'=>'/domains/1','code'=>'/domains/1/transfer-code'],'transfer'=>['open'=>true,'received'=>false,'phase'=>'editing']]),['expiryWaits'=>'transfer','renewalDueAt'=>null]],
 ];
+$cases['saved-auth-code']=[new OwnedDomain(...[...get_object_vars($cases['pending'][0]),'name'=>'saved-code.example','transfer'=>['open'=>true,'received'=>true,'phase'=>'editing']]),$cases['pending'][1]];
 // Paymenter default theme colours (themes/default/views/layouts/colors.blade.php), so both modes read as they do in the client area.
 $colors=':root{--color-primary:229 100% 64%;--color-neutral:220 25% 85%;--color-base:0 0% 0%;--color-muted:0 0% 40%;--color-success:142 71% 45%;--color-error:0 75% 60%;--color-warning:25 95% 53%;--color-info:210 100% 60%;--color-background:100 100% 100%;--color-background-secondary:0 0% 97%}'
     .'.dark{--color-neutral:0 0% 17%;--color-base:100 100% 100%;--color-muted:220 0% 53%;--color-background:240 18% 9%;--color-background-secondary:240 13% 11%}';
