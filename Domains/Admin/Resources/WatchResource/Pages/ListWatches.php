@@ -5,7 +5,6 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pag
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\{Callout,EmbeddedTable,RenderHook};
 use Filament\Schemas\Schema;
-use Filament\Tables\Table;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
@@ -27,18 +26,11 @@ class ListWatches extends ListRecords
     /** Request-scoped maintenance notice; false until read. */
     protected array|false|null $notice=false;
     private function notice(): ?array{if($this->notice===false){$this->notice=WatchMaintenance::notice(app(WatchWork::class)->status());}return $this->notice;}
-    /** Monitoring off (the only warning notice) with nothing monitored: the empty state says so instead of a notice. */
-    private function offAndEmpty(): bool{return ($this->notice()['tone']??null)==='warning'&&!WatchName::query()->exists();}
-    public function table(Table $table): Table
-    {
-        $table=parent::table($table);
-        return $this->offAndEmpty()?$table->emptyStateHeading($this->notice()['text']):$table;
-    }
     public function content(Schema $schema): Schema
     {
         $notice=$this->notice();
-        if(!$notice||$this->offAndEmpty()){return parent::content($schema);}
-        $url=match($notice['action']){'settings'=>WatchResource::getUrl('settings'),'failed_jobs'=>self::failedJobs(),default=>null};
+        if(!$notice){return parent::content($schema);}
+        $url=match($notice['action']){'settings'=>MonitoringSettings::canAccess()?WatchResource::getUrl('settings'):null,'failed_jobs'=>self::failedJobs(),default=>null};
         $button=$url?view('filament::components.button.index',['tag'=>'a','href'=>$url,'color'=>'gray','size'=>'sm','slot'=>$notice['action']==='settings'?'Open Settings':'Open Failed jobs'])->render():null;
         return $schema->components([Callout::make($notice['text'])->status($notice['tone'])->footer($button?new HtmlString($button):null)->columnSpanFull(),
             $this->getTabsContentComponent(),RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_BEFORE),

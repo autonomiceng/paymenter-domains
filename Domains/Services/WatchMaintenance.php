@@ -69,7 +69,7 @@ final class WatchMaintenance
             return ['text'=>implode(' and ',$names).(count($names)>1||$names[0]!=='Domain discovery'?' have':' has').' failed since '.$since.'.','tone'=>'danger','action'=>$action];
         }
         return match($health['reason']) {
-            'disabled'=>['text'=>'Domain monitoring is off on this site.','tone'=>'warning','action'=>null],
+            'disabled'=>['text'=>'Domain monitoring is off. Turn it on in Settings.','tone'=>'warning','action'=>'settings'],
             'dispatch_overdue'=>['text'=>'Monitoring checks have not run since '.$since.'.','tone'=>'danger','action'=>'failed_jobs'],
             default=>null,
         };

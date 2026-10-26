@@ -76,7 +76,7 @@ $GLOBALS['domainsTestCurlMissing']=false;
 $since=1800000000;$at='Jan 15, 2027 08:00 UTC';
 same(null,WatchMaintenance::notice(['outage'=>false,'reason'=>'waiting','since'=>null]),'Waiting has no notice');
 same(null,WatchMaintenance::notice(['outage'=>false,'reason'=>'current','since'=>$since]),'Current has no notice');
-same(['text'=>'Domain monitoring is off on this site.','tone'=>'warning','action'=>null],WatchMaintenance::notice(['outage'=>false,'reason'=>'disabled','since'=>null]),'Disabled');
+same(['text'=>'Domain monitoring is off. Turn it on in Settings.','tone'=>'warning','action'=>'settings'],WatchMaintenance::notice(['outage'=>false,'reason'=>'disabled','since'=>null]),'Disabled');
 same(['text'=>'Monitoring checks have not run since '.$at.'.','tone'=>'danger','action'=>'failed_jobs'],WatchMaintenance::notice(['outage'=>true,'reason'=>'dispatch_overdue','since'=>$since]),'Overdue');
 same(['text'=>'Expiry checks have failed since '.$at.'.','tone'=>'danger','action'=>null],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'registry','families'=>['registry'],'since'=>$since]),'Expiry checks');
 same(['text'=>'DNS checks have failed since '.$at.'.','tone'=>'danger','action'=>'settings'],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'watch_dns','families'=>['watch_dns','managed_dns'],'since'=>$since]),'DNS checks named once');
@@ -94,4 +94,16 @@ $manager->role->update(['permissions'=>[...$manager->role->permissions,'admin.fa
 $overdue=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertSee('Open Failed jobs')->assertDontSee('Open Settings')->assertCanSeeTableRecords([$watch]);
 $text=html_entity_decode(strip_tags($overdue->html()));expect(!str_contains($text,'—'),'No em dash');foreach(['unavailable','Public domain checks','scheduler'] as $word){expect(stripos($text,$word)===false,'No "'.$word.'" on the list');}
 config(['queue.connections.database.retry_after'=>60]);Livewire::actingAs($manager)->test(ListWatches::class)->assertDontSee('Queue timeout too short')->assertDontSee('retry_after');config(['queue.connections.database.retry_after'=>180]);
+// Disabled monitoring has the same permitted Settings action with or without rows.
+app()->instance(WatchWork::class,new WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),false));
+foreach([false,true] as $empty){
+    if($empty){DB::beginTransaction();DB::table('domains_watch_names')->delete();}
+    foreach([$viewer,$manager] as $actor){
+        $off=Livewire::actingAs($actor)->test(ListWatches::class)->assertSuccessful()->assertSee('Domain monitoring is off. Turn it on in Settings.')->assertSee('Open Settings');
+        $once($off,'Domain monitoring is off. Turn it on in Settings.');
+        $doc=new DOMDocument();@$doc->loadHTML($off->html());$dom=new DOMXPath($doc);same(1,$dom->query('//a[@href="'.WatchResource::getUrl('settings').'"][contains(.,"Open Settings")]')->length,'Off notice links the permitted Settings tab');
+    }
+    if($empty){DB::rollBack();}
+}
+Livewire::actingAs(staffUser([Staff::VIEW]))->test(ListWatches::class)->assertForbidden();
 $nativeSuccessful=true;echo "Staff navigation, Settings tab and monitoring notice passed.\n";
