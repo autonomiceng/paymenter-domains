@@ -34,12 +34,14 @@ echo "Cold index queries: one ending $small, 1500 endings $large.\n";
 same($small, $large, 'Cold index stops at the first valid transfer offer');
 DB::table('domains_sales_policies')->where('tld', '!=', 'com')->delete();
 
-$parity = static function (bool $expected, string $label) use ($store): void {
+$parity = static function (bool $expected, string $label) use ($store, $measure): void {
     Cache::flush();
     same($expected, $store->hasTransferOffers(), $label.' cold existence');
     $rows = $store->endings();
     same($expected, collect($rows)->contains(fn ($row) => $row['transfer'] !== null), $label.' full catalogue');
-    same($expected, $store->hasTransferOffers(), $label.' warm existence');
+    [$warm, $queries] = $measure(fn () => $store->hasTransferOffers());
+    same($expected, $warm, $label.' warm existence');
+    same(0, $queries, $label.' warm existence is query-free');
 };
 $parity(true, 'Test account');
 [$offered, $queries] = $measure(fn () => $store->hasTransferOffers());
@@ -54,6 +56,12 @@ $parity(false, 'No transfer stock');
 $product->update(['stock' => null]);
 same(false, $store->hasTransferOffers(), 'Warm negative survives native restoration within TTL');
 $clock->instant = $now->modify('+60 seconds'); $parity(true, 'Restored stock');
+// A separate Boolean cache must not disagree with endings() when its full projection is cold.
+Cache::flush(); $product->update(['stock' => 0]);
+same(false, $store->hasTransferOffers(), 'Cold negative without a full projection');
+$product->update(['stock' => null]);
+same(true, $store->hasTransferOffers(), 'Cold restoration cannot reuse a separate negative cache');
+same(true, collect($store->endings())->contains(fn ($row) => $row['transfer'] !== null), 'Cold restored catalogue agrees');
 // A writer must bypass committed rows and must not publish its temporary result.
 DB::beginTransaction();
 DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['enabled' => false]);
