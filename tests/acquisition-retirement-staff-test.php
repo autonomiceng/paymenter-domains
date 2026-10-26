@@ -76,5 +76,17 @@ $paid=$new(placeholderComFixtureName('unpaid-refusal-placeholder.com'));Auth::lo
 $refusal=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$paid->domain_id])->mountAction('retire_unpaid');
 $refusal->setActionData(['reason'=>'Paid modal must refuse'])->callMountedAction()->assertNotified("Couldn't cancel order");
 same($paid->domain->domain,$paid->domain->fresh()->reservation_name,'Paid modal retains name');
+// Both unpaid acquisition actions explain registrar evidence and other requests without blaming one cause.
+foreach(['register','transfer'] as $action){foreach(['provider','sibling'] as $cause){
+    $op=$new(placeholderComFixtureName('unpaid-modal-'.$action.'-'.$cause.'-placeholder.com'),paid:false,action:$action);
+    if($cause==='provider'){$op->domain->update(['provider_order_id'=>'synthetic-provider']);}
+    else{Operation::create(['domain_id'=>$op->domain_id,'service_id'=>$op->service_id,'server_id'=>$op->server_id,'registrar_key'=>$op->registrar_key,'account_fingerprint'=>$op->account_fingerprint,'authority_generation'=>1,'operation_key'=>'modal-other:'.$op->id,'action'=>'renew','term'=>1,'state'=>'queued','amount'=>'1.00','currency'=>'USD']);}
+    $invoice=App\Models\Invoice::findOrFail($op->invoice_id)->getRawOriginal();$reservation=$op->domain->fresh()->reservation_name;
+    Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$op->domain_id])->mountAction('retire_unpaid')->assertActionMounted('retire_unpaid')
+        ->setActionData(['reason'=>'Review refused unpaid cancellation'])->callMountedAction()->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't cancel order")
+            ->body('Cannot cancel: review the order status, registrar requests and registrar evidence.'));
+    same($reservation,$op->domain->fresh()->reservation_name,$action.' '.$cause.' keeps the reservation');
+    same($invoice,App\Models\Invoice::findOrFail($op->invoice_id)->getRawOriginal(),$action.' '.$cause.' keeps the invoice');
+}}
 $viewOnly=staffUser(['admin.domains.view']);Livewire\Livewire::actingAs($viewOnly)->test($pageClass,['record'=>$paid->domain_id])->assertActionDoesNotExist('retire_unpaid');
 echo "Unpaid retirement staff review, audit, late money and modals passed.\n";$nativeSuccessful=true;
