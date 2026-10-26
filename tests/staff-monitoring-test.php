@@ -213,9 +213,16 @@ $checkExpiry=static function(string $case,array $filters,array $expectedIds,bool
     $instance=$page->instance();
     // Livewire drops protected scan state between requests. Read the indicator before resolving records.
     if(property_exists($instance,'expiryCapped')){(new ReflectionProperty(ListWatches::class,'expiryCapped'))->setValue($instance,null);}
+    if(property_exists($instance,'expiryScans')){(new ReflectionProperty(ListWatches::class,'expiryScans'))->setValue($instance,[]);}
+    DB::flushQueryLog();DB::enableQueryLog();
     $indicators=$filter($page,'expiry')->getIndicators();expect(count($indicators)===1,'One actual expiry indicator for '.$case);
     $actual=(string)$indicators[0]->getLabel();$expected='Expires within 30 days'.($capped?' (first 1,000 domains)':'');
+    $instance->getTableRecords();
     $actualIds=$instance->getFilteredTableQuery()->orderBy('id')->pluck('id')->all();
+    $instance->getFilteredTableQuery();
+    $scans=array_filter(DB::getQueryLog(),static fn($q)=>str_contains($q['query'],'max(id)')&&str_contains($q['query'],'domains_watch_registry'));
+    DB::disableQueryLog();
+    same(1,count($scans),'Indicator and repeated record queries share one expiry scan: '.$case);
     echo 'Expiry indicator probe '.$case.': '.json_encode(['expected'=>$expected,'actual'=>$actual,'matches'=>count($actualIds)],JSON_THROW_ON_ERROR)."\n";
     if($actual!==$expected){$indicatorErrors[]=$case.': expected '.$expected.'; got '.$actual;}
     sort($expectedIds);sort($actualIds);if($actualIds!==$expectedIds){$indicatorErrors[]=$case.': exact expiry matches differ (expected '.json_encode($expectedIds).'; got '.json_encode($actualIds).')';}
@@ -252,6 +259,22 @@ $checkExpiry('empty customer and status intersection',['customer'=>['customer'=>
 // A warning is still needed when the extra candidates are stopped, with few active watches globally.
 DB::table('domains_watch_names')->whereIn('id',$nonfactIds)->update(['state'=>'retired']);
 $checkExpiry('few active watches still truncate historical facts',[],$nearIds,true);
+// Reusing one component must still distinguish intervals and incoming filter values.
+$cached=new ListWatches;$scope=static fn(int $owner)=>WatchName::where('user_id',$owner);
+foreach([7,30,90] as $days){
+    same([(int)$overflow],$cached->expiryQuery($scope((int)$other->id),$days)->pluck('id')->all(),'Expiry cache keeps interval '.$days.' scoped to the requested customer');
+}
+$ownMatches=$cached->expiryQuery($scope((int)$uid),30)->orderBy('id')->pluck('id')->all();
+same($nearIds,$ownMatches,'Different customer bindings retain their own expiry matches: '.json_encode($ownMatches));
+same([], $cached->expiryQuery($scope(-1),30)->pluck('id')->all(),'Different customer bindings cannot borrow cached matches');
+$intervalSeed=(int)$linkedCandidate->id;
+DB::table('domains_watch_registry')->insert([...$near,'watch_id'=>$intervalSeed,'facts'=>Crypt::encryptString(json_encode([...$registryFacts,'expiry'=>gmdate('Y-m-d',time()+60*86400)],JSON_THROW_ON_ERROR))]);
+$fresh=new ListWatches;$only=static fn()=>WatchName::whereKey($intervalSeed);
+same([],$fresh->expiryQuery($only(),7)->pluck('id')->all(),'Seven-day scan excludes a sixty-day expiry');
+same([],$fresh->expiryQuery($only(),30)->pluck('id')->all(),'Thirty-day scan excludes a sixty-day expiry');
+same([$intervalSeed],$fresh->expiryQuery($only(),90)->pluck('id')->all(),'Ninety-day scan does not reuse a shorter interval');
+DB::table('domains_watch_registry')->insert([...$near,'watch_id'=>$intervalSeed]);
+same([$intervalSeed],(new ListWatches)->expiryQuery($only(),7)->pluck('id')->all(),'A new request rechecks changed expiry facts');
 DB::rollBack();
 expect($indicatorErrors===[],"Expiry indicator regressions:\n".implode("\n",$indicatorErrors));
 

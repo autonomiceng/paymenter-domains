@@ -7,7 +7,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Support\Enums\FontFamily;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\HtmlString;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag,WatchReadResource,WatchQueries,WatchFacts,WatchFindings};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag,WatchReadResource,WatchFacts,WatchFindings};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Filament\Navigation\NavigationItem;
 use Filament\Pages\Enums\SubNavigationPosition;
@@ -62,7 +62,7 @@ class WatchResource extends WatchReadResource
             SelectFilter::make('expected_dns')->label('Expected nameservers')->options($who),
             SelectFilter::make('observed')->label('Nameservers')->options($who)->query(fn(Builder $query,array $data)=>isset($data['value'])?$query->whereHas('delegation',fn($query)=>$query->where('dns',$data['value'])):$query),
             SelectFilter::make('product')->label('Hosting product')->options(fn()=>WatchProductMap::with('product')->get()->mapWithKeys(fn($m)=>[$m->product_id=>$m->product?->name??'Product #'.$m->product_id])->all())->query(fn(Builder $query,array $data)=>isset($data['value'])?$query->whereHas('sources',fn($query)=>$query->whereIn('map_id',WatchProductMap::where('product_id',$data['value'])->select('id'))):$query),
-            SelectFilter::make('expiry')->label('Expires within')->options(['7'=>'7 days','30'=>'30 days','90'=>'90 days'])->query(fn(Builder $query,array $data,$livewire)=>WatchQueries::expiry($query,(int)($data['value']??0),fn(bool $capped)=>$livewire->recordExpiryScan($capped)))
+            SelectFilter::make('expiry')->label('Expires within')->options(['7'=>'7 days','30'=>'30 days','90'=>'90 days'])->query(fn(Builder $query,array $data,$livewire)=>$livewire->expiryQuery($query,(int)($data['value']??0)))
                 ->indicateUsing(fn(array $data,$livewire)=>in_array($data['value']??null,['7','30','90'],true)?'Expires within '.$data['value'].' days'.($livewire->expiryScanCapped()?' (first 1,000 domains)':''):null),
         ])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->defaultSort('canonical_name')->paginated([25,50])->defaultPaginationPageOption(25)->emptyStateHeading('No monitored domains');
     }

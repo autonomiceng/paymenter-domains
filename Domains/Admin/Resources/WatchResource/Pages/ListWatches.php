@@ -7,10 +7,11 @@ use Filament\Schemas\Components\{Callout,EmbeddedTable,RenderHook};
 use Filament\Schemas\Schema;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
+use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFindings;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFindings,WatchQueries};
 use Paymenter\Extensions\Servers\Domains\Models\WatchName;
-use Paymenter\Extensions\Servers\Domains\Services\{WatchMaintenance,WatchWork};
+use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites,WatchMaintenance,WatchWork};
 class ListWatches extends ListRecords
 {
     protected static string $resource=WatchResource::class;
@@ -19,6 +20,8 @@ class ListWatches extends ListRecords
     protected array $status=[];
     /** Overflow of the current expiry scan; protected, so never part of the Livewire snapshot. */
     protected ?bool $expiryCapped=null;
+    /** Request-scoped scans keyed by interval and incoming query, including filter bindings. */
+    protected array $expiryScans=[];
     public function getTitle(): string{return 'Domain monitoring';}
     public function getBreadcrumbs(): array{return [];}
     public function getSubheading(): ?string{return null;}
@@ -44,7 +47,15 @@ class ListWatches extends ListRecords
     }
     /** @return list<int> */
     public function statusIds(string $status): array{return $this->status[$status]??=WatchFindings::statusIds($status);}
-    public function recordExpiryScan(bool $capped): void{$this->expiryCapped=$capped;}
+    public function expiryQuery(Builder $query,int $days): Builder
+    {
+        abort_unless(Staff::can(StaffWatchWrites::VIEW),403);
+        if(!in_array($days,[7,30,90],true)){return $query;}
+        $key=hash('sha256',serialize([$days,$query->toSql(),$query->getBindings()]));
+        $scan=$this->expiryScans[$key]??=WatchQueries::expiryScan($query,$days);
+        $this->expiryCapped=$scan['capped'];
+        return $query->whereIn('id',$scan['ids']);
+    }
     /** Indicators can render before records; applying the filters records the scan without reading indicators. */
     public function expiryScanCapped(): bool
     {
