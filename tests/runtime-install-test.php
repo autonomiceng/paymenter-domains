@@ -20,6 +20,20 @@ DB::table('migrations')->insert((array) $pointerMigration);
 same(7,DB::table('migrations')->where('migration','like','2026_10_18_%')->count(),'All extension migrations recorded');
 $receipts=\Paymenter\Extensions\Servers\Domains\Services\StaffAlertSchema::TABLE;
 DB::table($receipts)->insert(['delivery_key'=>str_repeat('a',64),'user_id'=>1,'notification_id'=>2]);
+// Each retained receipt refusal uses its own restored fixture.
+$receiptSchema=\Paymenter\Extensions\Servers\Domains\Services\StaffAlertSchema::class;
+$receiptRecord=DB::table('migrations')->where('migration',$receiptSchema::MIGRATION)->sole();
+DB::table('migrations')->where('id',$receiptRecord->id)->delete();
+$receiptRefused=false;
+try{$entry->installed();}catch(DomainException $e){same('Retained holding storage has no installation record.',$e->getMessage(),'Receipt history refusal is specific');$receiptRefused=true;}
+expect($receiptRefused,'Receipt storage without migration history refuses installation');
+DB::table('migrations')->insert((array)$receiptRecord);
+Schema::table($receipts,fn($b)=>$b->dropColumn('notification_id'));
+$receiptRefused=false;
+try{$entry->installed();}catch(RuntimeException $e){same('Retained Domains schema mismatch: '.$receipts,$e->getMessage(),'Receipt schema refusal is specific');$receiptRefused=true;}
+expect($receiptRefused,'Recorded receipt storage with a missing column refuses installation');
+Schema::drop($receipts);$receiptSchema::install();
+DB::table($receipts)->insert(['delivery_key'=>str_repeat('a',64),'user_id'=>1,'notification_id'=>2]);
 $entry->upgraded('0.0.1');$entry->uninstalled();$entry->installed();
 $receiptMigration=require dirname(__DIR__).'/Domains/database/migrations/2026_10_24_000039_create_staff_alert_receipts.php';$receiptMigration->down();
 same(2,(int)DB::table($receipts)->sole()->notification_id,'Install, upgrade, uninstall and rollback retain recipient receipts');
