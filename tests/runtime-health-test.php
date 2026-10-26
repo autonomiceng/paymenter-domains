@@ -59,4 +59,19 @@ $clock->instant=$clock->now()->modify('+60 seconds');$runtime->tick();
 same((int)end($batch)->id,(int)DB::table('domains_runtime_turns')->where('server_id',$server)->value('tld_cursor'),'Repair advances the retained full batch');
 foreach($batch as $t){expect($native->product($t,'register')!==null,'Repair publishes every retained TLD');}
 same(2,$independent,'Independent producer advances through repair');
+// A per-TLD publication failure must retry before moving past a full batch.
+$cursor=(int)end($batch)->id;$next=[];
+for($i=0;$i<25;$i++){$t=$tlds[0]->replicate();$t->tld='retry'.$i.'.test';$t->save();$next[]=$t;}
+$failed=$next[12];$rejectPublication=true;$rejected=0;
+\App\Models\Product::creating(static function($product)use($failed,&$rejectPublication,&$rejected):void{
+    if($rejectPublication&&$product->slug===\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::slug($failed,'register')){$rejected++;throw new RuntimeException('Synthetic publication failure');}
+});
+$clock->instant=$clock->now()->modify('+60 seconds');$runtime->tick();
+same(1,$rejected,'The synthetic failure reaches one TLD publication');
+same($cursor,(int)DB::table('domains_runtime_turns')->where('server_id',$server)->value('tld_cursor'),'One failed TLD retains the full batch cursor');
+expect($native->product($next[24],'register')!==null,'A failed TLD does not stop later publications in the batch');
+expect((bool)array_filter($failures,static fn($f)=>$f['producer']==='publication'&&$f['row_id']===(int)$failed->id),'Failed publication retains its TLD diagnostic');
+$rejectPublication=false;$clock->instant=$clock->now()->modify('+60 seconds');$runtime->tick();
+same((int)$next[24]->id,(int)DB::table('domains_runtime_turns')->where('server_id',$server)->value('tld_cursor'),'Successful retry advances the full batch');
+foreach($next as $t){expect($native->product($t,'register')!==null,'Retry publishes every TLD in the retained batch');}
 echo "Runtime shared interactive/background request budget passed.\n";$nativeSuccessful=true;
