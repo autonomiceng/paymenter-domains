@@ -32,6 +32,31 @@ DB::table('domains_accounts')->where('server_id',$active->server_id)->update(['p
 same(['Synthetic registrar','Enom · Test'],[$f['Registrar']['value'],$f['Registrar']['sub']],'Registrar account name and registrar sub-line');
 same(['Yes','On','Off','Off'],[$f['In registrar account']['value'],$f['Transfer lock']['value'],$f['WHOIS privacy']['value'],$f['Registrar auto-renew']['value']],'Synced registrar facts');
 same([null,'Not synced yet'],[$f['Last sync']['value'],$f['Last sync']['sub']],'Never synced is Missing with its cause');
+// Registrar facts and ownership holds belong to the current assignment only.
+$factObservation=$active->fresh()->observation;
+$stable=DomainFacts::for($active->fresh());
+foreach (['name'=>'other.example.com','generation'=>2,'account_fingerprint'=>str_repeat('f',64),'legacy'=>null,'malformed'=>'invalid'] as $field=>$bad) {
+    $saved=$factObservation;
+    if ($field==='legacy') { unset($saved['facts']['generation'],$saved['facts']['account_fingerprint']); }
+    elseif ($field==='malformed') { $saved['facts']=$bad; }
+    else { $saved['facts'][$field]=$bad; }
+    $active->fresh()->update(['observation'=>$saved]);$rejected=DomainFacts::for($active->fresh());
+    foreach (['In registrar account','Registrar auto-renew'] as $label) {
+        same([null,'Not synced yet'],[$rejected[$label]['value'],$rejected[$label]['sub']],'Reject registrar facts with '.$field.' for '.$label);
+    }
+    foreach (['Expires',...DomainFacts::BILLING] as $label) { same($stable[$label]??null,$rejected[$label]??null,'Identity rejection preserves '.$label); }
+    same(null,$rejected['Transfer lock']['value'],'Lock retains its existing identity check');
+    same(null,$rejected['WHOIS privacy']['value'],'Privacy retains its existing identity check');
+}
+$active->fresh()->update(['observation'=>$factObservation]);
+ObservationRecords::hold($active->fresh(),'ownership_drift',new DateTimeImmutable('2026-10-18T12:00:00Z'));
+same('No',$value($active,'In registrar account'),'Current ownership hold overrides matched owned facts');
+$heldFacts=$active->fresh()->observation;
+foreach (['name'=>'other.example.com','generation'=>2,'fingerprint'=>str_repeat('f',64)] as $field=>$bad) {
+    $saved=$heldFacts;$saved['record_hold']['identity'][$field]=$bad;$active->fresh()->update(['observation'=>$saved]);
+    same(['Yes','Off'],[$value($active,'In registrar account'),$value($active,'Registrar auto-renew')],'Stale ownership hold cannot override current facts: '.$field);
+}
+$active->fresh()->update(['observation'=>$factObservation]);
 // Nameservers: the stored registrar readback the customer page shows, one per line in order. No extra queries.
 $queries=static function(Domain $d):int{DB::enableQueryLog();DB::flushQueryLog();DomainFacts::for($d);$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
 $before=$queries($active->fresh());

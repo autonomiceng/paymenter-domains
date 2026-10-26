@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, OperationResource};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar, DomainStates, ObservationRecords, ObservationWork, OwnedDomains, RenewalReplacements, RenewalStop};
+use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar, DomainStates, ObservationProjection, ObservationRecords, ObservationWork, OwnedDomains, RenewalReplacements, RenewalStop};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Request-local allowlisted projection. Never cache across actors, call providers or serialize models.
  * Each fact is ['value'=>string|list<string>|null,'sub'=>?string,'url'=>?string,'tone'=>?string,'help'=>?string,'demo'=>bool].
@@ -69,9 +69,10 @@ final class DomainFacts
             url:self::url(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::canAccess()?\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl():null),
             demo:DemoData::is($account)) : self::fact(null,sub:$account?'Unknown registrar':'Registrar account not found');
         if ($registered && $observation!==null) {
-            $facts=$observation['facts']??[];
+            $facts=$observation['facts']??null;
+            $facts=is_array($facts)&&ObservationProjection::matches($d,$facts)?$facts:[];
             $unread=self::unread($d,$sync);
-            $f['In registrar account']=self::fact(($observation['record_hold']['reason']??null)==='ownership_drift'?'No':self::flag($facts['owned']??null,'Yes','No'),sub:isset($facts['owned'])?null:$unread);
+            $f['In registrar account']=self::fact(ObservationRecords::held($d)&&($observation['record_hold']['reason']??null)==='ownership_drift'?'No':self::flag($facts['owned']??null,'Yes','No'),sub:isset($facts['owned'])?null:$unread);
             $nameservers=OwnedDomains::storedNameservers($d);
             $f['Nameservers']=self::fact($nameservers,sub:$nameservers?null:$unread,demo:$nameservers&&$account&&DemoData::is($account));
             $locked=OwnedDomains::storedFlag($d,'lock','locked');
