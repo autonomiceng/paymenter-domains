@@ -69,6 +69,9 @@ same(0,$dom->query('//*[contains(@class,"domains-row__a")]//*[self::a or self::b
 expect(str_contains($html,'.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: underline;'),'Inline links are underlined');
 expect(str_contains($html,'.domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-linkbtn { text-decoration: none; }'),'Standalone row actions keep their link style');
 expect(str_contains($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }'),'Standalone actions have explicit no-underline hover exceptions');
+$inlineHover=strpos($html,'.domains .domains-a:hover { text-decoration: underline; }');
+$actionHover=strpos($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }');
+expect($inlineHover!==false&&$actionHover!==false&&$actionHover>$inlineHover,'Action hover exceptions follow the inline rule so equal-specificity link buttons keep no underline');
 same(['Emailed to the owner',['Email auth code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
 same(0,$dom->query('//li[@id="auto_renew_off"]')->length,'Registrar auto-renew row is staff only');
 foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records','ds'=>'dnssec','lock'=>'transfer-lock','privacy'=>'privacy','auth_code_email'=>'transfer-code']as$id=>$anchor){
