@@ -62,7 +62,7 @@ Livewire::actingAs($staff)->test(BalancesPage::class)->assertRedirect(RegistrarS
 Livewire::actingAs($staff)->test(ActivationStatus::class)->assertRedirect(RegistrarSetup::getUrl());
 Livewire::actingAs(staffUser([]))->test(RegistrarSetup::class)->assertForbidden();
 // List page.
-$list=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful()->assertSee('Registrars')->assertSee('Add registrar account')->assertSee('Accounts');
+$list=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful()->assertSee('Registrars')->assertActionDoesNotExist('add_account')->assertSee('Accounts');
 foreach(['Account','Mode','Status','Balance','Due in 30 days','Enom test account','Enom · 1 domain','NameSilo · 0 domains','Test','Active','USD 7.99','Low balance','USD 8.00',
     'Missing','Not checked yet','Add funds','Not connected','Connect','Off in Paymenter','Demo NameSilo','Demo'] as $needle){$list->assertSee($needle);}
 $html=$list->html();
@@ -72,6 +72,18 @@ foreach(['Registrar setup','Registrar balances','Server #','Unknown','Viewing us
     expect(!str_contains($html,$needle),'List never shows: '.$needle);}
 $missing=ContactDetails::missingRequiredProperties();
 if($missing){$list->assertSee("Customers can't enter")->assertSee('Add them as custom properties.')->assertSee('Open custom properties');}
+// Native create permission and a usable route are both required.
+$creator=staffUser([Staff::VIEW,'admin.servers.create']);
+$routes=app('router')->getRoutes();$withoutCreate=new Illuminate\Routing\RouteCollection;
+$createName=\App\Admin\Resources\ServerResource::getRouteBaseName($panel).'.create';
+foreach($routes as $route){if($route->getName()!==$createName){$withoutCreate->add($route);}}
+app('router')->setRoutes($withoutCreate);
+Livewire::actingAs($creator)->test(RegistrarSetup::class)->assertActionDoesNotExist('add_account');
+app('router')->setRoutes($routes);
+Livewire::actingAs($creator)->test(RegistrarSetup::class)->assertActionVisible('add_account')
+    ->assertActionHasUrl('add_account',\App\Admin\Resources\ServerResource::getUrl('create'));
+$creator->role()->first()->update(['permissions'=>[Staff::VIEW]]);$creator->unsetRelation('role');
+Livewire::actingAs($creator)->test(RegistrarSetup::class)->assertActionDoesNotExist('add_account');
 // Account page.
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful();
 foreach(['Enom test account','Active','Check balance','Account','Registrar','Enom','Mode','Test','Balance','USD 7.99','Low balance','Add funds','Due in 30 days','USD 8.00',

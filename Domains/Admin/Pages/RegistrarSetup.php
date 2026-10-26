@@ -32,7 +32,11 @@ class RegistrarSetup extends Page implements HasTable
     public static function canAccess(): bool {return Staff::can();}
     public function mount(): void {Staff::requireView();}
     protected function getHeaderActions(): array
-    { return [Action::make('add_account')->label('Add registrar account')->url(self::resourceUrl(\App\Admin\Resources\ServerResource::class,'create'))]; }
+    {
+        $resource=\App\Admin\Resources\ServerResource::class;$url=self::resourceUrl($resource,'create');
+        if($url===null||!$resource::canCreate()){return [];}
+        return [Action::make('add_account')->label('Add registrar account')->url($url)];
+    }
     public function content(Schema $schema): Schema
     {
         Staff::requireView();$components=[];
