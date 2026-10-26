@@ -69,7 +69,7 @@ class RegistrarAccount extends Page
     }
     private static function testRefusal(): string
     {
-        if (EnomTestCalls::usage()['limit']===null) { return 'Enom test call limit is not set in server config.'; }
+        if (EnomTestCalls::usage()['limit']===null) { return 'Enom test call limit is invalid. All Enom TEST requests are refused. Ask the deployment administrator to check the setting.'; }
         return EnomTestCalls::callsRemain()?"Couldn't count Enom test calls. Try again.":'Enom test daily limit reached. Try again after 00:00 UTC.';
     }
     public function content(Schema $schema): Schema

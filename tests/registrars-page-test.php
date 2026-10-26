@@ -185,8 +185,24 @@ Livewire::actingAs(staffUser([Staff::VIEW,PslPage::VIEW]))->test(RegistrarAccoun
     ->assertActionDoesNotExist(TestAction::make('psl_download')->schemaComponent('system_checks','content'))->assertActionDoesNotExist(TestAction::make('psl_source')->schemaComponent('system_checks','content'));
 DB::table(EnomTestCallSchema::TABLE)->insert(['day'=>EnomTestCalls::day(),'used'=>50]);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('50 of 50')->assertSee('Resets 00:00 UTC');
+$capAccount=Account::where('server_id',$enom->server_id)->sole();
+$capFacts=Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::class;
+same('50 of 50',$capFacts::calls($capAccount)['value'],'Absent setting uses the default cap of 50');
+config(['domains.enom_test_daily_call_cap'=>0]);same('50 of 0',$capFacts::calls($capAccount)['value'],'Zero explicitly refuses all test calls');
+$beforeCap=[DB::table('domains_operations')->count(),(array)DB::table(EnomTestCallSchema::TABLE)->sole()];
+foreach(['many',-1] as $invalidCap){
+    config(['domains.enom_test_daily_call_cap'=>$invalidCap]);
+    same('Enom test call limit is invalid. All Enom TEST requests are refused. Ask the deployment administrator to check the setting.',$capFacts::calls($capAccount)['sub'],'Invalid cap explains refusal');
+}
+same($beforeCap,[DB::table('domains_operations')->count(),(array)DB::table(EnomTestCallSchema::TABLE)->sole()],'Reading bad cap facts changes no requests or counters');
+config(['domains.enom_test_daily_call_cap'=>50]);
+Illuminate\Support\Facades\Schema::rename(EnomTestCallSchema::TABLE,'domains_test_calls_saved');
+same("Couldn't read today's call count",$capFacts::calls($capAccount)['sub'],'Unreadable counter has its own cause');
+Illuminate\Support\Facades\Schema::rename('domains_test_calls_saved',EnomTestCallSchema::TABLE);
+$liveCap=clone $capAccount;$liveCap->environment='live';same(null,$capFacts::calls($liveCap),'Live account omits the TEST cap');
+
 config(['domains.enom_test_daily_call_cap'=>'many']);
-Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Missing')->assertSee('Enom test call limit is not set in server config.');
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Missing')->assertSee('Enom test call limit is invalid. All Enom TEST requests are refused. Ask the deployment administrator to check the setting.');
 config(['domains.enom_test_daily_call_cap'=>50]);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('NameSilo test account')->assertSee('Missing')->assertSee('Not checked yet')
     ->assertSee('Add funds')->assertSeeHtml('https://ote.namesilo.com/cart/add-funds')->assertDontSee('API calls today');

@@ -66,7 +66,7 @@ final class RegistrarFacts
     {
         if ($account->registrar_key!=='enom'||$account->environment!=='test') { return null; }
         ['used'=>$used,'limit'=>$limit]=EnomTestCalls::usage();
-        if ($limit===null) { return ['value'=>null,'tone'=>null,'sub'=>'Enom test call limit is not set in server config.','help'=>null]; }
+        if ($limit===null) { return ['value'=>null,'tone'=>null,'sub'=>'Enom test call limit is invalid. All Enom TEST requests are refused. Ask the deployment administrator to check the setting.','help'=>null]; }
         if ($used===null) { return ['value'=>null,'tone'=>null,'sub'=>"Couldn't read today's call count",'help'=>null]; }
         $full=$used>=$limit;
         return ['value'=>$used.' of '.$limit,'tone'=>$full?'danger':null,'sub'=>$full?'Resets 00:00 UTC':null,
