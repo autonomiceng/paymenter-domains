@@ -49,7 +49,7 @@ same(['label'=>'For sale','tone'=>'success','reason'=>null],TldFacts::salesState
 // The detail table shares page facts for prices, sellers and holders as accounts grow.
 $detailRead=static function($grants)use($enom):array{
     DB::flushQueryLog();DB::enableQueryLog();$html=TldFacts::accountsTable($enom,$grants)->toHtml();$queries=DB::getQueryLog();DB::disableQueryLog();
-    $counts=[];foreach(['domains_prices','domains_domains','domains_sales_policies'] as $table){$counts[$table]=count(array_filter($queries,fn($q)=>str_contains($q['query'],'from "'.$table.'"')));}
+    $counts=[];foreach(['domains_prices','domains_domains','domains_sales_policies','domains_accounts'] as $table){$counts[$table]=count(array_filter($queries,fn($q)=>($table==='domains_accounts'?str_starts_with($q['query'],'select * from "domains_accounts" '):str_contains($q['query'],'from "'.$table.'"'))));}
     return [$html,$counts];
 };
 $grants=Staff::requireView();[, $twoAccounts]=$detailRead($grants);
@@ -60,7 +60,12 @@ foreach([1,2] as $i){
     $saved=$enom->getRawOriginal();unset($saved['id']);DB::table('domains_tlds')->insert([...$saved,...$binding]);
     foreach(Price::where('server_id',$enom->server_id)->get() as $price){$saved=$price->getRawOriginal();unset($saved['id']);DB::table('domains_prices')->insert([...$saved,...$binding]);}
 }
-[$detail,$fourAccounts]=$detailRead($grants);same($twoAccounts,$fourAccounts,'Price, holder and seller reads stay fixed across detail accounts');
+[$detail,$fourAccounts]=$detailRead($grants);
+// Default-rule validation checks one account per server, in addition to the shared account read.
+same(3,$twoAccounts['domains_accounts'],'Two accounts use one shared read and two default-rule checks');
+same(5,$fourAccounts['domains_accounts'],'Four accounts use one shared read and four default-rule checks, with no demo-tag reads');
+unset($twoAccounts['domains_accounts'],$fourAccounts['domains_accounts']);
+same($twoAccounts,$fourAccounts,'Price, holder and seller reads stay fixed across detail accounts');
 foreach($fourAccounts as $table=>$count){same(1,$count,'One detail query for '.$table);}
 expect(str_contains($detail,'&lt;Extra &amp; 1&gt;'),'Account names remain escaped');
 $dom=new DOMDocument();@$dom->loadHTML($detail);$xpath=new DOMXPath($dom);$rendered=$xpath->query('//tbody/tr');

@@ -59,7 +59,7 @@ final class TldFacts
             if($t->use_default_rule){$hash=$defaults[(int)$t->server_id];}else{try{$hash=self::ruleHash($rules->rule($t));}catch(\Throwable){$hash=null;}}
             $seller=isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null;
             $out[$t->id]=[...self::build($t,$grants,$accepted[(int)$t->server_id],$hash,$prices[$key($t)]??collect(),static fn():?int=>$seller),
-                'seller'=>$seller,'holders'=>(int)($holders[$key($t)]->holders??0)];
+                'seller'=>$seller,'holders'=>(int)($holders[$key($t)]->holders??0),'demo'=>DemoData::is($accounts[(int)$t->server_id]??null)];
         }
         return $out;
     }
@@ -128,7 +128,7 @@ final class TldFacts
             $fact=$facts[$row->id];$prices=$fact['prices'];
             $first=static fn(string $action)=>collect($prices)->where('action',$action)->sortBy('term')->first();
             $price=static fn(?array $p)=>$p===null?self::missing('Sync TLD prices needed'):($p['retail']===null?self::missing('Price missing'):e($p['retail']));
-            $account=e((string)$row->server?->name).(DemoData::is(Account::where('server_id',$row->server_id)->first())?' '.DemoData::tag(inline:true)->toHtml():'')
+            $account=e((string)$row->server?->name).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
                 .($fact['seller']===(int)$row->server_id?' <span style="margin-inline-start:6px;padding:1px 6px;border-radius:4px;border:1px solid currentColor;font-size:11px;opacity:.8;white-space:nowrap">New orders</span>':'');
             $html.='<tr style="border-top:1px solid rgb(127 127 127 / .2)">'.self::cell($account,false).self::cell(e(self::pricing($row)))
                 .self::cell($price($first('register'))).self::cell($price(self::renewal($prices))).self::cell($price($first('transfer')));
