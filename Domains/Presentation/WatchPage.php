@@ -10,7 +10,7 @@ final class WatchPage
     /** The one notice at the top: text, tone and an optional link that ends the sentence, or null when nothing needs doing. */
     public static function notice(DomainSummary $s, array $notices, array $portal): ?array
     {
-        $kinds = [...array_column($notices, 'kind'), ...$portal]; $keys = $s->stateKeys;
+        $kinds = $portal; $keys = $s->stateKeys;
         $expiry = $s->expiry ? DomainPage::date($s->expiry) : null;
         $days = $s->daysLeft;
         return match (true) {
