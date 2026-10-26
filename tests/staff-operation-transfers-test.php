@@ -16,6 +16,14 @@ $staff=staffUser($perms);$service=new StaffOperations($clock);
 $run=static function($op,$action)use($service,$staff,$clock){$op=$op->fresh();$key=StaffOperationReview::ticket($staff->id,$op->domain_id,$op->id,$action,StaffOperationReview::stamp($op,$op->domain),$clock);
     $service->run($staff,$op->domain_id,$op->id,$action,$key,'Reviewed exact transfer evidence');};
 $op=$newTransfer(placeholderComFixtureName('staff-saved-transfer-placeholder.com'));$op->update(['state'=>'held','safe_code'=>'staff_review_required']);
+// Obvious state/action refusals do not load a holding snapshot. The locked writer still refuses them.
+foreach([['queued','register'],['rejected','transfer'],['succeeded','renew'],['held','contacts']] as [$savedState,$savedAction]){
+    $candidate=$op->fresh();$candidate->state=$savedState;$candidate->action=$savedAction;
+    Illuminate\Support\Facades\DB::enableQueryLog();Illuminate\Support\Facades\DB::flushQueryLog();
+    $allowed=StaffOperationWrites::canRelease($candidate,$clock->now());$reads=Illuminate\Support\Facades\DB::getQueryLog();Illuminate\Support\Facades\DB::disableQueryLog();
+    same(false,$allowed,'Non-held or unsupported request cannot be released');same([],$reads,'State/action prefilter avoids holding-fact reads');
+    commerceReject(fn()=>StaffOperationWrites::requireRelease($candidate,[],$clock->now()));
+}
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('release')->assertNotified('Hold released');
 same('queued',$op->fresh()->state,'Saved-code held transfer may queue only before cutoff');
 $run($op,'hold');$clock->instant=$now->modify('+30 days');commerceReject(fn()=>$run($op,'release'));

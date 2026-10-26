@@ -27,6 +27,7 @@ final class StaffOperationWrites
     }
     public static function canRelease(Operation $op,\DateTimeImmutable $now): bool
     {
+        if($op->state!=='held'||!in_array($op->action,['register','transfer','renew'],true)){return false;}
         try {
             $l=self::releaseFacts($op);$op=$l['operations']->firstWhere('id',$op->id)??throw new \DomainException('Missing request.');$op->setRelation('domain',$l['domain']);
             StaffOperationReview::requirePermission($l['staff'],'release',$op);StaffOperationReview::requireHistory($op,'release');
