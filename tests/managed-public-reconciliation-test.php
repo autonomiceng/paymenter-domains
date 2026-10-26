@@ -23,10 +23,21 @@ $old=(array)$work;unset($old['id']);$old['generation']=0;$old['safe_code']='read
 expect($signals->enqueue($id,$uid,$now),'Current generation repaired');expect(DB::table(ManagedPublicWorkSchema::TABLE)->where('generation',0)->value('retired_at')!==null,'Prior generation retired atomically');
 DB::table(ManagedPublicWorkSchema::TABLE)->where('generation',0)->update(['retired_at'=>null]);
 $hints=$sweep->due($now);same(2,count($hints),'At most two kinds per owner');same(['delegation','points'],array_column($hints,'kind'),'No RDAP kind');
-// A permanently broken native marker must not consume both owner hints forever.
-foreach(['domains_action','domains_tld_id']as$markerKey) {
+// Synthetic duplicate query rows preserve native uniqueness while exercising the public path.
+$duplicateKey=null;
+$extraMarker=$product->settings()->where('key','domains_activation_information_initialized')->sole();
+\App\Models\Setting::retrieved(static function($setting)use(&$duplicateKey,$extraMarker):void {
+    if($duplicateKey!==null&&(int)$setting->id===(int)$extraMarker->id){$setting->key=$duplicateKey;}
+});
+// Every incomplete marker identity yields the owner's turn and remains repairable.
+foreach(['domains_action','domains_tld_id','domains_catalogue','domains_registrar']as$markerKey) {
+foreach(['missing','duplicate']as$damage){
     $marker=$product->settings()->where('key',$markerKey)->sole();$savedMarker=$marker->getRawOriginal();
-    DB::table('settings')->where('id',$marker->id)->delete();
+    if($damage==='missing'){DB::table('settings')->where('id',$marker->id)->delete();}else{$duplicateKey=$markerKey;}
+    expect(!$signals->enqueue($id,$uid,$now),'Damaged marker refuses public enrollment safely');
+    $transferWatch=DB::table('domains_watch_names')->insertGetId(['user_id'=>$uid,'canonical_name'=>$d->domain,'psl_revision'=>str_repeat('a',64),'state'=>'active','notice_preferences'=>'{}']);
+    same(null,(new \Paymenter\Extensions\Servers\Domains\Services\ManagedPublicEnrollment)->reconcile($id,$uid,$now,transferOnly:true),'Transfer-only marker damage defers without throwing');
+    DB::table('domains_watch_names')->where('id',$transferWatch)->delete();
     $second=(array)$d->fresh()->getRawOriginal();$second['id']=2000;$second['domain']='second-placeholder.com';$second['reservation_name']='second-placeholder.com';$second['sld']='second-placeholder';$second['service_id']=2000;
     DB::table('domains_domains')->insert($second);
     foreach(['delegation','points']as$kind) { $copy=(array)$work;unset($copy['id']);$copy['domain_id']=2000;$copy['kind']=$kind;DB::table(ManagedPublicWorkSchema::TABLE)->insert($copy); }
@@ -37,10 +48,21 @@ foreach(['domains_action','domains_tld_id']as$markerKey) {
     foreach(['delegation','points']as$kind) { expect(!$signals->observe($id,$uid,$kind),'Unavailable marker respects retry backoff'); }
     same([1,1],$blocked->map(fn($row)=>(int)DB::table(ManagedPublicWorkSchema::TABLE)->where('id',$row->id)->value('attempts'))->all(),'Early retry never advances failure count');
     same([2000,2000],array_column($sweep->due($now),'domain_id'),'Other holding of same owner gets next dispatch turn');
-    DB::table('settings')->insert($savedMarker);DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',2000)->delete();DB::table('domains_domains')->where('id',2000)->delete();
+    if($damage==='missing'){DB::table('settings')->insert($savedMarker);}else{$duplicateKey=null;}DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',2000)->delete();DB::table('domains_domains')->where('id',2000)->delete();
     expect($signals->enqueue($id,$uid,$now),'Restored native marker permits reconciliation');
     DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)->update(['due_at'=>$now,'backoff_until'=>null,'attempts'=>0]);
-}
+    foreach(['delegation','points']as$kind){$ticket=$signals->begin($id,$uid,$kind,$now);expect($ticket!==null,'Repaired marker restores both public work kinds');$signals->defer($ticket,$now);}
+    DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)->update(['due_at'=>$now,'backoff_until'=>null,'attempts'=>0]);
+}}
+// Wrong marker values and types remain authority changes, not repairable cardinality gaps.
+foreach(['domains_catalogue','domains_registrar']as$markerKey){foreach([['value'=>'wrong'],['type'=>'boolean'],['encrypted'=>true]]as$damage){
+    $marker=$product->settings()->where('key',$markerKey)->sole()->getRawOriginal();
+    DB::table('settings')->where('id',$marker['id'])->update($damage);
+    expect(!$signals->enqueue($id,$uid,$now),'Changed marker authority refuses enrollment');
+    same(2,DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)->whereNotNull('retired_at')->count(),'Changed marker authority retires both kinds');
+    DB::table('settings')->where('id',$marker['id'])->update($marker);
+    expect($signals->enqueue($id,$uid,$now),'Restored marker authority re-enrolls');
+}}
 $fake->answers['example.com|NS']=managedNs();expect($signals->observe($id,$uid,'delegation'),'Apex without any hosting source observed');same(['example.com|NS'],$fake->calls,'No registrar inventory or hosting lookup required');
 same(0,$sweep->sweep($now,1),'Completed pass resets daily cursor');same($now+86400,(int)DB::table(PublicDnsQuota::TABLE)->value('sweep_due_at'),'Daily revisit durable');
 same(0,$sweep->sweep($now+1),'No unbounded repeat pass');

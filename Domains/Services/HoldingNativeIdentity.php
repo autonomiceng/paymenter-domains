@@ -13,7 +13,7 @@ final class HoldingNativeIdentity
         $s = $n['service']; $p = $n['product']; $plan = $n['plan'];
         $order = $n['orders']->firstWhere('id', $s->order_id);
         $props = $n['properties']->where('key', 'domain'); $m = $n['markers'];
-        foreach (['domains_action', 'domains_tld_id'] as $key) {
+        foreach (['domains_action', 'domains_tld_id', 'domains_catalogue', 'domains_registrar'] as $key) {
             if ($m->where('key', $key)->count() !== 1) { throw new HoldingNativeMarkersUnavailable('Holding product markers changed.'); }
         }
         $action = $m->where('key', 'domains_action')->first()->value;

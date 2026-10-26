@@ -30,8 +30,8 @@ same('held', $management->fresh()->state, 'Drifted contact disposition made no m
 DB::table('orders')->where('id', $orderId)->update(['user_id' => $user->id]);
 $fund(); $holding();
 
-// Both marker identities refuse missing rows through the holding writer contract.
-foreach (['domains_action', 'domains_tld_id'] as $key) {
+// All four marker identities refuse missing rows through the holding writer contract.
+foreach (['domains_action', 'domains_tld_id', 'domains_catalogue', 'domains_registrar'] as $key) {
     $marker = $service->product->settings()->where('key', $key)->sole()->getAttributes();
     DB::table('settings')->where('id', $marker['id'])->delete();
     try {
