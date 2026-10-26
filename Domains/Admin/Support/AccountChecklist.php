@@ -35,7 +35,8 @@ final class AccountChecklist
         }
         $live=$a->environment==='live'?'live_':'test_';
         foreach(['renewal'=>['Renewals',EnomTestRenewal::class],'management'=>['DNS, nameservers and contacts',EnomTestManagement::class]] as $key=>[$label,$feature]){
-            $enabled=$binding!==null&&$a->registrar_key==='enom'&&$feature::enabled($binding);
+            if($a->registrar_key!=='enom'){$rows[]=self::row($label,'Off',null,'These controls apply to Enom accounts.');continue;}
+            $enabled=$binding!==null&&$feature::enabled($binding);
             $rows[]=!$enabled?self::row($label,'Off',null,self::SERVER_CONFIG):($feature::accepted($binding)?self::row($label,'On','success',null,$live.$key):self::row($label,'Off',null,null,$live.$key));
         }
         $billing=RenewalBillingSettings::read((int)$a->server_id);
