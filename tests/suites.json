@@ -33,7 +33,8 @@
     "tests/status-tones-test.php",
     "tests/settings-refusal-test.php",
     "tests/render-artifacts-test.php",
-    "tests/ui-docs-test.php"
+    "tests/ui-docs-test.php",
+    "tests/test_staff_docs.py"
   ],
   "native": [
     "tests/enom-curl-test.php",
