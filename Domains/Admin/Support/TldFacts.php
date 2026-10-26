@@ -116,7 +116,7 @@ final class TldFacts
     {
         $rows=self::bound(Tld::query()->where('tld',$t->tld))->with('server:id,name')->orderBy('server_id')->get();
         if($rows->isEmpty()){return new HtmlString('No prices yet');}
-        $seller=self::sellerId($t->tld);
+        $facts=self::page($rows,$grants);
         $head=['Account','Pricing','Registration','Renewal','Transfer',...($grants->costs?['Cost']:[]),'Domains'];
         $html='<div style="max-width:100%;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.875rem"><thead><tr>';
         foreach($head as $label){
@@ -125,11 +125,11 @@ final class TldFacts
         }
         $html.='</tr></thead><tbody>';
         foreach($rows as $row){
-            $prices=self::prices($row,$grants);
+            $fact=$facts[$row->id];$prices=$fact['prices'];
             $first=static fn(string $action)=>collect($prices)->where('action',$action)->sortBy('term')->first();
             $price=static fn(?array $p)=>$p===null?self::missing('Sync TLD prices needed'):($p['retail']===null?self::missing('Price missing'):e($p['retail']));
             $account=e((string)$row->server?->name).(DemoData::is(Account::where('server_id',$row->server_id)->first())?' '.DemoData::tag(inline:true)->toHtml():'')
-                .($seller===(int)$row->server_id?' <span style="margin-inline-start:6px;padding:1px 6px;border-radius:4px;border:1px solid currentColor;font-size:11px;opacity:.8;white-space:nowrap">New orders</span>':'');
+                .($fact['seller']===(int)$row->server_id?' <span style="margin-inline-start:6px;padding:1px 6px;border-radius:4px;border:1px solid currentColor;font-size:11px;opacity:.8;white-space:nowrap">New orders</span>':'');
             $html.='<tr style="border-top:1px solid rgb(127 127 127 / .2)">'.self::cell($account,false).self::cell(e(self::pricing($row)))
                 .self::cell($price($first('register'))).self::cell($price(self::renewal($prices))).self::cell($price($first('transfer')));
             if($grants->costs){
@@ -137,7 +137,7 @@ final class TldFacts
                 $html.=self::cell(($renew['cost']??null)===null?self::missing('No cost saved')
                     :($note?'<span class="'.self::DANGER.'">'.e($renew['cost']).'</span><div class="'.self::DANGER.'" style="font-size:.75rem">'.e($note).'</div>':e($renew['cost'])));
             }
-            $html.=self::cell(e((string)self::holders($row))).'</tr>';
+            $html.=self::cell(e((string)$fact['holders'])).'</tr>';
         }
         return new HtmlString($html.'</tbody></table></div>');
     }

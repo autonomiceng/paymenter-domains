@@ -1,7 +1,7 @@
 <?php
 // Native TLDs & pricing list and TLD page: sales, price sync with its stored cause, prices by account; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
+require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';require_once __DIR__.'/Support/accounts.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
@@ -45,6 +45,36 @@ expect(str_contains($plain,'OFFLINE DEMO NameSilo (synthetic) Demo'),'Prices tab
 expect(str_contains($plain,'Enom TEST identity check New orders'),'Prices table: the account for new orders is marked');
 $page->assertDontSee('Last good prices')->assertDontSee('Sync failed');$clean($page->html(),'TLD page synced');
 same(['label'=>'For sale','tone'=>'success','reason'=>null],TldFacts::salesState($enom->fresh()),'Healthy TLD is for sale');
+
+// The detail table shares page facts for prices, sellers and holders as accounts grow.
+$detailRead=static function($grants)use($enom):array{
+    DB::flushQueryLog();DB::enableQueryLog();$html=TldFacts::accountsTable($enom,$grants)->toHtml();$queries=DB::getQueryLog();DB::disableQueryLog();
+    $counts=[];foreach(['domains_prices','domains_domains','domains_sales_policies'] as $table){$counts[$table]=count(array_filter($queries,fn($q)=>str_contains($q['query'],'from "'.$table.'"')));}
+    return [$html,$counts];
+};
+$grants=Staff::requireView();[, $twoAccounts]=$detailRead($grants);
+DB::beginTransaction();
+foreach([1,2] as $i){
+    $binding=fixtureAccount((int)App\Models\Server::max('id')+1,'enom','detail-table-'.$i);
+    App\Models\Server::whereKey($binding['server_id'])->update(['name'=>'<Extra & '.$i.'>']);
+    $saved=$enom->getRawOriginal();unset($saved['id']);DB::table('domains_tlds')->insert([...$saved,...$binding]);
+    foreach(Price::where('server_id',$enom->server_id)->get() as $price){$saved=$price->getRawOriginal();unset($saved['id']);DB::table('domains_prices')->insert([...$saved,...$binding]);}
+}
+[$detail,$fourAccounts]=$detailRead($grants);same($twoAccounts,$fourAccounts,'Price, holder and seller reads stay fixed across detail accounts');
+foreach($fourAccounts as $table=>$count){same(1,$count,'One detail query for '.$table);}
+expect(str_contains($detail,'&lt;Extra &amp; 1&gt;'),'Account names remain escaped');
+$dom=new DOMDocument();@$dom->loadHTML($detail);$xpath=new DOMXPath($dom);$rendered=$xpath->query('//tbody/tr');
+$all=Paymenter\Extensions\Servers\Domains\Models\Tld::where('tld','com')->orderBy('server_id')->get();same($all->count(),$rendered->length,'One rendered row per bound account');
+foreach($all as $i=>$row){
+    $saved=TldFacts::prices($row,$grants);$first=static fn($action)=>collect($saved)->where('action',$action)->sortBy('term')->first();
+    $expected=[$first('register')['retail'],TldFacts::renewal($saved)['retail'],$first('transfer')['retail'],TldFacts::renewal($saved)['cost'],(string)TldFacts::holders($row)];
+    foreach($expected as $j=>$value){same($value,$xpath->evaluate('normalize-space(td['.($j+3).'])',$rendered->item($i)),'Detail values agree with saved reader');}
+}
+$viewerGrants=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffGrants::current();
+Auth::setUser(staffUser([Staff::VIEW]));$withoutCosts=Staff::requireView();Auth::setUser($u);
+[$hidden]=$detailRead($withoutCosts);expect(!str_contains($hidden,'<th scope="col" style="padding:8px 12px;text-align:left;white-space:nowrap;font-weight:500">Cost'),'Supplied grants hide cost even when current staff may read it');
+[$shown]=$detailRead($viewerGrants);expect(str_contains($shown,'Registrations and transfers below cost are held.'),'Supplied cost grant keeps cost help');
+DB::rollBack();
 
 // Sync failed: the stored cause is shown as words, with the last good prices kept.
 DB::table('domains_observation_queues')->insert(['server_id'=>$enom->server_id,'account_fingerprint'=>$enom->account_fingerprint,
