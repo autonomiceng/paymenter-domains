@@ -24,14 +24,14 @@ final readonly class RegistrarBalances
         if (TestCatalogue::enabled(CatalogueAcceptances::binding($account))) { return; }
         if(!Schema::hasTable(BalanceSchema::TABLE)){return;}
         $claimedUntil=$this->claim($account,'daily_due_at',86400);
-        if($claimedUntil!==null&&$this->read($account,'daily',RequestOrigin::Background)==='rate_limited'){
-            // No provider request was made. Retry a later scheduler turn without burning a full day.
-            $this->retryDaily($account,$claimedUntil);
-            return;
+        if($claimedUntil!==null){
+            if($this->read($account,'daily',RequestOrigin::Background)==='rate_limited'){
+                // No provider request was made. Retry a later turn without burning a full day.
+                $this->retryDaily($account,$claimedUntil);return;
+            }
+            $this->armAlert($account);
         }
-        $facts=self::facts($account,$this->clock->now());
-        // Alert retries use the retained reading without changing the provider read schedule.
-        if($facts['low']){$this->notify($account);}
+        $this->alert($account);
     }
     private function retryDaily(Account $account,int $claimedUntil): void
     {
@@ -95,14 +95,64 @@ final readonly class RegistrarBalances
         $fraction=rtrim($fraction,'0');$fraction=str_pad($fraction,max(2,strlen($fraction)),'0');
         return $currency.' '.$sign.preg_replace('/\B(?=(\d{3})+(?!\d))/',',',$whole).'.'.$fraction;
     }
-    private function notify(Account $account): bool
+    private function armAlert(Account $account): void
     {
-        return DB::transaction(function()use($account):bool {
+        if(!Schema::hasTable(BalanceAlertSchema::TABLE)){return;}
+        DB::transaction(function()use($account):void {
+            $current=Account::where('server_id',$account->server_id)->lockForUpdate()->sole();
+            CatalogueAcceptances::binding($account)->requireMatch(CatalogueAcceptances::binding($current));
+            $balance=DB::table(BalanceSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)->lockForUpdate()->firstOrFail();
+            $q=DB::table(BalanceAlertSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint);
+            $row=(clone$q)->lockForUpdate()->first();$day=$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');
+            if($balance->notified_on===$day){if($row){$q->update(['pending_day'=>null,'claim'=>null]);}return;}
+            if($row&&$row->pending_day===$day){return;}
+            $values=['pending_day'=>$day,'retry_at'=>0,'attempts'=>0,'claim'=>null];
+            if($row){$q->update($values);}else{DB::table(BalanceAlertSchema::TABLE)->insert($values+['server_id'=>$account->server_id,'account_fingerprint'=>$account->account_fingerprint]);}
+        });
+    }
+    private static function balanceStamp(object $row): array
+    {return [$row->amount,$row->currency,$row->read_at,$row->attempted_at,$row->last_error_code];}
+    private function alert(Account $account): void
+    {
+        if(!Schema::hasTable(BalanceAlertSchema::TABLE)){return;}
+        if(!DB::table(BalanceAlertSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
+            ->whereNotNull('pending_day')->where('retry_at','<=',$this->clock->now()->getTimestamp())->exists()){return;}
+        $pending=DB::transaction(function()use($account):?array {
+            $current=Account::where('server_id',$account->server_id)->lockForUpdate()->sole();
+            CatalogueAcceptances::binding($account)->requireMatch(CatalogueAcceptances::binding($current));
+            $balance=DB::table(BalanceSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)->lockForUpdate()->first();
+            $q=DB::table(BalanceAlertSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint);
+            $row=(clone$q)->lockForUpdate()->first();$now=$this->clock->now()->getTimestamp();
+            if(!$balance||!$row||$row->pending_day===null||(int)$row->retry_at>$now){return null;}
+            if($balance->notified_on===$row->pending_day){$q->update(['pending_day'=>null,'claim'=>null]);return null;}
+            $attempts=max(0,min((int)$row->attempts,6));$token=bin2hex(random_bytes(16));
+            $q->update(['attempts'=>$attempts+1,'retry_at'=>$now+min(3600,60*(2**$attempts)),'claim'=>$token]);
+            return ['day'=>$row->pending_day,'token'=>$token,'attempts'=>$attempts+1,'stamp'=>self::balanceStamp($balance)];
+        });
+        if($pending===null){return;}
+        try{
+            $current=Account::where('server_id',$account->server_id)->sole();
+            CatalogueAcceptances::binding($account)->requireMatch(CatalogueAcceptances::binding($current));
+            if(!self::facts($current,$this->clock->now())['low']||$this->notify($current,$pending)){
+                DB::table(BalanceAlertSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
+                    ->where('pending_day',$pending['day'])->where('claim',$pending['token'])->update(['pending_day'=>null,'claim'=>null]);
+            }
+        }catch(\Throwable){
+            if($pending['attempts']===1){try{\Illuminate\Support\Facades\Log::warning('Registrar balance alert will be retried.');}catch(\Throwable){}}
+        }
+    }
+    private function notify(Account $account,array $pending): bool
+    {
+        return DB::transaction(function()use($account,$pending):bool {
+            $current=Account::where('server_id',$account->server_id)->lockForUpdate()->sole();
+            CatalogueAcceptances::binding($account)->requireMatch(CatalogueAcceptances::binding($current));
             $q=DB::table(BalanceSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint);
-            $r=(clone $q)->lockForUpdate()->firstOrFail();$day=$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');
+            $r=(clone$q)->lockForUpdate()->firstOrFail();$day=$pending['day'];
+            $alert=DB::table(BalanceAlertSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)->lockForUpdate()->first();
+            if(!$alert||$alert->pending_day!==$day||$alert->claim!==$pending['token']||self::balanceStamp($r)!==$pending['stamp']){return false;}
             if($r->notified_on===$day){return true;}
             $name=\App\Models\Server::whereKey($account->server_id)->value('name')?:'Registrar account';
-            if (StaffAlert::send('Low balance',$name.' balance is below renewals due in 30 days.','filament.admin.pages.registrar-setup',Staff::VIEW,'balance:'.$account->server_id.':'.$account->account_fingerprint.':'.$day)) {
+            if(StaffAlert::send('Low balance',$name.' balance is below renewals due in 30 days.','filament.admin.pages.registrar-setup',Staff::VIEW,'balance:'.$account->server_id.':'.$account->account_fingerprint.':'.$day)){
                 $q->update(['notified_on'=>$day]);return true;
             }
             return false;

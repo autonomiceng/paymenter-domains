@@ -224,6 +224,7 @@
     "tests/adopted-complimentary-test.php",
     "tests/balance-recording-rule-test.php",
     "tests/registrar-balances-test.php",
+    "tests/balance-alert-upgrade-test.php",
     "tests/registrars-page-test.php",
     "tests/management-deadline-test.php",
     "tests/renewal-deadline-test.php",

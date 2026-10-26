@@ -19,7 +19,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price}
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,BalanceForecast,BalanceReads,BalanceSchema,CatalogueAcceptances,ObservationSchema,RegistrarBalances,RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 extract(commerceFixture(true));$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now);
-app()->instance(AccountBindings::class,$bindings);BalanceSchema::install();ObservationSchema::install();
+app()->instance(AccountBindings::class,$bindings);BalanceSchema::install();\Paymenter\Extensions\Servers\Domains\Services\BalanceAlertSchema::install();ObservationSchema::install();
 $a=Account::where('server_id',$tlds[0]->server_id)->sole();$b=Account::where('server_id',$tlds[1]->server_id)->sole();
 $binding=CatalogueAcceptances::binding($a);$other=CatalogueAcceptances::binding($b);
 $row=static fn($a)=>DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->first();
@@ -313,12 +313,21 @@ Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSeeHtml('https://
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$liveServer->id])->assertSeeHtml('https://www.namesilo.com/cart/add-funds')->assertDontSeeHtml('https://ote.namesilo.com/cart/add-funds');
 foreach(['PRIVATE-PROVIDER-REPLY','account-enom','account-namesilo',$a->account_fingerprint,$foreign->fingerprint,'domains_credentials'] as $secret){expect(!str_contains($html,$secret),'HTML and state redact private evidence');}
 // Staff alerts use the real native inbox independently of Filament's optional inbox flag.
-staffAlertFixture();$secondStaff=staffUser([Staff::VIEW]);$customer=commerceUser();
+staffAlertFixture();
+$forecastQueries=0;
+DB::listen(static function($query)use(&$forecastQueries):void {
+    if(str_starts_with($query->sql,'select')&&str_contains($query->sql,'"domains_prices"')){$forecastQueries++;}
+});
+$secondStaff=staffUser([Staff::VIEW]);$customer=commerceUser();
 $d->update(['billing_managed'=>true,'provider_expires_at'=>'2026-11-01']);
 $rate->update(['revision'=>$rate->revision+1,'observed_at'=>$clock->now(),'fresh_until'=>$clock->now()->modify('+3 days')]);
 $clock->instant=$clock->now()->modify('+1 day');$balances->daily($a);
 $assertAlerts=static fn()=>staffAlerts('Low balance',$serverName.' balance is below renewals due in 30 days.',route('filament.admin.pages.registrar-setup'),[$staff,$secondStaff]);
-$assertAlerts();$balances->daily($a);$assertAlerts();
+$transactions=0;
+\Illuminate\Support\Facades\Event::listen(\Illuminate\Database\Events\TransactionBeginning::class,static function()use(&$transactions):void {$transactions++;});
+$assertAlerts();$forecastBefore=$forecastQueries;$transactionsBefore=$transactions;$balances->daily($a);$assertAlerts();
+same($forecastBefore,$forecastQueries,'Unclaimed daily turn skips the balance forecast');
+same($transactionsBefore+1,$transactions,'Idle balance alert skips its locking transaction after the daily claim');
 // Re-enter the alert path on the same UTC day without bypassing its retained day marker.
 DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0]);
 $clock->instant=$clock->now()->modify('+60 seconds');$balances->daily($a);$assertAlerts();
@@ -345,19 +354,37 @@ foreach(['veto','throw','missing-inbox','missing-receipts'] as $failure){
     $calls=$readState->calls;$wireBefore=$balanceReads();$sentBefore=App\Models\Notification::where('title','Low balance')->where('user_id',$secondStaff->id)->count();
     if($unavailable){Schema::rename($unavailable,$unavailable.'_unavailable');}
     try{
-        $readAt=$clock->now()->getTimestamp();$balances->daily($a);
-        foreach([60,60,60] as $seconds){$clock->instant=$clock->now()->modify('+'.$seconds.' seconds');$balances->daily($a);}
+        $readAt=$clock->now()->getTimestamp();$forecastQueries=0;$balances->daily($a);
+        same(1,$forecastQueries,'Granted daily read evaluates one balance forecast');
+        foreach([30=>1,59=>1,60=>2,119=>2,120=>2,179=>2,180=>3,419=>3,420=>4,899=>4,900=>5,1859=>5,1860=>6,3779=>6,3780=>7,7379=>7,7380=>8]as$offset=>$expected){
+            $clock->instant=(new DateTimeImmutable('@'.($readAt+$offset)));$balances->daily($a);
+            same($expected,$forecastQueries,'Persistent '.$failure.' forecasts and delivers only on bounded due retries at '.$offset);
+        }
         same($wireBefore+1,$balanceReads(),'Persistent '.$failure.' retries alerts with exactly one daily balance call');
         same($calls+1,$readState->calls,'Persistent '.$failure.' retries alerts with exactly one daily provider read');
         same($readAt+86400,(int)$row($a)->daily_due_at,'Alert failure preserves actual provider read schedule');
         same($readAt,(int)$row($a)->read_at,'Alert retries retain the original reading timestamp');
         same(null,$row($a)->notified_on,'Failed '.$failure.' keeps alert retryable');
     }finally{if($unavailable){Schema::rename($unavailable.'_unavailable',$unavailable);}}
-    $notificationFailure=false;$clock->instant=$clock->now()->modify('+60 seconds');$balances->daily($a);
+    $notificationFailure=false;$clock->instant=new DateTimeImmutable('@'.($readAt+10980));$balances->daily($a);
     same($calls+1,$readState->calls,'Recovered alert never re-reads provider');same($wireBefore+1,$balanceReads(),'Recovered alert uses no balance call');
     same($sentBefore+1,App\Models\Notification::where('title','Low balance')->where('user_id',$secondStaff->id)->count(),'Partial retries deliver once per recipient');
-    same($clock->now()->format('Y-m-d'),$row($a)->notified_on,'Recovery acknowledges retained daily reading');
+    same(gmdate('Y-m-d',$readAt),$row($a)->notified_on,'Recovery acknowledges the original UTC balance day');
 }
+// Due retries revalidate the retained balance and stop when it is no longer low.
+$clock->instant=$clock->now()->modify('+1 day');$rate->update(['revision'=>$rate->revision+1,'fresh_until'=>$clock->now()->modify('+3 days')]);
+$notificationFailure='veto';
+DB::table(BalanceSchema::TABLE)->where('id',$row($a)->id)->update(['daily_due_at'=>0,'notified_on'=>null]);
+$balances->daily($a);
+$alertQuery=fn()=>DB::table(\Paymenter\Extensions\Servers\Domains\Services\BalanceAlertSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint);
+expect($alertQuery()->value('pending_day')!==null,'Failed low balance delivery remains pending');
+BalanceReads::record($binding,new Money('999.00','USD'),$clock->now(),'manual');$forecastBefore=$forecastQueries;
+$clock->instant=$clock->now()->modify('+60 seconds');$balances->daily($a);
+same(null,$alertQuery()->value('pending_day'),'A repaired balance clears pending low balance delivery');
+same($forecastBefore+1,$forecastQueries,'Due retry revalidates low balance exactly once');
+$forecastBefore=$forecastQueries;$clock->instant=$clock->now()->modify('+60 seconds');$balances->daily($a);
+same($forecastBefore,$forecastQueries,'Cleared low balance work does not rebuild the forecast');
+$notificationFailure=false;
 $clock->instant=$clock->now()->modify('+1 day');$rate->update(['revision'=>$rate->revision+1,'fresh_until'=>$clock->now()->modify('+3 days')]);$notificationFailure='veto';$replacement=$clock->now()->getTimestamp()+172800;
 DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0,'notified_on'=>null]);
 $balances->daily($a);same($replacement,(int)$row($a)->daily_due_at,'Failure cannot release a replacement daily claim');$notificationFailure=false;
