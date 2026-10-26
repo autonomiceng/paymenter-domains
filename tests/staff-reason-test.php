@@ -45,12 +45,12 @@ $refuse=static function($op,string $name,string $code,string $message)use(&$logs
     return $key;
 };
 $evidence=$held('staff-provider-evidence-placeholder.com');$evidence->domain->update(['provider_domain_id'=>'synthetic-private-id']);
-$refuse($evidence,'refund','acquisition_provider_evidence',"Can't refund: the registrar may have received this request.");
+$refuse($evidence,'refund','acquisition_provider_evidence',"Can't update: the registrar may have received this request.");
 $line=$held('staff-no-paid-line-placeholder.com');DB::table('domains_operations')->where('id',$line->id)->update(['funding_basis'=>'offline_demo']);$line->refresh();
-$refuse($line,'release','no_eligible_paid_line',"Can't refund: no paid invoice for this request.");
+$refuse($line,'release','no_eligible_paid_line',"Can't update: no paid invoice for this request.");
 $missing=$held('staff-missing-invoice-placeholder.com');DB::table('domains_operations')->where('id',$missing->id)->update(['invoice_id'=>999999]);$missing->refresh();
 $before=[$missing->attempt,$missing->funding,$missing->domain->fresh()->getRawOriginal(),$credit(),count($observation->calls),$state->writes];
-$key=$refuse($missing,'recheck','original_invoice_missing',"Can't refund: invoice not found.");
+$key=$refuse($missing,'recheck','original_invoice_missing',"Can't update: invoice not found.");
 $history=$missing->fresh()->policy['staff_actions'];
 same(['read_requested','read_failed'],array_column($history,'phase'),'Failed read never claims to have finished');
 same('original_invoice_missing',$history[1]['safe_code'],'Failed read retains its bounded reason');
