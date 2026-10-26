@@ -26,6 +26,15 @@ same('Couldn’t save. Try again.',$session->get('errors')->first('preferences')
 try{$controller->save($request($owner,$payload,'POST'),'watch',$id);expect(false,'Consumed form key refuses');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Replay refuses');}
 $fresh=Pref::read($uid,'example.com');$controller->save($request($owner,['account_revision'=>$fresh['account']['revision'],'target_revision'=>$fresh['target']['revision'],'email'=>1,'notices'=>1,'_request_key'=>FormKeys::issue($request($owner),'watch-preferences:watch:'.$id)],'POST'),'watch',$id);
 same([true,'Alerts turned on.'],[Pref::read($uid,'example.com')['account']['enabled'],$session->get('watch_saved')],'Turning alerts on says so');
+// Submit exactly the fields emitted by each per-domain toggle, including fresh revisions and form key.
+foreach ([['Turn off',false,'Alerts turned off.'],['Turn on',true,'Alerts turned on.']] as [$label,$enabled,$flash]) {
+    $toggle=storefrontDom($controller->show($request($owner),'watch',$id)->render());
+    same($label,trim($toggle->query('//button[@form="form-alerts"]')->item(0)->textContent),'Rendered per-domain toggle');
+    $fields=[];foreach($toggle->query('//form[@id="form-alerts"]/input') as $input){$fields[$input->getAttribute('name')]=$input->getAttribute('value');}
+    $controller->save($request($owner,$fields,'POST'),'watch',$id);
+    $saved=Pref::read($uid,'example.com');
+    same([true,$enabled,$enabled,$flash],[$saved['account']['enabled'],$saved['target']['enabled'],Pref::enabled($uid,'example.com'),$session->get('watch_saved')],'Per-domain toggle preserves account setting and reports effective state');
+}
 $data=$controller->show($request($owner),'watch',$id)->getData();$data['name']=str_repeat('a',63).'.example';
 $data['summary']=new Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(...[...get_object_vars($data['summary']),'relatedServices'=>[['label'=>'<script>unsafe</script>','url'=>'/services/1']]]);
 $queries=0;DB::listen(static function()use(&$queries){$queries++;});$before=$queries;$long=view('domains::watch-notices',$data)->render();same($before,$queries,'Blade does not query database');
