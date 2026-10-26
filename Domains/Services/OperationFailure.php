@@ -13,9 +13,9 @@ enum OperationFailure: string
     public function message(): string
     {
         return match($this){
-            self::ProviderEvidence=>"Can't update: the registrar may have received this request.",
-            self::NoPaidLine=>"Can't update: no paid invoice for this request.",
-            self::InvoiceMissing=>"Can't update: invoice not found.",
+            self::ProviderEvidence=>"The registrar may have received this request.",
+            self::NoPaidLine=>"This request has no paid invoice.",
+            self::InvoiceMissing=>"Invoice not found.",
         };
     }
     public static function known(\Throwable $error): ?self
