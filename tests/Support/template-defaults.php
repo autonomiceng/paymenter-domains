@@ -7,13 +7,13 @@ require_once __DIR__.'/reminder-defaults.php';
 function priorReminderDefaults(): array
 {
 $prior=array (
-  'domains_domain_expiring' => 
+  'domains_domain_expiring' =>
   array (
-    'in_app_body' => 
+    'in_app_body' =>
     array (
       0 => '@if($invoice)@if($overdue)Your renewal invoice is overdue. Contact support to check renewal options.@else Pay the renewal invoice by {{ $due }}.@endif@elseif($invoice_on)Your renewal invoice is scheduled for {{ $invoice_on }}.@elseif($complimentary)Complimentary pricing. Contact support to confirm its renewal.@else Renewal is turned off. To keep this domain, contact support before it expires.@endif',
     ),
-    'body' => 
+    'body' =>
     array (
       0 => '# {{ $domain }} expires on {{ $expires }}
 
@@ -40,25 +40,25 @@ Renewal is turned off. To keep this domain, contact support before **{{ $expires
 @endif',
     ),
   ),
-  'domains_transfer_code_paid' => 
+  'domains_transfer_code_paid' =>
   array (
-    'name' => 
+    'name' =>
     array (
       0 => 'Paid transfer needs a code',
     ),
-    'subject' => 
+    'subject' =>
     array (
       0 => 'Enter the transfer code for {{ $domain }}',
     ),
-    'in_app_title' => 
+    'in_app_title' =>
     array (
       0 => 'Enter the transfer code for {{ $domain }}',
     ),
-    'edit_preference_message' => 
+    'edit_preference_message' =>
     array (
       0 => 'Transfer code reminders',
     ),
-    'body' => 
+    'body' =>
     array (
       0 => 'Thanks for your payment. To move {{ $domain }} to us, enter its transfer code (also called an auth code). Your current registrar gives you this code. We\'ll check the transfer once we have it.
 
@@ -69,25 +69,25 @@ Enter it by **{{ $deadline }}**.
 If we don\'t have it by then, we\'ll cancel the transfer and add {{ $amount }} to your account credit.',
     ),
   ),
-  'domains_transfer_code_reminder' => 
+  'domains_transfer_code_reminder' =>
   array (
-    'name' => 
+    'name' =>
     array (
       0 => 'Transfer code deadline reminder',
     ),
-    'subject' => 
+    'subject' =>
     array (
       0 => 'Reminder: transfer code for {{ $domain }}',
     ),
-    'in_app_title' => 
+    'in_app_title' =>
     array (
       0 => 'Enter the transfer code for {{ $domain }}',
     ),
-    'edit_preference_message' => 
+    'edit_preference_message' =>
     array (
       0 => 'Transfer code reminders',
     ),
-    'body' => 
+    'body' =>
     array (
       0 => 'We still need the transfer code for {{ $domain }}. Enter it by **{{ $deadline }}**.
 
@@ -104,110 +104,110 @@ return $prior;
 function priorWatchDefaults(): array
 {
 $prior=array (
-  'domains_watch_expiring' => 
+  'domains_watch_expiring' =>
   array (
-    'name' => 
+    'name' =>
     array (
       0 => 'Domain checks: expiry approaching',
     ),
-    'edit_preference_message' => 
+    'edit_preference_message' =>
     array (
       0 => 'Public domain check notices',
     ),
-    'subject' => 
+    'subject' =>
     array (
       0 => 'Check renewal for {{ $domain }} before {{ $date }}',
     ),
-    'in_app_title' => 
+    'in_app_title' =>
     array (
       0 => 'Check renewal for {{ $domain }} before {{ $date }}',
     ),
-    'in_app_body' => 
+    'in_app_body' =>
     array (
       0 => 'The public registry lists {{ $date }} as the expiry date for {{ $domain }}. Public registry dates may not show recent changes. Check renewal with your registration provider.',
     ),
-    'body' => 
+    'body' =>
     array (
       0 => '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%"><tr><td style="color:#1f2937;padding:0 0 16px;font-family:Arial,sans-serif;font-size:18px;line-height:26px;font-weight:bold;overflow-wrap:anywhere">Check renewal for {{ $domain }} before {{ $date }}</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px;overflow-wrap:anywhere">The public registry lists {{ $date }} as the expiry date for {{ $domain }}. Public registry dates may not show recent changes. Check renewal with your registration provider.</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:14px;line-height:22px">You receive this because public domain check notices are enabled in your account. This notice is not a bill.</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px"><a href="{{ $domain_url }}" style="color:#2563eb;text-decoration:underline">View domain checks</a></td></tr><tr><td style="color:#1f2937;font-family:Arial,sans-serif;font-size:14px;line-height:22px">To pause notices about this domain, or turn them off for all domains, use the link above.</td></tr></table>',
     ),
   ),
-  'domains_watch_expired' => 
+  'domains_watch_expired' =>
   array (
-    'name' => 
+    'name' =>
     array (
       0 => 'Domain checks: registry expiry reached',
     ),
-    'edit_preference_message' => 
+    'edit_preference_message' =>
     array (
       0 => 'Public domain check notices',
     ),
-    'subject' => 
+    'subject' =>
     array (
       0 => 'Registry expiry date reached for {{ $domain }}',
     ),
-    'in_app_title' => 
+    'in_app_title' =>
     array (
       0 => 'Registry expiry date reached for {{ $domain }}',
     ),
-    'in_app_body' => 
+    'in_app_body' =>
     array (
       0 => 'The public registry expiry date for {{ $domain }} was reached on {{ $date }}. Contact your registration provider to check its status. Whether it can still be renewed depends on your registration provider and the registry.',
     ),
-    'body' => 
+    'body' =>
     array (
       0 => '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%"><tr><td style="color:#1f2937;padding:0 0 16px;font-family:Arial,sans-serif;font-size:18px;line-height:26px;font-weight:bold;overflow-wrap:anywhere">Registry expiry date reached for {{ $domain }}</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px;overflow-wrap:anywhere">The public registry expiry date for {{ $domain }} was reached on {{ $date }}. Contact your registration provider to check its status. Whether it can still be renewed depends on your registration provider and the registry.</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:14px;line-height:22px">You receive this because public domain check notices are enabled in your account. This notice is not a bill.</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px"><a href="{{ $domain_url }}" style="color:#2563eb;text-decoration:underline">View domain checks</a></td></tr><tr><td style="color:#1f2937;font-family:Arial,sans-serif;font-size:14px;line-height:22px">To pause notices about this domain, or turn them off for all domains, use the link above.</td></tr></table>',
     ),
   ),
-  'domains_watch_ns_changed' => 
+  'domains_watch_ns_changed' =>
   array (
-    'name' => 
+    'name' =>
     array (
       0 => 'Domain checks: nameservers changed',
     ),
-    'edit_preference_message' => 
+    'edit_preference_message' =>
     array (
       0 => 'Public domain check notices',
     ),
-    'subject' => 
+    'subject' =>
     array (
       0 => 'Nameservers changed for {{ $domain }}',
     ),
-    'in_app_title' => 
+    'in_app_title' =>
     array (
       0 => 'Nameservers changed for {{ $domain }}',
     ),
-    'in_app_body' => 
+    'in_app_body' =>
     array (
       0 => 'As of {{ $date }}, {{ $domain }} no longer uses the nameservers provided by {{ $company }}. If you did not expect this, contact support.',
     ),
-    'body' => 
+    'body' =>
     array (
       0 => '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%"><tr><td style="color:#1f2937;padding:0 0 16px;font-family:Arial,sans-serif;font-size:18px;line-height:26px;font-weight:bold;overflow-wrap:anywhere">Nameservers changed for {{ $domain }}</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px;overflow-wrap:anywhere">As of {{ $date }}, {{ $domain }} no longer uses the nameservers provided by {{ $company }}. If you did not expect this, contact support.</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:14px;line-height:22px">You receive this because public domain check notices are enabled in your account. This notice is not a bill.</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px"><a href="{{ $domain_url }}" style="color:#2563eb;text-decoration:underline">View domain checks</a></td></tr><tr><td style="color:#1f2937;font-family:Arial,sans-serif;font-size:14px;line-height:22px">To pause notices about this domain, or turn them off for all domains, use the link above.</td></tr></table>',
     ),
   ),
-  'domains_watch_ns_restored' => 
+  'domains_watch_ns_restored' =>
   array (
-    'name' => 
+    'name' =>
     array (
       0 => 'Domain checks: nameserver change resolved',
     ),
-    'edit_preference_message' => 
+    'edit_preference_message' =>
     array (
       0 => 'Public domain check notices',
     ),
-    'subject' => 
+    'subject' =>
     array (
       0 => 'Nameserver change resolved for {{ $domain }}',
     ),
-    'in_app_title' => 
+    'in_app_title' =>
     array (
       0 => 'Nameserver change resolved for {{ $domain }}',
     ),
-    'in_app_body' => 
+    'in_app_body' =>
     array (
       0 => 'As of {{ $date }}, {{ $domain }} uses the nameservers provided by {{ $company }} again.',
     ),
-    'body' => 
+    'body' =>
     array (
       0 => '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%"><tr><td style="color:#1f2937;padding:0 0 16px;font-family:Arial,sans-serif;font-size:18px;line-height:26px;font-weight:bold;overflow-wrap:anywhere">Nameserver change resolved for {{ $domain }}</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px;overflow-wrap:anywhere">As of {{ $date }}, {{ $domain }} uses the nameservers provided by {{ $company }} again.</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:14px;line-height:22px">You receive this because public domain check notices are enabled in your account. This notice is not a bill.</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px"><a href="{{ $domain_url }}" style="color:#2563eb;text-decoration:underline">View domain checks</a></td></tr><tr><td style="color:#1f2937;font-family:Arial,sans-serif;font-size:14px;line-height:22px">To pause notices about this domain, or turn them off for all domains, use the link above.</td></tr></table>',
     ),
