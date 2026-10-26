@@ -75,10 +75,9 @@ final readonly class RuntimeWork
             $tldCursor=(int)$row->tld_cursor;
             $this->attempt('publication',function()use($a,$tlds,&$tldCursor):void {
                 if(!TestCatalogue::enabled(CatalogueAcceptances::binding($a))){
-                    $published=0;
-                    foreach($tlds as $t){$this->attempt('publication',function()use($t,&$published):void{app(NativeCatalogue::class)->publish((int)$t->id,$this->clock->now());$published++;},(int)$t->id);}
-                    if($published!==$tlds->count()){return;}
+                    foreach($tlds as $t){$this->attempt('publication',fn()=>app(NativeCatalogue::class)->publish((int)$t->id,$this->clock->now()),(int)$t->id);}
                 }
+                // Complete the scan despite individual failures; wrapping retries every retained TLD.
                 $tldCursor=$tlds->count()===25?$tlds->last()->id:0;
             },(int)$a->server_id);
             DB::table('domains_runtime_turns')->where('id',$row->id)->update(['tld_cursor'=>$tldCursor,'operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'domain_cursor'=>$domains->count()===25?$domains->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
