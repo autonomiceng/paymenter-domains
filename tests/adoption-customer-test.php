@@ -25,7 +25,9 @@ $issued=DB::table('invoices')->where('id',$old->id)->value('created_at');DB::tab
 $paidAt=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$old->id,'amount'=>'13.00','fee'=>'0.00','status'=>'succeeded','created_at'=>'2026-01-20 10:00:00','updated_at'=>'2026-01-20 10:00:00']);
 same('2026-01-20',$owners->present($d,false)->history[0]['date'],'History dates a paid invoice by its payment');DB::table('invoice_transactions')->where('id',$paidAt)->delete();DB::table('invoices')->where('id',$old->id)->update(['created_at'=>$issued]);
 $html=view('domains::show',['domain'=>$dto])->render();
-expect(!str_contains($html,'Company&gt; Registration')&&!str_contains($html,'<Synthetic & Company>'),'Detail has no registration badge and never renders the company unescaped');expect(str_contains($html,'<span class="domains-sub">Cancels ')&&preg_match('~<dt>Auto-renew .*?</dt><dd>Off <a class="domains-a" href="[^"]+">Contact support</a></dd>~s',$html)===1,'Approved cancellation copy');expect(str_contains($html,'<td>Imported</td> <td>Completed</td>'),'Adoption visible in activity');
+expect(!str_contains($html,'Company&gt; Registration')&&!str_contains($html,'<Synthetic & Company>'),'Detail has no registration badge and never renders the company unescaped');expect(str_contains($html,'<span class="domains-sub">Cancels ')&&preg_match('~<dt>Auto-renew .*?</dt><dd>Off <a class="domains-a" href="[^"]+">Contact support</a></dd>~s',$html)===1,'Approved cancellation copy');
+$activity=storefrontDom($html);
+same(1,$activity->query('//*[@id="history"]//tbody/tr[td[1][normalize-space(.)="Imported"] and td[2][normalize-space(.)="Completed"]]')->length,'Adoption visible in activity');
 same('cancellation',$dto->renewalOff,'Native cancellation takes precedence over adopted stop');
 DB::transaction(function()use($d,$bindings):void {
 $l=\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d);$l['cancel']=collect();
