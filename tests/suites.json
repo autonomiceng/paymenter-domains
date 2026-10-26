@@ -320,7 +320,8 @@
     "tests/staff-hold-release-audit-test.php",
     "tests/watch-notice-staff-delivery-test.php",
     "tests/staff-recovery-copy-test.php",
-    "tests/acquisition-payment-review-test.php"
+    "tests/acquisition-payment-review-test.php",
+    "tests/runtime-refusal-test.php"
   ],
   "ui": [],
   "runner": [

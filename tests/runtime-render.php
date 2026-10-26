@@ -40,7 +40,14 @@ foreach([false,true] as $enabled){
     $test=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($action)->assertActionMounted($action)->setActionData(['enabled'=>$enabled,'reason'=>'Review installed processing change']);
     $test->call('$refresh');$render($test,'staff-processing-'.($enabled?'enable':'disable'));
     if(!$enabled){$test->setActionData(['enabled'=>false,'confirmed'=>true,'reason'=>'Review installed processing change'])->callMountedAction()->assertRedirect(RegistrarAccount::getUrl(['account'=>$t->server_id]));expect(!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->value('processing_enabled'),'Native pause persisted');$render(Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$t->server_id]),'staff-processing-saved');}
-    if($enabled){$test->setActionData(['enabled'=>true,'confirmed'=>true,'reason'=>'Review installed processing change'])->callMountedAction();$render($test,'staff-activation-refusal');}
+    if($enabled){
+        session()->forget(['filament.notifications','filament.claimed_notifications']);
+        $test->setActionData(['enabled'=>true,'confirmed'=>true,'reason'=>'Review installed processing change'])->callMountedAction()
+            ->assertHasNoActionErrors()->assertNotified("Couldn't save");
+        $retainedAccount=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->firstOrFail();
+        same(false,$retainedAccount->processing_enabled,'Refused activation keeps the existing account disabled');
+        $render($test,'staff-activation-refusal');
+    }
 }
 $legacy=\App\Models\Server::create(['type'=>'server','name'=>'Legacy','extension'=>'Enom','enabled'=>false]);$setting=$legacy->settings()->create(['key'=>'operations_enabled','type'=>'boolean','value'=>false]);
 \Illuminate\Support\Facades\DB::table('settings')->where('id',$setting->id)->update(['value'=>'1']);
