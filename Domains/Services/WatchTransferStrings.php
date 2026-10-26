@@ -10,7 +10,7 @@ final class WatchTransferStrings
         $target = DnsSignalLabels::transferTarget();
         return ['watch.transfer_title'=>'Transfer :domain to '.$target,
             'watch.transfer_in_cart'=>'This transfer is already in your cart.',
-            'watch.transfer_unavailable'=>'This transfer isn’t available right now.',
+            'watch.transfer_unavailable'=>'We can’t add this transfer. Try again later. If it keeps happening, contact support.',
             'watch.transfer_changed'=>'We need to check this transfer again.',
             'watch.transfer_subject'=>'Transfer options for :domain'];
     }
