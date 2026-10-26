@@ -22,6 +22,8 @@ $domain=new OwnedDomain('example.com','Active','ok','2027-03-01','On','$14.00',[
 $pages['history']='<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div class="domains">'.view('domains::partials.styles')->render().view('domains::partials.activity',['domain'=>$domain])->render().'</div></body></html>';
 $dom=storefrontDom($pages['history']);
 same(2,$dom->query('//tbody/tr')->length,'Progress and renewal history both render');
+same(1,$dom->query('//table[contains(@class,"domains-stackable")]')->length,'History stacks on mobile');
+foreach(['Change','Status','Date'] as $label){same(2,$dom->query('//td[@data-label="'.$label.'"]')->length,'Both history sources label '.$label);}
 if(isset($argv[1])){
     expect(is_dir($argv[1]),'Existing output directory required');
     $css='*{box-sizing:border-box}body{margin:0;padding:24px;background:#14141b;color:#eee;font:15px/1.5 system-ui}h1,h2,p{margin:0}.domains{--color-base:0 0% 95%;--color-muted:0 0% 60%;--color-neutral:0 0% 22%;--color-background:240 18% 9%;--color-background-secondary:240 13% 11%;--color-primary:229 100% 64%}';
