@@ -180,14 +180,19 @@ try{(new NsTransport)->sendWithin(NsEnvironment::Sandbox,NsContext::Background,R
 expect($expired!==null,'Guard cannot spend an expired NameSilo request budget');
 same(0,$GLOBALS['nsGuardSends'],'Expired NameSilo budget sends no bytes');
 same([],$warnings,'NameSilo deadline failures outside the guard do not warn');
-config(['domains.provider_send_guard'=>static function():void {}]);
+config(['domains.provider_send_guard'=>$guard]);
 foreach([fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',1000),
     fn()=>$exchange($wire,'management')($origin,'GetBalance',[],1000),
-    fn()=>(new NsTransport)->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'')] as $send){
-    resetWire(['execFail'=>true]);$caught=null;
-    try{$send();}catch(Throwable $error){$caught=$error;}
-    expect($caught instanceof RuntimeException,'Transport failure fixture must fail');
-    same([],$warnings,'Transport failures outside the guard do not warn');
+    fn()=>(new NsTransport)->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY')] as $index=>$send){
+    resetWire(['execFail'=>true]);$caught=null;$warnings=[];$events=[];$GLOBALS['nsGuardSends']=0;
+    $GLOBALS['nsGuardExecFail']=$index===2;
+    try{
+        try{$send();}catch(Throwable $error){$caught=$error;}
+        expect($caught instanceof RuntimeException,'Transport failure fixture must fail after its send attempt');
+        same([[$index===2?'namesilo':'enom','test',$index===2?'getAccountBalance':'GetBalance']],$events,'Failed exchange reaches the guard exactly once');
+        same($index===2?[0,1]:[1,0],[count($GLOBALS['enomWire']['forms']),$GLOBALS['nsGuardSends']],'Failed exchange attempts exactly one physical send');
+        same([],$warnings,'Transport failures outside the guard do not warn');
+    }finally{$GLOBALS['nsGuardExecFail']=false;}
 }
 config(['domains.enom_test_daily_call_cap'=>0]);resetWire();$caught=null;
 try{(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',1000);}catch(EnomTestCallLimit $error){$caught=$error;}
