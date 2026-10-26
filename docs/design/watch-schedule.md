@@ -45,13 +45,14 @@ visit retained IDs only, allowing cleanup without enrolling new native services.
 Watch and managed DNS jobs share the existing public owner cursor: ten jobs, two per owner.
 Each job has one attempt, a 60-second timeout and a 120-second uniqueness window.
 
-A notice on the staff Domain monitoring page reports disabled, invalid queue,
+A notice on the staff Domain monitoring page reports disabled monitoring,
 two missed dispatch turns, or a family with pending work and
 no successful progress for 24 hours. Each proven successful daily job gets its expected completion and two dispatch turns
 before that family can alert, including registry expiry’s 0–60 minute jitter. Failed or abandoned
 claims cannot extend this grace. Managed health shares dispatch eligibility. Family-specific
 advice separates registry and DNS failures; a new failing family starts a new alert episode. Alerts are deduplicated, with optional native staff inbox delivery when
 that native storage is available. Failed local discovery/enrollment cannot block independent dispatch.
+A queue that can’t run monitoring shows as "Queue timeout too short" in the Background worker row, under System checks on each registrar account page.
 Retention prunes at most 100 old observations per family per turn after 90 days, preserving
 last successful per-kind/axis facts and pinned notice evidence under observation-row locks.
 Activation, the accepted discovery binding and installed queue/resolver acceptance remain
