@@ -9,8 +9,11 @@ foreach (['example.com', 'example.net', 'example.org', 'sealed.example.com', 'ch
     'child-placeholder.org.example.com', 'fixture.test', 'nested.fixture.test'] as $name) {
     same($name, reservedFixtureName($name), 'Reserved fixture identity is preserved');
 }
-same('child-placeholder.example.net', reservedFixtureName(strtolower('Child-Placeholder.Example.NET')),
-    'Mixed-case reserved fixture names normalize');
+foreach(['Child-Placeholder.Example.NET','Child-Placeholder.example.net'] as $name){
+    $rejected=false;
+    try{reservedFixtureName($name);}catch(InvalidArgumentException){$rejected=true;}
+    expect($rejected,'Reserved fixtures require canonical input: '.$name);
+}
 foreach (['rate-queued.com', 'other.com', 'example-sealed.com', 'timestamp-boundary.com',
     'example.com.evil.com', 'notexample.com', 'invalid..example.com'] as $name) {
     $rejected = false;
