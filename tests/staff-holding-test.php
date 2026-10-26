@@ -130,6 +130,29 @@ $permissionPage->call('callMountedAction')->assertActionDoesNotExist('resume');s
 $policy=$d->fresh()->renewal_policy;$d->fresh()->update(['renewal_policy'=>[...$policy,'staff_holdings'=>array_fill(0,100,$a)]]);
 $fullPage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('resume');$fullPage->setActionData(['reason'=>'Audit retention limit control'])->callMountedAction()->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't update renewal")->body('History for this domain is full. Contact support.'))->assertSet('mountedActions',[]);
 $d->fresh()->update(['renewal_policy'=>$policy]);same(true,$d->fresh()->renewal_policy['renewals_stopped'],'Full history refusal changes no holding policy');
+// A failed quote keeps the standard repricing action visible with a safe repair hint.
+foreach(['missing-price','throwing-clock'] as $fault){
+    $savedPrice=(array)DB::table('domains_prices')->where('id',$priceRow->id)->first();
+    if($fault==='missing-price'){DB::table('domains_prices')->where('id',$priceRow->id)->delete();}
+    else{app()->instance(Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard::class,new Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(
+        new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices),new class implements Paymenter\Extensions\Servers\Domains\Contracts\Clock{
+            public function now():DateTimeImmutable{throw new RuntimeException('Sensitive quote failure');}
+        }));}
+    $beforeQuote=[$d->fresh()->getRawOriginal(),$s->fresh()->getRawOriginal()];
+    $quotePage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->assertActionVisible('reprice')->assertActionDisabled('reprice')->assertActionVisible('resume')->assertActionEnabled('resume');
+    same('Could not read the renewal price. Check TLD prices or reload.',$quotePage->instance()->getAction('reprice')->getTooltip(),'Failed quote has a safe repair hint');
+    $quotePage->assertDontSee('Sensitive quote failure');
+    DB::beginTransaction();
+    $runningPolicy=$d->fresh()->renewal_policy;$runningPolicy['renewals_stopped']=false;$d->fresh()->update(['renewal_policy'=>$runningPolicy]);
+    Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->assertActionVisible('stop')->assertActionEnabled('stop');
+    DB::rollBack();
+    $priceViewer=staffUser(['admin.domains.view','admin.domains.manage',StaffHoldingReview::permission('resume')]);
+    Livewire\Livewire::actingAs($priceViewer)->test($pageClass,['record'=>$d->id])->assertActionHidden('reprice');
+    same($beforeQuote,[$d->fresh()->getRawOriginal(),$s->fresh()->getRawOriginal()],'Failed quote never changes policy or price');
+    if($fault==='missing-price'){DB::table('domains_prices')->insert($savedPrice);}else{app()->instance(Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard::class,$guard);}
+    Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->assertActionVisible('reprice')->assertActionEnabled('reprice');
+}
+Auth::login($staff);
 // Fresh dialogs reach the shared ownership refusal for resume and repricing.
 foreach(['missing-anchor','unconfirmed-anchor','immediate-cancellation'] as $fault){
     $savedPolicy=$d->fresh()->renewal_policy;$savedOp=$original->fresh()->getRawOriginal();

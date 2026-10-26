@@ -35,12 +35,13 @@ final class HoldingActions
         $out=[];
         foreach(StaffHoldingReview::ACTIONS as$name=>$unused){
             if($name==='reprice'&&$d->price_mode!=='standard'){continue;}
-            $label=self::LABELS[$name];$description=self::description($name);
+            $label=self::LABELS[$name];$description=self::description($name);$quoteFailed=false;
             if($name==='reprice'){
                 try{$price=app(NativeDomainGuard::class)->quote($l);$description='New price: USD '.$price['annual_gross'].' / year, from TLD prices. '.$description;}
-                catch(\Throwable){continue;}
+                catch(\Throwable){$quoteFailed=true;}
             }
             $out[]=Action::make($name)->label($label)->color($name==='stop'?'danger':'gray')
+                ->disabled($quoteFailed)->tooltip($quoteFailed?'Could not read the renewal price. Check TLD prices or reload.':null)
                 ->visible(fn()=>Staff::can(StaffHoldingReview::permission($name))&&($name==='reprice'||($name==='stop'?!$stopped:$stopped)))
                 ->requiresConfirmation()->modalHeading($name==='stop'?'Stop renewal?':$label)->modalDescription($description)->modalSubmitActionLabel($label)->modalWidth('lg')
                 ->schema([Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,$name,$stamp,app(Clock::class))),
