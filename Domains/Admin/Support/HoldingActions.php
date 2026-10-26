@@ -25,7 +25,7 @@ final class HoldingActions
         'Invalid review key. Reload this page.'=>self::CHANGED,'Holding changed. Reload this page and review it again.'=>self::CHANGED,
         'Review key used.'=>self::CHANGED,'Holding native authority changed.'=>self::CHANGED,
         'Holding audit full or unavailable.'=>'History for this domain is full. Contact support.',
-        'Review confirmed domain ownership and billing status before resuming or repricing this holding.'=>"Can't resume: the service is not active or has a cancellation.",
+        'Review confirmed domain ownership and billing status before resuming or repricing this holding.'=>'Review confirmed domain ownership and billing status before changing renewals.',
     ];
     public static function make(Domain $d): array
     {

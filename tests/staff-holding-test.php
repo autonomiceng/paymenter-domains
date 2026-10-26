@@ -130,6 +130,23 @@ $permissionPage->call('callMountedAction')->assertActionDoesNotExist('resume');s
 $policy=$d->fresh()->renewal_policy;$d->fresh()->update(['renewal_policy'=>[...$policy,'staff_holdings'=>array_fill(0,100,$a)]]);
 $fullPage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('resume');$fullPage->setActionData(['reason'=>'Audit retention limit control'])->callMountedAction()->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't update renewal")->body('History for this domain is full. Contact support.'))->assertSet('mountedActions',[]);
 $d->fresh()->update(['renewal_policy'=>$policy]);same(true,$d->fresh()->renewal_policy['renewals_stopped'],'Full history refusal changes no holding policy');
+// Fresh dialogs reach the shared ownership refusal for resume and repricing.
+foreach(['missing-anchor','unconfirmed-anchor','immediate-cancellation'] as $fault){
+    $savedPolicy=$d->fresh()->renewal_policy;$savedOp=$original->fresh()->getRawOriginal();
+    if($fault==='missing-anchor'){$changed=$savedPolicy;unset($changed['billing_anchor']);$d->fresh()->update(['renewal_policy'=>$changed]);}
+    elseif($fault==='unconfirmed-anchor'){DB::table('domains_operations')->where('id',$original->id)->update(['state'=>'pending']);}
+    else{DB::table('service_cancellations')->insert(['service_id'=>$d->service_id,'type'=>'immediate','reason'=>'Retained cancellation requires review','created_at'=>now(),'updated_at'=>now()]);}
+    foreach(['resume','reprice'] as $action){
+        $policyBefore=$d->fresh()->getRawOriginal('renewal_policy');$priceBefore=$s->fresh()->getRawOriginal('price');
+        Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction($action)->assertActionMounted($action)
+            ->setActionData(['reason'=>'Review confirmed ownership before renewal changes'])->callMountedAction()
+            ->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't update renewal")->body('Review confirmed domain ownership and billing status before changing renewals.'));
+        same($policyBefore,$d->fresh()->getRawOriginal('renewal_policy'),$fault.' '.$action.' keeps renewal policy');
+        same($priceBefore,$s->fresh()->getRawOriginal('price'),$fault.' '.$action.' keeps service price');
+    }
+    $d->fresh()->update(['renewal_policy'=>$savedPolicy]);DB::table('domains_operations')->where('id',$original->id)->update($savedOp);
+    if($fault==='immediate-cancellation'){DB::table('service_cancellations')->where('service_id',$d->service_id)->delete();}
+}
 DB::table('domains_domains')->where('id',$compDomain->id)->update(['price_mode'=>'complimentary']);Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$compDomain->id])->assertActionDoesNotExist('reprice');DB::table('domains_domains')->where('id',$compDomain->id)->update(['price_mode'=>'standard']);
 $viewOnly=staffUser(['admin.domains.view']);$readonly=Livewire\Livewire::actingAs($viewOnly)->test($pageClass,['record'=>$d->id]);$readonly->assertActionDoesNotExist('stop');
 Auth::login($staff);Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>$pageClass])
