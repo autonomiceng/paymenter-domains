@@ -164,7 +164,7 @@ foreach(['missing-anchor','unconfirmed-anchor','immediate-cancellation'] as $fau
         $policyBefore=$d->fresh()->getRawOriginal('renewal_policy');$priceBefore=$s->fresh()->getRawOriginal('price');
         Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction($action)->assertActionMounted($action)
             ->setActionData(['reason'=>'Review confirmed ownership before renewal changes'])->callMountedAction()
-            ->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't update renewal")->body('Review confirmed domain ownership and billing status before changing renewals.'));
+            ->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't update renewal")->body("The service isn't active, the registration isn't confirmed yet, or the service has an immediate cancellation. Check the service, then try again."));
         same($policyBefore,$d->fresh()->getRawOriginal('renewal_policy'),$fault.' '.$action.' keeps renewal policy');
         same($priceBefore,$s->fresh()->getRawOriginal('price'),$fault.' '.$action.' keeps service price');
     }
