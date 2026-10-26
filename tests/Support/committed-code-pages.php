@@ -52,7 +52,8 @@ foreach([0,1]as$i){
     expect(!$r->request->has('transfer_code'),'Secret scrubbed from committed request');
     $assertSessionCodeAbsent($session->all(),$sentinel);
     expect(!str_contains(DB::table('domains_operations')->where('id',$committed->id)->value('payload'),$sentinel),'Committed code encrypted at rest');
-    ContactRecovery::hold($committed->id);
+    ContactRecovery::hold($committed->id);$heldCalls=count($state->calls);
+    same('held',$committed->fresh()->state,'Paid transfer retains its contact hold');
     foreach(['show','setup','code']as$page){
         storefrontViews();app('view')->getFinder()->flush();
         $r=Request::create('/domains/'.$committed->domain_id,'GET');$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
@@ -72,7 +73,11 @@ foreach([0,1]as$i){
         expect(!str_contains(json_encode($invoiceDtos,JSON_THROW_ON_ERROR),$sentinel),'Native invoice DTO excludes committed code');
         $assertSessionCodeAbsent($session->all(),$sentinel);
         if($page==='code'){
-            expect($dto->transfer['received']&&substr_count($html,\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::CODE_SAVED)===1,'Real committed-code page acknowledges receipt');
+            expect($dto->transfer['received']&&substr_count($html,'Auth code saved.')===1,'Real committed-code page acknowledges receipt once');
+            expect(!str_contains($html,'The transfer starts once payment is confirmed.'),'Paid contact-held transfer makes no payment-only start promise');
+            same('Auth code saved.',\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::CODE_SAVED,'Saved receipt is neutral');
+            same('held',$committed->fresh()->state,'Rendering the saved receipt keeps the contact hold');
+            same($heldCalls,count($state->calls),'Saved-code pages dispatch no provider work');
             same(1,$dom->query('//input[@name="transfer_code"]')->length,'Unsent before-cutoff code editor is offered without prefill');
         }
     }

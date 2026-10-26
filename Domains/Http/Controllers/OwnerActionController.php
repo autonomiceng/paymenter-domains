@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, DomainManage
 final readonly class OwnerActionController
 {
     // Shown on the auth code page once a code is saved, so the redirect carries no flash.
-    public const CODE_SAVED='Auth code saved. The transfer starts once payment is confirmed.';
+    public const CODE_SAVED='Auth code saved.';
     public const ACTIONS=['nameservers','contacts','contact_profile','lock','privacy_enable','privacy_disable','privacy_purchase','privacy_renew','auto_renew_off','auth_code_email','dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'];
     public function __construct(private OwnedDomains $owners, private OwnerSetup $setup, private TransferInputs $inputs,
         private DomainManagement $management, private OwnerPorts $ports) {}

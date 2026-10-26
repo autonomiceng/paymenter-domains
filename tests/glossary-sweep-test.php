@@ -123,7 +123,7 @@ $cutoff=$plain(view('domains::code',['domain'=>$owned(['required'=>false],[...$t
 expect(str_contains($cutoff,'The time to enter or change this auth code has passed.'),'Cutoff names the auth code');
 
 // Controllers and services: renamed terms, "can't / couldn't" voice.
-same('Auth code saved. The transfer starts once payment is confirmed.',OwnerActionController::CODE_SAVED,'One saved string for page and flash');
+same('Auth code saved.',OwnerActionController::CODE_SAVED,'One saved string for page and flash');
 $owner=$source(OwnerActionController::class);
 expect(str_contains($owner,"'Enter a valid auth code.'")&&str_contains($owner,"'Change requested. Check History for updates.'")&&str_contains($owner,"'WHOIS privacy isn’t available for this domain.'"),'Owner action messages');
 $none($owner,['transfer code','Check Activity','Domain privacy','is not available',"get('confirmed')!=='1'"],'Owner action controller');
