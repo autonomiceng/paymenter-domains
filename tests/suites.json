@@ -37,6 +37,7 @@
     "tests/test_staff_docs.py"
   ],
   "native": [
+    "tests/walk-layout-test.php",
     "tests/enom-curl-test.php",
     "tests/enom-exchange-test.php",
     "tests/native-fixture-test.php",

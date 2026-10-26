@@ -384,7 +384,7 @@
 @media(max-width:639px) { .domains .domains-summary .domains-facts { grid-template-columns:1fr; } .domains .domains-summary .domains-fact { min-width:0; } }
 .domains fieldset{min-width:0}.domains .domains-checkbox{overflow-wrap:anywhere}
 .domains-name-cell{min-width:11rem}.domains-name-cell .domains-domain{display:inline-block}
-@media(max-width:719px){.domains-stackable .domains-name-cell{min-width:0;grid-column:1}.domains-stackable td.domains-cell-wide{grid-column:1/-1}.domains-stackable td.domains-end{grid-column:2;grid-row:1}}
+@media(max-width:719px){.domains-stackable .domains-name-cell{min-width:0;grid-column:1}.domains-stackable td.domains-cell-wide{grid-column:1/-1}.domains-list td.domains-end{grid-column:2;grid-row:1}}
 /* Confirm step: a modal with script, an inline panel without. */
 .domains .domains-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .domains .domains-confirm { width: min(30rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); margin: auto; padding: 1.5rem; border: 1px solid var(--e-line); border-radius: .75rem;
