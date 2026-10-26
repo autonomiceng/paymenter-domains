@@ -68,12 +68,12 @@ foreach(['throw','veto'] as $failure){
     expect(!$sent,'Failed recipient must not report successful handoff');
     same(1,App\Models\Notification::where('title','Retry inbox')->where('user_id',$staff[1]->id)->count(),'Later recipient still receives alert after '.$failure);
 }
-$failure='throw';$levels=[];$markers=[];$retryAt=$now+92*86400;$episodeCommitted=false;
+$failure='throw';$levels=[];$markers=[];$retryAt=$now+92*86400;$episodeCommitted=false;$commitObservations=[];
 \Illuminate\Support\Facades\Event::listen(\Illuminate\Database\Events\TransactionCommitted::class,static function()use(&$episodeCommitted,$retryAt):void {
     if(DB::transactionLevel()===0&&(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at')===$retryAt){$episodeCommitted=true;}
 });
-App\Models\Notification::creating(static function($n)use(&$episodeCommitted):void {
-    if($n->title==='Domain monitoring stopped'){expect($episodeCommitted,'Episode commits before recipient delivery transaction');}
+App\Models\Notification::creating(static function($n)use(&$episodeCommitted,&$commitObservations):void {
+    if($n->title==='Domain monitoring stopped'){$commitObservations[]=$episodeCommitted;}
 });
 $successfulBefore=App\Models\Notification::where('title','Domain monitoring stopped')->where('user_id',$staff[1]->id)->count();
 DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['alert_at'=>null,'progress_at'=>$now]);
@@ -81,6 +81,7 @@ $old=(array)DB::table('domains_watch_registry')->where('id',$last)->first();unse
 $old['result']='unknown';$old['reason']='endpoint_failed';$old['completed_at']=$now;
 $oldId=DB::table('domains_watch_registry')->insertGetId($old);
 $m->tick($retryAt);
+expect($commitObservations!==[]&&!in_array(false,$commitObservations,true),'Every observed recipient delivery follows episode commit');
 same([$retryAt,true],[(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at'),!DB::table('domains_watch_registry')->where('id',$oldId)->exists()],'Failure retains episode and still sweeps old observations');
 expect($levels!==[]&&array_unique($levels)===[1],'Native inbox writes use a separate receipt transaction after episode locks');
 expect(!in_array(false,$markers,true),'Episode committed before any native inbox write');
