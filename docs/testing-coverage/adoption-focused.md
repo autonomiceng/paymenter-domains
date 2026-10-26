@@ -1,4 +1,4 @@
-# Adoption and registrar focused checks
+# Focused checks for adoption and registrars
 
 Changes to these sources require the existing dependent tests even when their test
 files are unchanged. Use the conservative union below with the ordinary `--only`

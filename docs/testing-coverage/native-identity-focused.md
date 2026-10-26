@@ -1,4 +1,4 @@
-# Native identity and managed public focused checks
+# Focused checks for native identity and managed public enrollment
 
 Changes to native marker identity or managed public enrollment require the existing
 source consumers even when their test files are unchanged. Keep controlled writer
@@ -15,7 +15,7 @@ authority still follows the existing retirement path.
 | Changed test files or shared support fixtures | The tests themselves, every requiring registered consumer, fixture policy and runner discovery checks. |
 
 The conservative lexical inventory contains 297 registered tests, including the
-[adoption and registrar focused checks](adoption-focused.md). It follows class imports,
+[focused checks for adoption and registrars](adoption-focused.md). It follows class imports,
 requires, shared fixtures, route registration and source/package collectors. An import
 or route reference qualifies for this conservative selection; it does not establish
 that the changed marker branch executes in that test. No suite category is selected
