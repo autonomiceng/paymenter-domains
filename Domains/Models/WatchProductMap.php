@@ -10,6 +10,7 @@ final class WatchProductMap extends WatchRecord
     protected $casts = ['reason' => \Paymenter\Extensions\Servers\Domains\Casts\LegacyEncryptedString::class, 'revision' => 'integer', 'enabled' => 'boolean'];
     protected array $identity = ['id', 'product_id'];
     public function product(): \Illuminate\Database\Eloquent\Relations\BelongsTo {return $this->belongsTo(\App\Models\Product::class,'product_id');}
+    public function dnsTemplate(): \Illuminate\Database\Eloquent\Relations\BelongsTo {return $this->belongsTo(WatchProfile::class,'expected_ns_profile_id');}
     protected function validateRecord(): void
     {
         if (!is_string($this->property_key) || preg_match('/\A[a-zA-Z][a-zA-Z0-9_-]{0,63}\z/D', $this->property_key) !== 1 ||

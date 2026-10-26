@@ -11,6 +11,7 @@ final class WatchProfile extends WatchRecord
     protected array $identity = ['id'];
     protected $hidden = ['reason'];
     protected $casts = ['reason' => \Paymenter\Extensions\Servers\Domains\Casts\LegacyEncryptedString::class, 'revision' => 'integer', 'enabled' => 'boolean', 'nameservers' => 'array', 'website_endpoints' => 'array', 'email_endpoints' => 'array'];
+    public function productMaps(): \Illuminate\Database\Eloquent\Relations\HasMany {return $this->hasMany(WatchProductMap::class,'expected_ns_profile_id');}
     protected function validateRecord(): void
     {
         if (!is_string($this->name) || trim($this->name) === '' || strlen($this->name) > 128 ||

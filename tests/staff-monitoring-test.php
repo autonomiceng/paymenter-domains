@@ -73,11 +73,12 @@ $rows=WatchFacts::history(WatchName::find($id));same(['Note','Monitoring resumed
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->callAction('retire',['reason'=>'Customer asked to stop'])->assertNotified('Saved');same('retired',WatchName::find($id)->state,'Stop saves');
 same('Stopped',WatchFindings::status(WatchName::find($id),[])['label'],'Stopped status');
 
+
 // DNS templates.
 $templates=Livewire::actingAs($manager)->test(ListTemplates::class)->assertCanSeeTableRecords([$profile])->assertActionVisible('save');$clean($templates->html(),'DNS templates');
 same('DNS templates',$templates->instance()->getTitle(),'Templates title');same(null,$templates->instance()->getSubheading(),'No templates subheading');same('Add DNS template',$templates->instance()->getAction('save')->getLabel(),'Add template');
 foreach(['name'=>'Template','nameservers'=>'Nameservers','enabled'=>'Status','used_by'=>'Used by'] as $name=>$label){same($label,$column($templates,$name)->getLabel(),'Template column '.$name);}
-same(null,$column($templates,'revision'),'No revision column');same('On',$column($templates,'enabled')->record($profile)->getState(),'Status On');same('1 hosting product',$column($templates,'used_by')->record($profile)->getState(),'Used by count');
+same(null,$column($templates,'revision'),'No revision column');same('On',$column($templates,'enabled')->record($profile)->getState(),'Status On');same('1 hosting product',$column($templates,'used_by')->record(RoutingProfileResource::getEloquentQuery()->findOrFail($profile->id))->getState(),'Used by count');
 $template=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$profile->id])->assertSeeInOrder(['Records','Status','On','Nameservers','Website records','Email records','Used by','Monitored domains','Hosting products'])->assertActionHidden('enable');$clean($template->html(),'DNS template');
 same('Synthetic defaults',$template->instance()->getTitle(),'Template title');same('Edit',$template->instance()->getAction('save')->getLabel(),'Edit template');
 same([RoutingProfileResource::getUrl()=>'DNS templates','Synthetic defaults'],$template->instance()->getBreadcrumbs(),'Template breadcrumb');
@@ -104,4 +105,36 @@ same('Save',$product->instance()->getAction('save')->getModalSubmitActionLabel()
 $acts=\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchActions::watch($watch,(int)$watch->revision);$more=[];foreach(end($acts)->getActions() as $a){$more[$a->getName()]=$a->getModalSubmitActionLabel();}
 same(['profile'=>'Save','note'=>'Add note','retire'=>'Stop monitoring'],$more,'More submit labels');
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'paused']);$paused=WatchFacts::for(WatchName::find($watch->id));expect(!array_key_exists('DNS records',$paused['Checks']),'Paused name with no record results hides DNS records, not Missing');
+// Render the resource-query records so list reads stay bounded as rows and references grow.
+$resourceRows=static function(string $resource,string $page,string $columnName)use($manager,$column):array{
+    $component=Livewire::actingAs($manager)->test($page);$cell=$column($component,$columnName);$cell->clearCachedState();
+    DB::flushQueryLog();DB::enableQueryLog();$records=$resource::getEloquentQuery()->orderBy('id')->get();$values=[];
+    foreach($records as $row){$values[$row->id]=$cell->record($row)->getState();}
+    $queries=DB::getQueryLog();DB::disableQueryLog();return [$values,count($queries),$records];
+};
+DB::beginTransaction();
+DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['expected_ns_profile_id'=>$profile->id]);
+[, $oneMap]=$resourceRows(ProductMappingResource::class,ListProducts::class,'template');
+[, $twoTemplates]=$resourceRows(RoutingProfileResource::class,ListTemplates::class,'used_by');
+$third=WatchProfile::create(['name'=>'Disabled template','nameservers'=>['ns1.disabled.test'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic disabled template']);
+$expectedTemplates=[$map->id=>'Synthetic defaults'];
+foreach([$profile->id,$off->id,$third->id,$third->id,null,999999] as $i=>$templateId){
+    $productRow=(array)DB::table('products')->where('id',$map->product_id)->first();unset($productRow['id']);$productRow['slug']='list-query-product-'.$i;
+    $productId=DB::table('products')->insertGetId($productRow);$copy=$map->fresh()->getRawOriginal();unset($copy['id']);
+    $mapId=DB::table('domains_watch_product_maps')->insertGetId([...$copy,'product_id'=>$productId,'expected_ns_profile_id'=>$templateId,'enabled'=>false]);
+    $expectedTemplates[$mapId]=match($templateId){$profile->id=>'Synthetic defaults',$off->id=>'Spare template',$third->id=>'Disabled template',default=>'Missing'};
+}
+[$names,$manyMaps,$maps]=$resourceRows(ProductMappingResource::class,ListProducts::class,'template');
+same($expectedTemplates,$names,'Loaded template names include disabled templates, null and dangling references');
+same($oneMap,$manyMaps,'Template-name queries do not grow per hosting product');
+$missingCell=$column(Livewire::actingAs($manager)->test(ListProducts::class),'template')->record($maps->last());
+same(['Missing','Choose one in Edit','danger','heroicon-m-exclamation-triangle'],[$missingCell->getState(),$missingCell->getDescriptionBelow(),$missingCell->getColor('Missing'),$missingCell->getIcon('Missing')],'Missing template feedback is unchanged');
+[$counts,$manyTemplates,$profiles]=$resourceRows(RoutingProfileResource::class,ListTemplates::class,'used_by');
+same([$profile->id=>'2 hosting products',$off->id=>'1 hosting product',$third->id=>'2 hosting products'],$counts,'Loaded counts include disabled maps and use normal plurals');
+same($twoTemplates,$manyTemplates,'Used-by queries do not grow per DNS template');
+foreach($profiles as $row){same(WatchFacts::products(WatchFacts::usedBy((int)$row->id)['products']),$counts[$row->id],'List and detail product counts agree');}
+$empty=WatchProfile::create(['name'=>'Unused template','nameservers'=>['ns1.unused.test'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic unused template']);
+[$counts]=$resourceRows(RoutingProfileResource::class,ListTemplates::class,'used_by');same('0 hosting products',$counts[$empty->id],'Unused template count remains zero');
+DB::rollBack();
+
 $nativeSuccessful=true;echo "Domain monitoring, DNS templates and Hosting products pages passed.\n";
