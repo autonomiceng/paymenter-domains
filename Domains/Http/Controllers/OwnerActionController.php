@@ -76,7 +76,8 @@ final readonly class OwnerActionController
             $risky=match($action) {
                 'nameservers','auth_code_email','auto_renew_off','ds_delete','glue_delete'=>true,
                 'lock'=>$payload['locked']===false,
-                'dns','srv'=>count($payload['records'])<count($current),
+                'dns','srv'=>count($payload['records'])<count($current) || (bool) array_filter($p['records'],
+                    static fn($row,$index)=>isset($current[$index]) && \Paymenter\Extensions\Servers\Domains\Services\OwnerRecordInput::removed($row),ARRAY_FILTER_USE_BOTH),
                 default=>false,
             };
             if ($risky&&($p['confirmed']??null)!=='1') { throw new \Paymenter\Extensions\Servers\Domains\Services\OwnerConfirmRequired; }

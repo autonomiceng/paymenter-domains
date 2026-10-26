@@ -32,6 +32,12 @@ foreach($cases as $action=>$case){
     Cache::flush();$controller->manage($post($action,['records'=>$case['records'],'preimage_digest'=>ManagementPayload::digest([],$action)]),$d->id,$action);
     $op=$d->operations()->orderByDesc('id')->firstOrFail();same('succeeded',$management->run($op->id,$driver)->state,'Two existing '.$action.' records');
     $section=$owners->present($d->fresh())->management[$action];
+    // An untouched blank addition is not removal of an existing record.
+    $before=Operation::count();$io=count($state->calls);
+    $response=$controller->manage($post($action,['confirmed'=>'0','records'=>[...$case['records'],[]],'preimage_digest'=>$section['digest']]),$d->id,$action);
+    same(302,$response->getStatusCode(),'A blank new '.$action.' row needs no removal confirmation');same($before+1,Operation::count(),'An ordinary replacement still queues');same($io,count($state->calls),'Blank-row POST does not dispatch');
+    $op=$d->operations()->orderByDesc('id')->firstOrFail();Cache::flush();same('succeeded',$management->run($op->id,$driver)->state,'Unchanged inventory with a blank addition completes');
+    $section=$owners->present($d->fresh())->management[$action];
     // Zero and whitespace are submitted values. Incomplete rows need field errors, not deletion confirmation.
     foreach([0,'0','   '] as $value){
         $field=$value==='   '?($action==='dns'?'address':'target'):($action==='dns'?'mx_pref':'priority');
@@ -42,6 +48,32 @@ foreach($cases as $action=>$case){
         expect($dom->query('//input[starts-with(@name,"records[0]")][@aria-invalid="true"]')->length>0,'Nonempty '.$action.' row reaches field validation');
         same(0,$dom->query('//form[contains(@action,"/manage/'.$action.'")]//dialog[@open]')->length,'Nonempty row is not a removal confirmation');
         same($before,Operation::count(),'Invalid nonempty row queues nothing');same($io,count($state->calls),'Invalid nonempty row makes no provider calls');
+    }
+    // Removing an existing row still needs confirmation when new rows keep or increase the total.
+    foreach ([false,true] as $explicit) {
+        foreach ([1,2] as $additions) {
+            Cache::flush();
+            $cleared=$case['cleared'];if($explicit){$cleared['_delete']='1';}
+            $draft=[$cleared,$case['kept']];
+            for($i=1;$i<=$additions;$i++){$draft[]=$action==='dns'?['name'=>'new'.$i,'type'=>'TXT','address'=>'new value '.$i]:['service'=>'new'.$i,'protocol'=>'tcp','priority'=>0,'weight'=>0,'port'=>443,'target'=>'new'.$i.'.example.com.'];}
+            $before=Operation::count();$io=count($state->calls);
+            $response=$controller->manage($post($action,['confirmed'=>'0','records'=>$draft,'preimage_digest'=>$section['digest']]),$d->id,$action);
+            same(422,$response->getStatusCode(),'Existing '.$action.' removal confirms despite equal or increased count');
+            expect(str_contains($response->headers->get('Cache-Control'),'no-store')&&str_contains($response->headers->get('Cache-Control'),'private'),'Balanced removal confirmation is private');
+            $confirmation=storefrontDom($response->getContent());
+            same([$case['description']],array_map(fn($n)=>trim($n->textContent),iterator_to_array($confirmation->query('//dialog[@open]//*[@data-confirm-slot="removed"]/span'))),'Only the original removed record appears');
+            same($before,Operation::count(),'Balanced unconfirmed removal queues nothing');same($io,count($state->calls),'Balanced unconfirmed removal sends nothing');
+            $response=$controller->manage($post($action,['records'=>$draft,'preimage_digest'=>$section['digest']]),$d->id,$action);
+            same(302,$response->getStatusCode(),'Fresh confirmed balanced replacement queues');same($before+1,Operation::count(),'Fresh confirmation queues exactly once');same($io,count($state->calls),'Confirmed balanced POST does not dispatch');
+            $op=$d->operations()->orderByDesc('id')->firstOrFail();same($additions+1,count($op->payload['records']),'Replacement retains the filled additions');
+            $completed=$management->run($op->id,$driver);same('succeeded',$completed->state,'Balanced '.$action.' replacement completes: '.$completed->safe_code);
+            Cache::flush();$changed=$owners->present($d->fresh())->management[$action];
+            $beforeRestore=Operation::count();
+            $response=$controller->manage($post($action,['confirmed'=>'1','records'=>$case['records'],'preimage_digest'=>$changed['digest']]),$d->id,$action);
+            same(302,$response->getStatusCode(),'Confirmed inventory restore queues');same($beforeRestore+1,Operation::count(),'Restore creates a fresh operation');
+            $restore=$d->operations()->orderByDesc('id')->firstOrFail();same('succeeded',$management->run($restore->id,$driver)->state,'Restore original inventory for the next independent case');
+            $section=$owners->present($d->fresh())->management[$action];
+        }
     }
     foreach([false,true] as $explicit){
         $cleared=$case['cleared'];if($explicit){$cleared['_delete']='1';}
