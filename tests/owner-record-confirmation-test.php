@@ -66,6 +66,11 @@ foreach($cases as $action=>$case){
             $response=$controller->manage($post($action,['records'=>$draft,'preimage_digest'=>$section['digest']]),$d->id,$action);
             same(302,$response->getStatusCode(),'Fresh confirmed balanced replacement queues');same($before+1,Operation::count(),'Fresh confirmation queues exactly once');same($io,count($state->calls),'Confirmed balanced POST does not dispatch');
             $op=$d->operations()->orderByDesc('id')->firstOrFail();same($additions+1,count($op->payload['records']),'Replacement retains the filled additions');
+            for($i=1;$i<=$additions;$i++){
+                $expected=$action==='dns'?['name'=>'new'.$i,'type'=>'TXT','address'=>'new value '.$i,'mx_pref'=>10]
+                    :['service'=>'new'.$i,'protocol'=>'tcp','target'=>'new'.$i.'.example.com.','priority'=>0,'weight'=>0,'port'=>443];
+                same($expected,$op->payload['records'][$i],'Filled '.$action.' addition '.$i.' retains every field and value');
+            }
             $completed=$management->run($op->id,$driver);same('succeeded',$completed->state,'Balanced '.$action.' replacement completes: '.$completed->safe_code);
             Cache::flush();$changed=$owners->present($d->fresh())->management[$action];
             $beforeRestore=Operation::count();
