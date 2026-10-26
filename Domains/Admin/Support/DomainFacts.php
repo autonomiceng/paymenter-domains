@@ -167,7 +167,7 @@ final class DomainFacts
         $op=$d->latestAcquisition;
         if ($op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,['registration_pending','transfer_pending','needs_review'],true)) {
             $cause=preg_replace('/^Not sent: /','',(string)Labels::reason($op->safe_code));
-            $title=Labels::action($op->action).($op->state==='held'?' not sent'.($cause===''?'':': '.lcfirst($cause)).'.':' not confirmed by the registrar.');
+            $title=Labels::action($op->action).($op->state==='held'?' not sent'.($cause===''?'':': '.(preg_match('/\A(?:Enom|NameSilo)\b/',$cause)?$cause:lcfirst($cause))).'.':' not confirmed by the registrar.');
             return ['title'=>$title,'tone'=>'warning','action'=>['label'=>'Open request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
         }
         return null;
