@@ -8,6 +8,7 @@ $ports=new OwnerPorts(static function($b) {
     return new $class($b,static fn()=>throw new RuntimeException('No owner page may perform I/O.'));
 });
 $ownerBilling=new DomainBilling($bindings,new NativeDomainGuard(new HolderPricing($prices),$clock),$clock);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Storefront::class,new \Paymenter\Extensions\Servers\Domains\Services\Storefront($sellers,$prices,$native,$bindings,new \Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility($bindings,$clock),$clock));
 $owners=new OwnedDomains($clock,$ports,new DomainManagement($bindings,$clock),$ownerBilling);
 require dirname(__DIR__,2).'/Domains/routes/web.php';
 require dirname(__DIR__,2).'/Domains/routes/owned.php';

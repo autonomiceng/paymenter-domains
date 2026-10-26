@@ -15,8 +15,7 @@
                 <h1 class="domains-title">{{ $guest ? 'Find a domain' : 'Register a domain' }}</h1>
                 <p class="domains-lede">Type the name you want. We check it across every TLD we sell.</p>
             </div>
-            @if (\Illuminate\Support\Facades\Route::has('domains.domains.transfer'))<a class="domains-btn domains-btn--ghost" href="{{ route('domains.domains.transfer') }}">Transfer a domain instead</a>@else
-                <p class="domains-small domains-muted">Already own a domain? Search for it to see if you can transfer it to us.</p>
+            @if (\Illuminate\Support\Facades\Route::has('domains.domains.transfer') && collect($endings)->contains(fn($row) => $row['transfer'] !== null))<a class="domains-btn domains-btn--ghost" href="{{ route('domains.domains.transfer') }}">Transfer a domain instead</a>
             @endif
         </div>
     </div>

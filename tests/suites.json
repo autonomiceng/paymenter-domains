@@ -38,6 +38,7 @@
   ],
   "native": [
     "tests/walk-layout-test.php",
+    "tests/transfer-entry-test.php",
     "tests/enom-curl-test.php",
     "tests/enom-exchange-test.php",
     "tests/native-fixture-test.php",

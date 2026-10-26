@@ -95,7 +95,7 @@ expect(!str_contains($html,'Related services') && !str_contains($html,'View doma
 // Empty account.
 $empty=storefrontDom(view('domains::index',['domains'=>new LengthAwarePaginator([],0,25)])->render());
 same('No domains yet',$norm($empty->query('//*[contains(@class,"domains-empty")]/h2')->item(0)),'Empty heading');
-same('Register a new name or transfer one you own.',$norm($empty->query('//*[contains(@class,"domains-empty")]/p')->item(0)),'Empty text says it once');
+same('Register a new name.',$norm($empty->query('//*[contains(@class,"domains-empty")]/p')->item(0)),'Empty text says it once');
 same('yourbusiness.com',$empty->query('//*[contains(@class,"domains-empty")]//input[@name="name"]/@placeholder')->item(0)?->value,'Empty search placeholder');
 same(0,$empty->query('//*[contains(@class,"domains-empty")]//a')->length,'No second transfer link: the header button says it');
 $filtered=view('domains::index',['domains'=>new LengthAwarePaginator([],0,25),'filterCounts'=>[''=>3],'search'=>'zz'])->render();

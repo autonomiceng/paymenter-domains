@@ -6,7 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
-use Paymenter\Extensions\Servers\Domains\Services\DomainSummaries;
+use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,Storefront};
 use Paymenter\Extensions\Servers\Domains\Services\OwnedDomains;
 /** Owner pages; creation and writes have distinct controllers. Dormant until39. */
 final readonly class OwnedDomainController
@@ -38,7 +38,8 @@ final readonly class OwnedDomainController
         });
         $page=max(1,(int)$request->query('page',1));
         $domains=new LengthAwarePaginator(array_slice($rows,($page-1)*25,25),count($rows),25,$page,['path'=>route('domains.domains.index'),'query'=>array_filter(['q'=>$search,'status'=>$filter,'sort'=>$sort],fn($v)=>$v!=='')]);
-        return view('domains::index',compact('domains','search','filter','sort','filterCounts'));
+        $transfersOffered=collect(app(Storefront::class)->endings())->contains(fn($row)=>$row['transfer']!==null);
+        return view('domains::index',compact('domains','search','filter','sort','filterCounts','transfersOffered'));
     }
     public function show(Request $request,int $domain) { return $this->page($request,$domain,'show'); }
     public function setup(Request $request,int $domain) { return $this->page($request,$domain,'setup'); }
