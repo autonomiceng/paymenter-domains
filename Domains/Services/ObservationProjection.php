@@ -84,6 +84,7 @@ final class ObservationProjection
         $ops=$d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(101)->get();
         // Never treat a truncated history as a complete inventory. A fresh observation stands alone.
         if ($ops->count()>100) {
+            $sections=[];
             foreach (['nameservers','lock','privacy'] as $kind) {
                 $saved=$d->observation['sections'][$kind]??null;
                 if (is_array($saved) && self::matches($d,$saved)) { $sections[$kind]=$saved; }

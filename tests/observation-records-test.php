@@ -183,4 +183,69 @@ same('unresolved',$work->tick(2)[$d->server_id],'Overflow holds records while do
 same($prior,$d->fresh()->observation['records'],'Overflow does not advance inventory or its watermark');same($io,count($state->calls),'Overflow skips record provider reads');
 same('2028-10-18',$d->fresh()->observation['facts']['expiry'],'Overflow still refreshes domain drift facts');expect(!isset(OwnerRecords::forDomain($d->fresh())['dns']),'Overflow does not present stale whole-list records');
 $domainIo=count($observation->calls);$observation->years=3;$clock->instant=$clock->now()->modify('+1 day');$work->tick(2);expect(count($observation->calls)>$domainIo,'Overflow retains daily domain refresh');same($io,count($state->calls),'Overflow never retries record discovery automatically');same('2029-10-18',$d->fresh()->observation['facts']['expiry'],'Overflow cannot freeze daily expiry facts');
+// History alone can overflow while partial child-host history stays below its separate cap.
+$observation->years=1;
+[$d,$driver]=$holding('history-placeholder.com');
+$state->dns=[['name'=>'@','type'=>'TXT','address'=>'old','mx_pref'=>10]];
+$state->srv=[['service'=>'sip','protocol'=>'tcp','priority'=>0,'weight'=>5,'port'=>443,'target'=>'sip.example.com.']];
+$state->ds=[['algorithm'=>13,'digest_type'=>2,'key_tag'=>12,'digest'=>str_repeat('A',64)]];
+same('refreshed',$observer->run($d->id),'History fixture starts with complete inventory');
+$families=$d->fresh()->observation['records']['families'];
+$families['glue']=['state'=>'partial','records'=>['ns1.history-placeholder.com'=>'8.8.8.8']];
+ObservationRecords::save($d->fresh(),$families,$clock->now());
+foreach ([
+    ['dns',['records'=>[['name'=>'@','type'=>'TXT','address'=>'new','mx_pref'=>10]],'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest($state->dns)]],
+    ['srv',['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>0,'weight'=>5,'port'=>8443,'target'=>'sip.example.com.']],'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest($state->srv,'srv')]],
+    ['ds_add',['ds'=>['algorithm'=>13,'digest_type'=>2,'key_tag'=>13,'digest'=>str_repeat('B',64)]]],
+    ['nameservers',['nameservers'=>['ns3.example.net','ns4.example.net']]],
+    ['lock',['locked'=>false]],
+] as [$action,$payload]) {
+    Cache::flush();$changed=$submit($d,$driver,$action,$payload);
+    same('succeeded',$management->run($changed->id,$driver)->state,'Newer confirmed history '.$action);
+}
+$state->privacy=true;$state->enabled=true;Cache::flush();$changed=$submit($d,$driver,'privacy_disable');
+same('succeeded',$management->run($changed->id,$driver)->state,'History fixture has a real privacy readback');
+$preserved=$d->fresh()->observation['sections'];
+$raw=$changed->fresh()->getRawOriginal();unset($raw['id']);
+for ($i=$d->operations()->count();$i<100;$i++) {
+    $raw['operation_key']=hash('sha256','history-bound-'.$i);DB::table('domains_operations')->insert($raw);
+}
+same(100,$d->operations()->count(),'Exact reconstruction boundary');
+$known=OwnerRecords::forDomain($d->fresh());
+same('new',$known['dns'][0]['address'],'At100 newer DNS replaces inventory');
+same(8443,$known['srv'][0]['port'],'At100 newer SRV replaces inventory');
+same(2,count($known['ds']),'At100 newer DS overlays inventory');
+$srvPayload=['records'=>$known['srv'],'record_sources'=>['0'],'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest($known['srv'],'srv')];
+same($known['srv'],OwnerRecords::restoreSrv($d->fresh(),$srvPayload)['records'],'At100 SRV source indexes remain usable');
+$raw['operation_key']=hash('sha256','history-bound-101');DB::table('domains_operations')->insert($raw);
+same(101,$d->operations()->count(),'History overflow is independent of the glue cap');
+$inventory=$d->fresh()->observation['records'];$domainIo=count($observation->calls);$recordIo=count($state->calls);
+foreach ([1,2] as $cycle) {
+    $sections=ObservationProjection::sections($d->fresh());
+    foreach (['dns','srv','ds'] as $kind) {
+        expect(!isset($sections[$kind]),'History overflow omits stale '.$kind.' projection');
+        expect(!isset(OwnerRecords::forDomain($d->fresh())[$kind]),'History overflow hides owner '.$kind.' list');
+    }
+    try { OwnerRecords::restoreSrv($d->fresh(),$srvPayload);expect(false,'Overflow must refuse stale SRV sources'); }
+    catch (\Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation) {}
+    foreach (['nameservers','lock','privacy'] as $kind) { same($preserved[$kind],$sections[$kind],'Overflow keeps matched '.$kind); }
+    same(['ns1.history-placeholder.com'=>'8.8.8.8'],$sections['known_glue'],'Overflow retains explicitly partial glue');
+    foreach (['name'=>'other.example.com','generation'=>2,'account_fingerprint'=>str_repeat('f',64),'legacy'=>null] as $field=>$value) {
+        $copy=clone $d->fresh();$saved=$copy->observation;
+        foreach (['nameservers','lock','privacy'] as $kind) {
+            if ($field==='legacy') { unset($saved['sections'][$kind]['name'],$saved['sections'][$kind]['generation'],$saved['sections'][$kind]['account_fingerprint']); }
+            else { $saved['sections'][$kind][$field]=$value; }
+        }
+        $copy->observation=$saved;$rejected=ObservationProjection::sections($copy);
+        same([],$rejected['nameservers'],'Overflow refuses '.$field.' nameservers');
+        foreach (['lock','privacy'] as $kind) { expect(!isset($rejected[$kind]),'Overflow refuses '.$field.' '.$kind); }
+    }
+    $clock->instant=$clock->now()->modify('+1 day');
+    same('refreshed',$observer->run($d->id),'Overflow still refreshes domain facts cycle '.$cycle);
+    same($inventory,$d->fresh()->observation['records'],'Overflow cannot advance inventory cycle '.$cycle);
+    same('history_limit',$d->fresh()->observation['record_hold']['reason'],'History overflow keeps record discovery held');
+}
+same($recordIo,count($state->calls),'History overflow skips record discovery');
+expect(count($observation->calls)>$domainIo,'Daily domain reads continue across overflow cycles');
+
 $nativeSuccessful=true;echo "Initial managed records: complete/unknown, identity, encryption, sequence, owner gates, glue and fair held work passed.\n";
