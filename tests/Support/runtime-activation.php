@@ -96,7 +96,8 @@ expect(!str_contains($test->html(),'No TLDs chosen yet'),'Accepted catalogue is 
 DB::table('settings')->where('settingable_id',$server->id)->where('key',Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::KEY)->update(['value'=>'invalid-synthetic-acceptance']);
 $test=Livewire\Livewire::actingAs($staff)->test(RegistrarAccount::class,$account)->assertSuccessful();$html=$test->html();
 foreach(['Setup checklist','Supported TLDs','No TLDs chosen yet','Registrations','Transfers','Renewal invoices','Turn on','System checks','Registrar runtime'] as $word){expect(str_contains($html,$word),'Account page shows go-live fact '.$word);}
-foreach(['synthetic-held-account','synthetic-password','PRIVATE-','queued-held-placeholder.com','held-package-operation','domains_credentials','account_fingerprint'] as $secret){expect(!str_contains($html,$secret),'Account page excludes secrets and ledger payloads');}
+expect(Domain::where('domain','queued-held.test')->exists(),'The excluded queued-held.test fixture exists');
+foreach(['synthetic-held-account','synthetic-password','PRIVATE-','queued-held.test','held-package-operation','domains_credentials','account_fingerprint'] as $secret){expect(!str_contains($html,$secret),'Account page excludes secrets and ledger payloads');}
 $plain=staffUser([]);Livewire\Livewire::actingAs($plain)->test(RegistrarAccount::class,$account)->assertForbidden();
 $staff->role->update(['permissions'=>[]]);Livewire\Livewire::actingAs($staff)->test(RegistrarAccount::class,$account)->assertForbidden();
 $staff->role->update(['permissions'=>[Staff::VIEW]]);
