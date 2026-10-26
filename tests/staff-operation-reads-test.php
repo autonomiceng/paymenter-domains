@@ -44,6 +44,18 @@ Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id]
 expect(!ObservationRecords::held($check->domain->fresh()),'Domain recovery clears the record hold');
 same(2,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Record hold resumes current healthy job');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation');
+// Independent literal boundaries for both shared acquisition actions.
+foreach(['register','transfer'] as $action){
+    [$boundary]=$prepare(placeholderComFixtureName('staff-'.$action.'-boundary-placeholder.com'));
+    foreach([4,5] as $polls){
+        $policy=$boundary->fresh()->policy;$policy['reconciliation']=['polls'=>$polls];$policy['renewal_polls']=0;
+        $boundary->update(['policy'=>$policy]);DB::table('domains_operations')->where('id',$boundary->id)->update(['action'=>$action]);
+        $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$boundary->id]);
+        if($polls===4){$page->assertActionVisible('recheck')->assertActionHidden('resume_reads');}
+        else{$page->assertActionHidden('recheck')->assertActionVisible('resume_reads');}
+    }
+}
+
 // Read resume retains original attempt/funding; limits and current generation remain engine-owned.
 [$resume]=$prepare(placeholderComFixtureName('staff-resume-placeholder.com'));$p=$resume->policy;$p['reconciliation']=['polls'=>5];$resume->update(['policy'=>$p]);$original=$resume->fresh()->attempt;
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$resume->id])->callAction('resume_reads')->assertNotified('Status checked');
@@ -112,6 +124,13 @@ $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');commerceReject(fn(
 // Exhausted renewal read recovery is separately bounded and preserves all financial/send evidence.
 [$readRenew,$readDomain,$binding]=$makeRenewal(placeholderComFixtureName('staff-renewal-resume-placeholder.com'));
 $runRenewal($readRenew,$binding);$readRenew->refresh();$policy=$readRenew->policy;$policy['renewal_polls']=5;$readRenew->update(['policy'=>$policy]);
+foreach([4,5] as $polls){
+    $policy=$readRenew->fresh()->policy;$policy['renewal_polls']=$polls;$policy['reconciliation']=['polls'=>0];$readRenew->update(['policy'=>$policy]);
+    $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$readRenew->id]);
+    if($polls===4){$page->assertActionVisible('recheck')->assertActionHidden('resume_reads');}
+    else{$page->assertActionHidden('recheck')->assertActionVisible('resume_reads');}
+}
+
 $before=[$readRenew->fresh()->attempt,$readRenew->fresh()->funding,$readRenew->domain->fresh()->reservation_name];
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$readRenew->id])->callAction('resume_reads')->assertNotified('Status checked');
 same(0,$readRenew->fresh()->policy['renewal_polls'],'Renewal read budget explicitly resumed');

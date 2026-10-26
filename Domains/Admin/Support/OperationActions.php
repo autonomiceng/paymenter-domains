@@ -90,7 +90,7 @@ final class OperationActions
     public static function readLimit(Operation $op): bool
     {
         try { $p=$op->policy??[]; } catch (\Throwable) { return false; }
-        return ($p['renewal_polls']??0)>=5||($p['reconciliation']['polls']??0)>=5;
+        return ($p['renewal_polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT||($p['reconciliation']['polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT;
     }
     public static function description(string $action): ?string
     {

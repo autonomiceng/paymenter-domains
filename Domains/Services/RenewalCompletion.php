@@ -20,13 +20,13 @@ final readonly class RenewalCompletion
         $capture = DB::transaction(function () use ($seed, $id) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
             if (!$op || !$this->eligible($op)) { return null; }
-            $policy = $op->policy; $policy['renewal_execution'] = ['staff_alert' => true, 'reason' => ($op->policy['renewal_polls'] ?? 0) >= 5 ? 'poll_limit_reached' : 'original_attempt_unresolved', 'refundable_later' => false];
+            $policy = $op->policy; $policy['renewal_execution'] = ['staff_alert' => true, 'reason' => ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved', 'refundable_later' => false];
             $op->update(['state' => $op->state === 'running' ? 'uncertain' : $op->state, 'lease_expires_at' => null, 'policy' => $policy]);
             try {
                 $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true);
                 $attempt = ReconciliationEvidence::attempt($op, $l['domain'], CatalogueAcceptances::binding($l['account']));
                 if ((!$attempt->executionFacts || $attempt->providerReference === null) && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
-                if (($op->policy['renewal_polls'] ?? 0) >= 5) { return null; }
+                if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
                 return [$attempt, HoldingLocks::take($l['domain'])['stamp']];
             } catch (\Throwable) { return null; }
         });
@@ -56,7 +56,7 @@ final readonly class RenewalCompletion
             $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + ($covered ? 1 : 0);
             if (!$proof) {
                 $policy['renewal_execution']['reason'] = $autoRenewUnconfirmed ? 'provider_auto_renew_unconfirmed'
-                    : ($policy['renewal_polls'] >= 5 ? 'poll_limit_reached' : 'original_attempt_unresolved');
+                    : ($policy['renewal_polls'] >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved');
                 $op->update(['safe_code' => $autoRenewUnconfirmed ? 'provider_auto_renew_unconfirmed'
                     : ($autoRenewConfirmed && $op->safe_code === 'provider_auto_renew_unconfirmed' ? null : $op->safe_code), 'policy' => $policy]); return $op;
             }

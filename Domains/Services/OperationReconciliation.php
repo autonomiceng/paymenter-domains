@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Observation never replays a write. No rejection/refund can be inferred from an empty read. */
 final class OperationReconciliation
 {
+    public const POLL_LIMIT=5;
     public function __construct(private readonly OperationClaims $claims, private readonly AccountBindings $bindings, private readonly Clock $clock) {}
     public function run(int $id): Operation
     {
@@ -22,7 +23,7 @@ final class OperationReconciliation
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
                 $attempt = ReconciliationEvidence::attempt($op, $domain, $binding);
                 if ($op->action !== 'transfer' && (!$attempt->executionFacts || $attempt->providerReference === null) && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
-                if (($op->policy['reconciliation']['polls'] ?? 0) >= 5) { return null; }
+                if (($op->policy['reconciliation']['polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
                 $requestedNameservers = null;
                 if ($op->action === 'transfer' && $op->registrar_key === 'namesilo' && ($op->payload['nameservers'] ?? [])) {
                     try { $requestedNameservers = NameserverEvidence::requested($op->payload['nameservers'], 'transfer_request', new \DateTimeImmutable($op->attempt['dispatch_attempted_at'])); }
@@ -102,7 +103,7 @@ final class OperationReconciliation
                 }
             }
             if (!$proof) {
-                $policy['reconciliation']['reason'] = $policy['reconciliation']['polls'] >= 5 ? 'poll_limit_reached' : 'original_attempt_unresolved';
+                $policy['reconciliation']['reason'] = $policy['reconciliation']['polls'] >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved';
                 $op->update(['policy' => $policy]); return $op;
             }
             $funding->completeInitial($op, $domain); // Persistence failures roll back the whole native/domain decision.
@@ -155,7 +156,7 @@ final class OperationReconciliation
         $policy = $op->policy ?? [];
         $policy['reconciliation'] = [...($policy['reconciliation'] ?? []), 'polls' => $policy['reconciliation']['polls'] ?? 0,
             'staff_alert' => true, 'reason' => $op->state === 'held' && $op->safe_code === 'transfer_needs_action' ? 'transfer_needs_action'
-                : (($policy['reconciliation']['polls'] ?? 0) >= 5 ? 'poll_limit_reached' : 'original_attempt_unresolved')];
+                : (($policy['reconciliation']['polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved')];
         $op->update(['policy' => $policy, 'state' => $op->state === 'running' ? 'uncertain' : $op->state,
             'lease_expires_at' => null, 'safe_code' => $op->state === 'running' ? 'stale_claim' : ($op->safe_code ?: 'reconciliation_required')]);
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/reconciliation-fixture.php';
 use Illuminate\Support\Facades\DB;
+same(5,Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT,'Shared engine poll limit stays five');
 foreach (['generation', 'cancelled', 'reversal', 'changed', 'paused'] as $race) {
     [$op, $binding] = $prepare(placeholderComFixtureName('authority-'.$race.'-placeholder.com'));
     $observation->during = static function () use ($op, $race, $readBindings, $binding): void {
