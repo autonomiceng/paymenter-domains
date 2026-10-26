@@ -239,7 +239,7 @@ $verify=new class implements AccountVerifier {public function verify(Environment
 foreach(['enom','namesilo'] as $key){$registry->register($key,['token'],$verify,static function($binding,$credentials)use($readState):FakeRegistrar {
     same(0,DB::transactionLevel(),'Balance read outside transaction');$readState->calls++;
     if($readState->fail){throw new RuntimeException('PRIVATE-PROVIDER-REPLY');}
-    return $readState->readers[]=new FakeRegistrar($binding,new Capabilities($binding,[]),new DriverResult($binding,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence(balance:new Money('6.00','USD'))));
+    return $readState->readers[]=new FakeRegistrar($binding,new Capabilities($binding,[]),new DriverResult($binding,($readState->failedResult??false)?Disposition::Unknown:Disposition::Accepted,SendState::Sent,($readState->failedResult??false)?ResultReason::Unverified:ResultReason::Acknowledged,new Evidence(balance:new Money('6.00','USD'))));
 });}
 $balanceReads=static fn()=>array_sum(array_map(static fn($reader)=>count(array_filter($reader->calls,static fn($method)=>$method==='balance')),$readState->readers));
 $manualBindings=new AccountBindings($registry);$limiter=new AccountReadBudget($clock);$balances=new RegistrarBalances($manualBindings,$clock,$limiter);
@@ -261,6 +261,46 @@ $clock->instant=$clock->now()->modify('+60 seconds');$balances->daily($a);same('
 $calls=$readState->calls;$balances->daily($a);same($calls,$readState->calls,'Successful daily read not retried within24 hours');
 $clock->instant=$clock->now()->modify('+60 seconds');$readState->fail=true;same('configuration_unavailable',$balances->refresh($a->server_id),'Reader configuration failure is safe');
 same('6.00',$row($a)->amount,'Daily value retained on refresh failure');$readState->fail=false;
+// Local limiter errors before a physical read never invalidate retained balance evidence.
+foreach(['manual','daily']as$source){foreach(['throw','leases','fingerprint']as$damage){
+    $savedBalance=(array)$row($a);$savedBudget=(array)DB::table('domains_read_budgets')->where('server_id',$a->server_id)->sole();
+    $savedTime=$clock->instant;
+    try{
+        $clock->instant=$clock->now()->modify('+61 seconds');
+        BalanceReads::record($binding,new Money('6.00','USD'),$clock->now(),'manual');
+        DB::table(BalanceSchema::TABLE)->where('id',$savedBalance['id'])->update(['manual_due_at'=>0,'daily_due_at'=>0]);
+        $before=(array)$row($a);$wireBefore=$balanceReads();
+        $broken=$limiter;
+        if($damage==='throw'){
+            $broken=new class implements \Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter {
+                public function acquire(AccountBinding $b,RequestOrigin $o):string{throw new RuntimeException('Synthetic local limiter failure');}
+                public function release(AccountBinding $b,RequestOrigin $o,string $t):void{throw new LogicException('Unused lease');}
+            };
+        }else{DB::table('domains_read_budgets')->where('server_id',$a->server_id)->update($damage==='leases'?['leases'=>'{']:['account_fingerprint'=>str_repeat('f',64)]);}
+        $blocked=new RegistrarBalances($manualBindings,$clock,$broken);
+        if($source==='manual'){same('read_failed',$blocked->refresh($a->server_id),'Local limiter failure keeps its safe refresh code');}else{$blocked->daily($a);}
+        $after=(array)$row($a);
+        foreach(['manual_due_at','daily_due_at']as$field){unset($before[$field],$after[$field]);}
+        same($before,$after,'Pre-budget '.$damage.' through '.$source.' preserves all balance evidence');
+        same($wireBefore,$balanceReads(),'Pre-budget failure makes no balance/provider send');
+        same('USD 6.00',RegistrarBalances::facts($a,$clock->now())['balance'],'Local failure keeps retained balance visible');
+        DB::table('domains_read_budgets')->where('server_id',$a->server_id)->update($savedBudget);
+        $clock->instant=$clock->now()->modify($source==='manual'?'+60 seconds':'+1 day');
+        if($source==='manual'){same('refreshed',$balances->refresh($a->server_id),'Repaired limiter recovers after manual cooldown');}else{$balances->daily($a);}
+        same($wireBefore+1,$balanceReads(),'Repaired limiter permits exactly one balance read');
+        same(null,$row($a)->last_error_code,'Repaired read remains successful');
+    }finally{
+        DB::table(BalanceSchema::TABLE)->where('id',$savedBalance['id'])->update($savedBalance);
+        DB::table('domains_read_budgets')->where('server_id',$a->server_id)->update($savedBudget);$clock->instant=$savedTime;
+    }
+}}
+$savedBalance=(array)$row($a);$savedTime=$clock->instant;
+try{
+    $clock->instant=$clock->now()->modify('+60 seconds');$readState->failedResult=true;
+    same('read_failed',$balances->refresh($a->server_id),'Consumed failed balance reports a failed read');
+    same('read_failed',$row($a)->last_error_code,'Consumed failure invalidates retained display');
+    same($clock->now()->getTimestamp(),(int)$row($a)->attempted_at,'Consumed failure records its attempt');
+}finally{$readState->failedResult=false;DB::table(BalanceSchema::TABLE)->where('id',$savedBalance['id'])->update($savedBalance);$clock->instant=$savedTime;}
 // Render actual Filament page; neither credentials, fingerprints nor provider error text reach HTML or Livewire state.
 $shown=RegistrarBalances::facts($a,$clock->now());$serverName=App\Models\Server::findOrFail($a->server_id)->name;
 $render=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Registrars')->assertSee('Add funds')->assertSee($serverName)->assertSee($shown['balance']??'Missing');

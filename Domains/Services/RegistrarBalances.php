@@ -58,11 +58,12 @@ final readonly class RegistrarBalances
             if ($reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\CataloguePreview) { throw new \DomainException('Use the reviewed staff balance probe.'); }}
         catch(\Throwable){BalanceReads::record($binding,null,$this->clock->now(),$source,'configuration_unavailable');return 'configuration_unavailable';}
         $c=new RequestContext($binding,$origin,$this->clock->now()->modify('+25 seconds'),new RequestBudget(1),$this->clock,$this->limiter);
+        $remaining=$c->budget->remaining();
         try{
             // Reserve the same per-login wire limiter used by the existing driver reads.
             $r=$c->withReservedWire(fn()=>BalanceReads::read($reader,$c,$source));
             return $r->evidence()->balance&&$r->disposition===\Paymenter\Extensions\Servers\Domains\Data\Disposition::Accepted?'refreshed':'read_failed';
-        }catch(\Throwable $e){if($e instanceof EnomTestCallLimit){return 'test_call_refused';}if($e instanceof ReadDeferred){return 'rate_limited';}BalanceReads::record($binding,null,$this->clock->now(),$source,'read_failed');return 'read_failed';}
+        }catch(\Throwable $e){if($e instanceof EnomTestCallLimit){return 'test_call_refused';}if($e instanceof ReadDeferred){return 'rate_limited';}BalanceReads::recordRead($binding,$c,$remaining,$source,error:$e);return 'read_failed';}
     }
     public static function fundsUrl(string $registrar,string $environment): string
     {
