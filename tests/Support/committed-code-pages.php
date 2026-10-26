@@ -24,6 +24,16 @@ $controller=new OwnedDomainController($owners);
 $presenter=new NativePresenter($owners,$native,new HolderPricing($prices));
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 staffPanel();$viewer=staffUser(array_keys(Staff::permissions()));
+foreach ([false,true] as $paid) {
+    $receipt=$newTransfer('committed-payment-'.($paid?'paid':'unpaid').'-placeholder.com',0,$paid,true);
+    storefrontViews();app('view')->getFinder()->flush();
+    $r=Request::create('/domains/'.$receipt->domain_id.'/code','GET');$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
+    $calls=count($state->calls);$view=$controller->code($r,$receipt->domain_id);$dto=$view->getData()['domain'];
+    same([true,true,$paid],[$dto->transfer['received'],$dto->transfer['open'],$dto->transfer['paid']],'Saved code receipt uses the actual open transfer payment state');
+    $dom=storefrontDom($view->render());
+    same([$paid?'Auth code saved.':'Auth code saved. The transfer starts after the invoice is paid.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//p[@role="status"]'))),'Unpaid receipt explains payment; paid receipt stays neutral');
+    same($calls,count($state->calls),'Rendering the saved-code payment state dispatches no provider work');
+}
 foreach([0,1]as$i){
     $user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');
     $committed=$newTransfer('committed-private-page-placeholder-'.$i.'.com',$i,true,false);
@@ -75,6 +85,7 @@ foreach([0,1]as$i){
         if($page==='code'){
             expect($dto->transfer['received']&&substr_count($html,'Auth code saved.')===1,'Real committed-code page acknowledges receipt once');
             expect(!str_contains($html,'The transfer starts once payment is confirmed.'),'Paid contact-held transfer makes no payment-only start promise');
+            expect($dto->transfer['paid']&&!str_contains($html,'The transfer starts after the invoice is paid.'),'Paid contact-held receipt omits the unpaid payment sentence');
             same('Auth code saved.',\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::CODE_SAVED,'Saved receipt is neutral');
             same('held',$committed->fresh()->state,'Rendering the saved receipt keeps the contact hold');
             same($heldCalls,count($state->calls),'Saved-code pages dispatch no provider work');
