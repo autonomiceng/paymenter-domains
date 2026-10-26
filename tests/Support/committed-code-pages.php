@@ -34,6 +34,14 @@ foreach ([false,true] as $paid) {
     same([$paid?'Auth code saved.':'Auth code saved. The transfer starts after the invoice is paid.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//p[@role="status"]'))),'Unpaid receipt explains payment; paid receipt stays neutral');
     same($calls,count($state->calls),'Rendering the saved-code payment state dispatches no provider work');
 }
+$closed=$newTransfer('committed-payment-closed-placeholder.com',0,false,true);
+$closed->update(['state'=>'held','safe_code'=>'binding_changed']);
+$r=Request::create('/domains/'.$closed->domain_id.'/code','GET');$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
+$calls=count($state->calls);$view=$controller->code($r,$closed->domain_id);$dto=$view->getData()['domain'];
+same([true,false,false],[$dto->transfer['received'],$dto->transfer['paid'],$dto->transfer['open']],'Held unpaid transfer has a saved code and closed editor');
+$dom=storefrontDom($view->render());
+same(['Auth code saved.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//p[@role="status"]'))),'Closed unpaid receipt makes no payment-only start promise');
+same($calls,count($state->calls),'Closed saved-code receipt dispatches no provider work');
 foreach([0,1]as$i){
     $user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');
     $committed=$newTransfer('committed-private-page-placeholder-'.$i.'.com',$i,true,false);
