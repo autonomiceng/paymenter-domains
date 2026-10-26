@@ -164,7 +164,7 @@ foreach (['', 'psl-test.php', 'owner-record-confirmation-test.php'] as $fixture)
     expect(!fixtureIpAllowed('2606:4700:4700::1111', $fixture), 'IPv6 pin exception stays in its transport fixture');
 }
 expect(!fixtureIpAllowed('2606:4700:4700::1001', 'psl-transport-test.php'), 'IPv6 exception does not allow neighboring public addresses');
-foreach (['owner-record-confirmation-test.php', 'owner-record-errors-test.php', 'psl-test.php', 'psl-transport-test.php'] as $fixture) {
+foreach (['owner-record-confirmation-test.php', 'owner-record-errors-test.php', 'psl-test.php', 'psl-transport-test.php', 'client-script-render.php'] as $fixture) {
     $ips = fixtureIpLiterals(file_get_contents(__DIR__.'/'.$fixture));
     expect($ips !== [], $fixture.' must contain IP literals for this policy check');
     foreach ($ips as $ip) { expect(fixtureIpAllowed($ip, $fixture), $fixture.' uses a permitted IP fixture: '.$ip); }

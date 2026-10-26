@@ -29,8 +29,8 @@ $cases = [
 ];
 $recordManagement=[];
 foreach (['dns'=>[
-    ['name'=>'@','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10],
-    ['name'=>'www','type'=>'A','address'=>'8.8.4.4','mx_pref'=>10],
+    ['name'=>'@','type'=>'A','address'=>'192.0.2.1','mx_pref'=>10],
+    ['name'=>'www','type'=>'A','address'=>'192.0.2.2','mx_pref'=>10],
 ], 'srv'=>[
     ['service'=>'sip','protocol'=>'tcp','priority'=>0,'weight'=>0,'port'=>443,'target'=>'sip.example.com.'],
     ['service'=>'xmpp','protocol'=>'tcp','priority'=>0,'weight'=>0,'port'=>5222,'target'=>'chat.example.com.'],
