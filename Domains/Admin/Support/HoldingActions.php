@@ -41,7 +41,7 @@ final class HoldingActions
                 catch(\Throwable){$quoteFailed=true;}
             }
             $out[]=Action::make($name)->label($label)->color($name==='stop'?'danger':'gray')
-                ->disabled($quoteFailed)->tooltip($quoteFailed?'Could not read the renewal price. Check TLD prices or reload.':null)
+                ->disabled($quoteFailed)->tooltip($quoteFailed?"Couldn't read the renewal price. Check TLD prices, then reload.":null)
                 ->visible(fn()=>Staff::can(StaffHoldingReview::permission($name))&&($name==='reprice'||($name==='stop'?!$stopped:$stopped)))
                 ->requiresConfirmation()->modalHeading($name==='stop'?'Stop renewal?':$label)->modalDescription($description)->modalSubmitActionLabel($label)->modalWidth('lg')
                 ->schema([Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,$name,$stamp,app(Clock::class))),

@@ -141,7 +141,7 @@ foreach(['missing-price','throwing-clock'] as $fault){
         }));}
     $beforeQuote=[$d->fresh()->getRawOriginal(),$s->fresh()->getRawOriginal()];
     $quotePage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->assertActionVisible('reprice')->assertActionDisabled('reprice')->assertActionVisible('resume')->assertActionEnabled('resume');
-    same('Could not read the renewal price. Check TLD prices or reload.',$quotePage->instance()->getAction('reprice')->getTooltip(),'Failed quote has a safe repair hint');
+    same("Couldn't read the renewal price. Check TLD prices, then reload.",$quotePage->instance()->getAction('reprice')->getTooltip(),'Failed quote has a safe repair hint');
     $quotePage->assertDontSee('Sensitive quote failure');
     DB::beginTransaction();
     $runningPolicy=$d->fresh()->renewal_policy;$runningPolicy['renewals_stopped']=false;$d->fresh()->update(['renewal_policy'=>$runningPolicy]);
