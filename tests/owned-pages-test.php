@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 $controller=new OwnedDomainController($owners); $session=app('request')->session();
-$maxSld=str_pad('placeholder',63,'a');
+$maxSld=(str_repeat('a',51).'-placeholder');
 $request=static function($actor)use($session){$r=Request::create('/domains','GET');$r->setUserResolver(fn()=>$actor);$r->setLaravelSession($session);return $r;};
 $other=commerceUser(); $snapshots=[];
 foreach ([0,1] as $i) {

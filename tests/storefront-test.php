@@ -72,7 +72,7 @@ $reads->premium = false; $reads->available = true;
 foreach (['xn--example.com', 'éxample.com', str_repeat('a', 64).'.com', 'sub.example.com', '<script>.com', ['com']] as $invalid) {
     same(422, $check($invalid)->getStatusCode(), 'Unsupported/IDN/long/malformed input has neutral error');
 }
-same('available', $check(placeholderComFixtureName(str_pad('placeholder',63,'a').'.com'))->getData(true)['status'], '63-char label works');
+same('available', $check(placeholderComFixtureName((str_repeat('a',51).'-placeholder').'.com'))->getData(true)['status'], '63-char label works');
 foreach (['https://www.example.com/path', 'www.example.com', 'example.unoffered'] as $raw) {
     $data = $controller->search($req(['name' => $raw], 'GET'))->getData();
     same('example', $data['sld'], 'Approved pasted-name parsing'); expect(count($data['results']) === 1, 'Safe alternative ending');
@@ -188,7 +188,7 @@ same(7, $dom->query('//li[@data-domains-result]')->length, 'Real Blade renders e
 same(2, $dom->query('//li[@data-domains-result]//form[@method="POST"]')->length, 'Only available/transferable states offer actions');
 same(2, $dom->query('//input[@name="_token"]')->length, 'Offered forms contain native CSRF');
 same(2, $dom->query('//input[@name="_request_key"]')->length, 'Offered forms contain session keys');
-same(str_pad('placeholder',63,'a'), $dom->query('//li[@data-domains-result][1]//div[@class="domains-result__name"]/span[1]')->item(0)?->textContent, 'Real view keeps long names');
+same((str_repeat('a',51).'-placeholder'), $dom->query('//li[@data-domains-result][1]//div[@class="domains-result__name"]/span[1]')->item(0)?->textContent, 'Real view keeps long names');
 $data['results'][0]['sld'] = '<img src=x onerror=alert(1)>';
 same(0, storefrontDom(view('domains::search', $data)->render())->query('//img')->length, 'Names are escaped');
 $pricing = view('domains::pricing', ['rows' => $data['endings'], 'guest' => true, 'testEnvironment' => false])->render();

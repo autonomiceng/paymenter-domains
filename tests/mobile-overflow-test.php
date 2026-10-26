@@ -12,8 +12,10 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaryStrings, WatchTr
 
 storefrontViews();
 app('view')->share('keys', array_fill_keys(['setup', 'code', 'renew', 'auto-renew'], str_repeat('a', 64)));
-$label = str_pad('placeholder', 63, 'a');
+$label = (str_repeat('a',51).'-placeholder');
 $name = placeholderComFixtureName($label.'.com');
+same(63, strlen($label), 'Mobile fixture retains the DNS label boundary');
+expect(preg_match('/-placeholder(?:-[0-9]+)?\\.com\\z/', $name) === 1, 'Mobile long-name fixture has the approved placeholder suffix');
 $summary = new DomainSummary($name, null, 'watch', 'domain.registration.external', [], true, true,
     ['watch.ns_changed'], DomainSummaryStrings::all(), '2027-01-15', 'date', 'Public registry', [], null, null,
     [], [$name], ['detail'=>'/domains/checks/watch/1', 'support'=>'/tickets/create', 'compareTransfer'=>'/domains/checks/watch/1/transfer']);

@@ -6,7 +6,7 @@ require __DIR__.'/Support/owner-records.php';
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationSchema};
 use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
 $out=$argv[1];$shell=file_get_contents($argv[2]);storefrontViews();ObservationSchema::install();
-[$d,$driver]=$holding(placeholderComFixtureName(str_pad('placeholder',63,'a').'.com'));
+[$d,$driver]=$holding(placeholderComFixtureName((str_repeat('a',51).'-placeholder').'.com'));
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $clearRecords=static function()use(&$d):void{$fresh=$d->fresh();$p=$fresh->observation??[];unset($p['record_hold']);$fresh->update(['observation'=>$p]);};
 $observer=new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports);
@@ -17,7 +17,7 @@ $emit=static function(string $stateName)use(&$d,$owners,$out,$shell):void {
  $dto=$owners->present($d->fresh());storefrontViews();app('view')->getFinder()->flush();
  foreach(['dns','srv','ds','glue']as$kind){
   $copy=new OwnedDomain(...[...get_object_vars($dto),'management'=>[$kind=>$dto->management[$kind]]]);
-  $html=view('domains::show',['domain'=>$copy,'keys'=>array_fill_keys(\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS,str_repeat('a',64))])->render();
+  $html=view('domains::show',['domain'=>$copy,'keys'=>array_fill_keys(['setup','recovery','code','renew','auto-renew',...\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS],str_repeat('a',64))])->render();
   preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;
   writeRenderArtifact($out.'/'.$kind.'-'.$stateName.'.html',str_replace('@@SLOT@@',$content,$shell));
  }
