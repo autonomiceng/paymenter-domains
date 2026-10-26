@@ -18,6 +18,8 @@ class ListWatches extends ListRecords
     /** Request-scoped projection of the visible page; protected, so never part of the Livewire snapshot. */
     protected ?array $visible=null;
     protected array $status=[];
+    /** Overflow of the current expiry scan; protected, so never part of the Livewire snapshot. */
+    protected ?bool $expiryCapped=null;
     public function getTitle(): string{return 'Domain monitoring';}
     public function getBreadcrumbs(): array{return [];}
     public function getSubheading(): ?string{return null;}
@@ -50,6 +52,13 @@ class ListWatches extends ListRecords
     }
     /** @return list<int> */
     public function statusIds(string $status): array{return $this->status[$status]??=WatchFindings::statusIds($status);}
+    public function recordExpiryScan(bool $capped): void{$this->expiryCapped=$capped;}
+    /** Indicators can render before records; applying the filters records the scan without reading indicators. */
+    public function expiryScanCapped(): bool
+    {
+        if($this->expiryCapped===null){$this->getFilteredTableQuery();}
+        return $this->expiryCapped??false;
+    }
     public function watchRow(WatchName $record): array
     {
         $records=$this->getTableRecords();
