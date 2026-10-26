@@ -16,7 +16,9 @@ expect(str_contains($runtimeDoc,'share the same limiter'),'Request limits have a
 $server=$tlds[0]->server_id;
 $binding=CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server)->sole());
 $clock=new class implements Clock {
-    public function now():DateTimeImmutable{return new DateTimeImmutable('2026-10-22T12:00:00Z');}
+    public DateTimeImmutable $instant;
+    public function __construct(){$this->instant=new DateTimeImmutable('2026-10-22T12:00:00Z');}
+    public function now():DateTimeImmutable{return $this->instant;}
 };
 $budget=new AccountReadBudget($clock,48);
 foreach([RequestOrigin::Interactive,RequestOrigin::Background] as $index=>$origin){
@@ -25,6 +27,12 @@ foreach([RequestOrigin::Interactive,RequestOrigin::Background] as $index=>$origi
 }
 // Broken retained identity must not stop other account turns or independent producers.
 $badAccount = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[0]->server_id)->sole();
+$retainedIdentity=$badAccount->getRawOriginal('stable_identity');
+$batch=[];
+for($i=0;$i<24;$i++){
+    $t=$tlds[0]->replicate();$t->tld='batch'.$i.'.test';$t->save();$batch[]=$t;
+}
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class,$native);
 DB::table('domains_accounts')->where('id', $badAccount->id)->update(['stable_identity' => 'broken ciphertext']);
 $failures = [];
 \Illuminate\Support\Facades\Event::listen(\Illuminate\Log\Events\MessageLogged::class,
@@ -45,4 +53,10 @@ foreach (['registrar_balance', 'publication'] as $producer) {
     expect((bool) array_filter($failures, static fn ($f) => $f['producer'] === $producer && $f['row_id'] === (int) $badAccount->server_id),
         'Broken binding is recorded at its gate: '.$producer);
 }
+same(0,(int)DB::table('domains_runtime_turns')->where('server_id',$server)->value('tld_cursor'),'Failed publication gate retains the entire 25-row batch');
+DB::table('domains_accounts')->where('id',$badAccount->id)->update(['stable_identity'=>$retainedIdentity]);
+$clock->instant=$clock->now()->modify('+60 seconds');$runtime->tick();
+same((int)end($batch)->id,(int)DB::table('domains_runtime_turns')->where('server_id',$server)->value('tld_cursor'),'Repair advances the retained full batch');
+foreach($batch as $t){expect($native->product($t,'register')!==null,'Repair publishes every retained TLD');}
+same(2,$independent,'Independent producer advances through repair');
 echo "Runtime shared interactive/background request budget passed.\n";$nativeSuccessful=true;

@@ -72,10 +72,12 @@ final readonly class RuntimeWork
             $domains=Domain::where('server_id',$a->server_id)->where('id','>',$row->domain_cursor)->orderBy('id')->limit(25)->get();
             foreach($domains as $d){if(in_array($d->provenance,[null,'purchased','converted_purchase'],true)){$this->attempt('transfer_watch_enrollment',fn()=>(new TransferWatchEnrollment())->repair((int)$d->id,(int)$d->user_id,$this->clock->now()->getTimestamp()),(int)$d->id);}if($d->provenance==='adopted'){$this->attempt('adoption_enrollment',fn()=>app(AdoptionEnrollment::class)->repair((int)$d->id),(int)$d->id);}$this->attempt('acquisition_retirement',fn()=>app(AcquisitionRetirement::class)->inspect((int)$d->id),(int)$d->id);$this->attempt('native_identity',fn()=>NativeIdentityDiscrepancies::inspect($d,$this->clock->now()->getTimestamp()),(int)$d->id);$this->bill($d);}
             $tlds=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->where('id','>',$row->tld_cursor)->orderBy('id')->limit(25)->get();
-            $this->attempt('publication',function()use($a,$tlds):void {
+            $tldCursor=(int)$row->tld_cursor;
+            $this->attempt('publication',function()use($a,$tlds,&$tldCursor):void {
                 if(!TestCatalogue::enabled(CatalogueAcceptances::binding($a))){foreach($tlds as $t){$this->attempt('publication',fn()=>app(NativeCatalogue::class)->publish((int)$t->id,$this->clock->now()),(int)$t->id);}}
+                $tldCursor=$tlds->count()===25?$tlds->last()->id:0;
             },(int)$a->server_id);
-            DB::table('domains_runtime_turns')->where('id',$row->id)->update(['tld_cursor'=>$tlds->count()===25?$tlds->last()->id:0,'operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'domain_cursor'=>$domains->count()===25?$domains->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
+            DB::table('domains_runtime_turns')->where('id',$row->id)->update(['tld_cursor'=>$tldCursor,'operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'domain_cursor'=>$domains->count()===25?$domains->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
         }
         $this->attempt('initial_managed_records',fn()=>$this->ports->initialManagedRecordObservations());
         foreach(ObservationCandidates::next('refund') as $ids){foreach($ids as $id){$this->attempt('refund',fn()=>app(Refunds::class)->creditRejected((int)$id),(int)$id);}}
