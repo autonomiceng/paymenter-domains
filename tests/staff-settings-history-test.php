@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use App\Models\{Server,Setting};
 use Illuminate\Support\Facades\{Auth,Crypt,DB,Schema};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,StaffAuditSchema,StaffSettingsReview as Review};
 extract(commerceFixture());Carbon\Carbon::setTestNow($now);$t=$tlds[0];
 $u=staffUser([Staff::VIEW,Staff::POLICY,Review::permission('default_rule')]);Auth::setUser($u);
@@ -33,14 +33,26 @@ function historyCost(callable $run,int &$reads): array
     $reads=0;DB::enableQueryLog();DB::flushQueryLog();$run();$queries=DB::getQueryLog();DB::disableQueryLog();
     return [count($queries),$reads];
 }
+function validatedHistory(int $serverId,?int $tldId,int $actorId): array
+{
+    $rows=TldFacts::history($serverId,$tldId);
+    expect(is_array($rows),'History projection is readable');
+    expect($rows!==[],'History projection contains seeded audit evidence');
+    same('Retain synthetic audit evidence',$rows[0]['reason'],'History preserves the seeded reason');
+    same('Default pricing changed',$rows[0]['change'],'History projects the seeded change');
+    same('Staff #'.$actorId,$rows[0]['by'],'History projects the seeded actor');
+    expect(!str_contains(json_encode($rows,JSON_THROW_ON_ERROR),'unavailable'),'History projection contains no unavailable state');
+    expect(count($rows)<=Review::HISTORY_LIMIT,'Validated history projection has a bounded row count');
+    return $rows;
+}
 seedArchives($prototype,1,10);
 $writeTen=historyCost(fn()=>$review()->local(static fn()=>null),$retrieved);
-$readTen=historyCost(fn()=>TldFacts::history($server->id,$t->id),$retrieved);
+$readTen=historyCost(fn()=>validatedHistory($server->id,$t->id,$u->id),$retrieved);
 $nativeLoad=static fn()=>DB::transaction(fn()=>Server::whereKey($server->id)->lockForUpdate()->firstOrFail()->settings()->lockForUpdate()->get());
 $nativeTen=historyCost($nativeLoad,$retrieved);
 seedArchives($prototype,11,500);
 $writeMany=historyCost(fn()=>$review()->local(static fn()=>null),$retrieved);
-$readMany=historyCost(fn()=>TldFacts::history($server->id,$t->id),$retrieved);
+$readMany=historyCost(fn()=>validatedHistory($server->id,$t->id,$u->id),$retrieved);
 $nativeMany=historyCost($nativeLoad,$retrieved);
 same($nativeTen,$nativeMany,'Native full-settings locked loads do not grow with either archive family');
 same($writeTen,$writeMany,'10 versus 500 archives have constant write queries and setting decrypts');
@@ -49,7 +61,17 @@ expect($writeMany[1]>0&&$readMany[1]>0,'Encrypted setting retrieval counter is a
 same(1,$readMany[1],'History display retrieves only the current encrypted native setting');
 DB::table(AuditArchives::TABLE)->where('id',DB::table(AuditArchives::TABLE)->min('id'))->update(['payload'=>'broken old ciphertext']);
 $review()->local(static fn()=>null);
-expect(!str_contains(json_encode(TldFacts::history($server->id)),'unavailable'),'Old archives are retained without being loaded');
+validatedHistory($server->id,null,$u->id);
+$current=DB::table('settings')->where('id',$batch->id);$ciphertext=(clone $current)->value('value');
+expect(is_string($ciphertext)&&$ciphertext!=='','Current encrypted history has raw ciphertext to restore');
+try{
+    same(1,$current->update(['value'=>'broken current ciphertext']),'Current history ciphertext is corrupted');
+    $unreadable=TldFacts::history($server->id,$t->id);
+    same(null,$unreadable,'Corrupt current history returns strict null');
+    same(DomainFacts::UNREADABLE,html_entity_decode(strip_tags(TldFacts::historyTable($unreadable)->toHtml()),ENT_QUOTES),'Unreadable current history shows encryption-key feedback');
+}finally{$current->update(['value'=>$ciphertext]);}
+same($ciphertext,(clone $current)->value('value'),'Current history restores the exact raw ciphertext');
+validatedHistory($server->id,$t->id,$u->id);
 expect(count(Review::historyRows($server))<=Review::HISTORY_LIMIT,'History display has an explicit entry bound');
 same($stamp,Review::stamp($t->server_id,$t->id),'Audit growth leaves the reviewed state unchanged');
 tldRefusal(fn()=>$first->local(static fn()=>null),'Review key used.');
