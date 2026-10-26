@@ -31,7 +31,8 @@
 .domains .domains-small { font-size: .8125rem; line-height: 1.25rem; }
 .domains .domains-num { font-variant-numeric: tabular-nums; }
 .domains .domains-nowrap { white-space: nowrap; }
-.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: none; text-underline-offset: 3px; }
+.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-linkbtn { text-decoration: none; }
 .domains .domains-a:hover { text-decoration: underline; }
 .domains .domains-back { display: inline-flex; align-items: center; gap: .25rem; font-size: .875rem; color: var(--e-muted); min-height: 2rem; }
 .domains .domains-back:hover { color: var(--e-fg); }

@@ -66,7 +66,8 @@ same(['Off',['Add · $8.00/yr']],[$text('privacy'),$action('privacy')],'WHOIS pr
 same(['Jane Doe jane@example.com',['Edit contacts']],[$text('contacts'),$action('contacts')],'Owner row: registrant name and email');
 same('Owner',$norm($dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__l")]/text()')->item(0)),'Owner row label');
 same(0,$dom->query('//*[contains(@class,"domains-row__a")]//*[self::a or self::button][not(contains(@class,"domains-a"))]')->length,'Every row action uses the one link style');
-expect(str_contains($html,'.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: none;'),'Row actions are not underlined');
+expect(str_contains($html,'.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: underline;'),'Inline links are underlined');
+expect(str_contains($html,'.domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-linkbtn { text-decoration: none; }'),'Standalone row actions keep their link style');
 same(['Emailed to the owner',['Email auth code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
 same(0,$dom->query('//li[@id="auto_renew_off"]')->length,'Registrar auto-renew row is staff only');
 foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records','ds'=>'dnssec','lock'=>'transfer-lock','privacy'=>'privacy','auth_code_email'=>'transfer-code']as$id=>$anchor){
@@ -219,4 +220,5 @@ same(1,$dom->query('//section[@id="history"]//a[@href="/invoices/7"][.="Renewal 
 
 // Every help popover the page uses has an anchor.
 foreach(['nameservers','dns','glue','ds','lock','privacy','auth_code_email','contacts','auto-renew']as$id){expect(isset(OwnerHelp::SECTIONS[$id]),'Help section: '.$id);}
+
 $nativeSuccessful=true;echo "Client domain page checked.\n";
