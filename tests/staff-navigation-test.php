@@ -1,6 +1,7 @@
 <?php
 // Staff navigation, the Domain monitoring Settings tab and its maintenance notice. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require __DIR__.'/Support/doh-environment.php';
 require __DIR__.'/Support/watch-notices.php';
 use Illuminate\Support\Facades\{Auth,DB,Route};
 use Livewire\Livewire;
@@ -63,9 +64,13 @@ $saved=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee(
 $once($saved,'Edit resolver');
 // Unreadable saved settings: Missing with its cause and the fix next to it.
 \App\Models\Setting::where('key',DnsResolverSettings::KEY)->update(['value'=>'{']);
-Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Missing')->assertSee("Saved settings can't be read.")->assertDontSee('Server default');
+Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Missing')->assertSee("Saved settings can't be read.")->assertDontSee('Server default')->assertActionHidden('configure')->assertActionHidden('check')->assertSee('Edit resolver');
 // The server cannot use a custom resolver: the error notice and the server default, not Missing.
-putenv('SSLKEYLOGFILE=/synthetic-disabled');Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Turn off SSLKEYLOGFILE on the server to use a custom resolver.')->assertSee('Server default')->assertDontSee('Missing');putenv('SSLKEYLOGFILE');
+putenv('SSLKEYLOGFILE=/synthetic-disabled');Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Turn off SSLKEYLOGFILE on the server to use a custom resolver.')->assertSee('Server default')->assertDontSee('Missing')->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Edit resolver');putenv('SSLKEYLOGFILE');
+$GLOBALS['domainsTestCurlMissing']=true;
+same([null,'Install the PHP cURL extension to use a custom resolver.',true],$settings->configuration(),'Missing PHP cURL forces the server resolver');
+Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Install the PHP cURL extension to use a custom resolver.')->assertSee('Server default')->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Edit resolver');
+$GLOBALS['domainsTestCurlMissing']=false;
 
 // Maintenance notice, one line per state; time in staff format.
 $since=1800000000;$at='Jan 15, 2027 08:00 UTC';

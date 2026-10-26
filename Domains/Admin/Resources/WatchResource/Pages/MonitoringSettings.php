@@ -45,7 +45,7 @@ class MonitoringSettings extends Page
     private static function missing(): bool{[$endpoint,,$forced]=app(DnsResolverSettings::class)->configuration();return $endpoint===null&&!$forced;}
     protected function getHeaderActions(): array
     {
-        return [$this->edit('configure')->visible(fn()=>Staff::can(PublicSuffixList::MANAGE)&&!self::missing()),
+        return [$this->edit('configure')->visible(fn()=>Staff::can(PublicSuffixList::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null),
             Action::make('check')->label('Test resolver')->color('gray')->visible(fn()=>Staff::can(PublicSuffixList::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null)
                 ->action(function(): void{
                     self::requireManage();$result=app(DnsResolverSettings::class)->check();
