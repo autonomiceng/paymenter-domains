@@ -119,6 +119,15 @@ DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'rules_lo
 DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'dns_failed']);
 same("Couldn't download: the source name didn't resolve.",PslFacts::rows($list)['Last attempt result'],'Page facts keep a DNS failure apart from an unsafe address');
 Livewire::actingAs($staff)->test(Page::class)->assertSee("Couldn't download: the source name didn't resolve.");
+$manualFailures=0;$manualList=new Lists($clock,new PslTransport(function()use(&$manualFailures){$manualFailures++;throw new \Paymenter\Extensions\Servers\Domains\Services\PslFailure('dns_failed');}),new PslValidator(128,5,1));
+app()->instance(Lists::class,$manualList);$manualSnapshot=(array)$manualList->current();$clock->at+=86400;
+session()->forget('filament.notifications');
+Livewire::actingAs($staff)->test(Page::class)->callAction('psl_download')->assertHasNoActionErrors()
+    ->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't download: the source name didn't resolve."));
+same(1,$manualFailures,'Allowed manual download attempts exactly one fake exchange');
+same('dns_failed',$manualList->status()->last_result,'Manual action retains the safe failure');
+same($manualSnapshot,(array)$manualList->current(),'Manual failed download keeps current bytes');
+
 $page=Livewire::actingAs($staff)->test(Page::class);$setRights([Staff::VIEW,Page::MANAGE]);$page->call('$refresh')->assertForbidden();
 // The native migrator/retained-history preflight must neither replace lost data nor repair partial installs.
 $setRights($rights);$entry->upgraded('0.1.0');$entry->uninstalled();same(1,DB::table('domains_psl_snapshots')->count(),'Lifecycle retains snapshot');
