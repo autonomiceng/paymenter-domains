@@ -27,7 +27,8 @@ $support=route('tickets.create');
 $cases=[
     'transfer'=>[[],['state'=>'queued'],'Missing Shows when the transfer completes','Auto-renew on',null,null],
     'transfer-held'=>[[],['state'=>'held','safe_code'=>'transfer_setup_review_required'],'Missing Shows when the transfer completes','Auto-renew on',null,null],
-    'register-held'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'held','safe_code'=>null],'Missing Shows when the registration completes','Auto-renew on',null,null],
+    'register-pending'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'queued'],'Not yet Shows when the registration completes','Auto-renew on',null,null],
+    'register-held'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'held','safe_code'=>null],'Not yet Shows when the registration completes','Auto-renew on',null,null],
     'active'=>[['status'=>'active','provider_expires_at'=>$day(200)],['state'=>'succeeded'],$calendar(200)->format('M j, Y'),'Auto-renew on',null,null],
     'expiring'=>[['status'=>'active','provider_expires_at'=>$day(10)],['state'=>'succeeded'],$calendar(10)->format('M j, Y').' In 10 days','Auto-renew on','Next invoice: Missing','warn'],
     'renewal-off'=>[['status'=>'active','provider_expires_at'=>$day(200),'renewal_policy'=>$off],['state'=>'succeeded'],$calendar(200)->format('M j, Y'),'Auto-renew off','Cancels '.$calendar(200)->format('M j, Y'),null],
@@ -43,6 +44,10 @@ foreach ($cases as $case=>[$domain,$acquisition,$expires,$renewal,$sub,$expiresT
     $row=$list->query('//tbody/tr')->item(0);
     same($expires,$cell($list,$row,'Expires'),'Expires cell: '.$case);
     same($expiresTone,$tone($list,$row),'Expires tone: '.$case);
+    if(str_starts_with($case,'register-')){
+        same(0,$list->query('td[@data-label="Expires"]//*[contains(@class,"domains-missing")]',$row)->length,'Pending registration is not a missing-value error');
+        same('Not yet',$norm($list->query('td[@data-label="Expires"]/span[contains(@class,"domains-muted")]',$row)->item(0)),'Pending registration expiry is muted');
+    }
     same($renewal,$norm($list->query('td[@data-label="Renewal"]/*[contains(@class,"domains-cell-main")]',$row)->item(0)),'Renewal value: '.$case);
     if ($sub!==null) { same($sub,$norm($list->query('td[@data-label="Renewal"]/*[contains(@class,"domains-cell-sub")]',$row)->item(0)),'Renewal sub line: '.$case); }
     else { expect(!str_contains((string)$cell($list,$row,'Renewal'),'Next invoice') && !str_contains((string)$cell($list,$row,'Renewal'),'Cancels'),'No invoice or cancel line: '.$case); }

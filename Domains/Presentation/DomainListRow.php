@@ -14,13 +14,13 @@ final class DomainListRow
         $more = count($s->relatedServices) - 1 + $s->relatedOverflow;
         return 'Hosting: '.$s->relatedServices[0]['label'].($more > 0 ? ' and '.$more.' more' : '');
     }
-    /** A date with its tone (bad once passed, warn within 30 days) and "In N days", or Missing with its cause or fix. */
+    /** A date with its tone (bad once passed, warn within 30 days) and "In N days", or a pending registration, or Missing with its cause or fix. */
     public static function expires(DomainSummary $s): array
     {
         if ($s->expiry === null) {
             $cause = $s->kind === 'watch' ? 'Check at your registrar' : (self::WAITS[$s->expiryWaits ?? ''] ?? null);
             $support = $s->urls['support'] ?? null;
-            return ['missing' => true, 'cause' => $cause, 'fix' => $cause === null && $support ? ['label' => 'Contact support', 'url' => $support] : null];
+            return ['missing' => true, 'waiting' => $s->kind === 'managed' && $s->expiryWaits === 'registration', 'cause' => $cause, 'fix' => $cause === null && $support ? ['label' => 'Contact support', 'url' => $support] : null];
         }
         $days = $s->daysLeft;
         $soon = $days !== null && $days > 0 && $days <= 30;
