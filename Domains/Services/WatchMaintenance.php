@@ -8,7 +8,7 @@ final class WatchMaintenance
 {
     private function alert(array $health): bool
     {
-        Log::warning('Domain monitoring needs staff review.',['code'=>$health['reason']]);
+        if(($health['alert_attempts']??1)===1){Log::warning('Domain monitoring needs staff review.',['code'=>$health['reason']]);}
         $title=$health['reason']==='checks_unsuccessful'?'Domain monitoring checks failed':'Domain monitoring stopped';
         $body=$health['reason']==='dispatch_overdue'?'Checks have not run since '.self::date($health['since']??null).'.':self::notice($health)['text'];
         return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send($title,$body,'filament.admin.resources.domain-watch.index','admin.domains.watch.view','watch:'.$health['alert_key']);
@@ -102,7 +102,10 @@ final class WatchMaintenance
             }
             if(!($prior['alert_pending']??false)||($prior['alert_retry_at']??0)>$now){return null;}
             // Commit a bounded delivery lease with the episode; crashed delivery retries on a later turn.
-            $prior['alert_retry_at']=$now+60;$prior['alert_attempt']=bin2hex(random_bytes(16));
+            $attempts=$prior['alert_attempts']??0;
+            $attempts=is_int($attempts)&&$attempts>=0?min($attempts,6):0;
+            $prior['alert_attempts']=$attempts+1;
+            $prior['alert_retry_at']=$now+min(3600,60*(2**$attempts));$prior['alert_attempt']=bin2hex(random_bytes(16));
             $outage->update(['data'=>json_encode($prior)]);
             return $prior;
         });
@@ -112,7 +115,9 @@ final class WatchMaintenance
                     $encoded=json_encode($pending);$pending['alert_pending']=false;
                     DB::table('domains_watch_schedule')->where('scope','outage')->where('data',$encoded)->update(['data'=>json_encode($pending)]);
                 }
-            }catch(\Throwable){Log::warning('Domain monitoring alert will be retried.');}
+            }catch(\Throwable){
+                if($pending['alert_attempts']===1){try{Log::warning('Domain monitoring alert will be retried.');}catch(\Throwable){}}
+            }
         }
         foreach(['registry'=>['domains_watch_registry','watch_id','facts'],'watch_dns'=>['domains_watch_observations','watch_id','complete'],
             'managed_dns'=>['domains_managed_public_observations','domain_id','complete']]as$family=>[$table,$target,$success]) {

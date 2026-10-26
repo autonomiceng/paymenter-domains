@@ -89,12 +89,75 @@ $outage=fn()=>json_decode(DB::table('domains_watch_schedule')->where('scope','ou
 same(true,$outage()['alert_pending']??null,'Failed alert retains durable retry');
 $m->tick($retryAt+60);same(true,$outage()['alert_pending']??null,'Repeated partial failure keeps retry pending');
 same($successfulBefore+1,App\Models\Notification::where('title','Domain monitoring stopped')->where('user_id',$staff[1]->id)->count(),'Successful recipient receives one alert across partial retries');
-$failure=false;$m->tick($retryAt+120);same(false,$outage()['alert_pending']??null,'Later tick acknowledges successful retry');
+$m->tick($retryAt+120);same(true,$outage()['alert_pending']??null,'Escalating retry remains pending before the second due time');
+$failure=false;$m->tick($retryAt+180);same(false,$outage()['alert_pending']??null,'Later tick acknowledges successful retry');
 same($successfulBefore+1,App\Models\Notification::where('title','Domain monitoring stopped')->where('user_id',$staff[1]->id)->count(),'Recovery skips recipients already delivered');
-$count=App\Models\Notification::where('title','Domain monitoring stopped')->count();$m->tick($retryAt+180);
+$count=App\Models\Notification::where('title','Domain monitoring stopped')->count();$m->tick($retryAt+240);
 same($count,App\Models\Notification::where('title','Domain monitoring stopped')->count(),'Completed episode stays deduplicated');
 // An inbox deletion must not erase durable delivery success during a lost acknowledgement retry.
 App\Models\Notification::where('title','Domain monitoring stopped')->where('user_id',$staff[1]->id)->latest('id')->firstOrFail()->delete();
 $retry=$outage();$retry['alert_pending']=true;DB::table('domains_watch_schedule')->where('scope','outage')->update(['data'=>json_encode($retry)]);
-$m->tick($retryAt+240);same($count-1,App\Models\Notification::where('title','Domain monitoring stopped')->count(),'Inbox deletion does not resend acknowledged recipient delivery');
+$m->tick($outage()['alert_retry_at']);same($count-1,App\Models\Notification::where('title','Domain monitoring stopped')->count(),'Inbox deletion does not resend acknowledged recipient delivery');
+// Persistent delivery failures back off to one hour without losing their episode.
+$failure='veto';$at=$retryAt+1000;
+DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['alert_at'=>null,'progress_at'=>$now]);
+$beforeWarnings=count(array_filter($logs,fn($line)=>$line==='Domain monitoring needs staff review.'));
+$m->tick($at);$episode=$outage()['alert_key'];
+same(1,$outage()['alert_attempts']??null,'New monitoring episode starts at its first attempt');
+$delays=[60,120,240,480,960,1920,3600,3600];
+foreach($delays as $delay){
+    $before=$outage();same($at+$delay,$before['alert_retry_at'],'Monitoring retry delay is bounded and escalating');
+    $m->tick($at+$delay-1);same($before,$outage(),'Monitoring delivery never retries before its due time');
+    $at+=$delay;$m->tick($at);
+    same($episode,$outage()['alert_key'],'Monitoring retry preserves recipient receipt identity');
+}
+same(7,$outage()['alert_attempts'],'Monitoring attempt count saturates');
+same($beforeWarnings+1,count(array_filter($logs,fn($line)=>$line==='Domain monitoring needs staff review.')),'Only the first attempt logs the episode warning');
+$failure=false;$at=$outage()['alert_retry_at'];$m->tick($at);
+same(false,$outage()['alert_pending'],'Repaired inbox recovers after capped backoff');
+// Missing inbox or receipt storage retains pending delivery with the same backoff.
+foreach(['notifications',\Paymenter\Extensions\Servers\Domains\Services\StaffAlertSchema::TABLE]as$unavailable){
+    $at+=4000;DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['alert_at'=>null]);
+    \Illuminate\Support\Facades\Schema::rename($unavailable,$unavailable.'_missing');
+    try{
+        $m->tick($at);same(true,$outage()['alert_pending'],'Absent delivery storage keeps the episode pending');
+        $before=$outage();$m->tick($at+59);same($before,$outage(),'Absent delivery storage respects the retry deadline');
+        $m->tick($at+60);same($at+180,$outage()['alert_retry_at'],'Absent storage uses escalating retry delay');
+    }finally{\Illuminate\Support\Facades\Schema::rename($unavailable.'_missing',$unavailable);}
+    $at+=180;$m->tick($at);same(false,$outage()['alert_pending'],'Restored delivery storage recovers pending monitoring alerts');
+}
+// Even a failed warning sink leaves a durable lease and does not stop maintenance.
+$throwAlertLogs=true;
+\Illuminate\Support\Facades\Log::listen(static function($event)use(&$throwAlertLogs):void {
+    if($throwAlertLogs&&in_array($event->message,['Domain monitoring needs staff review.','Domain monitoring alert will be retried.'],true)){throw new RuntimeException('Synthetic warning sink failure');}
+});
+$at+=4000;DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['alert_at'=>null]);$m->tick($at);
+same(true,$outage()['alert_pending'],'Warning failure retains pending delivery');
+$throwAlertLogs=false;$at+=60;$m->tick($at);same(false,$outage()['alert_pending'],'Warning failure recovers on the due retry');
+// Legacy, malformed and oversized attempt counts always have a bounded retry.
+foreach([null,-1,'bad',[],PHP_INT_MAX]as$attempts){
+    $state=$outage();$state['alert_pending']=true;$state['alert_retry_at']=0;
+    if($attempts===null){unset($state['alert_attempts']);}else{$state['alert_attempts']=$attempts;}
+    DB::table('domains_watch_schedule')->where('scope','outage')->update(['data'=>json_encode($state)]);
+    $failure='veto';$m->tick(++$at);
+    $expected=$attempts===PHP_INT_MAX?3600:60;
+    same($at+$expected,$outage()['alert_retry_at'],'Legacy or corrupt attempt count remains bounded');
+}
+// A newer delivery lease cannot be acknowledged by an earlier sender.
+$failure=false;$replaceEpisode=false;
+App\Models\Notification::creating(static function($n)use(&$replaceEpisode,$outage):void {
+    if($replaceEpisode&&$n->title==='Domain monitoring stopped'){
+        $replaceEpisode=false;$state=$outage();$state['alert_attempt']='replacement';
+        DB::table('domains_watch_schedule')->where('scope','outage')->update(['data'=>json_encode($state)]);
+    }
+});
+DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['progress_at'=>$at]);$m->tick($at);
+same(false,$outage()['alert_pending'],'Healthy monitoring clears pending alert');
+$replaceEpisode=true;$m->tick($at+600);
+same(true,$outage()['alert_pending'],'Lost acknowledgement keeps newer pending lease');
+same('replacement',$outage()['alert_attempt'],'Old sender never overwrites a replacement token');
+same(1,$outage()['alert_attempts'],'Recovered monitoring rearms a fresh episode');
+expect($episode!==$outage()['alert_key'],'Recovered monitoring uses a new episode receipt identity');
+$m->tick($at+660);same(false,$outage()['alert_pending'],'Replacement retries recover without duplicate receipts');
+
 $nativeSuccessful=true;echo "Two missed turns, day-long outage, deduplicated health and ninety-day retained last-good/notice evidence passed.\n";
