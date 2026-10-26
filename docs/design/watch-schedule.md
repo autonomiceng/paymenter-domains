@@ -67,3 +67,12 @@ Staff inbox retries retain one receipt per recipient and outage episode or UTC b
 `domains_staff_alert_receipts`. Each native notification and receipt commit together. A partial
 failure retries only undelivered recipients, including after a delivered inbox item is deleted.
 Installation verifies this retained table; uninstall and migration rollback keep it.
+
+A monitoring alert that is not fully delivered is retried on a later turn. The next retry time is
+saved before each attempt, so a crash mid-delivery also retries. The wait doubles from 60 seconds
+(60, 120, 240, 480, 960, 1920) and then stays at one hour (3600 seconds). Retries continue while
+the alert is pending, with no lifetime limit. Recovery clears the pending alert. A new outage, or a
+new set of failing families, starts a new episode with a fresh attempt count and a new receipt key,
+so recipients get it as a new alert. The staff review warning, and the warning that an error will be
+retried, are logged only on an episode's first attempt. A recipient whose inbox item cannot be saved
+is still logged on every due retry.
