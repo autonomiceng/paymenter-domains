@@ -8,7 +8,8 @@ final class Labels
     public static function autoPay(mixed $evidence): string
     {
         return match (is_array($evidence) ? ($evidence['status'] ?? null) : null) {
-            'submitted', 'charged' => 'Auto Pay: charged',
+            'submitted' => 'Auto Pay: submitted',
+            'charged' => 'Auto Pay: charged',
             'declined' => 'Auto Pay: declined',
             'skipped' => 'Auto Pay skipped'.(($skip = ['manual_renewal'=>'manual renewal', 'currency'=>'not in USD',
                 'service_inactive'=>'service not active', 'renewal_off'=>'auto-renew off', 'owner_auto_renew_off'=>'auto-renew off', 'authority_changed'=>'account changed',
