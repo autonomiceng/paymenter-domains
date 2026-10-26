@@ -368,8 +368,9 @@ foreach(['veto','throw','missing-inbox','missing-receipts'] as $failure){
     }finally{if($unavailable){Schema::rename($unavailable.'_unavailable',$unavailable);}}
     $notificationFailure=false;$clock->instant=new DateTimeImmutable('@'.($readAt+10980));$balances->daily($a);
     same($calls+1,$readState->calls,'Recovered alert never re-reads provider');same($wireBefore+1,$balanceReads(),'Recovered alert uses no balance call');
-    same($sentBefore+1,App\Models\Notification::where('title','Low balance')->where('user_id',$secondStaff->id)->count(),'Partial retries deliver once per recipient');
-    same(gmdate('Y-m-d',$readAt),$row($a)->notified_on,'Recovery acknowledges the original UTC balance day');
+    $deliveryDays=$unavailable?[gmdate('Y-m-d',$readAt+10980)]:array_unique(array_map(static fn($offset)=>gmdate('Y-m-d',$readAt+$offset),[0,60,180,420,900,1860,3780,7380,10980]));
+    same($sentBefore+count($deliveryDays),App\Models\Notification::where('title','Low balance')->where('user_id',$secondStaff->id)->count(),'Partial retries deliver once per recipient per actual UTC day');
+    same(gmdate('Y-m-d',$readAt+10980),$row($a)->notified_on,'Recovery acknowledges the actual UTC delivery day');
 }
 // Due retries revalidate the retained balance and stop when it is no longer low.
 $clock->instant=$clock->now()->modify('+1 day');$rate->update(['revision'=>$rate->revision+1,'fresh_until'=>$clock->now()->modify('+3 days')]);
@@ -401,6 +402,33 @@ $replacedLimiter=new class($a,$replacement) implements Paymenter\Extensions\Serv
     public function release(AccountBinding $binding,RequestOrigin $origin,string $token):void{}
 };
 (new RegistrarBalances($manualBindings,$clock,$replacedLimiter))->daily($a);same($replacement,(int)$row($a)->daily_due_at,'Quota refusal cannot release replacement claim');
+// A recipient delivered after midnight remains deduplicated on that UTC day.
+$notificationFailure='veto';$replacement=null;
+$clock->instant=$clock->now()->setTimezone(new DateTimeZone('UTC'))->modify('+2 days')->setTime(23,59,30);
+$midnightStart=$clock->now();
+$rate->update(['revision'=>$rate->revision+1,'observed_at'=>$clock->now(),'fresh_until'=>$clock->now()->modify('+3 days')]);
+DB::table(BalanceSchema::TABLE)->where('id',$row($a)->id)->update(['daily_due_at'=>0,'notified_on'=>null]);
+$alertQuery()->update(['pending_day'=>null,'retry_at'=>0,'attempts'=>0,'claim'=>null]);
+$recipientCount=fn()=>App\Models\Notification::where('title','Low balance')->where('user_id',$staff->id)->count();
+$midnightBefore=$recipientCount();$midnightReads=$readState->calls;
+$balances->daily($a);
+expect(RegistrarBalances::facts($a,$clock->now())['low'],'Midnight probe uses a proven low reading');
+same($midnightBefore,$recipientCount(),'Selected recipient fails before midnight');
+same($midnightStart->getTimestamp()+86400,(int)$row($a)->daily_due_at,'Daily spacing is unchanged');
+$notificationFailure=false;$clock->instant=$midnightStart->modify('+60 seconds');
+$balances->daily($a);
+same($midnightBefore+1,$recipientCount(),'Recipient recovers just after midnight');
+same($midnightReads+1,$readState->calls,'Midnight alert retry does not read the provider');
+same($midnightStart->getTimestamp()+86400,(int)$row($a)->daily_due_at,'Midnight alert retry leaves the daily read schedule unchanged');
+same($clock->now()->format('Y-m-d'),$row($a)->notified_on,'Delayed notification records its actual UTC delivery day');
+$midnightDeliveryDay=$clock->now()->format('Y-m-d');
+$clock->instant=$midnightStart->modify('+1 day');
+same($midnightDeliveryDay,$clock->now()->format('Y-m-d'),'Next granted daily read is on the same UTC delivery day');
+$balances->daily($a);
+expect(RegistrarBalances::facts($a,$clock->now())['low'],'Next daily reading remains low');
+same($midnightBefore+1,$recipientCount(),'One balance alert per recipient per actual UTC delivery day');
+same($midnightReads+2,$readState->calls,'Next due daily read still happens after the midnight alert retry');
+same($midnightStart->getTimestamp()+172800,(int)$row($a)->daily_due_at,'Next daily read retains full provider spacing');
 $role=$staff->role;$role->update(['permissions'=>[]]);try{$balances->refresh($a->server_id);expect(false,'Permission revoked between renders must refuse');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Current permission reloaded');}
 BalanceSchema::install();same('6.00',$row($a)->amount,'Schema reinstall retains balance');
 $migration=require dirname(__DIR__).'/Domains/database/migrations/2026_10_19_000015_create_registrar_balances.php';$migration->down();expect(Schema::hasTable(BalanceSchema::TABLE),'Rollback retains ledger');

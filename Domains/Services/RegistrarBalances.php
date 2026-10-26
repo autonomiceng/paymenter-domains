@@ -147,9 +147,9 @@ final readonly class RegistrarBalances
             $current=Account::where('server_id',$account->server_id)->lockForUpdate()->sole();
             CatalogueAcceptances::binding($account)->requireMatch(CatalogueAcceptances::binding($current));
             $q=DB::table(BalanceSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint);
-            $r=(clone$q)->lockForUpdate()->firstOrFail();$day=$pending['day'];
+            $r=(clone$q)->lockForUpdate()->firstOrFail();$day=$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');
             $alert=DB::table(BalanceAlertSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)->lockForUpdate()->first();
-            if(!$alert||$alert->pending_day!==$day||$alert->claim!==$pending['token']||self::balanceStamp($r)!==$pending['stamp']){return false;}
+            if(!$alert||$alert->pending_day!==$pending['day']||$alert->claim!==$pending['token']||self::balanceStamp($r)!==$pending['stamp']){return false;}
             if($r->notified_on===$day){return true;}
             $name=\App\Models\Server::whereKey($account->server_id)->value('name')?:'Registrar account';
             if(StaffAlert::send('Low balance',$name.' balance is below renewals due in 30 days.','filament.admin.pages.registrar-setup',Staff::VIEW,'balance:'.$account->server_id.':'.$account->account_fingerprint.':'.$day)){
