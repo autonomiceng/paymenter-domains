@@ -174,6 +174,8 @@ completeness/pagination, zero/multiple/credited/unknown-status rows, lag, retent
 exhaustion. All provider facts are synthetic; these suites establish no live history/identity acceptance,
 MariaDB interleavings, installed UI/queue, renewal/refund/transfer execution or notification delivery.
 
+Registration reconciliation cases run in four native suites sharing `Support/reconciliation-fixture.php`: `reconciliation-test`, `reconciliation-dns-test`, `reconciliation-clock-test` and `reconciliation-history-test`. Separate databases bound the growing checkout fixture state and keep each process below its unchanged 120-second deadline.
+
 `reconciliation-recovery-test` exercises the slice21 residual with both same-result persistence attempts failing: provider-only unique recovery, zero/multiple candidates unresolved, and exactly one original send.
 
 Slice23 `renewal-admission-test` composes native checkout, slice22 completion and real Enom reads over

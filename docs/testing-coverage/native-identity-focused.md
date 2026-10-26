@@ -103,6 +103,8 @@ python3 scripts/test.py --jobs 4 --only \
   tests/reconciliation-authority-test.php tests/reconciliation-enom-history-test.php \
   tests/reconciliation-namesilo-test.php tests/reconciliation-provider-test.php \
   tests/reconciliation-recovery-test.php tests/reconciliation-test.php \
+  tests/reconciliation-dns-test.php tests/reconciliation-clock-test.php \
+  tests/reconciliation-history-test.php \
   tests/refund-evidence-test.php tests/refund-renewals-test.php \
   tests/refunds-test.php tests/registrar-balances-test.php \
   tests/registrars-page-test.php tests/registration-enom-test.php \
