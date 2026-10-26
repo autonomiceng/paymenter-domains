@@ -121,6 +121,7 @@ $page->callAction('stop',['reason'=>"Reviewed\u{2029}renewal"])->assertHasAction
 same($beforeInvalidReason,$d->fresh()->getRawOriginal(),'Renewal reason field error changes no holding');
 $page->unmountAction();
 $stopPage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('stop');
+same('Stops new renewal invoices. Issued invoices remain payable and issued renewal requests may still run. Turn off Registrar auto-renew separately.',$stopPage->instance()->getMountedAction()->getModalDescription(),'Actual stop dialog explains retained debt and issued requests');
 $stopPage->setActionData(['reason'=>'Stop through owned staff modal'])->callMountedAction()->assertNotified('Renewal stopped');same(true,$d->fresh()->renewal_policy['renewals_stopped'],'Actual modal invokes owned action');
 $resumePage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('resume')->assertActionMounted('resume');
 $stalePage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('resume');

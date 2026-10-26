@@ -137,7 +137,7 @@ Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=
 
 // Action copy.
 same('Closes the unpaid order and releases the domain name.',AcquisitionActions::DESCRIPTION,'Cancel order description');
-same('Stops new renewal invoices. Turn off Registrar auto-renew to stop all renewals.',HoldingActions::description('stop'),'Stop renewal description');
+same('Stops new renewal invoices. Issued invoices remain payable and issued renewal requests may still run. Turn off Registrar auto-renew separately.',HoldingActions::description('stop'),'Stop renewal description');
 same('Restarts renewal invoices and removes any pending service cancellation.',HoldingActions::description('resume'),'Resume renewal description');
 same('Future renewal invoices use the price on their issue date.',HoldingActions::description('reprice'),'Edit renewal price description');
 same(['reprice'=>'Edit renewal price','stop'=>'Stop renewal','resume'=>'Resume renewal'],HoldingActions::LABELS,'Renewal action labels');
