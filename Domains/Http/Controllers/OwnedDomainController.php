@@ -38,7 +38,7 @@ final readonly class OwnedDomainController
         });
         $page=max(1,(int)$request->query('page',1));
         $domains=new LengthAwarePaginator(array_slice($rows,($page-1)*25,25),count($rows),25,$page,['path'=>route('domains.domains.index'),'query'=>array_filter(['q'=>$search,'status'=>$filter,'sort'=>$sort],fn($v)=>$v!=='')]);
-        $transfersOffered=collect(app(Storefront::class)->endings())->contains(fn($row)=>$row['transfer']!==null);
+        $transfersOffered=app(Storefront::class)->hasTransferOffers();
         return view('domains::index',compact('domains','search','filter','sort','filterCounts','transfersOffered'));
     }
     public function show(Request $request,int $domain) { return $this->page($request,$domain,'show'); }

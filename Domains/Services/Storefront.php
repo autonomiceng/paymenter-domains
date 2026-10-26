@@ -22,6 +22,22 @@ final class Storefront
         });
     }
 
+    /** Display-only existence check with the same warm projection and eligibility as endings(). */
+    public function hasTransferOffers(): bool
+    {
+        $rows = (new StorefrontCatalogueCache($this->clock))->cachedRows();
+        if ($rows !== null) {
+            foreach ($rows as $row) { if ($row['transfer'] !== null) { return true; } }
+            return false;
+        }
+        $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock);
+        foreach (SalesPolicy::where('transfer_enabled', true)->orderBy('tld')->pluck('tld') as $ending) {
+            try { $read->offer($ending, 'transfer', 1); return true; }
+            catch (\Throwable) { /* A held ending does not rule out a later transfer offer. */ }
+        }
+        return false;
+    }
+
     /** Current public transfer offers, bounded to the candidate suffixes of these names. */
     public function offeredTransferEndings(array $names): array
     {

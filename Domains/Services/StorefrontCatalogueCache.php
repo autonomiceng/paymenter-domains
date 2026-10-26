@@ -23,15 +23,30 @@ final class StorefrontCatalogueCache
         if (DB::transactionLevel() !== 0) { return $render(); }
         $scope = self::scope(); $revision = self::revision($scope); $key = self::key($scope, $revision);
         $now = $this->clock->now(); $until = $now->modify('+'.self::TTL.' seconds');
-        $cached = Cache::get($key);
-        if (is_array($cached) && new \DateTimeImmutable($cached['from']) <= $now && $now < new \DateTimeImmutable($cached['until'])) {
-            return $cached['rows'];
-        }
+        $cached = $this->readRows($key, $now);
+        if ($cached !== null) { return $cached; }
         $rows = $render();
         // Publication changes the namespace, including a commit racing the following put.
         if ($revision !== self::revision($scope) || $this->clock->now() >= $until) { return $rows; }
         Cache::put($key, ['rows' => $rows, 'from' => $now->format('Y-m-d\TH:i:s.uP'), 'until' => $until->format('Y-m-d\TH:i:s.uP')], self::TTL);
         return $rows;
+    }
+
+    /** Reuse display rows without filling the entire catalogue on a miss. */
+    public function cachedRows(): ?array
+    {
+        if (DB::transactionLevel() !== 0) { return null; }
+        $scope = self::scope();
+        return $this->readRows(self::key($scope, self::revision($scope)), $this->clock->now());
+    }
+
+    private function readRows(string $key, \DateTimeImmutable $now): ?array
+    {
+        $cached = Cache::get($key);
+        if (is_array($cached) && new \DateTimeImmutable($cached['from']) <= $now && $now < new \DateTimeImmutable($cached['until'])) {
+            return $cached['rows'];
+        }
+        return null;
     }
 
     public static function invalidateAfterCommit(): void

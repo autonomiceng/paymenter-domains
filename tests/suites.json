@@ -326,7 +326,8 @@
     "tests/watch-notice-staff-delivery-test.php",
     "tests/staff-recovery-copy-test.php",
     "tests/acquisition-payment-review-test.php",
-    "tests/runtime-refusal-test.php"
+    "tests/runtime-refusal-test.php",
+    "tests/storefront-transfer-offers-test.php"
   ],
   "ui": [],
   "runner": [
