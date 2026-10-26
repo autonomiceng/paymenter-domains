@@ -118,7 +118,7 @@ class DomainResource extends Resource
                 catch (\Throwable) { $off=null; }
                 $account=$accounts->first(fn(Account $a)=>(int)$a->server_id===(int)$d->server_id&&$a->registrar_key===$d->registrar_key
                     &&$a->account_fingerprint===$d->account_fingerprint);
-                $cached[$d->id]=['off'=>$off,'sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]))];
+                $cached[$d->id]=['off'=>$off,'sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true)];
             }
             self::$rows[$records]=$cached;
         }

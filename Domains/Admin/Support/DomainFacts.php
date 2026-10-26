@@ -54,7 +54,7 @@ final class DomainFacts
     {
         Staff::requireView();
         $pending=$d->adoptionPending(); $registered=$pending||in_array($d->status,self::REGISTERED,true);
-        $account=self::account($d); $sync=self::sync($d,$account); $paused=$sync==='paused'; $f=[];
+        $account=self::account($d); $sync=self::sync($d,$account,accountLoaded:true); $paused=$sync==='paused'; $f=[];
         try { $observation=$d->observation??[]; $policy=$d->renewal_policy??[]; } catch (\Throwable) { $observation=$policy=null; }
         if ($registered) {
             $expiry=$d->provider_expires_at?->format('Y-m-d');
@@ -186,10 +186,10 @@ final class DomainFacts
         } catch (\Throwable) { return self::UNREADABLE; }
     }
     /** 'paused' (demo registrar off under Enom Test mode), 'failed' (stopped after repeated failures) or null. Shared by the page and the list.
-     * The list passes the account and stopped state it loaded for the whole page. */
-    public static function sync(Domain $d, ?Account $account=null, ?bool $stopped=null): ?string
+     * The list passes the account and stopped state it loaded for the whole page. $accountLoaded includes a missing account. */
+    public static function sync(Domain $d, ?Account $account=null, ?bool $stopped=null, bool $accountLoaded=false): ?string
     {
-        $account??=self::account($d);
+        if(!$accountLoaded){$account??=self::account($d);}
         return $account&&DemoData::syncPaused($d,$account)?'paused':(($stopped??ObservationWork::stopped($d))?'failed':null);
     }
     /** Why a value read from the registrar is Missing. */

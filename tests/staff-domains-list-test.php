@@ -15,7 +15,7 @@ $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);
 $list=function(?callable $queries=null)use($viewer){
     DB::flushQueryLog();DB::enableQueryLog();$page=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSuccessful();
     $log=DB::getQueryLog();DB::disableQueryLog();DB::flushQueryLog();
-    $instance=$page->instance();return [$instance->getTable()->getColumns(),$instance->getTableRecords()->keyBy('id'),count($log)];
+    $instance=$page->instance();return [$instance->getTable()->getColumns(),$instance->getTableRecords()->keyBy('id'),count($log),$log];
 };
 
 // Duplicate staff account names remain distinguishable in filters and rows.
@@ -57,6 +57,7 @@ foreach (['test'=>true,'live'=>false] as $environment=>$paused) {
     same($paused?'Sync paused':null,$columns['status']->record($records[$demo->id])->getDescriptionBelow(),'Demo list row says sync is paused: '.$environment);
     same($paused?'Paused':null,DomainFacts::for($demo->fresh())['Last sync']['value']??null,'Staff page agrees: '.$environment);
     same($paused,DemoData::syncPaused($demo->fresh()),'Customer view agrees: '.$environment);
+    same($paused?'paused':null,DomainFacts::sync($demo->fresh()),'Standalone sync lazily loads the valid demo account: '.$environment);
 }
 config(['domains.enom_identity.environment'=>'test']);
 same(false,DemoData::syncPaused($active->fresh()),'A real account is never demo paused');
@@ -73,4 +74,20 @@ foreach ([$held,$active,$demo] as $source) { for ($i=0;$i<4;$i++) {
 [, $records,$after]=$list();
 same($rows+12,count($records),'Twelve more rows on the same page');
 same($before,$after,'No queries per additional row');
+// A loaded missing or mismatched account stays missing without another query per row.
+[, , ,$queries]=$list();$accountReads=static fn($log)=>count(array_filter($log,fn($q)=>str_contains($q['query'],'from "domains_accounts"')));
+$beforeMissing=$accountReads($queries);$missing=[];
+foreach(['absent','mismatched'] as $fault){for($i=0;$i<3;$i++){
+    $name=$fault.$i.'.example.test';$changes=['domain'=>$name,'reservation_name'=>$name,'sld'=>$fault.$i,'tld'=>'example.test','service_id'=>6000+count($missing)];
+    $changes[$fault==='absent'?'server_id':'account_fingerprint']=$fault==='absent'?999999:str_repeat('e',64);
+    $id=$clone('domains_domains',$demo->id,$changes);$missing[]=$id;
+    if($i===0){$row=Domain::findOrFail($id);DB::table('domains_observation_work')->insert(['domain_id'=>$id,'server_id'=>$row->server_id,
+        'account_fingerprint'=>$row->account_fingerprint,'generation'=>$row->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_failed']);}
+}}
+[$columns,$records,,$queries]=$list();same($rows+18,count($records),'Missing-account controls are on the same rendered page');
+same($beforeMissing,$accountReads($queries),'Missing or mismatched accounts do not add row queries');
+foreach($missing as $i=>$id){$row=$records[$id];
+    same($i%3===0?'failed':null,DomainFacts::sync($row),'Direct callers still lazily read the identity and stopped state');
+    same($i%3===0?'Sync failed':null,$columns['status']->record($row)->getDescriptionBelow(),'Missing accounts never falsely pause demo sync');
+}
 echo "Staff Domains list: Auto-renew on every state, one demo-paused definition and a fixed query count passed.\n";$nativeSuccessful=true;
