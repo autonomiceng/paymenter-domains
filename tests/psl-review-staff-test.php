@@ -27,14 +27,35 @@ foreach([Lists::SOURCE,'80 → 40','i40.example'] as $expected){expect(str_conta
 expect(!str_contains($text,'i60.example'),'Native modal limits samples to 20');
 $accept=$page->instance()->getCachedHeaderActions()[1]->getActionFunction();
 $staff->role()->first()->update(['permissions'=>[Staff::VIEW,Page::VIEW]]);
-$denied=false;try{$accept();}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Cached acceptance rechecks permission');
+$denied=false;try{$accept([]);}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Cached acceptance rechecks permission');
 $viewOnly=Livewire::actingAs($staff)->test(Page::class);
 expect($viewOnly->instance()->getCachedHeaderActions()[1]->isHidden(),'View-only acceptance hidden without mounting protected schema');
 $staff->role()->first()->update(['permissions'=>$rights]);
 Livewire::actingAs($staff)->test(Page::class)->mountAction('psl_accept')
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified('List updated');
 same($hash,$list->revision(),'Native action accepted exact bytes');same(2,$calls,'Acceptance performs no I/O');same(1,DB::table('domains_watch_audit')->count(),'Native acceptance audited');
-$entry->upgraded('0.1.0');$entry->uninstalled();same(1,DB::table('domains_watch_audit')->count(),'Native lifecycle keeps audit');
+// Both entry points submit the bytes shown when the modal was mounted.
+require_once __DIR__.'/Support/accounts.php';fixtureAccount(1,'namesilo','psl-review-account');
+$accountPage=Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class;
+$setupPage=Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class;
+$panel->pages([Page::class,$accountPage,$setupPage]);
+Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$accountPage,$setupPage){$accountPage::registerRoutes($panel);$setupPage::registerRoutes($panel);});
+app('router')->getRoutes()->refreshNameLookups();
+foreach([false,true] as $embedded){
+    $body=pslFixture(20,20);$clock->at+=86400;same('rules_lost_icann',$list->update(),'Old candidate ready for review');
+    $action=$embedded?\Filament\Actions\Testing\TestAction::make('psl_accept')->schemaComponent('system_checks','content'):'psl_accept';
+    $stale=Livewire::actingAs($staff)->test($embedded?$accountPage:Page::class,$embedded?['account'=>1]:[])->mountAction($action)->assertActionMounted($action);
+    $beforeSnapshot=(array)$list->current();$auditCount=DB::table('domains_watch_audit')->count();
+    $body=pslFixture(10,10);$clock->at+=86400;same('rules_lost_icann',$list->update(),'Candidate replaced after review');
+    $stale->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('The download changed. Reload the page.'));
+    same($beforeSnapshot,(array)$list->current(),'Stale reviewed bytes cannot change the snapshot');
+    same($auditCount,DB::table('domains_watch_audit')->count(),'Stale reviewed bytes create no acceptance audit');
+}
+$hash=hash('sha256',$body);$priorCalls=$calls;
+Livewire::actingAs($staff)->test($accountPage,['account'=>1])->mountAction($action)->callMountedAction()->assertNotified('List updated');
+same($hash,$list->revision(),'Fresh account review accepts the displayed bytes');same($priorCalls,$calls,'Fresh acceptance has no network exchange');
+
+$entry->upgraded('0.1.0');$entry->uninstalled();same(2,DB::table('domains_watch_audit')->count(),'Native lifecycle keeps audit');
 DB::table('migrations')->where('migration','2026_10_19_000008_create_psl_reviews')->delete();
 $refused=false;try{$entry->installed();}catch(DomainException $e){$refused=str_contains($e->getMessage(),'suffix review history');}expect($refused,'Missing review installation history refused');
 echo "Installed suffix acceptance removed-rule samples, revoked permission, no I/O and retained migration history passed.\n";$nativeSuccessful=true;

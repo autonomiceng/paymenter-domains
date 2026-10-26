@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\Setting;
 use Filament\Actions\Action;
-use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\{Hidden,TextInput};
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{DB,Route};
@@ -67,14 +67,14 @@ final class PslActions
             ->schema(function(): array {
                 self::requireManage();$p=app(PslRebaseline::class)->preview();if($p===null){return [];}
                 $removed=array_slice(array_merge(...array_values(array_column($p['removed'],'samples'))),0,20);
-                return [TextEntry::make('source')->label('Source')->state($p['source_url'])->inlineLabel(),
+                return [Hidden::make('revision')->default($p['revision']),TextEntry::make('source')->label('Source')->state($p['source_url'])->inlineLabel(),
                     TextEntry::make('downloaded')->label('Downloaded')->state(self::date($p['fetched_at']))->inlineLabel(),
                     TextEntry::make('icann')->label('ICANN rules')->state($p['before_counts']['icann'].' → '.$p['after_counts']['icann'])->inlineLabel(),
                     TextEntry::make('private')->label('Private rules')->state($p['before_counts']['private'].' → '.$p['after_counts']['private'])->inlineLabel(),
                     TextEntry::make('removed')->label('Removed rules')->state($removed)->listWithLineBreaks()];
             })
-            ->action(function()use($refresh): void {
-                self::requireManage();$p=app(PslRebaseline::class)->preview();$revision=$p['revision']??'';
+            ->action(function(array $data)use($refresh): void {
+                self::requireManage();$revision=is_string($data['revision']??null)?$data['revision']:'';
                 try { app(PslRebaseline::class)->accept(auth()->user(),$revision,substr($revision,0,12),self::REASON); }
                 catch (PslFailure $e) { $refresh();Notification::make()->title(self::result($e->safeCode))->danger()->send();return; }
                 $refresh();Notification::make()->title('List updated')->success()->send();
