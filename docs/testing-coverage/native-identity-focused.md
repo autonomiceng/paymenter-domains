@@ -1,4 +1,4 @@
-# Focused checks for native identity and managed public enrollment
+# Focused checks for native marker identity and managed public enrollment
 
 Changes to native marker identity or managed public enrollment require the existing
 source consumers even when their test files are unchanged. Keep controlled writer
