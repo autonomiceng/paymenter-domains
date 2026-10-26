@@ -25,8 +25,8 @@ final class ReminderAction
                 TextInput::make('after')->label('Days after expiry')->default($after===null?null:implode(',',$after))->placeholder($after===null?'Unavailable':null)->required()->maxLength(80),
                 Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])->helperText('Use one line. Do not include credentials.')])
             ->action(function(array $data)use($server):void {
-                try{ReminderSchedules::save(Auth::user(),$server,(int)$data['revision'],(bool)$data['enabled'],(string)$data['before'],(string)$data['after'],trim((string)$data['reason']));Notification::make()->success()->title('Reminders saved')->send();}
-                catch(\Throwable){Notification::make()->danger()->title("Couldn't save reminders")->body('Check the days and try again.')->send();}
+                try{if(!isset($data['revision'])){throw new \DomainException('Reviewed reminder revision required.');}ReminderSchedules::save(Auth::user(),$server,(int)$data['revision'],(bool)$data['enabled'],(string)$data['before'],(string)$data['after'],trim((string)$data['reason']));Notification::make()->success()->title('Reminders saved')->send();}
+                catch(\Throwable){Notification::make()->danger()->title("Couldn't save reminders")->body('Reload the account page, then check the reminder days and your permissions before saving again.')->send();}
             });
     }
 }
