@@ -84,7 +84,7 @@ foreach(['register','transfer'] as $action){foreach(['provider','sibling'] as $c
     $invoice=App\Models\Invoice::findOrFail($op->invoice_id)->getRawOriginal();$reservation=$op->domain->fresh()->reservation_name;
     Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$op->domain_id])->mountAction('retire_unpaid')->assertActionMounted('retire_unpaid')
         ->setActionData(['reason'=>'Review refused unpaid cancellation'])->callMountedAction()->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't cancel order")
-            ->body('Cannot cancel: review the order status, registrar requests and registrar evidence.'));
+            ->body("Can't cancel: the order is no longer pending, or it has other requests or registrar details."));
     same($reservation,$op->domain->fresh()->reservation_name,$action.' '.$cause.' keeps the reservation');
     same($invoice,App\Models\Invoice::findOrFail($op->invoice_id)->getRawOriginal(),$action.' '.$cause.' keeps the invoice');
 }}

@@ -25,7 +25,7 @@ final class AcquisitionActions
         'Frozen domain invoice binding changed.'=>'This order changed. Reload the page and try again.',
         'The service is cancelled but its invoice is still open. Review the order and invoice; the name stays reserved.'=>"Can't cancel: the invoice is still open. Cancel the invoice first.",
         'This unpaid invoice also contains other items. Cancel it through the native billing workflow before retiring this order.'=>"Can't cancel: the invoice has other items. Cancel it in Paymenter.",
-        'Only an unpaid order with no other requests or registrar evidence can be retired.'=>"Cannot cancel: review the order status, registrar requests and registrar evidence.",
+        'Only an unpaid order with no other requests or registrar evidence can be retired.'=>"Can't cancel: the order is no longer pending, or it has other requests or registrar details.",
         'This order has a payment or payment attempt, so it cannot be retired. The name stays reserved.'=>"Can't cancel: this order has a payment.",
         'A registrar request may have started. Review its outcome; the name stays reserved.'=>"Can't cancel: a registrar request may have started.",
         'Unpaid terminal proof is unavailable.'=>"Can't cancel: couldn't confirm the order is unpaid.",
