@@ -66,7 +66,7 @@ final class HoldingActions
     {
         return match($action){
             'reprice'=>'Future renewal invoices use the price on their issue date.',
-            'stop'=>'Stops new renewal invoices. Issued invoices remain payable and issued renewal requests may still run. Turn off Registrar auto-renew separately.',
+            'stop'=>"Stops new renewal invoices. Invoices already sent stay payable, and renewal requests already created may still run. To stop all renewals, also turn off Registrar auto-renew.",
             'resume'=>'Restarts renewal invoices and removes any pending service cancellation.',
         };
     }
