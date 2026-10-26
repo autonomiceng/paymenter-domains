@@ -14,6 +14,7 @@ DB::table('domains_watch_names')->where('id',$id)->update(['registration'=>'exte
 $wire=(object)['status'=>['active'],'code'=>200,'during'=>null,'domainCalls'=>0,'failOn'=>null];
 $rdap=new Rdap(static function($url)use($wire,$at){if($wire->during){$run=$wire->during;$wire->during=null;$run();}if(!str_contains($url,'dns.json')){$wire->domainCalls++;}return ['status'=>str_contains($url,'dns.json')?200:($wire->domainCalls===$wire->failOn?503:$wire->code),'body'=>json_encode(str_contains($url,'dns.json')?['services'=>[[['com'],['https://rdap.example.com/']]]]:['objectClassName'=>'domain','ldhName'=>'example.com','status'=>$wire->status,'events'=>[['eventAction'=>'registration','eventDate'=>'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>gmdate('Y-m-d\TH:i:s\Z',$at+45*86400)]]])];});
 $eligibility=new CheckoutEligibility($bindings,$clock,new TransferPrecheck($rdap));$store=new Storefront($sellers,$prices,$native,$bindings,$eligibility,$clock);
+app()->instance(Storefront::class,$store);
 $selection=$sellers->selection('com','transfer',1,$now);App\Models\Server::find($selection->serverId)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';storefrontViews();$session=app('request')->session();
 $controller=new WatchTransferController(new WatchTransfer($store,new DomainSummaries,$native),$eligibility,$clock);app()->instance(StorefrontController::class,new StorefrontController($store));
@@ -98,6 +99,22 @@ require_once dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRout
 $watchPage=static fn($summary)=>view('domains::watch-notices',['summary'=>$summary,'name'=>'example.com','kind'=>'watch','id'=>$id,'editable'=>false,'preferences'=>['account'=>['enabled'=>true,'revision'=>1],'target'=>['enabled'=>true,'revision'=>1]],'notices'=>[],'portal'=>[],'key'=>null])->render();
 $summary=(new DomainSummaries)->one($owner,'watch',$id,$at);
 same(1,storefrontDom($watchPage($summary))->query('//a[@href="'.$summary->urls['compareTransfer'].'" and normalize-space(.)="Transfer to Example Hosting"]')->length,'Hosting domain page offers Transfer to Example Hosting');
+// Watch entry points follow the public transfer offer across repeated publication changes.
+foreach([false,true,false,true] as $enabled){
+    $tlds[0]->update(['transfer_enabled'=>$enabled]);$native->publish($tlds[0]->id,$clock->now());
+    same($enabled,$store->endings()[0]['transfer']!==null,'Public transfer offer follows the TLD');
+    $summary=(new DomainSummaries)->one($owner,'watch',$id,$at);
+    same($enabled,$summary->urls['compareTransfer']!==null,'Watch transfer entry follows the public offer');
+    same($enabled,str_contains($watchPage($summary),'Transfer to Example Hosting'),'Watch page omits unavailable transfers');
+    $compact=view('domains::partials.summary',['summary'=>$summary])->render();
+    same($enabled,str_contains($compact,'Compare transfer price'),'Hosting summary omits unavailable transfers');
+}
+// A retained native stock value can predate the current product edit guard.
+$product=$native->product($tlds[0],'transfer');$stock=$product->stock;DB::table('products')->where('id',$product->id)->update(['stock'=>0]);
+\Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueCache::invalidateAfterCommit();
+same(null,$store->endings()[0]['transfer'],'Out-of-stock public transfer is not offered');
+same(null,(new DomainSummaries)->one($owner,'watch',$id,$at)->urls['compareTransfer'],'Out-of-stock watch transfer has no entry');
+DB::table('products')->where('id',$product->id)->update(['stock'=>$stock]);
 config(['domains.watch_transfer.enabled'=>false]);$summary=(new DomainSummaries)->one($owner,'watch',$id,$at);
 expect(!str_contains($watchPage($summary),'Transfer to Example Hosting'),'Hosting domain page without an offer omits it');
 $nativeSuccessful=true;echo "Watch comparison: pure gates, no invented savings, owner/revision races, strict reads and neutral native cart passed.\n";

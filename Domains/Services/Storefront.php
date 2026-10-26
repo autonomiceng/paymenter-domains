@@ -22,6 +22,17 @@ final class Storefront
         });
     }
 
+    /** Current public transfer offers, bounded to the candidate suffixes of these names. */
+    public function offeredTransferEndings(array $names): array
+    {
+        $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock); $offered = [];
+        foreach (PolicyEndings::transferEnabled($names) as $ending) {
+            try { $read->offer($ending, 'transfer', 1); $offered[] = $ending; }
+            catch (\Throwable) { /* An unavailable public offer has no entry link. */ }
+        }
+        return $offered;
+    }
+
     private function catalogueRows(): array
     {
         $rows = []; $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock);

@@ -69,7 +69,7 @@ final class DomainSummaries
         $targets=[...$c->domains,...$c->watches];
         $scopes=array_map(fn($t)=>WatchNoticePreferences::scope((int)$t->user_id,$t instanceof WatchName?$t->canonical_name:$t->domain),$targets);
         $noticeStates=DB::table('domains_watch_notice_state')->whereIn('user_id',$c->staff?array_map(fn($w)=>$w->user_id,$c->watches):[$uid])->whereIn('scope',$scopes)->get()->keyBy('scope');
-        $transferEndings=PolicyEndings::transferEnabled(array_map(fn($w)=>$w->canonical_name,$c->watches));
+        $transferEndings=config('domains.watch_transfer.enabled',false) && $c->watches ? app(Storefront::class)->offeredTransferEndings(array_map(fn($w)=>$w->canonical_name,$c->watches)) : [];
         $items=InvoiceItem::whereIn('id',$cycles->flatten()->pluck('invoice_item_id'))->get()->keyBy('id');$out=[];
         foreach (['managed'=>$c->domains,'watch'=>$c->watches] as $kind=>$targets) {
             foreach ($targets as $id=>$t) {
