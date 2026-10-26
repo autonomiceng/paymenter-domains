@@ -172,6 +172,10 @@ foreach([$profile->id,$off->id,$third->id,$third->id,null,999999] as $i=>$templa
 [$names,$manyMaps,$maps]=$resourceRows(ProductMappingResource::class,ListProducts::class,'template');
 same($expectedTemplates,$names,'Loaded template names include disabled templates, null and dangling references');
 same($oneMap,$manyMaps,'Template-name queries do not grow per hosting product');
+foreach($maps as $row){
+    expect($row->relationLoaded('dnsTemplate'),'Hosting product query eagerly loads the template');
+    if($row->dnsTemplate!==null){$columns=array_keys($row->dnsTemplate->getAttributes());sort($columns);same(['id','name'],$columns,'Hosting product template loads only its ID and name');}
+}
 $missingCell=$column(Livewire::actingAs($manager)->test(ListProducts::class),'template')->record($maps->last());
 same(['Missing','Choose one in Edit','danger','heroicon-m-exclamation-triangle'],[$missingCell->getState(),$missingCell->getDescriptionBelow(),$missingCell->getColor('Missing'),$missingCell->getIcon('Missing')],'Missing template feedback is unchanged');
 [$counts,$manyTemplates,$profiles]=$resourceRows(RoutingProfileResource::class,ListTemplates::class,'used_by');

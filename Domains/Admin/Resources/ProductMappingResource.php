@@ -18,7 +18,7 @@ class ProductMappingResource extends WatchReadResource
     protected static ?string $pluralModelLabel='Hosting products';
     protected static ?string $breadcrumb='Hosting products';
     protected static ?string $slug='product-domain-mappings';
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder{return parent::getEloquentQuery()->with(['product','dnsTemplate']);}
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder{return parent::getEloquentQuery()->with(['product','dnsTemplate:id,name']);}
     public static function table(Table $table): Table
     {
         return $table->columns([TextColumn::make('product.name')->label('Product')->wrap(),TextColumn::make('property_key')->label('Domain field')->fontFamily(FontFamily::Mono),
