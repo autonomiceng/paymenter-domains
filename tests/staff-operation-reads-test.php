@@ -112,6 +112,8 @@ expect(RenewalReplacements::activity($domain->fresh())!==[],'Late old financial 
 $completion=app(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class);$state->fail=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Info;
 $calls=count($state->calls);same('pending',$completion->run($replacement->id)->state,'Engine read remains available after late old payment');expect(count($state->calls)>$calls,'No global lock-time freeze');
 $state->fail=null;$state->expiry='2028-10-18';$state->charge='8.00';
+same([(int)$renew->id],RenewalReplacements::activityIds($domain->fresh()),'Late refunded-debt activity exposes the affected request ID');
+
 // The late payment shows on the refunded request it landed on; the replacement still offers Check status.
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$renew->id])->assertSee('Payment received after refund. Check the invoice.');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$replacement->id])->assertDontSee('Payment received after refund')

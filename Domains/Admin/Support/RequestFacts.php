@@ -87,7 +87,7 @@ final class RequestFacts
         $facts ??= self::for($op);
         if ($facts['unreadable']??false) { return ['title'=>DomainFacts::UNREADABLE,'tone'=>'danger']; }
         $domain=$op->domain;
-        if ($domain && in_array(true,array_map(fn($line)=>str_starts_with($line,'Request #'.$op->id.' '),RenewalReplacements::activity($domain)),true)) {
+        if ($domain && in_array((int)$op->id,RenewalReplacements::activityIds($domain),true)) {
             return ['title'=>'Payment received after refund. Check the invoice.','tone'=>'warning','link'=>'invoice'];
         }
         if (isset($facts['cutoff'])) { return ['title'=>$facts['cutoff'],'tone'=>'danger','action'=>'refund']; }
@@ -97,16 +97,18 @@ final class RequestFacts
         }
         if ($op->state==='held') {
             $reason=$facts['reason']??null;
-            $fix=is_string($reason)&&preg_match(self::ACCOUNT_CAUSES,$reason,$m) ? match(true) {
-                $m[1]==='orders paused'=>'Resume orders', str_contains($m[1],'balance')=>'Check balance',
-                str_ends_with($m[1],'off for this account')=>'Turn on', default=>'Open Registrars'} : null;
+            $fix=match($op->safe_code){
+                'processing','automatic_spend_paused'=>'Resume orders',
+                'funding','balance','renewal_funding_or_authority','registrar_balance_insufficient_or_unknown','usd_balance_required','enom_test_transfer_usd_balance_required'=>'Check balance',
+                'awaiting_acceptance','write_disabled','write_acceptance_required','renewal_acceptance_required','grace_capability_unaccepted'=>'Turn on',
+                'authority','renewal_authority_invalid','renewal_binding_changed','claim_authority_invalid','seal_authority_invalid','registration_authority_changed',
+                'configuration_unavailable','transfer_setup_review_required','enom_test_transfer_setup_required','enom_test_setup_required'=>'Open Registrars',
+                default=>null};
             return ['title'=>($reason??Labels::reason(null)).'.','body'=>$facts['contact_missing']??$facts['contact_recovery']??$facts['auto_renew']??$facts['admission']??null,'tone'=>'warning','action'=>OperationActions::relevant('release',$op)?'release':null,
                 'link'=>$fix?'registrars':null,'link_label'=>$fix];
         }
         return null;
     }
-    /** Held reasons fixed on the Registrars page, each with its link label: account settings, orders paused, balance and features turned off. */
-    private const ACCOUNT_CAUSES="/^Not sent: (registrar account |couldn't load the registrar|orders paused|low registrar balance|check the registrar balance|.* off for this account)/";
     /** Account name, registrar and mode for the Registrar account fact. */
     public static function account(Operation $op): array
     {

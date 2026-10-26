@@ -73,6 +73,22 @@ foreach(['configuration_unavailable','processing','balance','usd_balance_require
 same(['configuration_unavailable'=>['registrars','Open Registrars',null],'processing'=>['registrars','Resume orders',null],
     'balance'=>['registrars','Check balance',null],'usd_balance_required'=>['registrars','Check balance',null],
     'write_disabled'=>['registrars','Turn on',null],'staff_review_required'=>[null,null,null]],$links,'Notice link per cause');
+// Repair links depend on retained safe codes even if display copy changes.
+$accountCodes=[
+    'authority'=>'Open Registrars','renewal_authority_invalid'=>'Open Registrars','renewal_binding_changed'=>'Open Registrars',
+    'claim_authority_invalid'=>'Open Registrars','seal_authority_invalid'=>'Open Registrars','registration_authority_changed'=>'Open Registrars',
+    'configuration_unavailable'=>'Open Registrars','transfer_setup_review_required'=>'Open Registrars','enom_test_transfer_setup_required'=>'Open Registrars','enom_test_setup_required'=>'Open Registrars',
+    'processing'=>'Resume orders','automatic_spend_paused'=>'Resume orders','balance'=>'Check balance','funding'=>'Check balance',
+    'renewal_funding_or_authority'=>'Check balance','registrar_balance_insufficient_or_unknown'=>'Check balance',
+    'usd_balance_required'=>'Check balance','enom_test_transfer_usd_balance_required'=>'Check balance',
+    'awaiting_acceptance'=>'Turn on','write_disabled'=>'Turn on','write_acceptance_required'=>'Turn on','renewal_acceptance_required'=>'Turn on','grace_capability_unaccepted'=>'Turn on'];
+foreach([...$accountCodes,'staff_review_required'=>null,'enom_test_call_cap'=>null,'nameservers_required'=>null] as $code=>$label){
+    DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
+    $copy=RequestFacts::for($heldOp->fresh());$copy['reason']='Reviewed cause with different wording';
+    $notice=RequestFacts::notice($heldOp->fresh(),$copy);
+    same([$label?'registrars':null,$label],[$notice['link']??null,$notice['link_label']??null],'Account link uses safe code '.$code);
+}
+
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>'configuration_unavailable']);
 $facts=RequestFacts::for($heldOp->fresh());
 same(null,$facts['invoice']??null,'No invoice is Missing');
