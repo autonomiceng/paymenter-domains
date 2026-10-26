@@ -115,9 +115,9 @@ foreach(['test','live'] as $mode){
     $siloAccount=Account::where('server_id',$silo->server_id)->sole();DB::table('domains_accounts')->where('id',$siloAccount->id)->update(['environment'=>$mode]);$siloAccount->refresh();
     $featureRows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($siloAccount,['label'=>'Active','reason'=>null]),null,'label');
     foreach(['Renewals','DNS, nameservers and contacts'] as $label){
-        same(['Off','These controls apply to Enom accounts.',null],[$featureRows[$label]['value'],$featureRows[$label]['cause'],$featureRows[$label]['action']],$mode.' NameSilo Enom-only control');
+        same(['Off','Enom accounts only.',null],[$featureRows[$label]['value'],$featureRows[$label]['cause'],$featureRows[$label]['action']],$mode.' NameSilo Enom-only control');
     }
-    Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('These controls apply to Enom accounts.')
+    Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Enom accounts only.')
         ->assertActionDoesNotExist(setupAction($mode.'_renewal',(int)$silo->server_id))->assertActionDoesNotExist(setupAction($mode.'_management',(int)$silo->server_id));
 }
 DB::table('domains_accounts')->where('id',$siloAccount->id)->update(['environment'=>'test']);
