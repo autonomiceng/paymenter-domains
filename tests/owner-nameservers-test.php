@@ -86,6 +86,6 @@ foreach ([
     same($message,$session->get('errors')->first('nameservers'),'Purchase-specific refusal explains the cause');
     expect(!isset($op->fresh()->policy['owner_setup']),'Invalid purchase input never freezes setup');
 }
-$action->setup($request($d,['nameservers'=>"NS1.12-34.\nns2.example.com."]),$d->id);
-same(['ns1.12-34','ns2.example.com'],$op->fresh()->payload['nameservers']??null,'Purchase permits its own final-label grammar and normalizes root dots');
+$action->setup($request($d,['nameservers'=>"NS1.12-34.EXAMPLE.COM.\nns2.example.com."]),$d->id);
+same(['ns1.12-34.example.com','ns2.example.com'],$op->fresh()->payload['nameservers']??null,'Purchase accepts a numeric-hyphen label and normalizes root dots');
 $nativeSuccessful=true;echo "Owner nameserver exact errors, escaped render, middleware blank defaults, retries and trailing dots passed.\n";
