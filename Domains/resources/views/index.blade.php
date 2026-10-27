@@ -8,12 +8,13 @@
 <div class="container mt-14 mb-10"><div class="domains">
 @include('domains::partials.styles')
 <div class="domains-head"><h1 class="domains-title">Domains</h1>
-<div class="domains-row">@if ($transfersOffered ?? false)<a class="domains-btn domains-btn--secondary" href="{{ route('domains.domains.transfer') }}">Transfer a domain</a>@endif<a class="domains-btn domains-btn--primary" href="{{ route('domains.domains.search') }}">Register a domain</a></div></div>
+@if ($total > 0)<div class="domains-row">@if ($transfersOffered ?? false)<a class="domains-btn domains-btn--secondary" href="{{ route('domains.domains.transfer') }}">Transfer a domain</a>@endif<a class="domains-btn domains-btn--primary" href="{{ route('domains.domains.search') }}">Register a domain</a></div>@endif</div>
 @include('domains::partials.notices')
 <section class="domains-panel" aria-label="Your domains">
 @if ($total === 0)
 <div class="domains-empty domains-section"><h2 class="domains-h2">No domains yet</h2><p>{{ ($transfersOffered ?? false) ? 'Register a new name or transfer one you own.' : 'Register a new name.' }}</p>
-<form method="GET" action="{{ route('domains.domains.search') }}" class="domains-searchbar" role="search" style="max-width:34rem;margin-inline:auto"><label for="domains-empty-q" class="domains-sr">Domain name</label><input id="domains-empty-q" name="name" type="text" placeholder="yourbusiness.com" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="253" required><button type="submit" class="domains-btn domains-btn--primary">Search</button></form></div>
+<form method="GET" action="{{ route('domains.domains.search') }}" class="domains-searchbar" role="search" style="max-width:34rem;margin-inline:auto"><label for="domains-empty-q" class="domains-sr">Domain name</label><input id="domains-empty-q" name="name" type="text" placeholder="yourbusiness.com" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="253" required><button type="submit" class="domains-btn domains-btn--primary">Search</button></form>
+@if ($transfersOffered ?? false)<p class="domains-empty-alt">Already own one? <a class="domains-a" href="{{ route('domains.domains.transfer') }}">Transfer a domain</a></p>@endif</div>
 @else
 <div class="domains-toolbar"><nav class="domains-chips" aria-label="Filter by status"><a class="domains-chip" href="{{ $url(['status'=>null,'page'=>null]) }}" @if ($filter === '') aria-current="true" @endif>All <small>{{ $total }}</small></a>
 @foreach (\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::SET as $key => [$label])

@@ -25,9 +25,16 @@ $rows=[
 // Paymenter default theme colours (themes/default/views/layouts/colors.blade.php), so both modes read as they do in the client area.
 $colors=':root{--color-primary:229 100% 64%;--color-neutral:220 25% 85%;--color-base:0 0% 0%;--color-muted:0 0% 40%;--color-success:142 71% 45%;--color-error:0 75% 60%;--color-warning:25 95% 53%;--color-info:210 100% 60%;--color-background:100 100% 100%;--color-background-secondary:0 0% 97%}'
     .'.dark{--color-neutral:0 0% 17%;--color-base:100 100% 100%;--color-muted:220 0% 53%;--color-background:240 18% 9%;--color-background-secondary:240 13% 11%}';
-$html=view('domains::index',['domains'=>new LengthAwarePaginator($rows,count($rows),25),'filterCounts'=>[''=>count($rows),'active'=>4,'under_review'=>1,'expired'=>1]])->render();
-foreach(['dark','light']as$mode){
-    $doc=str_replace(['<html>','</head>'],['<html lang="en" class="'.$mode.'">','<style>'.$colors.'body{margin:0;padding:32px;background:hsl(var(--color-background));font:15px/1.5 system-ui}</style></head>'],$html);
-    writeRenderArtifact($out.'/domains-list-'.$mode.'.html',$doc);
+$pages=[
+    'domains-list'=>['domains'=>new LengthAwarePaginator($rows,count($rows),25),'filterCounts'=>[''=>count($rows),'active'=>4,'under_review'=>1,'expired'=>1],'transfersOffered'=>true],
+    'domains-empty'=>['domains'=>new LengthAwarePaginator([],0,25)],
+    'domains-empty-transfer'=>['domains'=>new LengthAwarePaginator([],0,25),'transfersOffered'=>true],
+];
+foreach($pages as$name=>$data){
+    $html=view('domains::index',$data)->render();
+    foreach(['dark','light']as$mode){
+        $doc=str_replace(['<html>','</head>'],['<html lang="en" class="'.$mode.'">','<style>'.$colors.'body{margin:0;padding:32px;background:hsl(var(--color-background));font:15px/1.5 system-ui}</style></head>'],$html);
+        writeRenderArtifact($out.'/'.$name.'-'.$mode.'.html',$doc);
+    }
 }
-$nativeSuccessful=true;echo "Client Domains list rendered dark and light.\n";
+$nativeSuccessful=true;echo "Client Domains list and empty states rendered dark and light.\n";

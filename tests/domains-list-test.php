@@ -102,7 +102,13 @@ $empty=storefrontDom(view('domains::index',['domains'=>new LengthAwarePaginator(
 same('No domains yet',$norm($empty->query('//*[contains(@class,"domains-empty")]/h2')->item(0)),'Empty heading');
 same('Register a new name.',$norm($empty->query('//*[contains(@class,"domains-empty")]/p')->item(0)),'Empty text says it once');
 same('yourbusiness.com',$empty->query('//*[contains(@class,"domains-empty")]//input[@name="name"]/@placeholder')->item(0)?->value,'Empty search placeholder');
-same(0,$empty->query('//*[contains(@class,"domains-empty")]//a')->length,'No second transfer link: the header button says it');
+same(0,$empty->query('//*[contains(@class,"domains-head")]//a')->length,'Empty list has no header buttons: the search is the one path');
+same(0,$empty->query('//*[contains(@class,"domains-empty")]//a')->length,'No transfer link when no transfer is offered');
+$emptyTransfer=storefrontDom(view('domains::index',['domains'=>new LengthAwarePaginator([],0,25),'transfersOffered'=>true])->render());
+same(0,$emptyTransfer->query('//*[contains(@class,"domains-head")]//a')->length,'Empty list with transfers has no header buttons');
+same('Register a new name or transfer one you own.',$norm($emptyTransfer->query('//*[contains(@class,"domains-empty")]/p')->item(0)),'Empty text names both paths');
+same(['Transfer a domain'],array_map($norm,iterator_to_array($emptyTransfer->query('//*[contains(@class,"domains-empty")]/form/following-sibling::*//a[@href="'.route('domains.domains.transfer').'"]'))),'Transfer link sits under the search');
+same(['Register a domain'],array_map($norm,iterator_to_array($dom->query('//*[contains(@class,"domains-head")]//a[@href="'.route('domains.domains.search').'"]'))),'A list with domains keeps the header button');
 $filtered=view('domains::index',['domains'=>new LengthAwarePaginator([],0,25),'filterCounts'=>[''=>3],'search'=>'zz'])->render();
 expect(str_contains((string)$norm(storefrontDom($filtered)->query('//div[@class="domains"]')->item(0)),'No domains match "zz".'),'Filtered empty uses straight quotes');
 

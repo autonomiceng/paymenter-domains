@@ -337,6 +337,7 @@
 /* Empty state */
 .domains .domains-empty { padding: 3rem 1.5rem; text-align: center; }
 .domains .domains-empty p { color: var(--e-muted); max-width: 42ch; margin: .375rem auto 1.25rem; font-size: .9375rem; }
+.domains .domains-empty p.domains-empty-alt { margin: 1rem auto 0; font-size: .875rem; }
 /* Record editors share the table overflow and input focus rules. */
 .domains .domains-record-form { max-width: 100%; min-width: 0; }
 .domains .domains-record-form .domains-tablewrap { position: relative; }
