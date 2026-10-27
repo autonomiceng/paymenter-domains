@@ -46,6 +46,25 @@
             </ul>
         </div>
     </x-filament::section>
+    @if($matrix['skipped'])
+        <x-filament::section heading="Some TLDs are left out">
+            <p>Their saved pricing can't be read, so no prices are shown for them. The rows below are not affected.</p>
+            <ul>
+                @foreach($matrix['warnings'] as $warning)
+                    <li data-price-omission>
+                        @if($warning['cause'] === 'custom_rule')
+                            <span data-omitted-tld>{{ $warning['tlds'][0] }}</span> on {{ $warning['account'] }}: custom pricing can't be read.
+                            To fix, open the {{ $warning['tlds'][0] }} TLD page and use Edit prices.
+                        @else
+                            {{ $warning['account'] }}: {{ $warning['cause'] === 'card_fee' ? "card fee can't be read." : "default pricing can't be read." }}
+                            {{ count($warning['tlds']) }} {{ count($warning['tlds']) === 1 ? 'TLD' : 'TLDs' }} left out: @foreach($warning['tlds'] as $tld)<span data-omitted-tld>{{ $tld }}</span>{{ $loop->last ? '.' : ', ' }}@endforeach
+                            To fix, open {{ $warning['account'] }} under Registrars and use {{ $warning['cause'] === 'card_fee' ? 'Edit card fee.' : 'Edit default pricing.' }}
+                        @endif
+                    </li>
+                @endforeach
+            </ul>
+        </x-filament::section>
+    @endif
     <p class="domains-price-muted" style="font-size:.875rem">Missing means no price is saved for this many years. It is never worked out from the 1-year price.</p>
     <div class="domains-prices" style="overflow-x:auto">
         <table data-price-list style="width:100%;min-width:58rem;font-size:.875rem">
@@ -73,7 +92,7 @@
                     @endforeach
                 </tr>
             @empty
-                <tr><td colspan="10">No prices match these filters.</td></tr>
+                <tr><td colspan="10">{{ $matrix['skipped'] ? 'No prices to show. Some TLDs are left out; see above.' : 'No prices match these filters.' }}</td></tr>
             @endforelse
             </tbody>
         </table>

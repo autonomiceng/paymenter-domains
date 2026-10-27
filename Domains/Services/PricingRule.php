@@ -55,11 +55,15 @@ final class PricingRule
     {
         if (!in_array($rule['mode'] ?? null, ['fixed', 'markup_amount', 'markup_percent', 'markup_fee_percent'], true)
             || !in_array($rule['round_up'] ?? null, self::ROUNDING, true)) { throw new InvalidArgumentException('Choose a pricing mode and rounding rule.'); }
+        if (!is_scalar($rule['markup'] ?? '0')) { throw new InvalidArgumentException('Enter a valid nonnegative amount.'); }
         $markup = self::units((string) ($rule['markup'] ?? '0'), 2);
         if ($markup > 10000000) { throw new InvalidArgumentException('Enter a markup from 0 to 100000.'); }
         $fixed = [];
+        $values = $rule['fixed'] ?? [];
+        if (!is_array($values)) { throw new InvalidArgumentException('Enter a valid nonnegative amount.'); }
         foreach (['register', 'renew', 'transfer'] as $action) {
-            $value = $rule['fixed'][$action] ?? null;
+            $value = $values[$action] ?? null;
+            if ($value !== null && !is_scalar($value)) { throw new InvalidArgumentException('Enter a valid nonnegative amount.'); }
             $fixed[$action] = $value === null || $value === '' ? null : self::decimal(self::units((string) $value, 2));
             if ($rule['mode'] === 'fixed' && ($fixed[$action] === null || self::units($fixed[$action], 2) < 1)) {
                 throw new InvalidArgumentException('Enter all three prices, at least $0.01 each.');

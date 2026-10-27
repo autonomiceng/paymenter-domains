@@ -168,6 +168,7 @@
     "tests/tld-pricing-publish-test.php",
     "tests/default-followers-preview-test.php",
     "tests/price-list-test.php",
+    "tests/price-list-unreadable-test.php",
     "tests/renewal-billing-settings-test.php",
     "tests/reminders-test.php",
     "tests/reminder-transfer-test.php",

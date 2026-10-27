@@ -78,4 +78,23 @@ same('2.9% + $0.30',CardFee::describe(['percent'=>'2.9','fixed'=>'0.3']),'Shared
 same('0% + $0.00',CardFee::describe(['percent'=>'0','fixed'=>'0']),'Zero fee description');
 same('10% + $1.00',CardFee::describe(['percent'=>'10','fixed'=>'1']),'Whole percent description keeps significant zero');
 $reject(static fn()=>CardFee::describe(['percent'=>'100','fixed'=>'0']));
+// Numeric scalar inputs retain their existing canonicalization; malformed members fail before casting.
+foreach([0,1,1.25,'2.50',true] as $value){
+    same(CardFee::validate(['percent'=>(string)$value,'fixed'=>(string)$value]),CardFee::validate(['percent'=>$value,'fixed'=>$value]),'Scalar fee amounts keep their accepted behavior');
+    same(PricingRule::validate([...$rule,'markup'=>(string)$value]),PricingRule::validate([...$rule,'markup'=>$value]),'Scalar markup keeps its accepted behavior');
+    if($value!==0){
+        $values=array_fill_keys(['register','renew','transfer'],$value);
+        same(PricingRule::validate([...$fixed,'fixed'=>array_map('strval',$values)]),PricingRule::validate([...$fixed,'fixed'=>$values]),'Scalar fixed prices keep their accepted behavior');
+    }
+}
+$invalidAmount=static function(Closure $call):void{
+    try{$call();expect(false,'Malformed monetary member escaped');}
+    catch(InvalidArgumentException $error){same('Enter a valid nonnegative amount.',$error->getMessage(),'Malformed monetary member uses the existing validation exception');}
+};
+foreach([[],['nested'=>'1'],new stdClass] as $value){
+    foreach(['percent','fixed'] as $key){$invalidAmount(static fn()=>CardFee::validate([...CardFee::DEFAULT,$key=>$value]));}
+    $invalidAmount(static fn()=>PricingRule::validate([...$rule,'markup'=>$value]));
+    if(!is_array($value)){$invalidAmount(static fn()=>PricingRule::validate([...$fixed,'fixed'=>$value]));}
+    foreach(['register','renew','transfer'] as $action){$invalidAmount(static fn()=>PricingRule::validate([...$fixed,'fixed'=>[...$fixed['fixed'],$action=>$value]]));}
+}
 echo "Exact pricing and margin checks passed.\n";

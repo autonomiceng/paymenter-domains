@@ -11,6 +11,9 @@ final class CardFee
     public const KEY='domains_card_fee';
     public static function validate(array $fee): array
     {
+        foreach(['percent','fixed'] as $key){
+            if(!is_scalar($fee[$key]??'')){throw new \InvalidArgumentException('Enter a valid nonnegative amount.');}
+        }
         $percent=PricingRule::units((string)($fee['percent']??''),2);
         $fixed=PricingRule::units((string)($fee['fixed']??''),2);
         if($percent>=10000||$fixed>10000000){throw new \InvalidArgumentException('Enter a card fee below 100% and a fixed amount from 0 to 100000.');}
