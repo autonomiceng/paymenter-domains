@@ -1,5 +1,25 @@
 # Verification
 
+## Explicit offline button layout check
+
+This optional browser check is separate from the native runner: ordinary CI tests do not require a browser.
+It requires an already installed Node.js, Playwright package (tested with 1.60.0), and Chromium/Chrome.
+No dependency or browser is downloaded. Set `NODE_PATH` to an external installed `node_modules` directory
+when Playwright is not on Node's module path, and `CHROME_BIN` to an existing browser executable.
+With the same pinned native/PHP environment as below, choose a fresh output directory under `TMPDIR`:
+
+```sh
+suite-slot --quick python3 scripts/render-reminders.py "$BUTTON_RENDER_DIR" tests/Support/button-layout-render.php tests/domain-page-render.php
+suite-slot --quick node scripts/check-button-layout.cjs "$BUTTON_RENDER_DIR"
+```
+
+The first command verifies the pinned read-only native dependency and renders real Blade with synthetic DTOs.
+The second blocks network requests and application scripts, measuring text ranges on both axes: Transfer at
+320px with 14px/32px text, wrapped height/padding, and the real Renewal card's Pay invoice link on one line
+at default size in both modes at 320/360/768/1280px. It compares ordinary Register/Transfer/Retry geometry against
+the previous inline-flex/normal-wrap/1.25rem rules. Artifacts and `button-layout-receipt.json` remain in the output directory, including
+failed measurements. This minimal shell check does not establish installed-theme or browser-zoom acceptance.
+
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
 PHP **8.4.27**, Debian `8.4.27-1~deb13u1`, Linux x86_64 is pinned by archive SHA-256.
 PHP archive SHA-256 hashes were computed from Debian security downloads on 2026-10-22.

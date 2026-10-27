@@ -54,7 +54,7 @@
 /* Buttons */
 /* Border-box, as the app's base styles already set: one-line buttons keep their min-height; the padding gives a label that must wrap room. */
 .domains .domains-btn { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; box-sizing: border-box; min-height: 2.5rem; max-width: 100%; padding: .375rem 1rem;
-    border-radius: .375rem; border: 1px solid transparent; font-size: .875rem; font-weight: 600; line-height: 1.25rem; text-align: center; overflow-wrap: normal;
+    border-radius: .375rem; border: 1px solid transparent; font-size: .875rem; font-weight: 600; line-height: max(1.25rem, 1.4em); text-align: center; overflow-wrap: break-word;
     cursor: pointer; transition: background-color .15s, border-color .15s, color .15s; text-decoration: none; }
 .domains .domains-btn--primary { background: var(--e-accent); color: #fff; }
 .domains .domains-btn--primary:hover { background: hsl(var(--color-primary) / .85); }
@@ -203,7 +203,8 @@
 .domains .domains-result__action form { width: 100%; flex-direction: column; gap: .5rem; }
 .domains .domains-result__action select { width: 100%; min-width: 0; font-size: .8125rem; }
 .domains .domains-result__action .domains-retry { flex-direction: column; align-items: flex-end; gap: .25rem; }
-.domains .domains-result__action .domains-btn { width: 100%; }
+/* Block text can wrap inside the fixed action column without a flex item's word minimum. */
+.domains .domains-result__action .domains-btn { display: block; width: 100%; }
 .domains .domains-result[data-state="taken"] .domains-result__name, .domains .domains-result[data-state="premium"] .domains-result__name,
 .domains .domains-result[data-state="held"] .domains-result__name, .domains .domains-result[data-state="managed"] .domains-result__name, .domains .domains-result[data-state="invalid"] .domains-result__name { color: var(--e-muted); }
 .domains .domains-result[data-state="taken"] .domains-tld, .domains .domains-result[data-state="premium"] .domains-tld,
