@@ -15,7 +15,8 @@
     "tests/dns-reader-test.php",
     "tests/dns-signals-test.php",
     "tests/public-registry-test.php",
-    "tests/rdap-transport-test.php"
+    "tests/rdap-transport-test.php",
+    "tests/namesilo-default-contact-test.php"
   ],
   "contracts": [
     "tests/ote-reconciliation-test.php",
@@ -34,7 +35,9 @@
     "tests/settings-refusal-test.php",
     "tests/render-artifacts-test.php",
     "tests/ui-docs-test.php",
-    "tests/test_staff_docs.py"
+    "tests/test_staff_docs.py",
+    "tests/ote-order-window-test.php",
+    "tests/ote-collection-shapes-test.php"
   ],
   "native": [
     "tests/walk-layout-test.php",
@@ -72,6 +75,8 @@
     "tests/write-preflight-test.php",
     "tests/registration-enom-test.php",
     "tests/registration-namesilo-test.php",
+    "tests/namesilo-account-guard-test.php",
+    "tests/namesilo-account-guard-transfer-test.php",
     "tests/registration-namesilo-profile-test.php",
     "tests/reconciliation-test.php",
     "tests/reconciliation-dns-test.php",
@@ -328,7 +333,8 @@
     "tests/staff-recovery-copy-test.php",
     "tests/acquisition-payment-review-test.php",
     "tests/runtime-refusal-test.php",
-    "tests/storefront-transfer-offers-test.php"
+    "tests/storefront-transfer-offers-test.php",
+    "tests/namesilo-fingerprint-reset-test.php"
   ],
   "ui": [],
   "runner": [

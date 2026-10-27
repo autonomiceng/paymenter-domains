@@ -101,10 +101,16 @@ final class StaffSettingsReview
     {
         if(!$this->verified||DB::transactionLevel()!==1){throw new \LogicException('Locked review required.');}
         $s=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();
+        self::append($s,['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
+            'reason'=>$this->reason,'phase'=>$phase,'input'=>$this->input,'tld_id'=>$this->action==='default_rule'?null:$this->tldId,'before'=>$this->before,'after'=>$this->state($this->serverId,$this->tldId)]);
+    }
+    /** Caller holds the server/account mutex; audit and the local change commit together. */
+    public static function append(Server $s,array $entry): void
+    {
+        if(DB::transactionLevel()!==1){throw new \LogicException('Outer audit transaction required.');}
         $setting=$s->settings()->where('key',self::KEY)->lockForUpdate()->first()??$s->settings()->make(['key'=>self::KEY]);
         $rows=$setting->exists?self::batch($setting):[];
-        $rows[]=['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
-            'reason'=>$this->reason,'phase'=>$phase,'input'=>$this->input,'tld_id'=>$this->action==='default_rule'?null:$this->tldId,'before'=>$this->before,'after'=>$this->state($this->serverId,$this->tldId)];
+        $rows[]=$entry;
         $json=json_encode($rows,JSON_THROW_ON_ERROR);
         if(strlen(Crypt::encryptString($json))>64000){
             $last=array_pop($rows);if(!$rows){throw new \DomainException('Audit entry too large. Changes held.');}

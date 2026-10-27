@@ -13,6 +13,14 @@ abstract class RegistrationBridge implements AdmittedRegistrarDriver, WriteGate
         private readonly WriteAcceptance $accepted, private readonly \Closure $engine,
         #[\SensitiveParameter] RegistrationTransport $transport)
     { $this->transport = new \SensitiveParameterValue($transport); }
+    final public function guardAccount(\Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,\DateTimeImmutable $deadline): void
+    {
+        if($this->binding->registrarKey==='namesilo'&&$this->transport->getValue() instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol){
+            $context=new RequestContext($this->binding,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,$deadline,
+                new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(1),$clock,Runtime::limiter());
+            $this->transport->getValue()->guardAccount($context);
+        }
+    }
     final public function requireEnabled(Action $action): void { $this->features->requireEnabled($action); }
     final public function reserve(): void { OperationClaims::outside(); $this->accepted->reserve($this->binding); }
     final public function requireAtSeal(Operation $op, Domain $domain, DispatchReadiness $ready): void

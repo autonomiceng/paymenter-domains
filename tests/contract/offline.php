@@ -254,7 +254,7 @@ if (getenv('OTE_SELF_TEST_NATIVE')) {
             }
             elseif ($command === 'orderDetails') {
                 $r += ['order_number' => '901', 'order_date' => gmdate('Y-m-d H:i:s'), 'method' => 'Account Funds', 'total' => '8.95',
-                    'order_details' => [['description' => $wire->domain.' - '.($state->renewed ? 'renewal' : 'registration'), 'years_qty' => '1', 'price' => '8.95', 'subtotal' => getenv('OTE_SELF_TEST_SCENARIO') === 'malformed-registration' ? '9.95' : '8.95', 'status' => 'Processed']]];
+                    'order_details' => [['description' => $wire->domain.' - '.($state->renewed ? 'Renewal' : 'Registration'), 'years_qty' => '1', 'price' => '8.95', 'subtotal' => getenv('OTE_SELF_TEST_SCENARIO') === 'malformed-registration' ? '9.95' : '8.95', 'status' => 'Processed']]];
             } elseif ($command === 'domainUnlock') { $state->locked = 'No'; }
             elseif ($command === 'domainLock') { $state->locked = 'Yes'; }
             elseif ($command === 'removeAutoRenewal') { $r['code'] = 251; }

@@ -78,6 +78,7 @@ final class Labels
             'grace_capability_unaccepted'=>'Not sent: Renewals off for this account','renewal_cost_unconfirmed'=>'Not sent: cost missing',
             'registrar_balance_insufficient_or_unknown'=>'Not sent: low registrar balance',
             'reconciliation_required'=>'Registrar has not confirmed the result','prior_attempt'=>'Registrar has not confirmed the result',
+            'namesilo_account_guard'=>"Paused: the NameSilo account's default contact could not be confirmed. Check the API key and expected default contact email.",
             'pre_send_interrupted'=>'Registrar has not confirmed the result','claim_authority_invalid'=>'Not sent: registrar account changed',
             'seal_authority_invalid'=>'Not sent: registrar account changed','registration_authority_changed'=>'Not sent: registrar account changed',
             'registration_correction_required'=>'Not sent: contact details need fixing','registration_evidence_required'=>'Not sent: contact details need fixing',

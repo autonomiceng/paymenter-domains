@@ -47,6 +47,10 @@ final class RenewalExecution
         $descriptor = null; $context = null;$reservedContext=null;
         try {
             if ($first->code !== RenewalCode::Admitted) { throw new RenewalRefused($first->code); }
+            [$binding] = $this->authority->capture($capture);
+            $guardContext=new RequestContext($binding,RequestOrigin::Background,min($deadline,$first->validUntil),new RequestBudget(1),$this->clock,Runtime::limiter());
+            $writer->guardAccount($guardContext);
+            // First-use pinning changes retained settings; capture the financial stamp afterwards.
             [$binding, $name, $stamp] = $this->authority->capture($capture);
             $ready = $this->admission->refresh($capture, $deadline);
             if ($ready->code !== RenewalCode::Admitted || !$ready->cost || !$ready->validUntil) { throw new RenewalRefused($ready->code); }
@@ -85,7 +89,8 @@ final class RenewalExecution
                     $retry = in_array($reason, [RenewalCode::Rate, RenewalCode::Reads, RenewalCode::Balance, RenewalCode::Changed, RenewalCode::Acceptance], true);
                     $policy = $op->policy; unset($policy['renewal_admission']); $op->update(['policy' => $policy]);
                     $cap=EnomTestRenewal::enabled(CatalogueAcceptances::binding($l['account']))&&($error instanceof EnomTestCallLimit||EnomTestCalls::refusedSince($refusals));
-                    $this->hold($op,$cap?'enom_test_renewal_call_cap':$reason->value,$retry&&!$cap);
+                    $guard=$error instanceof WriteHeld&&$error->reason==='namesilo_account_guard';
+                    $this->hold($op,$guard?'namesilo_account_guard':($cap?'enom_test_renewal_call_cap':$reason->value),$retry&&!$cap&&!$guard);
                 } });
         }
         return Operation::findOrFail($id);

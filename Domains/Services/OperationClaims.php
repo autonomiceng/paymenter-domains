@@ -67,7 +67,10 @@ final class OperationClaims
             $now = $this->clock->now();$claimStartedAt=($startedAt??$now)->setTimezone($now->getTimezone());
             if($claimStartedAt>$now||$claimStartedAt<$now->modify('-'.ExecuteOperation::EXECUTION_SECONDS.' seconds')) { $op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null; }
             $digest = self::digest($op, $domain);$retry=$claimRetry;
-            if($claimRetry&&(!$op->started_at||$now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')>$op->started_at->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'))){$op->update(['state'=>'held','safe_code'=>'write_rate_limited']);return null;}
+            $window=self::executionStart($op);
+            if($claimRetry&&(!$window||$window>$now||$now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')>$window->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'))){
+                $op->update(['state'=>'held','safe_code'=>$window&&$op->started_at&&$window>$op->started_at?'namesilo_account_guard':'write_rate_limited']);return null;
+            }
             if($claimRetry&&($op->request_fingerprint!==$digest||($op->funding['claim']??null)!==$paid)){$op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null;}
             $attempt=$claimRetry?$op->attempt:($testCallRetry
                 ?array_replace(['test_call_refusals'=>$op->attempt['test_call_refusals']],array_intersect_key($op->attempt,['capacity_deferrals'=>true]),
@@ -94,9 +97,14 @@ final class OperationClaims
                 $writer?->requireAtSeal($op, $domain, $ready);
                 $wire?->requireReservedCapacity();$now = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
                 $ready->requireCurrent($binding, self::query($op, $domain), self::payloadDigest($op), $now);
-                $lastSend = min($op->started_at->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'),
+                $window=self::executionStart($op)??throw new \DomainException('Missing execution window.');
+                $windowEnd=$window->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
+                if($op->started_at&&$window>$op->started_at&&$windowEnd<$now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')){
+                    throw new WriteHeld('namesilo_account_guard');
+                }
+                $lastSend = min($windowEnd,
                     $entry->setTimezone(new \DateTimeZone('UTC'))->modify('+'.(ExecuteOperation::EXECUTION_SECONDS - ExecuteOperation::FINISH_SECONDS).' seconds'));
-                if ($ready->observedAt < $op->started_at || $op->request_fingerprint !== self::digest($op, $domain)
+                if ($ready->observedAt < $window || $op->request_fingerprint !== self::digest($op, $domain)
                     || !$op->lease_expires_at || $op->lease_expires_at < $now->modify('+'.(ExecuteOperation::REQUEST_SECONDS + ExecuteOperation::CLEANUP_SECONDS).' seconds')
                     || $lastSend < $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')
                     || $ready->validUntil < $now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')) {
@@ -193,6 +201,28 @@ final class OperationClaims
             &&count($a['capacity_deferrals'])<=5&&(!array_key_exists('test_call_refusals',$a)||self::testCallHistory($history))
             &&!array_diff(array_keys($a),['claim_key','seal','send_state','capacity_deferrals','test_call_refusals']);
     }
+    /** An audited staff release grants a bounded new window without changing original claim evidence. */
+    private static function executionStart(Operation $op): ?\DateTimeImmutable
+    {
+        $start=$op->started_at;
+        if(!$start||$op->registrar_key!=='namesilo'||!in_array($op->action,['register','transfer'],true)){return $start;}
+        foreach($op->policy['staff_actions']??[] as $event){
+            if(($event['action']??null)!=='release'||($event['phase']??null)!=='completed'
+                ||($event['operation_key']??null)!==$op->operation_key||($event['generation']??null)!==$op->authority_generation
+                ||($event['before']['state']??null)!=='held'||($event['before']['reason']??null)!=='namesilo_account_guard'
+                ||($event['after']['state']??null)!=='queued'||!is_array($event['after']??null)
+                ||!array_key_exists('reason',$event['after'])||$event['after']['reason']!==null||!is_string($event['at']??null)){continue;}
+            try{$at=new \DateTimeImmutable($event['at']);if($at->format(DATE_ATOM)!==$event['at']){continue;}}
+            catch(\Throwable){continue;}
+            if($at>$start){$start=$at;}
+        }
+        return $start;
+    }
+    public static function accountGuardRetryable(Operation $op): bool
+    {
+        return $op->state==='held'&&$op->safe_code==='namesilo_account_guard'&&$op->registrar_key==='namesilo'
+            &&in_array($op->action,['register','transfer'],true)&&$op->lease_expires_at===null&&$op->completed_at===null&&self::capacityRetry($op);
+    }
     /** Disabled feature gates create no claim, seal or provider traffic. */
     public function holdUnclaimed(int $id, string $reason): Operation
     {
@@ -206,7 +236,7 @@ final class OperationClaims
             if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
                 $op->update(['state' => 'uncertain', 'safe_code' => 'stale_claim', 'lease_expires_at' => null]);
             } elseif (in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)
-                && (self::virgin($op)||(in_array($reason,['enom_test_call_cap','enom_test_transfer_call_cap','write_acceptance_required','nameservers_required',
+                && (self::virgin($op)||($reason==='namesilo_account_guard'&&$op->registrar_key==='namesilo'&&self::capacityRetry($op))||(in_array($reason,['enom_test_call_cap','enom_test_transfer_call_cap','write_acceptance_required','nameservers_required',
                     'registry_details_unsupported','processing','write_disabled','usd_balance_required','enom_test_transfer_usd_balance_required','enom_test_setup_required','enom_test_transfer_setup_required'],true)&&self::testCallRetry($op)))) {
                 $op->update(['state' => 'held', 'safe_code' => $reason]);
             }

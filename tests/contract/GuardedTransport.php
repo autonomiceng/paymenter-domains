@@ -220,7 +220,7 @@ final class GuardedTransport implements DeadlineTransport
             $this->save();
             if ($shapeErrors === [] && ($readRequest === null || $parsed->outcome === \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Success)
                 && is_array($data['reply'] ?? null)) {
-                $this->latest[$command] = new \SensitiveParameterValue($data);
+                $this->latest[$command] = new \SensitiveParameterValue(Shapes::normalizeCollections($command, $data));
                 if ($command === 'orderDetails') { $this->details[(string) $parameters['order_number']] = new \SensitiveParameterValue($data['reply']); }
             }
             return $response;

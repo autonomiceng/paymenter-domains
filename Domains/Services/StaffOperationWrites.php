@@ -44,7 +44,7 @@ final class StaffOperationWrites
             throw new \DomainException('This hold requires its original recovery or evidence path.');
         }
         $op->setRelation('domain',$l['domain']);$account=$l['account'];
-        $ordinary=['staff_review_required','funding','processing','write_disabled','write_acceptance_required',
+        $ordinary=['namesilo_account_guard','staff_review_required','funding','processing','write_disabled','write_acceptance_required',
             'configuration_unavailable','balance','renewal_funding_or_authority','renewal_authority_invalid','transfer_setup_review_required'];
         $retry=false;
         if(!in_array($op->safe_code,$ordinary,true)&&!self::renewalAdmissionHold($op)){
@@ -61,7 +61,7 @@ final class StaffOperationWrites
             if(!$retry||!in_array($account?->environment,['test','live'],true)){throw new \DomainException('This hold requires its original recovery or evidence path.');}
         }
         $testRetry=OperationClaims::testCallRefusalRetryable($op);
-        if($testRetry) { RefundProof::requireUnsent($op,$l['domain']); }
+        if($testRetry||OperationClaims::accountGuardRetryable($op)) { RefundProof::requireUnsent($op,$l['domain']); }
         else { self::virgin($op,$l); }
         if(($op->action==='renew'?RenewalStop::blocksRenewal($l):$l['cancel']->contains('service_id',$op->service_id))||!in_array($l['service']->status,['pending','active'],true)) { throw new \DomainException('Service lifecycle changed.'); }
         if($op->action==='renew'){RenewalFunding::requireCurrent($op,$l);}

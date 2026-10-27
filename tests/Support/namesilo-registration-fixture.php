@@ -2,6 +2,7 @@
 // Synthetic NameSilo registration setup; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/registration-fixture.php';
+require_once __DIR__.'/namesilo-account-guard.php';
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 $sellers->change('com', 2, $tlds[1]->server_id, true, true, $clock->now()); $nsProduct = $native->product($tlds[1], 'register');
 $nsNew = static function ($name) use ($nsProduct, $user) {
@@ -11,9 +12,11 @@ $nsNew = static function ($name) use ($nsProduct, $user) {
     App\Models\InvoiceTransaction::create(['invoice_id' => $op->invoice_id, 'amount' => $op->amount, 'fee' => '0.00', 'status' => 'succeeded']); return $op;
 };
 $binding = $bindingFor(1);
+\App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>'domains_namesilo_expected_default_contact_email'],['value'=>'expected@example.com','type'=>'string','encrypted'=>true]);
 $exchange = static function ($origin, $command, $parameters, $timeout) use ($registration): string {
     same(0, Illuminate\Support\Facades\DB::transactionLevel(), 'All profile/purchase/follow-up work outside locks');
     same('https://ote.namesilo.com/apibatch', $origin, 'Fixed batch route'); expect($timeout > 0 && $timeout <= 25000, 'Bounded request');
+    if($command==='contactList'&&$parameters===[]){return json_encode(['request'=>['operation'=>'contactList'],'reply'=>['code'=>300,'contact'=>[['contact_id'=>'900','default_profile'=>'1','email'=>'expected@example.com']]]]);}
     $registration->calls[] = $command; $reply = ['code' => 300, 'detail' => 'synthetic'];
     if ($command === 'contactAdd') { $registration->profile = $parameters; $reply['contact_id'] = (string) ++$registration->id; }
     elseif ($command === 'contactList') {

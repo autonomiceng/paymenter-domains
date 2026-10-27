@@ -24,6 +24,14 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         if ($freshSeconds < 1 || $freshSeconds > 3600) { throw new \InvalidArgumentException('Invalid quote lifetime.'); }
         $copy = []; foreach ($acceptedAnnualActions as $action) { $copy[] = $action; } $this->annualActions = $copy;
     }
+    /** Staff continuity review through the same bounded read client and transport. */
+    public function defaultContact(RequestContext $context): array
+    {
+        $reply=$this->read(Request::defaultContact(),$context);
+        $contact=$reply->value('default_contact');
+        if($reply->outcome!==Outcome::Success||!is_array($contact)){throw new \DomainException('Could not read the current NameSilo default contact. Try again.');}
+        return $contact;
+    }
     public function catalogueBatch(\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted,
         \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness $freshness, RequestContext $context): array
     {

@@ -9,6 +9,12 @@ abstract class RegistrationProtocol extends RegistrationTransport
     private readonly \SensitiveParameterValue $exchange;
     protected function __construct(protected readonly AccountBinding $binding, #[\SensitiveParameter] \Closure $exchange)
     { $this->exchange = new \SensitiveParameterValue($exchange); }
+    final public function guardAccount(RequestContext $context): void
+    {
+        if($this->binding->registrarKey==='namesilo'){
+            \Paymenter\Extensions\Servers\Domains\Services\NameSiloAccountGuard::check($this->binding,$context,$this->exchange->getValue());
+        }
+    }
     final public function bindsTo(AccountBinding $binding): bool { return $this->binding->matches($binding); }
     final protected function request(AdmittedOperation $op, RequestContext $ctx, string $origin, string $command,
         #[\SensitiveParameter] array $parameters): string

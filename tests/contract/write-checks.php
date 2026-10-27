@@ -6,7 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\RegistrarReques
 
 $correlate = static function (string $label) use ($wire, $get): void {
     if ($wire->remaining() < 6) { $wire->check($label.'_charge_correlation', 'skipped_budget'); return; }
-    $get(RegistrarRequest::listOrders(gmdate('Y-m-d', time() - 86400), gmdate('Y-m-d')));
+    $get(RegistrarRequest::listOrders(gmdate('Y-m-d', time() - 86400), gmdate('Y-m-d', time() + 86400)));
     $orders = $wire->latest('listOrders')['order'] ?? [];
     if (is_array($orders) && !array_is_list($orders)) { $orders = [$orders]; }
     $orders = is_array($orders) ? $orders : [];
@@ -22,7 +22,7 @@ $correlate = static function (string $label) use ($wire, $get): void {
         $items = $detail?->value('order_details', []) ?? [];
         if (is_array($items) && !array_is_list($items)) { $items = [$items]; }
         foreach ($items as $item) {
-            if (($item['description'] ?? null) !== $wire->domain.' - '.$label) { continue; }
+            if (preg_match('/^'.preg_quote($wire->domain, '/').' - (?i:'.preg_quote($label, '/').')$/D', $item['description'] ?? '') !== 1) { continue; }
             $matches++;
             $chargeShape = ($item['years_qty'] ?? null) === '1' && ($item['status'] ?? null) === 'Processed'
                 && is_string($item['subtotal'] ?? null) && !array_key_exists('credited_amount', $item) && !array_key_exists('credited_date', $item);

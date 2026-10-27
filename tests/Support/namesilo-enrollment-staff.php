@@ -55,9 +55,9 @@ $GLOBALS['enrollmentMode']='ok';$s=$fresh();
 $extensionDir=base_path('extensions/Servers');if(!is_dir($extensionDir)){mkdir($extensionDir,0700,true);}
 if(!file_exists($extensionDir.'/Domains')){symlink(dirname(__DIR__,2).'/Domains',$extensionDir.'/Domains');}
 $nativeEdit=Livewire::actingAs($staff)->test(App\Admin\Resources\ServerResource\Pages\EditServer::class,['record'=>$s->id])
-    ->fillForm(['name'=>'Native OTE enrollment'])->set('data.settings.domains_setup_note',null)->call('save')->assertHasNoFormErrors();
+    ->fillForm(['name'=>'Native OTE enrollment'])->set('data.settings.domains_namesilo_expected_default_contact_email','expected@example.com')->set('data.settings.domains_setup_note',null)->call('save')->assertHasNoFormErrors();
 // Exercise the native write hook with a retained placeholder; Filament may omit an empty placeholder.
-(new ReflectionMethod(App\Admin\Resources\ServerResource\Pages\EditServer::class,'handleRecordUpdate'))->invoke($nativeEdit->instance(),$s,['settings'=>['domains_setup_note'=>null]]);
+(new ReflectionMethod(App\Admin\Resources\ServerResource\Pages\EditServer::class,'handleRecordUpdate'))->invoke($nativeEdit->instance(),$s,['settings'=>['domains_setup_note'=>null,'domains_namesilo_expected_default_contact_email'=>'expected@example.com']]);
 expect($s->settings()->where('key','domains_setup_note')->exists(),'Native write hook saves informational placeholder');
 unset($nativeEdit);gc_collect_cycles();
 

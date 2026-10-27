@@ -100,7 +100,7 @@ final class AccountBindings
             $q=DB::table($table)->where('server_id',$serverId);if($lock){$q->lockForUpdate();}
             if($q->exists()){throw new \DomainException('Sandbox enrollment requires a fresh server.');}
         }
-        $q=$server->settings()->whereRaw("`key` LIKE ? ESCAPE '!'",['domains!_%'])->whereNotIn('key',[StaffSettingsReview::KEY,'domains_setup_note']);
+        $q=$server->settings()->whereRaw("`key` LIKE ? ESCAPE '!'",['domains!_%'])->whereNotIn('key',[StaffSettingsReview::KEY,'domains_setup_note',NameSiloAccountGuard::EXPECTED]);
         if($lock){$q->lockForUpdate();}if($q->exists()){throw new \DomainException('Sandbox enrollment requires a fresh server.');}
     }
 
