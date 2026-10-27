@@ -89,6 +89,7 @@ final class AccountChecklist
             default=>self::row('Payment events','Available')}];
         $editor=NativeEditorNotice::missing();
         $checks[]=$editor===null?self::row('Domain editor','Available'):self::row('Domain editor',null,'danger','Paymenter is missing '.$editor.'. Update Paymenter or the Domains extension.');
+        if (($missing=PricingEditorNotice::missing())!==null) { $checks[]=self::row('Pricing change warning',null,'danger','Paymenter is missing '.$missing.'. Check public sales after pricing changes; update Paymenter or the Domains extension.'); }
         if (($missing=NativeServerGuard::deletionNoticeMissing())!==null) { $checks[]=self::row('Server delete warning',null,'danger','Paymenter is missing '.$missing.'. Deleting a Domains server is still refused.'); }
         if (($missing=NativeServiceRefusal::missing())!==null) { $checks[]=self::row('Service change warning',null,'danger','Paymenter is missing '.$missing.'. Unsafe service changes are still refused.'); }
         $failing=array_values(array_filter($checks,fn($c)=>in_array($c['tone'],['danger','warning'],true)));
