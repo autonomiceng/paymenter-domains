@@ -51,7 +51,7 @@ expect(isset($owners->present($d->fresh())->renewNow['url']),'Owner Off offers r
 expect(str_contains($page($d),'>Renew now</a>'),'Late owner page offers renewal');
 $clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');$late=$page($d);
 expect(!isset($owners->present($d->fresh())->renewNow['url']),'Cutoff hides manual renewal');
-expect(str_contains($late,'<span class="domains-date domains-tone-text-bad"><time datetime="2027-10-18">Oct 18, 2027</time></span> <span class="domains-sub">Cancels Oct 18, 2027</span>'),'Owner page after cutoff shows the cancel date in danger colour');
+expect(str_contains($late,'<span class="domains-date domains-card__v domains-tone-text-bad"><time datetime="2027-10-18">Oct 18, 2027</time></span> <span class="domains-sub">Cancels Oct 18, 2027</span>'),'Owner page after cutoff shows the cancel date in danger colour');
 expect(!str_contains($late,'Renew now'),'No renewal promise after cutoff');
 $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
 $summary=(new DomainSummaries)->one($user,'managed',$d->id);expect($summary->renewalOff,'List summary also shows Off');
@@ -103,7 +103,7 @@ foreach(['staff','cancellation'] as $stop){
     expect($session->get('errors')?->has('auto-renew')===true,'Hard stop returns safe HTTP error');
     same(false,$held->fresh()->renewal_policy['owner_auto_renew'],'Refused HTTP toggle changes nothing');
     $html=$page($held);expect(!str_contains($html,'form-auto-renew')&&!str_contains($html,'Turn off auto-renew'),'Hard stop hides switch HTML: '.$stop);
-    expect(preg_match('~<dt>Auto-renew .*?</dt><dd>Off <a class="domains-a" href="[^"]+">Contact support</a></dd>~s',$html)===1&&str_contains($html,'<span class="domains-sub">Cancels '),'Hard stop shows Off with Contact support and the cancel date: '.$stop);
+    expect(preg_match('~<dt>Auto-renew .*?</dt><dd><span class="domains-card__v">Off</span> <span class="domains-row__a domains-card__a"><a class="domains-a" href="[^"]+">Contact support</a></span></dd>~s',$html)===1&&str_contains($html,'<span class="domains-sub">Cancels '),'Hard stop shows Off with Contact support and the cancel date: '.$stop);
     $cancel?->delete();
 }
 // All switch lifecycle refusals are checked at the write, independently of presentation.

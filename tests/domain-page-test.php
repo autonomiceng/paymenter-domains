@@ -38,6 +38,9 @@ $summary=static fn(OwnedDomain $d,array $more=[])=>new DomainSummary($d->name,nu
 $render=static fn(OwnedDomain $d,?DomainSummary $s=null)=>view('domains::show',['domain'=>$d,'summary'=>$s])->render();
 $norm=static fn(?DOMNode $n)=>$n?trim(preg_replace('/\s+/',' ',$n->textContent)):null;
 $card=static fn(DOMXPath $dom,string $label)=>$norm($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]')->item(0));
+// A Renewal card value and its actions: the value stays on one line, the actions sit on their own line below it.
+$split=static fn(DOMXPath $dom,string $label)=>[$norm($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]/span[contains(@class,"domains-card__v")]')->item(0)),
+    array_map($norm,iterator_to_array($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]/span[contains(@class,"domains-card__a")]//*[self::a or self::button][contains(@class,"domains-a")]')))];
 
 // Header: breadcrumb, mono name with tags, pill. No Expires meta, Domain help link, tabs or Overview.
 $d=$domain();$html=$render($d,$summary($d,['daysLeft'=>129]));$dom=storefrontDom($html);
@@ -90,7 +93,9 @@ same(['All contacts','Owner','Admin','Tech','Billing'],array_map($norm,iterator_
 $visible=implode(' ',array_map(static fn($n)=>$n->nodeValue,iterator_to_array($dom->query('//body//text()[not(ancestor::style) and not(ancestor::script)]'))));
 expect(stripos($visible,'registrant')===false,'Page text says owner, never registrant');
 // Renewal card at desktop width: labels and Missing plus its fix stay on one line each; the cause sits below.
-expect(str_contains($html,'.domains .domains-card dt { flex: none; white-space: nowrap; }'),'Renewal card labels do not wrap at desktop width');
+expect(str_contains($html,'.domains .domains-card dt { display: inline-flex; flex: none; align-items: center; gap: .375rem; white-space: nowrap;'),'Renewal card labels never wrap, phone width included');
+expect(str_contains($html,'.domains .domains-card__v { white-space: nowrap; }'),'Renewal card values like a due date never wrap');
+expect(str_contains($html,'.domains .domains-card__a { display: flex; justify-content: flex-end;'),'Renewal card actions sit right-aligned on their own line');
 expect(str_contains($html,'.domains .domains-missing__line { flex-wrap: nowrap; white-space: nowrap; }'),'Missing and its fix share one line at desktop width');
 expect(str_contains($html,'Up to 50 records. Saving replaces the list.'),'DNS limit hint');
 same(0,$dom->query('//input[@type="checkbox"]')->length,'No checkboxes on the page');
@@ -147,6 +152,7 @@ foreach (['dns' => [
 // Renewal card: active, auto-renew on.
 same('Mar 1, 2027',$card($dom,'Expires'),'Expires date');
 same('On Turn off',$card($dom,'Auto-renew'),'Auto-renew on');
+same(['On',['Turn off']],$split($dom,'Auto-renew'),'Auto-renew action sits on its own line');
 same('$14.99/yr',$card($dom,'Renewal price'),'Renewal price');
 same(1,$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"]')->length,'Renew now button');
 foreach(['Renew '.$name,'>Years<','You can renew online until <time datetime="2027-02-28">Feb 28, 2027</time>.','Create invoice','Turn off auto-renew?',$name.' expires on Mar 1, 2027 unless you renew it.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
@@ -162,6 +168,7 @@ same('Missing Not issued yet. Expected Oct 3, 2026.',$card($dom,'Next invoice'),
 $d=$domain();same('Feb 1, 2027',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice date');
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9']]);$dom=storefrontDom($render($d,$summary($d)));
 same('Due Feb 1, 2027 Pay invoice',$card($dom,'Next invoice'),'Due invoice');
+same(['Due Feb 1, 2027',['Pay invoice']],$split($dom,'Next invoice'),'Pay invoice sits on its own line');
 same(0,$dom->query('//a[.="Renew now"]')->length,'No Renew now while an invoice is due');
 same('Paid Updates when the renewal completes',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Next invoice').' '.preg_replace('/^.*2027 /','',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Expires')),'Paid invoice');
 same('Missing Contact support Invoice cancelled',$card(storefrontDom($render($d=$domain(['renewNow'=>['status'=>'cancelled']]),$summary($d))),'Next invoice'),'Cancelled invoice');
@@ -170,10 +177,12 @@ same('Missing Contact support Renewal being checked',$card(storefrontDom($render
 // Auto-renew off by the owner, and stopped by staff.
 $d=$domain(['renewal'=>'Off','renewalOff'=>'owner','autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>false]]);$html=$render($d,$summary($d));$dom=storefrontDom($html);
 same(['Mar 1, 2027 Cancels Mar 1, 2027','Off Turn on'],[$card($dom,'Expires'),$card($dom,'Auto-renew')],'Owner off');
+same(['Off',['Turn on']],$split($dom,'Auto-renew'),'Turn on sits on its own line');
 same(null,$card($dom,'Next invoice'),'No next invoice while off');
 expect(!str_contains($html,'Auto-renew is off.'),'No auto-renew notice');
 $d=$domain(['renewal'=>'Off','renewalOff'=>'staff','autoRenew'=>[],'renewNow'=>[]]);$dom=storefrontDom($render($d,$summary($d)));
 same('Off Contact support',$card($dom,'Auto-renew'),'Staff stop');
+same(['Off',['Contact support']],$split($dom,'Auto-renew'),'Contact support sits on its own line');
 
 // Missing expiry; pending transfer; setup; cutoff; import; demo sync paused; test mode.
 $d=$domain(['expiry'=>null]);$dom=storefrontDom($render($d,$summary($d)));
@@ -191,7 +200,7 @@ same('Enter the auth code from your current registrar. Enter auth code',$norm($d
 same('Missing Shows when the transfer completes',$card($dom,'Expires'),'Pending expiry waits');
 same([null,null],[$card($dom,'Auto-renew'),$card($dom,'Next invoice')],'No renewal timing for an inactive domain');
 $saved=new OwnedDomain(...[...get_object_vars($pending),'transfer'=>['open'=>true,'received'=>true,'phase'=>'editing']]);
-$dom=storefrontDom($render($saved));same('Saved View transfer',$card($dom,'Auth code'),'Saved auth code');same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'No notice once saved');
+$dom=storefrontDom($render($saved));same('Saved View transfer',$card($dom,'Auth code'),'Saved auth code');same(['Saved',['View transfer']],$split($dom,'Auth code'),'View transfer sits on its own line');same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'No notice once saved');
 $setup=static fn(array $s,array $t=[])=>$domain(['status'=>'Action required','tone'=>'warn','renewal'=>'','management'=>[],'actions'=>['show'=>'/domains/1','setup'=>'/domains/1/setup'],'setup'=>$s,'transfer'=>$t]);
 same('Choose nameservers before registration starts, or we use Example Hosting nameservers. Choose nameservers',$norm(storefrontDom($render($setup(['defaults'=>true,'contacts'=>false])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameservers setup notice');
 same('Finish setup to start registration. Finish setup',$norm(storefrontDom($render($setup(['defaults'=>false,'contacts'=>true])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Setup notice');
