@@ -53,6 +53,9 @@ are retained encrypted in that server's settings and must continue to match. Thi
 continuity check, not provider account identity proof. A missing setting, unreadable inventory,
 missing/ambiguous default or changed fingerprint holds the funded request before any paid call.
 Staff can correct the key or expected email and release the hold for fresh checks. Editing the
-expected email never replaces the retained fingerprint. A deliberate profile change needs a
-separately reviewed fingerprint migration; no reset action ships. Availability and pricing reads
-remain independent of this guard.
+expected email never replaces the retained fingerprint. After a deliberate profile change, staff
+with domain management access use **Accept current NameSilo account** (account page, More menu).
+It needs a reason and reads the default contact again on submit. That email must match Expected
+default contact email. Only then does it replace the retained contact ID and email and add a
+staff settings audit entry. Held requests stay held: review and release each one separately.
+Availability and pricing reads remain independent of this guard.
