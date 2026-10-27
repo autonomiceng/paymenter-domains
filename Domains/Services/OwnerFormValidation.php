@@ -32,7 +32,7 @@ final class OwnerFormValidation extends \DomainException
                 'email_address'=>'Enter a valid email address.',
                 'phone'=>'Enter a phone number with its country code, such as +1.2025550123.',
                 'state_province'=>$registrar==='namesilo'?'For the US or Canada, enter the 2-letter state or province code. For other countries, enter its name.':'Enter your state or province for the US, Canada or Australia.',
-                default=>'Enter '.match($key) {'first_name'=>'your first name','last_name'=>'your last name','address1'=>'your street address','address2'=>'the second address line','city'=>'your city','postal_code'=>'your postal code','organization_name'=>'your organization',default=>'this contact detail'}.' (up to '.$limit.' characters).',
+                default=>'Enter '.match($key) {'first_name'=>'your first name','last_name'=>'your last name','address1'=>'your street address','address2'=>'the second address line','city'=>'your city','postal_code'=>'your postal code','organization_name'=>'your organization',default=>'this contact detail'}.'. Use '.$limit.' or fewer characters. Accented and non-Latin letters count as 2 or more.',
             };
         }
         if (!preg_match('/^(dns|srv)\.records\.\d+\.([a-z_]+)$/D',$field,$m)) { return null; }

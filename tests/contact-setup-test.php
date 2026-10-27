@@ -70,6 +70,17 @@ same('US', $enom['registrant']['country'], 'Country label normalized');
 same('+1.2065550100', $enom['registrant']['phone'], 'Frozen Enom phone format');
 same('2065550100', $ns['registrant']['phone'], 'NameSilo national phone omits prefix');
 same($ns, ContactDetails::validate('namesilo', $ns), 'Validation is idempotent');
+foreach ([str_repeat('a', 32), str_repeat('é', 16)] as $name) {
+    $input = $contacts; $input['registrant']['first_name'] = $name;
+    same($name, ContactDetails::validate('namesilo', $input)['registrant']['first_name'], 'First name accepts exactly 32 bytes');
+}
+$input = $contacts; $input['registrant']['first_name'] = str_repeat('é', 17);
+try { ContactDetails::validate('namesilo', $input); expect(false, 'A 34-byte first name must be refused'); }
+catch (ContactValidation $error) {
+    same(['contacts.registrant.first_name'], $error->fields, 'Multibyte refusal identifies the first name');
+    $messages = (new \Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation(['contact.first_name']))->messages('example.com', [], 'namesilo');
+    same('Enter your first name. Use 32 or fewer characters. Accented and non-Latin letters count as 2 or more.', $messages['contact.first_name'], 'Length guidance explains the byte-based character count');
+}
 function contactReject(callable $call): void
 {
     try { commerceReject($call); }
