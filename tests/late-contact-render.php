@@ -41,7 +41,10 @@ $emit($late,'customer-contact-review');
 $staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 Filament::getCurrentPanel()->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
-$test=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$late->id])->assertSee('Not sent: registrar account not set up')->assertSee('Auth code deadline passed.')->assertSee('Cancel and refund');
+$test=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$late->id])
+    ->assertSee('Auth code deadline passed.')->assertSee('Cancel and refund')
+    ->assertDontSee('Not sent: registrar account not set up')
+    ->assertActionVisible('refund')->assertActionHidden('release');
 $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$test->instance(),'body'=>$test->html()]);
 $html=preg_replace('~<script\b[^>]*>.*?</script>~si','',$html);$html=preg_replace('~<link\b[^>]*>~si','',$html);
 $html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);
