@@ -88,7 +88,7 @@ expect(str_contains($response->getContent(),'Email the auth code?'),'Confirm ste
 $invalidContact=$registrant;$invalidContact['country']='US';$invalidContact['state_province']='';$invalidContact['first_name']=str_repeat('x',$free?33:256);
 $before=Operation::count();$r=$post('contacts',['role'=>'all','contact'=>$invalidContact]);$controller->manage($r,$d->id,'contacts');
 same($before,Operation::count(),'Invalid provider contact fields create no operation');
-$contactMessages=['state_province'=>$free?'For the US or Canada, enter the 2-letter state or province code. For other countries, enter its name.':'Enter your state or province for the US, Canada or Australia.','first_name'=>'Enter your first name (up to '.($free?32:255).' characters).'];
+$contactMessages=['state_province'=>$free?'For the US or Canada, enter the 2-letter state or province code. For other countries, enter its name.':'Enter your state or province for the US, Canada or Australia.','first_name'=>'Enter your first name. Use '.($free?32:255).' or fewer characters. Accented and non-Latin letters count as 2 or more.'];
 app('view')->share('errors',$session->get('errors'));$contactDom=storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render());
 foreach($contactMessages as$field=>$message){
     same($message,$session->get('errors')->first('contact.'.$field),'Exact registrar-specific contact error: '.$field);
