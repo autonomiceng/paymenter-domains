@@ -20,6 +20,7 @@ import native
 import test_workers
 
 ROOT = Path(__file__).resolve().parents[1]
+SUPERVISOR = Path(__file__).with_name('process_supervisor.py')
 CATEGORIES = ['lint', 'provider', 'contracts', 'native', 'ui', 'runner', 'package', 'mariadb']
 ORDER = ['lint', 'provider', 'contracts', 'runner', 'package', 'ui', 'native', 'mariadb']
 WORKER_MEMORY_MIB = 1024
@@ -97,6 +98,11 @@ def available_memory_mib():
 
 
 def bounded_jobs(requested, memory_mib):
+    if memory_mib < WORKER_MEMORY_MIB:
+        raise ValueError('Memory budget must reserve at least 1024 MiB per worker.')
+    # Serial runs cannot reduce concurrency further; preserve small-host support.
+    if requested == 1:
+        return 1
     # Reserve one GiB per worker and leave another GiB for the host. Installed
     # package commands retain their exclusive barrier and their own memory gate.
     budget = min(memory_mib, available_memory_mib()-1024)
@@ -122,7 +128,7 @@ def order_commands(commands, previous=None):
     previous = previous or {}
     def priority(item):
         index, (kind, argv) = item
-        failed, seconds = previous.get((kind, argv[-1]), previous.get(argv[-1], (False, math.inf)))
+        failed, seconds = previous.get((kind, argv[-1]), (False, math.inf))
         return ORDER.index(kind), not failed, seconds, index
     return [command for _, command in sorted(enumerate(commands), key=priority)]
 
@@ -145,9 +151,43 @@ def manifest():
     return suites
 
 
+def shutdown(process, graceful, *, supervised):
+    if graceful:
+        try:
+            # The supervisor forwards TERM exactly once to each descendant;
+            # signalling its group as well could interrupt a finally block twice.
+            if supervised:
+                os.kill(process.pid, signal.SIGTERM)
+            else:
+                os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            stdout, stderr = process.communicate(timeout=graceful+2 if supervised else graceful)
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            return stdout, stderr
+        except subprocess.TimeoutExpired:
+            pass
+    if supervised:
+        kill_tree(process.pid)
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    try:
+        return process.communicate(timeout=1)
+    except subprocess.TimeoutExpired as drain:
+        return drain.output or b'', drain.stderr or b''
+
+
 def execute(argv, *, cwd, env, timeout=60, graceful=0, processes=None, index=None, rss_path=None):
     if rss_path is not None:
-        argv = ['/usr/bin/time', '-f', '%M', '-o', str(rss_path), '--', *argv]
+        argv = [sys.executable, str(SUPERVISOR), '--grace-seconds', str(graceful), '--',
+                '/usr/bin/time', '-f', '%M', '-o', str(rss_path), '--', *argv]
     with subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           start_new_session=True) as process:
         if processes is not None:
@@ -156,31 +196,10 @@ def execute(argv, *, cwd, env, timeout=60, graceful=0, processes=None, index=Non
             stdout, stderr = process.communicate(timeout=timeout)
             return stdout, stderr, process.returncode, False
         except subprocess.TimeoutExpired:
-            if graceful:
-                # Let opt-in resource owners run their finally cleanup before escalation.
-                os.killpg(process.pid, signal.SIGTERM)
-                try:
-                    stdout, stderr = process.communicate(timeout=graceful)
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                    return stdout, stderr, 124, True
-                except subprocess.TimeoutExpired:
-                    pass
-            # Descendants share the group: stop all of them before fixture cleanup.
-            os.killpg(process.pid, signal.SIGKILL)
-            try:
-                stdout, stderr = process.communicate(timeout=1)
-            except subprocess.TimeoutExpired as drain:
-                # An escaped session may still own the pipes. Keep cumulative output.
-                stdout, stderr = drain.output or b'', drain.stderr or b''
+            stdout, stderr = shutdown(process, graceful, supervised=rss_path is not None)
             return stdout, stderr, 124, True
         except BaseException:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            shutdown(process, graceful, supervised=rss_path is not None)
             raise
         finally:
             if processes is not None:
@@ -211,7 +230,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     started_run = time.monotonic()
     timings = {} if timings is None else timings
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
-    completed = {}
+    completed, attempted, submitted = {}, {}, {}
     with timing('runtime_snapshot', timings):
         before = hashes()
         fingerprint = runtime_fingerprint() if jobs > 1 else None
@@ -229,13 +248,14 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     def command(index, worker):
         kind, argv = commands[index]
         started = time.monotonic()
+        attempted[index] = (kind, argv, started)
         installed_package = Path(argv[-1]).name.startswith('test_installed_')
         timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and installed_package
                    else 120 if kind == 'native' else 60)
         rss_path = output/f'{index:03d}.rss.txt'
         stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=workers[worker] if workers else env,
                                                 timeout=timeout, graceful=60 if kind == 'mariadb' else 0,
-                                                processes=processes if fail_fast else None, index=index, rss_path=rss_path)
+                                                processes=processes, index=index, rss_path=rss_path)
         seconds = time.monotonic() - started
         cancelled = index in processes.cancelled
         if code and not cancelled:
@@ -258,9 +278,9 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
 
     def record(index, value):
         stdout, stderr, result = value
+        completed[index] = result
         (output/f'{index:03d}.stdout.txt').write_bytes(stdout)
         (output/f'{index:03d}.stderr.txt').write_bytes(stderr)
-        completed[index] = result
         print(json.dumps({'timing': 'command', 'index': index, **{key: result[key] for key in
                          ['kind', 'argv', 'exit', 'timed_out', 'seconds', 'guard_seconds',
                           'started_seconds', 'finished_seconds']}}), flush=True)
@@ -269,40 +289,63 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         if stderr:
             print(stderr.decode(errors='replace').strip(), file=sys.stderr, flush=True)
 
-    with timing('commands', timings):
-        if jobs == 1:
-            for index in range(len(commands)):
-                record(index, command(index, 0))
-                if stopped.is_set():
-                    break
-        else:
-            with ThreadPoolExecutor(max_workers=jobs) as pool, cancel_on_error(processes):
-                pending, index, available = {}, 0, list(range(jobs))
-                exclusive_running = False
-                while pending or (index < len(commands) and not stopped.is_set()):
-                    while available and index < len(commands):
-                        kind, argv = commands[index]
-                        exclusive = kind != 'lint' and Path(argv[-1]).name.startswith('test_installed_')
-                        # Installed fixtures need the whole pool, including integrity checks.
-                        if exclusive_running or (exclusive and pending):
-                            break
-                        with scheduling:
-                            if stopped.is_set():
-                                break
-                            worker = available.pop()
-                            pending[pool.submit(command, index, worker)] = (index, worker)
-                            exclusive_running = exclusive
-                            index += 1
-                    if not pending:
+    runner_error = None
+    try:
+        with timing('commands', timings):
+            if jobs == 1:
+                for index in range(len(commands)):
+                    record(index, command(index, 0))
+                    if stopped.is_set():
                         break
-                    done, _ = wait(pending, return_when=FIRST_COMPLETED)
-                    # Drain every completed result before assigning another command.
-                    for future in done:
-                        position, worker = pending.pop(future)
-                        record(position, future.result())
-                        available.append(worker)
-                    if not pending:
-                        exclusive_running = False
+            else:
+                with ThreadPoolExecutor(max_workers=jobs) as pool, cancel_on_error(processes):
+                    pending, index, available = {}, 0, list(range(jobs))
+                    exclusive_running = False
+                    while pending or (index < len(commands) and not stopped.is_set()):
+                        while available and index < len(commands):
+                            kind, argv = commands[index]
+                            exclusive = kind != 'lint' and Path(argv[-1]).name.startswith('test_installed_')
+                            # Installed fixtures need the whole pool, including integrity checks.
+                            if exclusive_running or (exclusive and pending):
+                                break
+                            with scheduling:
+                                if stopped.is_set():
+                                    break
+                                worker = available.pop()
+                                future = pool.submit(command, index, worker)
+                                pending[future] = (index, worker)
+                                submitted[future] = index
+                                exclusive_running = exclusive
+                                index += 1
+                        if not pending:
+                            break
+                        done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                        # Drain every completed result before assigning another command.
+                        for future in done:
+                            position, worker = pending.pop(future)
+                            record(position, future.result())
+                            available.append(worker)
+                        if not pending:
+                            exclusive_running = False
+    except BaseException as error:
+        runner_error = type(error).__name__
+        processes.cancel()
+        # The pool has drained after cancellation. Preserve metadata even when
+        # writing a command's output failed or a future raised unexpectedly.
+        for future, index in submitted.items():
+            if index not in completed:
+                try:
+                    completed[index] = future.result()[2]
+                except BaseException:
+                    pass
+        for index, (kind, argv, started) in attempted.items():
+            if index not in completed:
+                completed[index] = {'kind': kind, 'argv': argv, 'exit': None,
+                                    'timed_out': False, 'cancelled': True, 'peak_rss_kib': None,
+                                    'runtime_unchanged': False, 'runtime_error': runner_error,
+                                    'skipped': False, 'seconds': time.monotonic()-started,
+                                    'guard_seconds': 0, 'started_seconds': started-started_run,
+                                    'finished_seconds': time.monotonic()-started_run}
     results = [completed[index] for index in sorted(completed)]
     with timing('final_guards', timings):
         # A final guard catches changes after the last per-command check as well.
@@ -317,10 +360,10 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         except (ValueError, RuntimeError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
             dependency_unchanged = False
             dependency_error = type(error).__name__
-    complete = len(results) == len(commands) and all(r['exit'] == 0 and r['runtime_unchanged'] for r in results) and dependency_unchanged
+    complete = runner_error is None and len(results) == len(commands) and all(r['exit'] == 0 and r['runtime_unchanged'] for r in results) and dependency_unchanged
     timings['run'] = time.monotonic() - started_run
     planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
-    receipt = {'timings': timings, 'only_tests': sorted(set(only or [])),
+    receipt = {'runner_error': runner_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
                'fail_fast': fail_fast, 'first_failure': first_failure[0] if first_failure else None,
                'commands_planned': len(commands),
                'plan': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands)],
@@ -343,10 +386,10 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                       'first_failure': first_failure[0] if first_failure else None,
                       'cancelled_commands': sum(row['cancelled'] for row in results),
                       'only_tests': sorted(set(only or [])), 'receipt': str(output/'receipt.json')}))
-    if (len(results) == len(commands) and any(r['skipped'] for r in results) and dependency_unchanged
+    if (runner_error is None and len(results) == len(commands) and any(r['skipped'] for r in results) and dependency_unchanged
             and all(r['exit'] in [0, 77] and r['runtime_unchanged'] for r in results)):
         return 77
-    return 0 if complete else 1
+    return 130 if runner_error == 'KeyboardInterrupt' else 0 if complete else 1
 
 
 def runtime_fingerprint():
@@ -373,11 +416,11 @@ def runtime_matches(before, fingerprint=None):
         return False, type(error).__name__
 
 
-def positive_jobs(value):
-    jobs = int(value)
-    if jobs < 1:
-        raise argparse.ArgumentTypeError('Jobs must be positive.')
-    return jobs
+def positive_integer(value):
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError('Must be positive.')
+    return number
 
 
 def default_suites():
@@ -390,11 +433,11 @@ def main():
     selection.add_argument('--suite', choices=CATEGORIES, action='append')
     selection.add_argument('--only', nargs='+', action='extend', metavar='TEST_PATH',
                            help='Run only exact registered test paths; not a full boundary run.')
-    parser.add_argument('--jobs', type=positive_jobs,
+    parser.add_argument('--jobs', type=positive_integer,
                         default=os.environ.get('DOMAINS_TEST_JOBS', max(1, min(4, (os.cpu_count() or 1)//2))))
-    parser.add_argument('--memory-mib', type=positive_jobs, default=2048,
+    parser.add_argument('--memory-mib', type=positive_integer, default=2048,
                         help='Worker memory reservation budget; one GiB per parallel worker.')
-    parser.add_argument('--fail-fast', action='store_true', help='Kill in-flight command groups on the first failure.')
+    parser.add_argument('--fail-fast', action='store_true', help='Kill in-flight process trees on the first failure.')
     parser.add_argument('--timings-from', metavar='RECEIPT', help='Prioritize previously failing and faster commands within each category.')
     args = parser.parse_args()
     os.umask(0o077)
@@ -482,4 +525,7 @@ def main():
 
 
 if __name__ == '__main__':
+    def interrupted(signum, frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, interrupted)
     raise SystemExit(main())

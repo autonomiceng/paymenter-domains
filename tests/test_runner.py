@@ -133,6 +133,10 @@ class InstalledPhaseTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
+    def setUp(self):
+        memory = mock.patch.object(runner, 'available_memory_mib', return_value=8192)
+        memory.start(); self.addCleanup(memory.stop)
+
     def test_ote_output_resolves_symlinked_tmpdir(self):
         spec = importlib.util.spec_from_file_location('ote_contract', ROOT/'scripts/ote-contract.py')
         ote = importlib.util.module_from_spec(spec); spec.loader.exec_module(ote)
@@ -655,7 +659,8 @@ class RunnerTests(unittest.TestCase):
                 (Path(temp)/'runtime').mkdir()
                 self.assertEqual(runner.main(), 0)
                 expected = [(kind, path) for kind, paths in suites.items() for path in paths if path in requested]
-                self.assertCountEqual([(kind, argv[-1]) for kind, argv in run.call_args.args[0]], expected)
+                expected.sort(key=lambda item: runner.ORDER.index(item[0]))
+                self.assertEqual([(kind, argv[-1]) for kind, argv in run.call_args.args[0]], expected)
                 self.assertEqual(run.call_args.args[3], selected)
                 if selected == ['mariadb']:
                     php_prepare.assert_not_called()
@@ -713,7 +718,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(runner.main(), 0)
         commands = run.call_args.args[0]
         expected = [(kind, path) for kind, paths in suites.items() if kind != 'mariadb' for path in paths]
-        self.assertCountEqual([(kind, argv[-1]) for kind, argv in commands if kind != 'lint'], expected)
+        expected.sort(key=lambda item: runner.ORDER.index(item[0]))
+        self.assertEqual([(kind, argv[-1]) for kind, argv in commands if kind != 'lint'], expected)
         lint = [[str(ROOT/'scripts/php-test'), '-l', str(path.relative_to(ROOT))]
                 for area in ['Domains', 'tests'] for path in sorted((ROOT/area).rglob('*.php'))]
         lint.append([str(ROOT/'scripts/php-test'), 'tests/php83-compatibility-test.php'])
