@@ -24,6 +24,14 @@ expect(str_contains($page->html(),'A TLD is only for sale when its saved prices 
 expect(str_contains($page->html(),'Registration: For sale'),'Before editing registration is available');
 expect(str_contains($page->html(),'Edit prices'),'Recovery names the available price editor');
 expect(!str_contains(PricingEditorNotice::render($tlds[0]->fresh()),'Publish prices'),'Recovery does not name the removed publish button');
+// Paragraphs use the panel's prose spacing; sale status lines stay together.
+$noticeDom=static function(string $html):DOMXPath{$d=new DOMDocument;@$d->loadHTML('<?xml encoding="utf-8" ?>'.$html);return new DOMXPath($d);};
+$x=$noticeDom(PricingEditorNotice::render($tlds[0]->fresh()));
+same(1,$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-prose ")]/p/strong[.="Price changes can stop domain sales"]')->length,'Notice text is spaced as panel prose');
+same(5,$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-prose ")]/p')->length,'Title, two paragraphs, status and footer are separate blocks');
+same(1,$x->query('//p[strong[.="Registration: For sale"] and strong[.="Transfer: For sale"]]')->length,'Sale status lines are grouped');
+same(0,$noticeDom(PricingEditorNotice::render(null))->query('//p[not(normalize-space())]')->length,'Account page notice has no empty status block');
+same(4,$noticeDom(PricingEditorNotice::render(null))->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-prose ")]/p')->length,'Account page has title, two paragraphs and footer without a status block');
 $page->mountAction('override')->setActionData(['pricing'=>'custom','mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00','reason'=>'Reviewed retail change'])->callMountedAction()->assertHasNoActionErrors();
 // The approved pricing UX publishes on save. This notice must agree with either writer.
 $clock=app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
