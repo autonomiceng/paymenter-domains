@@ -8,7 +8,7 @@
 <a class="domains-btn domains-btn--ghost" href="{{ route('domains.domains.search') }}">Register a new domain instead</a></div>
 @include('domains::partials.notices', ['fieldKeys' => ['domain'], 'summary' => false])
 @if (!$endings)
-<div class="domains-notice domains-notice--warn" role="status">Domain transfers aren’t open yet. Check back soon.</div>
+<div class="domains-notice domains-notice--warn" role="status">No domain transfers are available right now. Please check back later.</div>
 @else
 <form method="GET" action="{{ route('domains.domains.transfer') }}" role="search">
 <div class="domains-searchbar">

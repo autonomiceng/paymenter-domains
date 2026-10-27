@@ -30,6 +30,23 @@ $req = static function (array $input = [], string $method = 'POST', ?App\Models\
     $r = Request::create('/domains/check', $method, $input, server: ['REMOTE_ADDR' => $ip]);
     $r->setLaravelSession($session); $r->setUserResolver(static fn () => $user); return $r;
 };
+// Registration choices exclude transfer-only offers, including a forged selected ending.
+Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->update(['register_enabled'=>false]);
+Illuminate\Support\Facades\Cache::flush();
+$transferOnly = $controller->search($req(['name'=>'example.com','tld'=>'com'], 'GET'));
+same([], $transferOnly->getData()['endings'], 'Transfer-only endings are not registration choices');
+same([], $transferOnly->getData()['results'], 'Transfer-only endings get no registration search result');
+expect(str_contains($transferOnly->render(), 'No domain registrations are available right now.'), 'Empty registration copy does not claim the shop never opened');
+same(true, $transferOnly->getData()['transfersOffered'], 'Transfer-only catalogue keeps the transfer entry point');
+Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->update(['register_enabled'=>true]);
+Illuminate\Support\Facades\Cache::flush();
+$tlds[0]->update(['min_years'=>3]);
+Illuminate\Support\Facades\Cache::flush();
+$longerOnly=$controller->search($req(['name'=>'example'], 'GET'))->getData();
+same([3],$longerOnly['endings'][0]['terms'],'Registration choices retain a longer-term-only offer');
+same('com',$longerOnly['results'][0]['tld'],'Longer-term-only ending remains searchable');
+$tlds[0]->update(['min_years'=>1]);
+Illuminate\Support\Facades\Cache::flush();
 $key = FormKeys::issue($req(), 'search');
 $check = static fn ($name) => $controller->check($req(['domain' => $name, '_request_key' => $key]));
 same(['com'], array_column($store->endings(), 'tld'), 'Only selected seller ending is published');
@@ -198,7 +215,7 @@ foreach (['1 or 3 years', '1 to 10 years', '1 year'] as $terms) { expect(str_con
 same(1, $dom->query('//*[@aria-live="polite"]')->length, 'One aggregate search announcement');
 same(0, $dom->query('//li[@data-domains-result]//*[@role="status"]')->length, 'No noisy per-result live regions');
 $data['endings'] = []; $data['results'] = [];
-expect(str_contains(view('domains::search', $data)->render(), 'Check back soon.'), 'Closed storefront view');
+expect(str_contains(view('domains::search', $data)->render(), 'No domain registrations are available right now.'), 'Closed storefront view');
 same('$9,999,999,999.99', Storefront::money('9999999999.99'), 'Exact large-money display');
 require __DIR__.'/Support/customer-polish-views.php';
 $nativeSuccessful = true; echo "Dormant storefront native controller, DOM states, privacy and budget checks passed.\n";

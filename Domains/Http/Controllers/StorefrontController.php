@@ -17,7 +17,10 @@ final class StorefrontController extends Controller
 
     public function search(Request $request)
     {
-        $endings = $this->storefront->endings(); $names = array_column($endings, 'tld');
+        $allEndings = $this->storefront->endings();
+        $transfersOffered = collect($allEndings)->contains(static fn ($row) => $row['transfer'] !== null);
+        $endings = array_values(array_filter($allEndings, static fn ($row) => $row['terms'] !== []));
+        $names = array_column($endings, 'tld');
         $raw = $this->string($request->query('name'), 300); $chosen = $this->string($request->query('tld'), 190);
         $preferred = in_array($chosen, $names, true) ? $chosen : ($names[0] ?? null);
         $parsed = $raw === '' ? ['sld' => null, 'ending' => null, 'error' => null] : self::parseName($raw);
@@ -36,7 +39,7 @@ final class StorefrontController extends Controller
                     'testEnvironment' => collect($endings)->firstWhere('tld', $ending)['testEnvironment']];
             }
         }
-        return view('domains::search', ['endings' => $endings, 'name' => $raw, 'preferred' => $preferred,
+        return view('domains::search', ['endings' => $endings, 'transfersOffered' => $transfersOffered, 'name' => $raw, 'preferred' => $preferred,
             'sld' => $sld, 'error' => $error, 'notice' => $notice, 'results' => $results, 'years' => null,
             'guest' => !$request->user(), 'testEnvironment' => $this->storefront->testEnvironment($endings), 'checkKey' => FormKeys::issue($request, 'search')]);
     }
