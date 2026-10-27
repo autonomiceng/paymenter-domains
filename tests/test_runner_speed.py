@@ -19,6 +19,40 @@ spec.loader.exec_module(runner)
 
 
 class SchedulingTests(unittest.TestCase):
+    def test_serial_guard_interrupt_preserves_known_exit_and_captured_streams(self):
+        import signal
+        for signum in [signal.SIGTERM, signal.SIGINT]:
+            with self.subTest(signal=signum), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); (root/'Domains').mkdir()
+                output = root/'output'; output.mkdir()
+                original = runner.runtime_matches; calls = []
+                def interrupt_once(*args):
+                    if not calls:
+                        calls.append(True)
+                        os.kill(os.getpid(), signum)
+                    return original(*args)
+                child = "import sys; print('guard-stdout'); print('guard-stderr',file=sys.stderr)"
+                previous = {number: signal.getsignal(number) for number in [signal.SIGTERM, signal.SIGINT]}
+                try:
+                    for number in previous:
+                        signal.signal(number, runner.interrupted)
+                    with mock.patch.object(runner, 'ROOT', root), \
+                         mock.patch.object(runner, 'runtime_matches', interrupt_once), \
+                         contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                        status = runner.run([('provider', [sys.executable, '-c', child])],
+                                            dict(os.environ), output, ['provider'], {}, jobs=1)
+                finally:
+                    for number, handler in previous.items():
+                        signal.signal(number, handler)
+                self.assertEqual(status, 130)
+                receipt = json.loads((output/'receipt.json').read_text())
+                self.assertEqual(receipt['results'][0]['exit'], 0)
+                self.assertFalse(receipt['results'][0]['runtime_unchanged'])
+                self.assertFalse(receipt['results'][0]['guard_complete'])
+                self.assertEqual(receipt['not_run'], [])
+                self.assertEqual((output/'000.stdout.txt').read_text(), 'guard-stdout\n')
+                self.assertEqual((output/'000.stderr.txt').read_text(), 'guard-stderr\n')
+
     def test_short_categories_precede_native_and_profile_orders_within_category(self):
         commands = [('native', ['slow.php']), ('runner', ['guard.py']),
                     ('provider', ['provider.php']), ('native', ['fast.php']),

@@ -249,7 +249,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     started_run = time.monotonic()
     timings = {} if timings is None else timings
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
-    completed, attempted, submitted, interrupted_values = {}, {}, {}, {}
+    completed, attempted, submitted = {}, {}, {}
     captured, outputs_saved = {}, set()
     with timing('runtime_snapshot', timings):
         before = hashes()
@@ -284,25 +284,32 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             code, timed_out = 130 if isinstance(error, KeyboardInterrupt) else None, False
         seconds = time.monotonic() - started
         cancelled = interrupted is not None or index in processes.cancelled
+        result = {'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out,
+                  'cancelled': cancelled, 'peak_rss_kib': None,
+                  'runtime_unchanged': False, 'runtime_error': 'Integrity verification did not finish.',
+                  'guard_complete': False, 'skipped': kind == 'mariadb' and code == 77,
+                  'seconds': seconds, 'guard_seconds': 0, 'started_seconds': started-started_run,
+                  'finished_seconds': time.monotonic()-started_run}
+        value = stdout, stderr, result
+        # Execution evidence must survive interruption in the integrity guard,
+        # RSS read or failure handling, before the main thread can record it.
+        captured[index] = value
         if code and not cancelled:
             stop(index)
         started_guard = time.monotonic()
-        unchanged, runtime_error = runtime_matches(before, fingerprint)
-        guard_seconds = time.monotonic() - started_guard
-        if not unchanged:
-            stop(index)
         try:
-            peak_rss = int(rss_path.read_text().splitlines()[-1])
-        except (OSError, ValueError, IndexError):
-            peak_rss = None
-        value = stdout, stderr, {'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out,
-                               'cancelled': cancelled, 'peak_rss_kib': peak_rss,
-                               'runtime_unchanged': unchanged, 'runtime_error': runtime_error,
-                               'skipped': kind == 'mariadb' and code == 77, 'seconds': seconds,
-                               'guard_seconds': guard_seconds, 'started_seconds': started - started_run,
-                               'finished_seconds': time.monotonic() - started_run}
+            unchanged, runtime_error = runtime_matches(before, fingerprint)
+            result.update(runtime_unchanged=unchanged, runtime_error=runtime_error, guard_complete=True)
+            if not unchanged:
+                stop(index)
+            try:
+                result['peak_rss_kib'] = int(rss_path.read_text().splitlines()[-1])
+            except (OSError, ValueError, IndexError):
+                pass
+        finally:
+            result.update(guard_seconds=time.monotonic()-started_guard,
+                          finished_seconds=time.monotonic()-started_run)
         if interrupted is not None:
-            interrupted_values[index] = value
             raise interrupted
         return value
 
@@ -375,7 +382,6 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                     captured[index] = future.result()
                 except BaseException:
                     pass
-        captured.update(interrupted_values)
         for index, value in list(captured.items()):
             if index not in outputs_saved:
                 try:
