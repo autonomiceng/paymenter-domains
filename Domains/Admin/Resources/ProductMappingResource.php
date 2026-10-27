@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\WatchReadResource;
 use Paymenter\Extensions\Servers\Domains\Models\WatchProductMap;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\ProductMappingResource\Pages\{ListConfiguration,ViewConfiguration};
+use Paymenter\Extensions\Servers\Domains\Services\WatchWork;
 class ProductMappingResource extends WatchReadResource
 {
     protected static ?string $model=WatchProductMap::class;
@@ -18,6 +19,8 @@ class ProductMappingResource extends WatchReadResource
     protected static ?string $pluralModelLabel='Hosting products';
     protected static ?string $breadcrumb='Hosting products';
     protected static ?string $slug='product-domain-mappings';
+    /** Configuration only helps after the deployment composes monitoring. */
+    public static function shouldRegisterNavigation(): bool{return parent::shouldRegisterNavigation()&&app(WatchWork::class)->active();}
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder{return parent::getEloquentQuery()->with(['product','dnsTemplate:id,name']);}
     public static function table(Table $table): Table
     {

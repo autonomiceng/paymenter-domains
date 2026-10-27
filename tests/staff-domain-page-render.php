@@ -31,13 +31,14 @@ $noExpiry=$copy('no-expiry.example.com',['provider_expires_at'=>null]);
 $withNs=$copy('nameservers.example.com',[]); $p=$withNs->observation;
 $p['sections']['nameservers']=['name'=>$withNs->domain,'generation'=>$withNs->authority_generation,'account_fingerprint'=>$withNs->account_fingerprint,'operation_key'=>'render-ns','at'=>'2026-10-20T15:05:00+00:00','facts'=>['nameservers'=>['ns1.example.net','ns2.example.net','ns3.example.net']]]; $withNs->update(['observation'=>$p]);
 $review=$copy('import-review.example.com',[]); DB::table('domains_domains')->where('id',$review->id)->update(['provenance'=>'adoption_pending']);
-$order=$copy('new-order.example.com',['status'=>'registration_pending','authority_generation'=>1]);
+$order=$copy('new-order.example.com',['status'=>'registration_pending','authority_generation'=>1,'provider_expires_at'=>null,'last_synced_at'=>null]);
 $op=$active->operations()->sole()->replicate(); $op->fill(['domain_id'=>$order->id,'service_id'=>$order->service_id,'operation_key'=>'render-order',
-    'action'=>'register','state'=>'awaiting_payment','safe_code'=>null,'authority_generation'=>1]); $op->save();
+    'action'=>'register','state'=>'queued','safe_code'=>null,'authority_generation'=>1]); $op->save();
 // Open alerts on the rows they concern: Missing records on a Service with no service, review alerts on Renewal invoices and Last sync,
 // and a missing renewal invoice under the Next invoice date.
 $alerted=$copy('alerts.example.com',[]);
 foreach(['native_identity_missing','renewal_unpaid','observation_review','missing_obligation'] as $code){Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($alerted,$code,time());}
+foreach(['unknown_expiry','missing_obligation'] as $code){Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($order,$code,time());}
 require_once __DIR__.'/Support/accounts.php';
 $demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'enom','demo-enom'),'domain'=>'demo-held.test','sld'=>'demo-held','tld'=>'test',
     'user_id'=>$customer->id,'service_id'=>699,'status'=>'active','provider_expires_at'=>today()->addDays(200)->format('Y-m-d'),
@@ -48,10 +49,14 @@ $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $loadingStyles=\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles();
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $user=staffUser([Staff::VIEW,Staff::ADOPT_PREVIEW,'admin.domains.manage',AcquisitionRetirement::PERMISSION,'admin.domains.operations.resume_observation']); Auth::setUser($user);
-foreach (['list'=>[ListDomains::class,[]],'active'=>[ViewDomain::class,['record'=>$active->id]],'nameservers'=>[ViewDomain::class,['record'=>$withNs->id]],'sync-failed'=>[ViewDomain::class,['record'=>$failed->id]],
+foreach (['list'=>[ListDomains::class,[]],'filtered-list'=>[ListDomains::class,[]],'active'=>[ViewDomain::class,['record'=>$active->id]],'nameservers'=>[ViewDomain::class,['record'=>$withNs->id]],'sync-failed'=>[ViewDomain::class,['record'=>$failed->id]],
     'demo-paused'=>[ViewDomain::class,['record'=>$demo->id]],'missing-expiry'=>[ViewDomain::class,['record'=>$noExpiry->id]],
     'under-review'=>[ViewDomain::class,['record'=>$review->id]],'pending-order'=>[ViewDomain::class,['record'=>$order->id]],'alerts'=>[ViewDomain::class,['record'=>$alerted->id]]] as $name=>[$class,$params]) {
     $test=Livewire::actingAs($user)->test($class,$params)->assertSuccessful();
+    if ($name==='filtered-list') {
+        $test->filterTable('server_id',(string)$order->server_id)->filterTable('alerts',true);
+        $test->set('tableDeferredFilters',$test->get('tableFilters'))->call('applyTableFilters');
+    }
     $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$test->instance(),'body'=>$test->html()]);
     // Static visual capture only: component interactions are covered by the native test suite.
     $html=preg_replace('~<script\b[^>]*>.*?</script>~si','',$html);
@@ -62,7 +67,7 @@ foreach (['list'=>[ListDomains::class,[]],'active'=>[ViewDomain::class,['record'
     $html=str_replace('</head>','<style>'.$css.'</style>'.$loadingStyles.'</head>',$html);
     expect(!str_contains($html,'PRIVATE-'),'Synthetic secret must not enter the rendered fixture');
     expect(!str_contains($html,"\u{2014}"),'No em dashes in rendered page');
-    if ($name==='alerts') { foreach(['dark','light'] as $mode){writeRenderArtifact($out.'/'.$name.'-'.$mode.'.html',preg_replace('~<html\b[^>]*>~','<html lang="en" class="'.$mode.'">',$html,1));} continue; }
+    if (in_array($name,['alerts','pending-order','filtered-list'],true)) { foreach(['dark','light'] as $mode){writeRenderArtifact($out.'/'.$name.'-'.$mode.'.html',preg_replace('~<html\b[^>]*>~','<html lang="en" class="'.$mode.'">',$html,1));} continue; }
     writeRenderArtifact($out.'/'.$name.'.html',$html);
 }
 echo "Staff domain page and list captures rendered.\n";

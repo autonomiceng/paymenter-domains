@@ -111,14 +111,24 @@ final class DomainFacts
         if ($invoice) { $f['Open invoice']=self::fact('Invoice #'.$invoice,url:self::invoiceUrl((int)$invoice)); }
         return self::alerts($d,$f);
     }
-    /** Puts each open alert's cause under the row it concerns, or under Service or Registrar when that row does not apply. */
+    /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. */
+    public static function alertCause(string $code): string
+    { return self::ALERTS[$code][1]??($code==='acquisition_late_money'?'Paid after the order closed':'Domain alert needs review'); }
+    /** Puts each cause under its row, collecting causes without a row for the page's top notice. */
     private static function alerts(Domain $d, array $f): array
     {
         if (!Schema::hasTable('domains_obligation_alerts')) { return $f; }
         foreach (DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->orderBy('id')->pluck('code')->unique() as $code) {
-            if (!isset(self::ALERTS[$code])) { continue; }
-            [$row,$cause,$tone]=self::ALERTS[$code];
-            if (!isset($f[$row])) { $row=in_array($row,self::BILLING,true)?'Service':'Registrar'; }
+            // Late payment already has a status reason and its own notice.
+            if ($code==='acquisition_late_money') { continue; }
+            [$row,$cause,$tone]=self::ALERTS[$code]??[null,self::alertCause($code),'warning'];
+            if (!isset($f[$row])) {
+                $notice=$f['Open alerts']??self::fact([],tone:$tone);
+                $notice['value']=array_values(array_unique([...$notice['value'],$cause]));
+                $notice['tone']=$notice['tone']==='danger'?'danger':$tone;
+                $f['Open alerts']=$notice;
+                continue;
+            }
             $fact=$f[$row];
             $fact['sub']=implode(' · ',array_unique(array_filter([$fact['sub'],$cause])));
             $fact['tone']=$fact['tone']==='danger'?'danger':$tone;

@@ -58,6 +58,27 @@ last successful per-kind/axis facts and pinned notice evidence under observation
 Activation, the accepted discovery binding and installed queue/resolver acceptance remain
 separate gates; shipped composition is dormant and creates no work on fresh installation.
 
+Activation is deployment composition: bind `WatchDiscoveryWork` with an accepted closure
+`(int $serviceId, int $productId): void`, then bind `WatchWork` with that discovery worker,
+the configured `DnsReader`, and `enabled: true`. Runtime's default singletons supply neither
+activation gate. There is no monitoring enable setting or environment variable; the
+Monitoring Settings tab only edits/tests the DNS resolver. The disabled notice therefore
+asks staff to contact their administrator and has no Settings action. The existing
+minute `domains-runtime` schedule must be allowed to dispatch and its queue worker must
+run; public checks coalesce to five-minute turns. The combined runtime also performs
+financial work, so deployment scheduling changes must account for those feature gates.
+
+A stopped dispatcher asks the administrator to check the scheduled task and worker.
+Discovery failures are caught and logged inside the scheduler, so their notice asks for
+server log review rather than linking to Failed jobs. DNS failures retain the resolver
+Settings action for staff who can edit it, except when the server prevents resolver changes
+or discovery also needs server review.
+Hosting products and DNS templates leave the menu until both activation gates are met;
+existing permission-protected routes and retained configuration remain available. Hosting
+products selects a real text checkout field, config option or saved service-property key from the chosen
+product, never a customer value. Alias keys remain ineligible. Saving still leaves the
+product disabled until staff explicitly turn its monitoring on.
+
 The explicit two-jobs-per-owner/five-minute-turn ceiling permits at most 576 jobs/day per
 owner and 2,880 globally. Rough baseline capacity is 96 watched names/owner or 480 globally
 before managed checks, urgent expiry or retries. With more than five backlogged owners,

@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFindings,WatchQueries};
 use Paymenter\Extensions\Servers\Domains\Models\WatchName;
-use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites,WatchMaintenance,WatchWork};
+use Paymenter\Extensions\Servers\Domains\Services\{DnsResolverSettings,StaffWatchWrites,WatchMaintenance,WatchWork};
 class ListWatches extends ListRecords
 {
     protected static string $resource=WatchResource::class;
@@ -33,17 +33,11 @@ class ListWatches extends ListRecords
     {
         $notice=$this->notice();
         if(!$notice){return parent::content($schema);}
-        $url=match($notice['action']){'settings'=>MonitoringSettings::canAccess()?WatchResource::getUrl('settings'):null,'failed_jobs'=>self::failedJobs(),default=>null};
-        $button=$url?view('filament::components.button.index',['tag'=>'a','href'=>$url,'color'=>'gray','size'=>'sm','slot'=>$notice['action']==='settings'?'Open Settings':'Open Failed jobs'])->render():null;
+        $url=$notice['action']==='settings'&&MonitoringSettings::canAccess()&&Staff::can(StaffWatchWrites::MANAGE)&&!app(DnsResolverSettings::class)->configuration()[2]?WatchResource::getUrl('settings'):null;
+        $button=$url?view('filament::components.button.index',['tag'=>'a','href'=>$url,'color'=>'gray','size'=>'sm','slot'=>'Open Settings'])->render():null;
         return $schema->components([Callout::make($notice['text'])->status($notice['tone'])->footer($button?new HtmlString($button):null)->columnSpanFull(),
             $this->getTabsContentComponent(),RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_BEFORE),
             EmbeddedTable::make(),RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_AFTER)]);
-    }
-    /** Paymenter's Failed jobs page, when this panel has it and the staff member may open it. */
-    private static function failedJobs(): ?string
-    {
-        $resource='App\\Admin\\Resources\\FailedJobResource';
-        try{return class_exists($resource)&&$resource::canAccess()?$resource::getUrl('index'):null;}catch(\Throwable){return null;}
     }
     /** @return list<int> */
     public function statusIds(string $status): array{return $this->status[$status]??=WatchFindings::statusIds($status);}

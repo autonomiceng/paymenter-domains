@@ -23,7 +23,9 @@ $save=function(string $name,$test)use($out,$css):void{
  $html=str_replace('</head>','<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:"><style>'.$css.'*{animation:none!important;transition:none!important}</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>',$html);
  foreach(['dark','light'] as $mode){writeRenderArtifact($out.'/staff-'.$mode.'-'.$name.'.html',preg_replace('~<html\b[^>]*>~','<html lang="en" class="'.$mode.'">',$html,1));}
 };
-// Overdue checks, left by the test: sidebar and notice on the list.
+// Restore active composition for outage captures; the test ends with monitoring disabled.
+app()->instance(WatchWork::class,new WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true,fn()=>$since));
+// Overdue checks: sidebar and notice on the list.
 $save('monitoring-overdue',Livewire::actingAs($manager)->test(ListWatches::class));
 // Checks failing for registry and DNS.
 DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['progress_at'=>$since]);

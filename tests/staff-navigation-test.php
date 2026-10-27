@@ -20,6 +20,8 @@ Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($
 // Seven pages in one Domains group, in the planned order; every other page leaves the menu but keeps its route.
 $all=[DomainResource::class,OperationResource::class,TldResource::class,RegistrarSetup::class,WatchResource::class,RoutingProfileResource::class,ProductMappingResource::class,
     PendingAdoptionResource::class,RegistrarAccount::class,RegistrarBalances::class,ActivationStatus::class,PublicSuffixList::class,DnsResolver::class];
+same(['Domains','Registrar requests','TLDs & pricing','Registrars','Domain monitoring'],array_map(fn($c)=>$c::getNavigationLabel(),array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()))),'Dormant menu hides monitoring configuration');
+app()->instance(WatchWork::class,new WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true));
 $menu=array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()));usort($menu,fn($a,$b)=>[$a::getNavigationSort()??PHP_INT_MAX]<=>[$b::getNavigationSort()??PHP_INT_MAX]);
 same(['Domains','Registrar requests','TLDs & pricing','Registrars','Domain monitoring','DNS templates','Hosting products'],array_map(fn($c)=>$c::getNavigationLabel(),$menu),'Seven staff pages in order');
 foreach($menu as $c){same('Domains',$c::getNavigationGroup(),'One Domains group: '.$c);}
@@ -28,6 +30,8 @@ foreach(array_filter($all,fn($c)=>is_subclass_of($c,\Filament\Resources\Resource
 same(count($menu),count(array_unique(array_map(fn($c)=>$c::getNavigationIcon(),$menu))),'Each staff page has its own icon');
 same(['domains','registrar-requests','domain-tlds','registrar-setup','domain-watch','dns-routing-profiles','product-domain-mappings','public-suffix-list','dns-resolver'],
     [DomainResource::getSlug(),OperationResource::getSlug(),TldResource::getSlug(),RegistrarSetup::getSlug(),WatchResource::getSlug(),RoutingProfileResource::getSlug(),ProductMappingResource::getSlug(),PublicSuffixList::getSlug(),DnsResolver::getSlug()],'Slugs kept');
+
+app()->forgetInstance(WatchWork::class);
 
 // The old DNS resolver page redirects to the Settings tab; the public suffix list keeps its own page.
 $viewer=staffUser([Staff::VIEW,Writes::VIEW]);$manager=staffUser([Staff::VIEW,Writes::VIEW,Writes::MANAGE]);Auth::setUser($manager);
@@ -76,32 +80,42 @@ $GLOBALS['domainsTestCurlMissing']=false;
 $since=1800000000;$at='Jan 15, 2027 08:00 UTC';
 same(null,WatchMaintenance::notice(['outage'=>false,'reason'=>'waiting','since'=>null]),'Waiting has no notice');
 same(null,WatchMaintenance::notice(['outage'=>false,'reason'=>'current','since'=>$since]),'Current has no notice');
-same(['text'=>'Domain monitoring is off. Turn it on in Settings.','tone'=>'warning','action'=>'settings'],WatchMaintenance::notice(['outage'=>false,'reason'=>'disabled','since'=>null]),'Disabled');
-same(['text'=>'Monitoring checks have not run since '.$at.'.','tone'=>'danger','action'=>'failed_jobs'],WatchMaintenance::notice(['outage'=>true,'reason'=>'dispatch_overdue','since'=>$since]),'Overdue');
+same(['text'=>'Domain monitoring is not set up on this server. Ask your administrator to turn it on.','tone'=>'warning','action'=>null],WatchMaintenance::notice(['outage'=>false,'reason'=>'disabled','since'=>null]),'Disabled');
+same(['text'=>'Monitoring checks have not run since '.$at.'. Ask your administrator to check the scheduled task and background worker.','tone'=>'danger','action'=>null],WatchMaintenance::notice(['outage'=>true,'reason'=>'dispatch_overdue','since'=>$since]),'Overdue');
 same(['text'=>'Expiry checks have failed since '.$at.'.','tone'=>'danger','action'=>null],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'registry','families'=>['registry'],'since'=>$since]),'Expiry checks');
 same(['text'=>'DNS checks have failed since '.$at.'.','tone'=>'danger','action'=>'settings'],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'watch_dns','families'=>['watch_dns','managed_dns'],'since'=>$since]),'DNS checks named once');
 same(['text'=>'Expiry checks and DNS checks have failed since '.$at.'.','tone'=>'danger','action'=>'settings'],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'registry','families'=>['registry','watch_dns'],'since'=>$since]),'Two families');
-same(['text'=>'Domain discovery has failed since '.$at.'.','tone'=>'danger','action'=>'failed_jobs'],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'local','families'=>['local'],'since'=>$since]),'Discovery');
+same(['text'=>'Domain discovery has failed since '.$at.'. Ask your administrator to check the server logs.','tone'=>'danger','action'=>null],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'local','families'=>['local'],'since'=>$since]),'Discovery');
+same(null,WatchMaintenance::notice(['reason'=>'checks_unsuccessful','families'=>['watch_dns','local'],'since'=>$since])['action'],'Local discovery failures cannot be repaired in resolver settings');
 // The queue timeout shows once, under Registrars > account > System checks, not on the monitoring list.
 same(null,WatchMaintenance::notice(['outage'=>true,'reason'=>'queue_configuration','since'=>null]),'Queue configuration has no monitoring notice');
 // The list shows the notice above the table with its one action.
 $clock=(object)['now'=>$since];app()->instance(WatchWork::class,new WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true,fn()=>$clock->now));
 config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>180]);
 DB::table('domains_watch_schedule')->where('scope','dispatch')->delete();DB::table('domains_watch_schedule')->insert(['scope'=>'dispatch','due_at'=>$since,'progress_at'=>$since-86400,'data'=>json_encode(['started_at'=>$since-86400])]);
-// The Failed jobs button shows only to staff who can open that page.
+// A stopped dispatcher needs server maintenance, even when staff can open Failed jobs.
 Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertDontSee('Open Failed jobs');
 $manager->role->update(['permissions'=>[...$manager->role->permissions,'admin.failed_jobs.viewAny']]);
-$overdue=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertSee('Open Failed jobs')->assertDontSee('Open Settings')->assertCanSeeTableRecords([$watch]);
-$text=html_entity_decode(strip_tags($overdue->html()));expect(!str_contains($text,'—'),'No em dash');foreach(['unavailable','Public domain checks','scheduler'] as $word){expect(stripos($text,$word)===false,'No "'.$word.'" on the list');}
+$overdue=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertDontSee('Open Failed jobs')->assertDontSee('Open Settings')->assertSee('Ask your administrator to check the scheduled task and background worker.')->assertCanSeeTableRecords([$watch]);
+$text=html_entity_decode(strip_tags($overdue->html()));expect(!str_contains($text,'—'),'No em dash');foreach(['unavailable','Public domain checks'] as $word){expect(stripos($text,$word)===false,'No "'.$word.'" on the list');}
+// Resolver advice reaches the page's edit/test controls only for staff who can use them.
+DB::beginTransaction();
+DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['progress_at'=>$since]);
+DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'health_watch_dns'],['cursor'=>$since-86400]);
+DB::table('domains_watch_work')->where('kind','delegation')->update(['attempts'=>1,'due_at'=>$since-86400]);
+Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('DNS checks have failed since ')->assertSee('Open Settings');
+Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('DNS checks have failed since ')->assertDontSee('Open Settings');
+putenv('SSLKEYLOGFILE=/synthetic-disabled');Livewire::actingAs($manager)->test(ListWatches::class)->assertDontSee('Open Settings');putenv('SSLKEYLOGFILE');
+DB::rollBack();
 config(['queue.connections.database.retry_after'=>60]);Livewire::actingAs($manager)->test(ListWatches::class)->assertDontSee('Queue timeout too short')->assertDontSee('retry_after');config(['queue.connections.database.retry_after'=>180]);
-// Disabled monitoring has the same permitted Settings action with or without rows.
+// Disabled monitoring explains deployment setup without a Settings action, with or without rows.
 app()->instance(WatchWork::class,new WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),false));
 foreach([false,true] as $empty){
     if($empty){DB::beginTransaction();DB::table('domains_watch_names')->delete();}
     foreach([$viewer,$manager] as $actor){
-        $off=Livewire::actingAs($actor)->test(ListWatches::class)->assertSuccessful()->assertSee('Domain monitoring is off. Turn it on in Settings.')->assertSee('Open Settings');
-        $once($off,'Domain monitoring is off. Turn it on in Settings.');
-        $doc=new DOMDocument();@$doc->loadHTML($off->html());$dom=new DOMXPath($doc);same(1,$dom->query('//a[@href="'.WatchResource::getUrl('settings').'"][contains(.,"Open Settings")]')->length,'Off notice links the permitted Settings tab');
+        $off=Livewire::actingAs($actor)->test(ListWatches::class)->assertSuccessful()->assertSee('Domain monitoring is not set up on this server. Ask your administrator to turn it on.')->assertDontSee('Open Settings');
+        $once($off,'Domain monitoring is not set up on this server. Ask your administrator to turn it on.');
+        $doc=new DOMDocument();@$doc->loadHTML($off->html());$dom=new DOMXPath($doc);same(0,$dom->query('//a[@href="'.WatchResource::getUrl('settings').'"][contains(.,"Open Settings")]')->length,'Off notice has no misleading Settings action');
     }
     if($empty){DB::rollBack();}
 }
