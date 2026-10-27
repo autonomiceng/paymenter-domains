@@ -65,7 +65,7 @@ final class PriceList
     {
         $out=[$row['tld'],$row['account'],(string)$row['years'],$row['pricing'],$row['currency']];
         foreach(self::ACTIONS as $action=>$label){$p=$row['prices'][$action];$out=[...$out,self::money($p['cost']),$p['price']??'Missing',self::money($p['profit'],true),$p['status']==='Missing'?'':$p['status']];}
-        return [...$out,$row['formula'],rtrim(rtrim($row['fee']['percent'],'0'),'.').'% + $'.$row['fee']['fixed']];
+        return [...$out,$row['formula'],CardFee::describe($row['fee'])];
     }
     /** Display cents only; round rough profit down, including a loss, without changing saved values. */
     private static function money(?string $value,bool $down=false): string

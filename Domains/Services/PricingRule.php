@@ -67,7 +67,8 @@ final class PricingRule
         }
         $validated = ['mode' => $rule['mode'], 'markup' => self::decimal($markup), 'round_up' => $rule['round_up'], 'fixed' => $fixed];
         if ($rule['mode'] === 'markup_fee_percent') {
-            $validated['card_fee'] = CardFee::validate($rule['card_fee'] ?? CardFee::DEFAULT);
+            if (!is_array($rule['card_fee'] ?? null)) { throw new InvalidArgumentException('Card fee required for this pricing mode.'); }
+            $validated['card_fee'] = CardFee::validate($rule['card_fee']);
             CardFee::minimum('0', $validated['markup'], $validated['card_fee']);
         }
         return $validated;

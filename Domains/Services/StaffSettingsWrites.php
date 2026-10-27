@@ -129,12 +129,14 @@ final class StaffSettingsWrites
             }
             if($r->action==='card_fee'){
                 $fee=CardFee::validate(['percent'=>$data['fee_percent']??'', 'fixed'=>$data['fee_fixed']??'']);
+                // Validate the effective rules against the replacement fee; any refusal rolls it back.
+                CardFee::saveLocked((int)$s->id,$fee);
                 $rules=new PricingRules;$default=$rules->defaultRule((int)$s->id,true);
                 if($default['mode']==='markup_fee_percent'){PricingRule::validate([...$default,'card_fee'=>$fee]);}
                 foreach(Tld::where(['server_id'=>$s->id,'account_fingerprint'=>$a->account_fingerprint,'registrar_key'=>$a->registrar_key,'use_default_rule'=>false,'pricing_mode'=>'markup_fee_percent'])->orderBy('id')->lockForUpdate()->get() as $own){
                     PricingRule::validate([...$rules->rule($own,true),'card_fee'=>$fee]);
                 }
-                CardFee::saveLocked((int)$s->id,$fee);return;
+                return;
             }
             if($r->action==='default_rule'){(new PricingRules)->saveDefaultRuleLocked((int)$s->id,self::rule($data,$r->serverId));return;}
             if($r->action==='tld_settings'){
@@ -210,7 +212,8 @@ final class StaffSettingsWrites
         $targets=Tld::where(['server_id'=>$r->serverId,'registrar_key'=>$a->registrar_key,'account_fingerprint'=>$a->account_fingerprint]);
         if($r->action==='default_rule'){$targets->where('use_default_rule',true);}
         else{
-            $defaultFee=(new PricingRules)->defaultRule($r->serverId)['mode']==='markup_fee_percent';
+            try{$defaultFee=(new PricingRules)->defaultRule($r->serverId)['mode']==='markup_fee_percent';}
+            catch(\Throwable){$defaultFee=true;}
             $targets->where(function($q)use($defaultFee):void{
                 $q->where(fn($own)=>$own->where('use_default_rule',false)->where('pricing_mode','markup_fee_percent'));
                 if($defaultFee){$q->orWhere('use_default_rule',true);}

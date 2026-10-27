@@ -99,7 +99,7 @@ final class SettingsActions
                 else{$fields[]=\Filament\Schemas\Components\Text::make(fn()=>self::followers($server))->key('followers');}
             }
             if($name==='card_fee'){
-                $fee=self::cached(static fn()=>CardFee::read($server));
+                $fee=self::cached(static function()use($server):array{try{return CardFee::read($server);}catch(\Throwable){return CardFee::DEFAULT;}});
                 $fields[]=TextInput::make('fee_percent')->label('Card fee (%)')->default(fn()=>$fee()['percent'])->required()->maxLength(6);
                 $fields[]=TextInput::make('fee_fixed')->label('Plus a fixed amount (USD)')->default(fn()=>$fee()['fixed'])->required()->maxLength(12);
                 $fields[]=\Filament\Schemas\Components\Text::make('An estimate per payment. International cards and refunds can cost more, so set it a little high.');

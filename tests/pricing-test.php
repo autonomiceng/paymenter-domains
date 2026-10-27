@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
-use Paymenter\Extensions\Servers\Domains\Services\{MarginPolicy, PricingRule, RetailLine};
+use Paymenter\Extensions\Servers\Domains\Services\{CardFee, MarginPolicy, PricingRule, RetailLine};
 
 $rule = PricingRule::DEFAULT;
 same('13.00', PricingRule::price('10.0000', $rule, 'register'), 'Default percent');
@@ -66,7 +66,16 @@ same('1.99', PricingRule::price('0.9901', [...$feeRule, 'markup'=>'0', 'card_fee
 $reject(static fn()=>PricingRule::price('1', [...$feeRule, 'markup'=>'5', 'card_fee'=>['percent'=>'99','fixed'=>'0']], 'renew'));
 $reject(static fn()=>PricingRule::price('99999999.9999', [...$feeRule, 'markup'=>'100000', 'card_fee'=>['percent'=>'0','fixed'=>'0']], 'renew'));
 $reject(static fn()=>PricingRule::validate([...$feeRule, 'card_fee'=>['percent'=>'100','fixed'=>'0']]));
+foreach (['validate', 'describe', 'price'] as $method) {
+    $missingFee=$feeRule;unset($missingFee['card_fee']);
+    $reject(static fn()=>$method==='price'?PricingRule::price('6',$missingFee,'register'):PricingRule::$method($missingFee));
+}
+$reject(static fn()=>PricingRule::validate([...$feeRule,'card_fee'=>'invalid']));
 same('0.6032', \Paymenter\Extensions\Servers\Domains\Services\CardFee::profit('2.99','2.0000',$feeRule['card_fee']), 'Rough profit includes fee on final price');
 same(true, \Paymenter\Extensions\Servers\Domains\Services\CardFee::losesMoney('2.00','2.0000',$feeRule['card_fee']), 'Separate fee loss above registrar cost');
 same('100000000.00', PricingRule::price('99999999.9999', [...$feeRule,'markup'=>'0','round_up'=>'none','card_fee'=>['percent'=>'0','fixed'=>'0']], 'register'), 'Large supported cost rounds safely');
+same('2.9% + $0.30',CardFee::describe(['percent'=>'2.9','fixed'=>'0.3']),'Shared fee description validates and canonicalizes input');
+same('0% + $0.00',CardFee::describe(['percent'=>'0','fixed'=>'0']),'Zero fee description');
+same('10% + $1.00',CardFee::describe(['percent'=>'10','fixed'=>'1']),'Whole percent description keeps significant zero');
+$reject(static fn()=>CardFee::describe(['percent'=>'100','fixed'=>'0']));
 echo "Exact pricing and margin checks passed.\n";

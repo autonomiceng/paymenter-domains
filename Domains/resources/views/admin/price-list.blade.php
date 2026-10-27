@@ -26,7 +26,7 @@
                         <div style="font-weight:600">{{ $explanation['account'] }} · {{ $explanation['pricing'] }}@if($explanation['pricing'] === 'Own rule') · {{ implode(', ',$explanation['tlds']) }}@endif</div>
                         <div>{{ $explanation['formula'] }}</div>
                         @if($explanation['fee_in_price'])<div>The card fee is worked out on the final price, so the price covers it.</div>@endif
-                        <div>Card fee: {{ rtrim(rtrim($explanation['fee']['percent'],'0'),'.') }}% + ${{ $explanation['fee']['fixed'] }} per payment.</div>
+                        <div>Card fee: {{ \Paymenter\Extensions\Servers\Domains\Services\CardFee::describe($explanation['fee']) }} per payment.</div>
                     </li>
                 @endforeach
             </ul>

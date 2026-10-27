@@ -16,6 +16,11 @@ final class CardFee
         if($percent>=10000||$fixed>10000000){throw new \InvalidArgumentException('Enter a card fee below 100% and a fixed amount from 0 to 100000.');}
         return ['percent'=>PricingRule::decimal($percent),'fixed'=>PricingRule::decimal($fixed)];
     }
+    public static function describe(array $fee): string
+    {
+        $fee=self::validate($fee);
+        return rtrim(rtrim($fee['percent'],'0'),'.').'% + $'.$fee['fixed'];
+    }
     public static function read(int $serverId,bool $lock=false): array
     {
         if($lock&&DB::transactionLevel()===0){throw new \LogicException('Card fee locks require an outer transaction.');}
