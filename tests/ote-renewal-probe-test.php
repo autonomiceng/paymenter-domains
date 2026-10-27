@@ -77,7 +77,7 @@ $probe = static function (string $scenario, string $route = 'background') use ($
                 if ($scenario === 'overflow') { $reply['order'] = array_fill(0, 21, $reply['order'][0]); }
             } elseif ($command === 'orderDetails') {
                 $reply += ['order_number' => '901', 'order_date' => $stamp, 'total' => '8.95', 'method' => 'Account Funds',
-                    'order_details' => [['description' => $wire->domain.' - renewal', 'years_qty' => '1', 'status' => 'Processed', 'price' => '8.95', 'subtotal' => '8.95']]];
+                    'order_details' => [['description' => $wire->domain.' - Renewal', 'years_qty' => '1', 'status' => 'Processed', 'price' => '8.95', 'subtotal' => '8.95']]];
                 if ($scenario === 'uppercase') { $reply['order_details'][0]['description'] = strtoupper($wire->domain).' - renewal'; }
                 if ($scenario === 'trailing-dot') { $reply['order_details'][0]['description'] = $wire->domain.'. - renewal'; }
                 if ($scenario === 'empty-detail') { $reply['order_details'] = []; }

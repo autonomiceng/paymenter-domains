@@ -101,10 +101,10 @@ final class RenewalProbe
                 if (is_array($items) && !array_is_list($items)) { $items = [$items]; }
                 foreach ($items as $item) {
                     $description = $item['description'] ?? '';
-                    if (!preg_match('/^(.+) - (registration|renewal|transfer)$/D', $description, $parts)) { $healthy = false; continue; }
+                    if (!preg_match('/^(.+) - ((?i:registration|renewal|transfer))$/D', $description, $parts)) { $healthy = false; continue; }
                     try { $normalized = \Paymenter\Extensions\Servers\Domains\Data\CanonicalName::normalize($parts[1]); }
                     catch (\InvalidArgumentException) { $healthy = false; continue; }
-                    if ($normalized === $data['name'] && $parts[2] === 'renewal') { $sameNameRows++; }
+                    if ($normalized === $data['name'] && strtolower($parts[2]) === 'renewal') { $sameNameRows++; }
                 }
             }
             $owned = $facts->domain?->owned === true && $facts->domain->active === true && $facts->domain->name === $data['name'];

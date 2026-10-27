@@ -133,6 +133,26 @@ $candidates = $rec->result()->evidence()->candidates;
 same(1, count($candidates), 'Strict synthetic description matches'); same('123', $candidates[0]->providerReference, 'Observed history reference only');
 same('12.34', $candidates[0]->charge?->amount, 'Candidate subtotal, never whole order total'); same(null, $candidates[0]->processedAt, 'Naive timestamp never assigned a zone');
 same(null, $rec->result()->evidence()->charge, 'Candidate never direct charge proof');
+$savedDetail = $wire->fixtures['orderDetails'];
+// Redacted OTE orderDetails values, with a synthetic public domain and order ID.
+foreach ([[Action::Register, 'Registration', '6.99'], [Action::Renew, 'Renewal', '8.99']] as [$action, $label, $amount]) {
+    $wire->fixtures['orderDetails']['reply'] = ['code' => 300, 'detail' => 'synthetic', 'order_number' => '123',
+        'order_date' => '2026-10-26 21:08:29', 'method' => 'AccountFunds', 'total' => $amount,
+        'order_details' => [['description' => 'example.com - '.$label, 'years_qty' => '1', 'price' => $amount,
+            'subtotal' => $amount, 'status' => 'Processed']]];
+    $observed = new AttemptEvidence($binding, new Query('example.com', $action, 1), 'observed-order', 1,
+        ExecutionRecord::RecordedNull, SendState::PossiblySent, $attempt->windowStart, $attempt->windowEnd);
+    $facts = $driver->reconcile($observed, $context())->result()->evidence();
+    same(1, count($facts->candidates), 'OTE title-case '.$label.' is a candidate');
+    same($amount, $facts->candidates[0]->charge?->amount, 'OTE item subtotal retained');
+    same(false, $facts->historyComplete, 'Observed row does not accept history semantics');
+    foreach (['example.com.evil - '.$label, 'EXAMPLE.COM - '.$label, 'example.com - '.$label.' extra',
+        'example.com - '.($action === Action::Register ? 'Renewal' : 'Registration')] as $description) {
+        $wire->fixtures['orderDetails']['reply']['order_details'][0]['description'] = $description;
+        same([], $driver->reconcile($observed, $context())->result()->evidence()->candidates, 'Exact domain and kind required');
+    }
+}
+$wire->fixtures['orderDetails'] = $savedDetail;
 same([], $reconcile(1)->result()->evidence()->candidates, 'List consumes one token before detail');
 $wire->fixtures['orderDetails']['reply']['order_date'] = '2026-10-18';
 same(ExpiryPrecision::Date, $reconcile()->result()->evidence()->candidates[0]->processedAt?->precision, 'Date-only history keeps precision');

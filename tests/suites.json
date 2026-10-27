@@ -34,7 +34,9 @@
     "tests/settings-refusal-test.php",
     "tests/render-artifacts-test.php",
     "tests/ui-docs-test.php",
-    "tests/test_staff_docs.py"
+    "tests/test_staff_docs.py",
+    "tests/ote-order-window-test.php",
+    "tests/ote-collection-shapes-test.php"
   ],
   "native": [
     "tests/walk-layout-test.php",

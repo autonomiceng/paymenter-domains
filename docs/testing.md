@@ -749,3 +749,11 @@ cycle, checking exact completed audit reasons/counts, no reason modal and its Hi
 checks exact recipient, subject/body, native email evidence and the staff delivery review fields.
 The supplied site shell owns its branded card class and company branding assertions. Domains owns the
 mail presentation table, content/domain, recipient and native delivery evidence.
+
+OTE order regressions use synthetic identities with observed title-case descriptions and
+6.99/8.99 subtotals. `namesilo-read-test.php` and `ote-renewal-probe-test.php` retain
+wrong-name/action/term refusals and unknown history acceptance. `ote-order-window-test.php`
+models the observed same-day end-date omission through the runner's real correlation path.
+`ote-collection-shapes-test.php` covers DNS and inventory singleton objects, empty/multiple
+rows, malformed records, unknown fields, normalized success caches and original receipt shapes.
+These offline cases do not accept provider history semantics or authorize purchase retries.

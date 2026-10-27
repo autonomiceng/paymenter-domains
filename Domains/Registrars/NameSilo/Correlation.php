@@ -46,10 +46,10 @@ final class Correlation
                 if (!$rows || count($rows) > 200) { $complete = false; continue; }
                 foreach ($rows as $row) {
                     $label = match ($attempt->query->action) { Action::Register => 'registration', Action::Renew => 'renewal', Action::Transfer => 'transfer' };
-                    if (($row['description'] ?? null) !== $attempt->query->name.' - '.$label
+                    if (preg_match('/^'.preg_quote($attempt->query->name, '/').' - (?i:'.$label.')$/D', $row['description'] ?? '') !== 1
                         || ($row['years_qty'] ?? null) !== (string) $attempt->query->years) {
                         try {
-                            if (!preg_match('/^(.+) - (registration|renewal|transfer)$/D', $row['description'] ?? '', $parts)
+                            if (!preg_match('/^(.+) - ((?i:registration|renewal|transfer))$/D', $row['description'] ?? '', $parts)
                                 || CanonicalName::normalize($parts[1]) === $attempt->query->name) { $complete = false; }
                         } catch (\InvalidArgumentException) { $complete = false; }
                         continue;

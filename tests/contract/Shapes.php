@@ -54,20 +54,33 @@ final class Shapes
     }
     private static function positiveInteger(mixed $value): bool
     { return (is_int($value) || is_string($value)) && preg_match('/^[1-9][0-9]*$/D', (string) $value) === 1; }
+    /** Observed collection variants only; preserve every row and unknown field for validation. */
+    public static function normalizeCollections(string $command, array $data): array
+    {
+        $r = $data['reply'] ?? [];
+        if ($command === 'listDomains' && array_key_exists('domains', $r) && $r['domains'] === null
+            && in_array($r['code'] ?? null, [300, '300'], true) && is_string($r['detail'] ?? null)
+            && is_string($data['request']['ip'] ?? null) && is_array($r['pager'] ?? null)
+            && in_array($r['pager']['total'] ?? null, [0, '0'], true)
+            && self::positiveInteger($r['pager']['page'] ?? null) && self::positiveInteger($r['pager']['pageSize'] ?? null)) {
+            $data['reply']['domains'] = [];
+        }
+        $field = match ($command) { 'dnsListRecords' => 'resource_record', 'listDomains' => 'domains', default => null };
+        if ($field === null || !is_array($data['reply'][$field] ?? null)) { return $data; }
+        $rows = $data['reply'][$field];
+        if ($command === 'listDomains' && array_keys($rows) === ['domain']
+            && is_array($rows['domain']) && !array_is_list($rows['domain'])) { $rows = $rows['domain']; }
+        $data['reply'][$field] = array_is_list($rows) ? $rows : [$rows];
+        return $data;
+    }
     public static function check(string $command, mixed $data, array $requested = []): array
     {
         $errors = [];
         if (!is_array($data) || ($data['request']['operation'] ?? null) !== $command || !is_array($data['reply'] ?? null)) {
             return ['envelope.operation'];
         }
+        $data = self::normalizeCollections($command, $data);
         $r = $data['reply'];
-        if ($command === 'listDomains' && array_key_exists('domains', $r) && $r['domains'] === null
-            && in_array($r['code'] ?? null, [300, '300'], true) && is_string($r['detail'] ?? null)
-            && is_string($data['request']['ip'] ?? null) && is_array($r['pager'] ?? null)
-            && in_array($r['pager']['total'] ?? null, [0, '0'], true)
-            && self::positiveInteger($r['pager']['page'] ?? null) && self::positiveInteger($r['pager']['pageSize'] ?? null)) {
-            $r['domains'] = []; $data['reply']['domains'] = [];
-        }
         if ($command === 'checkRegisterAvailability' && is_array($r['available'] ?? null)) {
             if (count($requested) === 1 && array_keys($r['available']) === ['domain']
                 && is_array($r['available']['domain']) && !array_is_list($r['available']['domain'])) {
