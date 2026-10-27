@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Http\Controllers;
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\{FormKeys,RawPost};
-use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, DomainManagement, OwnedDomains, OwnerPorts, OwnerSetup, TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, DomainManagement, OwnedDomains, OwnerPorts, OwnerSetup, OwnerNameservers, OwnerFormValidation, TransferInputs};
 /** Dormant owner POST boundary. Never calls a driver write or queues a purchase. */
 final readonly class OwnerActionController
 {
@@ -36,9 +36,10 @@ final readonly class OwnerActionController
     public function setup(Request $request,int $domain)
     {
         return $this->submit($request,$domain,'setup',function()use($request,$domain):void {
-            $servers=$request->request->get('nameservers','');
-            if (!is_string($servers)||!in_array($request->request->get('privacy','0'),['0','1'],true)) { throw new \DomainException; }
-            $this->setup->save($request->user(),$domain,['nameservers'=>self::servers($servers),'privacy'=>$request->request->get('privacy')==='1']);
+            $d=$this->owners->owned($request->user(),$domain);
+            $servers=OwnerNameservers::parse(($request->request->all()['nameservers']??null),$d->registrar_key==='enom',$d->registrar_key==='enom'?12:13,$d->registrar_key,$d->domain);
+            if (!in_array($request->request->get('privacy','0'),['0','1'],true)) { throw new \Paymenter\Extensions\Servers\Domains\Services\SetupValidation(['privacy']); }
+            $this->setup->save($request->user(),$domain,['nameservers'=>$servers,'privacy'=>$request->request->get('privacy')==='1']);
         },'Setup saved.');
     }
     public function contacts(Request $request,int $domain)
@@ -61,7 +62,7 @@ final readonly class OwnerActionController
             $current=in_array($action,['dns','srv'],true)?(\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::forDomain($d)[$action]??throw new \DomainException('Current records required.')):null;
             $payload=match($action) {
                 'nameservers'=>($p['use_default']??null)==='1' && $d->registrar_key==='enom'
-                    ? ['nameservers'=>[],'use_default'=>true] : ['nameservers'=>self::servers(is_string($p['nameservers']??null)?$p['nameservers']:'')],
+                    ? ['nameservers'=>[],'use_default'=>true] : ['nameservers'=>OwnerNameservers::parse($p['nameservers']??null,false,$d->registrar_key==='enom'?12:13,$d->registrar_key)],
                 'lock'=>['locked'=>match($p['locked']??null){'1'=>true,'0'=>false,default=>throw new \DomainException}],
                 'contacts','contact_profile'=>['role'=>$p['role']??'all','contact'=>$p['contact']??[]],
                 'dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'=>\Paymenter\Extensions\Servers\Domains\Services\OwnerRecordInput::payload($action,$p,$d->domain),
@@ -86,7 +87,7 @@ final readonly class OwnerActionController
     }
     private function submit(Request $request,int $domain,string $action,\Closure $work,string $message)
     {
-        $this->owners->owned($request->user(),$domain); $context='owner:'.$domain.':'.$action;
+        $owned=$this->owners->owned($request->user(),$domain); $context='owner:'.$domain.':'.$action;
         $nonce=FormKeys::verify($request,$context); FormKeys::consume($request,$context);
         try { $work($nonce); return redirect()->route('domains.domains.show',$domain)->with('domains_status',$message); }
         catch (\Paymenter\Extensions\Servers\Domains\Services\OwnerConfirmRequired) {
@@ -102,12 +103,13 @@ final readonly class OwnerActionController
                 $errors=(new \Illuminate\Support\ViewErrorBag)->put('default',new \Illuminate\Support\MessageBag($messages));
                 return response($view->with(['domain'=>$dto,'errors'=>$errors]),422)->header('Cache-Control','no-store, private');
             }
-            return $this->failed($request,$domain,$action,$error->messages(''));
+            return $this->failed($request,$domain,$action,$error->messages($owned->domain,$request->request->all(),$owned->registrar_key));
         } catch (\Paymenter\Extensions\Servers\Domains\Services\SetupValidation $error) {
             return $this->failed($request,$domain,$action,array_intersect_key([
-                'nameservers'=>'Check the nameservers.','privacy'=>'WHOIS privacy isn’t available for this domain.'],array_flip($error->fields)));
+                'nameservers'=>$owned->registrar_key==='enom'&&$this->owners->operation($owned)?->action==='transfer'?'Keep your current nameservers during this transfer. You can change them after the transfer finishes.':'These nameservers cannot be used for this order. Contact support.','privacy'=>'WHOIS privacy isn’t available for this domain.'],array_flip($error->fields)));
         } catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation $error) {
-            return $this->failed($request,$domain,$action,array_fill_keys(array_unique(array_map(static fn($field)=>preg_replace('/^contacts\\.[^.]+\\./','contact.',$field),$error->fields)),'Check this contact detail.'));
+            $fields=array_unique(array_map(static fn($field)=>preg_replace('/^contacts\\.[^.]+\\./','contact.',$field),$error->fields));
+            return $this->failed($request,$domain,$action,(new OwnerFormValidation($fields))->messages($owned->domain,registrar:$owned->registrar_key));
         } catch (\Throwable) { return $this->failed($request,$domain,$action,['owner_action'=>'We couldn’t save this change. Check the details and try again. If it keeps happening, contact support.']); }
     }
     private function failed(Request $request,int $domain,string $action,array $errors)
@@ -128,6 +130,4 @@ final readonly class OwnerActionController
         return redirect()->route($action==='setup'?'domains.domains.setup':'domains.domains.show',$domain)
             ->withErrors($errors)->withInput($input)->with('domains_failed_form',$form);
     }
-    private static function servers(string $text): array
-    { return $text===''?[]:array_values(array_filter(array_map('trim',preg_split('/\r\n|\n|\r/',$text)),fn($v)=>$v!=='')); }
 }

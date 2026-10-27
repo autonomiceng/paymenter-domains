@@ -34,7 +34,8 @@ foreach(['dns'=>['records'=>[['name'=>'bad host','type'=>'A','address'=>'secret-
     expect(!str_contains($html,'private-extra-not-for-html')&&!str_contains(serialize($session->all()),'private-extra-not-for-html'),'Private request extras are never retained');
     if($action!=='nameservers'){expect(!str_contains($html,'value="'.$nonce.'"'),'Direct retry issues fresh intent keys');}
     foreach($invalid as$field){expect($field->hasAttribute('aria-describedby'),'Field error is described');}
-    if($action==='dns'){expect(str_contains($html,'value="secret-invalid-value"'),'Public DNS draft is retained only in direct escaped response');}
+    if($action==='dns'){expect(str_contains($html,'value="secret-invalid-value"'),'Public DNS draft is retained only in direct escaped response');expect(str_contains($html,'Enter @, *, or a hostname such as www.'),'DNS name error explains the grammar');expect(str_contains($html,'Enter an address for this record type:'),'DNS address error explains the grammar');}
+    if($action==='srv'){foreach(['Choose TCP or UDP.','Enter a number from 0 to 65535.','Enter a hostname ending in a dot, such as sip.example.com.'] as $message){expect(str_contains($html,$message),'SRV field explains the invalid value');}}
     if($action==='glue_update'){same(1,$invalid->length,'Only the submitted host IP is invalid');same('glue-0-ip',$invalid->item(0)->getAttribute('id'),'Error targets matching host');same(['edit-glue'],array_map(fn($n)=>$n->getAttribute('id'),iterator_to_array($dom->query('//dialog[contains(@class,"domains-edit")][@open]'))),'Only submitted editor opens');}
     if($action==='ds_add'){expect(str_contains($html,'value="secret-invalid-value"'),'Public DS draft retained');}
 

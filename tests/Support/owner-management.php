@@ -23,9 +23,25 @@ $post=static function(string $action,array $data=[])use($d,$user,$session):Reque
     nativeNormalizeInput($r);$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
     $r->request->set('_request_key',FormKeys::issue($r,'owner:'.$d->id.':'.$action));return $r;
 };
-$r=$post('nameservers',['nameservers'=>"ns1.example.com\nns2.example.com"]);$stale=$session->get('domains.form_keys');$again=clone $r;
+foreach ([
+    ['ns1.example.com.','Enter at least 2 nameservers, one per line.'],
+    [implode("\n",array_map(fn($i)=>'ns'.$i.'.example.com',range(1,$free?14:13))),'Enter no more than '.($free?13:12).' nameservers.'],
+    ["bad_host.example.com\nns2.example.com","bad_host.example.com isn't a valid hostname. Use a name like ns1.example.com."],
+    ["NS1.EXAMPLE.COM.\nns1.example.com",'ns1.example.com is listed more than once.'],
+    [null,'Enter at least 2 nameservers, one per line.'],
+] as [$text,$message]) {
+    $before=Operation::count();$controller->manage($post('nameservers',['nameservers'=>$text]),$d->id,'nameservers');
+    same($message,$session->get('errors')->first('nameservers'),'Management nameserver errors explain the cause');
+    same($before,Operation::count(),'Invalid nameservers create no operation');
+}
+if ($free) {
+    $controller->manage($post('nameservers',['nameservers'=>"ns1.12-34\nns2.example.com"]),$d->id,'nameservers');
+    same("ns1.12-34 isn't a valid hostname. Use a name like ns1.example.com.",$session->get('errors')->first('nameservers'),'NameSilo management requires a letter in the final label');
+}
+$session->forget(['errors','_old_input','domains_failed_form']);
+$r=$post('nameservers',['nameservers'=>"NS1.EXAMPLE.COM.\nns2.example.com."]);$stale=$session->get('domains.form_keys');$again=clone $r;
 $count=Operation::count();$controller->manage($r,$d->id,'nameservers');same($count+1,Operation::count(),'Owner POST creates one durable engine request');
-$op=$d->operations()->where('action','nameservers')->sole();same('queued',$op->state,'No controller dispatch');same([],$free?$ms->calls:$state->calls,'No driver transport in owner POST');
+$op=$d->operations()->where('action','nameservers')->sole();same(['ns1.example.com','ns2.example.com'],$op->payload['nameservers'],'Management strips root dots before freezing input');same('queued',$op->state,'No controller dispatch');same([],$free?$ms->calls:$state->calls,'No driver transport in owner POST');
 $session->put('domains.form_keys',$stale);
 try{$controller->manage($again,$d->id,'nameservers');expect(false,'Stale session replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Atomic replay guard');}
 same($count+1,Operation::count(),'Replay creates no operation');$session->forget('domains.form_keys');
@@ -75,7 +91,7 @@ app('view')->share('errors',$session->get('errors'));
 $html=(new OwnedDomainController($owners))->show($r,$d->id)->render();$dom=storefrontDom($html);
 expect($dom->query('//input[@name="contact[phone]"][@aria-invalid="true"]')->length>0,'Real Blade identifies the invalid contact field');
 expect($dom->query('//input[@name="contact[phone]"][@aria-invalid="true"]/ancestor::dialog[@open]')->length>0,'Invalid contact forms open without script');
-expect(str_contains($html,'Check this contact detail.'),'Fixed contact error copy is rendered without submitted values');
+expect(str_contains($html,'Enter a phone number with its country code, such as +1.2025550123.'),'Contact error explains the expected format');
 $r=$post('auth_code_email');$controller->manage($r,$d->id,'auth_code_email');
 $dto=$owners->present($d->fresh());expect(!isset($dto->management['auth_code_email']),'Email cooldown removes the unavailable action');
 $peer=$d->operations()->where('action','auth_code_email')->sole();Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$peer->id)->update(['state'=>'uncertain']);
