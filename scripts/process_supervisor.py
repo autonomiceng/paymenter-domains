@@ -102,6 +102,10 @@ def main():
         raise OSError(ctypes.get_errno(), 'Cannot establish descendant ownership')
     children(os.getpid())
     def interrupted(signum, frame):
+        # Set dispositions before unwinding: a second signal must not abort
+        # the exception handler before it can drain owned descendants.
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         raise Shutdown(signum)
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
@@ -117,9 +121,6 @@ def main():
             return 125
         return leader.returncode if leader.returncode >= 0 else 128-leader.returncode
     except Shutdown as error:
-        # Ignore repeated interrupts while resource owners finish their cleanup.
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
         cleanup(leader, args.grace_seconds)
         return 128+error.signum
     except BaseException:

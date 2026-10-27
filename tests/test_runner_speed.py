@@ -226,6 +226,31 @@ class SchedulingTests(unittest.TestCase):
             self.assertEqual(status, 130)
             self.assertIn('serial-marker', (output/'000.stdout.txt').read_text())
 
+    def test_interrupt_between_output_writes_retries_both_streams(self):
+        for jobs in [1, 2]:
+            with self.subTest(jobs=jobs), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); (root/'Domains').mkdir()
+                output = root/'output'; output.mkdir()
+                write = Path.write_bytes
+                interrupted = []
+                def interrupt_once(path, data):
+                    if path.name == '000.stderr.txt' and not interrupted:
+                        interrupted.append(True)
+                        raise KeyboardInterrupt
+                    return write(path, data)
+                child = "import sys; print('stdout-marker'); print('stderr-marker',file=sys.stderr)"
+                with mock.patch.object(runner, 'ROOT', root), \
+                     mock.patch.object(Path, 'write_bytes', interrupt_once), \
+                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    status = runner.run([('provider', [sys.executable, '-c', child])],
+                                        dict(os.environ), output, ['provider'], {}, jobs=jobs)
+                self.assertEqual(status, 130)
+                self.assertEqual((output/'000.stdout.txt').read_text(), 'stdout-marker\n')
+                self.assertEqual((output/'000.stderr.txt').read_text(), 'stderr-marker\n')
+                receipt = json.loads((output/'receipt.json').read_text())
+                self.assertEqual(len(receipt['results']), 1)
+                self.assertFalse(receipt['complete'])
+
 
     def test_peer_cancellation_allows_cleanup_and_reaps_adopted_child(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -243,6 +268,33 @@ class SchedulingTests(unittest.TestCase):
             self.assertTrue(cleaned.exists(), 'Command cleanup was skipped')
             self.assertTrue(adopted.exists(), 'Detached intermediate did not exit during cancellation')
             self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Adopted child was not killed and reaped')
+
+    def test_supervisor_ignores_repeated_signals_before_unwinding(self):
+        spec = importlib.util.spec_from_file_location('signal_probe', ROOT/'scripts/process_supervisor.py')
+        supervisor = importlib.util.module_from_spec(spec); spec.loader.exec_module(supervisor)
+        handlers, snapshots = {}, []
+        original = supervisor.Shutdown
+        class ObservedShutdown(original):
+            def __init__(self, signum):
+                snapshots.append(dict(handlers))
+                super().__init__(signum)
+        def set_handler(signum, handler):
+            handlers[signum] = handler
+        def interrupt(*args):
+            handlers[supervisor.signal.SIGTERM](supervisor.signal.SIGTERM, None)
+        with mock.patch.object(sys, 'argv', ['supervisor', '--', 'unstarted']), \
+             mock.patch.object(supervisor.ctypes, 'CDLL') as libc, \
+             mock.patch.object(supervisor, 'children', return_value=set()), \
+             mock.patch.object(supervisor, 'cleanup', return_value=True) as cleanup, \
+             mock.patch.object(supervisor, 'Shutdown', ObservedShutdown), \
+             mock.patch.object(supervisor.subprocess, 'Popen') as spawn, \
+             mock.patch.object(supervisor.os, 'waitpid', side_effect=interrupt), \
+             mock.patch.object(supervisor.signal, 'signal', side_effect=set_handler):
+            libc.return_value.prctl.return_value = 0
+            self.assertEqual(supervisor.main(), 143)
+            cleanup.assert_called_once_with(spawn.return_value, 0)
+        for signum in [supervisor.signal.SIGTERM, supervisor.signal.SIGINT]:
+            self.assertEqual(snapshots[0][signum], supervisor.signal.SIG_IGN)
 
 if __name__ == '__main__':
     unittest.main()

@@ -250,6 +250,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     timings = {} if timings is None else timings
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
     completed, attempted, submitted, interrupted_values = {}, {}, {}, {}
+    captured, outputs_saved = {}, set()
     with timing('runtime_snapshot', timings):
         before = hashes()
         fingerprint = runtime_fingerprint() if jobs > 1 else None
@@ -307,6 +308,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
 
     def record(index, value):
         stdout, stderr, result = value
+        captured[index] = value
         completed[index] = result
         try:
             (output/f'{index:03d}.stdout.txt').write_bytes(stdout)
@@ -314,6 +316,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         except OSError as error:
             result['output_error'] = type(error).__name__
             raise
+        outputs_saved.add(index)
+        captured.pop(index, None)
         print(json.dumps({'timing': 'command', 'index': index, **{key: result[key] for key in
                          ['kind', 'argv', 'exit', 'timed_out', 'seconds', 'guard_seconds',
                           'started_seconds', 'finished_seconds']}}), flush=True)
@@ -357,6 +361,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                         for future in done:
                             position, worker = pending.pop(future)
                             record(position, future.result())
+                            submitted.pop(future, None)
                             available.append(worker)
                         if not pending:
                             exclusive_running = False
@@ -365,13 +370,14 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         processes.cancel()
         # Finalize output and metadata together after the pool has drained.
         for future, index in submitted.items():
-            if index not in completed:
+            if index not in captured and index not in outputs_saved:
                 try:
-                    record(index, future.result())
+                    captured[index] = future.result()
                 except BaseException:
                     pass
-        for index, value in interrupted_values.items():
-            if index not in completed:
+        captured.update(interrupted_values)
+        for index, value in list(captured.items()):
+            if index not in outputs_saved:
                 try:
                     record(index, value)
                 except BaseException:
