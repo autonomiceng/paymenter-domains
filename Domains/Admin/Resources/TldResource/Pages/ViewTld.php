@@ -37,6 +37,7 @@ class ViewTld extends ViewRecord
         $actions=$this->settings();
         return [$actions['seller']->color('primary'),ActionGroup::make([$actions['override'],$actions['tld_settings']])->label('More')->button()->color('gray')];
     }
+    public function overrideAction(): Action {return $this->settings()['override'];}
     public function lifecycleAction(): Action {return $this->settings()['lifecycle'];}
     protected function fillForm(): void {$this->data=[];}
     public function getTitle(): string {Staff::requireView();return '.'.$this->getRecord()->tld;}

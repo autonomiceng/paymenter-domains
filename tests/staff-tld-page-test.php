@@ -35,6 +35,36 @@ expect(!str_contains($plain,'NameSilo · default pricing · new orders'),'List: 
 $list->assertDontSee('Price sync failed');$clean($list->html(),'List synced');
 
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful();
+// The first render needs a section button, even while More is closed.
+$priceButtons=static function(string $html): DOMNodeList {
+    $dom=new DOMDocument();@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
+    return $xpath->query('//section[header//h2[normalize-space(.)="Prices by registrar account"]]/header//button[normalize-space(.)="Edit prices"]');
+};
+$shortcut=$priceButtons($page->html());
+same(1,$shortcut->length,'First load shows one Edit prices button in the prices section');
+$button=$shortcut->item(0);
+for($node=$button;$node instanceof DOMElement;$node=$node->parentNode){
+    expect(!$node->hasAttribute('hidden')&&!$node->hasAttribute('x-cloak')&&!$node->hasAttribute('x-show')
+        &&$node->getAttribute('aria-hidden')!=='true'&&!str_contains($node->getAttribute('class'),'fi-dropdown-panel')
+        &&!preg_match('/display\s*:\s*none/i',$node->getAttribute('style')),'Section shortcut is outside hidden menu content');
+}
+$click=$button->getAttribute('wire:click');
+expect((bool)preg_match("/^mountAction\\('override'(?:,|\\))/",$click),'Shortcut mounts the shared Edit prices action');
+$menu=(new DOMXPath($button->ownerDocument))->query('//button[contains(@class,"fi-dropdown-list-item")][normalize-space(.)="Edit prices"]');
+same(1,$menu->length,'More keeps its Edit prices menu item');
+same($click,$menu->item(0)->getAttribute('wire:click'),'Section and menu open the same form');
+$page->mountAction('override')->assertActionMounted('override')->assertActionDataSet(['pricing'=>'default']);
+same('Save and publish',$page->instance()->getMountedAction()->getModalSubmitActionLabel(),'Shortcut opens the current pricing form');
+$page->unmountAction();
+foreach([
+    array_values(array_diff($permissions,[Review::permission('override'),Review::permission('remove_override')])),
+    array_values(array_diff($permissions,[Review::permission('publish')])),
+] as $withoutPrices){
+    $restricted=staffUser($withoutPrices);
+    $hidden=Livewire::actingAs($restricted)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertActionHidden('override');
+    same(0,$priceButtons($hidden->html())->length,'Missing price-edit or publish grants hides the section shortcut');
+}
+Auth::setUser($u);
 same('.com',$page->instance()->getTitle(),'TLD page title is the TLD');
 foreach(['For sale','Change registrar','More','Sales','Registrar for new orders','Existing domains stay with their registrar','Terms','1 to 3 years',
     'Renewal grace period','Redemption period','Not set','Late renewals are off for this TLD.','Restoring expired domains is off for this TLD.','Price sync','Last sync','Oct 18, 2026 12:00 UTC','Valid until Oct 19, 2026 12:00 UTC',
