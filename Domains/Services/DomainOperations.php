@@ -79,6 +79,7 @@ final class DomainOperations
         $route=Operation::findOrFail($id);
         if($this->writer instanceof RegistrationBridge&&in_array($route->state,['queued','awaiting_payment','awaiting_code'],true)){
             try{$this->writer->guardAccount($this->clock,$entry->modify('+'.(ExecuteOperation::EXECUTION_SECONDS-ExecuteOperation::FINISH_SECONDS).' seconds'));}
+            catch(ReadDeferred){return $route->fresh();}
             catch(WriteHeld $held){return $this->claims->holdUnclaimed($id,$held->reason);}
         }
         $claim = $this->claims->claim($id,$testPurchase!==null?$entry:null);

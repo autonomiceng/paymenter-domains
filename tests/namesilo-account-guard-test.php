@@ -31,7 +31,14 @@ same('held',$engine->execute($result->id)->state,'Held registration stays held w
 same($reads,$guard->reads,'Held registration does not retry the account read');
 same(0,$paidCount,'Held registration remains unsent');
 $guard->email=' EXPECTED@example.com ';
-same('pending',$run('match')->state,'Trimmed case-insensitive match permits registration');
+$makeEngine($binding,$exchange);
+foreach([false,true] as $priorDeferral){
+    $limited=$nsNew(placeholderComFixtureName('guard-limiter-'.($priorDeferral?'deferred':'virgin').'-placeholder.com'));
+    $limited->update(['payload'=>$limited->payload+['nameservers'=>['ns1.provider.example','ns2.provider.example'],'privacy'=>false]]);
+    $registration->query=Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($limited,$limited->domain);
+    Illuminate\Support\Facades\Cache::forget('domains-write-slot:'.$binding->fingerprint);
+    assertNameSiloLimitedAcquisition($limited,$engine,$clock,$guard,static function()use(&$paidCount){return $paidCount;},$priorDeferral?$claims:null);
+}
 assertNameSiloAccountRefusals($binding,$guard,$run,static function()use(&$paidCount){return $paidCount;});
 expect(!in_array('registerDomain',$registration->calls,true),'Final refusal has no paid request');
 same('pending',$run('match-again')->state,'Same pinned singleton profile permits a later paid request');

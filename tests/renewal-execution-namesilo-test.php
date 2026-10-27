@@ -55,10 +55,27 @@ for ($cycle=0;$cycle<2;$cycle++) {
         same(0,$writes,'NameSilo release grants no dispatch');$wire->auto='No';$wire->commands=[];Cache::flush();Illuminate\Support\Facades\Auth::login($user);
     }
     if($cycle===0){require __DIR__.'/Support/namesilo-account-guard-renewal.php';}
-    same('pending',$engine->run($renewal->id,$writer)->state,'No-ID renewal acknowledged after all required reads recover');
+    $sentRenewal=$cycle===0?withNameSiloGuardLimiter(4,static function($limiter)use($binding,$engine,$writer,$renewal,$accountGuard,&$writes,$clock,$wire) {
+        Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+        $reads=$accountGuard->reads;$paid=$writes;$attempt=$renewal->fresh()->attempt;
+        $settings=App\Models\Server::findOrFail($binding->serverId)->settings();
+        $pin=$settings->where('key','domains_namesilo_default_contact_fingerprint')->first()?->getRawOriginal();
+        $deferred=$engine->run($renewal->id,$writer);
+        same(5,$limiter->calls,'Four admission reads precede the limited default contact read');
+        same('queued',$deferred->state,'Renewal account limiter refusal remains retryable');
+        same('renewal_rate_limited',$deferred->safe_code,'Renewal reports local rate capacity');
+        expect(!isset($deferred->policy['renewal_admission']),'Renewal limiter refusal removes admission');
+        same($attempt,$deferred->attempt,'Renewal limiter refusal creates no dispatch seal');
+        same($reads,$accountGuard->reads,'Renewal limiter refusal sends no guard exchange');same($paid,$writes,'Renewal limiter refusal sends no paid request');
+        same($pin,$settings->where('key','domains_namesilo_default_contact_fingerprint')->first()?->getRawOriginal(),'Renewal limiter refusal creates or changes no fingerprint');
+        $limiter->remaining=100;$clock->instant=$clock->now()->modify('+26 seconds');$wire->commands=[];
+        Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+        return $engine->run($renewal->id,$writer);
+    }):$engine->run($renewal->id,$writer);
+    same('pending',$sentRenewal->state,'No-ID renewal acknowledged after all required reads recover without staff release');
     same(8,count($wire->commands),'Full status, margin, flags and balance repeated before send');
     same($year.'-10-18',$holding->fresh()->provider_expires_at->format('Y-m-d'),'Acknowledgement is not expiry');
-    $wire->historyId=(string)(902+$cycle); $wire->expiry=($year+1).'-10-18'; $wire->historyAction='renewal'; $wire->historyDate=$year.'-10-16 05:00:01';
+    $wire->historyId=(string)(902+$cycle); $wire->expiry=($year+1).'-10-18'; $wire->historyAction='renewal'; $wire->historyDate=$clock->now()->setTimezone(new DateTimeZone('America/Los_Angeles'))->modify('+1 second')->format('Y-m-d H:i:s');
     Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,86400,'namesilo_renewal_v1'));
     same('namesilo_registration_v1',Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances::load($binding)->vocabulary,'Renewal acceptance preserves registration recovery');
     $clock->instant=$clock->now()->modify('+301 seconds');

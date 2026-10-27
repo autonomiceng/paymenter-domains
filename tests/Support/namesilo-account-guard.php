@@ -89,3 +89,45 @@ function assertNameSiloDeferredGuard($op,$claims,$engine,$clock,object $guard,Cl
     same($before+1,$paidCalls(),'Only delayed staff release permits the recovered account to send');
     same($originalStart,$op->fresh()->getRawOriginal('started_at'),'Delayed release preserves the original claim identity');
 }
+
+function withNameSiloGuardLimiter(int $allowed,Closure $run): mixed
+{
+    $runtime=Paymenter\Extensions\Servers\Domains\Services\Runtime::class;
+    $contract=Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class;
+    expect(!app()->bound($runtime)&&!app()->bound($contract),'Guard fixture starts without runtime limiter bindings');
+    $limiter=new class($allowed) implements Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter {
+        public int $calls=0;
+        public function __construct(public int $remaining){}
+        public function acquire(Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding,Paymenter\Extensions\Servers\Domains\Data\RequestOrigin $origin): string
+        {
+            $this->calls++;if($this->remaining--<=0){throw new Paymenter\Extensions\Servers\Domains\Services\ReadDeferred('Synthetic local capacity refusal');}
+            return 'synthetic-lease';
+        }
+        public function release(Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding,Paymenter\Extensions\Servers\Domains\Data\RequestOrigin $origin,string $token): void {}
+    };
+    app()->instance($runtime,new $runtime);app()->instance($contract,$limiter);
+    try{return $run($limiter);}finally{app()->offsetUnset($runtime);app()->offsetUnset($contract);}
+}
+function assertNameSiloLimitedAcquisition($op,$engine,$clock,object $guard,Closure $paidCalls,$claims=null): void
+{
+    if($claims){
+        $claim=$claims->claim($op->id);expect($claim!==null,'Funded acquisition obtains an unsealed claim before limiter refusal');
+        same('queued',$claims->defer($claim[0])->state,'Earlier capacity deferral retains unsent evidence');
+    }
+    Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+    $before=$op->fresh()->getRawOriginal();$reads=$guard->reads;$paid=$paidCalls();
+    $settings=App\Models\Server::findOrFail($op->server_id)->settings();
+    $pin=$settings->where('key','domains_namesilo_default_contact_fingerprint')->first()?->getRawOriginal();
+    withNameSiloGuardLimiter(0,static function($limiter)use($op,$engine,$clock,$guard,$paidCalls,$before,$reads,$paid,$pin):void {
+        $deferred=$engine->execute($op->id);
+        same(1,$limiter->calls,'Limiter rejects the preclaim default contact read');
+        same($before,$deferred->getRawOriginal(),'Acquisition limiter refusal returns the freshly loaded unchanged operation');
+        same($reads,$guard->reads,'Limiter refusal sends no default contact exchange');same($paid,$paidCalls(),'Limiter refusal sends no paid request');
+        expect(!isset($deferred->attempt['dispatch_attempted_at']),'Limiter refusal creates no dispatch seal');
+        same($pin,App\Models\Server::findOrFail($op->server_id)->settings()->where('key','domains_namesilo_default_contact_fingerprint')->first()?->getRawOriginal(),'Limiter refusal creates or changes no fingerprint');
+        $limiter->remaining=100;$clock->instant=$clock->now()->modify('+26 seconds');
+        Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+        expect(in_array($engine->execute($op->id)->state,['pending','uncertain'],true),'Capacity recovery retries acquisition without staff release');
+        same($reads+1,$guard->reads,'Capacity recovery freshly checks default contact');same($paid+1,$paidCalls(),'Recovered acquisition sends once');
+    });
+}

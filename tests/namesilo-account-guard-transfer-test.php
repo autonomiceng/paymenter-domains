@@ -14,11 +14,14 @@ $run=static function($case)use($newTransfer,$makeTransfer,&$engine){
     $op=$newTransfer(placeholderComFixtureName('guard-transfer-'.$case.'-placeholder.com'),1);$makeTransfer(1);
     return $engine->execute($op->id);
 };
-same('uncertain',$run('match')->state,'Matching account permits one no-ID transfer');
+$limited=$newTransfer(placeholderComFixtureName('guard-transfer-limiter-placeholder.com'),1);$makeTransfer(1);
+assertNameSiloLimitedAcquisition($limited,$engine,$clock,$guard,static function()use(&$paid){return $paid;});
 assertNameSiloAccountRefusals($binding,$guard,$run,static function()use(&$paid){return $paid;});
 same(1,$paid,'All transfer refusals preserve exactly the one matching write');
 same('uncertain',$run('match-again')->state,'Unchanged account permits another transfer');
 same(2,$paid,'One transfer per matching request');
+$limited=$newTransfer(placeholderComFixtureName('guard-transfer-limiter-deferred-placeholder.com'),1);$makeTransfer(1);
+assertNameSiloLimitedAcquisition($limited,$engine,$clock,$guard,static function()use(&$paid){return $paid;},$claims);
 $deferred=$newTransfer(placeholderComFixtureName('guard-transfer-deferred-placeholder.com'),1);$makeTransfer(1);
 assertNameSiloDeferredGuard($deferred,$claims,$engine,$clock,$guard,static function()use(&$paid){return $paid;});
 echo "NameSilo account transfer refusal matrix passed.\n";$nativeSuccessful=true;

@@ -53,7 +53,8 @@ final class NameSiloAccountGuard
                     $s->settings()->create(['key'=>self::PIN,'value'=>json_encode($fingerprint,JSON_THROW_ON_ERROR),'encrypted'=>true,'type'=>'string']);
                 }
             });
-        }catch(\Throwable){throw new WriteHeld('namesilo_account_guard');}
+        }catch(ReadDeferred $deferred){throw $deferred;}
+        catch(\Throwable){throw new WriteHeld('namesilo_account_guard');}
     }
     private static function email(mixed $value): string
     {
