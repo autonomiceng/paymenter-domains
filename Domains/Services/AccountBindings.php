@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Models\Server;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
@@ -27,6 +27,8 @@ final class AccountBindings
         }
         $phase = 'verification_refused';
         try {
+            $existing=Account::where('server_id',$serverId)->first();
+            if($existing&&NameSiloSandbox::enrolled($existing)){throw new \DomainException('Sandbox enrollment is immutable.');}
             $credentials = $this->registry->credentials($registrar, $credentials);
             [$binding, $identity] = $this->registry->verify($registrar, $serverId, $environment, $credentials);
             try {
@@ -34,7 +36,7 @@ final class AccountBindings
                     $review?->lockActor(); $review?->lockAccounts(); $review?->check(true);
                     $this->server($serverId, true);
                     $account = Account::where('server_id', $serverId)->lockForUpdate()->first();
-                    if ($account) { $binding->requireMatch($this->binding($account)); }
+                    if ($account) { if (!$binding->matches($this->binding($account))) { throw new IdentityRefused('identity_account_changed'); } }
                     else {
                         $account = Account::withVerifiedBindingWrite(static fn () => Account::create(['server_id' => $serverId, 'registrar_key' => $binding->registrarKey,
                             'environment' => $binding->environment->value, 'stable_identity' => $identity,
@@ -48,13 +50,80 @@ final class AccountBindings
                     $review?->record('verified_and_saved');
                     return $binding;
                 });
-            } catch (\Throwable) {
+            } catch (IdentityRefused $error) { throw new IdentityRefused($error->reason); } catch (\Throwable) {
                 // The native transaction callback captures plaintext: never retain its exception trace.
                 throw new \DomainException('Registrar account configuration could not be saved.');
             }
             $phase = 'verification_finished';
             return $saved;
         } finally { $review?->finish($phase); }
+    }
+
+    /** Single-use staff review, authenticated OTE key, and a fresh local binding; no identity fallback. */
+    public function enrollSandbox(int $serverId, Environment $environment, #[\SensitiveParameter] string $label,
+        #[\SensitiveParameter] array $credentials, StaffSettingsReview $review): AccountBinding
+    {
+        if(DB::transactionLevel()!==0||$review->action!=='enroll_sandbox'||$review->serverId!==$serverId){throw new \DomainException('Sandbox review mismatch.');}
+        $review->local(fn()=>null,'sandbox_enrollment_requested');$phase='sandbox_enrollment_refused';
+        try {
+            NameSiloSandbox::requireTest($environment);
+            $facts=NameSiloSandbox::facts($serverId,$label,$credentials);
+            $this->freshSandbox($serverId);$this->uniqueSandboxKey($facts);
+            NameSiloSandbox::checkKey($credentials);
+            try {
+                $saved=DB::transaction(function()use($serverId,$environment,$credentials,$facts,$review):AccountBinding {
+                    $review->lockActor();$review->lockAccounts();$review->check(true);
+                    NameSiloSandbox::requireTest($environment);$this->freshSandbox($serverId,true);$this->uniqueSandboxKey($facts,true);
+                    $identity=NameSiloSandbox::identity($facts);$binding=new AccountBinding('namesilo',$serverId,$environment,$identity);
+                    Account::withVerifiedBindingWrite(static fn()=>Account::create(['server_id'=>$serverId,'registrar_key'=>'namesilo',
+                        'environment'=>$environment->value,'stable_identity'=>$identity,'processing_enabled'=>false]));
+                    $this->saveSecret($serverId,NameSiloSandbox::KEY,json_encode($facts,JSON_THROW_ON_ERROR));
+                    $this->saveSecret($serverId,self::CREDENTIALS,json_encode($credentials,JSON_THROW_ON_ERROR));
+                    $this->saveSecret($serverId,self::VERIFIED,$this->digest($binding,$credentials));
+                    $review->record('sandbox_enrollment_saved');return $binding;
+                });
+            }catch(\Throwable){throw new \DomainException('Sandbox enrollment could not be saved.');}
+            $phase='sandbox_enrollment_finished';return $saved;
+        }finally{$review->finish($phase);}
+    }
+
+    private function freshSandbox(int $serverId,bool $lock=false): void
+    {
+        $server=$this->server($serverId,$lock);
+        // Inspect extension-owned retained state, not native application tables or framework internals.
+        $prefix=DB::connection()->getTablePrefix();
+        foreach(Schema::getTableListing(null,false) as $listed){
+            if($prefix!==''&&!str_starts_with($listed,$prefix)){continue;}
+            $table=$prefix===''?$listed:substr($listed,strlen($prefix));
+            if(!str_starts_with($table,'domains_')||in_array($table,[StaffSettingsReview::KEYS,AuditArchives::TABLE],true)
+                ||!Schema::hasColumn($table,'server_id')){continue;}
+            $q=DB::table($table)->where('server_id',$serverId);if($lock){$q->lockForUpdate();}
+            if($q->exists()){throw new \DomainException('Sandbox enrollment requires a fresh server.');}
+        }
+        $q=$server->settings()->whereRaw("`key` LIKE ? ESCAPE '!'",['domains!_%'])->whereNotIn('key',[StaffSettingsReview::KEY,'domains_setup_note']);
+        if($lock){$q->lockForUpdate();}if($q->exists()){throw new \DomainException('Sandbox enrollment requires a fresh server.');}
+    }
+
+    private function uniqueSandboxKey(#[\SensitiveParameter] array $candidate,bool $lock=false): void
+    {
+        $q=Account::where('registrar_key','namesilo')->orderBy('server_id');if($lock){$q->lockForUpdate();}
+        foreach($q->get() as $account){
+            $enrolled=NameSiloSandbox::enrolled($account);
+            try {
+                $sq=Server::whereKey($account->server_id);if($lock){$sq->lockForUpdate();}$server=$sq->first();
+                $marked=$server?->settings()->where('key',NameSiloSandbox::KEY)->exists()??false;
+            }catch(\Throwable){throw new \DomainException('Existing sandbox enrollment unavailable.');}
+            // The encrypted facts row is a durable enrollment marker even when the account identity
+            // itself can no longer be decrypted. Never treat an unreadable enrollment as absent.
+            if(!$enrolled&&!$marked){continue;}
+            try {
+                if(!$server){throw new \DomainException;}
+                $facts=json_decode($this->secret((int)$account->server_id,NameSiloSandbox::KEY,$server,!$lock),true,8,JSON_THROW_ON_ERROR);
+                $credentials=json_decode($this->secret((int)$account->server_id,self::CREDENTIALS,$server,!$lock),true,8,JSON_THROW_ON_ERROR);
+                NameSiloSandbox::validate($account,$facts,$credentials);
+            }catch(\Throwable){throw new \DomainException('Existing sandbox enrollment unavailable.');}
+            if(hash_equals($facts['key_fingerprint'],$candidate['key_fingerprint'])){throw new \DomainException('Sandbox key already enrolled.');}
+        }
     }
 
     public function confirmLiveSite(int $serverId, string $explicitSite): void
@@ -72,21 +141,90 @@ final class AccountBindings
         });
     }
 
-    public function setProcessing(int $serverId, bool $enabled): void
+    public function setProcessing(int $serverId, bool $enabled, ?\Closure $acceptance=null): void
     {
-        DB::transaction(function () use ($serverId, $enabled): void {
-            $this->server($serverId, true);
+        if($enabled&&!$acceptance){throw new \DomainException('Installed activation requires staff review.');}
+        DB::transaction(function () use ($serverId, $enabled,$acceptance): void {
+            $server=$this->server($serverId, true);
             $account = Account::where('server_id', $serverId)->lockForUpdate()->firstOrFail();
-            if ($enabled) { $this->configuration($account, true); }
+            if ($enabled) { $acceptance?->__invoke($server,$account);$this->configuration($account, true,$server); }
             $account->processing_enabled = $enabled; Account::withVerifiedBindingWrite(static fn () => $account->save());
         });
     }
 
-    public function reader(int $serverId): RegistrarDriver
+    public function reader(int $serverId, bool $balanceOnly = false): RegistrarDriver
     {
         $this->server($serverId);
         $account = Account::where('server_id', $serverId)->firstOrFail();
-        return $this->registry->reader($this->binding($account), $this->configuration($account, true));
+        return $this->registry->reader($this->binding($account), $this->configuration($account, true), $balanceOnly);
+    }
+
+    /** Bound real reads for one targeted, paid TEST acquisition preflight. */
+    public function registrationPreflightReader(AccountBinding $expected): RegistrarDriver
+    {
+        if(DB::transactionLevel()!==0||!(EnomTestRegistration::enabled($expected)||EnomTestTransfer::enabled($expected))){
+            throw new \DomainException('TEST registration preflight is unavailable.');
+        }
+        $this->server($expected->serverId);$account=Account::where('server_id',$expected->serverId)->sole();
+        $expected->requireMatch($this->binding($account));
+        return $this->registry->registrationPreflightReader($expected,$this->configuration($account,true));
+    }
+
+    /** Pure opt-in factory. Plaintext is loaded only inside the private protocol exchange. */
+    public function enomRuntimeFactory(AccountBinding $expected, \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,
+        WriteFeatures $features, WriteAcceptance $accepted, RenewalAcceptance $renewalAccepted,
+        TransferPrecheck $precheck, bool $managementAccepted=false, bool $testManagement=false): \Closure
+    {
+        return \Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::make($expected,$this,$clock,$features,$accepted,
+            $renewalAccepted,$precheck,function(bool $write)use($expected):array {
+                OperationClaims::outside();$this->server($expected->serverId);
+                $account=Account::where('server_id',$expected->serverId)->sole();
+                $expected->requireMatch($this->binding($account));
+                if ($write&&!$account->processing_enabled) { throw new RuntimeIneligible(RuntimeReason::ProcessingOff); }
+                return $this->configuration($account,true);
+            },$managementAccepted,$testManagement);
+    }
+
+    /** Local credential/site validation only; never resolves a provider reader or sends a request. */
+    public function configurationAvailable(int $serverId): bool
+    { return $this->configurationStatus($serverId) === 'matched'; }
+
+    public function hasRegistrar(string $registrar): bool
+    {return in_array($registrar,$this->registry->keys(),true);}
+
+    /** Safe local reason codes for staff recovery; no credential or provider detail leaves this check. */
+    public function configurationStatus(int $serverId): string
+    {
+        try {
+            $server = Server::find($serverId);
+            if (!$server || $server->extension !== 'Domains') { return 'server_unavailable'; }
+            if (!$server->enabled) { return 'server_disabled'; }
+            $account = Account::where('server_id', $serverId)->first();
+            if (!$account) { return 'not_configured'; }
+            $binding = $this->binding($account);
+            if ($binding->environment === Environment::Live) {
+                try { $site = self::site(); } catch (\Throwable) { return 'site_invalid'; }
+                if ($account->live_site === null) { return 'site_unbound'; }
+                if ($account->live_site !== $site) { return 'site_mismatch'; }
+            }
+            $this->configuration($account, true);
+            return 'matched';
+        } catch (\Throwable) { return 'configuration_unavailable'; }
+    }
+
+    /** Named adoption factory: accepted credentials and exact site guard, independent of spending. */
+    public function adoptionReader(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $expected,
+        \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,
+        \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport $wire): \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader
+    {
+        if (DB::transactionLevel() !== 0 || $expected->registrarKey !== 'enom') { throw new \DomainException('Adoption read unavailable.'); }
+        $this->registry->requireDomainReads($expected->registrarKey);
+        $this->server($expected->serverId);
+        $account = Account::where('server_id', $expected->serverId)->sole();
+        $expected->requireMatch($this->binding($account));
+        $credentials = $this->configuration($account, true);
+        return new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader($expected,
+            $credentials['uid'], $credentials['token'], $wire, $clock, Runtime::limiter());
     }
 
     /** Guard for later engine claim/dispatch; never grants admission by itself. */
@@ -96,7 +234,7 @@ final class AccountBindings
         $account = Account::where('server_id', $expected->serverId)->firstOrFail();
         $expected->requireMatch($this->binding($account));
         $this->configuration($account, true);
-        if (!$account->processing_enabled) { throw new \DomainException('Registrar processing is disabled.'); }
+        if (!$account->processing_enabled) { throw new RuntimeIneligible(RuntimeReason::ProcessingOff); }
     }
 
     /** Caller holds these server/account rows in its checkout/claim transaction; never re-query a snapshot. */
@@ -108,7 +246,7 @@ final class AccountBindings
         }
         $this->binding($account);
         $this->configuration($account, true, $server, $advisory);
-        if (!$account->processing_enabled) { throw new \DomainException('Registrar processing is disabled.'); }
+        if (!$account->processing_enabled) { throw new RuntimeIneligible(RuntimeReason::ProcessingOff); }
     }
 
     /** Local sync commit recheck against current locked credentials, independent of spending pause. */
@@ -146,6 +284,12 @@ final class AccountBindings
             $credentials = $this->registry->credentials($binding->registrarKey, $credentials);
             if (!hash_equals($this->secret((int) $account->server_id, self::VERIFIED, $lockedServer, $advisory), $this->digest($binding, $credentials))) {
                 throw new \DomainException('Registrar credentials changed without verified rotation.');
+            }
+            if(NameSiloSandbox::enrolled($account)){
+                $facts=json_decode($this->secret((int)$account->server_id,NameSiloSandbox::KEY,$lockedServer,$advisory),true,8,JSON_THROW_ON_ERROR);
+                NameSiloSandbox::validate($account,$facts,$credentials);
+            }elseif($account->registrar_key==='namesilo'&&($lockedServer??$this->server((int)$account->server_id))->settings()->where('key',NameSiloSandbox::KEY)->exists()){
+                throw new \DomainException('Sandbox enrollment cannot be rebound.');
             }
             return $credentials;
         } catch (\Throwable) {

@@ -9,7 +9,9 @@ final class ManagementRead
     {
         $p = []; foreach (['allowed','exists','enabled','autorenew'] as $k) { $p[$k] = Driver::flag($r->value('getwppsinfo.wpps'.$k)); }
         $expiry = Expiry::read(new ProtocolResult($r->status, null, ['expirationdate' => $r->value('getwppsinfo.wppsexpdate')]));
-        $p['expiry'] = $expiry ? substr($expiry->value, 0, 10) : null; $p['cost'] = Pricing::annual($r->value('getwppsinfo.wppsprice'));
+        $price = $r->value('getwppsinfo.wppsprice');
+        if (is_string($price) && str_starts_with($price, '$')) { $price = substr($price, 1); }
+        $p['expiry'] = $expiry ? substr($expiry->value, 0, 10) : null; $p['cost'] = Pricing::annual($price);
         return $p;
     }
     public static function nameservers(ProtocolResult $r): array
@@ -30,6 +32,9 @@ final class ManagementRead
         $rows = self::rows($raw); $out=[];
         foreach ($rows as $v) {
             if (!is_array($v)) { throw new \DomainException('Malformed records.'); }
+            // Provider targets may omit the root dot; desired input still uses the strict validator.
+            if ($kind === 'dns' && is_string($v['type'] ?? null) && in_array(strtoupper($v['type']), ['CNAME', 'MX'], true)
+                && is_string($v['address'] ?? null) && !str_ends_with($v['address'], '.')) { $v['address'] .= '.'; }
             $out[] = $kind === 'dns' ? ManagementInput::host(['name'=>$v['name']??null,'type'=>$v['type']??null,'address'=>$v['address']??null,'mx_pref'=>$v['mxpref']??10])
                 : ManagementInput::srv(['service'=>ltrim($v['hostname']??$v['name']??'', '_'),'protocol'=>strtolower(ltrim($v['protocol']??'', '_')),
                     'target'=>$v['address']??null,'priority'=>$v['priority']??null,'weight'=>$v['weight']??null,'port'=>$v['port']??null,

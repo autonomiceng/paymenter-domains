@@ -25,7 +25,17 @@ reviews:
         This is a public open-source repository. Flag anything that should not be public:
         credentials, tokens, private keys, real hostnames, IP addresses, server paths,
         database names, personal email addresses, or customer data. Examples and test data
-        must use example.com, documentation IP ranges, and placeholder values.
+        must use reserved example names (example.com, example.net, example.org, *.example,
+        *.test), documentation IP ranges, and placeholder values.
+        Exception: single-label <label>-placeholder.com names (including numbered placeholder
+        variants) are allowed where a test needs distinct .com second-level names, as enforced
+        by tests/fixture-policy-test.php. Offline tests only; no DNS or availability lookups.
+        Public-only network tests may use 8.8.8.8 where non-global addresses are refused.
+        tests/psl-transport-test.php may also use exactly 2606:4700:4700::1111 for its offline
+        IPv6 pin test, as enforced by tests/fixture-policy-test.php. Unsafe DNS answers in the
+        two PSL fixtures are deliberate refusal cases that must make zero network exchanges. Tests
+        may use production constants the code matches (the IANA bootstrap URL, Enom default nameservers and
+        registrar API endpoints). Glue fixtures use public addresses because glue refuses documentation ranges.
     - path: "NameSilo/**"
       instructions: |
         Paymenter domain registrar extension (Laravel/PHP) for the NameSilo registrar API. Check

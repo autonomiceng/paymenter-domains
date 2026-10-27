@@ -2,6 +2,8 @@
 """Opt-in OTE contract harness; runtime preparation is offline, never downloads."""
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 import argparse
+import contextlib
+import io
 import datetime
 import json
 import os
@@ -46,6 +48,14 @@ def outcome(receipt, code, require_complete):
 
 
 def verify_wrapper_guards(output):
+    with contextlib.redirect_stderr(io.StringIO()) as diagnostic:
+        try:
+            parse_arguments(['--write', '--renewal-context', 'interactive', '--max-requests', '60'])
+        except SystemExit as error:
+            assert error.code == 2
+        else:
+            raise AssertionError('Interactive renewal must require continuation')
+    assert '--renewal-context interactive requires --renewal-only' in diagnostic.getvalue()
     directory = output/'wrapper-guards'
     directory.mkdir(mode=0o700)
     receipt = directory/'receipt.json'
@@ -60,31 +70,45 @@ def verify_wrapper_guards(output):
     assert outcome(receipt, 1, True)['exit'] == 3
 
 
-def main():
+def parse_arguments(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     flags = parser.add_mutually_exclusive_group(required=True)
     flags.add_argument('--read', action='store_true')
     flags.add_argument('--write', action='store_true')
     flags.add_argument('--profile-read', action='store_true')
     flags.add_argument('--reconcile', action='store_true')
+    flags.add_argument('--renewal-only', action='store_true')
     parser.add_argument('--attempt-receipt', type=Path)
+    parser.add_argument('--registration-context', choices=['background', 'interactive'], default='background')
+    parser.add_argument('--renewal-context', choices=['background', 'interactive'], default='background')
     flags.add_argument('--self-test', action='store_true')
     parser.add_argument('--max-requests', type=int, choices=range(1, 61), default=None, metavar='1..60')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.max_requests is None and not args.self_test:
         parser.error('--max-requests is required for live phases')
     if args.max_requests is None:
         args.max_requests = 60
     if args.reconcile and (args.attempt_receipt is None or not 2 <= args.max_requests <= 15):
         parser.error('--reconcile requires --attempt-receipt and --max-requests 2..15')
-    if not args.reconcile and args.attempt_receipt is not None:
-        parser.error('--attempt-receipt requires --reconcile')
+    if not (args.reconcile or args.renewal_only) and args.attempt_receipt is not None:
+        parser.error('--attempt-receipt requires --reconcile or --renewal-only')
+    if args.registration_context != 'background' and not args.write:
+        parser.error('--registration-context interactive requires --write and separate authority')
+    if args.renewal_context != 'background' and not args.renewal_only:
+        parser.error('--renewal-context interactive requires --renewal-only and retained continuation evidence')
+    if args.renewal_only and (args.attempt_receipt is None or args.renewal_context != 'interactive' or args.max_requests < 8):
+        parser.error('--renewal-only requires --attempt-receipt, --renewal-context interactive and at least 8 requests')
+    return args
+
+
+def main():
+    args = parse_arguments()
     os.umask(0o077)
     if not args.self_test and 18 <= datetime.datetime.now(datetime.timezone.utc).hour < 21:
-        parser.exit(2, 'OTE time window closed.\n')
+        argparse.ArgumentParser().exit(2, 'OTE time window closed.\n')
     if not args.self_test and not os.environ.get('NAMESILO_SANDBOX_API_KEY'):
-        parser.exit(2, 'NAMESILO_SANDBOX_API_KEY must be supplied in the environment.\n')
-    output = Path(tempfile.mkdtemp(prefix='domains-ote-'))
+        argparse.ArgumentParser().exit(2, 'NAMESILO_SANDBOX_API_KEY must be supplied in the environment.\n')
+    output = Path(tempfile.mkdtemp(prefix='domains-ote-')).resolve()
     runtime = fixture = snapshot = None
     source = os.environ.get('PAYMENTER_TEST_APP')
     try:
@@ -93,8 +117,9 @@ def main():
         with_native = args.write or args.profile_read or (args.self_test and bool(source))
         runtime, binary, ext = prepare(native=with_native)
         env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'PHP_INI_SCAN_DIR': '', 'PHPRC': '',
-               'OTE_OUTPUT': str(output), 'OTE_REQUEST_LIMIT': str(args.max_requests)}
-        if args.reconcile:
+               'OTE_OUTPUT': str(output), 'OTE_REQUEST_LIMIT': str(args.max_requests),
+               'OTE_REGISTRATION_CONTEXT': args.registration_context, 'OTE_RENEWAL_CONTEXT': args.renewal_context}
+        if args.reconcile or args.renewal_only:
             env['OTE_ATTEMPT_RECEIPT'] = str(args.attempt_receipt.resolve(strict=True))
         if with_native:
             if not source:
@@ -116,19 +141,41 @@ def main():
         if args.self_test:
             disabled += ',curl_exec,curl_multi_exec'
         argv += ['-d', 'disable_functions='+disabled, str(ROOT/'tests/contract/namesilo-ote.php'),
-                 '--self-test' if args.self_test else '--write' if args.write else '--profile-read' if args.profile_read else '--reconcile' if args.reconcile else '--read']
+                 '--self-test' if args.self_test else '--write' if args.write else '--profile-read' if args.profile_read else '--reconcile' if args.reconcile else '--renewal-only' if args.renewal_only else '--read']
         # Never relay child stdout/stderr: native errors can contain raw responses or credentials.
         result = subprocess.run(argv, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
         if args.self_test and with_native and result.returncode == 0:
-            for scenario, renewals in [('profile-read', 0), ('missing-premium', 0), ('premium-one', 0), ('malformed-registration', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
+            for scenario, renewals in [('failed-readbacks', 1), ('interactive-route', 1), ('profile-read', 0), ('profile-read-contact', 0), ('profile-read-duplicate', 0), ('profile-read-authority', 0), ('profile-read-claim', 0), ('profile-read-transport', 0), ('profile-read-status', 0), ('profile-read-malformed', 0), ('missing-premium', 0), ('premium-one', 0), ('malformed-registration', 0), ('unknown-registered', 1), ('unknown-absent', 0), ('renewal-transport-failure', 1), ('limited-budget', 0), ('short-budget', 0)]:
                 uncertain_output = output/scenario
                 uncertain_output.mkdir(mode=0o700)
                 uncertain_env = dict(env, OTE_OUTPUT=str(uncertain_output), OTE_SELF_TEST_SCENARIO=scenario)
+                if scenario == 'interactive-route':
+                    uncertain_env.update(OTE_REGISTRATION_CONTEXT='interactive')
+                if scenario in ('limited-budget', 'short-budget'):
+                    uncertain_env.update(OTE_REQUEST_LIMIT='28' if scenario == 'limited-budget' else '26')
                 refused = subprocess.run(argv, cwd=ROOT, env=uncertain_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900)
                 evidence = json.loads((uncertain_output/'receipt.json').read_text())
                 commands = [row['command'] for row in evidence['requests']]
-                if scenario == 'profile-read':
-                    if refused.returncode != 0 or commands != ['contactList']:
+                if scenario == 'failed-readbacks':
+                    if refused.returncode != 0 or evidence['checks'].get('nameservers_readback') is not False or evidence['checks'].get('txt_deleted') is not False:
+                        raise ValueError('Failed readback must remain unobserved')
+                    continue
+                if scenario == 'interactive-route':
+                    if refused.returncode != 0 or commands.count('registerDomain') != 1 or commands.count('renewDomain') != 1:
+                        raise ValueError('Interactive purchase diagnostic failed')
+                    for row in evidence['requests']:
+                        expected_route = 'api' if row['command'] == 'registerDomain' else 'apibatch'
+                        if row['route'] != expected_route:
+                            raise ValueError('Only the purchase exchanges may reroute')
+                    continue
+                if scenario == 'unknown-registered':
+                    if refused.returncode != 0 or evidence['reconciliation']['category'] != 'registered_in_account' or commands.count('registerDomain') != 1 or commands.count('renewDomain') != 1:
+                        raise ValueError('Same-name reconciled sequence failed')
+                    continue
+                if scenario == 'unknown-absent' and evidence['reconciliation']['category'] != 'not_registered':
+                    raise ValueError('Exact absent purchase classification failed')
+                if scenario.startswith('profile-read'):
+                    if refused.returncode != 0 or commands != ([] if scenario == 'profile-read-claim' else ['contactList']):
                         raise ValueError('Read-only contact probe guard failed')
                     continue
                 if scenario in ('missing-premium', 'premium-one'):
@@ -136,7 +183,7 @@ def main():
                         raise ValueError('Unknown/premium singleton purchase guard failed')
                     continue
                 if scenario in ('limited-budget', 'short-budget'):
-                    limit = 28 if scenario == 'limited-budget' else 26
+                    limit = int(uncertain_env['OTE_REQUEST_LIMIT'])
                     if refused.returncode != 0 or evidence['request_count'] > limit or commands.count('renewDomain') != 0:
                         raise ValueError('Constrained request budget failed')
                     continue

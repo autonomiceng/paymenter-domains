@@ -54,7 +54,7 @@ Suffixes are explicit, including compound endings; there are no default sellable
 | Frozen source | Target synthetic test (`enom-read-test.php`) |
 | --- | --- |
 | `Services/Catalogue.php`, `EnomApi::tldList/tldInfo` | Repeated/compound/malformed catalogue; bounded registration terms; paid privacy and unknown flags |
-| `EnomApi::productPrice` / provider contracts | Exact lexical zero and action/term parameters; disabled/unparseable is `no_price`; refusal/timeout is failed `unknown` |
+| `EnomApi::productPrice` / provider contracts | Exact lexical zero and action/term parameters; explicit false/0 is `no_price`; malformed/refusal/timeout is failed `unknown` |
 | `Services/RegistryFields.php::normalize/supported` | Conditional child schema; malformed/empty dependencies close; explicit empty and frozen no-Attributes/ResponseCount=0 schema |
 | `EnomApi::normalize(info)` / `DomainObservation` | Domain/SLD/TLD/owner UID/provider ID proof; another owner suppresses extra reads; per-read budget |
 | `RegistrarResult::confirmedExpiry`, provider contracts | Date-only precision; Pacific winter/DST and UTC attributes; invalid/conflicting aliases unknown; GetDomainExp |
@@ -87,8 +87,9 @@ Adapted from the same frozen revision's `Services/Catalogue.php::productCost`,
 `catalogueRate` retains selected-term annual registration rates and annual renewal/transfer,
 using source USD semantics. `quote` exposes exact term totals, advisory for acquisition:
 ordinary/premium/availability acceptance remains separate. A failed neutral quote never means
-no-price. Only the successful source `product_price_unavailable` shape supplies explicit null
-catalogue rates; unsupported decimal precision/currency fails instead. Live prices retain the source four-decimal limit; extra precision fails the read
+no-price. Only successful explicit `ProductEnabled=false/0` supplies null
+catalogue rates, whatever the precision or currency fields say; for other successful replies,
+unsupported decimal precision/currency fails instead. Live prices retain the source four-decimal limit; extra precision fails the read
 instead of withdrawing a prior price. Only database padding is trimmed when excess digits
 are zero (the neutral pricing lane owns that mapping). No floats or rounding are used.
 `Pricing::catalogue` checks binding/query/currency/future observation/expiry and divides totals
@@ -113,7 +114,9 @@ OrderCharge reads GetOrderDetail for a captured ID and requires a retained succe
 Purchase/Register or Extend/Renew execution plus one exact successful closed item. Equal header
 and item amounts prove USD using source OrderBillAmount semantics; different authorized charge
 is retained as a discrepancy. Split/unknown/pending orders and UpdateExpiredDomains remain
-unconfirmed. BillDate/expiry retain date precision and Pacific provenance. This is read evidence,
+unconfirmed. Captured-ID BillDate retains local wall-clock seconds with unknown timezone;
+a matching retained execution permits the original window widened by -12h/+14h. History
+candidates keep Pacific provenance and the strict window; expiry parsing is unchanged. This is read evidence,
 not completion, no-charge proof, unique attempt correlation, replay/refund or spending authority.
 The internal execution input is only a consistency check; slice 22 must replace it with a
 neutral persisted execution record and decide unique original-attempt charge acceptance.
@@ -131,9 +134,46 @@ contracts; 23 owns saved expected-ID/expiry, auto-renew-off, balance, funding, g
 and complimentary caps. Neither billing nor dispatch gains a cost floor. Provider acceptance,
 installed hooks and production account identity remain open.
 
-Slice25 supersedes the earlier expired-command charge exclusion: explicitly admitted one-year
+Slice 25 supersedes the earlier expired-command charge exclusion: explicitly admitted one-year
 UpdateExpiredDomains accepts its nested ReactivateDomainName acknowledgement/order ID, then
 requires the same exact singleton successful closed Renew item, original order/time binding and
 owned full-term expiry as ordinary renewal. An acknowledgement never supplies actual cost or
 expiry. Unknown mode/product/charge remains unresolved; real grace/order-vocabulary acceptance
 is still required before installed processing. Enom acceptance without an ID needs accepted history.
+
+## Live runtime composition
+
+The built-in live path reuses the TEST catalogue, admission, account locks, verified native funding,
+one-attempt writes and captured-order reconciliation. The endpoint is
+`https://reseller.enom.com/interface.asp`. Transfer remains unavailable. Independent deployment
+booleans under `domains.enom_live` enable catalogue, registration, ordinary annual renewal and
+the same supported management actions as TEST. All default off. TEST opt-ins never enable live.
+
+Each live account requires a deployment entry keyed by its lowercase UID, the exact account
+fingerprint, a canonical HTTPS site equal to the running app URL and the retained account site.
+An identity retained as TEST cannot supply live authority. Staff live catalogue, renewal and
+management acceptance remain separate from TEST, including their route and account fingerprint.
+Credential verification and acceptance do not enable processing or renewal billing.
+
+The retained `domains_enom_live_calls` table records daily UTC calls and reserved USD cost in
+integer millionths. A single conditional update checks both account limits before incrementing
+them. Registration and renewal reserve their admitted cost before the durable seal. The physical
+wire consumes that same request reservation once. Free management reserves a call with zero cost;
+paid privacy remains unavailable, as in TEST. Read calls use the same daily account counter.
+Failed, timed-out, uncertain and reserved-but-unsent requests retain usage. UTC rollover refuses
+an old reservation; it never creates a fresh send or frees an earlier reservation. Identity-only
+mode with every live action off retains its existing identity/balance read behavior.
+
+Upgrade adds only the retained counter schema. It creates no account, site binding, acceptance,
+opt-in or processing authority. Installed synthetic tests exercise funded live registration and
+renewal through the actual ZIP with fake cURL, original charge/full-term expiry completion,
+duplicate workers, separate acceptance and binding/call/spend refusals. They establish no provider
+or production acceptance. See the release settings table for deployment keys and defaults.
+
+Live renewal reserves its admitted cost before the final cost-cap and funding checks. A later
+refusal retains that reservation, even though no mutation was sent, matching the conservative
+call-counter policy.
+
+Catalogue authority can still compose read-only recovery for retained sealed attempts after every
+write opt-in is off. This applies to TEST and live. Renewal reconciliation requires the captured
+attempt, without requiring new-renewal authority. No unsent work gains permission to write.

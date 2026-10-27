@@ -81,28 +81,12 @@ $wire->check('txt_readback', $id !== null && count($found) === 1);
 if ($id !== null) {
     $raw('dnsDeleteRecord', ['domain' => $wire->domain, 'rrid' => (string) $id]);
     $raw('dnsListRecords', ['domain' => $wire->domain]);
-    $records = $wire->latest('dnsListRecords')['resource_record'] ?? [];
+    $reply = $wire->latest('dnsListRecords'); $records = $reply['resource_record'] ?? null;
     if (is_array($records) && !array_is_list($records)) { $records = [$records]; }
-    $wire->check('txt_deleted', !array_filter(is_array($records) ? $records : [], static fn ($r) => (string) ($r['record_id'] ?? '') === (string) $id));
+    $wire->check('txt_deleted', in_array($reply['code'] ?? null, [300, '300'], true) && is_array($records)
+        && !array_filter($records, static fn ($r) => (string) ($r['record_id'] ?? '') === (string) $id));
 }
 } else { $wire->check('txt_sequence', 'skipped_budget'); }
-// The cached public API reference is silent about auto_renew on renewDomain.
-// Probe exactly once, for one year, only on this process's freshly registered name.
-if ($wire->remaining() < 9) { $wire->check('renew_probe', 'skipped_budget'); return; }
-$info = $get(RegistrarRequest::domainInfo($wire->domain)); $before = $info?->value('expires');
-$expiry = \OteContract\Shapes::strictDate($before);
-if ($wire->remaining() < 8) { $wire->check('renew_probe', 'skipped_budget'); }
-elseif ($info?->value('status') === 'Active' && $info->value('auto_renew') === 'No' && $expiry !== null
-    && $expiry->getTimestamp() > time() + 172800) {
-    $renewBody = $raw('renewDomain', ['domain' => $wire->domain, 'years' => 1, 'auto_renew' => 0]);
-    $renewParsed = (new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\ResponseParser)->parse($renewBody,
-        \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::renew($wire->domain, 1, false), (string) getenv('NAMESILO_SANDBOX_API_KEY'));
-    $code = (int) ($wire->latest('renewDomain')['code'] ?? 0);
-    $info = $get(RegistrarRequest::domainInfo($wire->domain));
-    $wire->check('renew_auto_renew_request_accepted', $code === 300 && $renewParsed->outcome === \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Success);
-    $wire->check('renew_auto_renew_remained_off', $info?->value('auto_renew') === 'No');
-    $wire->check('renew_added_one_year', $info?->value('expires') === $expiry->modify('+1 year')->format('Y-m-d'));
-    if (!in_array($renewParsed->outcome, [\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Success, \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Rejected], true)) { $wire->check('purchase_unresolved', true); }
-    $correlate('renewal');
-    $wire->check('renew_parameter_effect', 'request_acceptance_does_not_prove_parameter_honored');
-} else { $wire->check('renew_probe', 'blocked_without_active_owned_autorenew_off_readback'); $wire->mismatch('renewDomain', 'probe_readback_gate'); }
+// Diagnostic purchase routing is confined to this runner, with same-invocation Unknown reconciliation.
+\OteContract\RenewalProbe::run($wire, $reader, $binding, $clock);
+if ($wire->attempted('renewDomain')) { $correlate('renewal'); }

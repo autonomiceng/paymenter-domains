@@ -1,0 +1,70 @@
+# Native runtime
+
+For the planned lifecycle replacement and accepted limits, see the [Option E native lifecycle contract](design/native-lifecycle.md).
+
+Install `Domains/` as the native `Servers/Domains` extension. Run the native extension install/upgrade lifecycle before adding registrar accounts. Installation verifies every retained schema after migration; incomplete history or shape requires restoring the original database and migration history. Rollback and uninstall retain financial records, global reservations, templates and accounts. No automatic retained-data adoption or repair exists.
+
+One boot authority registers the native financial guards, cart admission before invoice binding, authenticated routes, permissions, policies, both navigation collections, paid-invoice work and the minute scheduler. Native server-edit permission includes access to saved credentials in native encrypted settings. Native editors and routes remain unchanged; scoped model guards refuse unsafe writes. Rebuild route caches and reload open editor pages after removing the old Secure editors. Disabling a native server pauses account processing; retained server identities cannot be repurposed or deleted. Legacy Enom processing must be paused before installation; it cannot be re-enabled while this runtime is installed. Returning authority to the legacy extension requires a separately reviewed migration.
+
+Processing and optional customer reminder schedules default off. Each account page's setup actions require a current permission, one-use confirmation, reason and encrypted before/after audit. Enabling additionally requires a complete account-bound runtime composition, verified credentials, shared atomic cache/session storage and an asynchronous database/Redis queue with retry_after of at least 900 seconds. Run the worker with a timeout above 840 seconds and below retry_after; the unique tick times out at 840 seconds, operation jobs at 300 seconds. No real provider verifier, write acceptance or transport is installed by default. Provider and database concurrency acceptance remain deployment gates. Live-site confirmation currently requires the trusted AccountBindings integration; the staff activation form cannot provision live-site acceptance.
+
+`RuntimePorts::register` attaches an independently reviewed factory to one immutable account fingerprint. It supplies acquisition, reconciliation, renewal execution/writer/completion and management engine/protocol objects. Every engine retains its funding, identity, generation, current ownership and uncertainty checks. Missing or incomplete factories cannot enable processing. `registerInitialManagedRecordObservations` is the single producer attachment. Native registration attaches one bounded observation turn. Record discovery additionally requires current locked processing approval and a complete accepted account composition; ordinary domain facts continue to refresh while processing or record checks are paused. The standalone unregistered seam remains a tested no-op.
+
+Run native queue workers and `schedule:run` on one shared deployment. The minute scheduler dispatches one unique runtime job. Each minute, a read-only public suffix status check dispatches a separate unique job only when no attempt exists or the last attempt is at least seven days old, and no network fetch occurred in the last 24 hours. The job uses the existing default queue; no additional worker is required. The public-data job times out after 120 seconds; `PublicSuffixList::tick()` preserves weekly admission and the shared one-fetch-per-day limit. Account turns commit before bounded work; each minute handles at most eight accounts, with 25 operations, 25 domains and 25 TLDs per account. One observation/catalogue account turn runs per scheduler invocation to bound interruption and avoid advancing unattempted accounts. Observation, catalogue refresh, publication, renewal billing, transfer deadlines, automatic credits and reminder inspection each retain their own eligibility checks. Durable per-operation polling backs off pending/uncertain checks from five minutes to six hours; unfunded awaiting-payment or missing-code sweeps wait fifteen minutes; funded ready operations retry after one minute. Unique operation jobs bound backlog. Authority drift records a durable staff alert without adding failed jobs. Jobs carry only an operation locator and re-read authority. Unpaid acquisitions and missing transfer codes wait without being converted to permanent holds. Read-only observations and financial reconciliation continue with processing off when credentials remain readable. Physical reads, registrations/contact-profile writes, renewals and management exchanges share the same limiter. Acquisition and renewal reserve physical capacity before sealing; unsealed acquisition capacity refusals retain their original claim and retry at most five times inside the original five-minute execution window before a refundable hold. Expired or exhausted local claims require a refund rather than staff re-queue. Background wire starts stop at 48/minute, reserving 12 of the shared 60 for interactive work.
+
+The account page shows last completed turns, binding drift, saved wire usage and unresolved notification claims. Compare rotation lag with account count; inspect failed native queue jobs before retrying. Expected management read refusals leave the request unchanged and do not create failed jobs. Review uncertain requests and their read history; the 20-read safety limit requires manual investigation and has no automatic reset. An expired scheduler lock does not authorize an uncertain registrar write. Restore the original binding rather than rebind retained history. Notification check review records independent inspection; a continuing failure reopens the alert. Notification handoff review records independent staff inspection and never releases or resends the original claim. Render/check failures remain retryable before handoff; uncertain handoffs never replay automatically. Schedule audit segments rotate after 100 edits or before the encrypted text limit into encrypted native settings under the same account lock; retain previous application encryption keys until audited re-encryption.
+
+`Domains hook unavailable.` describes missing listeners in the process that logged it.
+New registrations and transfers wait when executed there; a healthy worker can pick them up.
+The warning records missing event names, console/HTTP mode, PID and a command name or matched
+route template. Arguments, query strings and route parameter values are excluded; unmatched
+paths appear as `[unmatched]`. An optional deployment identifier comes from `app.release`,
+then `RELEASE_ID` (1 to 128 letters, digits, dots, underscores, colons, plus or minus signs).
+An affected operation logs `Domains paid operation deferred: required Service listeners missing.`
+once per operation per process, including its ID and the same context. Deferral changes no
+operation or financial state. Registrar account pages and domain facts describe only their current process.
+
+Paid missing-code and actual account-credit notices work with optional schedules off. Native notification preferences and template/channel switches still apply. Queue acceptance is not delivery confirmation.
+
+Themes can use the read-only `NativePresenter` singleton:
+
+- `service($owner,$serviceId)` and `services($owner,$ids)` (maximum 250) return safe owned DTOs keyed by native service ID, requiring both native and ledger ownership.
+- `invoice($owner,$invoiceId)` returns DTOs keyed by exact retained native invoice-item bindings; unrelated or transferred lines return no DTO.
+- `checkout($owner,$cartItem)` returns canonical name, neutral registration/transfer label, term, holding-account annual renewal quote and a neutral owner/current-cart-scoped edit URL. Editing updates the existing native cart line through fresh admission rather than adding a duplicate. Missing quotes stay unavailable.
+
+Advisory owner forms inspect at most 100 domain operations and 100 related payment rows; longer histories require staff review and expose no action. Mutation authority still checks complete locked history.
+
+`OwnedDomain::renewalDue` is the pending issued renewal invoice’s due date; `expiry` remains the registrar-confirmed domain expiry. The `domains::checkout-line` and `domains::invoice-line` partials consume these projections. No-action held registrations display “Processing.” Customer actions can still require “Needs attention.”
+
+Initial DNS/SRV inventories unlock editing only after a complete current-identity check. Ordinary active checks run daily after acquisition follow-up; failed record discovery is held until an audited staff resume. The staff domain view shows the current hold reason. Customer DNS/SRV lists use numeric name order, with SRV source indexes restored in that same order; canonical evidence digests are unchanged.
+
+The native producer seam is owned at registration and logs both domain facts and record discovery as `initial_managed_records`; deployment code registers account port factories, not another producer. Port factories must be pure and perform no I/O: acceptance is checked within both locked observation windows. Customer recovery notes and staff alerts also recognize stopped current-generation/current-phase scheduled jobs; stale jobs do not hold the current domain. Staff alerts link to the bound registrar request and name its existing Resume scheduled reads action, with administrator guidance when no current request exists.
+
+Each registrar account page (Domains → Registrars) shows its go-live facts in the Setup checklist
+and System checks, from saved local facts only, without constructing provider readers or
+executors. Registration, transfer, renewal and management acceptance remain independent.
+The old Activation status address redirects to Registrars.
+Runtime diagnostics use bounded reasons and numeric locators. Expected ineligibility uses an
+atomic per-producer/reason UTC-day slot on supported shared cache stores; local or unavailable
+stores keep these notices quiet. Unexpected failures remain warnings. Candidate filters exclude
+offline or invoice-less display work from billing, transfer payment and timeout guards; retained
+reconciliation and refund selection remain independent, including recovery after invoice loss.
+
+## Go-live reviews
+
+These deployment and request checks have no page; review them before turning processing on.
+
+- Installation and retained authority: verify native installation and conversion history; pause legacy registrar processing. Restore retained ledgers rather than rebinding them.
+- Shared worker: use atomic Redis/database/memcached cache and sessions, an asynchronous Redis/database queue with retry_after ≥ 900 seconds, worker timeout > 840 and < retry_after, and a running scheduler. Review failed jobs before retrying.
+- Write acceptance and transport: verify USD balance, batch route, exact terms and a 25 to 86400 second account interval. Require cURL/TLS/CA support, TLS key logging disabled, fixed HTTPS origins and bounded deadlines and bodies.
+- Runtime composition: supply account-bound acquisition, reconciliation, renewal execution/writer/completion and management engine/protocol. Registered factories alone do not prove provider acceptance.
+- Contacts and setup: require approved contact creation with exact non-default profile readback, fresh proof shared by preflight and protocol, valid frozen contacts, registry fields and nameservers. Transfer contact recovery needs explicit review; stopped unsent input cannot be reopened implicitly.
+- Checkout and funding: require a fresh eligibility token, current seller and native mapping, one name in USD with no options, and the exact fully paid native invoice line. Display fixtures and offline provenance cannot fund work.
+- Transfer policy and codes: verify accepted transfer endings, one-year terms, provider transferability and RDAP age/lock policy. The owner submits the code via POST. After 30 days, only definitely-unsent missing-code work can time out and credit once.
+- Prior outcomes and history: validate current claim, seal, funding and generation. Reconcile possibly sent work using accepted action-specific history, unique original charge and owned expiry; at most five covered polls. Never replay an unresolved purchase.
+- Renewal and management acceptance: independently accept renewal USD/route/interval and any grace capability. Require owned expiry, known cost and registrar balance. Management needs accepted engine/protocol, active authority and complete readback; DNS tools require their own setting.
+- Reminder delivery: approve the optional reminder schedule and verify native channels, templates and preferences. Required paid-code and account-credit notices remain active; uncertain handoffs need staff inspection.
+- Public checks and watch delivery: accept discovery, enabled profiles and native product mappings, a valid public suffix baseline, and a shared asynchronous public-check queue with retry_after ≥ 180. Config flags alone cannot enable these paths.
+- Adoption and transfer watch: `domains.adoption.enabled` and `domains.watch_transfer.enabled` are separate default-off features. Verify native prerequisites, ownership, provenance and reviewed adoption proof before enabling either.
+- Enom identity: set `domains.enom_identity.environment` to `test` or `live` before extension boot to allow identity and balance reads. This does not turn on prices or processing.
+- NameSilo: only test (OTE) accounts can be connected, on a fresh Domains server, when OTE enrollment is on for the site. NameSilo does not confirm account ownership.

@@ -46,13 +46,14 @@ final class PriceCatalogue
 
     /** Shared batch import; no native product locks/writes here. */
     public function import(\Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry $entry,
-        \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, \Closure $recheck, \DateTimeImmutable $now): void
+        \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, \Closure $recheck, \DateTimeImmutable $now, ?StaffSettingsReview $review = null): void
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Import owns its locks.'); }
         $accepted->binding->requireMatch($entry->binding);
         $tld = new Tld(['server_id' => $entry->binding->serverId, 'registrar_key' => $entry->binding->registrarKey,
             'account_fingerprint' => $entry->binding->fingerprint, 'tld' => $entry->tld]);
-        $this->locked($tld, function (Tld $locked, Server $server, Account $account) use ($entry, $accepted, $recheck, $now): void {
+        $this->locked($tld, function (Tld $locked, Server $server, Account $account) use ($entry, $accepted, $recheck, $now, $review): void {
+            $prior = $review && !$locked->wasRecentlyCreated ? [$locked->register_enabled, $locked->transfer_enabled, $locked->renew_enabled] : null;
             $recheck($server, $account); $row = $accepted->endings[$entry->tld];
             $rates = array_filter($entry->rates, static fn (CatalogueRate $rate): bool => $rate->action !== 'register'
                 || ($rate->term >= $locked->min_years && $rate->term <= $locked->max_years));
@@ -75,10 +76,16 @@ final class PriceCatalogue
                 catch (\DomainException) { return false; }
             };
             $annual = $renewal && $eligible('renew', 1);
-            $locked->register_enabled = $registry && $annual && array_any($terms, static fn (int $term): bool => $eligible('register', $term));
+            $locked->register_enabled = false;
+            if ($registry && $annual) {
+                foreach ($terms as $term) {
+                    if ($eligible('register', $term)) { $locked->register_enabled = true; break; }
+                }
+            }
             $locked->transfer_enabled = $registry && $annual && in_array(1, $row['transfer'], true) && $eligible('transfer', 1);
+            if ($prior !== null) { $locked->register_enabled = $locked->register_enabled && $prior[0]; $locked->transfer_enabled = $locked->transfer_enabled && $prior[1]; $locked->renew_enabled = $locked->renew_enabled && $prior[2]; }
             $locked->save();
-        });
+        }, $review);
     }
 
     public function republish(Tld $tld): void
@@ -181,19 +188,30 @@ final class PriceCatalogue
             'action' => $action, 'term' => $term, 'currency' => $currency]);
         if ($lock) { $query->lockForUpdate(); }
         $price = $query->first();
+        return self::currentEvidence($price, $hash, $now);
+    }
+
+    /** Pure saved-price validation for render snapshots; callers qualify the row's binding and action. */
+    public static function currentEvidence(?Price $price, ?string $ruleHash, \DateTimeImmutable $now): PriceSnapshot
+    {
         if (!$price || $price->wholesale === null || $price->retail === null || $price->hold_reason !== null
-            || $price->unit !== 'term_total' || !$price->fresh_until || $price->observed_at > $now || $price->fresh_until <= $now) {
+            || $price->unit !== 'term_total' || !$price->fresh_until || $price->observed_at > $now) {
             throw new \DomainException('No current eligible price.');
         }
-        if (($price->eligibility['rule_hash'] ?? null) !== $hash) { throw new \DomainException('Price rule changed; republication required.'); }
-        return new PriceSnapshot($price->id, $price->revision, $serverId, $price->registrar_key, $fingerprint, $tld, $action, $term,
-            $currency, self::cost($price->wholesale), self::retail($price->retail), $price->source,
+        if ($ruleHash === null || ($price->eligibility['rule_hash'] ?? null) !== $ruleHash) { throw new \DomainException('Price rule changed; republication required.'); }
+        if ($price->fresh_until <= $now) { throw new ExpiredCostEvidence($price->server_id, $price->tld, $price->action, $price->term, $price->fresh_until->toDateTimeImmutable()); }
+        return new PriceSnapshot($price->id, $price->revision, $price->server_id, $price->registrar_key, $price->account_fingerprint, $price->tld, $price->action, $price->term,
+            $price->currency, self::cost($price->wholesale), self::retail($price->retail), $price->source,
             $price->observed_at->toDateTimeImmutable(), $price->fresh_until->toDateTimeImmutable(), $price->eligibility['staff_alert'] ?? null);
     }
 
-    private function locked(Tld $tld, \Closure $write): void
+    private function locked(Tld $tld, \Closure $write, ?StaffSettingsReview $review = null): void
     {
-        DB::transaction(function () use ($tld, $write): void {
+        DB::transaction(function () use ($tld, $write, $review): void {
+            if ($review) {
+                if ($review->action !== 'import' || $review->serverId !== (int)$tld->server_id || $review->tldId !== null) { throw new \DomainException('Import review mismatch.'); }
+                $review->lockActor(); $review->lockAccounts(); $review->check(true);
+            }
             $server = Server::whereKey($tld->server_id)->lockForUpdate()->firstOrFail();
             $account = Account::where('server_id', $server->id)->lockForUpdate()->firstOrFail();
             if (!$server->enabled || $server->extension !== 'Domains' || $account->account_fingerprint !== $tld->account_fingerprint) {
@@ -206,6 +224,7 @@ final class PriceCatalogue
                 throw new \DomainException('Catalogue account mismatch.');
             }
             $write($locked, $server, $account);
+            $review?->record('catalogue_imported');
         });
     }
 

@@ -1,4 +1,4 @@
-@component('layouts.app', ['title' => $guest ? 'Find a domain' : 'Register a domain', 'sidebar' => !$guest, 'spa' => false, 'description' => 'Search for a domain name and see prices for every ending we offer.'])
+@component('layouts.app', ['title' => $guest ? 'Find a domain' : 'Register a domain', 'sidebar' => !$guest, 'spa' => false, 'description' => 'Search for a domain name and see prices for every TLD we sell.'])
 @php
     $tldNames = array_column($endings, 'tld');
     $nameValue = $sld ?? (string) old('domain', $name);
@@ -13,10 +13,9 @@
         <div class="domains-head">
             <div>
                 <h1 class="domains-title">{{ $guest ? 'Find a domain' : 'Register a domain' }}</h1>
-                <p class="domains-lede">Type the name you want. We’ll check it across every ending we offer.</p>
+                <p class="domains-lede">Type the name you want. We check it across every TLD we sell.</p>
             </div>
-            @if (\Illuminate\Support\Facades\Route::has('domains.domains.transfer'))<a class="domains-btn domains-btn--ghost" href="{{ route('domains.domains.transfer') }}">Transfer a domain instead</a>@else
-                <p class="domains-small domains-muted">Already own a domain? Search for it to see if you can transfer it to us.</p>
+            @if (\Illuminate\Support\Facades\Route::has('domains.domains.transfer') && collect($endings)->contains(fn($row) => $row['transfer'] !== null))<a class="domains-btn domains-btn--ghost" href="{{ route('domains.domains.transfer') }}">Transfer a domain instead</a>
             @endif
         </div>
     </div>
@@ -29,7 +28,7 @@
                 <label for="domains-name" class="domains-sr">Domain name</label>
                 <input id="domains-name" name="name" type="text" value="{{ $nameValue }}" placeholder="yourbusiness" autocomplete="off" autocapitalize="none"
                     spellcheck="false" maxlength="253" required @if ($error || $errors->has('domain')) aria-invalid="true" aria-describedby="domains-name-error" @endif @if (!$results) autofocus @endif>
-                <label for="domains-tld" class="domains-sr">Ending</label>
+                <label for="domains-tld" class="domains-sr">TLD</label>
                 <select id="domains-tld" name="tld" class="domains-input">
                     @foreach ($endings as $ending)
                         <option value="{{ $ending['tld'] }}" @selected($ending['tld'] === $preferred)>.{{ $ending['tld'] }}</option>
@@ -38,7 +37,7 @@
                 <button type="submit" class="domains-btn domains-btn--primary"><x-ri-search-line class="domains-i" aria-hidden="true" />Search</button>
             </div>
             @if ($error || $errors->has('domain'))<p id="domains-name-error" class="domains-error" role="alert">{{ $error ?? $errors->first('domain') }}</p>@endif
-            <p class="domains-endings" aria-label="Endings and first-year prices">
+            <p class="domains-endings" aria-label="First-year prices">
                 @foreach ($endings as $ending)
                     <span><b>.{{ $ending['tld'] }}</b>@if ($ending['price']) {{ $ending['price'] }}/yr @endif</span>
                 @endforeach

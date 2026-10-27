@@ -16,13 +16,19 @@ final class Catalogue
     {
         if ($reply->status !== 'success' || !is_array($list = $reply->value('tldlist'))) { return null; }
         $names = [];
-        $walk = function (array $node) use (&$walk, &$names): void {
+        // Enom lists IDN (xn--) and numeric endings this catalogue cannot sell; skip them, keep the rest.
+        // Anything that is not even hostname-shaped is a malformed list and still voids the whole read.
+        $add = static function (string $name) use (&$names): void {
+            try { self::tld($name = strtolower($name)); $names[$name] = true; }
+            catch (\InvalidArgumentException $e) { if (!preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/D', $name)) { throw $e; } }
+        };
+        $walk = function (array $node) use (&$walk, &$add): void {
             foreach ($node as $key => $value) {
                 if ($key === 'tld' && is_string($value) && $value !== '') {
-                    self::tld(strtolower($value)); $names[strtolower($value)] = true;
+                    $add($value);
                 } elseif ($key === 'tld' && is_array($value) && array_is_list($value)) {
                     foreach ($value as $item) {
-                        if (is_string($item)) { self::tld(strtolower($item)); $names[strtolower($item)] = true; }
+                        if (is_string($item)) { $add($item); }
                         elseif (is_array($item)) { $walk($item); }
                         else { throw new \InvalidArgumentException('Invalid ending.'); }
                     }

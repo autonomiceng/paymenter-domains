@@ -13,7 +13,7 @@ final class ObservationRecords
     }
     public static function save(Domain $d, array $families, \DateTimeImmutable $now): void
     {
-        $p=$d->observation??[]; $clean=[];
+        $p=$d->observation??[]; unset($p['record_failure']); $clean=[];
         foreach (['dns','srv','ds'] as $kind) {
             $f=$families[$kind]??[]; $rows=$f['records']??null; $clean[$kind]=['state'=>'unknown'];
             if (($f['state']??null)!=='complete'||!is_array($rows)||!array_is_list($rows)||count($rows)>50) { continue; }
@@ -32,12 +32,24 @@ final class ObservationRecords
         $p['records']=['identity'=>self::identity($d),'at'=>$now->format(DATE_ATOM),'sequence'=>$p['management_sequence']??0,'families'=>$clean];
         $d->update(['observation'=>$p]);
     }
+    /** Failure is separate from saved inventory and survives staff resume until new record evidence. */
+    public static function failPrimary(Domain $d, \DateTimeImmutable $now, string $code='read_failed'): void
+    {
+        $p=$d->observation??[];
+        $p['record_failure']=['identity'=>self::identity($d),'at'=>$now->format(DATE_ATOM),'code'=>$code];
+        if (!self::held($d)) { $p['record_hold']=[...$p['record_failure'],'reason'=>$code]; }
+        $d->update(['observation'=>$p]);
+    }
+    /** Staff recovery is needed for either a record hold or stopped current scheduled reads. */
+    public static function stopped(Domain $d): bool
+    { return self::held($d) || ObservationWork::stopped($d); }
     public static function held(Domain $d): bool
     { return ($d->observation['record_hold']['identity']??null)===self::identity($d); }
-    public static function hold(Domain $d, string $reason, \DateTimeImmutable $now): void
+    public static function hold(Domain $d, string $reason, \DateTimeImmutable $now, ?string $code=null): void
     {
         $p=$d->observation??[];
         $p['record_hold']=['identity'=>self::identity($d),'reason'=>$reason,'at'=>$now->format(DATE_ATOM)];
+        if ($code!==null) { $p['record_hold']['code']=$code; }
         $d->update(['observation'=>$p]);
     }
     public static function current(Domain $d): ?array

@@ -35,10 +35,20 @@ Server::create(['id' => 1, 'name' => 'Synthetic', 'type' => 'server', 'extension
 try { $bindings->configure(1, 'namesilo', Environment::Test, ['key' => 'unverified-label-or-key']); throw new LogicException('Unknown identity accepted'); }
 catch (RuntimeException) {}
 same(0, Account::count(), 'Unverified identity cannot configure a real reader');
+$expectedBinding = new AccountBinding('namesilo', 1, Environment::Test, 'synthetic-stable-id');
 $binding = $bindings->configure(1, 'namesilo', Environment::Test, ['key' => 'synthetic-key-a']);
+$account = Account::where('server_id', 1)->firstOrFail();
+same(false, $account->processing_enabled, 'Initial NameSilo configuration leaves processing off');
+same('synthetic-stable-id', $account->stable_identity, 'Configured account stores verified NameSilo identity');
+same($expectedBinding->fingerprint, $account->account_fingerprint, 'Configured account fingerprint derives from verified NameSilo identity');
+same($expectedBinding->fingerprint, $binding->fingerprint, 'Configured binding fingerprint derives from verified NameSilo identity');
 $driver = $bindings->reader(1);
 $rotated = $bindings->configure(1, 'namesilo', Environment::Test, ['key' => 'synthetic-key-b']);
-$binding->requireMatch($rotated); same(false, Account::firstOrFail()->processing_enabled, 'Rotation keeps stable account and processing off');
+$account = $account->fresh();
+same('synthetic-stable-id', $account->stable_identity, 'Rotation retains verified NameSilo identity');
+same($expectedBinding->fingerprint, $account->account_fingerprint, 'Rotation retains verified NameSilo account fingerprint');
+same($expectedBinding->fingerprint, $rotated->fingerprint, 'Rotation retains verified NameSilo binding fingerprint');
+$binding->requireMatch($rotated); same(false, $account->processing_enabled, 'Rotation keeps stable account and processing off');
 Tld::create(['server_id' => 1, 'registrar_key' => 'namesilo', 'account_fingerprint' => $binding->fingerprint, 'tld' => 'com', 'enabled' => false, 'renew_enabled' => true]);
 $catalogue = new PriceCatalogue(new PricingRules);
 $query = new Query('example.com', Action::Register, 1);

@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{Money, RenewalCode, RenewalRequest};
+use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, DateEvidence, ExpiryPrecision, Money, RenewalCode, RenewalRequest};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Owns the renewal-specific ordered prefix. No general callback or write-authority scope is exposed. */
 final readonly class RenewalAuthority
@@ -23,10 +23,20 @@ final readonly class RenewalAuthority
             return DB::transaction(function () use ($seed, $request, $stamp, $accepted, $until): array {
                 $l = HoldingLocks::take($seed); $domain = $l['domain'];
                 $binding = CatalogueAcceptances::binding($l['account']);
-                try { $this->bindings->requireProcessingLocked($l['server'], $l['account']); $accepted?->requireCurrent($binding); }
+                try {
+                    $this->bindings->requireProcessingLocked($l['server'], $l['account']); $accepted?->requireCurrent($binding);
+                    // HoldingLocks already locked all server settings before catalogue/domain rows.
+                    $catalogue = CatalogueAcceptances::load($binding, true);
+                    $parts = CanonicalName::parse($domain->domain, array_keys($catalogue->endings));
+                    $row = $catalogue->endings[$parts['tld']];
+                    if (($row['renewal_safe'] ?? null) !== true
+                        || !in_array(1, $row['renew'] ?? [], true)) { throw new RenewalRefused(RenewalCode::Acceptance); }
+                }
                 catch (\Throwable) { throw new RenewalRefused(RenewalCode::Acceptance); }
+                // A named issued obligation keeps its original authority through a future-only stop.
+                $issued=$l['operations']->contains(fn($op)=>self::expected($op,$request));
                 if (!in_array($domain->status, ['active', 'expired', 'grace'], true) || $l['service']->status !== 'active'
-                    || $l['cancel']->contains('service_id', $domain->service_id)) { throw new RenewalRefused(RenewalCode::Authority); }
+                    || ($issued?RenewalStop::blocksRenewal($l):RenewalStop::stopped($l))) { throw new RenewalRefused(RenewalCode::Authority); }
                 $all = $l['operations']; $prices = $l['prices'];
                 if ($domain->authority_generation !== $request->generation || $domain->confirmed_revision !== $request->revision
                     || $domain->provider_expires_at?->format('Y-m-d') !== $request->expiry || $domain->provider_domain_id !== $request->providerId
@@ -34,13 +44,14 @@ final readonly class RenewalAuthority
                     throw new RenewalRefused(RenewalCode::Anchor);
                 }
                 if ($domain->renewal_policy['automatic_spend_paused'] ?? false) { throw new RenewalRefused(RenewalCode::Paused); }
-                $anchor = $domain->renewal_policy['billing_anchor'] ?? [];
-                $prior = $all->firstWhere('operation_key', $anchor['operation_key'] ?? null);
-                if (($anchor['expiry'] ?? null) !== $request->expiry || !$prior || !self::completed($prior, $domain, $binding)
-                    || $all->contains(fn ($op) => $op->id !== $prior->id && !self::resolved($op, $domain, $binding) && !self::expected($op, $request))) {
+                try { $anchor = HoldingAnchor::resolve($l); }
+                catch (RenewalRefused $error) { throw $error; }
+                catch (\Throwable) { throw new RenewalRefused(RenewalCode::Prior); }
+                $prior = $anchor->operation;
+                if ($all->contains(fn ($op) => $op->id !== $prior?->id && !HoldingAnchor::resolved($op, $l) && !self::expected($op, $request))) {
                     throw new RenewalRefused(RenewalCode::Prior);
                 }
-                self::requireCostAnchor($prior);
+                if ($prior) { self::requireCostAnchor($prior); }
                 $current = $l['stamp'];
                 if (($stamp !== null && $stamp !== $current) || ($until !== null && $until <= $this->clock->now())) {
                     throw new RenewalRefused(RenewalCode::Changed);
@@ -48,12 +59,12 @@ final readonly class RenewalAuthority
                 $annual = $prices->where('term', 1)->where('currency', 'USD')->where('account_fingerprint', $binding->fingerprint)->first();
                 $retail = $annual?->retail !== null ? PricingRule::total(PriceCatalogue::retail($annual->retail), $request->years) : null;
                 // Resolve original registration proof after the latest anchor advances to a renewal.
-                $registration = $all->first(fn ($op) => in_array($op->action, ['register', 'transfer'], true) && $op->state === 'succeeded' && self::resolved($op, $domain, $binding));
+                $registration = $l['identity_source']['kind'] !== 'checkout' ? null : $all->first(fn ($op) => in_array($op->action, ['register', 'transfer'], true) && $op->state === 'succeeded' && self::resolved($op, $domain, $binding));
                 $prior = $registration ?? $prior;
-                $admission = $prior->attempt[$prior->action === 'transfer' ? 'transfer_admission' : 'registration_admission'] ?? [];
+                $admission = $prior?->attempt[$prior?->action === 'transfer' ? 'transfer_admission' : 'registration_admission'] ?? [];
                 $nonpremium = false;
                 try {
-                    $nonpremium = ($admission['premium'] ?? null) === false && ($admission['name'] ?? null) === $domain->domain
+                    $nonpremium = $prior !== null && ($admission['premium'] ?? null) === false && ($admission['name'] ?? null) === $domain->domain
                         && ($admission['years'] ?? null) === (int) $prior->term
                         && ($admission['cost'] ?? null) === ($prior->attempt['authorized_cost'] ?? null)
                         && ($admission['cost']['currency'] ?? null) === 'USD'
@@ -74,7 +85,7 @@ final readonly class RenewalAuthority
     {
         return $r->obligationKey !== null && $op->operation_key === $r->obligationKey && $op->action === 'renew'
             && in_array($op->state, ['awaiting_payment', 'queued'], true) && ($op->attempt ?? []) === []
-            && RenewalCycles::virgin($op) && $op->provider_order_id === null
+            && RenewalCycles::registrarVirgin($op) && $op->provider_order_id === null
             && $op->confirmed_expires_at === null && $op->authority_generation === $r->generation
             && $op->base_expires_at?->format('Y-m-d') === $r->expiry && (int) $op->term === $r->years;
     }
@@ -88,6 +99,8 @@ final readonly class RenewalAuthority
     /** Retained completion proof only; reusable by invoice creation and grants no execution authority. */
     public static function completed(Operation $op, Domain $domain, \Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): bool
     {
+        if ($domain->adoptionPending()) { return false; }
+        if (ConvertedHoldingProof::completed($op,$domain,$binding)) { return true; }
         $p = $op->attempt['reconciliation'] ?? [];
         try { if ($op->action === 'transfer' && (($p['transfer_status'] ?? null) !== 'completed'
             || !($base = $op->attempt['transfer_admission']['base_expiry'] ?? null) || ($p['base_expiry'] ?? null) !== $base
@@ -109,10 +122,13 @@ final readonly class RenewalAuthority
             $reference = $op->attempt[$op->action === 'renew' ? 'renewal' : 'registration']['order_reference'] ?? $op->attempt['evidence']['registration']['orderReference'] ?? null;
             if ($p['source'] === 'accepted_history' && $reference === null) { $original->provider_order_id = null; }
             $attempt = ReconciliationEvidence::attempt($original, $domain, $binding);
-            $processed = new \DateTimeImmutable($p['processed_at'] ?? 'invalid');
+            $precision = ExpiryPrecision::from($p['processed_precision'] ?? 'instant');
+            if ($precision === ExpiryPrecision::Local && $p['source'] !== 'captured_order') { return false; }
+            $processed = new DateEvidence($p['processed_at'] ?? '', $precision, $p['processed_source'] ?? 'retained_order',
+                $p['processed_timezone'] ?? ($precision === ExpiryPrecision::Instant ? (new \DateTimeImmutable($p['processed_at']))->getTimezone()->getName() : null));
             if (($p['window_start'] ?? null) !== $attempt->windowStart->format(DATE_ATOM)
                 || ($p['window_end'] ?? null) !== $attempt->windowEnd->format(DATE_ATOM)
-                || $processed < $attempt->windowStart || $processed > $attempt->windowEnd) { return false; }
+                || !ReconciliationEvidence::processedWithin($attempt, $processed, $p['order_reference'] ?? null)) { return false; }
             if ($p['source'] === 'captured_order') {
                 if (!$attempt->executionFacts) { return false; }
                 $attempt->executionFacts->requireAttempt($attempt);

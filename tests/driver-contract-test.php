@@ -25,6 +25,13 @@ $precise = new DateEvidence('2029-10-17T00:00:00-07:00', ExpiryPrecision::Instan
 same('2029-10-17', $expiry->value, 'Date-only source has no manufactured instant');
 same(null, $expiry->timezone, 'Date-only timezone remains unknown');
 same(ExpiryPrecision::Instant, $precise->precision, 'Exact source precision retained');
+// Floating order clocks retain seconds without claiming a timezone or an instant.
+$local = new DateEvidence('2029-10-17T00:00:00', ExpiryPrecision::Local, 'enom_order_bill_date');
+same(null, $local->timezone, 'Local wall-clock zone remains unknown');
+foreach (['2029-02-30T00:00:00', '2029-10-17T00:00:00+00:00', '2029-10-17'] as $bad) {
+    refuses(fn () => new DateEvidence($bad, ExpiryPrecision::Local, 'enom_order_bill_date'), 'Invalid local clock accepted');
+}
+refuses(fn () => new DateEvidence($local->value, ExpiryPrecision::Local, $local->source, 'UTC'), 'Invented local clock zone accepted');
 foreach (['2029-02-30', '2029-1-01', '2029-10-17T00:00:00+00:00', "2029-10-17\0"] as $bad) {
     refuses(fn () => new DateEvidence($bad, ExpiryPrecision::Date, 'domain_info'), 'Invalid expiry accepted');
 }
@@ -112,7 +119,7 @@ foreach (['enom' => PrivacyMode::Paid, 'namesilo' => PrivacyMode::Free] as $regi
     $frozenEvidence = new Evidence(candidates: [&$mutableOrder]);
     $frozenReject = new DriverResult($account, Disposition::Rejected, SendState::Sent, ResultReason::ProvenRejected,
         $frozenEvidence, rejectionBasis: RejectionBasis::ProviderProof);
-    $mutableOrder = new OrderEvidence($account, new Query('other.com', Action::Register, 1), new Money('10.00', 'USD'), 'other-order');
+    $mutableOrder = new OrderEvidence($account, new Query('example.net', Action::Register, 1), new Money('10.00', 'USD'), 'other-order');
     same(null, $frozenReject->evidence()->candidates[0]->charge, 'Referenced candidate bypassed rejection validation');
     same('example.com', $frozenEvidence->candidates[0]->query->name, 'Referenced candidate changed frozen query');
     $term = 1; $frozenCapability = new Capability(Support::Supported, [&$term]); $term = 10;
@@ -165,7 +172,7 @@ foreach (['enom' => PrivacyMode::Paid, 'namesilo' => PrivacyMode::Free] as $regi
         $now, $now, $expiry, seal: DispatchSeal::Sealed, providerReference: 'order-42', expectedExpiry: $expiry);
     refuses(fn () => (new FakeRegistrar($account, $capabilities, $unsent))->reconcile($sentAttempt, $makeContext()), 'Reconciliation relabelled sent attempt unsent');
     $wrongName = new DriverResult($account, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved,
-        new Evidence(domain: new DomainSnapshot($account, 'other.com')));
+        new Evidence(domain: new DomainSnapshot($account, 'example.net')));
     refuses(fn () => new ReconciliationResult($sentAttempt, $wrongName), 'Wrong-domain reconciliation accepted');
     $wrongTerm = new DriverResult($account, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved,
         new Evidence(candidates: [new OrderEvidence($account, new Query('example.com', Action::Renew, 1))]));
@@ -238,3 +245,19 @@ foreach ([['+2 seconds', 2000], ['+1000 microseconds', 1]] as [$offset, $millise
 $context = new RequestContext($account, RequestOrigin::Background, $clock->now()->modify('+999 microseconds'), new RequestBudget(1), $clock);
 try { $context->claimRead($account); throw new LogicException('Expected sub-millisecond refusal'); } catch (RuntimeException) {}
 same(1, $context->budget->remaining(), 'Sub-millisecond refusal preserves budget');
+
+// Execution arithmetic must not inherit a site's DST-observing timezone.
+$siteTimezone = date_default_timezone_get();
+$systemClock = new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;
+try {
+    date_default_timezone_set('America/Los_Angeles');
+    $systemClock->withinExecution(function () use ($systemClock): void {
+        $first = $systemClock->now(); $next = $systemClock->now();
+        same('America/Los_Angeles', $first->getTimezone()->getName(), 'Execution clock preserves native datetime serialization timezone');
+        expect($next >= $first, 'Execution clock advances monotonically');
+    });
+    same('America/Los_Angeles', $systemClock->now()->getTimezone()->getName(), 'Clock returns to site wall time after execution');
+    try { $systemClock->withinExecution(static fn () => throw new RuntimeException('Synthetic clock scope failure')); }
+    catch (RuntimeException) {}
+    same('America/Los_Angeles', $systemClock->now()->getTimezone()->getName(), 'Failed execution releases clock anchor');
+} finally { date_default_timezone_set($siteTimezone); }

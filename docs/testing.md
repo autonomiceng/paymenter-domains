@@ -1,10 +1,13 @@
 # Verification
 
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
-PHP **8.4.26**, Debian `8.4.26-1~deb13u1`, Linux x86_64 is pinned by archive SHA-256.
-CLI/common/curl hashes were checked against the Debian security index on 2026-10-17.
-Optional native sqlite3/mbstring/intl/xml and ICU hashes are pinned from the existing local
-reference archives; their upstream index provenance has not been independently rechecked.
+PHP **8.4.27**, Debian `8.4.27-1~deb13u1`, Linux x86_64 is pinned by archive SHA-256.
+PHP archive SHA-256 hashes were computed from Debian security downloads on 2026-10-22.
+Native runs also load gd and bcmath. ICU remains pinned at `76.1-4` with its existing hash;
+its archive was downloaded again and verified without changing the pin.
+Native GD requires the host `libgd3` package (`libgd.so.3`) and its dependencies; these are
+not bundled in the pinned PHP archives. Native bootstrap verifies GD loads and retains the
+loader error on failure. Provider-only bootstrap does not load or require GD.
 Every run verifies and re-extracts archives; missing/corrupt cache fails without downloading.
 `PHP_RUNTIME_ARCHIVE_CACHE` copies verified archives from another cache without changing it.
 Python 3, dpkg-deb and compatible system libraries are required; no system PHP or Composer runs.
@@ -18,6 +21,8 @@ Lint includes every runtime/test PHP file. Unknown, missing or explicit unimplem
 Default runs execute all implemented categories except native when no dependency is supplied;
 empty categories are reported as unimplemented. `--suite` selects categories; receipts disclose
 omissions. No UI suite exists yet. Synthetic provider tests do not establish provider acceptance.
+Native `test_client_scripts.py` requires Node.js on PATH. It renders the shared client script
+and every including view with real Blade, then syntax-checks each inline script with `node --check`.
 
 Clean environment and PHP settings disable URL streams, cURL execution, sockets, process launch
 and mail. Exception arguments are hidden by default; redaction cases explicitly enable them.
@@ -74,7 +79,7 @@ See [API gates](design/parity.md). Provider/environment acceptance requires sepa
 Enom protocol tests (slice 10) require DOM in standalone/provider runs as well as native runs.
 The already pinned XML archive is now part of the base offline runtime; `php-test` loads DOM
 without loading the other native fixture extensions. Missing archives still fail without download.
-Its upstream hash provenance remains the locally pinned evidence described above.
+Its archive hash was computed from the Debian security download described above.
 
 Enom named read normalization is exercised by `tests/enom-read-test.php` with synthetic XML and
 a synthetic accepted-binding factory. Price absence differs from failed reads; ownership, expiry
@@ -169,6 +174,8 @@ completeness/pagination, zero/multiple/credited/unknown-status rows, lag, retent
 exhaustion. All provider facts are synthetic; these suites establish no live history/identity acceptance,
 MariaDB interleavings, installed UI/queue, renewal/refund/transfer execution or notification delivery.
 
+Registration reconciliation cases run in four native suites sharing `Support/reconciliation-fixture.php`: `reconciliation-test`, `reconciliation-dns-test`, `reconciliation-clock-test` and `reconciliation-history-test`. Separate databases bound the growing checkout fixture state and keep each process below its unchanged 120-second deadline.
+
 `reconciliation-recovery-test` exercises the slice21 residual with both same-result persistence attempts failing: provider-only unique recovery, zero/multiple candidates unresolved, and exactly one original send.
 
 Slice23 `renewal-admission-test` composes native checkout, slice22 completion and real Enom reads over
@@ -229,9 +236,10 @@ All exchanges are injected; no provider or installed-extension acceptance is cla
 
 `management-refusal-test` covers documented/system/contradictory provider refusals and the binding no-sent-credit boundary.
 
-Runner timeout correction: native offline suites have a 120-second per-process deadline on shared,
-nice/ionice-limited hosts. The 60-second summary above applies to other categories.
-Provider request deadlines remain independent.
+Native offline suites have a 120-second per-process deadline on shared, nice/ionice-limited hosts.
+Installed-package lifecycle commands have a 300-second outer deadline because they run multiple
+individually bounded PHP phases. Their 45- or 120-second phase deadlines remain in force. The
+60-second summary above applies to other categories. Provider request deadlines remain independent.
 
 NameSilo management: `management-namesilo-test`, `management-namesilo-contacts-test` and
 `management-namesilo-boundary-test` cover free capabilities, bounded routes/readback, separate
@@ -253,7 +261,10 @@ No installed schedule, provider acceptance or concurrent MariaDB guarantee is es
 `owned-pages-test.php` exercises current native/ledger ownership, capability labels,
 held contacts, pending transfers, safe correction states and real Blade rendering.
 `PAYMENTER_TEST_APP=<pinned source> python3 scripts/render-owned.py SHELL_DIR OUTPUT_DIR`
-renders synthetic owner DTOs inside the supplied site shell.
+renders synthetic owner DTOs inside the supplied site shell. It needs cached native PHP
+archives (`PHP_RUNTIME_ARCHIVE_CACHE`, or seed with `python3 scripts/bootstrap.py --native --download`)
+and reads `SHELL_DIR/ref-domains-register.html`. It writes pages to `OUTPUT_DIR` and copies
+them back into `SHELL_DIR` as `ui33-*.html` (`ui34-*.html` with `records`).
 It does not boot the extension, read registrar state or enable processing.
 The owner action/management suites cover exact encrypted code bytes, paid UTC cutoffs,
 immutable setup, purchase grammar, native CSRF, atomic replay, engine requests and synthetic readback.
@@ -267,6 +278,8 @@ empty nameservers never imply a reset, and NameSilo does not offer one.
 unknown evidence, exact nested costs and HTML/Livewire secret boundaries. The optional
 `staff-domains-render.php OUTPUT_DIRECTORY` renders static native panel fixtures with synthetic
 records and the pinned compiled Filament stylesheet. Browser captures cover 1440/1024, light/dark.
+`staff-domain-page-render.php OUTPUT_DIRECTORY` captures the Domains list and the domain page when active,
+sync failed, demo paused under Enom Test mode, missing expiry, under review and pending order.
 No provider requests, staff writes, installed registration or production acceptance are established.
 The staff fixture also records Paymenter's native `*` role semantics (all read permissions,
 no mutation actions) and paid-rejection credit-review selection; that SQL queue includes already
@@ -285,11 +298,13 @@ These are presentation checks, not installed provider acceptance. DNS/SRV editin
 ### Dormant staff operation review
 
 The native staff-operation suites cover independent default-deny actions, locked fresh authorization,
-required reasons, immutable before/after audit, one-use keys, stale/binding refusals, exact unsent
+required reasons for money actions, immutable before/after audit, one-use keys, stale/binding refusals, exact unsent
 account credits, bounded read resumes and explicit refunded-renewal replacement. Paid sent/unknown
 outcomes keep their account spending holds and cannot be released or credited by these actions.
-`tests/staff-operations-render.php OUTPUT_DIRECTORY` renders the native queue, views, all nine
+`tests/staff-operations-render.php OUTPUT_DIRECTORY` renders the native queue, views, the four
 confirmations and reason refusal with synthetic data; capture at 1440/1024 in light/dark.
+`tests/staff-request-page-render.php OUTPUT_DIRECTORY` captures Registrar requests and the request page
+when not sent, pending, under review, unconfirmed after payment, completed, and cancelled and refunded.
 No resource or permission registration is installed by these fixtures.
 
 ### Staff TLD pricing and setup (slice37)
@@ -300,6 +315,8 @@ and HTML/Livewire credential secrecy are checked offline. Native action tests co
 stale/replayed keys, current permissions, encrypted audit, margin holds, seller/holder separation,
 acceptance narrowing/recovery and fake-only credential/probe paths. Default setup performs no I/O.
 `tests/staff-tld-render.php` emits native fixtures to its output argument. No panel registration is installed.
+`tests/staff-tld-pricing-render.php OUTPUT_DIRECTORY` captures TLDs & pricing and the TLD page when prices are synced,
+when sync failed with its stored cause, and with no registrar for new orders, across two registrar accounts (one demo).
 Source layout/labels adapt Enom `444f31c` TldResource and EnomSetup (MIT).
 
 ### Neutral reminders and obligation alerts
@@ -323,6 +340,10 @@ No provider calls, installed schedule or production database acceptance is estab
 
 Render complete, unknown, partial, stale-generation and many-record owner pages offline with
 `scripts/render-observations.py SHELL_DIR OUTPUT_DIR`, using the pinned native fixture.
+
+### Native runtime registration
+
+`runtime-install-test.php`, `runtime-presenter-test.php`, `runtime-notices-test.php`, `runtime-worker-test.php`, `runtime-wire-registration-test.php`, `runtime-wire-renewal-test.php`, `runtime-wire-management-test.php` and `runtime-lifecycle-test.php` cover retained lifecycle verification, singleton hooks, activation refusal/audit, legacy exclusion, paired owner-scoped theme DTOs, mandatory notices with schedules off, encrypted audit rotation and no-resend notification review. They use pinned native SQLite fixtures and fakes only. `runtime-render.php` accepts an output directory and inert supplied-shell HTML as CLI arguments for installed native panel and customer captures. This is not provider, MariaDB or delivered-mail acceptance. See [runtime composition](runtime.md).
 
 ## Opt-in NameSilo OTE contract test
 
@@ -410,3 +431,321 @@ Zero, one or multiple candidates therefore remain `ambiguous`, including empty i
 exit 3 preserves the original unknown purchase. There is no write/resume path in this mode.
 The normal time, credential, host, receipt and no-retry guards apply; use an explicit cap of 2–15.
 `ote-reconciliation-test.php` runs only synthetic transports in the offline contracts suite.
+
+### Retained OTE purchase evidence
+
+New writes persist `attempt-private.json` with mode 0600 before purchase dispatch. It contains
+only the generated name, exact authorized decimal amount, term, route and UTC dispatch time.
+It is separate from the redacted receipt; never copy it into logs, fixtures or commits. A renewal
+archives the initial file privately as `registration-attempt-private.json` before replacing it.
+Unknown registration replies invoke the real driver reconciliation in the same process, using
+that original file and the remaining request budget. The closed observation is `registered_in_account`,
+`not_registered` (exact account absence, empty successful orders and available nonpremium name),
+or `ambiguous`. Matching account ownership requires a unique exact-name/term/amount order before
+sandbox sequence continuation. These observations never complete native financial operations or
+accept production history completeness/timezone. Only `registered_in_account` continues the sequence.
+Both `not_registered` and `ambiguous` stop with exit 3 and never retry.
+A separately authorized diagnostic `--write --registration-context interactive --max-requests N`
+selects the existing interactive API route inside the runner only; background remains the default
+for registration and renewal. A separately authorized renewal continuation may use `/api` as described
+below. Unknown renewals reconcile read-only in the same invocation before the sequence can continue.
+`ote-purchase-evidence-test.php` uses synthetic transports only and is part of contracts.
+
+### Purchase-only OTE diagnostic routes
+
+Separately authorized `--registration-context interactive` now reroutes **registerDomain only**;
+RegistrationProfiles contactAdd/contactList and all other calls retain their production routes.
+`--renewal-context interactive` similarly changes only renewDomain, and requires the continuation below. Defaults stay background.
+Every code other than 300 records only its code and closed category in the receipt; raw string
+detail is retained solely in the private mode-0600 attempt file, including pre-purchase refusals.
+Credential-bearing detail is refused. Archived attempts and private details remain receipt-redacted.
+
+Unknown renewal replies reconcile read-only in the same invocation, including transport failures:
+exact owned-name expiry versus the retained pre-renewal date plus one year, and bounded order
+history/details for the attempt window. Exactly one category is retained: renewed, not_renewed
+(unchanged expiry and no matching order), or ambiguous. Renewed needs a unique exact-term/amount
+order and full-year expiry; uncertainty is never promoted to a successful acknowledgement.
+These sandbox observations do not accept production timezone/history completeness or settle charges.
+
+Only after a separately approved batch renewal reconciles not_renewed, one explicit continuation
+may use `--renewal-only --renewal-context interactive --attempt-receipt /private/prior/receipt.json
+--max-requests N` (N at least 8, within the remaining total grant). It requires matching private
+registration/renewal evidence and a recent dispatch, claims the prior evidence once before reads,
+rechecks the original expiry, permits no contacts/registration/management, and renews the same name
+once. Failure or ambiguity stops. The initial registration phase must not be repeated to continue.
+The synthetic contracts and opt-in native self-test cover purchase-only routing, private refusals,
+renewal categories, failed/partial reads, exact order correlation and consumed continuation proof.
+
+The private snapshot now also names the purchase command and renewal expiry baseline; closed
+renewal category and non-success details are private metadata. Updates preserve original evidence
+with synced mode-0600 temporary files and atomic replacement. Continuation checks the retained
+request count plus its explicit limit against 60, and the transport requires its claimed /api route.
+
+## Native initial records
+
+`runtime-records-test.php` exercises the registered observation seam with accepted synthetic ports, processing pauses, daily cadence, held manual recovery, numeric DNS/SRV presentation and source-ID preservation. Staff record holds use allowlisted current-identity reasons. Customer unknown-state notes distinguish ordinary checks from manually resumed checks. All reads stay offline; native renders accept output and supplied-shell paths as arguments.
+
+Stopped scheduled-read coverage includes a domain-read failure while processing is paused, re-enabling without automatic retry, current-phase/binding exclusion and audited manual recovery. Staff alerts verify the exact resume-action label, bound request link and missing-request guidance.
+
+## Supported PHP
+
+Runtime source targets PHP 8.3 and 8.4, matching Paymenter 1.5.9. The existing offline
+runner retains its hash-pinned PHP 8.4.27 runtime. A separate CI job parses every shipped
+PHP file on PHP 8.3 and runs `tests/php83-compatibility-test.php`.
+The token guard also runs with offline lint and the registered runner suite. It rejects
+40 PHP 8.4 global functions from PHP NEWS (including Intl, OPcache, PCNTL, PgSQL and
+Sodium additions), asymmetric visibility, property hooks and unparenthesized
+`new` dereferences, with synthetic accepted/rejected fixtures. Namespaced user functions
+and imports are resolved without executing source. This targeted check is not exhaustive:
+dynamic function names, extension availability and untested runtime behavior remain
+outside it. Passing it does not establish installed Paymenter or provider acceptance.
+
+Storefront catalogue parity exercises real public endings/checks with separate malformed native
+price/setup-fee, altered-marker and duplicate marker-set products. Healthy and registration-only
+endings remain usable; stale, below-cost and unknown-cost acquisition evidence never leaks.
+
+Cold public catalogue coverage compares one and ten terms across distinct selected price tables,
+checks every amount against strict offer resolution, and bounds ending/check query growth.
+Fresh-call invalidation covers native stock/plans, TLD and seller flags/revisions, rules, account
+identity, acceptance revisions and current-price proof. Query logging forbids display writes;
+only explicit synthetic availability checks read the provider port.
+
+Holding provenance tests pair purchased holdings with pending conversions: billing, renewal proof, reminders, direct dispatch, observation and owner/staff presentation refuse pending authority. The additive migration retains existing rows without fabricating purchase provenance.
+
+Slice 41: `tests/conversion-test.php` and `tests/conversion-guards-test.php` exercise exact synthetic legacy schemas, offline accepted evidence, staged ID-map recovery, native financial/evidence retention, pending exclusions, configuration/queue/maintenance/backup refusals and replay safety. The one-time development converter is excluded from the runtime archive; see `scripts/conversion/README.md` for its guarded operator workflow. Real application databases and registrar transports are never used by these suites.
+
+PSL updater tests use small synthetic ICANN/PRIVATE lists and injected clocks/transports.
+`psl-test.php` covers retained copies, validation refusals, conditional requests, shared daily admission,
+weekly eligibility and exact 30/90-day boundaries. `psl-transport-test.php` uses namespaced cURL
+fakes to verify public-address pinning, HTTPS, no redirects/retries, deadlines and response caps.
+No list download, discovery/resolver or provider acceptance is established.
+
+`psl-staff-test.php` mounts the installed native page, submits source/update actions,
+revokes permissions after mount, checks all age states and exercises weekly runtime work
+without accounts. It runs the registered scheduler callback with a frozen clock: fresh installs
+queue on the next minute, recent and failed attempts queue nothing over 1,440 minutes,
+weekly and daily network boundaries remain exact, and a missing status table queues nothing. Native fixture defaults inject a failing PSL transport so incidental ticks
+can never resolve DNS or download data.
+
+### Runtime archive verification
+
+`python3 scripts/build.py --output-dir /fresh/output` builds the complete native runtime.
+References reachable from the entry point and native Admin discovery, plus literal
+boot/view/migration paths, determine included roots. Source README files and tooling stay out.
+Sorted uncompressed entries use fixed metadata, avoiding compression-toolchain variance. The runtime conversion
+completion guard remains included; the one-time converter and its directories do not.
+The embedded `Domains/manifest.json` hashes all payload files. The adjacent release
+`manifest.json` hashes every ZIP member, including the embedded inventory, and the ZIP itself.
+Run `python3 scripts/build.py --verify /fresh/output/paymenter-domains-0.1.0.zip` before upload.
+Checksums detect corruption, not publisher identity; obtain artifacts from a trusted source.
+Package tests build the real tree twice, verify every member, omit referenced roots and
+refuse converter paths, tampering, unsafe names, symlinks, collisions and oversized files.
+
+### Native archive lifecycle acceptance
+
+The native suite verifies the built ZIP before passing an upload copy to Paymenter
+1.5.9's real UploadExtensionService. A second disposable app copy uses installed files
+without the source-tree runtime autoloader. Native ZIP support uses a pinned PHP archive
+and requires the system libzip library; missing offline dependencies fail rather than simulate.
+Keep git object `e7881cf404e934e1cc84931ab9036e84804b8b61` available for the
+previous local development-build upgrade (same 0.1.0 version, before the additive PSL schema).
+Fresh-process boot checks migration history, installed classes/pages/routes and one scheduler.
+Same-ZIP reinstall, previous-build upgrade and file-removal/reinstall via native Install preserve
+raw ledgers/settings and all prior migration records; only account update timestamps are
+normalized because native pause touches them. Native server deletion calls disabled then
+refuses retained accounts; the separate uninstall hook also retains data. Upload-time schemas
+are verified before repeating the native upgrade command as an idempotency check.
+Customized notification templates and populated synthetic PSL state are retained too.
+Converter injection and a modified embedded manifest are rejected before native upload.
+
+### Default-held registration from installed bytes
+
+The installed-package fixture starts a third fresh native Install and proves no catalogue
+ending/offer, no admitted native cart line and no checkout order/service/invoice/operation.
+An adversarial native cart row with positive stock/price must receive the specific neutral
+checkout refusal and roll back. Identity verification and audited catalogue review leave
+processing off without accepted runtime composition and shared workers. A backfilled queued
+registration cannot reach a provider executor; the real registration writer refuses with
+`write_disabled` before engine resolution or wire calls. Transfer and renewal feature gates
+remain independent and default off. No provider requests or live acceptance are implied.
+
+Registrable-name tests use only synthetic PSL fixtures: ICANN longest matches, wildcard/exception,
+PRIVATE holds, ASCII A-labels, U-label holds, invalid hostnames and revision changes.
+PSL rebaseline tests bind acceptance to pending bytes, fresh staff rights, typed short hash and reason;
+current validation remains mandatory and acceptance retains encrypted append-only audit evidence.
+
+Watch storage tests use installed native SQLite fixtures. They cover disabled revisioned mappings, fresh/default-deny permissions, customer/name and service uniqueness, exact target invariants, immutable owner identities, encrypted evidence/audit, source retirement with retained service identity, lifecycle retention and missing migration history. No discovery runtime, public lookup or browser evidence is implied.
+
+Worker-deadline regressions in `operation-recovery-test.php` cover the 245-second last-send
+boundary, refusal beyond it and claim-lock waits that consume the same entry budget. Late contact
+recovery in `Support/late-contact-matrix.php` commits and explicitly retains the staff review hold
+without adding queued jobs. Synthetic clocks and SQLite do not establish production lock latency.
+
+Operation clock regressions cover elapsed fall-back boundaries and native datetime round trips. Operation rate regressions cover unchanged preclaim states, the durable 60-second retry, one eventual send and staff release of disabled writes.
+
+
+## Opt-in MariaDB conversion rehearsal
+
+The required suites always omit `mariadb`. Run it explicitly through the local suite limiter:
+set `TMPDIR` to a private scratch root, `PAYMENTER_TEST_APP` to the pristine pinned 1.5.9
+checkout, `CONVERSION_ENOM_CHECKOUT` to a local checkout containing both accepted Git
+revisions, and `CONVERSION_MARIADB_PHP` to a supported host PHP with `pdo_mysql`; then run
+`python3 scripts/test.py --suite mariadb`. No installed application or provider is used.
+Docker or the existing `mariadb:11.4.5` image being absent produces a clear skip receipt;
+there is no image pull. A skip exits 77, records incomplete acceptance in both receipts,
+and is never MariaDB evidence. Docker context/environment variables are forwarded only for
+this explicit suite. Acceptance requires two completed pin runs and no skipped status. A pre-existing dedicated container name refuses rather than being
+reused or stopped. The harness owns only `dom-c41r-mariadb`, with no network, published ports
+or persistent volumes, and stops it after success or failure.
+
+Each exact source revision runs actual native and source migrations, purchased/pending,
+payable/history refusals and queue audit scenarios, actual app-profile schema/dry/apply
+commands with real quiet windows, financial/encrypted/reminder readback and database/files
+restore. Its private receipt records command elapsed times, full re-inspections, image ID,
+source revisions, SQL invariants and unchanged pristine dependency. This proves sequential
+conversion on the pinned MariaDB image; it grants no production cutover, concurrent-lock,
+provider or distributed scheduling acceptance. Linux user, mount, PID and network namespaces
+plus a native inspectable crontab command are required. The fixture mounts an empty private
+cron spool inside its own mount namespace and inventories its own isolated processes; no host
+cron spool is changed. This proves the disposable CLI only, not shared-host process/cron readiness. The converter runbook contains host prerequisites.
+
+After an ungraceful crash, use the private `container.json` Docker endpoint and inspect only
+`dom-c41r-mariadb`; stop its immutable ID only when its `domains-conversion-rehearsal` label
+matches that file, otherwise leave it alone. Never clean up by name alone.
+`registration-nameservers-test.php` exercises both registrars through the real registration
+preflight and native claim/finish path with a synthetic writer, independently of the bridge's
+earlier owner-setup guard. Empty hosts, excessive counts and invalid hostname labels hold
+unsealed as `nameservers_required`, with zero reads/writes and a specific staff label. Enom
+privacy refusal keeps precedence; valid inputs still seal and reach the synthetic writer.
+The existing registration protocol suites cover valid purchases and follow-up readback.
+Claimed nameserver holds also retain definitely-unsent rejection and exact once-only account credit;
+unknown execution evidence still blocks both recovery proofs. Both registrars exercise staff
+refund and terminal-rejection recovery paths.
+
+Registration reconciliation covers captured execution with a null order reference: a saved,
+covering history acceptance permits Enom history reads and unique completion without replay.
+Terminal-proof checks assert held/sealed/expired lifecycle reasons before exercising refusal
+and re-read persisted reservations afterwards. Their example placeholders use the operation
+fixture's sole published suffix, `.com` (`Support/commerce.php`).
+
+## Coverage notes
+
+Coverage details are in the [testing coverage index](testing-coverage.md), with area files in
+`testing-coverage/`. Add new notes to the matching area file; this file keeps setup and suites.
+
+## Parallel offline suites
+
+`python3 scripts/test.py --jobs 4` uses four workers. `--jobs 1` keeps serial execution.
+`DOMAINS_TEST_JOBS` sets the default; otherwise it is half the CPU count, between one and four.
+Each worker owns its fixture, PHP runtime and temporary paths. Source and copied dependencies are checked before commands start and after the run.
+Console output prints each command's block as it completes; receipts keep manifest order and indexed output files.
+Receipts add `jobs` and command `seconds` for concurrency and timing.
+Installed-package commands (`test_installed_*.py`, including NameSilo enrollment) run alone.
+The pool drains before each one and resumes after its integrity check finishes.
+Command `started_seconds` and `finished_seconds` are monotonic offsets from run start;
+the finish includes the integrity check, so receipts can verify that commands did not overlap.
+The first failure stops new work; running commands finish. Runs that include MariaDB run serially.
+In parallel runs, writes to `Domains/`, even when restored, fail.
+
+Public registry expiry tests use synthetic bootstrap/HTTP bodies, endpoint DNS and clocks.
+They retain date/instant precision, reject ambiguous expiry and unsafe endpoints, and
+share the transfer client's strict selected-endpoint 404 classifier. No WHOIS fallback,
+registrar operation, live RDAP acceptance or customer notification is exercised.
+
+Registry work tests cover default-off/profile-independent enrollment, owner and native stamp
+rechecks, exact claims, crash recovery, independent retry/circuit/429 policies and urgent
+freshness transitions. RDAP and DNS reservations precede wire attempts; local deferral preserves
+fresh facts. Delegation tests cover TTL-spaced classification confirmation and overflow cohorts.
+
+Watch scheduling tests use synthetic local discovery and dispatch callbacks, an injected clock
+and an asynchronous queue configuration. They cover five-minute turns, bounded product/owner
+rotation, duplicate hints, queue timeouts, outage deduplication, and 90-day evidence retention.
+Activation and live/concurrent resolver/queue acceptance remain separate operator gates.
+
+Watch notice policy is exercised offline by `watch-notice-plan-test.php`: exact UTC windows,
+nearest discovery, bounded catch-up, retained correction keys, clock reversal, independent DNS
+confirmation and restoration only for previously handed-off channels. Pure inputs grant no
+owner, installed queue, public resolver or SMTP acceptance.
+
+Public notice delivery coverage uses independent native mail/app fakes, retained per-channel claims,
+opt-out and owner/role/retirement checks, daily priority, render failures, and managed relink proof.
+The owner preference page uses native web/auth, CSRF and one-use session keys with stale revisions refused.
+
+Domain summaries use batched native/ledger owner checks and local observation display stamps.
+Coverage checks source/property/order/profile changes, partial empty-label refusal, safe hosting
+links, constant query counts and no display writes. Public reads remain synthetic and offline.
+Managed cases also cover adopted generations, retired work, the expiry-day boundary and retained
+last-known values. Current badges require fresh evidence; historical values carry per-axis stale flags.
+
+The domain portal suite covers the registered/related section order, neutral unknown labels,
+read-only paused/retired detail, fresh preference eligibility, owner-safe hosting rows,
+local GETs and query-free extension Blade. The exact native service view adapter is pinned
+by the upgrade tripwire; it composes one named view and changes no native component state.
+
+The hosting Domain row uses an exact `services.show` view composer because native
+service fields have no documented append hook. It only changes view data, fails
+closed to an omitted row, and never mutates the native component. The test-only
+tripwire pins its template/component dependencies; upgrading requires rechecking
+this narrow adapter when those files change.
+
+Staff watch coverage uses native Filament pages, fresh permission checks and actor-bound one-use revision tickets.
+It exercises stale/revoked actions, local queue wakeup limits, retained leases, disabled configuration saves,
+separate reviewed enablement, archived source links, schema drift and read-only pending adoption.
+
+Staff watch summaries batch up to 250 watches across owners using the same local projection
+as customer summaries. `staff-watch-summary-owners-test` compares every DTO field against
+per-owner batches, checks constant queries for 25 rows across 1/5/25 customers, and injects
+foreign-owner DNS/registry/source/native identities to verify isolation. Fresh watch-view
+permission is required. The attention filter evaluates the first 1,000 active names in four
+bounded batches; the cap bounds local decryption and response work, with no provider reads.
+
+### Focused iteration and timing evidence
+
+Select focused tests from changed source dependencies as well as changed test files.
+Follow direct assertions, imports/requires, shared fixtures and their transitive
+consumers, then include source-wide scanners of the changed bytes. An unchanged test
+can still be the regression check for a runtime change. `--only` does not expand
+dependencies. For adoption and registrar seams, use the [source triggers and complete
+focused command](testing-coverage/adoption-focused.md), including the unchanged
+`tests/adoption-preview-test.php` mid-read change matrix.
+For native marker identity and public enrollment, use the [native identity focused
+command](testing-coverage/native-identity-focused.md), including shared transfer and
+conversion consumers and separately recorded MariaDB scenarios.
+
+The PR boundary still runs `python3 scripts/test.py` with the pristine native dependency
+and pinned runtime cache configured. Use `--only` for exact registered test paths during
+focused iteration, for example:
+
+```sh
+python3 scripts/test.py --only tests/test_runner.py tests/test_native.py
+python3 scripts/test.py --only tests/test_installed_package_previous.py
+```
+
+The second command requires `PAYMENTER_TEST_APP`, just like the native suite. Selection
+keeps manifest order, deduplicates paths and never adds implicit lint. Unknown paths,
+invalid manifests and mixing `--only` with `--suite` fail. Category selection remains
+available through `--suite`. A focused pass is not full boundary acceptance: receipts
+record `only_tests`, `omitted_tests` and selected/omitted categories. `complete` describes
+the selected plan, including its dependency and runtime guards.
+
+Every command, including lint, prints a JSON timing row with its command index,
+execution `seconds` and integrity `guard_seconds`; indexed stdout/stderr files remain
+unchanged. Receipts also record setup, command scheduling and final-guard stage durations
+in `timings`. Its `run` value includes command execution and guards, excluding setup,
+receipt writing and cleanup. Parallel command/guard totals are summed worker time,
+not elapsed wall time. Measure full wall time around the runner separately.
+
+`native-paid-baseline-test.php` is the single entrypoint for the shared paid-processing matrix.
+
+`provider-send-guard-test.php` checks all three physical registrar senders with synthetic cURL,
+all named command routes, UTC metadata, default-null sends and closed failure paths.
+`provider-send-guard-operation-test.php` checks a funded native registration's guard refusal,
+retained unsent evidence, staff release and later one-time dispatch without changing its debt.
+
+`staff-hold-release-audit-test.php` repeats a paid native request’s Hold and Livewire Release
+cycle, checking exact completed audit reasons/counts, no reason modal and its History request URL.
+
+`watch-notice-staff-delivery-test.php` queues a native watch notice to its staff owner and
+checks exact recipient, subject/body, native email evidence and the staff delivery review fields.
+The supplied site shell owns its branded card class and company branding assertions. Domains owns the
+mail presentation table, content/domain, recipient and native delivery evidence.

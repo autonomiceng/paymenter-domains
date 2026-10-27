@@ -66,7 +66,8 @@ final class Rdap
             $transferred = $dates['transfer'] ?? null;
             if (!$created || !$expiry || $created > $today || $expiry <= $created
                 || $transferred && ($transferred > $today || $transferred < $created || $transferred >= $expiry)) { return $unknown; }
-            $result = ['allowed' => true, 'code' => null, 'warning' => null, 'expires_at' => $expiry->format('Y-m-d')];
+            $result = ['allowed' => true, 'code' => null, 'warning' => null, 'expires_at' => $expiry->format('Y-m-d'),
+                'comparison_allowed' => !array_diff($statuses, ['ok', 'active', 'clientdeleteprohibited', 'clientupdateprohibited', 'serverdeleteprohibited', 'serverupdateprohibited'])];
             foreach (['clienttransferprohibited' => 'transfer_locked', 'servertransferprohibited' => 'transfer_locked',
                 'redemptionperiod' => 'transfer_redemption', 'pendingdelete' => 'transfer_pending_delete', 'pendingtransfer' => 'transfer_pending'] as $status => $code) {
                 if (in_array($status, $statuses, true)) { return array_replace($result, ['allowed' => false, 'code' => $code]); }
@@ -98,7 +99,7 @@ final class Rdap
         return $first->setDate($year, $month, min((int) $date->format('d'), (int) $first->format('t')));
     }
 
-    private function safeUrl(string $url): bool
+    public static function safeUrl(string $url): bool
     {
         $parts = parse_url($url);
         return is_array($parts) && ($parts['scheme'] ?? null) === 'https'
@@ -119,9 +120,7 @@ final class Rdap
         if (!is_array($response) || !is_string($response['body'] ?? null)
             || strlen($response['body']) > self::BODY_LIMIT) { throw new RuntimeException('Lookup response is unavailable.'); }
         if ($domainObject && ($response['status'] ?? null) === 404) {
-            if ($response['body'] === '') { return null; }
-            $error = json_decode($response['body'], false, 32, JSON_THROW_ON_ERROR);
-            if ($error instanceof \stdClass && (!property_exists($error, 'errorCode') || $error->errorCode === 404)) { return null; }
+            if (self::missing($response['body'])) { return null; }
             throw new RuntimeException('Lookup response is unavailable.');
         }
         if (($response['status'] ?? null) !== 200) { throw new RuntimeException('Lookup response is unavailable.'); }
@@ -130,16 +129,37 @@ final class Rdap
         return $data;
     }
 
-    private static function completedStatus(bool $ok, int $errno, int $status): ?int
+    /** Shared strict selected-domain-endpoint 404 rule; never applies to bootstrap replies. */
+    public static function missing(string $body): bool
     {
-        // Some registry servers close the connection uncleanly after a close-delimited 404.
-        return $ok || ($errno === CURLE_RECV_ERROR && $status === 404) ? $status : null;
+        if ($body === '') { return true; }
+        try {
+            $error = json_decode($body, false, 32, JSON_THROW_ON_ERROR);
+            return $error instanceof \stdClass && (!property_exists($error, 'errorCode') || $error->errorCode === 404);
+        } catch (Throwable) { return false; }
     }
 
-    private function send(string $url, int $timeout): array
+    /** Public-only watch transport: the bounded reader has already resolved and validated these pins. */
+    public function pinned(string $url, int $timeout, array $addresses): array
+    {
+        if (!self::safeUrl($url) || $timeout < 1 || !$addresses) { throw new RuntimeException('Lookup endpoint is unavailable.'); }
+        foreach ($addresses as $ip) {
+            if (!is_string($ip) || !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_GLOBAL_RANGE)
+                || str_starts_with(strtolower($ip), '::ffff:')) { throw new RuntimeException('Lookup endpoint is unavailable.'); }
+        }
+        return $this->send($url, min(8000, $timeout), $addresses);
+    }
+
+    private static function completedStatus(bool $ok, int $errno, int $status, string $body): ?int
+    {
+        // An unclean close proves absence only when a complete RDAP error object arrived.
+        return $ok || ($errno === CURLE_RECV_ERROR && $status === 404 && $body !== '' && self::missing($body)) ? $status : null;
+    }
+
+    private function send(string $url, int $timeout, ?array $pins = null): array
     {
         $host = parse_url($url, PHP_URL_HOST);
-        $records = dns_get_record($host, DNS_A | DNS_AAAA);
+        $records = $pins === null ? dns_get_record($host, DNS_A | DNS_AAAA) : array_map(static fn($ip) => ['ip' => $ip], $pins);
         $addresses = [];
         foreach ($records ?: [] as $record) {
             $address = $record['ip'] ?? $record['ipv6'] ?? null;
@@ -149,19 +169,23 @@ final class Rdap
             $addresses[] = str_contains($address, ':') ? '['.$address.']' : $address;
         }
         if (!$addresses || getenv('SSLKEYLOGFILE')) { throw new RuntimeException('Lookup endpoint is unavailable.'); }
-        if ($this->context) {
+        if ($pins === null && $this->context) {
             $now = $this->context->now(); $deadline = $this->context->deadline;
             $timeout = min($timeout, ($deadline->getTimestamp() - $now->getTimestamp()) * 1000
                 + intdiv((int) $deadline->format('u') - (int) $now->format('u'), 1000));
             if ($timeout < 1) { throw new RuntimeException('Lookup deadline reached.'); }
         }
-        $body = '';
+        $body = ''; $retryAfter = null;
         $curl = curl_init($url);
         curl_setopt_array($curl, [CURLOPT_FOLLOWLOCATION => false, CURLOPT_MAXREDIRS => 0,
             CURLOPT_PROXY => '', CURLOPT_NOPROXY => '*', CURLOPT_VERBOSE => false,
             CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
             CURLOPT_CONNECTTIMEOUT_MS => min(3000, $timeout), CURLOPT_TIMEOUT_MS => $timeout, CURLOPT_RESOLVE => [$host.':443:'.implode(',', $addresses)],
             CURLOPT_HTTPHEADER => ['Accept: application/rdap+json, application/json'],
+            CURLOPT_HEADERFUNCTION => static function ($handle, string $line) use (&$retryAfter): int {
+                if (preg_match('/^Retry-After:\s*(.{1,128})\s*$/iD', trim($line), $m)) { $retryAfter = trim($m[1]); }
+                return strlen($line);
+            },
             CURLOPT_WRITEFUNCTION => static function ($handle, string $chunk) use (&$body): int {
                 if (strlen($body) + strlen($chunk) > self::BODY_LIMIT) { return 0; }
                 $body .= $chunk;
@@ -169,9 +193,9 @@ final class Rdap
             }]);
         try {
             $ok = curl_exec($curl) !== false;
-            $status = self::completedStatus($ok, curl_errno($curl), curl_getinfo($curl, CURLINFO_RESPONSE_CODE));
+            $status = self::completedStatus($ok, curl_errno($curl), curl_getinfo($curl, CURLINFO_RESPONSE_CODE), $body);
             if ($status === null) { throw new RuntimeException('Lookup response is unavailable.'); }
-            return ['status' => $status, 'body' => $body];
+            return ['status' => $status, 'body' => $body, 'retry_after' => $retryAfter];
         } finally { curl_close($curl); }
     }
 }

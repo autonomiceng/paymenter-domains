@@ -3,78 +3,42 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Plan, Product, Server, Service, ServiceCancellation, TaxRate, User};
+use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Price, Tld};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Operation, Price, Tld};
 
 /** Internal billing/save prefix, joining exactly one caller-owned transaction. Never performs I/O. */
 final class HoldingLocks
 {
-    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false): array
+    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false): array
     {
-        if (DB::transactionLevel() !== 1) { throw new \LogicException('Holding locks require the outer transaction.'); }
-        $users = User::whereKey(array_filter([$seed->user_id, $staffId]))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $user = $users->firstWhere('id', $seed->user_id) ?? throw new \DomainException('Missing owner.');
-        $staff = $staffId === null ? null : $users->firstWhere('id', $staffId);
-        if ($staff) { $staff->setRelation('role', $staff->role()->when(!$advisory,fn($q)=>$q->lockForUpdate())->first()); }
-        $user->setRelation('properties', $user->properties()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get());
-        $credit = $user->credits()->where('currency_code', 'USD')->when(!$advisory,fn($q)=>$q->lockForUpdate())->first();
-        // Current locking reads also see invoices committed after an older native cron read view.
-        // All owner invoices precede ALL services, matching InvoiceFunding, including mixed invoices.
-        $invoices = Invoice::where('user_id', $user->id)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get(); $ids = $invoices->pluck('id');
-        $items = InvoiceItem::whereIn('invoice_id', $ids)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $transactions = InvoiceTransaction::whereIn('invoice_id', $ids)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $serviceIds = $items->where('reference_type', (new Service)->getMorphClass())->pluck('reference_id')->push($seed->service_id)->unique();
-        $services = Service::whereKey($serviceIds)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $products = Product::whereKey($services->pluck('product_id'))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $plans = Plan::whereKey($services->pluck('plan_id'))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $service = $services->firstWhere('id', $seed->service_id) ?? throw new \DomainException('Missing holding service.');
-        $product = $products->firstWhere('id', $service->product_id); $plan = $plans->firstWhere('id', $service->plan_id);
-        $cancel = ServiceCancellation::whereIn('service_id', $serviceIds)->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $configs = $service->configs()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $properties = $service->properties()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        if (!$product || !$plan) { throw new \DomainException('Missing holding route.'); }
-        $markers = $product->settings()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $upgrades = DB::table('product_upgrades')->where('product_id', $product->id)->orWhere('upgrade_id', $product->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        $links = DB::table('config_option_products')->where('product_id', $product->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        // Native Settings::tax selection, using current locked rows rather than a cached read view.
-        $country = $user->properties->where('key', 'country')->value('value');
-        if ($country) { $country = array_search($country, config('app.countries')) ?: $country; }
-        $tax = TaxRate::whereIn('country', [$country, 'all'])->orderByRaw('country = ? desc', [$country])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->first() ?? 0;
+        if (!$advisory && DB::transactionLevel() !== 1) { throw new \LogicException('Holding locks require the outer transaction.'); }
+        ['user' => $user, 'staff' => $staff, 'credit' => $credit, 'invoices' => $invoices, 'items' => $items,
+            'transactions' => $transactions, 'orders' => $orders, 'services' => $services, 'products' => $products,
+            'plans' => $plans, 'service' => $service, 'product' => $product, 'plan' => $plan, 'cancel' => $cancel,
+            'configs' => $configs, 'properties' => $properties, 'markers' => $markers, 'tax' => $tax,
+            'upgrades' => $upgrades, 'links' => $links, 'opIds' => $opIds]
+            = $nativeLocks = HoldingNativeLocks::take((int) $seed->user_id, (int) $seed->service_id, $staffId, $advisory, $seed, additionalServices: $additionalServices, completeInvoices: $completeInvoices);
+        $order = $orders->firstWhere('id', $service->order_id);
         $server = Server::whereKey($seed->server_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $account = Account::where('server_id', $seed->server_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
-        $settings = $server->settings()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $settings = $server->settings()->when($advisory,fn($q)=>$q->whereIn('key',['domains_credentials','domains_verified_credentials','domains_dns_tools']))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $tld = Tld::where(['server_id' => $seed->server_id, 'tld' => $seed->tld])->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $prices = Price::where(['server_id' => $seed->server_id, 'tld' => $seed->tld, 'action' => 'renew'])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $domain = Domain::whereKey($seed->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
-        $operations = Operation::where('domain_id', $seed->id)->orderBy('id')->when($advisory,fn($q)=>$q->limit(101))->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        if ($advisory && $operations->count()>100) { throw new \DomainException('Advisory history limit reached.'); }
-        $c = $domain->snapshot['checkout'] ?? [];
+        $operations = Operation::where('domain_id', $seed->id)->when($advisory,fn($q)=>$q->whereIn('id',$opIds)->limit(100))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $adoption = $domain->adoption_id === null ? null : Adoption::whereKey($domain->adoption_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->first();
         if ($domain->service_id !== $seed->service_id || $domain->user_id !== $seed->user_id || $domain->server_id !== $seed->server_id || $domain->tld !== $seed->tld
-            || !$domain->billing_managed || $domain->reservation_name !== $domain->domain || $domain->authority_generation < 1
-            || (int) $service->user_id !== (int) $user->id || $service->currency_code !== 'USD' || (string) $service->quantity !== '1'
-            || $service->expires_at !== null || $server->extension !== 'Domains' || (int) $product->server_id !== (int) $server->id
-            || $account->account_fingerprint !== $domain->account_fingerprint || $account->registrar_key !== $domain->registrar_key
-            || $tld->account_fingerprint !== $domain->account_fingerprint || $tld->registrar_key !== $domain->registrar_key
-            || ($c['user_id'] ?? null) !== (int) $user->id || ($c['service_id'] ?? null) !== (int) $service->id
-            || ($c['order_id'] ?? null) !== (int) $service->order_id || ($c['product_id'] ?? null) !== (int) $product->id
-            || ($c['annual_plan_id'] ?? null) !== (int) $plan->id || ($c['name'] ?? null) !== $domain->domain
-            || $plan->priceable_type !== $product->getMorphClass() || (int) $plan->priceable_id !== (int) $product->id
-            || $plan->type !== 'recurring' || $plan->billing_unit !== 'year' || (int) $plan->billing_period !== 1
-            || !$product->hidden || $product->allow_quantity !== 'separated' || $product->slug !== NativeCatalogue::slug($tld, $c['action'] ?? '')
-            || $configs->isNotEmpty() || $upgrades->isNotEmpty() || $links->isNotEmpty()
-            || $properties->where('key', 'domain')->count() !== 1 || $properties->firstWhere('key', 'domain')->value !== $domain->domain) {
+            || $domain->adoptionPending() || !$domain->billing_managed || $domain->reservation_name !== $domain->domain || $domain->authority_generation < 1
+            || $server->extension !== 'Domains' || $account->account_fingerprint !== $domain->account_fingerprint || $account->registrar_key !== $domain->registrar_key
+            || $tld->account_fingerprint !== $domain->account_fingerprint || $tld->registrar_key !== $domain->registrar_key) {
             throw new \DomainException('Holding native authority changed.');
         }
-        foreach (['domains_catalogue' => '1', 'domains_tld_id' => (string) $tld->id, 'domains_action' => $c['action'], 'domains_registrar' => $domain->registrar_key] as $key => $value) {
-            $rows = $markers->where('key', $key);
-            if ($rows->count() !== 1 || $rows->first()->value !== $value || $rows->first()->encrypted || $rows->first()->type !== 'string') {
-                throw new \DomainException('Holding product markers changed.');
-            }
-        }
+        $nativeIdentity = HoldingNativeIdentity::capture($domain, $nativeLocks, $tld);
+        $identity_source = HoldingIdentitySource::resolve($domain, $nativeIdentity, $adoption, $account, $cancel);
         $service->setRelation('user', $user);
-        $rows = [$user, ...$user->properties, ...$invoices, ...$items, ...$transactions, ...$services, ...$products, ...$plans, ...$cancel, ...$configs, ...$properties, ...$markers, $server, $account, ...$settings, $tld, ...$prices, $domain, ...$operations];
-        $stamp = hash('sha256', json_encode(array_map(static fn ($row) => $row->getRawOriginal(), $rows), JSON_THROW_ON_ERROR));
-        return compact('advisory', 'credit', 'staff', 'stamp', 'prices', 'transactions', 'domain', 'service', 'product', 'plan', 'user', 'tax', 'server', 'account', 'settings', 'tld', 'operations', 'invoices', 'items', 'cancel');
+        $rows = [$user, ...$user->properties, ...$invoices, ...$items, ...$transactions, ...$orders, ...$services, ...$products, ...$plans, ...$cancel, ...$configs, ...$properties, ...$markers, $server, $account, ...$settings, $tld, ...$prices, $domain, ...($adoption ? [$adoption] : []), ...$operations, ...$upgrades, ...$links, ...($tax === 0 ? [] : [$tax])];
+        $stamp = hash('sha256', json_encode([array_map(static fn ($row) => method_exists($row, 'getRawOriginal') ? $row->getRawOriginal() : (array) $row, $rows), $identity_source], JSON_THROW_ON_ERROR));
+        return compact('identity_source', 'adoption', 'advisory', 'credit', 'staff', 'stamp', 'prices', 'transactions', 'domain', 'service', 'product', 'plan', 'user', 'tax', 'server', 'account', 'settings', 'tld', 'operations', 'invoices', 'items', 'cancel', 'services', 'orders', 'products') + ['relatedProperties' => $nativeLocks['relatedProperties']];
     }
 }

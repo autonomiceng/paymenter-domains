@@ -51,7 +51,7 @@ class ManagementPayload
         return ['algorithm' => $a, 'digest_type' => $t, 'digest' => $d, 'key_tag' => self::integer($r['key_tag'] ?? null)];
     }
     private static function fqdn(#[\SensitiveParameter] string $v): bool
-    { return strlen($v) <= 254 && str_ends_with($v, '.') && filter_var(substr($v, 0, -1), FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) && str_contains(substr($v, 0, -1), '.'); }
+    { return strlen($v) <= 254 && str_ends_with($v, '.') && !str_ends_with(substr($v, 0, -1), '.') && filter_var(substr($v, 0, -1), FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) && str_contains(substr($v, 0, -1), '.'); }
     public static function host(#[\SensitiveParameter] array $r): array
     {
         $name = self::text($r['name'] ?? '', 253); $type = strtoupper(self::text($r['type'] ?? '', 10)); $address = self::text($r['address'] ?? '', 2048);
@@ -75,7 +75,7 @@ class ManagementPayload
         $b = filter_var($ip, FILTER_VALIDATE_IP) ? @inet_pton($ip) : false;
         if ($b === false) { throw new \DomainException('Invalid glue address.'); }
         $ranges = strlen($b) === 4 ? ['0.0.0.0/8','10.0.0.0/8','100.64.0.0/10','127.0.0.0/8','169.254.0.0/16','172.16.0.0/12','192.0.0.0/24','192.0.2.0/24','192.168.0.0/16','198.18.0.0/15','198.51.100.0/24','203.0.113.0/24','224.0.0.0/3']
-            : ['::/127','::ffff:0:0/96','64:ff9b::/96','100::/64','2001:db8::/32','2001::/23','fc00::/7','fe80::/10','ff00::/8'];
+            : ['::/127','::ffff:0:0/96','64:ff9b::/96','64:ff9b:1::/48','100::/64','2001:db8::/32','2001::/23','fc00::/7','fe80::/10','ff00::/8'];
         foreach ($ranges as $range) { [$network, $bits] = explode('/', $range); $n = inet_pton($network); $bytes = intdiv((int) $bits, 8); $rest = (int) $bits % 8;
             if (strncmp($b, $n, $bytes) === 0 && ($rest === 0 || ((ord($b[$bytes]) ^ ord($n[$bytes])) & (0xFF << (8 - $rest)) & 0xFF) === 0)) { throw new \DomainException('Glue requires a public address.'); }
         }
@@ -83,7 +83,11 @@ class ManagementPayload
     public static function canonical(string $kind, #[\SensitiveParameter] array $rows): array
     {
         $rows = array_map(function (#[\SensitiveParameter] $r) use ($kind) {
-            if ($kind === 'dns') { $r = self::host($r); $r['name'] = strtolower(rtrim($r['name'], '.')); if (in_array($r['type'], ['CNAME', 'MX'], true)) { $r['address'] = strtolower($r['address']); } }
+            if ($kind === 'dns') {
+                $r = self::host($r); $r['name'] = strtolower(rtrim($r['name'], '.'));
+                if (in_array($r['type'], ['CNAME', 'MX'], true)) { $r['address'] = strtolower($r['address']); }
+                if (in_array($r['type'], ['A', 'AAAA', 'MXE'], true)) { $r['address'] = inet_ntop(inet_pton($r['address'])); }
+            }
             elseif ($kind === 'srv') { $r = self::srv($r); unset($r['host_id']); $r['target'] = strtolower($r['target']); }
             else { $r = self::ds($r); }
             ksort($r); return $r;

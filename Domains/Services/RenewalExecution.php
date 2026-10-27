@@ -15,6 +15,13 @@ final class RenewalExecution
         private readonly WriteFeatures $features, private readonly Clock $clock) { $this->grants = new \WeakMap; }
     public function run(int $id, RenewalWriter $writer): Operation
     {
+        $work=fn()=>EntryDeadline::run($this->clock, fn ($finishCap) => $this->runEntered($id, $writer, $finishCap));
+        $op=Operation::findOrFail($id);$a=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->first();
+        try{$b=$a?CatalogueAcceptances::binding($a):null;}catch(\Throwable){$b=null;}
+        return $b&&EnomTestRenewal::enabled($b)?EnomTestWriteReservation::run($b,'renewal',$id,$work):$work();
+    }
+    private function runEntered(int $id, RenewalWriter $writer, \DateTimeImmutable $finishCap): Operation
+    {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $capture = DB::transaction(function () use ($seed, $id) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
@@ -22,7 +29,7 @@ final class RenewalExecution
                 $op->update(['state' => 'uncertain', 'lease_expires_at' => null, 'safe_code' => 'stale_claim',
                     'policy' => [...$op->policy, 'renewal_execution' => ['staff_alert' => true, 'reason' => 'stale_claim', 'refundable_later' => false]]]); return null;
             }
-            if (!$op || $op->action !== 'renew' || !in_array($op->state, ['awaiting_payment', 'queued'], true) || !RenewalCycles::virgin($op)) { return null; }
+            if (!$op || $op->action !== 'renew' || !in_array($op->state, ['awaiting_payment', 'queued'], true) || !RenewalCycles::registrarVirgin($op)) { return null; }
             if (isset($op->policy['renewal_admission']['until']) && new \DateTimeImmutable($op->policy['renewal_admission']['until']) > $this->clock->now()) { return null; }
             if ($op->funding_basis === 'paid_invoice' && $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'pending') { return null; }
             try { $this->configured($l); } catch (\Throwable) { $this->hold($op, RenewalCode::Acceptance->value, true); return null; }
@@ -35,47 +42,56 @@ final class RenewalExecution
         if (!$capture) { return Operation::findOrFail($id); }
         [$capture, $admissionClaim] = $capture;
         // The account slot is reserved once. The second complete assessment refreshes every provider fact.
-        $deadline = $this->clock->now()->modify('+250 seconds');
-        $first = $this->admission->check($capture);
-        $descriptor = null; $context = null;
+        $deadline = min($finishCap, $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+250 seconds'));
+        $refusals=EnomTestCalls::refusalGeneration();$first = $this->admission->check($capture, $deadline);
+        $descriptor = null; $context = null;$reservedContext=null;
         try {
             if ($first->code !== RenewalCode::Admitted) { throw new RenewalRefused($first->code); }
             [$binding, $name, $stamp] = $this->authority->capture($capture);
-            $ready = $this->admission->refresh($capture);
+            $ready = $this->admission->refresh($capture, $deadline);
             if ($ready->code !== RenewalCode::Admitted || !$ready->cost || !$ready->validUntil) { throw new RenewalRefused($ready->code); }
             $until = min($deadline, $first->validUntil, $ready->validUntil);
-            [$descriptor, $context] = DB::transaction(function () use ($seed, $id, $binding, $name, $stamp, $ready, $until, $writer, $admissionClaim) {
+            $reservedContext=new RequestContext($binding,RequestOrigin::Background,$until,new RequestBudget(1),$this->clock,Runtime::limiter());
+            return $reservedContext->withReservedWire(function()use($seed,$id,$binding,$name,$stamp,$ready,$until,$writer,$admissionClaim,$reservedContext,&$descriptor,&$context) {
+            EnomTestWriteReservation::reserve($binding,'renewal',$ready->cost);
+            [$descriptor, $context] = DB::transaction(function () use ($seed, $id, $binding, $name, $stamp, $ready, $until, $writer, $admissionClaim,$reservedContext) {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
                 if ($l['stamp'] !== $stamp || !$op || ($op->policy['renewal_admission']['key'] ?? null) !== $admissionClaim
-                    || new \DateTimeImmutable($op->policy['renewal_admission']['until']) <= $this->clock->now() || !RenewalCycles::virgin($op) || !in_array($op->state, ['awaiting_payment', 'queued'], true)) { throw new \DomainException('Renewal changed.'); }
+                    || new \DateTimeImmutable($op->policy['renewal_admission']['until']) <= $this->clock->now() || !RenewalCycles::registrarVirgin($op) || !in_array($op->state, ['awaiting_payment', 'queued'], true)) { throw new \DomainException('Renewal changed.'); }
                 $funding = $this->current($op, $l); $writer->requirePolicy($binding, $this->features, $this->accepted);
                 $cap = $op->policy['renewal']['cost_cap'] ?? null;
                 if (!$cap || $cap['currency'] !== 'USD' || WriteMoney::compare($ready->cost->amount, (new Money($cap['amount'], 'USD'))->amount) > 0) {
                     $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => true]]);
                     $this->hold($op, 'renewal_cost_overrun'); return [null, null];
                 }
-                if ($until < $this->clock->now()->modify('+25 seconds')) { throw new \DomainException('Renewal admission expired.'); }
-                $claim = bin2hex(random_bytes(16)); $digest = hash('sha256', json_encode([$op->operation_key, $op->policy['renewal'], $op->payload], JSON_THROW_ON_ERROR));
+                if ($until < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')) { throw new \DomainException('Renewal admission expired.'); }
+                $reservedContext->requireReservedCapacity();$claim = bin2hex(random_bytes(16)); $digest = hash('sha256', json_encode([$op->operation_key, $op->policy['renewal'], $op->payload], JSON_THROW_ON_ERROR));
                 $op->update(['state' => 'running', 'started_at' => $this->clock->now(), 'lease_expires_at' => $this->clock->now()->modify('+360 seconds'),
                     'request_fingerprint' => $digest, 'funding' => [...($op->funding ?? []), 'claim' => $funding, 'seal' => $funding],
                     'attempt' => ['claim_key' => $claim, 'seal' => 'sealed', 'dispatch_attempted_at' => $this->clock->now()->format(DATE_ATOM),
                         'send_state' => 'possibly_sent', 'authorized_cost' => ['amount' => $ready->cost->amount, 'currency' => 'USD'], 'renewal_mode' => $ready->status->value]]);
                 $descriptor = new AdmittedOperation($binding, new Query($name, Action::Renew, (int) $op->term), $op->operation_key, $claim,
                     $d->authority_generation, $claim, $digest, $ready->cost, new DateEvidence($op->base_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'renewal_base'));
-                $context = new RequestContext($binding, RequestOrigin::Background, $until, new RequestBudget(1), $this->clock);
+                $context = $reservedContext;
                 $fresh = HoldingLocks::take($d); $this->grants[$descriptor] = [$context, $fresh['stamp'], $id, $ready->status->value, $writer];
                 return [$descriptor, $context];
             });
+            return $descriptor?$this->dispatch($seed,$id,$descriptor,$context,$writer):Operation::findOrFail($id);
+            });
         } catch (\Throwable $error) {
-            DB::transaction(function () use ($seed, $id, $admissionClaim, $error) { $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
-                if ($op && RenewalCycles::virgin($op) && ($op->policy['renewal_admission']['key'] ?? null) === $admissionClaim) {
-                    $reason = $error instanceof RenewalRefused ? $error->reason : RenewalCode::Changed;
+            DB::transaction(function () use ($seed, $id, $admissionClaim, $error, $refusals) { $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
+                if ($op && RenewalCycles::registrarVirgin($op) && ($op->policy['renewal_admission']['key'] ?? null) === $admissionClaim) {
+                    $reason = $error instanceof RenewalRefused ? $error->reason : ($error instanceof ReadDeferred?RenewalCode::Rate:RenewalCode::Changed);
                     $retry = in_array($reason, [RenewalCode::Rate, RenewalCode::Reads, RenewalCode::Balance, RenewalCode::Changed, RenewalCode::Acceptance], true);
                     $policy = $op->policy; unset($policy['renewal_admission']); $op->update(['policy' => $policy]);
-                    $this->hold($op, $reason->value, $retry);
+                    $cap=EnomTestRenewal::enabled(CatalogueAcceptances::binding($l['account']))&&($error instanceof EnomTestCallLimit||EnomTestCalls::refusedSince($refusals));
+                    $this->hold($op,$cap?'enom_test_renewal_call_cap':$reason->value,$retry&&!$cap);
                 } });
         }
-        if (!$descriptor) { return Operation::findOrFail($id); }
+        return Operation::findOrFail($id);
+    }
+    private function dispatch($seed,int $id,AdmittedOperation $descriptor,RequestContext $context,RenewalWriter $writer): Operation
+    {
         $result = null;
         try { $result = $writer->renew($descriptor, $context); } catch (\Throwable) {} finally { unset($this->grants[$descriptor]); }
         return DB::transaction(function () use ($seed, $id, $descriptor, $result, $context) {
@@ -103,7 +119,7 @@ final class RenewalExecution
             if ($l['stamp'] !== $grant[1] || $row->state !== 'running' || ($row->attempt['seal'] ?? null) !== 'sealed'
                 || $row->funding['seal'] !== $funding || $row->attempt['claim_key'] !== $op->claimKey
                 || $row->request_fingerprint !== $op->desiredStateDigest || $row->lease_expires_at <= $this->clock->now()
-                || $context->deadline < $this->clock->now()->modify('+25 seconds')) { throw new \DomainException('Sealed renewal authority changed.'); }
+                || $context->deadline < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')) { throw new \DomainException('Sealed renewal authority changed.'); }
             return $grant[3];
         }); } catch (\Throwable $error) { throw new RenewalUnsent('Live renewal refused before the wire.', previous: $error); }
     }

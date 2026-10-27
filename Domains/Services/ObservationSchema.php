@@ -27,6 +27,7 @@ final class ObservationSchema
                 $t->id(); $t->unsignedBigInteger('server_id'); $t->string('account_fingerprint',64);
                 $t->unsignedBigInteger('domain_id'); $t->unsignedBigInteger('generation');
                 $t->unsignedBigInteger('due_at')->index(); $t->unsignedInteger('tries')->default(0);
+                $t->index(['server_id','account_fingerprint','due_at'], $t->getTable().'_account_due_index');
                 $t->unsignedInteger('resumes')->default(0); $t->string('claim',32)->nullable();
                 $t->unsignedBigInteger('lease_until')->default(0); $t->string('safe_code',32)->nullable();
                 $t->string('phase',64)->default('holding'); $t->unique(['domain_id','generation','phase']);
@@ -38,7 +39,12 @@ final class ObservationSchema
         $present=array_filter(array_keys(self::definitions()),fn($name)=>Schema::hasTable($name));
         if ($present && count($present)!==count(self::definitions())) { throw new \RuntimeException('Partial retained observation schema.'); }
         foreach (self::definitions() as $name=>$definition) {
-            if (Schema::hasTable($name)) { SchemaVerifier::verify($name,$definition); }
+            if (Schema::hasTable($name)) {
+                if ($name === 'domains_observation_work' && !Schema::hasIndex($name, $name.'_account_due_index')) {
+                    Schema::table($name, static fn (Blueprint $t) => $t->index(['server_id','account_fingerprint','due_at'], $t->getTable().'_account_due_index'));
+                }
+                SchemaVerifier::verify($name,$definition);
+            }
             else { Schema::create($name,$definition); }
         }
     }

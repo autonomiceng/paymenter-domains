@@ -5,6 +5,7 @@ import subprocess
 import json
 from pathlib import Path
 import sys
+import shutil
 import tarfile
 import tempfile
 import unittest
@@ -12,6 +13,42 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 import native
+import bootstrap
+
+
+class BootstrapTests(unittest.TestCase):
+    def prepare(self, root, native_mode=False):
+        # Reuse only verified local archives; never download for these checks.
+        archives = os.environ.get('PHP_RUNTIME_ARCHIVE_CACHE', bootstrap.CACHE)
+        with mock.patch.object(bootstrap, 'CACHE', root/'runtime-cache'), mock.patch.dict(os.environ, {
+                'PHP_RUNTIME_ARCHIVE_CACHE': str(archives), 'LD_LIBRARY_PATH': str(root)}):
+            return bootstrap.prepare(native=native_mode)
+
+    @unittest.skipUnless(os.environ.get('PAYMENTER_TEST_FIXTURE'), 'native fixture not selected')
+    def test_native_bootstrap_reports_gd_library_load_failure_and_cleans_runtime(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            # Shadow the host library without changing it. PHP must report the actual loader failure.
+            (root/'libgd.so.3').write_bytes(b'not a shared library')
+            with self.assertRaisesRegex(RuntimeError, r'GD.*libgd3') as failure:
+                self.prepare(root, native_mode=True)
+            self.assertIn(str(root/'libgd.so.3'), str(failure.exception))
+            self.assertIn('file too short', str(failure.exception))
+            self.assertEqual(list((root/'runtime-cache').glob('runtime-*')), [])
+
+    def test_provider_bootstrap_does_not_need_gd(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'libgd.so.3').write_bytes(b'not a shared library')
+            for _ in range(2):
+                runtime, binary, extension = self.prepare(root)
+                try:
+                    self.assertTrue(binary.is_file())
+                    self.assertTrue(extension.is_file())
+                    self.assertFalse((extension.parent/'gd.so').exists())
+                    self.assertEqual(list((root/'runtime-cache').glob('*-gd_*.deb')), [])
+                finally:
+                    shutil.rmtree(runtime)
 
 
 class NativeGuardTests(unittest.TestCase):
@@ -71,6 +108,59 @@ class NativeGuardTests(unittest.TestCase):
                 with mock.patch.object(native, 'git', side_effect=git), mock.patch.object(native, 'LOCK_SHA256', lock), self.assertRaises(ValueError):
                     native.verify(root)
 
+    def test_hashes_track_nested_hidden_added_changed_and_removed_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); (root/'a').mkdir(); (root/'empty').mkdir()
+            files = {'a/file': b'nested', 'a.txt': b'peer', '.hidden': b'hidden'}
+            for name, payload in files.items(): (root/name).write_bytes(payload)
+            expected = {name: native.hashlib.sha256(files[name]).hexdigest() for name in sorted(files, key=Path)}
+            before = native.hashes(root)
+            self.assertEqual(before, expected)
+            self.assertEqual(list(before), list(expected))
+            (root/'a/file').write_bytes(b'changed')
+            self.assertNotEqual(native.hashes(root), before)
+            (root/'a/file').write_bytes(files['a/file'])
+            (root/'extra').write_bytes(b'added')
+            self.assertNotEqual(native.hashes(root), before)
+            (root/'extra').unlink(); (root/'.hidden').unlink()
+            self.assertNotEqual(native.hashes(root), before)
+
+    def test_hashes_refuse_file_directory_broken_and_looping_symlinks(self):
+        for shape in ['file', 'directory', 'broken', 'loop', 'nested']:
+            with self.subTest(shape=shape), tempfile.TemporaryDirectory() as temp:
+                parent = Path(temp); root = parent/'tree'; root.mkdir()
+                (parent/'outside').mkdir(); (parent/'outside/file').write_bytes(b'outside')
+                targets = {'file': parent/'outside/file', 'directory': parent/'outside',
+                           'broken': parent/'missing', 'loop': root/'linked', 'nested': parent/'outside/file'}
+                link = root/'nested/linked' if shape == 'nested' else root/'linked'
+                link.parent.mkdir(exist_ok=True); link.symlink_to(targets[shape])
+                with self.assertRaisesRegex(ValueError, r'^Dependency symlinks are not accepted\.$'): native.hashes(root)
+
+    def test_worker_fixture_keeps_pristine_files_and_exact_vendor_inventory(self):
+        for failure in ['source', 'file_link', 'parent_link', 'vendor', 'added', 'missing', 'vendor_link', 'nested_link']:
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)/'fixture'; root.mkdir(); self.fixture(root)
+                snapshot = native.hashes(root)
+                (root/'generated').mkdir(); (root/'generated/cache.php').write_text('<?php')
+                (root/'installed-extension').symlink_to(root/'generated')
+                native.verify(root, fixture_snapshot=snapshot)
+                if failure == 'source': (root/'config/app.php').write_text('changed')
+                if failure == 'file_link':
+                    path = root/'config/app.php'; saved = Path(temp)/'saved'; saved.write_bytes(path.read_bytes())
+                    path.unlink(); path.symlink_to(saved)
+                if failure in ['parent_link', 'vendor_link']:
+                    path = root/('config' if failure == 'parent_link' else 'vendor')
+                    saved = Path(temp)/'saved'; path.rename(saved); path.symlink_to(saved, target_is_directory=True)
+                if failure == 'vendor': (root/'vendor/autoload.php').write_text('changed')
+                if failure == 'added': (root/'vendor/extra.php').write_text('<?php')
+                if failure == 'missing': (root/'vendor/autoload.php').unlink()
+                if failure == 'nested_link': (root/'vendor/extra').symlink_to(root/'generated')
+                expected = (r'Fixture dependency changed: config/app\.php' if failure == 'source'
+                            else r'Fixture dependency path is linked\.' if failure in ['file_link', 'parent_link', 'vendor_link']
+                            else r'Dependency symlinks are not accepted\.' if failure == 'nested_link'
+                            else r'Fixture vendor inventory changed\.')
+                with self.assertRaisesRegex(ValueError, '^'+expected+'$'): native.verify(root, fixture_snapshot=snapshot)
+
     @unittest.skipUnless(os.environ.get('PAYMENTER_TEST_FIXTURE'), 'native fixture not selected')
     def test_rendered_native_exception_has_failure_exit(self):
         root = Path(__file__).resolve().parents[1]
@@ -80,10 +170,10 @@ class NativeGuardTests(unittest.TestCase):
         self.assertIn(b'synthetic native failure', result.stdout + result.stderr)
 
     def test_relative_or_symlink_source_refused(self):
-        with self.assertRaises(ValueError): native.verify(Path('relative'))
+        with self.assertRaisesRegex(ValueError, r'^Use a canonical pristine development dependency\.$'): native.verify(Path('relative'))
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'alias').symlink_to(root, target_is_directory=True)
-            with self.assertRaises(ValueError): native.verify(root/'alias')
+            with self.assertRaisesRegex(ValueError, r'^Use a canonical pristine development dependency\.$'): native.verify(root/'alias')
 
 
 if __name__ == '__main__':

@@ -17,6 +17,7 @@ final class CurlTransport implements DeadlineTransport
         #[\SensitiveParameter] string $apiKey, int $timeoutMs): TransportResponse
     {
         if ($timeoutMs < 1 || $timeoutMs > 25000) { throw new \InvalidArgumentException('Invalid read deadline.'); }
+        $deadline=hrtime(true)+$timeoutMs*1000000;
         if (!function_exists('curl_init') || $apiKey === '' || getenv('SSLKEYLOGFILE')) {
             throw new \RuntimeException('Registrar transport unavailable.');
         }
@@ -28,7 +29,7 @@ final class CurlTransport implements DeadlineTransport
                 .http_build_query($query, '', '&', PHP_QUERY_RFC3986);
             $handle = curl_init();
             if ($handle === false) { throw new \RuntimeException('Registrar transport unavailable.'); }
-            $configured = curl_setopt_array($handle, [
+            $options = [
                 CURLOPT_URL => $url,
                 CURLOPT_HTTPGET => true,
                 CURLOPT_HTTPHEADER => ['Accept: application/json'],
@@ -55,8 +56,14 @@ final class CurlTransport implements DeadlineTransport
                     $body .= $chunk;
                     return strlen($chunk);
                 },
-            ]);
-            if (!$configured || curl_exec($handle) === false) {
+            ];
+            if (!curl_setopt_array($handle,$options)) { throw new \RuntimeException('Registrar transport incomplete.'); }
+            \Paymenter\Extensions\Servers\Domains\Services\ProviderSendGuard::beforeSend('namesilo',$environment===Environment::Live?'live':'test',$request->command);
+            $remaining=intdiv($deadline-hrtime(true),1000000);
+            if ($remaining<1) { throw new \RuntimeException('Registrar transport incomplete.'); }
+            $options[CURLOPT_CONNECTTIMEOUT_MS]=min(8000,$remaining);$options[CURLOPT_TIMEOUT_MS]=$remaining;
+            if (!curl_setopt_array($handle,$options)) { throw new \RuntimeException('Registrar transport incomplete.'); }
+            if (curl_exec($handle) === false) {
                 throw new \RuntimeException('Registrar transport incomplete.');
             }
             return new TransportResponse((int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE), $body);

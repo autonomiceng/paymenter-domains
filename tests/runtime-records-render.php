@@ -1,0 +1,76 @@
+<?php
+// Installed panel and actual observer/owner projections. MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/Support/runtime-records.php';
+use Filament\Facades\Filament;
+use Illuminate\Support\Facades\{Auth,Blade};
+use Illuminate\Support\HtmlString;
+use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,ObservationRecords};
+use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
+$out=$argv[1]??'';$shell=file_get_contents($argv[2]??'');expect(is_dir($out),'Output directory required');
+$registerRecords();$state->dns=array_map(fn($i)=>['name'=>'record'.$i,'type'=>'TXT','address'=>' exact TXT value '.$i.' ','mx_pref'=>10],range(12,1));
+$state->srv=array_map(fn($i)=>['service'=>'sip'.$i,'protocol'=>'tcp','priority'=>0,'weight'=>5,'port'=>443,'target'=>'sip.example.com.'],range(12,1));
+app(\Paymenter\Extensions\Servers\Domains\Services\ObservationWork::class)->enroll($d->server_id);$dueRecords();$runtimePorts->initialManagedRecordObservations();
+same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Actual installed scheduled record producer');
+$emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
+    $dto=$owners->present($d->fresh());storefrontViews();app('view')->getFinder()->flush();
+    expect($dto->autoRenew!==[],'Actual owner projection retains local auto-renew');
+    foreach(['dns','srv']as$kind){
+        expect(isset($dto->management[$kind]),'Actual owner projection retains '.$kind.' capability');
+        $copy=new OwnedDomain(...[...get_object_vars($dto),'management'=>[$kind=>$dto->management[$kind]]]);
+        $pageKeys=array_fill_keys(['setup','recovery','code','renew','auto-renew',...\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS],str_repeat('a',64));
+        $pageKeys['auto-renew']=str_repeat('b',64);
+        $html=view('domains::show',['domain'=>$copy,'keys'=>$pageKeys])->render();
+        $dom=storefrontDom($html);
+        $rows=$dom->query('//li[@id="'.$kind.'"]');
+        same(1,$rows->length,'Customer record section remains visible: '.$kind.' '.$stateName);
+        $forms=$dom->query('//form[@id="form-auto-renew" and @method="POST"]');
+        same(1,$forms->length,'Customer auto-renew form remains available: '.$kind.' '.$stateName);
+        same($dto->autoRenew['url'],$forms->item(0)->getAttribute('action'),'Auto-renew form retains its actual owner URL');
+        $keys=$dom->query('.//input[@name="_request_key"]',$forms->item(0));
+        same(1,$keys->length,'Auto-renew form has one request key');
+        same($pageKeys['auto-renew'],$keys->item(0)->getAttribute('value'),'Auto-renew form receives its own action key');
+        if ($stateName==='complete') {
+            same(12,$dom->query('//table[contains(@class,"domains-records")]/tbody/tr[@data-record]')->length,'Complete customer inventory retains all 12 '.$kind.' records');
+            foreach (range(0,11) as $i) {
+                $field=$kind==='dns'?'name':'service';$prefix=$kind==='dns'?'record':'sip';
+                $input=$dom->query('//input[@id="'.$kind.'-'.$i.'-'.$field.'"]');
+                same(1,$input->length,'Record input exists at numeric index '.$i);
+                same($prefix.($i+1),$input->item(0)->getAttribute('value'),'Customer '.$kind.' record order is numeric');
+            }
+        } else {
+            $expected=$stateName==='unknown'?'Shows after the next sync':'Shows when our team resumes record checks';
+            expect(str_contains($rows->item(0)->textContent,$expected),'Record note explains recovery for '.$kind.' '.$stateName);
+        }
+        preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;
+        writeRenderArtifact($out.'/customer-'.$kind.'-'.$stateName.'.html',str_replace('@@SLOT@@',$content,$shell));
+    }
+};
+$emit('complete');
+$p=$d->fresh()->observation;unset($p['records']);$d->fresh()->update(['observation'=>$p]);$emit('unknown');
+ObservationRecords::hold($d->fresh(),'records_unavailable',$clock->now());$emit('held');
+$staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
+$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
+Filament::getCurrentPanel()->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
+$staffPage=static function(string $name)use($staff,$out,$css,&$d):void {
+$test=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSee($name==='staff-scheduled-stop'?'Sync stopped after repeated failures.':"Sync stopped: couldn't read DNS records.");
+if ($name==='staff-scheduled-stop') { $test->assertSee('Sync failed')->assertSee('1 attempt. Stopped until resumed.'); }
+$html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$test->instance(),'body'=>$test->html()]);
+$html=preg_replace('~<script\b[^>]*>.*?</script>~si','',$html);$html=preg_replace('~<link\b[^>]*>~si','',$html);
+$html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);
+$html=preg_replace('~src="https?://[^\"]+"~','src="data:image/svg+xml;base64,'.base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#64748b"/></svg>').'"',$html);
+$html=str_replace('</head>','<style>'.$css.'</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>',$html);
+writeRenderArtifact($out.'/'.$name.'.html',$html);
+};
+$staffPage('staff-record-hold');
+$p=$d->fresh()->observation;unset($p['record_hold']);$d->fresh()->update(['observation'=>$p]);
+$bindings->setProcessing($d->server_id,false);$observation->fault='info_missing';$dueRecords();$runtimePorts->initialManagedRecordObservations();
+$bindings->setProcessing($d->server_id,true,static fn()=>null);
+same(1,(int)Illuminate\Support\Facades\DB::table('domains_observation_work')->where('domain_id',$d->id)->value('tries'),'Stopped fixture retains one actual attempted check');
+$emit('stopped');$staffPage('staff-scheduled-stop');
+$strings=[];foreach(glob($out.'/*.html')as$file){$strings[basename($file)]=trim(preg_replace('/\s+/u',' ',strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',file_get_contents($file)))));}
+writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
+echo "Installed staff record hold, 12-row numeric customer DNS/SRV and unknown notes rendered.\n";$nativeSuccessful=true;

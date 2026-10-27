@@ -9,7 +9,8 @@ interface CatalogueReader extends RegistrarDriver
 {
     /** Accepted endings only; one batch per refresh. Missing/null entries retain prior state.
      * Explicit CatalogueUnavailable invalidates cost/sale evidence without inventing a no-price quote.
-     * @return array<string, \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry|\Paymenter\Extensions\Servers\Domains\Data\CatalogueUnavailable|null>
+     * CatalogueFailure retains prior state with a closed failure code.
+     * @return array<string, \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry|\Paymenter\Extensions\Servers\Domains\Data\CatalogueUnavailable|\Paymenter\Extensions\Servers\Domains\Data\CatalogueFailure|null>
      */
     public function catalogueBatch(CatalogueAcceptance $accepted, CatalogueFreshness $freshness, RequestContext $context): array;
 }

@@ -1,14 +1,15 @@
 <?php
 // Synthetic post-seal guard regressions; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/write-fixture.php';
 use App\Models\InvoiceTransaction;
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, WriteAcceptance};
 $ops = [];
-foreach (['funding', 'owner', 'generation', 'reservation', 'pause', 'peer', 'acceptance', 'lease', 'context', 'budget', 'reference', 'charge', 'candidates', 'refund', 'cost', 'policy'] as $change) { $ops[$change] = $new('boundary-'.$change.'.com'); }
-$rate = $new('rate-held.com'); $preseal = [];
-foreach (['charge', 'order_candidates', 'refund'] as $key) { $preseal[$key] = $new('preseal-'.str_replace('_', '-', $key).'.com'); }
+foreach (['funding', 'owner', 'generation', 'reservation', 'pause', 'peer', 'acceptance', 'lease', 'context', 'budget', 'reference', 'charge', 'candidates', 'refund', 'cost', 'policy'] as $change) { $ops[$change] = $new(placeholderComFixtureName('boundary-'.$change.'-placeholder.com')); }
+$rate = $new(placeholderComFixtureName('rate-held-placeholder.com')); $preseal = [];
+foreach (['charge', 'order_candidates', 'refund'] as $key) { $preseal[$key] = $new(placeholderComFixtureName('preseal-'.str_replace('_', '-', $key).'-placeholder.com')); }
 foreach ($ops as $change => $op) {
     $build($enomBinding);
     $proxy->before = static function ($admitted, $context) use ($change, $op, $bindings, $enomBinding, $clock) {
@@ -41,7 +42,7 @@ foreach ($ops as $change => $op) {
     $before = count($transport->calls); $result = $engine->execute($op->id);
     same($before, count($transport->calls), 'Post-seal '.$change.' refuses transport'); same('uncertain', $result->state, 'Sealed refusal preserves uncertainty');
     expect(array_key_exists('execution', $result->attempt), 'Sealed refusal records execution null');
-    if ($change === 'pause') { $bindings->setProcessing($op->server_id, true); }
+    if ($change === 'pause') { $bindings->setProcessing($op->server_id, true, syntheticActivation()); }
     if ($change === 'acceptance') { CatalogueAcceptances::save($enomBinding, 2, ['com' => ['register' => [1, 3], 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]]); }
     if ($change === 'lease') { $clock->instant = $clock->now()->modify('-26 seconds'); }
 }
@@ -55,6 +56,6 @@ foreach ($preseal as $key => $op) {
 }
 $preflight->during = null;
 $bridge = $build($enomBinding); Cache::put('domains-write-slot:'.$enomBinding->fingerprint, true, 60);
-$result = $engine->execute($rate->id); same('held', $result->state, 'Rate refusal precedes claim'); same('write_rate_limited', $result->safe_code, 'Neutral rate hold');
+$result = $engine->execute($rate->id); same($rate->state, $result->state, 'Rate refusal preserves retryable unclaimed state'); same(null, $result->safe_code, 'Write contention is not a permanent hold');
 same(null, $result->attempt, 'Rate refusal burns no claim or seal'); same([], $transport->calls, 'Rate budget has zero wire calls');
 echo "Sealed bridge current authority checks passed\n"; $nativeSuccessful = true;

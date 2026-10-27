@@ -10,9 +10,15 @@ same('succeeded',$r->state,'Exact status, Active, flags, unique charge and full 
 same('99.00',$r->cost['actual']['amount'],'Original transfer charge committed'); same('9001',$r->provider_order_id,'History ID retained without invented original ID');
 same('2028-01-01',$r->domain->provider_expires_at->format('Y-m-d'),'Full year from immutable baseline'); same(1,$r->domain->confirmed_revision,'Revision committed');
 same('active',App\Models\Service::find($r->service_id)->status,'Native service activated'); same(null,App\Models\Service::find($r->service_id)->expires_at,'Native expiry remains null');
+same(['ns1.provider.example','ns2.provider.example'],$r->domain->fresh()->observation['nameservers']['nameservers']??null,'NameSilo domain-info values are saved on completed transfer');
+same('observed',$r->domain->fresh()->observation['nameservers']['state']??null,'NameSilo transfer nameservers retain observed provenance');
 expect(RenewalAuthority::completed($r,$r->domain,$binding),'Transfer anchor accepted');
 $calls=$observe->calls; $reconcile->run($r->id); same($calls,$observe->calls,'Repeated completed reconciliation performs no I/O');
 $op=$prepare('no-status-expiry'); $observe->expiration=[]; same('succeeded',$reconcile->run($op->id)->state,'Optional expiration absent uses proven domain expiry');
+$op=$prepare('missing-nameservers'); $observe->fault='missing_nameservers'; $r=$reconcile->run($op->id);
+same('succeeded',$r->state,'Missing nameserver readback does not block transfer completion');
+same(['ns1.provider.example','ns2.provider.example'],$r->domain->fresh()->observation['nameservers']['nameservers']??null,'Submitted nameservers remain visible without readback');
+same('requested',$r->domain->fresh()->observation['nameservers']['state']??null,'NameSilo transfer fallback stays unconfirmed');
 $unresolved(['inactive','auto','privacy','short','owner','nocharge','duplicate','late','credited','unknowncharge','paged','nohistory','lag']);
 // Slice25 accepts the no-ID anchor and still requires immutable ordinary acquisition proof.
 $observe->name=$completed->domain->domain; $observe->fault=''; $authority=new RenewalAuthority($readBindings,$clock);

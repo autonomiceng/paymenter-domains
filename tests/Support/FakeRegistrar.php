@@ -12,6 +12,7 @@ final class FakeRegistrar implements RegistrarDriver
 {
     public array $calls = [];
     public array $reconciliationReferences = [];
+    public static array $readClaims = [];
     public function __construct(private readonly AccountBinding $account, private readonly Capabilities $capabilities,
         private readonly DriverResult $response)
     {
@@ -21,7 +22,8 @@ final class FakeRegistrar implements RegistrarDriver
     public function binding(): AccountBinding { return $this->account; }
     private function read(string $method, RequestContext $context): DriverResult
     {
-        $context->claimRead($this->account);
+        $milliseconds = $context->claimRead($this->account);
+        self::$readClaims[] = ['milliseconds' => $milliseconds, 'remaining' => $context->budget->remaining()];
         $this->calls[] = $method;
         return $this->response;
     }
@@ -36,6 +38,8 @@ final class FakeRegistrar implements RegistrarDriver
     {
         Query::requireName($name); return $this->read('domain', $context);
     }
+    public function readRenewalDomain(string $name, RequestContext $context): DriverResult
+    { return $this->readDomain($name, $context); }
     public function renewalAssessment(Query $query, RequestContext $context): DriverResult
     {
         if ($query->action !== Action::Renew) { throw new \InvalidArgumentException('Renewal assessment requires renew action.'); }

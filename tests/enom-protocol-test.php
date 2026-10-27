@@ -35,6 +35,15 @@ $catalogue = envelope('GetTLDList', '<TLDList>'.str_repeat('<TLD>example</TLD>',
 expect(strlen($catalogue) > 1048576, 'Catalogue fixture exceeds normal cap');
 same('success', $parser->parse(ReadCommand::Tlds, $catalogue)->status, 'Source larger catalogue allowance retained');
 same('unknown', $parser->parse(ReadCommand::Tlds, str_repeat('x', 8388609))->status, 'Catalogue cap enforced on injection');
+// Production shape (Enom TEST GetTLDList, 2026-10-22 excerpt): nested entries, IDN and numeric endings mixed in.
+$entries = ['eco', 'com', 'net', 'co.uk', 'xn--3ds443g', '3rdearlyaccess', 'example36', 'ORG'];
+$listed = envelope('GetTLDList', '<tldlist>'.implode('', array_map(fn ($t) => "<tld>\n<tld>$t</tld>\n</tld>\n", $entries)).'</tldlist>');
+same(['eco', 'com', 'net', 'co.uk', 'org'], Paymenter\Extensions\Servers\Domains\Registrars\Enom\Catalogue::names($parser->parse(ReadCommand::Tlds, $listed)),
+    'Unsupported listed endings are skipped, not fatal to the whole list');
+same(null, Paymenter\Extensions\Servers\Domains\Registrars\Enom\Catalogue::names($parser->parse(ReadCommand::Tlds, envelope('GetTLDList', '<tldlist><tld><tld>xn--3ds443g</tld></tld></tldlist>'))),
+    'A list with no supported ending stays unavailable');
+same(null, Paymenter\Extensions\Servers\Domains\Registrars\Enom\Catalogue::names($parser->parse(ReadCommand::Tlds, envelope('GetTLDList', '<tldlist><tld><tld>com</tld></tld><tld><tld>bad ending</tld></tld></tldlist>'))),
+    'A non-hostname entry still voids the whole list');
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');
 $transport = new class implements Transport {
     public int $calls = 0;
@@ -106,3 +115,10 @@ foreach ([$client, $reply, $failure] as $private) {
     try { $copy = clone $private; throw new LogicException('Expected clone refusal'); } catch (LogicException $e) { expect(!str_contains($e->getMessage(), 'Expected'), 'Cloning refused'); }
 }
 echo "Enom protocol: bounded XML, context, redaction and read-only dispatch passed.\n";
+
+foreach (['host','record'] as $container) {
+    foreach (['A'=>' 192.0.2.1 ', 'CNAME'=>' target.example.com ', 'MX'=>' mail.example.com ', 'TXT'=>'  exact text  '] as $type=>$address) {
+        $reply=$parser->parse(ReadCommand::Hosts,envelope('GetHosts','<'.$container.'><address>'.$address.'</address><type>'.$type.'</type></'.$container.'>'));
+        same($type==='TXT'?$address:trim($address),$reply->value($container.'.address'),'Only TXT preserves address bytes in '.$container);
+    }
+}

@@ -17,7 +17,7 @@ final readonly class TransferPreflight implements SealPreflight
                 || ($this->profiles && $transport->usesProfiles($this->profiles) && $accepted->usesProfiles($this->profiles)));
     }
     private static function selection(Operation $op, Domain $d): SaleSelection
-    { return new SaleSelection($d->tld, $op->server_id, $op->registrar_key, $op->account_fingerprint, 0, $op->action, $op->term, 'USD', 0, 0); }
+    { return new SaleSelection($d->tld, (int) $op->server_id, $op->registrar_key, $op->account_fingerprint, 0, $op->action, $op->term, 'USD', 0, 0); }
     public function inspect(Operation $op, Domain $domain, RequestContext $context): DispatchReadiness
     {
         OperationClaims::outside(); $query = OperationClaims::query($op, $domain); $this->features->requireEnabled(Action::Transfer);
@@ -34,9 +34,9 @@ final readonly class TransferPreflight implements SealPreflight
             if (!$this->profiles->hasProof($op)) { $this->profiles->prepare($op, $context); }
         }
         $capability = $this->accepted->requireCurrent($context->binding, $query, $op);
-        $reader = $this->bindings->reader($context->binding->serverId); $context->binding->requireMatch($reader->binding());
+        $reader = $context->binding->registrarKey==='enom'&&EnomTestTransfer::enabled($context->binding)?$this->bindings->registrationPreflightReader($context->binding):$this->bindings->reader($context->binding->serverId); $context->binding->requireMatch($reader->binding());
         $observed = $context->now(); $transfer = $this->precheck->check($query->name, self::selection($op, $domain), $reader, $context);
-        $quote = $reader->quote($query, $context); $balance = $reader->balance($context);
+        $quote = $reader->quote($query, $context); $balance = BalanceReads::read($reader, $context, 'preflight');
         foreach ([$quote, $balance] as $result) {
             $context->binding->requireMatch($result->binding);
             if ($result->disposition !== Disposition::Accepted) { throw new WriteHeld('write_acceptance_required'); }

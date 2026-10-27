@@ -3,23 +3,25 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, CostUnit, DispatchSeal, Discrepancy, Disposition,
     DriverResult, Environment, Evidence, ExecutionRecord, ExpiryPrecision, Money, PersistedExecution, Query, QuoteEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, RenewalStatus, SendState};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, ResponseParser, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, OrderCharge, Pricing};
 $clock = new class implements Clock { public DateTimeImmutable $at; public function now(): DateTimeImmutable { return $this->at; } };
 $clock->at = new DateTimeImmutable('2026-10-18T12:00:00Z');
 $binding = new AccountBinding('enom', 1, Environment::Test, 'offline');
 $context = fn (int $budget = 8) => new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+1 hour'), new RequestBudget($budget), $clock);
 $wire = new class implements Transport {
-    public array $data = []; public array $calls = []; public bool $fail = false; public bool $reject = false; public ?ReadCommand $failCommand = null;
+    public array $data = []; public array $calls = []; public bool $fail = false; public bool $reject = false; public ?ReadCommand $failCommand = null; public ?ReadCommand $rejectCommand = null;
     public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
     {
         $this->calls[] = [$command, $parameters];
         if ($this->fail || $this->failCommand === $command) { throw new RuntimeException('private-token'); }
-        return '<interface-response><Command>'.$command->value.'</Command><ErrCount>'.($this->reject ? '1' : '0').'</ErrCount><Done>true</Done>'.($this->data[$command->name] ?? '').'</interface-response>';
+        if (str_starts_with($this->data[$command->name] ?? '', '<interface-response>')) { return $this->data[$command->name]; }
+        return '<interface-response><Command>'.$command->value.'</Command><ErrCount>'.(($this->reject || $this->rejectCommand === $command) ? '1' : '0').'</ErrCount><Done>true</Done>'.($this->data[$command->name] ?? '').'</interface-response>';
     }
 };
 $driver = new Driver(new Client($binding, 'offline', 'private-token', $wire), ['com']);
@@ -54,7 +56,7 @@ $wire->data['ProductPrice'] = '<ProductPrice><ProductEnabled>true</ProductEnable
 same('0.0000', $driver->catalogueRate('com', 'renew', 1, $context(), new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness(86400, 86400))->perYear, 'Known annual zero survives');
 $wire->data['ProductPrice'] = str_replace('</ProductPrice>', '<Currency>CAD</Currency></ProductPrice>', $wire->data['ProductPrice']);
 same('unknown', $driver->productPrice('com', 'renew', 1, $context())->status, 'Currency contradiction cannot withdraw');
-foreach ([['query' => new Query('other.com', Action::Register, 3)], ['currency' => 'CAD'], ['cost' => null], ['total' => '26.865001'],
+foreach ([['query' => new Query(reservedFixtureName('example.net'), Action::Register, 3)], ['currency' => 'CAD'], ['cost' => null], ['total' => '26.865001'],
     ['total' => '26.8651'], ['at' => $clock->now()->modify('+1 second')], ['until' => $clock->now()]] as $fault) {
     $q = $fault['query'] ?? $query; $at = $fault['at'] ?? $clock->now();
     $cost = array_key_exists('cost', $fault) ? null : new Money($fault['total'] ?? '26.8650', $fault['currency'] ?? 'USD');
@@ -63,14 +65,32 @@ foreach ([['query' => new Query('other.com', Action::Register, 3)], ['currency' 
     try { Pricing::catalogue($bad, $binding, $query, $clock->now()); throw new LogicException('Expected refusal'); } catch (DomainException) {}
 }
 try { Pricing::catalogue($quote, new AccountBinding('enom', 2, Environment::Test, 'offline'), $query, $clock->now()); throw new LogicException('Expected binding refusal'); } catch (InvalidArgumentException) {}
+// Replay the observed flat reply and empty Check currency through the real driver.
+$captured = require __DIR__.'/Support/enom-captured-renewal.php';
+$wire->data['Info'] = '<GetDomainInfo><DomainName DomainNameID="456">example.com</DomainName><Status><Belongs-To>offline</Belongs-To><Expiration>10/22/2027 5:00:00 AM</Expiration></Status></GetDomainInfo>';
+$wire->data += $captured;
+$capturedResult = $driver->renewalAssessment(new Query('example.com', Action::Renew, 1), $context(3));
+same(Disposition::Accepted, $capturedResult->disposition, 'Captured flat renewal reply is accepted');
+same(RenewalStatus::Ordinary, $capturedResult->evidence()->renewal, 'Captured future flat expiry establishes ordinary renewal');
+same('8.9500', $capturedResult->evidence()->quote?->cost?->amount, 'Captured empty Check currency preserves exact one-year USD price');
+$wire->data = array_diff_key($wire->data, $captured, ['Info' => true]);
 $info = '<GetDomainInfo><DomainName DomainNameID="456">example.com</DomainName><Status><Belongs-To>offline</Belongs-To><Expiration>10/12/2028 11:14:00 PM</Expiration></Status></GetDomainInfo>';
-$extend = '<GetExtendInfo><Expiration>10/12/2028</Expiration><Price>8.95</Price><RegistrarHold>False</RegistrarHold><MaxExtension>8</MaxExtension></GetExtendInfo>';
+$extend = '<Expiration>10/12/2028</Expiration><Price>8.95</Price><RegistrarHold>False</RegistrarHold><MaxExtension>8</MaxExtension>';
 $check = '<Domains><Domain><Name>example.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Prices><Currency/><Renewal>8.95</Renewal></Prices></Domain></Domains>';
 $wire->data += ['Info' => $info, 'RenewalInfo' => $extend, 'Check' => $check];
 $renew = new Query('example.com', Action::Renew, 2);
 $result = $driver->renewalAssessment($renew, $context(3));
 same(RenewalStatus::Ordinary, $result->evidence()->renewal, 'Owned precise future expiry and limits establish ordinary provider state');
 same('17.9000', $result->evidence()->quote?->cost?->amount, 'Documented annual renewal price gives exact selected total');
+foreach(['<RegistrarHold>True</RegistrarHold>','<Price>99.00</Price>','<Currency>EUR</Currency>','<MaxExtension>1</MaxExtension>',''] as $wrapped) {
+    $wire->data['RenewalInfo']=$extend.'<GetExtendInfo>'.$wrapped.'</GetExtendInfo>';
+    $reply=(new ResponseParser)->parse(ReadCommand::RenewalInfo,'<interface-response><Command>GetExtendInfo</Command><ErrCount>0</ErrCount><Done>true</Done>'.$wire->data['RenewalInfo'].'</interface-response>');
+    same(null,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Renewal::limits($reply),'Wrapped renewal facts never supply flat limits');
+    $assessment=$driver->renewalAssessment($renew,$context(3))->evidence();
+    same(RenewalStatus::Unknown,$assessment->renewal,'Unsupported wrapped renewal evidence stays unknown');
+    same(null,$assessment->quote,'Conflicting wrapped evidence never supplies a quote');
+}
+$wire->data['RenewalInfo']=$extend;
 same('2028-10-13T06:14:00+00:00', $result->evidence()->domain?->expiry?->value, 'Pacific date reconciles against authenticated precise UTC next day');
 same(ExpiryPrecision::Instant, $result->evidence()->domain?->expiry?->precision, 'No date precision lost');
 foreach (['foreign' => str_replace('offline', 'other', $info), 'date' => str_replace('10/12/2028 11:14:00 PM', '10/12/2028', $info)] as $fault => $payload) {
@@ -87,10 +107,19 @@ foreach (['2028-10-13T00:00:00Z', '2028-10-13T06:14:00Z', '2028-10-13T06:59:59.9
 $wire->data['Info'] = str_replace('10/12/2028 11:14:00 PM', '2028-10-13T06:14:00.000001Z', $info);
 same(RenewalStatus::Unknown, $driver->renewalAssessment($renew, $context())->evidence()->renewal, 'Unsupported fractional expiry cannot be silently truncated');
 $wire->data['Info'] = $info;
+$wire->data['RenewalInfo'] = str_replace('10/12/2028', '2028-10-13T06:14:00Z', $extend)
+    .'<GetExtendInfo><Expiration>10/14/2028</Expiration></GetExtendInfo>';
+same(RenewalStatus::Unknown, $driver->renewalAssessment($renew, $context())->evidence()->renewal, 'Conflicting wrapped expiry refuses before matching instant shortcut');
+$wire->data['RenewalInfo'] = '<GetExtendInfo>'.$extend.'</GetExtendInfo>';
+same(RenewalStatus::Unknown, $driver->renewalAssessment($renew, $context())->evidence()->renewal, 'Unevidenced wrapped renewal reply stays unknown');
 foreach ([str_replace('10/12/2028', '10/13/2028', $extend), str_replace('False', 'unknown', $extend),
-    str_replace('</GetExtendInfo>', '</GetExtendInfo><RegistryExpDate>2028-10-12T08:00:00Z</RegistryExpDate>', $extend)] as $bad) {
+    $extend.'<RegistryExpDate>2028-10-12T08:00:00Z</RegistryExpDate>'] as $bad) {
     $wire->data['RenewalInfo'] = $bad;
     same(RenewalStatus::Unknown, $driver->renewalAssessment($renew, $context())->evidence()->renewal, 'Conflicting expiry/unknown hold never ordinary');
+}
+foreach (['<Currency>CAD</Currency>', '<Currency/>', '<Currency>?</Currency>', '<Currency>USD</Currency><Currency>USD</Currency>'] as $currency) {
+    $wire->data['RenewalInfo'] = $extend.$currency;
+    same(null, $driver->renewalAssessment($renew, $context())->evidence()->quote, 'Malformed or conflicting flat currency stays unknown');
 }
 $wire->data['RenewalInfo'] = $extend;
 $wire->data['Check'] = str_replace('<Currency/>', '<Currency>CAD</Currency>', $check);
@@ -119,11 +148,16 @@ foreach ([str_replace('456', '457', $wire->data['Expired']), str_replace('Expire
     same(RenewalStatus::Unknown, $driver->renewalAssessment($annual, $context())->evidence()->renewal, 'Unknown/restorable/foreign listing never grace');
     $wire->data['Expired'] = $saved;
 }
-foreach (['Redemption', 'RedemptionPeriod', 'Restorable'] as $state) {
-    $saved = $wire->data['Expired']; $wire->data['Expired'] = str_replace('Expired', $state, $saved);
+expect(str_contains($wire->data['Expired'], '<Status>Expired</Status>'), 'Status replacement fixture must contain the real status field');
+foreach (['RGP', 'Redemption', 'RedemptionPeriod', 'Restorable'] as $state) {
+    $saved = $wire->data['Expired']; $wire->data['Expired'] = str_replace('<Status>Expired</Status>', '<Status>'.$state.'</Status>', $saved);
     same(RenewalStatus::Redemption, $driver->renewalAssessment($annual, $context())->evidence()->renewal, 'Exact restoration inventory is distinct from grace');
     $wire->data['Expired'] = $saved;
 }
+$saved = $wire->data['Expired'];
+$wire->data['Expired'] = str_replace('<Status>Expired</Status>', '<Status>Extended RGP</Status>', $saved);
+same(RenewalStatus::ExtendedRedemption, $driver->renewalAssessment($annual, $context())->evidence()->renewal, 'Documented Extended RGP requires separate support handling');
+$wire->data['Expired'] = $saved;
 $wire->data['RenewalInfo'] = str_replace('False', 'True', $extend);
 same(RenewalStatus::Grace, $driver->renewalAssessment($annual, $context())->evidence()->renewal, 'Expired grace can retain hold as in source admission');
 $wire->data['RenewalInfo'] = $extend;
@@ -140,6 +174,18 @@ foreach ([ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Expired] as
     same(Disposition::Unknown, $driver->quote($annual, $context())->disposition, 'Every required renewal read failure reports Unknown');
 }
 $wire->failCommand = null;
+foreach (['transport', 'provider'] as $failure) {
+    foreach ([ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Expired] as $index => $failed) {
+        $wire->failCommand = $failure === 'transport' ? $failed : null; $wire->rejectCommand = $failure === 'provider' ? $failed : null; $before = count($wire->calls);
+        $result = $driver->renewalAssessment($annual, $context());
+        same([Disposition::Unknown, $failure === 'transport' ? SendState::PossiblySent : SendState::Sent, RenewalStatus::Unknown, null, null],
+            [$result->disposition, $result->sendState, $result->evidence()->renewal, $result->evidence()->quote, $result->evidence()->domain],
+            'First failed renewal prerequisite preserves unresolved result without financial proof');
+        same(array_slice([ReadCommand::Info, ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Expired], 0, $index + 2),
+            array_column(array_slice($wire->calls, $before), 0), 'Failed renewal prerequisite stops before Check/expired inventory follow-ups');
+    }
+}
+$wire->failCommand = null; $wire->rejectCommand = null;
 $execution = new PersistedExecution($binding, new Query('example.com', Action::Register, 1), 'original', Disposition::Accepted, SendState::Sent, '9001');
 $attempt = fn (Action $action = Action::Register, ?Money $expected = null, ExecutionRecord $record = ExecutionRecord::Recorded) => new AttemptEvidence(
     $binding, new Query('example.com', $action, 1), 'original', 1, $record, SendState::Sent, $clock->now(), $clock->now(),
@@ -150,11 +196,36 @@ $order = fn (array $h) => new ProtocolResult('success', data: ['order' => $h]);
 $candidate = OrderCharge::read($attempt(), $execution, $order($header));
 same('8.95', $candidate?->charge?->amount, 'Single exact closed item proves actual USD charge');
 same('2026-11-07T13:40:05+00:00', $candidate?->processedAt?->value, 'BillDate retains provider Pacific time semantics');
+// Both order fields accept exactly one optional dollar sign, independently.
+foreach (['8.95', '$8.95'] as $total) {
+    foreach (['8.95', '$8.95'] as $paid) {
+        $data = $header; $data['orderbillamount'] = $total; $data['orderdetail']['amountpaid'] = $paid;
+        same('8.95', OrderCharge::read($attempt(), $execution, $order($data))?->charge?->amount,
+            'Order dollar acceptance: '.$total.' / '.$paid);
+    }
+}
+foreach (['double_dollar' => '$$8.95', 'bare_dollar' => '$', 'leading_space' => ' $8.95',
+    'negative_prefix' => '-$8.95', 'negative_amount' => '$-8.95', 'trailing_dollar' => '8.95$',
+    'null' => null, 'integer' => 895, 'float' => 8.95, 'boolean' => true, 'array' => ['8.95'], 'object' => new stdClass] as $case => $invalid) {
+    foreach (['amountpaid', 'orderbillamount'] as $field) {
+        $data = $header;
+        if ($field === 'amountpaid') { $data['orderdetail'][$field] = $invalid; }
+        else { $data[$field] = $invalid; }
+        same(null, OrderCharge::read($attempt(), $execution, $order($data)), 'Order dollar refusal: '.$field.' / '.$case);
+    }
+}
+foreach (['amountpaid', 'orderbillamount'] as $field) {
+    $data = $header;
+    if ($field === 'amountpaid') { $data['orderdetail'][$field] = '$9.95'; }
+    else { $data[$field] = '$9.95'; }
+    same(null, OrderCharge::read($attempt(), $execution, $order($data)), 'Order dollar mismatch: '.$field);
+}
+same(null, Pricing::cents('$8.95'), 'Order dollar decoration never loosens quote parsing');
 foreach (['orderid' => '9002', 'result' => 'false', 'orderbillamount' => '$9.95', 'currency' => 'EUR', 'orderdetail' => [$header['orderdetail'], $header['orderdetail']]] as $field => $value) {
     same(null, OrderCharge::read($attempt(), $execution, $order(array_replace($header, [$field => $value]))), 'Ambiguous header/split order has unknown charge');
 }
-foreach ([['description', 'other.com'], ['producttype', 'Domain'], ['quantity', '2'], ['status', 'Failed'], ['orderstatus', 'Open'],
-    ['amountpaid', '8.950'], ['currency', ''], ['amountpaid', '$8.95']] as [$field, $value]) {
+foreach ([['description', reservedFixtureName('example.net')], ['producttype', 'Domain'], ['quantity', '2'], ['status', 'Failed'], ['orderstatus', 'Open'],
+    ['amountpaid', '8.950'], ['currency', '']] as [$field, $value]) {
     $bad = $header; $bad['orderdetail'][$field] = $value;
     same(null, OrderCharge::read($attempt(), $execution, $order($bad)), 'Unbound/ambiguous item never charge proof');
 }

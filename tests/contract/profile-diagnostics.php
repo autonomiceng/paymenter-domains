@@ -17,6 +17,9 @@ foreach (ProfileDiagnostics::FIELDS as $wireField => $field) {
         same('field.'.$field, $d['held_by'], 'Exact first failed identity predicate');
         same($category, $d['fields'][$field]['category'], 'Closed field category');
         same(false, $d['fields'][$field]['match'], 'Missing/malformed/mismatched fields cannot match');
+        foreach (['invented-contact-secret', 'other-contact-secret', '101'] as $secret) {
+            expect(!str_contains(json_encode($d), $secret), 'Every mismatch category omits values and IDs');
+        }
     }
 }
 foreach (['contact_id', 'default_profile'] as $field) {

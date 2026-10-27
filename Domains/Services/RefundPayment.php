@@ -18,7 +18,7 @@ final class RefundPayment
             || (int) $invoice->user_id !== (int) $d->user_id || $invoice->currency_code !== 'USD'
             || (int) $item->invoice_id !== (int) $invoice->id || (string) $item->quantity !== '1'
             || PricingRule::minor($op->amount) <= 0 || PricingRule::minor($item->price) !== PricingRule::minor($op->amount)) {
-            throw new \DomainException('No exact eligible paid native line.');
+            throw new OperationRefused(OperationFailure::NoPaidLine);
         }
         if (in_array($op->action, ['register', 'transfer'], true)) { InvoiceBinding::requireIdentity($op, $d, $s, $invoice, $item, $l['product']); }
         elseif ($op->action === 'renew') {
@@ -54,7 +54,7 @@ final class RefundPayment
     public static function requireCurrent(Operation $op, array $l): array
     {
         [$invoice, $item] = self::requireLine($op, $l);
-        if ($invoice->status !== 'paid' && !($invoice->status === 'cancelled' && RefundProof::retired($op, $l['domain']))) {
+        if ($invoice->status !== 'paid' && !($invoice->status === 'cancelled' && (RefundProof::retired($op, $l['domain']) || PrivacyRetirement::safe($op, $l['domain'])))) {
             throw new \DomainException('Native invoice must be paid or proven retired.');
         }
         $total = $net = 0; $payments = [];

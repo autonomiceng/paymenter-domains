@@ -1,19 +1,32 @@
 @component('layouts.app', ['title' => $domain->name, 'sidebar' => true])
 <div class="container mt-14 mb-10"><div class="domains">
 @include('domains::partials.styles')
-@include('domains::partials.test-banner', ['test' => $domain->testEnvironment])
-<a class="domains-back" href="{{ route('domains.domains.index') }}">Domains</a>
-<div class="domains-dhead"><div><h1 class="domains-title domains-record-value" tabindex="0">{{ $domain->name }}</h1><div class="domains-dhead__meta"><span class="domains-badge domains-tone-{{ $domain->tone }}">{{ $domain->status }}</span>@if ($domain->expiry)<span>Expires <strong>@include('domains::partials.date', ['date' => $domain->expiry])</strong></span>@endif</div></div></div>
+@php
+    $support = ($summary ?? null)?->urls['support'] ?? (\Illuminate\Support\Facades\Route::has('tickets.create') ? route('tickets.create') : null);
+    $notice = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($domain, $support, $summary ?? null);
+    $pill = \Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::owned($domain, $summary ?? null);
+    $groups = ['DNS' => ['nameservers', 'dns', 'srv', 'glue', 'ds'], 'Security and contacts' => ['lock', 'privacy', 'contacts', 'auth_code_email']];
+@endphp
+<nav class="domains-crumb" aria-label="Breadcrumb"><a href="{{ route('domains.domains.index') }}">Domains</a> / {{ $domain->name }}</nav>
+<div class="domains-ph"><h1 class="domains-mono">{{ $domain->name }}{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($domain->demo, $domain->testEnvironment) }}</h1>@if ($pill)<span class="domains-pill">@include('domains::partials.status-pill', ['pill' => $pill])</span>@endif</div>
 @include('domains::partials.notices', ['fieldKeys'=>['nameservers','contact','dns','srv','ds','glue']])
-@if ($domain->changesUnavailable)<div class="domains-notice" role="status">You can’t change this domain’s settings right now. Try again later, or contact support if this continues.</div>@endif
-@if (isset($domain->actions['setup']))<section class="domains-panel domains-section"><h2 class="domains-h2">{{ $domain->setup['defaults'] && !$domain->setup['contacts'] ? 'Choose your nameservers' : 'Complete your domain setup' }}</h2><p>{{ $domain->setup['defaults'] && !$domain->setup['contacts'] ? 'Optional. If you don’t choose, we use the default nameservers. You can change them later.' : 'Confirm the details for your domain before we continue.' }}</p><a class="domains-btn domains-btn--primary" href="{{ $domain->actions['setup'] }}">{{ $domain->setup['defaults'] && !$domain->setup['contacts'] ? 'Choose nameservers' : 'Continue setup' }}</a></section>@endif
-@if (isset($domain->actions['code']))<section class="domains-panel domains-section"><h2 class="domains-h2">Transfer code</h2><p>{{ $domain->transfer['received'] ? 'Code saved.' : (!$domain->transfer['open'] ? 'See your transfer’s status.' : 'Your current registrar gives you this code. It’s also called an auth code or EPP code.') }}</p><a class="domains-btn domains-btn--secondary" href="{{ $domain->actions['code'] }}">{{ (!$domain->transfer['open'] || $domain->transfer['received']) ? 'View transfer' : 'Enter transfer code' }}</a></section>@endif
-@if ($domain->management)
-<nav class="domains-tabs" aria-label="Domain settings"><a class="domains-tab" href="#overview">Overview</a>@foreach ($domain->management as $cap => $section)<a class="domains-tab" href="#{{ $cap }}">{{ $section['label'] }}</a>@endforeach<a class="domains-tab" href="#domains-activity">Activity</a></nav>
+@if ($notice)
+<div class="domains-notice domains-notice--{{ $notice['tone'] }}" role="status"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4M12 16h.01"/><circle cx="12" cy="12" r="10"/></svg><span class="domains-notice__tx">{{ $notice['text'] }}</span>@if ($notice['action']) <a class="domains-a" href="{{ $notice['action']['url'] }}">{{ $notice['action']['label'] }}</a>@endif</div>
 @endif
-<section id="overview" class="domains-panel domains-section"><h2 class="domains-h2">Overview</h2><dl class="domains-facts"><div class="domains-fact"><dt>Auto-renew</dt><dd>{{ $domain->renewal }}</dd></div>@if ($domain->renewalPrice)<div class="domains-fact"><dt>Renewal price</dt><dd>{{ $domain->renewalPrice }}/yr</dd></div>@endif</dl></section>
-@include('domains::partials.owner-management')
+<div class="domains-cols"><div>
+@foreach ($groups as $heading => $caps)
+@php($caps = array_values(array_filter($caps, fn ($cap) => isset($domain->management[$cap]) || ($cap === 'nameservers' && $domain->syncPaused))))
+@if ($caps)
+<section class="domains-panel" aria-labelledby="heading-{{ \Illuminate\Support\Str::slug($heading) }}"><div class="domains-panel__h"><h2 id="heading-{{ \Illuminate\Support\Str::slug($heading) }}" class="domains-h2">{{ $heading }}</h2></div>
+<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $caps])</ul></section>
+@endif
+@endforeach
+@unless ($domain->setupPending)
 @include('domains::partials.activity')
+@endunless
+</div><aside>
+@include('domains::partials.owner-renew')
+</aside></div>
 @include('domains::partials.client-script')
 </div></div>
 @endcomponent

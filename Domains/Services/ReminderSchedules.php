@@ -9,6 +9,15 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 /** Explicit enrollment and audited optimistic edits; installation never overwrites customizations. */
 final class ReminderSchedules
 {
+    /** Null means unreadable saved data, not an empty schedule. */
+    public static function storedDays(mixed $value):?array
+    {
+        if(!is_string($value)){return null;}
+        try{$days=json_decode($value,false,8,JSON_THROW_ON_ERROR);}catch(\JsonException){return null;}
+        if(!is_array($days)){return null;}
+        foreach($days as $day){if(!is_int($day)||$day<0||$day>365){return null;}}
+        return $days;
+    }
     public static function offsets(string $value):array
     {
         if(strlen($value)>200){throw new \InvalidArgumentException('Reminder schedule too long.');}$days=[];
@@ -32,17 +41,24 @@ final class ReminderSchedules
     public static function save(User $actor,int $serverId,int $revision,bool $enabled,string $before,string $after,string $reason):void
     {
         OperationClaims::outside();$b=self::offsets($before);$a=self::offsets($after);
-        if(!preg_match('/^[a-z][a-z0-9_]{4,63}$/D',$reason)){throw new \DomainException('A safe audit reason is required.');}
+        StaffReason::require($reason);
         DB::transaction(function()use($actor,$serverId,$revision,$enabled,$b,$a,$reason):void {
             $u=User::whereKey($actor->id)->lockForUpdate()->firstOrFail();$role=$u->role()->lockForUpdate()->first();$u->setRelation('role',$role);
             if(!$u->hasPermission(Staff::VIEW)||!$u->hasPermission(Staff::POLICY)){throw new \DomainException('Reminder policy permission required.');}
             $s=Server::whereKey($serverId)->lockForUpdate()->firstOrFail();$account=Account::where('server_id',$serverId)->lockForUpdate()->firstOrFail();
             $q=DB::table('domains_reminder_schedules')->where('server_id',$serverId);$old=(clone $q)->lockForUpdate()->first();
             if(!$old||$s->extension!=='Domains'||$old->account_fingerprint!==$account->account_fingerprint||(int)$old->revision!==$revision){throw new \DomainException('Reload the reminder schedule.');}
-            $audit=decrypt($old->audit);if(!is_array($audit)||count($audit)>=100){throw new \DomainException('Reminder audit limit reached.');}
+            if(self::storedDays($old->before_days)===null||self::storedDays($old->after_days)===null){throw new \DomainException('Reload the reminder schedule.');}
+            $audit=decrypt($old->audit);if(!is_array($audit)){throw new \DomainException('Reminder audit unavailable.');}
             $next=['enabled'=>$enabled,'before_days'=>json_encode($b),'after_days'=>json_encode($a)];
-            $audit[]=['actor_id'=>(int)$u->id,'reason'=>$reason,'at'=>gmdate(DATE_ATOM),'revision'=>$revision+1,
+            $entry=['actor_id'=>(int)$u->id,'reason'=>$reason,'at'=>gmdate(DATE_ATOM),'revision'=>$revision+1,
                 'before'=>['enabled'=>(bool)$old->enabled,'before_days'=>$old->before_days,'after_days'=>$old->after_days],'after'=>$next];
+            if(count($audit)>=100||strlen(encrypt([...$audit,$entry]))>60000){
+                if(!$audit){throw new \DomainException('Reminder audit entry too large.');}
+                $json=json_encode(['through_revision'=>$revision,'rows'=>$audit],JSON_THROW_ON_ERROR);
+                AuditArchives::append((int)$s->id,'reminders',$json);$audit=[];
+            }
+            $audit[]=$entry;
             $q->update([...$next,'revision'=>$revision+1,'audit'=>encrypt($audit)]);
         });
     }

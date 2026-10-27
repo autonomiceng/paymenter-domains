@@ -118,7 +118,7 @@ are charged to foundation allowance; estimates remain ±25%, and hard limits req
 
 | PR | Budget | Scope / predecessors / evidence |
 | --- | ---: | --- |
-| 31R | 1,200 | Initial durable DNS/SRV/DS/child-host observations; explicit complete/unknown and partial glue, bounded account/read budgets, domain/provider/account/generation binding, no GET transport. Observation lane owns the producer after36–38 and before39. Owner DNS/SRV editing requires proven current records.39 only registers the accepted producer. Split green commits if hard limits require. |
+| 31R | 1,200 | Initial durable DNS/SRV/DS/child-host observations; explicit complete/unknown and partial glue, bounded account/read budgets, domain/provider/account/generation binding, no GET transport. Observation lane owns the producer after 36–38 and before 39. Owner DNS/SRV editing requires proven current records. 39 only registers the accepted producer. Split green commits if hard limits require. |
 
 ## Parallel worktrees and owners
 
@@ -131,7 +131,7 @@ are charged to foundation allowance; estimates remain ±25%, and hard limits req
 | Finance | 19,21–28,31,38 | Financial: claims/funding/completion/reservation release/lock order | Frozen schema/binding |
 | Contacts | 18,27 inputs | Contact: validation/recovery/RDAP inputs | Driver schemas; refund gates for 27 |
 | Presentation | 32–36,43 | Client/admin/theme: separate views/controllers/presenter consumer | Frozen DTO fixtures; merge after engine |
-| Conversion | 41,44 conversion | Migration with integration/finance: offline converter | Accepted Enom schema,39/40 |
+| Conversion | 41,44 conversion | Migration with integration/finance: offline converter | Accepted Enom schema, 39/40 |
 
 Assign individuals to these roles before parallel work. Central manifest/hook edits go through the
 integration owner. Merge/rebase by listed dependencies. Freeze the actually accepted Enom 0.5

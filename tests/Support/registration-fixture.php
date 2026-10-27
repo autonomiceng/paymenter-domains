@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, DomainOperations, OperationClaims, RegistrarRegistry, RegistrationPreflight, RegistrationProfiles, WriteAcceptance, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 \Paymenter\Extensions\Servers\Domains\Services\ContactProfileSchema::install();
-$registration = (object) ['query' => null, 'calls' => [], 'mode' => '', 'profile' => [], 'id' => 100, 'diagnostics' => []];
+$registration = (object) ['query' => null, 'calls' => [], 'reads' => [], 'purchases' => [], 'mode' => '', 'profile' => [], 'id' => 100, 'diagnostics' => []];
 $registry = new RegistrarRegistry;
 $verifier = new class implements AccountVerifier {
     public function verify(Environment $e, #[SensitiveParameter] array $credentials): string { return $credentials['token']; }
@@ -17,6 +17,7 @@ $verifier = new class implements AccountVerifier {
 foreach (['enom', 'namesilo'] as $key) {
     $registry->register($key, ['token'], $verifier, static function (AccountBinding $b, array $c) use ($registration, $clock): FakeRegistrar {
         same(0, DB::transactionLevel(), 'Read factory outside locks');
+        $registration->reads[] = $registration->query->name;
         $quote = new QuoteEvidence($registration->query, new Money('99.00', 'USD'), CostUnit::TermTotal, 'synthetic', $clock->now(), $clock->now()->modify('+120 seconds'));
         return new FakeRegistrar($b, new Capabilities($b, []), new DriverResult($b, Disposition::Accepted, SendState::Sent,
             ResultReason::Acknowledged, new Evidence(quote: $quote, balance: new Money('100.00', 'USD'), available: true, premium: false)));
@@ -36,7 +37,7 @@ $makeEngine = static function ($binding, $exchange, ?WriteFeatures $features = n
     Cache::forget('domains-write-slot:'.$binding->fingerprint);
 };
 $runRegistration = static function (Operation $op) use (&$engine, $registration) {
-    $op->update(['payload' => $op->payload + ['nameservers' => ['ns1.provider.net', 'ns2.provider.net'], 'privacy' => false]]);
+    $op->update(['payload' => $op->payload + ['nameservers' => ['ns1.provider.example', 'ns2.provider.example'], 'privacy' => false]]);
     $registration->query = OperationClaims::query($op, $op->domain); return $engine->execute($op->id);
 };
 $assertRetained = static function ($result, array $corrections): void {

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, Discrepancy, Disposition, DriverResult, Evidence, RegistrationEvidence, RequestContext, ResultReason, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, Discrepancy, Disposition, DriverResult, Evidence, NameserverEvidence, RegistrationEvidence, RequestContext, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{RegistrationCommand, ResponseParser};
 final class Registration extends RegistrationProtocol
@@ -27,6 +27,7 @@ final class Registration extends RegistrationProtocol
             foreach ($fields as $local => $wire) { $parameters[($role === 'auxbilling' ? 'AuxBilling' : ucfirst($role)).$wire] = $contact[$local]; }
         }
         $parser = new ResponseParser;
+        $submittedAt = $ctx->now();
         $purchase = $parser->parse(RegistrationCommand::Purchase, $this->request($op, $ctx, $origin, 'Purchase', $parameters));
         if ($purchase->status !== 'success') { return new DriverResult($op->binding, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved); }
         $reference = $purchase->value('orderid');
@@ -39,26 +40,35 @@ final class Registration extends RegistrationProtocol
         if ($purchase->code !== '200' || $reference === null || $expiry === null) {
             return new DriverResult($op->binding, Disposition::Unknown, SendState::Sent, ResultReason::Unresolved, new Evidence(registration: $facts));
         }
-        $corrections = []; $servers = $payload['nameservers'] ?? [];
+        $corrections = []; $servers = $payload['nameservers'] ?? []; $nameservers = null;
         if ($servers) {
             $corrections[] = 'nameservers';
             try {
                 $ns = $name + self::nameservers($servers);
                 $parser->parse(RegistrationCommand::Nameservers, $this->request($op, $ctx, $origin, 'ModifyNS', $ns));
+            } catch (\Throwable) { /* A failed ancillary send cannot undo the accepted purchase. */ }
+            try {
                 // Ack alone never clears correction work. GetDNS must exactly match desired state.
                 $read = $parser->parse(RegistrationCommand::NameserverReadback, $this->request($op, $ctx, $origin, 'GetDNS', $name));
                 $actual = $read->value('dns');
                 if (is_string($actual)) { $actual = [$actual]; }
                 if ($read->status === 'success' && is_array($actual) && array_is_list($actual)
                     && count(array_filter($actual, 'is_string')) === count($actual)) {
-                    $actual = array_map(static fn ($host) => strtolower(rtrim($host, '.')), $actual);
-                    $expected = array_values(self::nameservers($servers));
-                    sort($actual); sort($expected);
-                    if ($actual === $expected) { $corrections = []; }
+                    try { $nameservers = NameserverEvidence::observed($actual, 'enom_getdns', $ctx->now()); }
+                    catch (\Throwable) { $nameservers = null; }
+                    if ($nameservers !== null) {
+                        $observed = $nameservers->nameservers; $expected = array_values(self::nameservers($servers));
+                        sort($observed); sort($expected);
+                        if ($observed === $expected) { $corrections = []; }
+                    }
                 }
             } catch (\Throwable) { /* Accepted purchase survives every ancillary failure. */ }
         }
-        $facts = new RegistrationEvidence($op->query, $reference, $expiry, null, $corrections);
+        if ($nameservers === null && $servers) {
+            try { $nameservers = NameserverEvidence::requested($servers, 'registration_request', $submittedAt); }
+            catch (\Throwable) { /* Invalid submitted data cannot be shown as a nameserver fact. */ }
+        }
+        $facts = new RegistrationEvidence($op->query, $reference, $expiry, null, $corrections, $nameservers);
         return new DriverResult($op->binding, $corrections ? Disposition::AcceptedWithDiscrepancy : Disposition::Accepted,
             SendState::Sent, $corrections ? ResultReason::Fallback : ResultReason::Acknowledged, new Evidence(registration: $facts),
             $corrections ? [Discrepancy::Nameservers] : []);

@@ -31,8 +31,10 @@
 .domains .domains-small { font-size: .8125rem; line-height: 1.25rem; }
 .domains .domains-num { font-variant-numeric: tabular-nums; }
 .domains .domains-nowrap { white-space: nowrap; }
-.domains .domains-a { color: var(--e-accent); font-weight: 600; text-underline-offset: 3px; }
+.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-linkbtn { text-decoration: none; }
 .domains .domains-a:hover { text-decoration: underline; }
+.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }
 .domains .domains-back { display: inline-flex; align-items: center; gap: .25rem; font-size: .875rem; color: var(--e-muted); min-height: 2rem; }
 .domains .domains-back:hover { color: var(--e-fg); }
 .domains .domains-stack > * + * { margin-top: 1rem; }
@@ -79,6 +81,7 @@
 .domains .domains-badge { display: inline-flex; align-items: center; gap: .375rem; padding: .125rem .625rem; border-radius: 999px; font-size: .75rem;
     font-weight: 700; line-height: 1.25rem; white-space: nowrap; color: var(--e-quiet); background: color-mix(in srgb, currentColor 13%, transparent); }
 .domains .domains-badge::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: currentColor; }
+.domains .domains-pill-reason { display: block; margin-top: .25rem; font-size: .75rem; line-height: 1rem; color: var(--e-muted); }
 .domains .domains-tone-ok { color: var(--e-ok); }
 .domains .domains-tone-info { color: var(--e-info); }
 .domains .domains-tone-warn { color: var(--e-warn); }
@@ -148,6 +151,7 @@
 .domains .domains-tbl tbody tr:last-child td { border-bottom: 0; }
 .domains .domains-tbl tbody tr:hover td { background: color-mix(in srgb, var(--e-line) 22%, transparent); }
 .domains .domains-tbl .domains-end { text-align: right; }
+.domains .domains-domain, .domains .domains-num .domains-domain { font-variant-numeric: normal; }
 .domains .domains-domain { font-weight: 700; letter-spacing: -.005em; color: var(--e-fg); }
 .domains a.domains-domain:hover { color: var(--e-accent); }
 @media (max-width: 719px) {
@@ -165,11 +169,10 @@
 /* Search */
 .domains .domains-searchbar { display: flex; align-items: stretch; gap: .375rem; padding: .375rem; border: 1px solid var(--e-line); border-radius: .875rem;
     background: var(--e-panel); transition: border-color .15s, box-shadow .15s; }
-.domains .domains-searchbar:focus-within { border-color: var(--e-accent); box-shadow: 0 0 0 4px hsl(var(--color-primary) / .14); }
+.domains .domains-searchbar:focus-within { border-color: var(--e-accent); box-shadow: 0 0 0 1px var(--e-accent), 0 0 0 4px hsl(var(--color-primary) / .2); }
 .domains .domains-searchbar input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--e-fg); font-size: 1.1875rem; font-weight: 600; padding: .625rem .875rem; letter-spacing: -.005em; }
 .domains .domains-searchbar input::placeholder { color: var(--e-muted); font-weight: 400; }
-.domains .domains-searchbar :is(input, select):focus { outline: none; box-shadow: none; }
-.domains .domains-searchbar :is(input, select):focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+.domains .domains-searchbar :is(input, select):is(:focus, :focus-visible) { outline: none; box-shadow: none; }
 .domains .domains-searchbar select { flex: none; border: 0; border-left: 1px solid var(--e-line); border-radius: 0; background-color: transparent; color: var(--e-fg);
     font-size: 1rem; font-weight: 700; padding: 0 2.25rem 0 1rem; min-height: 3rem; width: auto; }
 .domains .domains-searchbar .domains-btn { min-height: 3rem; padding: 0 1.375rem; border-radius: .5rem; font-size: .9375rem; }
@@ -262,15 +265,6 @@
 .domains-dhead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem 2rem; }
 .domains .domains-dhead__meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-top: .5rem; font-size: .875rem; color: var(--e-muted); }
 .domains .domains-dhead__meta strong { color: var(--e-fg); font-weight: 600; }
-.domains .domains-tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--e-line); overflow-x: auto; scrollbar-width: none; }
-.domains .domains-tabs::-webkit-scrollbar { display: none; }
-.domains .domains-tab { display: inline-flex; align-items: center; gap: .375rem; padding: .75rem .875rem; font-size: .875rem; font-weight: 600; color: var(--e-muted);
-    border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
-.domains .domains-tab:hover { color: var(--e-fg); }
-.domains .domains-tab[aria-selected="true"] { color: var(--e-fg); border-bottom-color: var(--e-accent); }
-.domains .domains-tab .domains-dot { width: .4375rem; height: .4375rem; border-radius: 50%; background: var(--e-warn); }
-.domains .domains-tabpanel + .domains-tabpanel { margin-top: 1.5rem; }
-.domains.domains-js .domains-tabpanel { margin-top: 1.25rem; }
 .domains .domains-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
 .domains .domains-facts { padding-block: .5rem; }
 .domains .domains-facts:not(:last-child) { border-bottom: 1px solid var(--e-line); }
@@ -340,7 +334,7 @@
 .domains .domains-filter > .domains-input { max-width: 100%; }
 @media (max-width: 639px) { .domains .domains-filter > .domains-input { width: 100%; } }
 
-/* Enom 444f31c empty state */
+/* Empty state */
 .domains .domains-empty { padding: 3rem 1.5rem; text-align: center; }
 .domains .domains-empty p { color: var(--e-muted); max-width: 42ch; margin: .375rem auto 1.25rem; font-size: .9375rem; }
 /* Record editors share the table overflow and input focus rules. */
@@ -357,5 +351,115 @@
 .domains .domains-dhead > div { min-width: 0; max-width: 100%; }
 .domains .domains-record-value { white-space: nowrap; overflow-wrap: normal; overflow-x: auto; max-width: 100%; }
 .domains .domains-inline-token { display: inline-block; max-width: 100%; white-space: nowrap; overflow-wrap: normal; overflow-x: auto; vertical-align: bottom; }
+.domains .domains-wrap { overflow-wrap:anywhere; word-break:normal; white-space:normal; }
+.domains .domains-summary { min-width:0; }
+.domains .domains-summary-badges { margin-block:.75rem; align-items:flex-start; }
+.domains .domains-summary .domains-small { display:block; }
+.domains .domains-summary-links { margin-block:1rem; }
+.domains .domains-checks { margin-block:1rem; }
+.domains .domains-checks > summary { cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+/* Domains list: the whole row opens the domain; a fix link inside a cell stays clickable above it. */
+.domains .domains-linkrow { position:relative; }
+.domains .domains-row-link::after { content:""; position:absolute; inset:0; }
+.domains .domains-row-link:focus-visible { outline:none; }
+.domains .domains-linkrow:is(:hover, :focus-within) td { background: color-mix(in srgb, var(--e-accent) 10%, transparent); }
+.domains .domains-linkrow .domains-missing__fix { position:relative; z-index:1; }
+.domains .domains-list .domains-domain { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight:500; text-decoration:none; }
+.domains .domains-list .domains-domain:hover { text-decoration:underline; }
+.domains .domains-list td { vertical-align:top; }
+.domains .domains-cell-main { display:block; }
+.domains .domains-cell-sub, .domains .domains-list .domains-missing__cause, .domains .domains-list .domains-missing__fix { display:block; margin:.2rem 0 0; font-size:.75rem; color:var(--e-muted); }
+.domains .domains-list .domains-missing__fix { color:var(--e-accent); }
+.domains .domains-cell-sub .domains-missing { font-weight:500; }
+.domains .domains-tone-text-warn { color: var(--e-warn); }
+.domains .domains-tone-text-bad { color: var(--e-bad); }
+.domains .domains-badge { white-space:normal; }
+.domains .domains-missing { display:inline-flex; align-items:center; gap:.375rem; color: var(--e-bad); font-weight:600; }
+.domains .domains-missing__cause { margin-inline-start:.5rem; color:var(--e-muted); }
+.domains .domains-missing__fix { margin-inline-start:.5rem; white-space:nowrap; }
+/* Demo tag: the only orange on the page. Wraps as one unit after the name. The Test variant has the same shape. */
+.domains .domains-demo-tag { display: inline-flex; align-items:center; height:18px; padding:0 6px; margin-inline-start:8px; border-radius:4px;
+    font-size:11px; font-weight:600; line-height:1; letter-spacing:.03em; white-space: nowrap; vertical-align:2px; cursor:help; }
+@include('domains::partials.demo-tag-colors')
+.domains a:focus-visible,.domains summary:focus-visible { outline:2px solid var(--e-accent);outline-offset:3px; }
+@media(max-width:639px) { .domains .domains-summary .domains-facts { grid-template-columns:1fr; } .domains .domains-summary .domains-fact { min-width:0; } }
+.domains fieldset{min-width:0}.domains .domains-checkbox{overflow-wrap:anywhere}
+.domains-name-cell{min-width:11rem}.domains-name-cell .domains-domain{display:inline-block}
+@media(max-width:719px){.domains-stackable .domains-name-cell{min-width:0;grid-column:1}.domains-stackable td.domains-cell-wide{grid-column:1/-1}.domains-list td.domains-end{grid-column:2;grid-row:1}}
+/* Confirm step: a modal with script, an inline panel without. */
+.domains .domains-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.domains .domains-confirm { width: min(30rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); margin: auto; padding: 1.5rem; border: 1px solid var(--e-line); border-radius: .75rem;
+    background: var(--e-panel); color: var(--e-fg); box-shadow: 0 24px 60px rgb(0 0 0 / .35); overflow: auto; }
+.domains .domains-confirm::backdrop { background: rgb(0 0 0 / .55); }
+.domains .domains-confirm:not(:modal) { position: static; width: auto; max-width: 38rem; margin: .25rem 0 0; box-shadow: none; border-color: var(--e-warn); }
+.domains .domains-confirm > p { margin-top: .75rem; font-size: .875rem; }
+.domains .domains-confirm__facts { display: grid; gap: .625rem; margin-top: .75rem; font-size: .875rem; }
+.domains .domains-confirm__facts dt { font-size: .8125rem; color: var(--e-muted); }
+.domains .domains-confirm__facts dd { margin: .125rem 0 0; }
+.domains .domains-confirm__facts dd span { display: block; font-weight: 600; }
+.domains .domains-confirm .domains-buttons { margin-top: 1.25rem; }
+@media (prefers-reduced-motion: no-preference) { .domains .domains-confirm:modal { animation: domains-confirm-in .15s ease-out; } }
+@keyframes domains-confirm-in { from { opacity: 0; transform: translateY(.5rem); } }
+/* Help popovers and the help page */
+.domains .domains-help-head { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.domains .domains-help-btn { display: inline-grid; place-items: center; inline-size: 1.5rem; block-size: 1.5rem; flex: none; border: 1px solid var(--e-line); border-radius: 999px; background: transparent; color: var(--e-muted); font-size: .8125rem; font-weight: 700; line-height: 1; cursor: help; }
+.domains .domains-help-btn:hover, .domains .domains-help-btn[aria-expanded="true"] { color: var(--e-fg); border-color: var(--e-accent); }
+.domains .domains-help-btn:focus-visible { outline: 2px solid var(--e-accent); outline-offset: 2px; }
+.domains .domains-help-pop { white-space: normal; display: none; box-sizing: border-box; position: absolute; z-index: 20; top: 100%; left: 0; margin-top: .375rem; inline-size: max-content; max-inline-size: min(22rem, 100%); padding: .625rem .75rem; border: 1px solid var(--e-line); border-radius: .5rem; background: var(--e-panel); color: var(--e-fg); box-shadow: 0 .5rem 1.5rem rgb(0 0 0 / .25); font-size: .875rem; font-weight: 400; line-height: 1.375rem; }
+.domains .domains-help[data-open] .domains-help-pop, .domains .domains-help:not([data-ready]):is(:hover, :focus-within) .domains-help-pop { display: block; }
+@media (prefers-reduced-motion: no-preference) { .domains .domains-help[data-open] .domains-help-pop { animation: domains-confirm-in .12s ease-out; } }
+.domains .domains-help-toc { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin-top: .5rem; }
+.domains .domains-prose h2 { margin-top: 1.75rem; scroll-margin-top: 5rem; }
+.domains .domains-prose h2:first-child { margin-top: 0; }
+.domains .domains-prose p, .domains .domains-prose ul { margin-top: .625rem; max-width: 42rem; }
+.domains .domains-prose ul { padding-left: 1.25rem; list-style: disc; }
+.domains .domains-prose li + li { margin-top: .25rem; }
+/* ---------- Domain page ---------- */
+.domains .domains-crumb { font-size: .8125rem; color: var(--e-muted); margin-bottom: .5rem; }
+.domains .domains-crumb a { color: var(--e-muted); text-decoration: none; }
+.domains .domains-transfer { max-width: 36rem; }
+.domains .domains-crumb a:hover { color: var(--e-fg); }
+.domains .domains-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.domains .domains-ph { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-bottom: 1.5rem; }
+.domains .domains-ph__sub { flex-basis: 100%; margin: -.5rem 0 0; color: var(--e-muted); font-size: .875rem; }
+.domains h1.domains-mono { font-size: 1.75rem; line-height: 1.2; font-weight: 600; overflow-wrap: anywhere; }
+.domains .domains-ph ~ .domains-notice { align-items: center; margin-bottom: 1.5rem; }
+.domains .domains-notice__tx { flex: 1; }
+.domains .domains-cols { display: grid; grid-template-columns: minmax(0, 760px) 320px; gap: 1.5rem; align-items: start; }
+.domains .domains-cols > * > .domains-panel + .domains-panel { margin-top: 1.5rem; }
+.domains .domains-panel__h { padding: 1rem 1.25rem; border-bottom: 1px solid var(--e-line); }
+.domains .domains-panel__h h2, .domains .domains-card, .domains .domains-card dd { margin: 0; }
+.domains .domains-rows { list-style: none; margin: 0; padding: 0; }
+.domains .domains-panel__b { padding: 1rem 1.25rem; }
+.domains .domains-rows > .domains-row { position: relative; display: grid; grid-template-columns: 11.25rem minmax(0, 1fr) auto; gap: 1rem; align-items: center; padding: .875rem 1.25rem; border-bottom: 1px solid var(--e-line); }
+.domains .domains-rows > .domains-row:last-child { border-bottom: 0; }
+.domains .domains-row > form { display: contents; }
+.domains .domains-row > dialog, .domains .domains-row > form > dialog { grid-column: 1 / -1; }
+.domains .domains-row__l { display: inline-flex; align-items: center; gap: .375rem; font-size: .8125rem; font-weight: 500; color: var(--e-muted); }
+.domains .domains-row__v { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.domains .domains-row__a { display: flex; flex-wrap: wrap; gap: .75rem; font-size: .8125rem; font-weight: 600; }
+.domains .domains-sub { display: block; margin-top: .1875rem; font-size: .75rem; font-weight: 400; color: var(--e-muted); }
+.domains .domains-linkbtn { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.domains .domains-inline { display: inline; margin: 0; }
+.domains .domains-card > div { position: relative; display: flex; justify-content: space-between; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid var(--e-line); }
+.domains .domains-card > div:last-child { border-bottom: 0; }
+.domains .domains-card dt { display: inline-flex; align-items: center; gap: .375rem; font-size: .8125rem; font-weight: 500; color: var(--e-muted); }
+.domains .domains-card dd { min-width: 0; text-align: right; font-weight: 500; }
+.domains .domains-missing__line { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .25rem .375rem; }
+.domains .domains-missing__line .domains-missing__fix { margin-inline-start: 0; }
+.domains .domains-card .domains-missing__fix { font-size: .8125rem; }
+@media (min-width: 640px) {
+  .domains .domains-card dt { flex: none; white-space: nowrap; }
+  .domains .domains-missing__line { flex-wrap: nowrap; white-space: nowrap; }
+}
+.domains .domains-btn--block { display: flex; justify-content: center; box-sizing: border-box; width: 100%; margin-top: 1rem; }
+.domains .domains-edit { width: min(40rem, calc(100vw - 2rem)); }
+.domains .domains-edit:not(:modal) { max-width: none; }
+.domains .domains-edit__close { display: flex; justify-content: flex-end; margin-top: .75rem; }
+@media (max-width: 900px) {
+    .domains .domains-cols { grid-template-columns: minmax(0, 1fr); }
+    .domains .domains-rows > .domains-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .domains .domains-row__l { grid-column: 1 / -1; }
+}
 </style>
 @endonce

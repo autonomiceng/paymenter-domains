@@ -27,6 +27,14 @@ final class DomainReservations
         DB::transaction(static fn () => self::releaseLocked($name));
     }
 
+    /** Unfunded closure must release inside its SAME full native-prefix transaction. */
+    public static function releaseUnfunded(array $locks): void
+    {
+        if(DB::transactionLevel()!==1){throw new \LogicException('Unfunded release requires the outer retirement transaction.');}
+        UnpaidAcquisitionProof::require($locks,true);
+        Domain::whereKey($locks['domain']->id)->update(['reservation_name'=>null]);
+    }
+
     private static function releaseLocked(string $name): void
     {
         $domain = Domain::where('reservation_name', $name)->lockForUpdate()->first();

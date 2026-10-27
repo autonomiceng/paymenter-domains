@@ -29,6 +29,7 @@ function staffData(bool $ordinaryCompleted = false): array
 {
     \Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();
     \Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
+    \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
     require_once __DIR__.'/accounts.php';
     $a=fixtureAccount(1,'namesilo','PRIVATE-ACCOUNT-IDENTITY'); $b=fixtureAccount(2,'enom','PRIVATE-OTHER-IDENTITY');
     $domains=[];
@@ -39,6 +40,9 @@ function staffData(bool $ordinaryCompleted = false): array
             'provider_expires_at'=>today()->addDays($i===1?120:15)->format('Y-m-d'),
             'snapshot'=>['private'=>'PRIVATE-SNAPSHOT'], 'observation'=>['facts'=>['owned'=>true,'auto_renew'=>false,'locked'=>true,'privacy'=>false],
                 'drift'=>false,'followup'=>['state'=>'pending']], 'renewal_policy'=>['automatic_spend_paused'=>false]]);
+        $observed=$domain->observation;
+        $observed['facts']+=['name'=>$domain->domain,'generation'=>$domain->authority_generation,'account_fingerprint'=>$domain->account_fingerprint];
+        $domain->update(['observation'=>$observed]);
         $op=Operation::create([...($i===1?$b:$a),'domain_id'=>$domain->id,'service_id'=>$domain->service_id,'authority_generation'=>1,
             'operation_key'=>'private-operation-'.$i,'action'=>'transfer','currency'=>'USD','amount'=>'18.00','state'=>$i===1?'succeeded':'held',
             'safe_code'=>$i===1?null:'transfer_needs_action','payload'=>['epp'=>'PRIVATE-EPP','contacts'=>['email'=>'PRIVATE-CONTACT']],
@@ -48,4 +52,11 @@ function staffData(bool $ordinaryCompleted = false): array
         $domains[]=$domain;
     }
     return $domains;
+}
+
+/** A registrar account setup action: header actions by name, the rest inside the account's sections. */
+function setupAction(string $action,int $server): string|\Filament\Actions\Testing\TestAction
+{
+    return in_array($action,['processing','configure','enroll_sandbox'],true)?$action.'_'.$server
+        :\Filament\Actions\Testing\TestAction::make($action.'_'.$server)->schemaComponent('account_'.$server,'content');
 }

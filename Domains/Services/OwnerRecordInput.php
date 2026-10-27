@@ -5,6 +5,12 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 /** Browser adaptation only. The existing driver and engine revalidate and authorize the request. */
 final class OwnerRecordInput
 {
+    /** A deleted or entirely cleared row is excluded from the replacement list. */
+    public static function removed(array $row): bool
+    {
+        return ($row['_delete']??null)==='1'
+            || !array_filter(array_diff_key($row,['_delete'=>true,'_source'=>true,'host_id'=>true]),static fn($v)=>$v!==''&&$v!==null);
+    }
     public static function payload(string $action, #[\SensitiveParameter] array $p, string $name): array
     {
         $errors=[];
@@ -16,10 +22,9 @@ final class OwnerRecordInput
             if (!is_array($rows)||!array_is_list($rows)||count($rows)>50) { throw new OwnerFormValidation([$action.'.records.count']); }
             foreach ($rows as $i=>$row) {
                 if (!is_array($row)) { $errors[]=$action.'.records.'.$i; continue; }
-                if (($row['_delete']??null)==='1') { continue; }
+                if (self::removed($row)) { continue; }
                 $source=$row['_source']??'';
                 $row=array_diff_key($row,['_delete'=>true,'_source'=>true,'host_id'=>true]);
-                if (!array_filter($row,static fn($v)=>$v!==''&&$v!==null)) { continue; }
                 $base=$action==='dns'?['name'=>'@','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10]
                     :['service'=>'sip','protocol'=>'tcp','target'=>'sip.example.com.','priority'=>0,'weight'=>0,'port'=>443];
                 $before=count($errors);

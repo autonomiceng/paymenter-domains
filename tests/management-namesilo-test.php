@@ -2,10 +2,14 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/management-namesilo.php';
+require __DIR__.'/Support/owner-pages.php';
+require __DIR__.'/Support/staff-panel.php';
 use App\Models\Invoice;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\{Auth,Cache};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Data\{ManagementRequest, RequestBudget, RequestContext, RequestOrigin, PrivacyMode, Support};
 [$d,$driver,$original]=$holding('baseline');
+staffPanel(); $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 same(PrivacyMode::Free,$driver->capabilities()->privacy,'Free privacy declared');
 foreach (['dns','ds','glue','auth_code_display'] as $cap) { same(Support::Unsupported,$driver->capabilities()->get($cap)->support,'Advanced tools unsupported'); }
 foreach ([['nameservers',['nameservers'=>['NS3.EXAMPLE.NET.','ns4.example.net']],'changeNameServers'],['lock',['locked'=>false],'domainUnlock'],
@@ -14,7 +18,13 @@ foreach ([['nameservers',['nameservers'=>['NS3.EXAMPLE.NET.','ns4.example.net']]
     same('succeeded',$management->run($op->id,$driver)->state,'Readback confirms '.$action);
     same([$cmd],array_column($writes(),0),'Exactly one mapped write');
     same(null,$op->invoice_id,'Free baseline has no invoice');
+    if (in_array($action,['privacy_enable','privacy_disable'],true)) {
+        same($action==='privacy_enable',$owners->present($d->fresh())->management['privacy']['state'],'Customer reads confirmed NameSilo privacy');
+        same($action==='privacy_enable'?'On':'Off',DomainFacts::for($d->fresh())['WHOIS privacy']['value'],'Staff reads confirmed NameSilo privacy');
+    }
+    $nativeBeforeReplay = nativeFinancialSnapshot($op);
     $before=$ms->calls; $management->run($op->id,$driver); same($before,$ms->calls,'Completed operation never replays');
+    same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
 }
 same(['email_accepted'=>true],$op->fresh()->attempt['management_ack'],'Email acceptance only');
 try { $submit($d,$driver,'auth_code_email'); throw new LogicException('Missing cooldown'); } catch (DomainException) {}
@@ -31,7 +41,9 @@ foreach (['127.0.0.1','ns1.123','-bad.example.net'] as $host) {
 }
 [$d,$driver]=$holding('unknown'); $ms->fault='lost'; $op=$submit($d,$driver,'lock',['locked'=>false]);
 same('uncertain',$management->run($op->id,$driver)->state,'Lost response stays uncertain'); same(1,count($writes()),'One uncertain write');
+$nativeBeforeReplay = nativeFinancialSnapshot($op);
 $management->run($op->id,$driver); same(1,count($writes()),'Unknown write never replayed');
+same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
 $ms->fault=''; $ms->route='apibatch'; same('succeeded',$management->reconcile($op->id,$driver)->state,'Read-only recovery'); same(1,count($writes()),'Recovery emits no write');
 [$d,$driver]=$holding('email-unknown'); $ms->fault='lost'; $op=$submit($d,$driver,'auth_code_email');
 same('uncertain',$management->run($op->id,$driver)->state,'Lost email acknowledgement stays unknown');

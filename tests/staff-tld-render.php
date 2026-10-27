@@ -6,7 +6,7 @@ use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,Blade};
 use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
@@ -19,7 +19,7 @@ $writer->run(new Review($u->id,$t->server_id,$t->id,'default_rule',$key,'Review 
 $key=Review::ticket($u->id,$t->server_id,$t->id,'publish',Review::stamp($t->server_id,$t->id));
 $writer->run(new Review($u->id,$t->server_id,$t->id,'publish',$key,'Publish reviewed annual retail revision'),[],$now);
 \Paymenter\Extensions\Servers\Domains\Models\Domain::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,
-    'user_id'=>900,'service_id'=>900,'domain'=>'holder.com','sld'=>'holder','tld'=>'com','status'=>'active']);
+    'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);
 $panel=Filament::getCurrentPanel();$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $render=static function($test,string $name)use($out,$css){
@@ -31,19 +31,27 @@ $render=static function($test,string $name)use($out,$css){
     $html=str_replace('</head>','<style>'.$css.'</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>',$html);
     $state=$test->get('mountedActions.0.data')??[];unset($state['review_key']);
     $html=str_replace('</body>','<template id="fixture-action-state" data-state="'.e(json_encode($state,JSON_THROW_ON_ERROR)).'"></template></body>',$html);
-    expect(!str_contains($html,'account-enom'),'No synthetic credential');file_put_contents($out.'/'.$name.'.html',$html);
+    expect(!str_contains($html,'account-enom'),'No synthetic credential');writeRenderArtifact($out.'/'.$name.'.html',$html);
 };
-$render(Livewire::actingAs($u)->test(ListTlds::class),'tlds');$render(Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id]),'tld-revisions');
-$render(Livewire::actingAs($u)->test(RegistrarSetup::class),'setup-both');$strings=[];
-foreach(Review::ACTIONS as $action=>$label){
+$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSee(['TLD','Registrar account','Domains','Renewal price','.com']);$render($list,'tlds');
+$view=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee(['Prices by registrar account','History','More'],false);$render($view,'tld-revisions');
+$render(Livewire::actingAs($u)->test(RegistrarSetup::class),'setup-both');$render(Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]),'setup-account');$strings=[];
+// TLD page actions, then the account actions this Enom TEST fixture shows. Live and test renewal or DNS changes
+// and NameSilo enrollment do not appear for it: their server config is off.
+$tldActions=['lifecycle','default_rule','override','remove_override','tld_settings','seller','publish'];
+$hiddenAccountActions=['live_management','live_renewal','test_management','test_renewal','enroll_sandbox'];
+$accountActions=array_values(array_diff(staffSetupActions(),$hiddenAccountActions));
+same([],array_values(array_diff(array_keys(Review::ACTIONS),$tldActions,$accountActions,$hiddenAccountActions)),'Every settings action is placed');
+foreach(array_intersect_key(Review::ACTIONS,array_flip([...$tldActions,...$accountActions])) as $action=>$label){
     app()->instance(StaffSettingsWrites::class,in_array($action,['configure','probe'],true)?new StaffSettingsWrites($native,$sellers,$bindings,true):$writer);
-    $setup=in_array($action,['configure','probe','acceptance','history'],true);$page=Livewire::actingAs($u)->test($setup?RegistrarSetup::class:ViewTld::class,$setup?[]:['record'=>$t->id]);
-    $name=$setup?\Filament\Actions\Testing\TestAction::make($action.'_'.$t->server_id)->schemaComponent('account_'.$t->server_id,'content'):$action;$page->mountAction($name)->assertActionMounted($name)->call('$refresh');$render($page,'modal-'.$action);
+    $setup=in_array($action,$accountActions,true);$page=Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id]);
+    $name=$setup?setupAction($action,$t->server_id):$action;$page->mountAction($name)->assertActionMounted($name)->call('$refresh');$render($page,'modal-'.$action);
     $strings[$action]=['label'=>$label,'description'=>SettingsActions::description($action)];
 }
 app()->instance(StaffSettingsWrites::class,$writer);
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('publish');
 \Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->increment('revision');
 $page->setActionData(['reason'=>'Refuse stale publication after seller change'])->callMountedAction();$render($page,'refusal-offline');
-file_put_contents($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-echo "Native TLD list/detail/revisions, setup, ten modals and refusal rendered.\n";$nativeSuccessful=true;
+writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
+same(16,count($strings),'Sixteen settings modals rendered');
+echo "Native TLD list/detail/revisions, account page, sixteen modals and refusal rendered.\n";$nativeSuccessful=true;

@@ -34,6 +34,11 @@ final class RenewalReplacements
     /** Read-only warning; changed old debt never blocks reconciliation of an admitted replacement. */
     public static function activity(Domain $d): array
     {
+        return array_map(fn($id)=>'Request #'.$id.' · Late financial or billing activity on refunded debt; review the ledger.',self::activityIds($d));
+    }
+    /** Requests whose refunded debt needs a read-only ledger review. @return list<int> */
+    public static function activityIds(Domain $d): array
+    {
         $ops=$d->operations()->get()->filter(fn($op)=>array_key_exists('renewal_replacement',$op->policy??[]));
         if($ops->isEmpty()){return [];}
         $ids=$ops->pluck('invoice_id');$service=$d->service;
@@ -41,7 +46,7 @@ final class RenewalReplacements
             'items'=>\App\Models\InvoiceItem::whereIn('invoice_id',$ids)->get(),
             'transactions'=>\App\Models\InvoiceTransaction::whereIn('invoice_id',$ids)->get(),
             'credit'=>$service?->user?->credits()->where('currency_code','USD')->first()];
-        return $ops->filter(fn($op)=>!self::settled($op,$l))->map(fn($op)=>'Request #'.$op->id.' · Late financial or billing activity on refunded debt; review the ledger.')->values()->all();
+        return $ops->filter(fn($op)=>!self::settled($op,$l))->map(fn($op)=>(int)$op->id)->values()->all();
     }
     private static function settled(Operation $op,array $l): bool
     {

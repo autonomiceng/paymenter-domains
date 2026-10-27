@@ -32,15 +32,20 @@ final class OrderCharge
         if (strtolower($item['description']) !== $query->name || ($item['quantity'] ?? null) !== (string) $query->years
             || strtolower($item['status']) !== 'successful' || strtolower($item['orderstatus']) !== 'closed'
             || strtolower($item['producttype']) !== $query->action->value) { return null; }
-        $bill = $header['orderbillamount'] ?? null;
-        $total = Pricing::cents(is_string($bill) && str_starts_with($bill, '$') ? substr($bill, 1) : $bill);
-        $amount = Pricing::cents($item['amountpaid'] ?? null);
+        $total = self::orderAmount($header['orderbillamount'] ?? null);
+        $amount = self::orderAmount($item['amountpaid'] ?? null);
         if ($amount === null || $total !== $amount) { return null; }
         foreach ([$header, $item] as $row) {
             if (array_key_exists('currency', $row) && (!is_string($row['currency']) || strtoupper($row['currency']) !== 'USD')) { return null; }
         }
-        $processed = self::date($header['billdate'] ?? null, 'enom_order_bill_date');
+        $processed = self::date($header['billdate'] ?? null, 'enom_order_bill_date',
+            $attempt->executionFacts !== null && $attempt->providerReference !== null && $id === $attempt->providerReference);
         return new OrderEvidence($attempt->binding, $query, new Money($amount, 'USD'), $id, $processed, Expiry::read($order));
+    }
+    /** Order amounts may carry one leading dollar sign; quote parsing stays strict. */
+    private static function orderAmount(mixed $value): ?string
+    {
+        return Pricing::cents(is_string($value) && str_starts_with($value, '$') ? substr($value, 1) : $value);
     }
     /** Every parsed item must positively name a different canonical domain. */
     public static function unrelated(AttemptEvidence $attempt, ProtocolResult $order): bool
@@ -58,12 +63,17 @@ final class OrderCharge
         }
         return true;
     }
-    private static function date(mixed $value, string $source): ?DateEvidence
+    private static function date(mixed $value, string $source, bool $captured): ?DateEvidence
     {
         if (!is_string($value)) { return null; }
         if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4}) (\d{1,2}):(\d{2}):(\d{2}) (AM|PM)$/D', $value, $m)) {
             if ((int) $m[4] < 1 || (int) $m[4] > 12) { return null; }
             $value = sprintf('%04d-%02d-%02d %02d:%02d:%02d', $m[3], $m[1], $m[2], (int) $m[4] % 12 + ($m[7] === 'PM' ? 12 : 0), $m[5], $m[6]);
+        }
+        // UTC here validates calendar fields only; captured evidence retains no invented offset.
+        if ($captured) {
+            $local = HistoryAcceptance::localDate($value, 'UTC', $source);
+            return $local ? new DateEvidence(substr($local->value, 0, 19), ExpiryPrecision::Local, $source) : null;
         }
         $date = HistoryAcceptance::localDate($value, 'America/Los_Angeles', $source);
         return $date ? new DateEvidence((new \DateTimeImmutable($date->value))->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM), ExpiryPrecision::Instant, $source, 'UTC') : null;

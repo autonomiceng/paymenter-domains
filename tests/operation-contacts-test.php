@@ -1,6 +1,7 @@
 <?php
 // Synthetic slice18/19 integration; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/operation-fixture.php';
 use App\Models\Role;
 use Illuminate\Support\Facades\{Crypt, DB};
@@ -19,7 +20,7 @@ Operation::updating(static function ($op) use (&$holdLevels): void {
     if ($op->isDirty('safe_code') && $op->safe_code === 'contact_details_required') { $holdLevels[] = DB::transactionLevel(); }
 });
 foreach (['flags', 'registry', 'contacts', 'schema'] as $bad) {
-    $op = $new('unready-'.$bad.'.com'); $payload = $op->payload;
+    $op = $new(placeholderComFixtureName('unready-'.$bad.'-placeholder.com')); $payload = $op->payload;
     match ($bad) {
         'flags' => $payload['setup_required'] = true,
         'registry' => $payload['registry_supported'] = false,
@@ -56,7 +57,7 @@ foreach (['flags', 'registry', 'contacts', 'schema'] as $bad) {
 }
 expect($holdLevels !== [] && array_unique($holdLevels) === [1], 'Contact hold owns a fresh transaction after refused claim commits');
 // Valid frozen contacts are revalidated at final seal even after a privileged out-of-band change.
-$op = $new('contacts-changed-before-seal.com');
+$op = $new(placeholderComFixtureName('contacts-changed-before-seal-placeholder.com'));
 $preflight->during = static function ($claimed) use ($inject): void {
     $payload = $claimed->payload; $payload['contacts']['tech']['phone'] = 'invalid';
     $inject($claimed, ['payload' => $payload]);
@@ -66,13 +67,13 @@ same('seal_authority_invalid', $result->safe_code, 'Invalid postclaim contacts r
 same('absent', $result->attempt['seal'], 'Refused final seal never opens a grant');
 // Real claimed and sealed rows cannot be readmitted even if somebody relabels them contact-held.
 foreach ([false, true] as $seal) {
-    $op = $new($seal ? 'contacts-sealed-recovery.com' : 'contacts-claimed-recovery.com');
+    $op = $new($seal ? 'contacts-sealed-recovery-placeholder.com' : 'contacts-claimed-recovery-placeholder.com');
     [$claimed, $domain, $binding] = $claims->claim($op->id);
     if ($seal) {
         $context = new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,
             Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background, $clock->now()->modify('+300 seconds'),
             new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(10), $clock);
-        $claims->seal($claimed, $preflight->inspect($claimed, $domain, $context));
+        $claims->seal($claimed, $preflight->inspect($claimed, $domain, $context), $clock->now());
     }
     $inject($op, ['state' => 'held', 'safe_code' => 'contact_details_required']);
     commerceReject(fn () => ContactRecovery::hold($op->id));
@@ -80,8 +81,8 @@ foreach ([false, true] as $seal) {
 }
 $role = Role::create(['name' => 'Synthetic contact manager', 'permissions' => ['admin.domains.manage']]);
 $staff = commerceUser(); $staff->update(['role_id' => $role->id]);
-$base = $new('contact-evidence-matrix.com');
-$manageBase = $new('contact-close-evidence-matrix.com');
+$base = $new(placeholderComFixtureName('contact-evidence-matrix-placeholder.com'));
+$manageBase = $new(placeholderComFixtureName('contact-close-evidence-matrix-placeholder.com'));
 $management = Operation::create(['domain_id' => $manageBase->domain_id, 'service_id' => $manageBase->service_id, 'server_id' => $manageBase->server_id,
     'registrar_key' => $manageBase->registrar_key, 'account_fingerprint' => $manageBase->account_fingerprint, 'authority_generation' => 1,
     'operation_key' => 'contact-finance-close', 'action' => 'contacts', 'term' => 1, 'currency' => 'USD', 'amount' => '0.00',

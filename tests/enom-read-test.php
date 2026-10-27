@@ -11,14 +11,15 @@ use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 function body(string $command, string $payload = ''): string { return '<interface-response><Command>'.$command.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$payload.'</interface-response>'; }
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');
 $wire = new class implements Transport {
-    public array $payloads = []; public array $calls = []; public bool $fail = false; public bool $reject = false;
+    public array $payloads = []; public array $calls = []; public bool $fail = false; public bool $reject = false; public ?ReadCommand $failCommand = null; public bool $cap = false; public ?ReadCommand $rejectCommand = null;
     public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
     {
         $this->calls[] = [$command, $parameters];
-        if ($this->fail) { throw new RuntimeException('synthetic-secret timeout'); }
+        if ($this->cap) { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit; }
+        if ($this->fail || $this->failCommand === $command) { throw new RuntimeException('synthetic-secret timeout'); }
         $result = body($command->value, $this->payloads[$command->name] ?? '');
-        return $this->reject ? str_replace('<ErrCount>0', '<ErrCount>1', $result) : $result;
+        return ($this->reject || $this->rejectCommand === $command) ? str_replace('<ErrCount>0', '<ErrCount>1', $result) : $result;
     }
 };
 $context = fn (int $budget = 20) => new RequestContext($binding, RequestOrigin::Background, new DateTimeImmutable('+1 hour'), new RequestBudget($budget));
@@ -31,11 +32,11 @@ $registry->register('enom', ['uid', 'token'], $verifier, fn (AccountBinding $acc
 [$verified] = $registry->verify('enom', 1, Environment::Test, ['uid' => 'synthetic-uid', 'token' => 'synthetic-secret']);
 $driver = $registry->reader($verified, ['uid' => 'synthetic-uid', 'token' => 'synthetic-secret']);
 expect($driver instanceof Driver && $binding->matches($driver->binding()), 'Neutral registry returns bound read-only driver');
-foreach (['0' => '0.00', '1,234.50' => '1234.50', '12.3' => '12.3'] as $input => $amount) {
+foreach (['0' => '0.00', '1,234.50' => '1234.50', '12.3' => '12.3', '999,999,999,999,999,999.99'=>'999999999999999999.99'] as $input => $amount) {
     $wire->payloads['Balance'] = '<AvailableBalance>'.$input.'</AvailableBalance>';
     $result = $driver->balance($context()); same($amount, $result->evidence()->balance?->amount, 'Source grouped USD balance exact');
 }
-foreach (['', '-1', '1,23.00', '1e3', '1.234'] as $bad) {
+foreach (['', '-1', '1,23.00', '1e3', '1.234', '9999999999999999999.00', '999,999,999,999,999,999,999.00'] as $bad) {
     $wire->payloads['Balance'] = '<AvailableBalance>'.$bad.'</AvailableBalance>';
     $result = $driver->balance($context()); same(Disposition::Unknown, $result->disposition, 'Bad balance unknown'); same(null, $result->evidence()->balance, 'Unknown is never zero');
 }
@@ -72,8 +73,29 @@ foreach (['required' => $field, 'child' => str_replace('<IsChild>0', '<IsChild>1
     'text' => str_replace('<UserDefined>false', '<UserDefined>true', $optional),
     'options' => str_replace('<Value>citizen', '<Value>resident', $optional)] as $conflict => $duplicate) {
     try { $parseFields($optional.$duplicate.$child); throw new LogicException('Expected duplicate '.$conflict.' refusal'); }
-    catch (InvalidArgumentException) {}
+    catch (InvalidArgumentException $e) { same($conflict === 'options' ? 'Conflicting registry field options.' : 'Conflicting registry field flags.', $e->getMessage(), 'Exact safe duplicate '.$conflict.' message'); }
 }
+$secondOption = '<Option><Value>resident</Value><Title>Resident</Title><Description>Second choice</Description></Option>';
+$twoOptions = str_replace('</Options>', $secondOption.'</Options>', $field);
+$firstOption = substr($twoOptions, strpos($twoOptions, '<Option>'), strpos($twoOptions, '</Option>') + strlen('</Option>') - strpos($twoOptions, '<Option>'));
+// Every pair differs in exactly one normalized option dimension; flags/dependencies agree.
+foreach ([
+    'order' => str_replace($firstOption.$secondOption, $secondOption.$firstOption, $twoOptions),
+    'title' => str_replace('<Title> Citizen </Title>', '<Title>Citizen prime</Title>', $twoOptions),
+    'description' => str_replace('<Description>Second choice</Description>', '<Description>Changed choice</Description>', $twoOptions),
+] as $conflict => $duplicate) {
+    try { $parseFields($twoOptions.$duplicate.$child); throw new LogicException('Expected duplicate option '.$conflict.' refusal'); }
+    catch (InvalidArgumentException $e) { same('Conflicting registry field options.', $e->getMessage(), 'Exact safe option '.$conflict.' conflict message'); }
+    $wire->payloads['Attributes'] = '<Attributes>'.$twoOptions.$duplicate.$child.'</Attributes>';
+    $unavailable = $driver->registrySchema('com', $context());
+    same('unknown', $unavailable->status, 'Duplicate option '.$conflict.' closes the neutral schema');
+    same([], $unavailable->facts(), 'Duplicate option '.$conflict.' exposes no provider schema or exception');
+}
+$expectedOptions = $parseFields($twoOptions.$child);
+same($expectedOptions, $parseFields($twoOptions.$twoOptions.$child), 'Identical ordered option lists collapse');
+same(['citizen', 'resident'], array_column($expectedOptions[0]['options'], 'value'), 'Provider option order retained');
+same('Citizen', $expectedOptions[0]['options'][0]['label'], 'Option title normalized');
+same('Second choice', $expectedOptions[0]['options'][1]['description'], 'Option description retained');
 $expectedFields = $parseFields($field.$child);
 same($expectedFields, $parseFields($field.$field.$child), 'Identical registry duplicates collapse');
 $withoutOptions = preg_replace('#<Options>.*?</Options>#', '', $field);
@@ -83,7 +105,7 @@ foreach (['required' => str_replace('<Required>1', '<Required>0', $withoutOption
     'child' => str_replace('<IsChild>0', '<IsChild>1', $withoutOptions),
     'text' => str_replace('<UserDefined>false', '<UserDefined>true', $withoutOptions)] as $conflict => $first) {
     try { $parseFields($first.$field.$child); throw new LogicException('Expected option-fill '.$conflict.' refusal'); }
-    catch (InvalidArgumentException) {}
+    catch (InvalidArgumentException $e) { same('Conflicting registry field flags.', $e->getMessage(), 'Exact safe flags-before-fill '.$conflict.' message'); }
 }
 $wire->payloads['Attributes'] = '<Attributes/>'; same([], $driver->registrySchema('com', $context())->facts()['fields'], 'Explicit no registry requirements retained');
 foreach (['register' => 10, 'renew' => 16, 'transfer' => 19] as $action => $type) {
@@ -91,9 +113,19 @@ foreach (['register' => 10, 'renew' => 16, 'transfer' => 19] as $action => $type
     $price = $driver->productPrice('com', $action, 2, $context()); same('success', $price->status, 'Known zero is valid lexical price');
     same('0.0000', $price->facts()['price'], 'No float price conversion'); same(['TLD' => 'com', 'ProductType' => $type, 'Years' => 2], end($wire->calls)[1], 'Exact action/term wire');
 }
-foreach (['<ProductEnabled>false</ProductEnabled><Price>10.00</Price>', '<ProductEnabled>true</ProductEnabled>', '<ProductEnabled>1</ProductEnabled><Price>1e3</Price>', '<ProductEnabled>yes</ProductEnabled><Price>10</Price>'] as $noPrice) {
-    $wire->payloads['ProductPrice'] = '<ProductPrice>'.$noPrice.'</ProductPrice>';
-    same('no_price', $driver->productPrice('com', 'register', 1, $context())->status, 'Only source product_price_unavailable maps to no price');
+foreach (['false', 'FALSE', 'FaLsE', '0'] as $disabled) {
+    $wire->payloads['ProductPrice'] = '<ProductPrice><ProductEnabled>'.$disabled.'</ProductEnabled><Price>10.00</Price></ProductPrice>';
+    same('no_price', $driver->productPrice('com', 'register', 1, $context())->status, 'Explicit disablement alone maps to no price');
+}
+foreach (['<Price>10.00000</Price>', '<Price>10.00</Price><Currency>EUR</Currency>'] as $ignoredPrice) {
+    $wire->payloads['ProductPrice'] = '<ProductPrice><ProductEnabled>false</ProductEnabled>'.$ignoredPrice.'</ProductPrice>';
+    same('no_price', $driver->productPrice('com', 'register', 1, $context())->status, 'Explicit disablement does not depend on price precision or currency');
+}
+foreach (['<Price>10.00</Price>', '<ProductEnabled><Value>true</Value></ProductEnabled><Price>10.00</Price>',
+    '<ProductEnabled>true</ProductEnabled>', '<ProductEnabled>true</ProductEnabled><Price>1e3</Price>',
+    '<ProductEnabled>yes</ProductEnabled><Price>10</Price>'] as $malformed) {
+    $wire->payloads['ProductPrice'] = '<ProductPrice>'.$malformed.'</ProductPrice>';
+    same('unknown', $driver->productPrice('com', 'register', 1, $context())->status, 'Malformed price reply is a failed read');
 }
 $wire->reject = true; same('unknown', $driver->productPrice('com', 'register', 1, $context())->status, 'Other provider non-success is failed read');
 $wire->reject = false; $wire->fail = true; same('unknown', $driver->productPrice('com', 'register', 1, $context())->status, 'Timeout never no price'); $wire->fail = false;
@@ -101,6 +133,19 @@ $check = '<Domains><Domain><Name>example.com</Name><RRPCode>210</RRPCode><IsPrem
 $wire->payloads['Check'] = $check;
 $result = $driver->availability(new Query('example.com', Action::Register, 1), $context());
 same(true, $result->evidence()->available, 'Recognized available response'); same(false, $result->evidence()->premium, 'All exclusions known false');
+foreach (['<Properties/>', "<Properties> \n\t </Properties>"] as $empty) {
+    $wire->payloads['Check'] = str_replace('</Domain>', $empty.'</Domain>', $check);
+    foreach ([1, 10] as $years) {
+        $result = $driver->availability(new Query('example.com', Action::Register, $years), $context());
+        same(Disposition::Accepted, $result->disposition, 'Empty Properties keeps default 1..10 registration bounds');
+        same(true, $result->evidence()->available, 'Empty Properties keeps normal availability');
+        same(false, $result->evidence()->premium, 'Empty Properties keeps explicit premium exclusions');
+    }
+    $wire->payloads['Check'] = str_replace('210', '211', $wire->payloads['Check']);
+    $result = $driver->availability(new Query('example.com', Action::Transfer, 1), $context());
+    same(Disposition::Accepted, $result->disposition, 'Transfer uses the same empty Properties normalization');
+    same(false, $result->evidence()->available, 'Empty Properties never invents positive transfer eligibility');
+}
 $wire->payloads['Check'] = str_replace('</Domain>', '<Properties><MinRegYear>1</MinRegYear><MaxRegYear>1</MaxRegYear></Properties></Domain>', $check);
 same(Disposition::Rejected, $driver->availability(new Query('example.com', Action::Register, 3), $context())->disposition, 'Name-specific term restriction closes multi-year checkout');
 same(true, $driver->availability(new Query('example.com', Action::Register, 1), $context())->evidence()->available, 'Allowed name-specific term retained');
@@ -113,11 +158,12 @@ $wire->payloads['Check'] = str_replace('</Domain>', str_repeat('<Properties><Min
 same(Disposition::Unknown, $driver->availability(new Query('example.com', Action::Register, 1), $context())->disposition, 'Repeated properties cannot bypass the minimum');
 $wire->payloads['Check'] = str_replace('</Domain>', '<Properties>invalid</Properties></Domain>', $check);
 same(Disposition::Unknown, $driver->availability(new Query('example.com', Action::Register, 1), $context())->disposition, 'Scalar properties are unknown');
+same(Disposition::Unknown, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->disposition, 'Scalar transfer properties are unknown');
 $wire->payloads['Check'] = str_replace('</Domain>', '<MinRegYear>5</MinRegYear><MaxRegYear>1</MaxRegYear></Domain>', $check);
 same(true, $driver->availability(new Query('example.com', Action::Register, 3), $context())->evidence()->available, 'Unrelated top-level fields do not replace nested restrictions');
 $wire->payloads['Check'] = str_replace('<IsEAP>0', '<IsEAP>1', $check); same(true, $driver->availability(new Query('example.com', Action::Register, 1), $context())->evidence()->premium, 'EAP is premium');
 $wire->payloads['Check'] = str_replace('<IsEAP>0</IsEAP>', '', $check); same(null, $driver->availability(new Query('example.com', Action::Register, 1), $context())->evidence()->premium, 'Absent exclusion is unknown');
-foreach ([str_replace('example.com', 'other.com', $check), str_replace('210', '999', $check), str_replace('</Domains>', substr($check, 9, -10).'</Domains>', $check)] as $bad) {
+foreach ([str_replace('example.com', 'other-placeholder.com', $check), str_replace('210', '999', $check), str_replace('</Domains>', substr($check, 9, -10).'</Domains>', $check)] as $bad) {
     $wire->payloads['Check'] = $bad; same(Disposition::Unknown, $driver->availability(new Query('example.com', Action::Register, 1), $context())->disposition, 'Bad Check cardinality/domain/status');
 }
 $info = '<GetDomainInfo><DomainName DomainNameID="123" SLD="example" TLD="com">example.com</DomainName><Status><Belongs-To>SyNtHeTiC-uId</Belongs-To><Expiration>2027-04-03</Expiration></Status></GetDomainInfo>';
@@ -133,7 +179,7 @@ $domain = $driver->readDomain('example.com', $context())->evidence()->domain; sa
 $before = count($wire->calls); $partial = $driver->readDomain('example.com', $context(1)); $domain = $partial->evidence()->domain;
 same(Disposition::Unknown,$partial->disposition,'Incomplete flags never grant admission'); same(SendState::PossiblySent,$partial->sendState,'Budget failure provenance retained');
 same(true, $domain?->owned, 'Partial read preserves proven owner'); same(null, $domain?->locked, 'Budget exhaustion leaves flag unknown'); same($before + 1, count($wire->calls), 'Each extra read checks shared budget');
-foreach ([str_replace('example.com', 'other.com', $info), str_replace('SLD="example"', 'SLD="other"', $info), str_replace('DomainNameID="123"', 'DomainNameID="0"', $info), str_replace('</GetDomainInfo>', '<DomainNameID>456</DomainNameID></GetDomainInfo>', $info), str_replace('<Belongs-To>SyNtHeTiC-uId</Belongs-To>', '', $info)] as $bad) {
+foreach ([str_replace('example.com', 'other-placeholder.com', $info), str_replace('SLD="example"', 'SLD="other"', $info), str_replace('DomainNameID="123"', 'DomainNameID="0"', $info), str_replace('</GetDomainInfo>', '<DomainNameID>456</DomainNameID></GetDomainInfo>', $info), str_replace('<Belongs-To>SyNtHeTiC-uId</Belongs-To>', '', $info)] as $bad) {
     $wire->payloads['Info'] = $bad; same(Disposition::Unknown, $driver->readDomain('example.com', $context())->disposition, 'Unproven ownership never positive');
 }
 $wire->payloads['Info'] = str_replace('SyNtHeTiC-uId', 'other-owner', $info); $before = count($wire->calls);
@@ -162,6 +208,10 @@ foreach (['true' => true, 'false' => false, 'unknown' => false] as $flag => $eli
     $wire->payloads['Check'] = '<Domains><Domain><Name>example.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><MinRegYear>2</MinRegYear><Transferable>'.$flag.'</Transferable></Properties></Domain></Domains>';
     same($eligible, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->evidence()->available, 'Transfer needs explicit positive property');
 }
+$wire->payloads['Check'] = '<Domains><Domain><Name>example.com</Name><RRPCode>210</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><Transferable>true</Transferable></Properties></Domain></Domains>';
+same(false, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->evidence()->available, 'Unregistered name is not transferable');
+$wire->payloads['Check'] = '<Domains><Domain><Name>example.com</Name><RRPCode>211</RRPCode><IsPremium>1</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><Transferable>true</Transferable></Properties></Domain></Domains>';
+same(true, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->evidence()->premium, 'Premium transfer is flagged');
 $before = count($wire->calls);
 try { $driver->balance(new RequestContext(new AccountBinding('enom', 2, Environment::Test, 'other'), RequestOrigin::Background, new DateTimeImmutable('+1 hour'), new RequestBudget(1))); throw new LogicException('Expected binding refusal'); } catch (InvalidArgumentException) {}
 same($before, count($wire->calls), 'Wrong binding never dispatched');
@@ -169,8 +219,19 @@ echo "Enom reads: catalogue, exact lexical price, ownership, expiry, nullable fl
 $wire->payloads['Expiry'] = '<RegistryExpDate>2027-04-03</RegistryExpDate>';
 same('2027-04-03', $driver->expiry('example.com', $context())->facts()['expiry']->value, 'Named GetDomainExp strict date read');
 $wire->payloads['Expiry'] = '<RegistryExpDate>bad</RegistryExpDate>'; same('unknown', $driver->expiry('example.com', $context())->status, 'Invalid GetDomainExp not acknowledged');
-$wire->payloads['RenewalInfo'] = '<GetExtendInfo><Expiration>2027-04-03</Expiration><RegistrarHold>false</RegistrarHold><MaxExtension>9</MaxExtension></GetExtendInfo>';
+$wire->payloads['RenewalInfo'] = '<Expiration>2027-04-03</Expiration><RegistrarHold>false</RegistrarHold><MaxExtension>9</MaxExtension>';
 $facts = $driver->renewalInfo('example.com', $context())->facts(); same(9, $facts['max_extension'], 'Bounded renewal maximum'); same(false, $facts['registrar_hold'], 'Known false hold'); same(null, $facts['grace_eligible'], 'Restorable/expiry never infer ordinary grace');
+$savedRenewal=$wire->payloads['RenewalInfo'];$savedExpiry=$wire->payloads['Expiry'];
+foreach (['','<Expiration>bad</Expiration>','<Expiration>2027-04-03</Expiration><Expiration>2028-04-03</Expiration>'] as $expiryPayload) {
+    $wire->payloads['RenewalInfo']=$expiryPayload.'<RegistrarHold>false</RegistrarHold><MaxExtension>9</MaxExtension>';
+    $wire->payloads['Expiry']=$expiryPayload;
+    foreach(['renewalInfo','expiry'] as $read) {
+        $result=$driver->$read('example.com',$context());
+        same('unknown',$result->status,'Missing, invalid or ambiguous expiry cannot acknowledge '.$read);
+        same([],$result->facts(),'Unknown expiry exposes no successful facts');
+    }
+}
+$wire->payloads['RenewalInfo']=$savedRenewal;$wire->payloads['Expiry']=$savedExpiry;
 $wire->payloads['Info'] = str_replace(['example.com', 'TLD="com"'], ['example.co.uk', 'TLD="co.uk"'], $info);
 $before = count($wire->calls); $driver->contacts('example.co.uk', $context());
 same(['SLD' => 'example', 'TLD' => 'co.uk'], end($wire->calls)[1], 'Explicit longest compound suffix reaches named command');
@@ -217,7 +278,7 @@ foreach (['<ResponseCount>1</ResponseCount>', '<ResponseCount>bad</ResponseCount
 }
 
 foreach (['expiry' => ReadCommand::Expiry, 'renewalInfo' => ReadCommand::RenewalInfo, 'contacts' => ReadCommand::Contacts] as $method => $command) {
-    foreach ([str_replace('SyNtHeTiC-uId', 'retail-subaccount', $info), str_replace('example.com', 'other.com', $info),
+    foreach ([str_replace('SyNtHeTiC-uId', 'retail-subaccount', $info), str_replace('example.com', 'other-placeholder.com', $info),
         str_replace('DomainNameID="123"', 'DomainNameID="0"', $info), str_replace('<Belongs-To>SyNtHeTiC-uId</Belongs-To>', '', $info)] as $unowned) {
         $wire->payloads['Info'] = $unowned; $before = count($wire->calls);
         same('unknown', $driver->$method('example.com', $context())->status, 'Private read refuses unproven ownership');
@@ -237,3 +298,52 @@ foreach (['expiry' => ReadCommand::Expiry, 'renewalInfo' => ReadCommand::Renewal
     same('123', $read->facts()['provider_reference'], 'Private read retains proven provider identity');
     same(true, $read->facts()['owned'], 'Private facts carry positive ownership marker');
 }
+
+// Renewal snapshots retain fresh identity/auto-renew without inventing omitted flags.
+$wire->payloads['Info'] = $info; $wire->payloads['Renewal'] = '<RenewName>0</RenewName>';
+$wire->payloads['Lock'] = '<Reg-Lock>1</Reg-Lock>';
+$wire->payloads['Privacy'] = '<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>';
+$before = count($wire->calls); $narrow = $driver->readRenewalDomain('example.com', $context(2));
+same([ReadCommand::Info, ReadCommand::Renewal], array_column(array_slice($wire->calls, $before), 0), 'Narrow renewal reads exactly fresh identity then auto-renew');
+same([Disposition::Accepted, true, false, null, null, '123'], [$narrow->disposition, $narrow->evidence()->domain?->owned,
+    $narrow->evidence()->domain?->providerAutoRenew, $narrow->evidence()->domain?->privacy,
+    $narrow->evidence()->domain?->locked, $narrow->evidence()->domain?->providerReference], 'Omitted renewal flags remain independently unknown');
+$before = count($wire->calls); $generic = $driver->readDomain('example.com', $context(4));
+same([ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Lock, ReadCommand::Privacy], array_column(array_slice($wire->calls, $before), 0), 'Generic snapshot still fetches all flags');
+same([false, false, true], [$generic->evidence()->domain?->providerAutoRenew, $generic->evidence()->domain?->privacy,
+    $generic->evidence()->domain?->locked], 'Generic snapshot flags stay complete');
+foreach (['<RenewName>?</RenewName>', '<RenewName>0</RenewName><auto-renew>1</auto-renew>'] as $unknown) {
+    $wire->payloads['Renewal'] = $unknown;
+    same(null, $driver->readRenewalDomain('example.com', $context(2))->evidence()->domain?->providerAutoRenew, 'Unknown/conflicting renewal flags stay unknown');
+}
+$wire->payloads['Renewal'] = '<RenewName>0</RenewName>';
+foreach (['transport', 'provider'] as $failure) {
+    foreach ([ReadCommand::Renewal, ReadCommand::Lock, ReadCommand::Privacy] as $index => $failed) {
+        $wire->failCommand = $failure === 'transport' ? $failed : null; $wire->rejectCommand = $failure === 'provider' ? $failed : null; $before = count($wire->calls);
+        $failedRead = $driver->readDomain('example.com', $context());
+        same([Disposition::Unknown, $failure === 'transport' ? SendState::PossiblySent : SendState::Sent, true, null, null, null], [$failedRead->disposition, $failedRead->sendState,
+            $failedRead->evidence()->domain?->owned, $failedRead->evidence()->domain?->providerAutoRenew,
+            $failedRead->evidence()->domain?->privacy, $failedRead->evidence()->domain?->locked], 'First failed generic prerequisite preserves identity and unknown flags');
+        same(array_slice([ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Lock, ReadCommand::Privacy], 0, $index + 2),
+            array_column(array_slice($wire->calls, $before), 0), 'No generic flags after first failed prerequisite');
+    }
+}
+$wire->rejectCommand = null;
+$wire->failCommand = ReadCommand::Renewal; $before = count($wire->calls);
+$failedRead = $driver->readRenewalDomain('example.com', $context());
+same([Disposition::Unknown, SendState::PossiblySent, null], [$failedRead->disposition, $failedRead->sendState,
+    $failedRead->evidence()->domain?->providerAutoRenew], 'Failed narrow renewal cannot authorize auto-renew off');
+same([ReadCommand::Info, ReadCommand::Renewal], array_column(array_slice($wire->calls, $before), 0), 'Failed narrow renewal does no extra reads');
+$wire->failCommand = null; $wire->cap = true;
+try { $driver->readRenewalDomain('example.com', $context()); throw new LogicException('Expected typed cap'); }
+catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) {}
+$wire->cap = false;
+
+require __DIR__.'/Support/enom-captured-audit.php';
+
+foreach (['-bad','bad-','-bad.com','com.bad-','bad.-label','bad.label-'] as $ending) {
+    $wire->payloads['Tlds']='<TLDList><TLD>com</TLD><TLD>'.$ending.'</TLD></TLDList>';
+    same('unknown',$driver->catalogue($context())->status,'Malformed label edge voids the entire catalogue: '.$ending);
+}
+$wire->payloads['Tlds']='<TLDList><TLD>com</TLD><TLD>xn--3ds443g</TLD><TLD>123</TLD><TLD>a.123</TLD></TLDList>';
+same(['com'],$driver->catalogue($context())->facts()['tlds'],'Hostname-shaped unsupported endings remain skippable');

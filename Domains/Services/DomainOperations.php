@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, Clock, OperationPreflight, SealPreflight, WriteGate};
-use Paymenter\Extensions\Servers\Domains\Data\{AdmittedOperation, RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 
@@ -38,6 +38,13 @@ final class DomainOperations
 
     public function execute(int $id): Operation
     {
+        return $this->clock instanceof \Paymenter\Extensions\Servers\Domains\Data\SystemClock
+            ? $this->clock->withinExecution(fn () => $this->executeEntered($id)) : $this->executeEntered($id);
+    }
+
+    private function executeEntered(int $id): Operation
+    {
+        $entry = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
         OperationClaims::outside();
         $route = Operation::findOrFail($id);
         if ($route->action === 'transfer' && !TransferInputs::validCode($route->payload['epp'] ?? null)) { return $route; }
@@ -49,24 +56,47 @@ final class DomainOperations
                 if ($this->writer instanceof RegistrationBridge && !AcquisitionSetup::ready($route)) { return $route; }
                 if (in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { $this->writer->reserve(); }
             }
-            catch (WriteHeld $held) { return $this->claims->holdUnclaimed($id, $held->reason); }
+            catch (WriteHeld $held) { return $held->reason==='write_rate_limited'?$route:$this->claims->holdUnclaimed($id, $route->action==='transfer'&&$route->registrar_key==='enom'&&$held->reason==='usd_balance_required'?'enom_test_transfer_usd_balance_required':$held->reason); }
         }
-        $claim = $this->claims->claim($id);
+        if (EnomTestRegistration::applies($route)||EnomTestTransfer::applies($route)) {
+            try {
+                $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$route->server_id)->first();
+                if(!$account) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
+                $binding = CatalogueAcceptances::binding($account);
+                if(!($route->action==='transfer'?EnomTestTransfer::enabled($binding):EnomTestRegistration::enabled($binding))) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
+                if(($reason=EnomTestRegistration::localHoldReason($binding,$route))!==null){return $this->claims->holdUnclaimed($id,$reason);}
+                return EnomTestCalls::withPurchase($binding,fn()=> $this->executeClaimed($id,$entry,$binding),(int)$route->id);
+            } catch (EnomTestCallLimit) { return $this->claims->holdUnclaimed($id,$route->action==='transfer'?'enom_test_transfer_call_cap':'enom_test_call_cap'); }
+            catch (ReadDeferred) { return $route->fresh(); }
+            catch (WriteHeld $held) { return $this->claims->holdUnclaimed($id,$held->reason); }
+            catch (\Throwable) { return $this->claims->holdUnclaimed($id,$route->action==='transfer'?'enom_test_transfer_setup_required':'enom_test_setup_required'); }
+        }
+        return $this->executeClaimed($id,$entry);
+    }
+
+    private function executeClaimed(int $id, \DateTimeImmutable $entry, ?AccountBinding $testPurchase=null): Operation
+    {
+        $claim = $this->claims->claim($id,$testPurchase!==null?$entry:null);
         if (!$claim) { return Operation::findOrFail($id); }
         [$op, $domain, $binding] = $claim;
         $result = null;
         try {
-            $deadline = $op->started_at->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
-            $context = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget($op->action === 'transfer' ? 12 : ExecuteOperation::REQUEST_LIMIT), $this->clock);
+            if($testPurchase!==null){$binding->requireMatch($testPurchase);}
+            $deadline = $entry->modify('+'.(ExecuteOperation::EXECUTION_SECONDS - ExecuteOperation::FINISH_SECONDS).' seconds');
+            $context = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget($op->action === 'transfer' ? 12 : ExecuteOperation::REQUEST_LIMIT), $this->clock, Runtime::limiter());
             $ready = $this->preflight->inspect($op, $domain, $context);
-            if ($this->preflight instanceof TransferPreflight) { $ready = $this->preflight->inspect($op, $domain, $context); }
+            if ($this->preflight instanceof TransferPreflight) {
+                $ready = $this->preflight->inspect($op, $domain, $context);
+            }
+            if($testPurchase!==null){EnomTestCalls::assertPurchaseCurrent($binding);EnomTestCalls::reservePurchase($binding,$ready->cost);}
             if ($context->budget->remaining() < 1) { throw new \DomainException('No dispatch request budget remains.'); }
-            $sealed = $this->claims->seal($op, $ready, $this->preflight instanceof SealPreflight ? $this->preflight : null,
-                $this->writer instanceof WriteGate ? $this->writer : null);
+            $dispatchDeadline = min($deadline, $ready->validUntil, $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds'));
+            $context = new RequestContext($binding, RequestOrigin::Background, $dispatchDeadline, $context->budget, $this->clock, Runtime::limiter());
+            return $context->withReservedWire(function()use(&$op,$ready,$context,$binding,&$result,$entry):Operation {
+            $sealed = $this->claims->seal($op, $ready, $entry, $this->preflight instanceof SealPreflight ? $this->preflight : null,
+                $this->writer instanceof WriteGate ? $this->writer : null,$context);
             if (!$sealed) { return $op->fresh(); }
             $op = $sealed;
-            $dispatchDeadline = min($deadline, $ready->validUntil, $this->clock->now()->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds'));
-            $context = new RequestContext($binding, RequestOrigin::Background, $dispatchDeadline, $context->budget, $this->clock);
             $admitted = new AdmittedOperation($binding, $ready->query, $op->operation_key,
                 $op->attempt['claim_key'], $op->authority_generation, 'operation:'.$op->id.':seal', OperationClaims::payloadDigest($op), $ready->cost);
             $this->grants[$admitted] = ['context' => $context, 'consumed' => false, 'sealed' => $op, 'ready' => $ready];
@@ -76,6 +106,11 @@ final class DomainOperations
                 $binding->requireMatch($response->binding); $result = $response;
             } finally { unset($this->grants[$admitted]); }
             return $this->claims->finish($op, $result);
+            });
+        } catch (EnomTestCallLimit) {
+            return $this->claims->holdTestCallCap($op);
+        } catch (ReadDeferred) {
+            return $this->claims->defer($op);
         } catch (WriteHeld $held) {
             return $this->claims->finish($op, $result, holdReason: $held->reason);
         } catch (\Throwable) {

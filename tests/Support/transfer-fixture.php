@@ -4,23 +4,25 @@ declare(strict_types=1);
 require dirname(__DIR__).'/native-app.php';
 require __DIR__.'/commerce.php';
 require __DIR__.'/native-commerce.php';
+require_once __DIR__.'/native-financial-snapshot.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CostUnit, Disposition, DriverResult, Environment, Evidence, Money, QuoteEvidence, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmission, CatalogueAcceptances, CheckoutEligibility, ContactProfileSchema, DomainOperations, InvoiceBinding, OperationClaims, Rdap, Refunds, RegistrarRegistry, RegistrationProfiles, TransferInputs, TransferPrecheck, TransferPreflight, WriteAcceptance, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\{FakeClock, FakeRegistrar};
-extract(commerceFixture(true)); $clock = new FakeClock($now);
+if (($transferEnvironment??Environment::Test)===Environment::Live) { config(['app.url'=>'https://domains-tests.invalid']); }
+extract(commerceFixture(true,environment:$transferEnvironment??Environment::Test)); $clock = new FakeClock($now);
 $guard=new Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices),$clock); $guard->boot();
 Carbon\Carbon::setTestNow($now); Carbon\CarbonImmutable::setTestNow($now); ContactProfileSchema::install();
-$state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false];
+$state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'readers'=>[],'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false,'createShape'=>'nested','enomOrigin'=>($transferEnvironment??Environment::Test)===Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'];
 foreach ($tlds as $tld) { App\Models\Server::find($tld->server_id)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']); }
 $rdap = new Rdap(static function ($url) use ($state): array {
     same(0, DB::transactionLevel(), 'RDAP outside financial locks'); $state->rdap++;
     if ($state->rdapUnknown) { throw new RuntimeException('Synthetic offline failure'); }
     if ($state->rdap404 && !str_contains($url,'dns.json')) { return ['status'=>404,'body'=>'']; }
     return ['status'=>200, 'body'=>json_encode(str_contains($url,'dns.json') ? ['services'=>[[['com'],['https://rdap.example.com/']]]]
-        : ['objectClassName'=>'domain','ldhName'=>$state->query?->name ?? 'x.com','status'=>['active'],'events'=>[
+        : ['objectClassName'=>'domain','ldhName'=>$state->query?->name ?? 'example.com','status'=>['active'],'events'=>[
             ['eventAction'=>'registration','eventDate'=>'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>'2027-01-01T00:00:00Z']]])];
 });
 $admission = new CartAdmission($native,$sellers,new CheckoutEligibility($bindings,$clock,new TransferPrecheck(new Rdap(fn()=>throw new RuntimeException('Synthetic checkout lookup')))),$clock);
@@ -35,7 +37,7 @@ $newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=tru
     $op = Domain::where('domain',$name)->sole()->operations()->sole();
     if ($paid) { App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount); $inputs->paymentAccepted($op->id); }
     if ($code) { $r = Illuminate\Http\Request::create('/internal-transfer-input','POST',['transfer_code'=>'SyntheticOnly']); $r->setUserResolver(fn()=>$user); $inputs->submitCode($r,$op->id); }
-    if ($i === 1) { $op->refresh()->update(['payload'=>[...$op->payload,'nameservers'=>['ns1.provider.net','ns2.provider.net'],'privacy'=>false]]); }
+    if ($i === 1) { $op->refresh()->update(['payload'=>[...$op->payload,'nameservers'=>['ns1.provider.example','ns2.provider.example'],'privacy'=>false]]); }
     $state->query = OperationClaims::query($op,$op->domain); return $op->fresh();
 };
 $registry = new RegistrarRegistry;
@@ -45,8 +47,9 @@ foreach (['enom','namesilo'] as $key) {
         same(0,DB::transactionLevel(),'Fresh reads outside locks'); $state->reads++;
         if ($state->during) { ($state->during)($state->reads); }
         $q = new QuoteEvidence($state->query,new Money('99.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
-        return new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
+        $reader = new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
             new Evidence(quote:$q,balance:new Money($state->funds,'USD'),available:$state->available,premium:$state->premium)));
+        $state->readers[]=$reader;return $reader;
     });
 }
 $freshBindings = new AccountBindings($registry); $claims = new OperationClaims($bindings,$clock);
@@ -59,10 +62,14 @@ $exchange = static function ($origin,$command,$p,$timeout) use ($state): string 
         if ($state->mode === 'lost') { throw new RuntimeException('Synthetic response loss'); }
         if ($state->mode === 'malformed') { return '{}'; }
         if ($command === 'TP_CreateOrder') {
-            same('https://resellertest.enom.com/interface.asp',$origin,'Fixed Enom route');
+            same($state->enomOrigin,$origin,'Fixed Enom route');
             same([1,0,1,0,'no'],[$p['DomainCount'],$p['PreConfig'],$p['Lock'],$p['Renew'],$p['UseCreditCard']],'Frozen external-transfer flags');
             expect(isset($p['AuthInfo1'],$p['RegistrantEmailAddress'],$p['AuxBillingEmailAddress']),'Frozen input and four roles mapped');
-            return '<interface-response><Command>TP_CreateOrder</Command><ErrCount>0</ErrCount><Done>true</Done><TransferOrderID>7001</TransferOrderID></interface-response>';
+            // Documented nested ID, top-only compatibility, agreeing IDs and conflicting IDs.
+            $id=['nested'=>'<transferorder><transferorderid>7001</transferorderid><statusid>5</statusid></transferorder>','top'=>'<TransferOrderID>7001</TransferOrderID>',
+                'agree'=>'<transferorder><transferorderid>7001</transferorderid></transferorder><TransferOrderID>7001</TransferOrderID>',
+                'conflict'=>'<transferorder><transferorderid>7001</transferorderid></transferorder><TransferOrderID>7002</TransferOrderID>'][$state->createShape];
+            return '<interface-response><Command>TP_CreateOrder</Command><ErrCount>0</ErrCount><Done>true</Done>'.$id.'</interface-response>';
         }
         same('transferDomain',$command,'Only monetary transfer command'); same('https://ote.namesilo.com/apibatch',$origin,'Fixed batch route');
         same(0,$p['auto_renew'],'No automatic registrar renewal'); same(0,$p['private'],'Frozen privacy'); expect(str_starts_with($p['auth'],'base64:'),'Encoded auth');

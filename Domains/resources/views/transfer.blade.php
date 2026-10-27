@@ -14,7 +14,7 @@
 <div class="domains-searchbar">
 <label for="domains-transfer-name" class="domains-sr">Domain name</label>
 <input id="domains-transfer-name" name="name" type="text" value="{{ $sld ?? $name }}" placeholder="yourbusiness" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="253" required @if ($error) aria-invalid="true" aria-describedby="domains-transfer-error" @endif>
-<label for="domains-transfer-tld" class="domains-sr">Ending</label><select id="domains-transfer-tld" name="tld" class="domains-input">@foreach ($endings as $ending)<option value="{{ $ending['tld'] }}" @selected($ending['tld'] === $preferred)>.{{ $ending['tld'] }}</option>@endforeach</select>
+<label for="domains-transfer-tld" class="domains-sr">TLD</label><select id="domains-transfer-tld" name="tld" class="domains-input">@foreach ($endings as $ending)<option value="{{ $ending['tld'] }}" @selected($ending['tld'] === $preferred)>.{{ $ending['tld'] }}</option>@endforeach</select>
 <button type="submit" class="domains-btn domains-btn--primary">Continue</button></div>
 @if ($error)<p id="domains-transfer-error" class="domains-error" role="alert">{{ $error }}</p>@endif
 </form>
@@ -23,11 +23,11 @@
 @endif
 <div class="domains-panel"><section class="domains-section" aria-labelledby="domains-before-heading">
 <h2 id="domains-before-heading" class="domains-h2">Before you start</h2><p>Do these at your current registrar.</p>
-<ol class="domains-steps2"><li>Turn off the domain’s transfer lock (sometimes called registrar lock).</li><li>Get the transfer code, also called an auth or EPP code. You’ll enter it on the domain page after checkout.</li><li>Make sure the owner email address is current. The registrar may send an approval email there.</li></ol>
+<ol class="domains-steps2"><li>Turn off the transfer lock.</li><li>Get the auth code (also called EPP code). You’ll enter it after checkout.</li><li>Make sure the owner email address is current. The registrar may send an approval email there.</li></ol>
 <p class="domains-small domains-muted">Domains registered or transferred in the last 60 days can’t be transferred yet. Most transfers finish within 5 to 7 days.</p>
 </section><section class="domains-section" aria-labelledby="domains-transfer-prices"><h2 id="domains-transfer-prices" class="domains-h2">Transfer prices</h2>
-<div class="domains-tablewrap"><table class="domains-tbl"><thead><tr><th scope="col">Ending</th><th scope="col" class="domains-end">Transfer, includes 1 year</th></tr></thead><tbody>
-@foreach ($endings as $ending)<tr><td class="domains-domain">.{{ $ending['tld'] }}</td><td class="domains-end domains-num">{{ $ending['transfer'] }}</td></tr>@endforeach
+<div class="domains-tablewrap"><table class="domains-tbl"><thead><tr><th scope="col">TLD</th><th scope="col" class="domains-end">Transfer (adds 1 year)</th></tr></thead><tbody>
+@foreach ($endings as $ending)<tr><td class="domains-domain">.{{ $ending['tld'] }}@if ($ending['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</td><td class="domains-end domains-num">{{ $ending['transfer'] }}</td></tr>@endforeach
 </tbody></table></div><p class="domains-small domains-muted">Prices plus tax where applicable.</p></section></div>
 @endif
 </div></div>

@@ -16,22 +16,51 @@ final class Storefront
 
     public function endings(): array
     {
-        return (new StorefrontCatalogueCache($this->clock))->remember(fn () => $this->catalogueRows());
+        return (new StorefrontCatalogueCache($this->clock))->remember(function (): array {
+            $rows = $this->catalogueRows(); $tests = $this->testEndings($rows);
+            return array_map(static fn ($row) => [...$row, 'testEnvironment' => in_array($row['tld'], $tests, true)], $rows);
+        });
+    }
+
+    /** Display-only existence check with the same warm projection and eligibility as endings(). */
+    public function hasTransferOffers(): bool
+    {
+        $rows = (new StorefrontCatalogueCache($this->clock))->cachedRows();
+        if ($rows !== null) {
+            foreach ($rows as $row) { if ($row['transfer'] !== null) { return true; } }
+            return false;
+        }
+        $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock);
+        foreach (SalesPolicy::where('transfer_enabled', true)->orderBy('tld')->pluck('tld') as $ending) {
+            try { $read->offer($ending, 'transfer', 1); return true; }
+            catch (\Throwable) { /* A held ending does not rule out a later transfer offer. */ }
+        }
+        return false;
+    }
+
+    /** Current public transfer offers, bounded to the candidate suffixes of these names. */
+    public function offeredTransferEndings(array $names): array
+    {
+        $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock); $offered = [];
+        foreach (PolicyEndings::transferEnabled($names) as $ending) {
+            try { $read->offer($ending, 'transfer', 1); $offered[] = $ending; }
+            catch (\Throwable) { /* An unavailable public offer has no entry link. */ }
+        }
+        return $offered;
     }
 
     private function catalogueRows(): array
     {
-        $rows = [];
+        $rows = []; $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock);
         foreach (SalesPolicy::orderBy('tld')->pluck('tld') as $ending) {
-            $register = $transfer = null; $terms = [];
+            $register = $transfer = $chosen = null; $terms = [];
             foreach (range(1, 10) as $term) {
-                try { $offer = $this->offer($ending, 'register', $term); $terms[] = $term; if ($term === 1) { $register = $offer['price']; } }
+                try { $offer = $read->offer($ending, 'register', $term); $chosen ??= $offer; $terms[] = $term; if ($term === 1) { $register = $offer['price']; } }
                 catch (\Throwable) { /* A held term does not imply an unavailable longer term. */ }
             }
-            try { $transfer = $this->offer($ending, 'transfer', 1)['price']; } catch (\Throwable) {}
+            try { $offer = $read->offer($ending, 'transfer', 1); $chosen ??= $offer; $transfer = $offer['price']; } catch (\Throwable) {}
             if (!$terms && !$transfer) { continue; }
-            $action = $terms ? 'register' : 'transfer'; $term = $terms[0] ?? 1;
-            try { $renew = $this->offer($ending, $action, $term)['renew']; } catch (\Throwable) { continue; }
+            $renew = $chosen['renew'];
             $rows[] = ['tld' => $ending, 'price' => $register, 'register' => $register, 'transfer' => $transfer,
                 'renew' => $renew, 'terms' => $terms];
         }
@@ -40,32 +69,39 @@ final class Storefront
 
     public function testEnvironment(array $rows): bool|string
     {
+        $tests = count(array_filter($rows, static fn ($row) => $row['testEnvironment'] ?? false));
+        return $tests === 0 ? false : ($tests === count($rows) ? true : 'some');
+    }
+
+    /** Test labels describe the public selected seller, never a reserved domain's owner/account. */
+    private function testEndings(array $rows): array
+    {
         $ids = SalesPolicy::whereIn('tld', array_column($rows, 'tld'))->pluck('server_id', 'tld');
         $environments = Account::whereIn('server_id', $ids->values())->pluck('environment', 'server_id');
-        $tests = $ids->filter(static fn ($id) => ($environments[$id] ?? null) === 'test')->count();
-        return $tests === 0 ? false : ($tests === count($rows) ? true : 'some');
+        return $ids->filter(static fn ($id) => ($environments[$id] ?? null) === 'test')->keys()->all();
     }
 
     /** Safe public result only. Any reservation has the SAME response regardless of owner or lifecycle. */
     public function check(string $input): array
     {
         $name = CanonicalName::normalize($input);
-        $ending = CanonicalName::parse($name, SalesPolicy::pluck('tld')->all())['tld'];
-        $base = ['domain' => $name, 'sld' => substr($name, 0, -strlen($ending)-1), 'tld' => $ending, 'status' => 'taken'];
+        $ending = PolicyEndings::parse($name)['tld'];
+        $base = ['domain' => $name, 'sld' => substr($name, 0, -strlen($ending)-1), 'tld' => $ending, 'status' => 'taken',
+            'testEnvironment' => $this->testEndings([['tld' => $ending]]) !== []];
         if (Domain::where('reservation_name', $name)->exists()) { return $base; }
-        $offers = [];
+        $offers = []; $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock);
         foreach (range(1, 10) as $term) {
-            try { $offers[$term] = $this->offer($ending, 'register', $term); } catch (\Throwable) {}
+            try { $offers[$term] = $read->offer($ending, 'register', $term); } catch (\Throwable) {}
         }
         $transfer = null;
-        try { $transfer = $this->offer($ending, 'transfer', 1); } catch (\Throwable) {}
+        try { $transfer = $read->offer($ending, 'transfer', 1); } catch (\Throwable) {}
         if (!$offers && !$transfer) { return [...$base, 'status' => 'held']; }
         $selection = ($offers ? reset($offers) : $transfer)['selection'];
         $driver = $this->bindings->reader($selection->serverId);
         if ($driver->binding()->fingerprint !== $selection->fingerprint) { throw new \DomainException('Search account changed.'); }
         $started = $this->clock->now();
-        // Deliberately no optional ReadLimiter until joint interactive headroom acceptance in39.
-        $context = new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock);
+        // Installed contexts share interactive headroom with background work.
+        $context = new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock, Runtime::limiter());
         $r = $driver->availability(new Query($name, Action::Register, $offers ? (int) array_key_first($offers) : 1), $context);
         $driver->binding()->requireMatch($r->binding);
         if ($r->disposition !== Disposition::Accepted || $context->now() >= $context->deadline) { return [...$base, 'status' => 'error']; }

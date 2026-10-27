@@ -4,20 +4,59 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
-use App\Models\{Invoice, InvoiceTransaction, Role, User};
+require_once __DIR__.'/Support/reserved-fixtures.php';
+require __DIR__.'/Support/staff-tlds.php';
+use App\Models\{CustomProperty, Invoice, InvoiceTransaction, Role, User};
 use Illuminate\Support\Facades\DB;
+use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{ContactProfile, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, ContactDetails, ContactProfiles, ContactProfileSchema,
     ContactRecovery, ContactSetup, ContactValidation, InvoiceBinding, PublicationEligibility, RegistryInputs};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
-extract(commerceFixture(true)); ContactProfileSchema::install(); ContactProfileSchema::verify();
+$fixtureEnding = 'test';
+extract(commerceFixture(true, ending: $fixtureEnding)); ContactProfileSchema::install(); ContactProfileSchema::verify();
 $migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000003_create_domains_contact_profiles.php';
 $migration->down(); ContactProfileSchema::verify();
 $clock = new FakeClock($now); $admission = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock), $clock);
 $admission->boot(); (new InvoiceBinding($admission, $native, $prices, $clock))->boot();
 $user = commerceUser(); $user->update(['email' => 'contact@example.com']); $other = commerceUser();
 $staff = commerceUser(); $role = Role::create(['name' => 'Domain manager', 'permissions' => ['admin.domains.manage']]); $staff->update(['role_id' => $role->id]);
+tldPanel();$panel = Filament\Facades\Filament::getCurrentPanel();
+Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn () => App\Admin\Resources\CustomPropertyResource::registerRoutes($panel));
+app('router')->getRoutes()->refreshNameLookups();
+DB::beginTransaction();
+$setupStaff = staffUser(['admin.domains.view']);
+CustomProperty::query()->delete();
+$define = static fn (string $key) => CustomProperty::create(['key' => $key, 'name' => $key, 'model' => User::class,
+    'type' => 'string', 'non_editable' => false, 'required' => true, 'show_on_invoice' => false]);
+$checkProperties = static function (array $missing) use ($setupStaff): void {
+    $before = DB::table('custom_properties')->orderBy('id')->get()->toJson();
+    for ($i = 0; $i < 2; $i++) {
+        same($missing, ContactDetails::missingRequiredProperties(), 'Exact missing user property definitions');
+        $page = Livewire::actingAs($setupStaff)->test(RegistrarSetup::class)->assertSuccessful();
+        if ($missing) {
+            $page->assertSee("Customers can't enter ".implode(', ', $missing).'. Add them as custom properties.')
+                ->assertSee('Open custom properties')->assertSeeHtml(e(App\Admin\Resources\CustomPropertyResource::getUrl('index')));
+        } else {
+            $page->assertDontSee("Customers can't enter")->assertDontSee('Open custom properties');
+        }
+        same($before, DB::table('custom_properties')->orderBy('id')->get()->toJson(), 'Setup check never changes definitions');
+        unset($page); gc_collect_cycles();
+    }
+};
+$checkProperties(['address', 'city', 'state', 'zip', 'country', 'phone']);
+foreach (['address', 'city', 'state', 'zip', 'country', 'phone'] as $key) { $define($key); }
+$checkProperties([]); // Optional company_name and address2 definitions are not required.
+CustomProperty::where('key', 'city')->update(['model' => App\Models\Service::class]);
+$checkProperties(['city']); // Another model's definition cannot satisfy a user contact key.
+CustomProperty::where('key', 'city')->update(['model' => User::class]);
+$checkProperties([]);
+CustomProperty::query()->update(['model' => App\Models\Service::class]);
+$checkProperties(['address', 'city', 'state', 'zip', 'country', 'phone']);
+DB::rollBack();
+Illuminate\Support\Facades\Auth::logout();
 function contactProperty(User $user, string $key, string $value): void
 {
     $user->properties()->updateOrCreate(['key' => $key], ['name' => $key, 'value' => $value]);
@@ -31,6 +70,17 @@ same('US', $enom['registrant']['country'], 'Country label normalized');
 same('+1.2065550100', $enom['registrant']['phone'], 'Frozen Enom phone format');
 same('2065550100', $ns['registrant']['phone'], 'NameSilo national phone omits prefix');
 same($ns, ContactDetails::validate('namesilo', $ns), 'Validation is idempotent');
+foreach ([str_repeat('a', 32), str_repeat('é', 16)] as $name) {
+    $input = $contacts; $input['registrant']['first_name'] = $name;
+    same($name, ContactDetails::validate('namesilo', $input)['registrant']['first_name'], 'First name accepts exactly 32 bytes');
+}
+$input = $contacts; $input['registrant']['first_name'] = str_repeat('é', 17);
+try { ContactDetails::validate('namesilo', $input); expect(false, 'A 34-byte first name must be refused'); }
+catch (ContactValidation $error) {
+    same(['contacts.registrant.first_name'], $error->fields, 'Multibyte refusal identifies the first name');
+    $messages = (new \Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation(['contact.first_name']))->messages('example.com', [], 'namesilo');
+    same('Enter your first name. Use 32 or fewer characters. Accented and non-Latin letters count as 2 or more.', $messages['contact.first_name'], 'Length guidance explains the byte-based character count');
+}
 function contactReject(callable $call): void
 {
     try { commerceReject($call); }
@@ -72,11 +122,16 @@ contactProperty($user, 'country', 'Duplicate'); same('', ContactDetails::collect
 config(['app.countries' => $countries]); contactProperty($user, 'country', 'US'); contactProperty($user, 'state', 'WA'); contactProperty($user, 'phone', "\t2065550100");
 $contactError(ContactDetails::collect($user), 'contacts.registrant.phone');
 contactProperty($user, 'phone', '(206) 555-0100');
-// Empty registry schema is explicit; .us/.ca/.eu and every nonempty/unknown schema remain OFF.
+// Publication remains off for registry endings; only frozen NameSilo .us nexus has preparation validation.
 foreach (['enom', 'namesilo'] as $registrar) {
     foreach (['us', 'ca', 'eu', 'co.us'] as $ending) {
         expect(!RegistryInputs::supported($registrar, $ending, []), 'Unaccepted registry gate');
-        contactReject(static fn () => RegistryInputs::validate($registrar, $ending, [], ['usnc' => 'C11', 'usap' => 'P3']));
+        $values=['usnc'=>'C11','usap'=>'P3'];
+        if($registrar==='namesilo' && $ending==='us'){
+            same($values,RegistryInputs::validate($registrar,$ending,[],$values),'Explicit frozen nexus preparation only');
+            $unpublished=clone $tlds[1];$unpublished->tld='us';
+            same(false,ContactSetup::capture($user,$unpublished)['registry_supported'],'Native capture still grants no .us acceptance');
+        }else{contactReject(static fn () => RegistryInputs::validate($registrar,$ending,[],$values));}
     }
     foreach ([null, [['name' => 'us_nexus', 'required' => true]]] as $schema) { contactReject(static fn () => RegistryInputs::validate($registrar, 'com', $schema, [])); }
     contactReject(static fn () => RegistryInputs::validate($registrar, 'com', [], ['command' => 'override']));
@@ -87,8 +142,9 @@ DB::transaction(static function () use ($tlds): void {
     $tld->registry_fields = []; $tld->save();
 });
 // Native checkout binds the real snapshot, no customer contact/EPP/profile IDs enter the cart.
-$product = $native->product($tlds[0], 'register'); $cart = commerceCart($user); commerceAdd($cart, $product, 'frozen-contact.com'); commerceCheckout($user, $cart);
-$op = Domain::where('domain', 'frozen-contact.com')->sole()->operations()->sole();
+$frozenName = reservedFixtureName('frozen-contact.test');
+$product = $native->product($tlds[0], 'register'); $cart = commerceCart($user); commerceAdd($cart, $product, $frozenName); commerceCheckout($user, $cart);
+$op = Domain::where('domain', $frozenName)->sole()->operations()->sole();
 expect(!$op->payload['setup_required'], 'Valid contact setup captured at binding'); ContactSetup::validate($op);
 ContactSetup::requireReady($op);
 foreach ([['setup_required' => true], ['registry_supported' => false], ['contacts' => []]] as $change) {
@@ -102,16 +158,19 @@ $op->refresh(); // A refused Eloquent save leaves the caller's in-memory attribu
 $raw = DB::table('domains_operations')->where('id', $op->id)->first();
 expect(!str_contains($raw->payload, 'Main Street') && !isset($op->toArray()['payload']), 'Encrypted and hidden snapshots');
 expect(!$op->domain->service->properties()->where('key', 'contacts')->exists(), 'No native contact property');
+require __DIR__.'/Support/frozen-contact-lifecycle.php';
 // Invalid paid setup is held; invalid unpaid setup cannot gain a paid hold.
 contactProperty($user, 'phone', 'private-value');
-$cart = commerceCart($user); commerceAdd($cart, $product, 'held-contact.com'); commerceCheckout($user, $cart);
-$held = Domain::where('domain', 'held-contact.com')->sole()->operations()->sole(); $heldPayload = $held->payload;
+$heldName = reservedFixtureName('held-contact.test');
+$cart = commerceCart($user); commerceAdd($cart, $product, $heldName); commerceCheckout($user, $cart);
+$held = Domain::where('domain', $heldName)->sole()->operations()->sole(); $heldPayload = $held->payload;
 contactReject(static fn () => ContactRecovery::hold($held->id)); same('awaiting_payment', $held->fresh()->state, 'Unpaid cannot recover');
 DB::table('invoices')->where('id', $held->invoice_id)->update(['status' => 'paid']);
 contactReject(static fn () => ContactRecovery::hold($held->id)); // native paid flag alone is insufficient
 InvoiceTransaction::create(['invoice_id' => $held->invoice_id, 'amount' => $held->amount, 'fee' => 0, 'status' => 'succeeded']);
 $beforeMoney = serialize([DB::table('invoices')->get(), DB::table('invoice_items')->get(), DB::table('invoice_transactions')->get()]);
 ContactRecovery::hold($held->id); $rawHeld = $held->fresh()->getAttributes(); ContactRecovery::hold($held->id);
+same('contact_details_required', $held->fresh()->safe_code, 'Supported registry with invalid contacts remains a contact hold');
 same($rawHeld, $held->fresh()->getAttributes(), 'Repeated hold is read-only'); same($heldPayload, $held->fresh()->payload, 'Hold freezes invalid original contacts');
 contactReject(static fn () => ContactSetup::requireReady($held->fresh()));
 DB::table('domains_operations')->where('id', $held->id)->update(['safe_code' => 'funding_review']);
@@ -137,6 +196,22 @@ ContactSetup::recoveryWrite(static fn () => $held->fresh()->update(['payload' =>
 ContactRecovery::hold($held->id); same('registry_details_unsupported', $held->fresh()->safe_code, 'Unsupported registry stays held');
 contactReject(static fn () => ContactRecovery::replace($staff, $held->id, 'Cannot invent registry support'));
 DB::table('domains_operations')->where('id', $held->id)->update($rawHeld);
+// Positive setup flags never bypass invalid frozen contacts.
+ContactSetup::recoveryWrite(static fn () => $held->fresh()->update(['state' => 'queued', 'safe_code' => null,
+    'payload' => array_replace($heldPayload, ['setup_required' => false, 'registry_supported' => true])]));
+ContactRecovery::hold($held->id); same('contact_details_required', $held->fresh()->safe_code, 'Invalid frozen contacts override positive setup flags');
+DB::table('domains_operations')->where('id', $held->id)->update($rawHeld);
+// Both defects must classify as unsupported registry, even from an existing contact hold.
+$bothPayload = array_replace($heldPayload, ['registry_schema' => [['name' => 'unaccepted']], 'registry_supported' => false]);
+ContactSetup::recoveryWrite(static fn () => $held->fresh()->update(['payload' => $bothPayload]));
+ContactRecovery::hold($held->id);
+same('registry_details_unsupported', $held->fresh()->safe_code, 'Unsupported registry takes precedence over invalid frozen contacts');
+same($bothPayload, $held->fresh()->payload, 'Registry classification preserves both frozen defects');
+$bothHeld = $held->fresh()->getAttributes(); ContactRecovery::hold($held->id);
+same($bothHeld, $held->fresh()->getAttributes(), 'Repeated unsupported registry hold is read-only');
+contactReject(static fn () => ContactRecovery::replace($staff, $held->id, 'Contacts cannot repair unsupported registry'));
+same($bothHeld, $held->fresh()->getAttributes(), 'Refused contact recovery preserves the registry hold');
+DB::table('domains_operations')->where('id', $held->id)->update($rawHeld);
 $peer = Operation::create(['domain_id' => $held->domain_id, 'service_id' => $held->service_id, 'server_id' => $held->server_id,
     'registrar_key' => $held->registrar_key, 'account_fingerprint' => $held->account_fingerprint, 'authority_generation' => 1,
     'action' => 'contacts', 'term' => 1, 'currency' => 'USD', 'amount' => '0.00', 'funding_basis' => 'non_billable_management',
@@ -157,7 +232,7 @@ foreach ([['attempt' => ['execution' => null]], ['attempt' => ['seal' => 'unknow
     // Test-only restore of exact pre-case bytes; no runtime evidence-rewriting API.
     DB::table('domains_operations')->where('id', $held->id)->update($rawHeld);
 }
-foreach (['', 'bad', "bad\nreason", str_repeat('x', 501)] as $reason) {
+foreach (['', 'bad', "bad\nreason", str_repeat('x', 501), str_repeat('é',4), "valid\xff"] as $reason) {
     contactReject(static fn () => ContactRecovery::replace($staff, $held->id, $reason));
 }
 // Native owner/route/lifecycle, generation, reservation and signed-net funding remain authoritative.
@@ -173,7 +248,7 @@ foreach ([['services', $serviceId, ['user_id' => $other->id]], ['services', $ser
 $reversal = InvoiceTransaction::create(['invoice_id' => $held->invoice_id, 'amount' => '-0.01', 'fee' => 0, 'status' => 'succeeded']);
 contactReject(static fn () => ContactRecovery::replace($staff, $held->id, 'Funding is no longer complete'));
 DB::table('invoice_transactions')->where('id', $reversal->id)->delete();
-$recovered = ContactRecovery::replace($staff, $held->id, 'Owner corrected account details');
+$recovered = ContactRecovery::replace($staff, $held->id, str_repeat('🦦',500));
 same('queued', $recovered->state, 'Same paid never-sent obligation readmitted, no new operation');
 ContactSetup::requireReady($recovered);
 same('2 Updated Street', $recovered->payload['contacts']['tech']['address1'], 'Staff uses OWNER account details');
@@ -236,12 +311,13 @@ $closed = ContactRecovery::closeUnsent($staff, $manage->id, 'Abandon the unsent 
 same('rejected', $closed->state, 'Terminal disposition retained'); same('non_refundable', $closed->policy['contact_disposition']['financial'], 'Contacts never create credit');
 same('definitely_unsent', $closed->attempt['rejection_basis'], 'Explicit terminal proof');
 contactReject(static fn () => ContactRecovery::closeUnsent($staff, $manage->id, 'Duplicate disposition'));
-same('frozen-contact.com', $op->domain->fresh()->reservation_name, 'Management disposition never releases holding');
+same($frozenName, $op->domain->fresh()->reservation_name, 'Management disposition never releases holding');
 // Synthetic 301/302 remain purchases with discrepancy; even recorded-null execution blocks recovery.
 $parser = new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\ResponseParser;
-$request = Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::register('fallback.com', 1, false, '123', ['ns1.example.net', 'ns2.example.net']);
+$fallbackName = reservedFixtureName('example.com');
+$request = Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::register($fallbackName, 1, false, '123', ['ns1.example.net', 'ns2.example.net']);
 foreach ([301, 302] as $code) {
-    $body = json_encode(['request' => ['operation' => 'registerDomain'], 'reply' => ['code' => $code, 'detail' => 'private-value', 'domain' => 'fallback.com', 'order_amount' => '9.25']]);
+    $body = json_encode(['request' => ['operation' => 'registerDomain'], 'reply' => ['code' => $code, 'detail' => 'private-value', 'domain' => $fallbackName, 'order_amount' => '9.25']]);
     $reply = $parser->parse($body, $request, 'secret');
     same(Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Fallback, $reply->outcome, 'Fallback is a purchased discrepancy');
     $sent = $management(); $sent->update(['attempt' => ['execution' => ['code' => $code]]]);

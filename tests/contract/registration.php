@@ -41,9 +41,18 @@ $realBindings = new AccountBindings($registry); $claims = new OperationClaims($r
 $profileParameters = []; $profileId = null;
 $authority = static function () use ($claims, &$op, $binding): bool {
     try { [$current] = $claims->profileAuthority($op); $binding->requireMatch($current); return true; }
-    catch (Throwable) { return false; }
+    catch (\Paymenter\Extensions\Servers\Domains\Services\ProfileAuthorityMismatch|\Paymenter\Extensions\Servers\Domains\Data\AccountBindingMismatch) { return false; }
 };
+$wire->purchaseAuthorization(static function (string $command) use (&$op) {
+    if ($command !== 'registerDomain') { throw new RuntimeException('Registration authorization only.'); }
+    $cost = $op->fresh()->attempt['authorized_cost'] ?? [];
+    return new \Paymenter\Extensions\Servers\Domains\Data\Money($cost['amount'] ?? '', $cost['currency'] ?? '');
+});
 $exchange = static function ($origin, $command, $parameters, $ms) use ($wire, &$profileParameters, &$profileId): string {
+    if ($command === 'registerDomain' && getenv('OTE_REGISTRATION_CONTEXT') === 'interactive') {
+        $origin = \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Environment::Sandbox->origin().'/'
+            .\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\RequestContext::Interactive->value;
+    }
     if ($command === 'contactAdd') { $profileParameters = $parameters; }
     $body = $wire->raw($origin, $command, $parameters, $ms);
     $data = json_decode($body, true);
@@ -57,16 +66,27 @@ $exchange = static function ($origin, $command, $parameters, $ms) use ($wire, &$
     return $body;
 };
 if (($mode ?? '') === '--profile-read') {
-    [$op] = $claims->claim($op->id); $wire->check('profile_authority_before', $authority());
-    $parameters = RegistrationProfiles::parameters(\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate('namesilo', $op->payload['contacts'])['registrant']);
-    $body = $wire->raw('https://ote.namesilo.com/apibatch', 'contactList', []);
-    $data = json_decode($body, true);
-    $inventory = \OteContract\ProfileDiagnostics::inventory(is_array($data['reply'] ?? null) ? $data['reply'] : [], $parameters);
-    $wire->receipt['profile_inventory'] = $inventory;
-    $matching = array_filter($inventory['rows'], static fn ($row) => $row['identity_match'] && $row['default_nondefault'] && $row['id_valid']);
-    $wire->check('profile_read_gate', count($matching) === 1);
-    $wire->check('profile_authority_after', $authority());
-    $wire->check('registration', 'profile_read_only_no_creation_or_purchase'); $nativeSuccessful = true; return;
+    $claimed = $claims->claim($op->id);
+    if ($claimed === null) {
+        $wire->check('profile_claim', false); $wire->check('registration', 'blocked_profile_claim'); $nativeSuccessful = true; return;
+    }
+    [$op] = $claimed;
+    try {
+        $wire->check('profile_claim', true);
+        $wire->check('profile_authority_before', $authority());
+        $parameters = RegistrationProfiles::parameters(\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate('namesilo', $op->payload['contacts'])['registrant']);
+        $body = $wire->raw('https://ote.namesilo.com/apibatch', 'contactList', []);
+        $data = json_decode($body, true);
+        $wire->check('profile_contact_list_success', ($data['request']['operation'] ?? null) === 'contactList'
+            && in_array($data['reply']['code'] ?? null, [300, '300'], true));
+        $inventory = \OteContract\ProfileDiagnostics::inventory(is_array($data['reply'] ?? null) ? $data['reply'] : [], $parameters);
+        $wire->receipt['profile_inventory'] = $inventory;
+        $matching = array_filter($inventory['rows'], static fn ($row) => $row['identity_match'] && $row['default_nondefault'] && $row['id_valid']);
+        $wire->check('profile_read_gate', count($matching) === 1);
+        $wire->check('profile_authority_after', $authority());
+        $wire->check('registration', 'profile_read_only_no_creation_or_purchase'); $nativeSuccessful = true;
+    } finally { $claims->finish($op); }
+    return;
 }
 $features = new WriteFeatures(registration: true);
 $profiles = new RegistrationProfiles($binding, $claims, $clock, $exchange,
@@ -89,8 +109,15 @@ $wire->check('registration', $registered ? 'accepted_via_real_admitted_protocol'
     : ($wire->attempted('registerDomain') ? 'unresolved_possibly_sent' : 'blocked_before_purchase'));
 if (!$registered) {
     $wire->mismatch('registerDomain', 'production_registration_not_accepted'); $nativeSuccessful = true;
-    if ($wire->attempted('registerDomain')) { $wire->check('purchase_unresolved', true); throw new RuntimeException('OTE purchase needs investigation.'); }
-    return;
+    if (!$wire->attempted('registerDomain')) { return; }
+    $wire->check('purchase_unresolved', true);
+    $client = new Client($binding, (string) getenv('NAMESILO_SANDBOX_API_KEY'), $wire);
+    $category = $wire->purchaseAttempt()->reconcile($wire, $client, $binding, $clock);
+    if ($category !== 'registered_in_account') { throw new RuntimeException('OTE purchase needs investigation.'); }
+    // Sandbox sequence authority only: no engine completion, charge acceptance or retry.
+    $wire->authorizeRenewal(true);
+    $wire->receipt['checks']['purchase_unresolved'] = false; $wire->save();
+    $wire->check('registration', 'reconciled_in_account');
 }
 
 $raw = static fn ($command, $parameters) => $wire->raw('https://ote.namesilo.com/apibatch', $command, $parameters);

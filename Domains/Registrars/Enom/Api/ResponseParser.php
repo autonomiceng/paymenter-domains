@@ -30,6 +30,11 @@ final class ResponseParser
             || !is_string($data['done'] ?? null) || strtolower($data['done']) !== 'true') {
             return new ProtocolResult('unknown', 'invalid_envelope');
         }
+        if ($command === ReadCommand::Balance && $data['errcount'] === '1'
+            && (($data['errors']['err1'] ?? null) === 'Bad User name or Password'
+                || ($data['responses']['response']['responsenumber'] ?? null) === '304155')) {
+            return new ProtocolResult('rejected', 'identity_credentials_refused');
+        }
         $code = $data['rrpcode'] ?? $data['responsecode'] ?? null;
         $code = is_string($code) && preg_match('/^[0-9]{1,6}$/D', $code) ? $code : null;
         if ($command === ReadCommand::HostStatus && $data['errcount'] === '1' && ($data['errors']??null) === ['err1'=>'Error 545 - Name server does not exist']
@@ -59,6 +64,7 @@ final class ResponseParser
     private function refused(ManagementCommand $command, #[\SensitiveParameter] array $d): bool
     {
         foreach(['orderid','transferorderid','registryexpdate'] as $k){if(isset($d[$k])&&$d[$k]!==''){return false;}}
+        if(isset($d['transferorder'])&&$d['transferorder']!==''&&(!is_array($d['transferorder'])||array_is_list($d['transferorder'])||isset($d['transferorder']['transferorderid'])&&$d['transferorder']['transferorderid']!=='')){return false;}
         foreach(['domaininfo','reactivatedomainname'] as $k){if(isset($d[$k])&&$d[$k]!==''&&(!is_array($d[$k])||array_is_list($d[$k])||isset($d[$k]['registryexpdate'])||isset($d[$k]['orderid']))){return false;}}
         $top=$d['nssuccess']??null;$nested=$d[strtolower($command->value)]['nssuccess']??null;
         if($top!==null&&$nested!==null&&$top!==$nested){return false;}
@@ -70,7 +76,7 @@ final class ResponseParser
         foreach($codes as $c){if(!is_string($c)||(!in_array($c,['500','501','502','503','504','505','506','507','508','509','530','531','535','541','542','543','544','545','546','547','548','550','551','552','556','524181'],true)&&!preg_match('/^[347](?:01|03|04|05|06|12|13|15|16|17)[0-9]{3}$/D',$c))){return false;}}return true;
     }
 
-    private function txtAddress(\DOMElement $node): bool
+    private function recordAddress(\DOMElement $node): bool
     {
         if (strtolower($node->tagName) !== 'address' || !$node->parentNode instanceof \DOMElement) { return false; }
         foreach ($node->parentNode->childNodes as $child) {
@@ -97,7 +103,7 @@ final class ResponseParser
                 } else { $data[$key] = $value; }
             } elseif ($child instanceof \DOMText || $child instanceof \DOMCdataSection) { $text .= $child->textContent; }
         }
-        if (!$data) { return $this->txtAddress($node) ? $text : trim($text); }
+        if (!$data) { return $this->recordAddress($node) ? $text : trim($text); }
         if (trim($text) !== '') { $data['#text'] = trim($text); }
         return $data;
     }

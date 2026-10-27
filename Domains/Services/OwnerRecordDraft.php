@@ -5,7 +5,7 @@ use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
 /** Bounded public record fields for a direct 422 response. Never persisted or flashed. */
 final class OwnerRecordDraft
 {
-    public static function apply(OwnedDomain $d,string $action,#[\SensitiveParameter] array $p): OwnedDomain
+    public static function apply(OwnedDomain $d,string $action,#[\SensitiveParameter] array $p,bool $confirm=false): OwnedDomain
     {
         $cap=$action==='srv'?'srv':DomainManagement::capability($action); $sections=$d->management;
         if (!isset($sections[$cap])) { return $d; }
@@ -24,8 +24,10 @@ final class OwnerRecordDraft
             $digest=$p['preimage_digest']??null;
             if (is_string($digest)&&preg_match('/^[a-f0-9]{64}$/D',$digest)) { $values['digest']=$digest; }
         } elseif ($cap==='ds') { $values=['ds'=>$clean($p['ds']??[],['key_tag'=>5,'algorithm'=>5,'digest_type'=>5,'digest'=>64])]; }
-        else { $values=$clean($p,['host'=>253,'ip'=>64]); }
-        $sections[$cap]['retry']=['action'=>$action,'values'=>$values];
+        elseif ($cap==='glue') { $values=$clean($p,['host'=>253,'ip'=>64]); }
+        elseif ($cap==='nameservers') { $values=['nameservers'=>is_string($p['nameservers']??null)?mb_strcut($p['nameservers'],0,4096,'UTF-8'):'','use_default'=>($p['use_default']??null)==='1'?'1':'']; }
+        else { $values=[]; }
+        $sections[$cap]['retry']=['action'=>$action,'values'=>$values,'confirm'=>$confirm];
         return new OwnedDomain(...[...get_object_vars($d),'management'=>$sections]);
     }
 }

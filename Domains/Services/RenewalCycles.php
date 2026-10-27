@@ -18,7 +18,8 @@ final readonly class RenewalCycles
             && $op->authority_generation === $l['domain']->authority_generation && $op->base_expires_at == $l['domain']->provider_expires_at);
         foreach ($cycle as $op) {
             if (RenewalReplacements::reviewed($op,$l['domain'])) { RenewalReplacements::requireSettled($op,$l); continue; }
-            if (!OperationTerminalProof::safe($op, $l['domain']) || $op->safe_code !== 'renewal_cancelled_unpaid'
+            if ((!RenewalAutoPay::unattempted($op) && !RefundPayment::retiredSettled($op, $l))
+                || !OperationTerminalProof::safe($op, $l['domain']) || $op->safe_code !== 'renewal_cancelled_unpaid'
                 || (($l['invoices']->firstWhere('id', $op->invoice_id)?->status !== 'cancelled'
                     || $l['transactions']->contains('invoice_id', $op->invoice_id)) && !RefundPayment::retiredSettled($op, $l))) {
                 throw new \DomainException('A renewal obligation already owns this cycle.');
@@ -31,21 +32,52 @@ final readonly class RenewalCycles
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         return DB::transaction(function () use ($seed, $id): Operation {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
-            $invoice = $l['invoices']->firstWhere('id', $op?->invoice_id); $item = $l['items']->firstWhere('id', $op?->invoice_item_id);
-            if (!$op || $op->action !== 'renew' || $op->funding_basis !== 'paid_invoice' || !$invoice || !$item
+            if (!self::canRetireUnpaid($op, $l)) { throw new \DomainException('Unpaid terminal proof unavailable.'); }
+            return $this->retireLocked($op, $l, 'Unpaid renewal cancelled');
+        });
+    }
+    /** Local expiry cleanup, independent of renewal preferences and billing switches. */
+    public function expireUnpaid(int $domainId): void
+    {
+        OperationClaims::outside(); $seed = Domain::findOrFail($domainId);
+        if (!DomainBilling::expired($seed, $this->clock->now())) { return; }
+        // Expired holdings stay in the cursor; take row locks only when an unpaid renewal may remain.
+        if (!$seed->operations()->where('action', 'renew')->whereIn('state', ['awaiting_payment', 'queued', 'held'])->exists()) { return; }
+        DB::transaction(function () use ($seed): void {
+            $l = HoldingLocks::take($seed);
+            if (!DomainBilling::expired($l['domain'], $this->clock->now())) { return; }
+            foreach ($l['operations'] as $op) {
+                if (self::canRetireUnpaid($op, $l)) { $this->retireLocked($op, $l, 'Domain expired'); }
+            }
+        });
+    }
+    /** Read-only eligibility proof, independent of expiry. Writes require the current locked ledger. */
+    public static function canRetireUnpaid(?Operation $op, array $l): bool
+    {
+        $invoice = $l['invoices']->firstWhere('id', $op?->invoice_id); $item = $l['items']->firstWhere('id', $op?->invoice_item_id);
+        return !(!$op || $op->action !== 'renew' || $op->funding_basis !== 'paid_invoice' || !$invoice || !$item
                 || $op->service_id !== $l['domain']->service_id || $op->authority_generation !== $l['domain']->authority_generation
                 || (int) $invoice->user_id !== (int) $l['domain']->user_id || $invoice->currency_code !== 'USD'
                 || (int) $item->invoice_id !== (int) $invoice->id
                 || !in_array($invoice->status, ['pending', 'cancelled'], true) || $l['transactions']->contains('invoice_id', $invoice->id)
                 || $l['items']->where('invoice_id', $invoice->id)->count() !== 1 || $item->reference_type !== null || $item->reference_id !== null
                 || PricingRule::minor($item->price) !== PricingRule::minor($op->amount) || (string) $item->quantity !== '1'
-                || !in_array($op->state, ['awaiting_payment', 'queued', 'held'], true) || !self::virgin($op)) { throw new \DomainException('Unpaid terminal proof unavailable.'); }
-            $invoice->update(['status' => 'cancelled']);
-            $op->update(['state' => 'rejected', 'safe_code' => 'renewal_cancelled_unpaid', 'completed_at' => $this->clock->now(),
-                'attempt' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent',
-                    'terminal' => ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'invoice_id' => $invoice->id, 'transactions' => []]]]);
-            return $op;
-        });
+                || !in_array($op->state, ['awaiting_payment', 'queued', 'held'], true) || !self::virgin($op));
+    }
+    private function retireLocked(Operation $op, array $l, string $reason): Operation
+    {
+        $invoice = $l['invoices']->firstWhere('id', $op->invoice_id);
+        // Retain the same local financial audit shape as unpaid acquisition retirement.
+        $audit = ['actor_id' => null, 'reason' => $reason, 'at' => $this->clock->now()->format(DATE_ATOM),
+            'operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'invoice_id' => $invoice->id,
+            'before' => ['invoice' => $invoice->status, 'operation' => $op->state],
+            'after' => ['invoice' => 'cancelled', 'operation' => 'rejected']];
+        $invoice->update(['status' => 'cancelled']);
+        $op->update(['state' => 'rejected', 'safe_code' => 'renewal_cancelled_unpaid', 'completed_at' => $this->clock->now(),
+            'policy' => [...($op->policy ?? []), 'unpaid_retirement' => $audit],
+            'attempt' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent',
+                'terminal' => ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'invoice_id' => $invoice->id, 'transactions' => []]]]);
+        return $op;
     }
     public function complimentary(int $domainId, User $actor, int $years, Money $cap, string $reason): Operation
     {
@@ -59,16 +91,17 @@ final readonly class RenewalCycles
             $d = $l['domain']; $s = $l['service']; $binding = CatalogueAcceptances::binding($l['account']);
             $this->bindings->requireProcessingLocked($l['server'], $l['account']);
             if ($years < 1 || $years > 10 || $d->provider_expires_at?->addYearsNoOverflow($years) > $this->clock->now()->modify('+10 years')
-                || $s->status !== 'active' || $l['cancel']->contains('service_id', $s->id) || ($d->renewal_policy['automatic_spend_paused'] ?? false)) { throw new \DomainException('Complimentary lifecycle unavailable.'); }
+                || $s->status !== 'active' || RenewalStop::blocksRenewal($l) || ($d->renewal_policy['automatic_spend_paused'] ?? false)) { throw new \DomainException('Complimentary lifecycle unavailable.'); }
+            $anchor = HoldingAnchor::resolve($l);
+            if ($anchor->operation) { RenewalAuthority::requireCostAnchor($anchor->operation); }
             $key = self::key($d); $existing = $l['operations']->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
             if ($existing && $existing->funding_basis === 'complimentary') {
                 if ((int) $existing->term !== $years || ($existing->policy['renewal']['cost_cap'] ?? null) !== ['amount' => $cap->amount, 'currency' => 'USD']) { throw new \DomainException('Complimentary term and cap are fixed.'); }
                 return $existing;
             }
-            $key = self::next($l); $anchor = $l['operations']->firstWhere('operation_key', $d->renewal_policy['billing_anchor']['operation_key'] ?? null);
-            if (!$anchor || !RenewalAuthority::completed($anchor, $d, $binding)
-                || $l['operations']->contains(fn ($op) => !RenewalAuthority::resolved($op, $d, $binding))) { throw new \DomainException('Prior renewal outcome unavailable.'); }
-            RenewalAuthority::requireCostAnchor($anchor);
+            if(RenewalStop::stopped($l)){throw new \DomainException('Future renewals are stopped for this domain.');}
+            $key = self::next($l);
+            if ($l['operations']->contains(fn ($op) => !HoldingAnchor::resolved($op, $l))) { throw new \DomainException('Prior renewal outcome unavailable.'); }
             $authorization = ['actor' => (int) $staff->id, 'reason' => $reason, 'generation' => $d->authority_generation,
                 'expiry' => $d->provider_expires_at->format('Y-m-d'), 'years' => $years, 'cap' => ['amount' => $cap->amount, 'currency' => 'USD'], 'at' => $this->clock->now()->format(DATE_ATOM)];
             $d->update(['renewal_policy' => [...$d->renewal_policy, 'complimentary' => $authorization]]);
@@ -84,7 +117,12 @@ final readonly class RenewalCycles
     }
     public static function virgin(Operation $op): bool
     {
-        return ($op->attempt ?? []) === [] && ($op->cost ?? []) === [] && FinancialAdjustments::unattemptedFunding($op)
+        return FinancialAdjustments::unattemptedFunding($op) && self::registrarVirgin($op);
+    }
+    /** No registrar attempt. Native funding must still be checked before admission. */
+    public static function registrarVirgin(Operation $op): bool
+    {
+        return ($op->attempt ?? []) === [] && ($op->cost ?? []) === [] && FinancialAdjustments::registrarUnattemptedFunding($op)
             && $op->provider_order_id === null && $op->confirmed_expires_at === null && $op->started_at === null && $op->request_fingerprint === null
             && !array_key_exists('dispatch_attempted_at', $op->policy ?? []);
     }

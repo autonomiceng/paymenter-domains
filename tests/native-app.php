@@ -30,3 +30,9 @@ same('sqlite', config('database.default'), 'Native database isolation');
 same(':memory:', config('database.connections.sqlite.database'), 'Native database is memory only');
 Illuminate\Support\Facades\Http::preventStrayRequests();
 Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+
+// Public-data updater also uses an explicit fake: native runtime tests must never resolve DNS.
+$app->instance(\Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,
+    new \Paymenter\Extensions\Servers\Domains\Services\PslTransport(static function (): never {
+        throw new \Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');
+    }));

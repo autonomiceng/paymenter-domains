@@ -1,0 +1,43 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/Support/managed-public.php';
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Dns\{DnsQuery,DnsAnswer,PublicSignalsTarget};
+use Paymenter\Extensions\Servers\Domains\Models\{ManagedPublicObservation,ManagedPublicConfig,WatchName,WatchSource};
+use Paymenter\Extensions\Servers\Domains\Services\{ManagedPublicSignals,PublicSignalsProjection,ManagedPublicWorkSchema};
+extract(managedFixture(true));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
+$before=DB::table(ManagedPublicWorkSchema::TABLE)->orderBy('id')->get();$money=scenarioMoney();$authority=$d->fresh()->getRawOriginal();$count=WatchName::count();$calls=count($wire->calls);
+$off=new ManagedPublicSignals($fake);expect(!$off->enqueue($id,$uid,$now),'Activation remains explicit');
+same('awaiting_acceptance',DB::table(ManagedPublicWorkSchema::TABLE)->value('safe_code'),'Old A3 enrollment stays dormant by default');
+expect($signals->enqueue($id,$uid),'DNR holding enrolls');same($count,WatchName::count(),'Managed enrollment never creates a watch');
+same($before->pluck('id')->all(),DB::table(ManagedPublicWorkSchema::TABLE)->orderBy('id')->pluck('id')->all(),'Original A3 work IDs consumed in place');
+same('linked',$watch->fresh()->state,'Predecessor tombstone retained');same('managed_link',WatchSource::where('managed_domain_id',$id)->sole()->state,'Source relink retained');
+same(true,ManagedPublicConfig::find($id)->notice_preferences['dns'],'DNS preference independent from DNR');
+$bindings->setProcessing($tld->server_id,false);
+$fake->answers['example.com|NS']=function(){same(0,DB::transactionLevel(),'DNS outside transactions');return managedNs();};
+expect($signals->observe($id,$uid,'delegation'),'Registrar processing gate does not gate public DNS');
+same(false,ManagedPublicObservation::sole()->ns_confirmed,'One sample never confirms an NS episode');
+$w=DB::table(ManagedPublicWorkSchema::TABLE)->where('kind','delegation')->first();same($now+900,(int)$w->due_at,'Second sample waits at least fifteen minutes');
+$time->now=$now+900;expect($signals->observe($id,$uid,'delegation'),'Second matching sample accepted');same(true,ManagedPublicObservation::orderByDesc('id')->first()->ns_confirmed,'Two spaced samples confirm');
+foreach(['example.com','www.example.com']as$hostName){foreach(['CNAME','A','AAAA']as$type){$q=new DnsQuery($hostName,$type);$fake->answers[$q->key()]=DnsAnswer::negative($q);}}
+$q=new DnsQuery('example.com','MX');$fake->answers[$q->key()]=DnsAnswer::negative($q);
+expect($signals->observe($id,$uid,'points'),'Managed linked primary hostnames and apex use shared classifier');
+expect(in_array('www.example.com|A',$fake->calls,true) && in_array('example.com|A',$fake->calls,true),'Apex and hosting primary both queried');
+$target=PublicSignalsTarget::managed($id,$uid,$d->account_fingerprint,$d->authority_generation,$d->confirmed_revision);
+$view=(new PublicSignalsProjection())->read($target,$time->now+1);same('platform',$view['dns']['value'],'Managed badges read managed facts');expect(!$view['dns']['stale'],'Managed facts current');
+same(null,(new PublicSignalsProjection())->read(PublicSignalsTarget::watch($watch->id,$uid,$watch->fresh()->revision),$time->now),'Linked watch cannot supply managed badges');
+$pointsDue=DB::table(ManagedPublicWorkSchema::TABLE)->where('kind','points')->value('due_at');managedDue($id,$time->now);
+expect($signals->observe($id,$uid,'delegation'),'Unchanged confirmed delegation observed');
+same($pointsDue,DB::table(ManagedPublicWorkSchema::TABLE)->where('kind','points')->value('due_at'),'Routine NS checks preserve daily points cadence');
+managedDue($id,$time->now);$fake->answers['example.com|NS']=fn()=>managedNs('ns.external.test',3600);
+expect($signals->observe($id,$uid,'delegation'),'Mismatch captured as unconfirmed');same(false,ManagedPublicObservation::orderByDesc('id')->first()->ns_confirmed,'Old confirmation does not authorize a changed NS set');
+$time->now+=3600;expect($signals->observe($id,$uid,'delegation'),'TTL-separated differing set confirmed');same(true,ManagedPublicObservation::orderByDesc('id')->first()->ns_confirmed,'Stable mismatch confirmed');
+$time->now+=43201;managedDue($id,$time->now);
+expect($signals->observe($id,$uid,'delegation'),'Fresh read after prior evidence expired');
+same(false,ManagedPublicObservation::orderByDesc('id')->first()->ns_confirmed,'Expired confirmation requires a new second sample');
+same($authority,$d->fresh()->getRawOriginal(),'Public DNS does not change holding authority, expiry, permissions or observation');same($money,scenarioMoney(),'No financial mutation');same($calls,count($wire->calls),'No registrar reads');
+DB::table('domains_domains')->where('id',$id)->update(['status'=>'expired']);expect(!$signals->enqueue($id,$uid,$time->now),'Expired work retires');
+expect(DB::table(ManagedPublicWorkSchema::TABLE)->whereNull('retired_at')->doesntExist(),'All expired work retired');
+expect((new PublicSignalsProjection())->read($target,$time->now)['dns']['stale'],'Retained facts visibly stale after retirement');
+$nativeSuccessful=true;echo "Managed DNR enrollment, explicit activation, shared classifier, NS confirmation and authority isolation passed.\n";

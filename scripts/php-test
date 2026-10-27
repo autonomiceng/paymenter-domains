@@ -6,12 +6,13 @@ set -euo pipefail
 export PHP_INI_SCAN_DIR=''
 extra=()
 if [[ -n "${PAYMENTER_TEST_NATIVE_EXTENSIONS:-}" ]]; then
-  for module in pdo pdo_sqlite sqlite3 mbstring intl tokenizer xml xmlreader xmlwriter; do
+  for module in pdo pdo_sqlite sqlite3 mbstring intl zip gd bcmath xml xmlreader xmlwriter; do
     extra+=(-d "extension=${PAYMENTER_TEST_NATIVE_EXTENSIONS}/$module.so")
   done
 fi
 exec "$PAYMENTER_TEST_PHP" -n \
   -d "extension=$PAYMENTER_TEST_CURL_EXTENSION" \
+  -d "extension=${PAYMENTER_TEST_CURL_EXTENSION%/*}/tokenizer.so" \
   -d "extension=${PAYMENTER_TEST_CURL_EXTENSION%/*}/dom.so" "${extra[@]}" \
   -d allow_url_fopen=0 -d ffi.enable=0 \
   -d zend.exception_ignore_args=1 \

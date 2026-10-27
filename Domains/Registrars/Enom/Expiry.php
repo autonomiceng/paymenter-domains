@@ -13,7 +13,7 @@ final class Expiry
         if ($reply->status !== 'success') { return null; }
         $confirmed = null; $missing = new \stdClass;
         foreach (['registryexpdate', 'domaininfo.registryexpdate', 'expirationdate', 'getdomaininfo.status.expiration',
-            'expiration', 'getextendinfo.expiration', 'order.orderdetail.expirydatetime'] as $path) {
+            'expiration', 'order.orderdetail.expirydatetime'] as $path) {
             $value = $reply->value($path, $missing);
             if ($value === $missing) { continue; }
             $zone = new \DateTimeZone('America/Los_Angeles');
@@ -33,6 +33,24 @@ final class Expiry
             $confirmed = $date;
         }
         return $confirmed;
+    }
+    public static function reconcile(ProtocolResult $extend, ?DateEvidence $authenticated, ProtocolResult $authenticatedInfo): ?DateEvidence
+    {
+        // Only the frozen scalar US local-date and authenticated timestamp shapes may reconcile.
+        foreach (['registryexpdate', 'domaininfo.registryexpdate', 'expirationdate', 'getdomaininfo.status.expiration', 'getextendinfo.expiration', 'order.orderdetail.expirydatetime'] as $path) {
+            if ($extend->value($path) !== null) { return null; }
+        }
+        $expiry = Expiry::read($extend);
+        if (!$expiry || !$authenticated) { return null; }
+        if ($expiry->precision === ExpiryPrecision::Instant) {
+            return $authenticated->precision === ExpiryPrecision::Instant && $expiry->value === $authenticated->value ? $authenticated : null;
+        }
+        $raw = $extend->value('expiration');
+        if ($authenticated->precision !== ExpiryPrecision::Instant || !is_string($raw) || !preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/D', $raw)) { return null; }
+        $authenticatedRaw = $authenticatedInfo->value('getdomaininfo.status.expiration');
+        if (!is_string($authenticatedRaw) || !preg_match('/[T ]\d{1,2}:\d{2}/', $authenticatedRaw)) { return null; }
+        $local = (new \DateTimeImmutable($authenticated->value))->setTimezone(new \DateTimeZone('America/Los_Angeles'));
+        return $expiry->value === $local->format('Y-m-d') ? $authenticated : null;
     }
     private static function date(string $input, \DateTimeZone $zone): ?DateEvidence
     {

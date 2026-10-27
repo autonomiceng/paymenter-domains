@@ -84,10 +84,12 @@ draft renew 263/264. Every other non-success code stays unknown. State-toggle ac
 250–256 do not apply to current read/purchase mappings. Refusals carry request, credential/account,
 funds or domain-state scope so future processing can hold account-wide problems.
 
-`RegistrarRequest` and transport/client execution accept reads only. `PurchaseMapping` exposes
-register/renew/transfer parameters with no dispatch path. `ResponseParser` can classify synthetic
-purchase evidence independently, without sending it. A later authorized write slice must introduce
-funding/ownership/premium/cost/prior-outcome admission before adding a purchase transport path.
+The standalone NameSilo API client accepts only read-only `RegistrarRequest` values.
+`PurchaseMapping` describes register/renew/transfer parameters and cannot dispatch them through
+that client. `ResponseParser` can classify synthetic purchase evidence without sending it.
+Separate engine-admitted writers consume one sealed, live grant after current funding,
+ownership, premium, cost, prior-outcome and account-acceptance checks. A mapping alone never
+grants dispatch authority; the renewal-specific acceptance contract is stated below.
 Availability collections normalize to lists and must cover exactly the requested names once;
 missing premium evidence is explicit null, never ordinary-name proof. On 2026-10-18, the
 [registration availability reference](https://www.namesilo.com/api-reference/pages?uid=domains/check-register-availability)
@@ -104,8 +106,8 @@ prices also accept plain decimal lexemes with longer fractions, preserving every
 informational, never funded quote authority. Neutral Money and pricing admission limits are unchanged.
 `getPrices` requires a successful correlated envelope and at least one well-formed row. Each row
 requires all three positive exact prices. A valid TLD with a missing, null, zero or malformed price
-is quarantined as a whole row with unknown cost; valid rows remain usable. Invalid TLD keys and
-entirely unpriceable catalogues remain unknown. Quarantine never supplies a quote or a zero price.
+is quarantined as a whole row with unknown cost; valid rows remain usable. One invalid TLD key makes
+the whole reply unknown (no row is kept), as does an entirely unpriceable catalogue. Quarantine never supplies a quote or a zero price.
 The OTE runner additionally requires complete positive com/net rows before any write. See
 [catalogue quarantine and revision handling](catalogue.md).
 The optional OTE availability `renew` field is explicitly ignored by name: it is not an independently
@@ -124,7 +126,7 @@ All rows: **I/B**, common JSON envelope and code table above. Optional parameter
 | [registerDomain](https://www.namesilo.com/api-reference/pages?uid=domains/register-domain) | `domain`, `years` 1–10; `private?`, `auto_renew?`, `payment_id?`, `portfolio?`, `coupon?`, `ns1`–`ns13?`, contact fields or `contact_id?` | `{message,domain,order_amount}`; example has no order identifier. Explicit `private=0/1`, `auto_renew=0`; no card profile. At least two valid registry hosts or 301 fallback. Reject invalid contacts through Reseller Manager setting before live activation. |
 | [renewDomain](https://www.namesilo.com/api-reference/pages?uid=domains/renew-domain) | `domain`, `years` 1–10; `payment_id?`, `coupon?` | `{message,domain,order_amount}`. Can restore during redemption unless disabled in **API Manager**. No documented per-call restore ceiling/opt-out, privacy or auto-renew parameters. See renewal gate below. |
 | [transferDomain](https://www.namesilo.com/api-reference/pages?uid=domains/transfer-domain) | `domain`; `auth?`, `private?`, `auto_renew?`, `payment_id?`, `portfolio?`, `coupon?`, `ns1`–`ns13?`, contact fields or `contact_id?` | `{message,domain,order_amount}`. Explicit flags as registration. Encode auth as `base64:` plus base64 then URL encode. Initial acknowledgement is not completed transfer; no chosen `years` parameter documented. |
-| [checkTransferStatus](https://www.namesilo.com/api-reference/pages?uid=transfers/check-transfer-status) | `domain` | `{date,status,message,expiration?}`; latest status only. The 28 official strings map to 9 pending, 1 completion candidate, 5 needs-action holds, 10 rejections and 3 deliberately unknown outcomes. Exact matching only; other strings stay unknown. See [vocabulary/provenance and independent completion gates](transfers.md#namesilo-terminal-vocabulary-slice30a); support confirmation/live acceptance39 remain open. |
+| [checkTransferStatus](https://www.namesilo.com/api-reference/pages?uid=transfers/check-transfer-status) | `domain` | `{date,status,message,expiration?}`; latest status only. The 28 official strings map to 9 pending, 1 completion candidate, 5 needs-action holds, 10 rejections and 3 deliberately unknown outcomes. Exact matching only; other strings stay unknown. See [vocabulary/provenance and independent completion gates](transfers.md#namesilo-terminal-vocabulary-slice30a); support confirmation/live acceptance 39 remain open. |
 | [transferUpdateChangeEPPCode](https://www.namesilo.com/api-reference/pages?uid=transfers/transfer-update-change-epp-code) | `domain`, `auth` | Ack; same base64 option. Explicit recovery, never purchase replay. |
 | [transferUpdateResendAdminEmail](https://www.namesilo.com/api-reference/pages?uid=transfers/transfer-update-resend-admin-email) | `domain` | Ack, but response sample incorrectly names ChangeEPPCode. Confirm operation echo; staff-only until proved. |
 | [transferUpdateResubmitToRegistry](https://www.namesilo.com/api-reference/pages?uid=transfers/transfer-update-resubmit-registry) | `domain` | Ack; staff-only reconciliation decision, no automatic resubmission. |
@@ -141,11 +143,15 @@ presence-based `retail_prices`. Parameters alone are not the authoritative contr
 workflow must read getDomainInfo, verify `auto_renew=No` and expected privacy, and removeAutoRenewal
 before accepting Paymenter renewal authority.
 
-**Renewal gate:** the task requires explicit `auto_renew=0` and privacy on all three purchase
-builders. Preserve those fields in a draft renewal mapping, but provide no purchase dispatch
-until support confirms their behavior or an approved readback/control sequence replaces that
-mapping. Undocumented parameters cannot enforce policy. Disable restores in API Manager and
-prove normal/grace eligibility independently. Renewal builder output alone is not safe fulfillment.
+**Renewal gate:** purchase mappings retain explicit `auto_renew=0` and privacy parameters;
+the standalone client cannot send them. The separate admitted renewal writer sends
+`renewDomain` with the exact name, annual term and `auto_renew=0`, without changing privacy.
+Its default-off renewal feature and binding-scoped USD, batch/rate and per-TLD annual-renewal
+acceptance must pass before the sealed engine grant can be consumed. Support recommended
+explicit `auto_renew=0` on 2026-10-18; parameter output alone does not prove it is honored.
+Completion requires fresh auto-renew-off readback plus unique charge and full-term expiry proof.
+Restores must be disabled in API Manager. NameSilo admission accepts only independently proven
+ordinary annual renewal; grace/redemption remain closed. Mapping output is not fulfillment.
 
 The provider confirms there is no idempotency key or maximum-price parameter. Future
 execution must admit one operation, retain pre-send order snapshots, correlate account/domain/action/

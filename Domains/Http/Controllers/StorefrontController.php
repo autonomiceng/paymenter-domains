@@ -8,8 +8,7 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\RateLimiter;
 use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Models\SalesPolicy;
-use Paymenter\Extensions\Servers\Domains\Services\Storefront;
+use Paymenter\Extensions\Servers\Domains\Services\{PolicyEndings, Storefront};
 
 /** Dormant until39 explicitly loads routes, views and the shared native cart admission hooks. */
 final class StorefrontController extends Controller
@@ -33,7 +32,8 @@ final class StorefrontController extends Controller
         if ($sld !== null && $error === null) {
             usort($names, static fn ($a, $b) => ($b === $preferred) <=> ($a === $preferred));
             foreach (array_slice($names, 0, 12) as $ending) {
-                $results[] = ['domain' => $sld.'.'.$ending, 'sld' => $sld, 'tld' => $ending, 'status' => 'idle'];
+                $results[] = ['domain' => $sld.'.'.$ending, 'sld' => $sld, 'tld' => $ending, 'status' => 'idle',
+                    'testEnvironment' => collect($endings)->firstWhere('tld', $ending)['testEnvironment']];
             }
         }
         return view('domains::search', ['endings' => $endings, 'name' => $raw, 'preferred' => $preferred,
@@ -60,7 +60,7 @@ final class StorefrontController extends Controller
         if (!is_string($input) || strlen($input) > 253) { return response()->json(['status' => 'invalid', 'message' => 'Enter a valid domain name.'], 422); }
         try { $result = $this->storefront->check($input); }
         catch (\InvalidArgumentException) { return response()->json(['status' => 'invalid', 'message' => 'Enter a valid domain name.'], 422); }
-        catch (\Throwable) { return response()->json(['status' => 'error', 'message' => 'Couldn’t check this name.'], 503); }
+        catch (\Throwable $e) { \Illuminate\Support\Facades\Log::warning('Domains search failed.',['exception_class'=>$e::class]); return response()->json(['status' => 'error', 'message' => 'Couldn’t check this name.'], 503); }
         if (in_array($result['status'], ['available', 'transferable'], true)) {
             $result['key'] = FormKeys::issue($request, 'order:'.$result['domain']);
         }
@@ -80,13 +80,29 @@ final class StorefrontController extends Controller
         try {
             $name = CanonicalName::normalize($input); $action = $request->input('action'); $term = $request->input('term');
             if (!in_array($action, ['register', 'transfer'], true) || !is_string($term) || !preg_match('/^(?:[1-9]|10)$/D', $term)) { throw new \DomainException; }
-            $ending = CanonicalName::parse($name, SalesPolicy::pluck('tld')->all())['tld'];
-            $offer = $this->storefront->offer($ending, $action, (int) $term);
-            \App\Classes\Cart::add($offer['product'], $offer['plan'], [], ['domain' => $name]);
-        } catch (\Throwable) {
+            $this->add($name,$action,(int)$term);
+        } catch (\App\Exceptions\DisplayException $e) {
+            return redirect()->route('domains.domains.search',['name'=>$input])->with('domains_notice',$e->getMessage());
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Domains cart handoff failed.',['exception_class'=>$e::class]);
             return redirect()->route('domains.domains.search', ['name' => $input])->with('domains_notice', 'We couldn’t add that name to your cart. Check the latest results below and try again.');
         }
         return redirect()->route('cart');
+    }
+
+    /** Internal handoff; the owning watch controller verifies its own one-use form key. */
+    public function transfer(Request $request,string $name,\Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility $eligibility,callable $guard)
+    {
+        if ($this->limit($request)) { throw new \OverflowException('Transfer read limit reached.'); }
+        $item=null;
+        try { $eligibility->comparison($name,function()use($name,&$item){return $item=$this->add($name,'transfer',1);},$guard); }
+        catch (\Throwable $error) { if ($item!==null) { \App\Models\CartItem::whereKey($item)->delete(); }throw $error; }
+        return redirect()->route('cart');
+    }
+    private function add(string $name,string $action,int $term): int
+    {
+        $ending=PolicyEndings::parse($name)['tld'];$offer=$this->storefront->offer($ending,$action,$term);
+        return \App\Classes\Cart::add($offer['product'],$offer['plan'],[],['domain'=>$name]);
     }
 
     private function limit(Request $request)
@@ -122,7 +138,7 @@ final class StorefrontController extends Controller
             return ['sld' => null, 'ending' => null, 'error' => 'Use only letters a–z, numbers and hyphens, without a hyphen at the start or end.'];
         }
         if ($ending !== null && !preg_match('/\A[a-z0-9]+(?:\.[a-z0-9]+)*\z/', $ending)) {
-            return ['sld' => $sld, 'ending' => null, 'error' => 'Check the ending after the dot, for example '.$sld.'.com.'];
+            return ['sld' => $sld, 'ending' => null, 'error' => 'Check the TLD after the dot, for example '.$sld.'.com.'];
         }
 
         return ['sld' => $sld, 'ending' => $ending, 'error' => null];

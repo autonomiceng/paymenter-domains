@@ -6,13 +6,13 @@ use Paymenter\Extensions\Servers\Domains\Services\Rdap;
 $checks = 0;
 function verify(bool $ok, string $message): void { global $checks; if (!$ok) { throw new RuntimeException($message); } $checks++; }
 $completedStatus = new ReflectionMethod(Rdap::class, 'completedStatus');
-verify($completedStatus->invoke(null, false, CURLE_RECV_ERROR, 404) === 404, 'Unclean close lost the completed 404 status.');
+verify($completedStatus->invoke(null, false, CURLE_RECV_ERROR, 404, '{}') === 404, 'Unclean close lost the completed 404 status.');
 foreach ([0, 200, 404, 503] as $status) {
-    verify($completedStatus->invoke(null, true, CURLE_OK, $status) === $status, 'Successful transport changed its status: '.$status);
+    verify($completedStatus->invoke(null, true, CURLE_OK, $status, '') === $status, 'Successful transport changed its status: '.$status);
 }
 foreach ([[CURLE_RECV_ERROR, 200], [CURLE_RECV_ERROR, 0], [CURLE_RECV_ERROR, 503],
     [CURLE_OPERATION_TIMEDOUT, 404], [CURLE_PARTIAL_FILE, 404], [CURLE_WRITE_ERROR, 404], [CURLE_OK, 404]] as [$errno, $status]) {
-    verify($completedStatus->invoke(null, false, $errno, $status) === null, 'Transport failure accepted: '.$errno.' / '.$status);
+    verify($completedStatus->invoke(null, false, $errno, $status, '{}') === null, 'Transport failure accepted: '.$errno.' / '.$status);
 }
 $now = new DateTimeImmutable('2026-10-17T12:00:00Z');
 $body = ['objectClassName' => 'domain', 'ldhName' => 'example.com', 'status' => ['active'], 'events' => [
@@ -30,8 +30,10 @@ function lookup(array $body, ?DateTimeImmutable $now = null, int $created = 60, 
     return $rdap->precheck('example.com', $created, $transferred, $now ?? new DateTimeImmutable('2026-10-17T12:00:00Z'));
 }
 $result = lookup($body);
-verify($result === ['allowed' => true, 'code' => null, 'warning' => null, 'expires_at' => '2027-01-01'], 'Valid lookup failed.');
+verify($result === ['allowed' => true, 'code' => null, 'warning' => null, 'expires_at' => '2027-01-01', 'comparison_allowed' => true], 'Valid lookup failed.');
 verify($requests === ['https://data.iana.org/rdap/dns.json', 'https://rdap.example.com/domain/example.com'], 'Lookup ignored the bootstrap/name endpoint.');
+$candidate = $body; $candidate['status'] = ['unrecognized-status']; $advisory = lookup($candidate);
+verify($advisory['allowed'] && $advisory['comparison_allowed'] === false, 'Unknown status must preserve ordinary advisory admission but refuse a watch comparison.');
 $compound = $body; $compound['ldhName'] = 'example.co.nz';
 $compoundRequests = [];
 $compoundRdap = new Rdap(function ($url) use ($compound, &$compoundRequests) {
@@ -68,7 +70,7 @@ verify(lookup($candidate, new DateTimeImmutable('2024-02-29T00:00:00Z'))['allowe
 $candidate['events'][1]['eventDate'] = '2033-03-01T00:00:00Z';
 verify(!lookup($candidate, new DateTimeImmutable('2024-02-29T00:00:00Z'))['allowed'], 'Leap-day cap overflow accepted.');
 $unknowns = [];
-$candidate = $body; $candidate['ldhName'] = 'other.com'; $unknowns[] = $candidate;
+$candidate = $body; $candidate['ldhName'] = 'other-placeholder.com'; $unknowns[] = $candidate;
 $candidate = $body; unset($candidate['status']); $unknowns[] = $candidate;
 $candidate = $body; unset($candidate['events']); $unknowns[] = $candidate;
 $candidate = $body; $candidate['events'][0]['eventDate'] = '2027-01-01T00:00:00Z'; $unknowns[] = $candidate;

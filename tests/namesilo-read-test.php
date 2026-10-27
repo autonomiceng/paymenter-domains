@@ -69,7 +69,7 @@ foreach ([0 => false, 1 => true] as $flag => $expected) {
     $wire->fixtures['checkRegisterAvailability']['reply']['available'][0]['premium'] = $flag;
     $facts = $driver->availability($query, $context())->evidence(); same($expected, $facts->premium, 'Known premium retained'); same(true, $facts->available, 'Available is independent of premium');
 }
-$wire->fixtures['checkRegisterAvailability']['reply']['available'][0]['domain'] = 'other.com';
+$wire->fixtures['checkRegisterAvailability']['reply']['available'][0]['domain'] = 'other-placeholder.com';
 same(Disposition::Unknown, $driver->availability($query, $context())->disposition, 'Cross-name response refused');
 $wire->fixtures['checkTransferAvailability']['reply'] = ['code' => 300, 'detail' => 'synthetic', 'available' => [['domain' => 'example.com', 'price' => '12.34']]];
 same(null, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->evidence()->premium, 'Transfer premium absent is unknown');
@@ -139,7 +139,7 @@ same(ExpiryPrecision::Date, $reconcile()->result()->evidence()->candidates[0]->p
 $row = $wire->fixtures['orderDetails']['reply']['order_details'][0];
 $wire->fixtures['orderDetails']['reply']['order_details'][] = $row;
 same(2, count($reconcile()->result()->evidence()->candidates), 'Multiple candidates retained unresolved');
-foreach ([['description' => 'other.com - registration'], ['years_qty' => '2'], ['description' => 'example.com - renewal']] as $mismatch) {
+foreach ([['description' => 'other-placeholder.com - registration'], ['years_qty' => '2'], ['description' => 'example.com - renewal']] as $mismatch) {
     $wire->fixtures['orderDetails']['reply']['order_details'] = [array_replace($row, $mismatch)];
     same([], $reconcile()->result()->evidence()->candidates, 'Cross-name/action/term never candidate');
 }

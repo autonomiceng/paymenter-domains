@@ -1,6 +1,6 @@
 {{-- Shared progressive enhancement adapted from Enom 444f31c; MIT, Copyright (c) 2026 Autonomic Engineering. --}}
 @once
-<p class="domains-sr" aria-live="polite" id="domains-live"></p>
+<p class="domains-sr" aria-live="polite" id="domains-live" data-nameservers-filled="{{ ucfirst(\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers()).' filled in. Save to apply them.' }}"></p>
 @verbatim
 <script>
 (() => {
@@ -43,6 +43,89 @@
             if (!refs.some(ref => ref.endsWith('-error'))) field.removeAttribute('aria-invalid');
         });
     });
+    // Risky owner actions: submit opens the confirm dialog; only its button sends the confirmation field.
+    document.querySelectorAll('form[data-confirm]').forEach(form => {
+        const dialog = form.querySelector('[data-confirm-dialog]');
+        if (!dialog || typeof dialog.showModal !== 'function') return;
+        const fill = (slot, lines) => {
+            const dd = dialog.querySelector('[data-confirm-slot="' + slot + '"]');
+            if (!dd) return;
+            dd.replaceChildren(...lines.map(line => { const span = document.createElement('span'); span.className = 'domains-record-value'; span.textContent = line; return span; }));
+            dd.closest('[data-confirm-row]').hidden = !lines.length;
+        };
+        // A record row's Delete adds a hidden delete field; Cancel takes it back out.
+        const deleting = row => !!row.querySelector('input[name$="[_delete]"]');
+        const filled = row => [...row.querySelectorAll('input:not([type=hidden]):not(:disabled), select:not(:disabled)')].some(field => field.value !== '');
+        const removed = () => [...form.querySelectorAll('tr[data-record]')].filter(row => deleting(row) || !filled(row)).map(row => row.dataset.record);
+        let added = [];
+        const needed = () => {
+            if (form.dataset.confirmWhen === 'lock-off') return form.elements.locked?.value === '0';
+            if (form.dataset.confirmWhen === 'records-removed') {
+                const kept = [...form.querySelectorAll('tbody tr')].filter(row => !deleting(row) && filled(row)).length;
+                return removed().length > 0 || kept < Number(form.dataset.current || 0);
+            }
+            return true;
+        };
+        const servers = form.elements.nameservers, useDefault = form.querySelector('[data-use-default]');
+        form.querySelector('[data-fill-defaults]')?.addEventListener('click', event => {
+            event.preventDefault();
+            servers.value = form.dataset.defaultServers; useDefault.disabled = false;
+            servers.dispatchEvent(new Event('input', {bubbles: true})); servers.focus();
+            if (live) live.textContent = live.dataset.nameserversFilled;
+        });
+        servers?.addEventListener('input', event => { if (event.isTrusted && useDefault) useDefault.disabled = true; });
+        form.addEventListener('submit', event => {
+            if (event.submitter?.name === 'confirmed') return;
+            if (event.submitter?.matches('[data-delete-record]')) {
+                const mark = Object.assign(document.createElement('input'), {type: 'hidden', name: event.submitter.name, value: '1'});
+                event.submitter.after(mark); event.submitter.hidden = true; added.push(mark);
+            }
+            if (!needed()) return;
+            event.preventDefault();
+            if (servers) fill('nameservers', servers.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean));
+            if (form.dataset.confirmWhen === 'records-removed') fill('removed', removed());
+            if (dialog.open) dialog.close();
+            dialog.showModal();
+        });
+        const undo = () => { added.forEach(mark => { mark.previousElementSibling.hidden = false; mark.remove(); }); added = []; };
+        dialog.addEventListener('cancel', undo);
+        dialog.querySelector('[data-confirm-cancel]')?.addEventListener('click', () => { undo(); dialog.close(); });
+    });
+    // Page editors: the row link opens its dialog as a modal; without script the link reloads with the editor open.
+    document.querySelectorAll('a[data-dialog-open]').forEach(link => {
+        const dialog = document.getElementById(link.hash.slice(1));
+        if (!dialog || typeof dialog.showModal !== 'function') return;
+        link.addEventListener('click', event => { event.preventDefault(); if (dialog.open) dialog.close(); dialog.showModal(); });
+    });
+    document.querySelectorAll('[data-dialog-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog')?.close()));
+    document.querySelectorAll('dialog.domains-edit[open]').forEach(dialog => {
+        if (typeof dialog.showModal !== 'function' || dialog.querySelector('dialog[open]')) return;
+        dialog.close(); dialog.showModal();
+    });
+    // List filters apply on change; the search box submits on Enter.
+    document.querySelectorAll('form[data-domains-autosubmit]').forEach(form => {
+        form.addEventListener('change', event => { if (event.target.matches('select')) form.requestSubmit(); });
+    });
+    // Help popovers: hover, focus, click or tap opens; Esc, a second click or leaving closes.
+    const helps = [...document.querySelectorAll('[data-help]')];
+    helps.forEach(help => {
+        const button = help.querySelector('button');
+        let pinned = false, refocus = false, timer;
+        help.dataset.ready = '';
+        help.close = () => show(false);
+        const show = open => { clearTimeout(timer); help.toggleAttribute('data-open', open); button.setAttribute('aria-expanded', String(open)); if (!open) pinned = false; };
+        help.addEventListener('mouseenter', () => show(true));
+        help.addEventListener('mouseleave', () => { if (!pinned && !help.contains(document.activeElement)) timer = setTimeout(() => show(false), 150); });
+        button.addEventListener('focus', () => { if (!refocus) show(true); });
+        help.addEventListener('focusout', event => { if (!help.contains(event.relatedTarget)) show(false); });
+        button.addEventListener('click', () => { pinned = !pinned || !help.hasAttribute('data-open'); show(pinned); });
+        help.addEventListener('keydown', event => {
+            if (event.key !== 'Escape' || !help.hasAttribute('data-open')) return;
+            event.stopPropagation(); show(false); refocus = true; button.focus(); refocus = false;
+        });
+    });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') helps.forEach(help => help.close()); });
+    document.addEventListener('click', event => helps.forEach(help => { if (!help.contains(event.target)) help.close(); }));
     document.querySelectorAll('[data-domains-results]').forEach(list => {
         const summary = () => {
             const states = [...list.querySelectorAll('[data-domains-result]')].map(row => row.dataset.state);

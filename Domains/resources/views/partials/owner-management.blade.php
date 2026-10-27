@@ -1,64 +1,120 @@
-@if ($domain->management)
-@foreach ($domain->management as $cap => $section)
-<section class="domains-panel domains-section" id="{{ $cap }}" aria-labelledby="heading-{{ $cap }}">
-<h2 id="heading-{{ $cap }}" class="domains-h2">{{ $section['label'] }}</h2>
-@if ($cap === 'nameservers')
-<p>These decide where your website and email are hosted. Changes can take up to 48 hours to reach everyone.</p>
-<form method="POST" action="{{ $section['url'] }}" class="domains-owner-form">
+{{-- MIT, Copyright (c) 2026 Autonomic Engineering. Page rows for $caps: label with help, current value, one action. Editors open in a dialog; risky toggles confirm in one. --}}
+@php $show = $domain->actions['show']; @endphp
+@php $caps ??= array_values(array_diff(array_keys($domain->management), ['auto_renew_off'])); @endphp
+@foreach ($caps as $cap)
+@php
+    $section = $domain->management[$cap] ?? null;
+    $retry = $section['retry'] ?? null;
+    $confirmStep = $retry && ($retry['confirm'] ?? false) ? $retry['action'] : null;
+    $failed = session('domains_failed_form');
+    $editUrl = $show.'?edit='.$cap.'#edit-'.$cap;
+    $editOpen = $section !== null && (request()->query('edit') === $cap || $retry !== null
+        || ($failed !== null && in_array($failed, array_filter([$section['url'] ?? null, ...array_values($section['actions'] ?? [])]), true)));
+    $records = $section['records'] ?? null;
+    $label = $cap === 'contacts' ? 'Owner' : ($section['label'] ?? 'Nameservers');
+    $state = $section['state'] ?? null;
+    $waits = collect($domain->management)->contains(fn ($s) => $s['recordCheckHeld'] ?? false) ? 'Shows when our team resumes record checks' : 'Shows after the next sync';
+    // While the demo registrar is paused, synced values are unknown: Missing with no action; the page notice gives the cause once.
+    $paused = $domain->syncPaused && in_array($cap, ['nameservers', 'dns', 'srv', 'glue', 'ds', 'lock', 'privacy'], true);
+@endphp
+@continue($section === null && !($cap === 'nameservers' && $domain->syncPaused))
+<li class="domains-row" id="{{ $cap }}">
+<span class="domains-row__l">{{ $label }}@if (array_key_exists($cap, \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SECTIONS))@include('domains::partials.help', ['id' => $cap, 'label' => $label])@endif</span>
+@if ($paused)
+<span class="domains-row__v">@include('domains::partials.missing', ['cause' => null, 'fix' => null])</span>
+@elseif ($cap === 'nameservers')
+<span class="domains-row__v">@if (!($section['current'] ?? []))@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else<span class="domains-mono">{{ $section['current'][0] }}</span>@foreach (array_slice($section['current'], 1) as $server) <span class="domains-sub domains-mono">{{ $server }}</span>@endforeach @endif</span>
+@if ($section)
+<span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Change</a></span>
+@php $useDefault = $confirmStep === 'nameservers' && ($retry['values']['use_default'] ?? '') === '1'; @endphp
+@php $nsValue = $confirmStep === 'nameservers' ? ($useDefault ? implode("\n", $section['defaultServers'] ?? []) : $retry['values']['nameservers']) : implode("\n", $section['current'] ?? []); @endphp
+@component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])
+<form method="POST" action="{{ $section['url'] }}" class="domains-owner-form" data-confirm @if ($section['defaults'] ?? false) data-default-servers="{{ implode("\n", $section['defaultServers'] ?? []) }}" @endif>
 @include('domains::partials.form-key', ['action' => 'nameservers'])
-@include('domains::partials.nameservers', ['id' => 'domains-ns', 'max' => $section['max'], 'required' => true, 'hint' => '2 to '.$section['max'].' hostnames, such as ns1.example.com.'])
-@include('domains::partials.owner-confirm', ['text' => 'I understand that changing nameservers may stop my website or email working.'])
-<button type="submit" class="domains-btn domains-btn--primary">Save nameservers</button></form>
-@if ($section['defaults'] ?? false)
-<form method="POST" action="{{ $section['url'] }}" class="domains-owner-form">
-@include('domains::partials.form-key', ['action' => 'nameservers'])
-<input type="hidden" name="use_default" value="1">
-@include('domains::partials.owner-confirm', ['text' => 'I understand that using the default nameservers may stop my website or email working.'])
-<button type="submit" class="domains-btn domains-btn--secondary">Use default nameservers</button></form>
+@if ($section['defaults'] ?? false)<input type="hidden" name="use_default" value="1" data-use-default @disabled(!$useDefault)>@endif
+@include('domains::partials.nameservers', ['id' => 'domains-ns', 'max' => $section['max'], 'required' => true, 'useOld' => $failed === $section['url'], 'value' => $nsValue, 'placeholder' => "ns1.example.com\nns2.example.com", 'hint' => '2 to '.$section['max'].', like ns1.example.com.'])
+<div class="domains-buttons">
+<button type="submit" class="domains-btn domains-btn--primary">Save</button>
+@if ($section['defaults'] ?? false)<button type="submit" name="use_default" value="1" formnovalidate class="domains-btn domains-btn--ghost" data-fill-defaults>Use the default nameservers</button>@endif
+</div>
+@include('domains::partials.owner-confirm', ['id' => 'nameservers', 'open' => $confirmStep === 'nameservers', 'cancel' => $show.'?edit=nameservers#edit-nameservers', 'title' => 'Change nameservers?', 'tone' => 'primary', 'button' => 'Change nameservers',
+    'facts' => [['label' => 'Current', 'value' => $section['current'] ?? []], ['label' => 'New', 'slot' => 'nameservers', 'value' => preg_split('/\R/', trim($nsValue), -1, PREG_SPLIT_NO_EMPTY)]],
+    'risk' => 'If the new nameservers aren’t set up, your website and email stop working.'])
+</form>
+@endcomponent
 @endif
-@elseif ($cap === 'contacts')
-<p>Change the domain owner, one other contact, or all contacts at once.</p>
-<p class="domains-hint">Changing the owner’s name, organization or email may need email verification, and blocks transfers to another registrar for 60 days.</p>
-@foreach ($section['staged'] ? ['contact_profile' => 'Prepare contact', 'contacts' => 'Save contact'] : ['contacts' => 'Save contact'] as $action => $label)
-<details class="domains-more" @if (collect($errors->keys())->contains(fn($key) => str_starts_with($key, 'contact.'))) open @endif><summary>{{ $section['staged'] ? ($action === 'contact_profile' ? 'Step 1: Prepare new details' : 'Step 2: Apply the new details') : 'Change contact details' }}</summary>
-@if ($section['staged'])<p>{{ $action === 'contact_profile' ? 'Enter the new details. When Activity shows Contact details as Confirmed, go to step 2.' : 'Choose the same contact and enter exactly the same details as in step 1. We apply them only after step 1 is confirmed.' }}</p>@endif
-<form method="POST" action="{{ $section['actions'][$action] }}" class="domains-owner-form">
-@include('domains::partials.form-key')
-<label class="domains-label" for="role-{{ $action }}">Contact</label><select id="role-{{ $action }}" class="domains-input" name="role"><option value="all">All contacts</option><option value="registrant">Domain owner</option><option value="admin">Administrative</option><option value="tech">Technical</option><option value="auxbilling">Billing</option></select>
-@include('domains::partials.contact', ['prefix' => 'contact', 'idPrefix' => $action, 'section' => 'owner-'.$action, 'stateRequired' => $section['staged'], 'limits' => $section['limits'] ?? null])
-@include('domains::partials.owner-confirm', ['text' => 'I confirm these contact details are correct.'])
-<button type="submit" class="domains-btn domains-btn--primary">{{ $label }}</button></form></details>
-@endforeach
-@elseif (in_array($cap, ['dns', 'srv', 'ds', 'glue']))
-@include('domains::partials.owner-'.$cap)
-@elseif ($cap === 'privacy')
-<p>Hides the owner’s name, address, phone and email from public WHOIS lookups.</p>
-@if ($section['free'])<p class="domains-hint">Domain privacy is included at no charge.</p>@else<p class="domains-hint">Domain privacy renews separately from the domain, one year at a time.</p>@endif
-@foreach ($section['actions'] as $action => $url)
-<form method="POST" action="{{ $url }}" class="domains-owner-form">
-@include('domains::partials.form-key')
-@include('domains::partials.owner-confirm', ['text' => $action === 'privacy_purchase' ? 'I want an invoice for one year of domain privacy at '.$section['price'].', plus tax where applicable.' : ($action === 'privacy_renew' ? 'I want an invoice to renew domain privacy for one year at '.$section['price'].', plus tax where applicable.' : ($action === 'privacy_disable' ? 'I understand that turning off privacy may make the owner’s details public.' : 'I want to turn on domain privacy.'))])
-<button class="domains-btn domains-btn--secondary" type="submit">{{ ['privacy_enable'=>'Turn on','privacy_disable'=>'Turn off','privacy_purchase'=>'Add domain privacy','privacy_renew'=>'Renew domain privacy'][$action] }}@if (in_array($action, ['privacy_purchase', 'privacy_renew'])) · {{ $section['price'] }}/yr @endif</button></form>
-@endforeach
+@elseif (in_array($cap, ['dns', 'srv']))
+<span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ count($records) }} {{ count($records) === 1 ? 'record' : 'records' }}@endif</span>
+@if ($records !== null)
+<span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Edit</a></span>
+@component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])@include('domains::partials.owner-dns')@endcomponent
+@endif
+@elseif (in_array($cap, ['glue', 'ds']))
+<span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@elseif (!$records)<span class="domains-muted">{{ $cap === 'glue' ? 'No glue records' : 'Off' }}</span>@elseif ($cap === 'glue'){{ count($records) }} {{ count($records) === 1 ? 'record' : 'records' }}@else On · key tag {{ $records[0]['key_tag'] }}@endif</span>
+@if ($section['actions'] ?? [])
+<span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">{{ $cap === 'glue' ? ($records ? 'Edit' : 'Add') : ($records && isset($section['actions']['ds_delete']) ? 'Remove' : 'Add DS record') }}</a></span>
+@component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])@include('domains::partials.owner-'.$cap)@endcomponent
+@endif
+@elseif ($cap === 'lock')
+<span class="domains-row__v">@if ($state === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ $state ? 'On' : 'Off' }}@endif</span>
+@if ($state === null)
+<span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Change</a></span>
+@php $lockOff = $confirmStep === 'lock' || ($failed === $section['url'] && old('locked') === '0'); @endphp
+@component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])
+<form method="POST" action="{{ $section['url'] }}" class="domains-owner-form" data-confirm data-confirm-when="lock-off">
+@include('domains::partials.form-key', ['action' => 'lock'])
+<label for="domains-lock" class="domains-label">Transfer lock</label><select id="domains-lock" name="locked" class="domains-input"><option value="1">On</option><option value="0" @selected($lockOff)>Off</option></select>
+<div class="domains-buttons"><button class="domains-btn domains-btn--primary" type="submit">Save</button></div>
+@include('domains::partials.owner-confirm', ['id' => 'lock', 'open' => $confirmStep === 'lock', 'cancel' => $show, 'title' => 'Turn off transfer lock?', 'button' => 'Turn off',
+    'risk' => 'Anyone with the auth code can then move '.$domain->name.' to another registrar.'])
+</form>
+@endcomponent
 @else
-<form method="POST" action="{{ $section['url'] }}" class="domains-owner-form">
-@include('domains::partials.form-key', ['action' => $cap])
-@if ($cap === 'lock')
-<p>Stops anyone moving this domain to another registrar. Leave it on unless you’re moving the domain.</p>
-<label for="domains-lock" class="domains-label">Transfer lock</label><select id="domains-lock" name="locked" class="domains-input"><option value="1">On</option><option value="0">Off</option></select>
-@include('domains::partials.owner-confirm', ['text' => 'I understand that turning the lock off lets anyone with the transfer code move this domain.'])
-<button class="domains-btn domains-btn--secondary" type="submit">Save transfer lock</button>
-@elseif ($cap === 'auth_code_email')
-<p>Your new registrar asks for this code. We’ll ask for it to be emailed to the {{ $section['recipient'] }}.</p>
-@include('domains::partials.owner-confirm', ['text' => 'I want to request the transfer code by email.'])
-<button class="domains-btn domains-btn--secondary" type="submit">Email transfer code</button>
-@elseif ($cap === 'auto_renew_off')
-<p>This turns off automatic renewal at the registrar. Your domain then renews only as set by Auto-renew above, which doesn’t change.</p>
-@include('domains::partials.owner-confirm', ['text' => 'I want to turn off automatic renewal at the registrar.'])
-<button class="domains-btn domains-btn--secondary" type="submit">Turn off registrar auto-renew</button>
-@endif
+<span class="domains-row__a"><button type="submit" form="form-lock" class="domains-a domains-linkbtn">{{ $state ? 'Turn off' : 'Turn on' }}</button></span>
+<form id="form-lock" method="POST" action="{{ $section['url'] }}" class="domains-owner-form" @if ($state) data-confirm @endif>
+@include('domains::partials.form-key', ['action' => 'lock'])
+<input type="hidden" name="locked" value="{{ $state ? '0' : '1' }}">
+@if ($state)@include('domains::partials.owner-confirm', ['id' => 'lock', 'open' => $confirmStep === 'lock', 'cancel' => $show, 'title' => 'Turn off transfer lock?', 'button' => 'Turn off',
+    'risk' => 'Anyone with the auth code can then move '.$domain->name.' to another registrar.'])@endif
 </form>
 @endif
-</section>
-@endforeach
+@elseif ($cap === 'privacy')
+@php
+    $labels = ['privacy_enable' => 'Turn on', 'privacy_disable' => 'Turn off', 'privacy_purchase' => $section['free'] ? 'Turn on' : 'Add · '.$section['price'].'/yr', 'privacy_renew' => 'Renew · '.$section['price'].'/yr'];
+    $pick = static fn (array $keys) => array_intersect_key($section['actions'], array_flip(array_slice(array_values(array_filter($keys, fn ($key) => isset($section['actions'][$key]))), 0, 1)));
+    $privacyActions = match (true) {
+        $state === true => $pick(['privacy_disable', 'privacy_renew']),
+        $state === false => $pick($section['free'] ? ['privacy_enable', 'privacy_purchase'] : ['privacy_purchase', 'privacy_enable']),
+        default => $section['actions'],
+    };
+@endphp
+<span class="domains-row__v">@if ($state === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ $state ? 'On' : 'Off' }}@endif</span>
+@if ($privacyActions)
+<span class="domains-row__a">@foreach ($privacyActions as $action => $url)<form method="POST" action="{{ $url }}" class="domains-owner-form domains-inline">@include('domains::partials.form-key')<button class="domains-a domains-linkbtn" type="submit">{{ $labels[$action] }}</button></form>@endforeach</span>
 @endif
+@elseif ($cap === 'contacts')
+<span class="domains-row__v">@if ($domain->owner){{ $domain->owner['name'] }} <span class="domains-sub">{{ $domain->owner['email'] }}</span>@else @include('domains::partials.missing', ['cause' => 'No contact details on file', 'fix' => null, 'stack' => true])@endif</span>
+<span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Edit contacts</a></span>
+@component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])
+@foreach ($section['staged'] ? ['contact_profile' => 'Send for approval', 'contacts' => 'Apply details'] : ['contacts' => 'Save'] as $action => $buttonLabel)
+@php $contactFailed = $failed === $section['actions'][$action]; @endphp
+<form method="POST" action="{{ $section['actions'][$action] }}" class="domains-owner-form">
+@if ($section['staged'])<p class="domains-hint">{{ $action === 'contact_profile' ? 'Step 1 of 2: we send the new details for approval.' : 'Step 2 of 2: apply the approved details.' }}</p>@endif
+@include('domains::partials.form-key')
+<label class="domains-label" for="role-{{ $action }}">Contact</label><select id="role-{{ $action }}" class="domains-input" name="role">@foreach (['all' => 'All contacts', 'registrant' => 'Owner', 'admin' => 'Admin', 'tech' => 'Tech', 'auxbilling' => 'Billing'] as $role => $roleLabel)<option value="{{ $role }}" @selected($contactFailed && old('role', 'all') === $role)>{{ $roleLabel }}</option>@endforeach</select>
+@include('domains::partials.contact', ['prefix' => 'contact', 'useOld' => $contactFailed, 'errors' => $contactFailed ? $errors : new \Illuminate\Support\ViewErrorBag, 'idPrefix' => $action, 'section' => 'owner-'.$action, 'stateRequired' => $section['staged'], 'limits' => $section['limits'] ?? null])
+<p class="domains-hint">Changing the owner’s name, organization or email can block transfers to another registrar for 60 days.</p>
+<div class="domains-buttons"><button type="submit" class="domains-btn domains-btn--primary">{{ $buttonLabel }}</button></div></form>
+@endforeach
+@endcomponent
+@elseif ($cap === 'auth_code_email')
+<span class="domains-row__v"><span class="domains-muted">Emailed to the {{ $section['recipient'] }}</span></span>
+<span class="domains-row__a"><button type="submit" form="form-auth_code_email" class="domains-a domains-linkbtn">Email auth code</button></span>
+<form id="form-auth_code_email" method="POST" action="{{ $section['url'] }}" class="domains-owner-form" data-confirm>
+@include('domains::partials.form-key', ['action' => 'auth_code_email'])
+@include('domains::partials.owner-confirm', ['id' => 'auth_code_email', 'open' => $confirmStep === 'auth_code_email', 'cancel' => $show, 'title' => 'Email the auth code?', 'button' => 'Email auth code', 'tone' => 'primary',
+    'risk' => 'We’ll email it to the '.$section['recipient'].'.'])
+</form>
+@endif
+</li>
+@endforeach

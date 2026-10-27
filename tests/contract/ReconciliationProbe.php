@@ -72,7 +72,7 @@ final class ReconciliationProbe
         $wire->check('purchase_unresolved', true); $wire->save();
         try {
             self::inspect($wire, $read, $from, $to);
-            $wire->check('completed', true);
+            $wire->check('completed', $wire->receipt['mismatches'] === []);
         } catch (\Throwable) { $wire->check('aborted', true); }
         return 3;
     }

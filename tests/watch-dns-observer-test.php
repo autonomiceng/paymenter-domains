@@ -1,0 +1,45 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/Support/watch-dns.php';
+require __DIR__.'/Support/FakeDnsReader.php';
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Dns\{DnsQuery,DnsAnswer,DnsSignalLabels};
+use Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader;
+use Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation;
+use Paymenter\Extensions\Servers\Domains\Services\{WatchDnsChecks,WatchDnsObserver,WatchDnsProjection};
+extract(dnsFixture());$now=1800000000;
+$fake=new FakeDnsReader();$off=new WatchDnsObserver(new WatchDnsChecks(),$fake,fn()=>$now);
+expect(!$off->observe($watch->id,$owner->id,'delegation'),'Dormant observer performs no work');same([],$fake->calls,'Dormant observer performs no DNS');
+DB::transaction(fn()=>$profile->fill(['enabled'=>true,'revision'=>2,'reason'=>'Synthetic enabled composition'])->save());
+$checks=new WatchDnsChecks(true);expect($checks->enroll($watch->id,$owner->id,$now),'Enroll synthetic composition');
+$q=new DnsQuery('example.com','NS');$ns=DnsAnswer::rrset($q,array_map(fn($target)=>['host'=>'example.com','class'=>'IN','type'=>'NS','ttl'=>300,'target'=>$target],$profile->nameservers));
+$fake->answers[$q->key()]=function()use($ns){same(0,DB::transactionLevel(),'DNS executes outside transactions');return $ns;};
+$observer=new WatchDnsObserver($checks,$fake,fn()=>$now);
+$before=(array)DB::table('domains_watch_work')->where('kind','delegation')->sole();expect(!$observer->observe($watch->id,$other->id,'delegation'),'Foreign owner cannot observe');same([],$fake->calls,'No foreign DNS');same($before,(array)DB::table('domains_watch_work')->where('kind','delegation')->sole(),'Foreign owner cannot postpone or alter work');
+expect($observer->observe($watch->id,$owner->id,'delegation'),'Claim/collect/commit delegation');
+same('platform',WatchDnsObservation::firstOrFail()->dns,'Complete exact delegation saved');
+foreach(['example.com','www.example.com'] as $host){foreach(['CNAME','A','AAAA'] as $type){$q=new DnsQuery($host,$type);$fake->answers[$q->key()]=DnsAnswer::negative($q,60,'nodata');}}
+$q=new DnsQuery('example.com','MX');$fake->answers[$q->key()]=DnsAnswer::negative($q,60,'nxdomain');
+expect($observer->observe($watch->id,$owner->id,'points'),'Proven empties through complete observer');
+$view=(new WatchDnsProjection())->read($watch->id,$owner->id,$now+1);
+expect(in_array('domain.points.platform_empty',DnsSignalLabels::projection($view),true),'Complete fake observations reach DNS only');
+DB::table('domains_watch_work')->where('kind','points')->update(['due_at'=>$now]);
+$fake->answers[$q->key()]=DnsAnswer::unknown($q);
+expect($observer->observe($watch->id,$owner->id,'points'),'Failed MX retained without overwriting website axis');
+$view=(new WatchDnsProjection())->read($watch->id,$owner->id,$now+1);$keys=DnsSignalLabels::projection($view);
+expect(!in_array('domain.points.platform_empty',$keys,true) && in_array('domain.points.unknown',$keys,true),'Failed refresh cannot render DNS only from retained false');
+$count=WatchDnsObservation::count();DB::table('domains_watch_work')->where('kind','delegation')->update(['due_at'=>$now]);
+$fake->answers['example.com|NS']=function()use($property,$ns){same(0,DB::transactionLevel(),'Race callback executes unlocked');$property->update(['value'=>'changed.example.com']);return $ns;};
+expect(!$observer->observe($watch->id,$owner->id,'delegation'),'Changed source discarded after unlocked DNS');same($count,WatchDnsObservation::count(),'Changed source cannot append stale facts');
+$view=(new WatchDnsProjection())->read($watch->id,$owner->id,$now+1);expect($view['dns']['stale'],'Current source change stales earlier success');
+$property->update(['value'=>'www.example.com']);
+DB::table('domains_watch_work')->where('kind','delegation')->update(['due_at'=>$now]);
+$external=DnsAnswer::rrset(new DnsQuery('example.com','NS'),[['host'=>'example.com','type'=>'NS','class'=>'IN','ttl'=>1,'target'=>'ns.external.test']]);
+$fake->answers['example.com|NS']=$external;expect($observer->observe($watch->id,$owner->id,'delegation'),'External complete delegation saved');
+DB::table('domains_watch_work')->where('kind','points')->update(['due_at'=>$now,'backoff_until'=>null]);$q=new DnsQuery('example.com','MX');$fake->answers[$q->key()]=DnsAnswer::negative($q);
+expect($observer->observe($watch->id,$owner->id,'points'),'Fresh proven empties reset only points backoff');
+$view=(new WatchDnsProjection())->read($watch->id,$owner->id,$now+1);expect(in_array('domain.points.external_empty',DnsSignalLabels::projection($view),true),'Complete fake observations reach Not pointed to company');
+config(['settings.company_name'=>'  ','app.name'=>'Example App (testing)']);same('Not pointed to Example App',DnsSignalLabels::configuredStrings()['domain.points.external_empty'],'Configured company fallback');
+echo "Dormant observer, unlocked fake reads, owner/source recheck and proven-empty versus failed-read labels passed.\n";
+$nativeSuccessful=true;

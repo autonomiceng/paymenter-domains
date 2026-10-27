@@ -9,12 +9,15 @@ final readonly class DateEvidence
         public string $source, public ?string $timezone = null)
     {
         if (str_contains($value, "\0") || !preg_match('/^[a-z][a-z0-9_]{0,63}$/D', $source)) { throw new \InvalidArgumentException('Invalid date provenance.'); }
-        $format = $precision === ExpiryPrecision::Date ? '!Y-m-d' : '!Y-m-d\TH:i:sP';
+        $format = match ($precision) {
+            ExpiryPrecision::Date => '!Y-m-d', ExpiryPrecision::Instant => '!Y-m-d\TH:i:sP',
+            ExpiryPrecision::Local => '!Y-m-d\TH:i:s',
+        };
         $date = \DateTimeImmutable::createFromFormat($format, $value, new \DateTimeZone('UTC'));
         $errors = \DateTimeImmutable::getLastErrors();
         if (!$date || ($errors !== false && ($errors['warning_count'] || $errors['error_count']))
             || $date->format(substr($format, 1)) !== $value
-            || ($precision === ExpiryPrecision::Date && $timezone !== null)
+            || ($precision !== ExpiryPrecision::Instant && $timezone !== null)
             || ($precision === ExpiryPrecision::Instant && $timezone === null)) {
             throw new \InvalidArgumentException('Invalid date precision or value.');
         }

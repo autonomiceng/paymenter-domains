@@ -22,7 +22,7 @@ $bindings = new AccountBindings($registry); $accounts = [];
 foreach ([1 => 'enom', 2 => 'namesilo', 3 => 'enom'] as $id => $key) {
     Server::create(['id' => $id, 'name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
     $b = $bindings->configure($id, $key, Environment::Test, ['token' => 'account-'.$id]);
-    $bindings->setProcessing($id, true);
+    $bindings->setProcessing($id, true, syntheticActivation());
     $accounts[$id] = ['server_id' => $id, 'registrar_key' => $key, 'account_fingerprint' => $b->fingerprint];
     Tld::create([...$accounts[$id], 'tld' => 'com', 'enabled' => true, 'register_enabled' => true, 'transfer_enabled' => true, 'renew_enabled' => true, 'min_years' => 1, 'max_years' => 3]);
 }
@@ -139,7 +139,7 @@ same(1, Domain::count(), 'Cross-account duplicate name stays reserved');
 $reject(static fn () => $sellers->selection('com', 'transfer', 1, $now));
 $bindings->setProcessing(2, false);
 $p = $sellers->change('com', 3, 1, true, true, $now);
-$bindings->setProcessing(2, true);
+$bindings->setProcessing(2, true, syntheticActivation());
 $reject(static fn () => $admit($oldCart, $acquire));
 same(4, $p->revision, 'Switch-back does not revive old tokens');
 $current = $sellers->selection('com', 'register', 1, $now);
@@ -154,7 +154,7 @@ Server::findOrFail(1)->update(['enabled' => true]);
 $bindings->setProcessing(1, false);
 $reject(static fn () => $sellers->selection('com', 'register', 1, $now));
 $reject(static fn () => $admit($liveCart, static fn () => null));
-$bindings->setProcessing(1, true);
+$bindings->setProcessing(1, true, syntheticActivation());
 Tld::where('server_id', 1)->firstOrFail()->update(['min_years' => 2]);
 $reject(static fn () => $sellers->selection('com', 'register', 1, $now));
 $reject(static fn () => $admit($liveCart, static fn () => null));
@@ -169,7 +169,7 @@ $reject(static fn () => $sellers->change('com', 4, 2, true, true, $now));
 Server::findOrFail(2)->update(['enabled' => true]);
 $bindings->setProcessing(2, false);
 $reject(static fn () => $sellers->change('com', 4, 2, true, true, $now));
-$bindings->setProcessing(2, true);
+$bindings->setProcessing(2, true, syntheticActivation());
 Tld::where('server_id', 2)->firstOrFail()->update(['transfer_enabled' => false]);
 $reject(static fn () => $sellers->change('com', 4, 2, true, true, $now));
 Tld::where('server_id', 2)->where('tld', 'com')->firstOrFail()->update(['min_years' => 11, 'max_years' => 12]);
@@ -184,12 +184,12 @@ $current = $sellers->selection('com', 'register', 1, $now);
 try {
     $admit($current, static function ($price) use ($accounts): void {
         App\Models\User::create(['email' => 'rollback@example.invalid', 'password' => bcrypt('synthetic')]);
-        DomainReservations::reserve([...$accounts[1], 'service_id' => 12, 'user_id' => 22, 'domain' => 'rollback.com', 'status' => 'pending'], ['com']);
+        DomainReservations::reserve([...$accounts[1], 'service_id' => 12, 'user_id' => 22, 'domain' => 'rollback-placeholder.com', 'status' => 'pending'], ['com']);
         throw new RuntimeException('checkout rollback');
     });
 } catch (RuntimeException $e) { same('checkout rollback', $e->getMessage(), 'Complete checkout abort'); }
 same(0, App\Models\User::count(), 'Native checkout rolled back');
-same(null, Domain::where('domain', 'rollback.com')->first(), 'Reservation write rolled back');
+same(null, Domain::where('domain', 'rollback-placeholder.com')->first(), 'Reservation write rolled back');
 $p = $sellers->change('com', 4, null, false, false, $now);
 same(5, $p->revision, 'Disabling seller advances policy');
 $reject(static fn () => $sellers->selection('com', 'register', 1, $now));
@@ -211,6 +211,25 @@ $prices->current(1, $accounts[1]['account_fingerprint'], 'com', 'register', 3, '
 $reject(static fn () => DB::transaction(static fn () => $sellers->admit([$eligible], $future)));
 $reject(static fn () => $p->update(['revision' => 6]));
 $reject(static fn () => $p->delete());
+// Expired required costs retain safe context and leave the seller and revision untouched.
+Tld::where('server_id', 2)->where('tld', 'com')->firstOrFail()->update(['renew_enabled' => true]);
+foreach (['register', 'renew'] as $action) {
+    $row = Price::where(['server_id' => 2, 'tld' => 'com', 'action' => $action, 'term' => 1])->sole();
+    $expiry = $now;
+    DB::table('domains_prices')->where('id', $row->id)->update(['fresh_until' => $expiry->format('Y-m-d H:i:s')]);
+    $prior = SalesPolicy::where('tld', 'com')->sole()->getAttributes(); $caught = null;
+    try { $sellers->change('com', $prior['revision'], 2, true, false, $now); }
+    catch (\Paymenter\Extensions\Servers\Domains\Services\ExpiredCostEvidence $error) { $caught = $error; }
+    expect($caught !== null, 'Expired '.$action.' cost refused with typed context');
+    same([2, 'com', $action, 1, $now->getTimestamp()], [$caught->serverId, $caught->tld, $caught->action, $caught->term, $caught->freshUntil->getTimestamp()], 'Exact saved cost context');
+    same($prior, SalesPolicy::where('tld', 'com')->sole()->getAttributes(), 'Expired cost leaves seller and revision unchanged');
+    DB::table('domains_prices')->where('id', $row->id)->update(['fresh_until' => $row->getRawOriginal('fresh_until')]);
+}
+$publish([$rate('register', 1, '5.00'), $rate('register', 3, '4.00'), $rate('renew', 1, '6.00')]);
+DB::table('domains_prices')->where(['server_id' => 1, 'tld' => 'com', 'action' => 'register', 'term' => 1])->update(['fresh_until' => $now]);
+$priorRevision = SalesPolicy::where('tld', 'com')->sole()->revision;
+$p = $sellers->change('com', $priorRevision, 1, true, false, $now);
+same($priorRevision + 1, $p->revision, 'Another fresh eligible registration term still permits seller selection');
 $before = DB::table('domains_sales_policies')->get()->toJson();
 $migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000002_create_domains_sales_policies.php';
 $migration->down(); $migration->up(); SalesPolicySchema::verify();

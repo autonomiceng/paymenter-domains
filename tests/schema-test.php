@@ -9,10 +9,11 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Price, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\FoundationSchema;
+use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, ObservationSchema};
 
 $migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000001_create_domains_foundation.php';
 app(Illuminate\Database\Migrations\Migrator::class)->run([dirname(__DIR__).'/Domains/database/migrations']);
+$installedTables = Schema::getTableListing(); sort($installedTables);
 FoundationSchema::verify();
 expect(DB::table('migrations')->where('migration', '2026_10_18_000001_create_domains_foundation')->exists(), 'Native migration history recorded');
 foreach (Schema::getTableListing() as $table) {
@@ -21,6 +22,23 @@ foreach (Schema::getTableListing() as $table) {
         expect(strlen($index['name']) <= 64, 'Index fits MySQL identifier limit');
     }
 }
+// Account claims must not scan another account's due work. Pin the physical index,
+// then prove retained verification still refuses its loss when native migrations skip.
+$accountDue = array_values(array_filter(Schema::getIndexes('domains_observation_work'),
+    static fn (array $index): bool => $index['columns'] === ['server_id', 'account_fingerprint', 'due_at'] && !$index['unique']));
+same(1, count($accountDue), 'Observation work has the account/due composite index');
+ObservationSchema::verify();
+Schema::table('domains_observation_work', static fn (Blueprint $t) => $t->dropIndex($accountDue[0]['name']));
+app(Illuminate\Database\Migrations\Migrator::class)->run([dirname(__DIR__).'/Domains/database/migrations']);
+try { ObservationSchema::verify(); expect(false, 'Missing account/due index accepted after migration skip'); }
+catch (RuntimeException $error) { same('Retained Domains schema mismatch: domains_observation_work', $error->getMessage(), 'Missing account/due index refuses retained verification'); }
+ObservationSchema::install(); ObservationSchema::verify();
+expect(Schema::hasIndex('domains_observation_work', 'domains_observation_work_account_due_index'), 'Retained install adds only the missing account/due index');
+Schema::table('domains_observation_work', static fn (Blueprint $t) => $t->dropIndex(['due_at']));
+try { ObservationSchema::install(); expect(false, 'Other retained observation mismatch accepted'); }
+catch (RuntimeException $error) { same('Retained Domains schema mismatch: domains_observation_work', $error->getMessage(), 'Other retained mismatch still refuses'); }
+Schema::table('domains_observation_work', static fn (Blueprint $t) => $t->index('due_at'));
+ObservationSchema::verify();
 $binding = fixtureAccount(1, 'enom', 'synthetic-account');
 $account = Account::where('server_id', 1)->firstOrFail();
 $domain = Domain::create($binding + ['id' => 41, 'service_id' => 51, 'user_id' => 61,
@@ -100,7 +118,8 @@ Schema::table('domains_domains', static fn (Blueprint $t) => $t->unique('reserva
 Schema::table('domains_operations', static fn (Blueprint $t) => $t->dropColumn('attempt'));
 try { FoundationSchema::install(); expect(false, 'Missing evidence column accepted'); }
 catch (RuntimeException $e) { expect(str_contains($e->getMessage(), 'schema mismatch'), 'Column refusal'); }
-expect(!array_filter(Schema::getTableListing(), static fn (string $name): bool => str_contains($name, 'domains_verify_')), 'Reference tables cleaned');
+$afterVerification = Schema::getTableListing(); sort($afterVerification);
+same($installedTables, $afterVerification, 'All reference tables cleaned after success and schema refusals');
 Schema::drop('domains_operations');
 try { FoundationSchema::install(); expect(false, 'Partial retained installation accepted'); }
 catch (RuntimeException $e) { expect(str_contains($e->getMessage(), 'Partial retained'), 'Partial installation refusal'); }

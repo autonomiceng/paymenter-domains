@@ -12,7 +12,6 @@ use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
 /** One batch in native Order Creating, after ALL native user/coupon/product locks. Dormant until slice 39. */
 final class CartAdmission
 {
-    private bool $booted = false;
     private ?Order $order = null;
     private array $lines = [];
     public function __construct(private readonly NativeCatalogue $native, private readonly SellerPolicies $sellers,
@@ -20,11 +19,13 @@ final class CartAdmission
 
     public function boot(): void
     {
-        if ($this->booted) { return; } $this->booted = true;
+        if(!HookRegistration::claim(Event::getFacadeRoot(),self::class)){return;}
         foreach ([\App\Events\CartItem\Creating::class, \App\Events\CartItem\Updating::class] as $event) {
             Event::listen($event, fn ($e) => $this->prepare($e->cartItem));
         }
-        Event::listen(\App\Events\Order\Creating::class, fn ($e) => $this->admit($e->order));
+        Event::listen(\App\Events\Order\Creating::class,function($e):void {
+            try{$this->admit($e->order);}catch(\DomainException|\InvalidArgumentException $error){throw new \App\Exceptions\DisplayException($error->getMessage()===NativeUserDeletion::PENDING?NativeUserDeletion::PENDING:'Your domain offer changed or expired. Remove this line from your cart and search again for a current offer.');}
+        });
         foreach ([\Illuminate\Database\Events\TransactionCommitted::class, \Illuminate\Database\Events\TransactionRolledBack::class] as $event) {
             Event::listen($event, function ($e): void {
                 if ($e->connection === DB::connection() && $e->connection->transactionLevel() === 0) { $this->order = null; $this->lines = []; }
@@ -38,7 +39,7 @@ final class CartAdmission
         $mapping = $this->native->mapping($product);
         return !$mapping ? [] : [['name' => 'domain', 'type' => 'text', 'label' => 'Domain name', 'required' => true,
             'placeholder' => 'example.'.$mapping['tld']->tld,
-            'description' => $mapping['action'] === 'transfer' ? 'Enter the transfer code after checkout.' : 'Enter the full domain name.']];
+            'description' => $mapping['action'] === 'transfer' ? 'Enter the auth code after checkout.' : 'Enter the full domain name.']];
     }
 
     public function prepare(CartItem $item): void
@@ -52,7 +53,7 @@ final class CartAdmission
         }
         $selected = $this->sellers->selection($mapping['tld']->tld, $mapping['action'], $mapping['term'], $this->clock->now());
         if ($selected->serverId !== (int) $product->server_id || $selected->fingerprint !== $mapping['tld']->account_fingerprint) {
-            throw new \DomainException('Seller changed; search again.');
+            throw new \DomainException('Registrar changed. Search again.');
         }
         $token = $this->eligibility->observe($name, $selected, $this->identity($item));
         // Drop arbitrary fields, including transfer codes and client-supplied authority claims.
@@ -66,11 +67,19 @@ final class CartAdmission
         foreach ($cart->items as $item) {
             $product = Product::findOrFail($item->product_id);
             if (!$this->native->mapping($product)) { continue; }
+            $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $product->server_id)->firstOrFail();
+            $binding = CatalogueAcceptances::binding($account);
+            if (EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::enabled($binding) && !(($this->native->mapping($product)['action']??null)==='transfer'&&EnomTestTransfer::enabled($binding))) {
+                throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Domains can’t be ordered right now. Remove them to check out.':'Test domains can’t be ordered. Remove them to check out.');
+            }
             if (DB::transactionLevel() !== 1 || $this->order || (int) Auth::id() !== (int) $order->user_id
                 || ($cart->user_id !== null && (int) $cart->user_id !== (int) $order->user_id) || $order->currency_code !== 'USD') {
                 throw new \DomainException('Domain checkout requires its native transaction and owner.');
             }
             $mapping = $this->validate($item, $product);
+            if ($mapping['action'] !== 'register' && EnomTestRegistration::enabled($binding) && !EnomTestTransfer::enabled($binding)) {
+                throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Transfers can’t be ordered yet. Remove them to check out.':'Test transfers can’t be ordered yet. Remove them to check out.');
+            }
             $name = $this->name($item, $mapping);
             if (isset($names[$name])) { throw new \DomainException('Duplicate domain cart line.'); } $names[$name] = true;
             $selection = $this->eligibility->require((string) ($item->checkout_config['domains_check'] ?? ''), $name, $this->identity($item));
@@ -85,6 +94,8 @@ final class CartAdmission
                 'admitted_user_id' => (int) $order->user_id, 'check' => $item->checkout_config['domains_check'], 'identity' => $this->identity($item)];
         }
         if (!$lines) { return; }
+        // Native checkout already locked this user before coupons and products.
+        NativeUserDeletion::requireOwner((int)$order->user_id);
         // Exactly one call for the whole checkout. Any exception aborts the native outer transaction.
         $snapshots = $this->sellers->admit($selections, $this->clock->now());
         foreach ($lines as $index => &$line) {
@@ -135,7 +146,7 @@ final class CartAdmission
     {
         $plan = $item->plan()->firstOrFail(); $mapping = $this->native->mapping($product, $plan);
         if (!$mapping || (string) $item->quantity !== '1' || !empty($item->config_options) || $product->configOptions()->exists()
-            || $item->cart?->currency_code !== 'USD' || $product->stock === 0) { throw new \DomainException('Domain line requires one name, no options and USD.'); }
+            || $item->cart?->currency_code !== 'USD' || $product->stock !== null) { throw new \DomainException('Domain line requires one name, no options and USD.'); }
         return $mapping;
     }
     private function name(CartItem $item, array $mapping): string

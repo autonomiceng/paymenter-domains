@@ -45,6 +45,11 @@ final class NativeCatalogue
     public function mapping(Product $product, ?Plan $plan = null): ?array
     {
         $settings = $product->settings()->whereIn('key', self::KEYS)->get();
+        return $this->mappingSettings($product, $settings, $plan);
+    }
+
+    private function mappingSettings(Product $product, \Illuminate\Support\Collection $settings, ?Plan $plan = null): ?array
+    {
         $server = $product->server()->first();
         if ($settings->isEmpty() && $server?->extension !== 'Domains') { return null; }
         $value = static fn (string $key) => $settings->where('key', $key)->count() === 1 ? $settings->firstWhere('key', $key)->value : null;
@@ -57,10 +62,40 @@ final class NativeCatalogue
             || $account->registrar_key !== $tld->registrar_key || $value('domains_registrar') !== $tld->registrar_key
             || !in_array($action, ['register', 'transfer'], true) || $product->slug !== self::slug($tld, $action)
             || !$product->hidden || $product->allow_quantity !== 'separated' || $this->unsafeLinks($product)) { throw new \DomainException('Invalid domain product mapping.'); }
-        if ($plan && ($plan->priceable_type !== $product->getMorphClass() || (int) $plan->priceable_id !== (int) $product->id
-            || $plan->type !== 'recurring' || $plan->billing_unit !== 'year' || $plan->billing_period < 1 || $plan->billing_period > 10
-            || ($action === 'transfer' && $plan->billing_period !== 1))) { throw new \DomainException('Invalid domain plan mapping.'); }
+        if ($plan) { $this->requirePlan($product, $plan, $action); }
         return ['tld' => $tld, 'action' => $action, 'term' => $plan?->billing_period];
+    }
+
+    private function requirePlan(Product $product, Plan $plan, string $action): void
+    {
+        if ($plan->priceable_type !== $product->getMorphClass() || (int) $plan->priceable_id !== (int) $product->id
+            || $plan->type !== 'recurring' || $plan->billing_unit !== 'year' || $plan->billing_period < 1 || $plan->billing_period > 10
+            || ($action === 'transfer' && $plan->billing_period !== 1)) { throw new \DomainException('Invalid domain plan mapping.'); }
+    }
+
+    /** Display snapshot only: strict mapping() above never trusts preloaded model relations. */
+    public function display(Tld $tld): array
+    {
+        $products = [];
+        foreach ($this->products($tld)->with(['settings' => static fn ($q) => $q->whereIn('key', self::KEYS),
+            'plans.prices' => static fn ($q) => $q->where('currency_code', 'USD')])->get() as $product) {
+            $mapping = $this->mappingSettings($product, $product->settings) ?? throw new \DomainException('Reserved domain slug collision.');
+            if ($mapping['tld']->id !== $tld->id) { throw new \DomainException('Domain product identity changed.'); }
+            $products[$mapping['action']][] = $product;
+        }
+        $read = [];
+        foreach ($products as $action => $matches) {
+            if (count($matches) !== 1) { continue; }
+            $product = $matches[0]; $plans = [];
+            foreach ($product->plans->groupBy('billing_period') as $term => $matches) {
+                if ($matches->count() !== 1) { continue; }
+                $plan = $matches->first();
+                try { $this->requirePlan($product, $plan, $action); $plans[$term] = $plan; }
+                catch (\DomainException) { /* One invalid term does not remove healthy plans. */ }
+            }
+            $read[$action] = compact('product', 'plans');
+        }
+        return $read;
     }
 
     private function unsafeLinks(Product $product): bool
@@ -116,11 +151,12 @@ final class NativeCatalogue
                 else {
                     $product = Product::create(['name' => ($action === 'register' ? 'Register .' : 'Transfer .').$tld->tld,
                         'slug' => self::slug($tld, $action), 'category_id' => $category->id, 'server_id' => $tld->server_id,
-                        'hidden' => true, 'stock' => 0, 'per_user_limit' => 0, 'allow_quantity' => 'separated']);
+                        'hidden' => true, 'stock' => null, 'per_user_limit' => 0, 'allow_quantity' => 'separated']);
                     foreach (array_combine(self::KEYS, ['1', (string) $tld->id, $action, $tld->registrar_key]) as $key => $value) {
                         $product->settings()->create(['key' => $key, 'value' => $value, 'type' => 'string', 'encrypted' => false]);
                     }
                 }
+                NativeActivationInformation::initialize($product);
                 $available = [];
                 foreach ($action === 'register' ? range(1, 10) : [1] as $term) {
                     if (!$tld->enabled || !$tld->{$action.'_enabled'} || !$tld->renew_enabled
@@ -146,9 +182,10 @@ final class NativeCatalogue
                         $price->fill(['price' => $available[$term], 'setup_fee' => '0.00'])->save();
                     } else { $plan->prices()->delete(); }
                 }
-                $product->stock = $available !== [] ? null : 0; $product->save();
+                $product->stock = null; $product->save();
             }
             $review?->record();
+            StorefrontCatalogueCache::invalidateAfterCommit();
         });
     }
 }

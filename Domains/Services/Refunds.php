@@ -23,7 +23,8 @@ final readonly class Refunds
             }
             if ($op->state !== 'held' || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Only held unpaid-to-provider requests may be closed.'); }
             RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireCurrent($op, $l);
-            if ($op->action === 'transfer' && (($op->attempt ?? []) !== [] || $op->safe_code === 'transfer_not_registered')) {
+            $testUnsent=OperationClaims::testCallRefusalUnsent($op);
+            if ($op->action === 'transfer' && (($op->attempt ?? []) !== [] || $op->safe_code === 'transfer_not_registered')&&!$testUnsent) {
                 throw new \DomainException('A fresh registry404 disposition is unavailable; retain this hold.');
             }
             $audit = ['actor_id' => $staffId, 'reason' => $reason, 'at' => $this->clock->now()->format(DATE_ATOM),
@@ -31,9 +32,11 @@ final readonly class Refunds
             // Retain the decision if credit fails; retryPending independently rechecks funding and negative proof.
             ContactRecovery::financialDisposition($op, ['state' => 'rejected', 'safe_code' => 'refund_approved',
                 'funding' => [...($op->funding ?? []), 'refund_authorization' => $audit]]);
-            if (in_array($op->action,['register','transfer'],true)&&($op->attempt??[])===[]) {
+            if (in_array($op->action,['register','transfer'],true)&&(($op->attempt??[])===[]||($op->action==='transfer'&&$testUnsent))) {
                 $op->update(['attempt'=>OperationTerminalProof::rejectedAttempt($op,$l['domain'])]);
             }
+            AcquisitionRetirement::retainClosure($op,$l['transactions']->where('invoice_id',$op->invoice_id),
+                $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$this->clock->now());
             $review?->record($l);
         });
         return $this->creditRejected($id);
@@ -54,7 +57,7 @@ final readonly class Refunds
                 throw new \DomainException('Refund authorization identity changed.');
             }
             if ($op->action === 'transfer' && !RefundProof::transferTimeout($op, $l['domain']) && !OperationTerminalProof::safe($op, $l['domain'])) { throw new \DomainException('Transfer timeout proof required.'); }
-            if (!$approved && !RefundProof::transferTimeout($op, $l['domain']) && !RefundProof::retired($op, $l['domain']) && !OperationTerminalProof::safe($op, $l['domain'])) {
+            if (!$approved && !RefundProof::transferTimeout($op, $l['domain']) && !RefundProof::retired($op, $l['domain']) && !PrivacyRetirement::safe($op, $l['domain']) && !OperationTerminalProof::safe($op, $l['domain'])) {
                 throw new \DomainException('No retained refund disposition.');
             }
             $payment = RefundPayment::requireCurrent($op, $l);
@@ -63,11 +66,11 @@ final readonly class Refunds
             $credit->save();
             $refund = [...$payment, 'to' => 'account_credit', 'credit_id' => (int) $credit->id,
                 'at' => $this->clock->now()->format(DATE_ATOM), 'actor_id' => $approved['actor_id'] ?? null,
-                'reason' => $approved['reason'] ?? (RefundProof::transferTimeout($op, $l['domain']) ? 'transfer_code_timeout' : (RefundProof::retired($op, $l['domain']) ? 'late_retired_payment' : 'terminal_unsent'))];
+                'reason' => $approved['reason'] ?? (RefundProof::transferTimeout($op, $l['domain']) ? 'transfer_code_timeout' : (RefundProof::retired($op, $l['domain']) || PrivacyRetirement::safe($op, $l['domain']) ? 'late_retired_payment' : 'terminal_unsent'))];
             $op->update(['funding' => [...($op->funding ?? []), 'refund' => $refund]]);
             if (in_array($op->action, ['register', 'transfer'], true)) {
                 $l['domain']->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);
-                $l['service']->update(['status' => 'cancelled', 'expires_at' => null]);
+                NativeDomainGuard::terminal($l, $op);
             }
             $review?->record($l);
             return ['amount' => $payment['amount'], 'currency' => 'USD'];
@@ -80,7 +83,13 @@ final readonly class Refunds
         if ($afterId < 0 || $limit < 1 || $limit > 100) { throw new \InvalidArgumentException('Invalid refund batch.'); }
         $done = 0;
         $ids = RefundCandidates::query(Operation::where('id', '>', $afterId))->orderBy('id')->limit($limit)->pluck('id');
-        foreach ($ids as $id) { try { $done += $this->creditRejected((int) $id) !== null ? 1 : 0; } catch (\Throwable) {} }
+        foreach ($ids as $id) {
+            try { $done += $this->creditRejected((int) $id) !== null ? 1 : 0; }
+            catch (\Throwable $e) {
+                try { logger()->warning('Domains refund retry failed.', ['operation_id' => (int) $id, 'exception_class' => $e::class]); }
+                catch (\Throwable) { /* Logging cannot interrupt the remaining retries. */ }
+            }
+        }
         return $done;
     }
 }

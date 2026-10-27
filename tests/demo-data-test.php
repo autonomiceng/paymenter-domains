@@ -1,0 +1,130 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering. Seeded demo records carry one Demo tag; real records never do.
+declare(strict_types=1);
+require __DIR__.'/native-app.php';
+require __DIR__.'/Support/storefront.php';
+require __DIR__.'/Support/staff-panel.php';
+require __DIR__.'/Support/facts-probe.php';
+require __DIR__.'/Support/accounts.php';
+use Filament\Infolists\Components\TextEntry;
+use Filament\Tables\Columns\TextColumn;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\DemoTag;
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, ManagedPublicConfig, Operation, WatchName, WatchRegistryObservation};
+use Paymenter\Extensions\Servers\Domains\Services\FoundationSchema;
+use Paymenter\Extensions\Servers\Domains\Support\DemoData;
+storefrontViews();
+
+$domain=static fn(array $snapshot)=>tap(new Domain,fn($d)=>$d->snapshot=$snapshot);
+$operation=static fn(array $policy,string $basis)=>tap(new Operation,function($o)use($policy,$basis){$o->policy=$policy;$o->funding_basis=$basis;});
+$account=static fn(string $key,string $identity)=>tap(new Account,function($a)use($key,$identity){$a->registrar_key=$key;$a->stable_identity=$identity;});
+$watch=static fn(?array $facts)=>tap(new WatchName,fn($w)=>$w->setRelation('registry',$facts===null?null:new WatchRegistryObservation(['facts'=>$facts])));
+// Each seed marker is a demo record.
+foreach ([
+    'domain snapshot'=>$domain(['offline_demo'=>true,'checkout'=>['invoice_id'=>9]]),
+    'request policy'=>$operation(['offline_demo'=>true],'invoice'),
+    'request funding basis'=>$operation([],'offline_demo'),
+    'watch reason'=>new ManagedPublicConfig(['reason'=>'offline_demo']),
+    'demo Enom account'=>$account('enom','demo-enom'),
+    'demo NameSilo account'=>$account('namesilo','demo-namesilo'),
+    'hosting watch registry facts'=>$watch(['result'=>'facts','offline_demo'=>true]),
+] as $marker=>$model) { expect(DemoData::is($model),'Demo marker: '.$marker); }
+// Existing encrypted identities remain demo records; only canonical values are written by new seeds.
+same(['enom'=>'demo-enom','namesilo'=>'demo-namesilo'],DemoData::ACCOUNTS,'Neutral seed identities');
+$legacy=['enom'=>hex2bin('6265636f2d64656d6f2d656e6f6d'),'namesilo'=>hex2bin('6265636f2d64656d6f2d6e616d6573696c6f')];
+foreach ($legacy as $key=>$identity) {
+    expect(DemoData::is($account($key,$identity)),'Prior identity remains demo: '.$key);
+    expect(!DemoData::is($account($key,$identity.'-other')),'Prior identity requires an exact match: '.$key);
+    expect(!DemoData::is($account($key==='enom'?'namesilo':'enom',$identity)),'Prior identity stays with its registrar: '.$key);
+}
+// Real records are never tagged.
+foreach ([
+    'domain'=>$domain(['checkout'=>['invoice_id'=>9]]), 'domain without snapshot'=>new Domain,
+    'domain with a false marker'=>$domain(['offline_demo'=>false]),
+    'request'=>$operation(['dispatch_attempted_at'=>'2026-10-01T00:00:00+00:00'],'invoice'),
+    'watch'=>new ManagedPublicConfig(['reason'=>'Customer asked for checks']),
+    'Enom account'=>$account('enom','reseller-account'), 'NameSilo account'=>$account('namesilo','Demo-NameSilo'),
+    'hosting watch'=>$watch(['result'=>'facts']), 'unchecked hosting watch'=>$watch(null),
+    'no record'=>null, 'other object'=>new stdClass,
+] as $real=>$model) { expect(!DemoData::is($model),'Real record: '.$real); }
+
+// Client tag: one word, one line, tooltip and accessible name from the glossary.
+$tag=storefrontDom(view('domains::partials.demo-tag')->render());
+$node=$tag->query('//span[@class="domains-demo-tag"]')->item(0);
+same(DemoData::TOOLTIP,$node?->getAttribute('title'),'Tooltip text');
+same('Demo data. Seeded for testing. Nothing is sent to a registrar and no money moves.',DemoData::TOOLTIP,'Glossary tooltip');
+same('Demo '.DemoData::TOOLTIP,preg_replace('/\s+/',' ',trim($node?->textContent??'')),'Accessible name says Demo and why');
+same('Demo',trim($tag->query('//span[@class="domains-demo-tag"]/text()')->item(0)?->textContent??''),'Visible text is Demo');
+same(view('domains::partials.demo-tag')->render(),DemoData::tag()->toHtml(),'DemoData::tag renders the partial');
+$css=file_get_contents(__DIR__.'/../Domains/resources/views/partials/styles.blade.php');
+expect((bool)preg_match('/\.domains-demo-tag\s*\{[^}]*display:\s*inline-flex[^}]*white-space:\s*nowrap/',$css),'Demo tag stays on one line and wraps as a unit');
+expect((bool)preg_match('/\.domains-missing\s*\{[^}]*color:\s*var\(--e-bad\)/',$css),'Missing uses the danger colour');
+
+// Tag colours follow the light and dark themes on staff/native pages (inline) and client pages (stylesheet).
+// The cascade model covers class and descendant-class selectors only; inline style declarations win.
+$styleText=static fn(string $html)=>implode("\n",array_map(fn($n)=>$n->textContent,iterator_to_array(storefrontDom($html)->query('//style'))));
+$color=static function(string $css,string $inlineStyle,array $ancestors,array $classes): ?string {
+    if (preg_match('/(?:^|;)\s*color\s*:\s*([^;]+)/',$inlineStyle,$c)) { return trim($c[1]); }
+    preg_match_all('/([^{}]+)\{([^{}]*)\}/',(string)preg_replace('~/\*.*?\*/~s','',$css),$rules,PREG_SET_ORDER);
+    $best=null;$bestSpecificity=-1;
+    foreach ($rules as [, $selectors, $body]) {
+        if (!preg_match('/(?:^|;|\s)color\s*:\s*([^;]+)/',$body,$c)) { continue; }
+        foreach (explode(',',$selectors) as $selector) {
+            $parts=preg_split('/\s+/',trim($selector));
+            if (array_filter($parts,fn($p)=>!preg_match('/^(\.[\w-]+)+$/',$p))) { continue; }
+            $parts=array_map(fn($p)=>explode('.',ltrim($p,'.')),$parts);
+            $specificity=count(array_merge(...$parts));
+            if (array_diff(array_pop($parts),$classes)) { continue; }
+            $i=0;foreach ($ancestors as $ancestor) { if ($i<count($parts) && !array_diff($parts[$i],$ancestor)) { $i++; } }
+            if ($i<count($parts)) { continue; }
+            if ($specificity>=$bestSpecificity) { $best=trim($c[1]);$bestSpecificity=$specificity; }
+        }
+    }
+    return $best;
+};
+$clientCss=view('domains::partials.styles')->render();
+expect(str_contains($clientCss,'domains-demo-tag'),'Client stylesheet renders once for the colour checks');
+$want=['Demo'=>['light'=>'#c2410c','dark'=>'#fdba74'],'Test'=>['light'=>'#475569','dark'=>'#cbd5e1']];
+$expected=[];$actual=[];
+foreach ([false,true] as $test) {
+    $variant=$test?'Test':'Demo';
+    $surfaces=['inline without client stylesheet'=>[DemoData::tag(inline:true,test:$test)->toHtml(),''],
+        'inline with client stylesheet'=>[DemoData::tag(inline:true,test:$test)->toHtml(),$clientCss],
+        'client'=>[DemoData::tag(test:$test)->toHtml(),$clientCss]];
+    foreach ($surfaces as $surface=>[$html,$pageCss]) {
+        $node=storefrontDom($html)->query('//span[contains(@class,"domains-demo-tag")]')->item(0);
+        foreach (['light','dark'] as $mode) {
+            $ancestors=array_values(array_filter([$mode==='dark'?['dark']:null,$pageCss===''?null:['domains']]));
+            $key=$variant.' '.$mode.' '.$surface;
+            $expected[$key]=$want[$variant][$mode];
+            $actual[$key]=$color($styleText($pageCss)."\n".$styleText($html),(string)$node?->getAttribute('style'),$ancestors,explode(' ',(string)$node?->getAttribute('class')));
+        }
+    }
+}
+same($expected,$actual,'Demo and Test tag colours follow light and dark: '.json_encode(array_diff_assoc($actual,$expected)));
+
+// Staff: entries and columns add the tag after the name only for demo records.
+staffPanel();
+$demo=$account('enom','demo-enom');$real=$account('enom','reseller-account');
+$facts=renderFacts([DemoTag::apply(TextEntry::make('demo')->label('Registrar')->state('OFFLINE DEMO Enom (synthetic)')->model($demo)),
+    DemoTag::apply(TextEntry::make('real')->label('Registrar')->state('Enom reseller')->model($real))]);
+same(1,storefrontDom($facts['html'])->query('//span[contains(concat(" ",@class," ")," domains-demo-tag ")]')->length,'Only the demo entry carries the tag');
+expect(str_contains($facts['html'],DemoData::TOOLTIP),'Staff tag has the tooltip');
+$column=static fn($record)=>DemoTag::apply(TextColumn::make('name'))->record($record)->getSuffix();
+expect(str_contains((string)$column($demo)?->toHtml(),'>Demo'),'Demo column suffix');
+same(null,$column($real),'Real column has no suffix');
+
+// Staff banner: shown on Domains pages while seeded demo accounts exist.
+FoundationSchema::install();
+same('',DemoTag::banner(),'No banner on a system without demo accounts');
+fixtureAccount(1,'enom','reseller-account');
+same('',DemoTag::banner(),'Real accounts do not raise the banner');
+fixtureAccount(2,'enom',$legacy['enom']);
+$banner=storefrontDom(DemoTag::banner());
+same('Test system. Records tagged Demo are seeded examples.',preg_replace('/\s+/',' ',trim($banner->query('//*[@role="note"]')->item(0)?->textContent??'')),'Banner text');
+$stored=Account::where('server_id',2)->sole();
+expect(DemoData::present(),'Prior encrypted demo identity raises the banner');
+config(['domains.enom_identity.environment'=>'test']);
+expect(DemoData::paused($stored->fresh()),'Prior encrypted demo identity keeps its paused rule');
+fixtureAccount(3,'enom',DemoData::ACCOUNTS['enom']);
+expect(DemoData::is(Account::where('server_id',3)->sole()),'New seed uses the canonical demo identity');
+$nativeSuccessful=true;echo "Demo data checks passed.\n";

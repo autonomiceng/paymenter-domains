@@ -1,6 +1,7 @@
 <?php
 // Enom 444f31c refunds refusal scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{Credit, Role};
 use Illuminate\Support\Facades\DB;
@@ -8,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, PricingRule, RefundPayment, RefundProof, Refunds, OperationTerminalProof};
 $refunds=new Refunds($clock); $staff=commerceUser();
 $role=Role::create(['name'=>'Refund evidence','permissions'=>['admin.domains.manage','admin.invoices.update']]); $staff->update(['role_id'=>$role->id]);
-$op=$new('refund-presence.com'); $op->update(['state'=>'held','safe_code'=>'staff_review']);
+$op=$new(placeholderComFixtureName('refund-presence-placeholder.com')); $op->update(['state'=>'held','safe_code'=>'staff_review']);
 $raw=$op->getRawOriginal(); $sraw=$op->domain->service->getRawOriginal(); $iraw=App\Models\Invoice::find($op->invoice_id)->getRawOriginal();
 $itemraw=App\Models\InvoiceItem::find($op->invoice_item_id)->getRawOriginal();
 $prove=static function($row) { return DB::transaction(static function()use($row){ $l=HoldingLocks::take($row->domain); RefundProof::requireUnsent($row,$l['domain']); return RefundPayment::requireCurrent($row,$l); }); };
@@ -49,15 +50,15 @@ DB::table('invoice_items')->where('id',$op->invoice_item_id)->update($itemraw); 
 same($op->amount,$prove($op->fresh())['amount'],'Restored positive control after matrix');
 $refunds->refundHeld($staff,$op->id,'customer_cancelled');
 // Completed preseal local worker, normalized by the existing encoder, authorizes automatic retry credit.
-$local=$new('refund-local-worker.com'); [$claimed]=$claims->claim($local->id); $claims->finish($claimed);
+$local=$new(placeholderComFixtureName('refund-local-worker-placeholder.com')); [$claimed]=$claims->claim($local->id); $claims->finish($claimed);
 OperationTerminalProof::encode($claims,$local->id); expect($refunds->creditRejected($local->id)!==null,'Positive terminal-unsent automatic refund');
 // A completed preseal worker held for lost seal authority can be disposed by fresh staff directly.
-$invalid=$new('refund-seal-authority.com'); [$claim]=$claims->claim($invalid->id); $claims->finish($claim);
+$invalid=$new(placeholderComFixtureName('refund-seal-authority-placeholder.com')); [$claim]=$claims->claim($invalid->id); $claims->finish($claim);
 $invalid->refresh()->update(['safe_code'=>'seal_authority_invalid']);
 expect($refunds->refundHeld($staff,$invalid->id,'authority_changed')!==null,'Held seal-authority-invalid positive credit');
 // All sent/unknown/fallback evidence remains disqualifying regardless of held/candidate labels.
 foreach(['accepted','null','absent'] as $mode){
-    [$sent]=$prepare('refund-sent-'.$mode.'.com',$mode); $sent->update(['state'=>'held','safe_code'=>'staff_review',
+    [$sent]=$prepare(placeholderComFixtureName('refund-sent-'.$mode.'-placeholder.com'),$mode); $sent->update(['state'=>'held','safe_code'=>'staff_review',
         'policy'=>[...$sent->policy,'renewal_execution'=>['refundable_later'=>true]]]);
     commerceReject(fn()=>$refunds->refundHeld($staff,$sent->id,'customer_cancelled'));
 }

@@ -1,0 +1,1 @@
+@if ($pill)<span class="domains-badge domains-status domains-tone-{{ $pill['tone'] }}">{{ $pill['label'] }}</span>@if ($pill['reason'] ?? null)<span class="domains-pill-reason">{{ $pill['reason'] }}</span>@endif @endif

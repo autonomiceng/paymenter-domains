@@ -5,14 +5,15 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader;
-use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry, CatalogueFreshness, CatalogueUnavailable, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry, CatalogueFailure, CatalogueFreshness, CatalogueUnavailable, RequestContext};
 
 final class CatalogueSync
 {
     public function __construct(private readonly AccountBindings $bindings, private readonly PriceCatalogue $prices) {}
-    public function refresh(int $serverId, RequestContext $context, CatalogueFreshness $freshness = new CatalogueFreshness, ?array $suffixes = null): array
+    public function refresh(int $serverId, RequestContext $context, CatalogueFreshness $freshness = new CatalogueFreshness, ?array $suffixes = null, ?StaffSettingsReview $review = null): array
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Catalogue reads must finish outside locks.'); }
+        if (TestCatalogue::enabled($context->binding) && $review === null) { throw new \DomainException('TEST catalogue import requires staff review.'); }
         $reader = $this->bindings->reader($serverId); // enabled, identity, credentials, site BEFORE any provider read
         if (!$reader instanceof CatalogueReader) { throw new \DomainException('Catalogue reader unavailable.'); }
         $reader->binding()->requireMatch($context->binding);
@@ -31,11 +32,20 @@ final class CatalogueSync
         $summary = ['synced' => 0, 'failed' => []];
         if ($accepted->endings === []) { return $summary; }
         try { $batch = $reader->catalogueBatch($accepted, $freshness, $context); }
+        catch (EnomTestCallLimit $error) { throw $error; }
         catch (ReadDeferred $error) { throw $error; }
-        catch (\Throwable) { return ['synced' => 0, 'failed' => array_map(static fn (string $tld): string => '.'.$tld, array_keys($accepted->endings))]; }
+        catch (\Throwable $error) {
+            $failed = array_map(static fn (string $tld): string => '.'.$tld, array_keys($accepted->endings));
+            return ['synced' => 0, 'failed' => $failed, 'failure_codes' => array_fill_keys($failed, ReadFailure::code($error))];
+        }
         foreach ($accepted->endings as $tld => $_) {
             try {
                 $entry = $batch[$tld] ?? null;
+                if ($entry instanceof CatalogueFailure) {
+                    $summary['failed'][] = '.'.$tld;
+                    $summary['failure_codes']['.'.$tld] = $entry->code;
+                    continue;
+                }
                 $recheck = function ($server, $account) use ($accepted): void {
                     $this->bindings->requireReadableLocked($server, $account);
                     if (CatalogueAcceptances::load($accepted->binding, true)->revision !== $accepted->revision) {
@@ -54,9 +64,13 @@ final class CatalogueSync
                         throw new \DomainException('Unaccepted catalogue evidence.');
                     }
                 }
-                $this->prices->import($entry, $accepted, $recheck, $context->now());
+                $this->prices->import($entry, $accepted, $recheck, $context->now(), $review);
                 $summary['synced']++;
-            } catch (\Throwable) { $summary['failed'][] = '.'.$tld; }
+            } catch (ReadDeferred|EnomTestCallLimit $error) { throw $error; }
+            catch (\Throwable $error) {
+                $summary['failed'][] = '.'.$tld;
+                $summary['failure_codes']['.'.$tld] = ReadFailure::code($error,'catalogue_import_failed');
+            }
         }
         return $summary;
     }

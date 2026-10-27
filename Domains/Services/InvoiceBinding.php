@@ -12,7 +12,6 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation, Tld};
 /** Synchronous native hooks, dormant until 39. No jobs, provider calls or spending grants. */
 final class InvoiceBinding
 {
-    private bool $booted = false;
     private \WeakMap $creating;
     private array $prepared = [];
     private array $services = [];
@@ -21,13 +20,11 @@ final class InvoiceBinding
 
     public function boot(): void
     {
-        if ($this->booted) { return; } $this->booted = true;
+        if(!HookRegistration::claim(Event::getFacadeRoot(),self::class)){return;}
         Event::listen(\App\Events\Order\Creating::class, fn ($e) => $this->prepare($e->order));
         Service::creating(function (Service $service): void {
             if (!$this->native->mapping($service->product, $service->plan)) { return; }
-            $line = $this->admission->take($service);
-            $annual = $this->prepared[$line['item_id']] ?? throw new \DomainException('Domain renewal projection was not admitted.');
-            $this->creating[$service] = [...$line, ...$annual];
+            $this->admitIdentity($service);
         });
         Event::listen(\App\Events\Service\Created::class, function ($e): void {
             if (isset($this->creating[$e->service])) {
@@ -37,9 +34,8 @@ final class InvoiceBinding
         Event::listen(\App\Events\InvoiceItem\Creating::class, function ($e): void {
             $line = $e->invoiceItem->reference_type === (new Service)->getMorphClass() ? ($this->services[$e->invoiceItem->reference_id] ?? null) : null;
             if ($line) {
-                $term = $line['selection']->term; $years = $term.' '.($term === 1 ? 'year' : 'years');
-                $e->invoiceItem->description = ($line['selection']->action === 'register' ? 'Register ' : 'Transfer ').$line['name']
-                    .' ('.($line['selection']->action === 'transfer' ? 'adds ' : '').$years.')';
+                $e->invoiceItem->description = InvoiceDescription::acquisition($line['name'],
+                    $line['selection']->action, $line['selection']->term, $this->clock->now());
             }
         });
         Event::listen(\App\Events\InvoiceItem\Created::class, fn ($e) => $this->bind($e->invoiceItem));
@@ -50,6 +46,25 @@ final class InvoiceBinding
                 }
             });
         }
+    }
+
+    /** The route guard and checkout hook share one exact-object admission, never a caller flag. */
+    public function admitIdentity(Service $service): void
+    {
+        if (isset($this->creating[$service])) { return; }
+        if (!$service->product || !$service->plan || !$this->native->mapping($service->product, $service->plan)) { NativeIdentity::refuse(); }
+        $line = $this->admission->take($service);
+        $annual = $this->prepared[$line['item_id']] ?? throw new \DomainException('Domain renewal projection was not admitted.');
+        $this->creating[$service] = [...$line, ...$annual];
+    }
+
+    /** Only the admitted checkout line may initially persist its canonical service property. */
+    public function identityProperty(\App\Models\Property $property): bool
+    {
+        $line=$this->services[$property->model_id]??null;
+        return DB::transactionLevel()>=1&&$line!==null&&$property->model_type===(new Service)->getMorphClass()
+            &&$property->key==='domain'&&$property->value===$line['name']&&empty($property->custom_property_id)
+            &&!\App\Models\Property::where('model_type',$property->model_type)->where('model_id',$property->model_id)->where('key','domain')->exists();
     }
 
     private function prepare(Order $order): void
@@ -118,6 +133,9 @@ final class InvoiceBinding
     /** Current native rows must match the frozen operation; no DTO alone grants authority. */
     public static function requireIdentity(Operation $op, Domain $domain, Service $service, Invoice $invoice, InvoiceItem $item, ?Product $product = null): void
     {
+        if ($domain->adoption_id !== null || isset($domain->snapshot['holding']) || $domain->provenance === 'adopted') {
+            throw new \DomainException('Adoption does not authorize acquisition.');
+        }
         $c = $op->policy['checkout'] ?? [];
         $product ??= $service->product()->firstOrFail();
         foreach (['user_id' => $service->user_id, 'order_id' => $service->order_id, 'service_id' => $service->id,

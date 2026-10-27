@@ -1,0 +1,147 @@
+# MIT, Copyright (c) 2026 Autonomic Engineering. No Docker calls: ownership and refusal regressions.
+import ast
+from collections import Counter
+import contextlib
+import io
+import itertools
+import json
+import os
+import signal
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+from unittest import mock
+
+import test_conversion_mariadb as harness
+import test_schema_mariadb as schema_harness
+
+
+class MariaGuardTests(unittest.TestCase):
+    def test_remote_fixtures_use_reserved_test_namespace(self):
+        tree = ast.parse(Path(__file__).read_text())
+        hosts = Counter(node.value for node in ast.walk(tree)
+                        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                        and node.value.startswith(('tcp://' + 'remote.', 'ssh://' + 'remote.')))
+        # Covers host refusals, context metadata and the cleanup assertion together.
+        self.assertEqual(hosts, Counter({'tcp://' + 'remote.test': 4, 'ssh://' + 'remote.test': 1}))
+
+    def environment(self, directory, **extra):
+        return dict(TMPDIR=directory, PATH='/usr/bin:/bin', CONVERSION_MARIADB_PHP='/synthetic/php',
+                    PAYMENTER_TEST_APP='/synthetic/app', CONVERSION_ENOM_CHECKOUT='/synthetic/source', **extra)
+
+    def test_restores_handlers_after_skip_failure_and_receipt_error(self):
+        for subject, outcome in itertools.product([harness, schema_harness], ['skip', 'failure', 'receipt_error', 'setup_error', 'owner_error', 'handler_setup_error']):
+            with self.subTest(harness=subject.__name__, outcome=outcome), tempfile.TemporaryDirectory() as directory:
+                handlers = {sig: signal.getsignal(sig) for sig in [signal.SIGTERM, signal.SIGINT]}
+                sentinels = {sig: lambda *args: None for sig in handlers}
+                for sig, handler in sentinels.items(): signal.signal(sig, handler)
+                try:
+                    environment = self.environment(directory, DOCKER_HOST='tcp://remote.test')
+                    if outcome == 'setup_error': environment['TMPDIR'] = 'relative'
+                    original_signal = signal.signal
+                    installs = 0
+                    def install(sig, handler):
+                        nonlocal installs
+                        if callable(handler) and handler not in sentinels.values():
+                            installs += 1
+                            if installs == 2: raise OSError('handler setup failed')
+                        return original_signal(sig, handler)
+                    with mock.patch.dict(os.environ, environment, clear=True), \
+                         mock.patch.object(subject.shutil, 'which', return_value=None if outcome in ['skip', 'receipt_error'] else '/docker'), \
+                         mock.patch.object(Path, 'write_text', side_effect=OSError('receipt failed')) if outcome == 'receipt_error' else contextlib.nullcontext(), \
+                         mock.patch.object(subject.secrets, 'token_hex', side_effect=OSError('owner failed')) if outcome == 'owner_error' else contextlib.nullcontext(), \
+                         mock.patch.object(signal, 'signal', side_effect=install) if outcome == 'handler_setup_error' else contextlib.nullcontext(), \
+                         contextlib.redirect_stdout(io.StringIO()):
+                        if outcome == 'skip': self.assertIn('skipped', subject.run())
+                        else:
+                            with self.assertRaises((RuntimeError, OSError, ValueError)): subject.run()
+                    for sig, handler in sentinels.items(): self.assertIs(signal.getsignal(sig), handler)
+                finally:
+                    for sig, handler in handlers.items(): signal.signal(sig, handler)
+
+    def test_schema_fixture_overrides_inherited_database_url(self):
+        with mock.patch.dict(os.environ, {'DB_URL': 'mysql://operator:synthetic@localhost/host_database?unix_socket=/host/mysql.sock',
+                                          'DB_DATABASE': 'host_database', 'DB_SOCKET': '/host/mysql.sock'}):
+            env = schema_harness.php_environment('/owned/app', '/owned/socket', 'owned_database', 'synthetic', 'p_')
+        self.assertEqual(env['DB_URL'], '')
+        self.assertEqual(env['DB_SOCKET'], '/owned/socket')
+        self.assertEqual(env['DB_DATABASE'], 'owned_database')
+        self.assertEqual(env['SCHEMA_PREFIX'], 'p_')
+
+    def test_schema_remote_host_refuses_without_any_docker_call(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_HOST='tcp://remote.test'), clear=True), \
+             mock.patch.object(schema_harness.shutil, 'which', return_value='/usr/bin/docker'), mock.patch.object(schema_harness.subprocess, 'run') as called, contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(ValueError, 'local Unix-socket'):
+                schema_harness.run()
+            called.assert_not_called()
+
+    def test_remote_host_refuses_without_any_docker_call(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_HOST='tcp://remote.test'), clear=True), \
+             mock.patch.object(harness.shutil, 'which', return_value='/usr/bin/docker'), mock.patch.object(harness.subprocess, 'run') as called, contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, 'local Unix-socket'):
+                harness.run()
+            called.assert_not_called()
+
+    def test_remote_context_only_reads_local_context_metadata(self):
+        context = subprocess.CompletedProcess([], 0, json.dumps([{'Endpoints': {'docker': {'Host': 'ssh://remote.test'}}}]).encode(), b'')
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory, DOCKER_CONTEXT='remote'), clear=True), \
+             mock.patch.object(harness.shutil, 'which', return_value='/usr/bin/docker'), mock.patch.object(harness.subprocess, 'run', return_value=context) as called, contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, 'Remote Docker contexts'):
+                harness.run()
+            self.assertEqual([c.args[0] for c in called.call_args_list], [['docker', 'context', 'inspect']])
+
+    def timed_out_start(self, matches):
+        owner = None; inspections = 0; stopped = []
+        image_id = 'a'*64; container_id = 'b'*64
+        def execute(argv, **kwargs):
+            nonlocal owner, inspections
+            self.assertNotIn('tcp://remote.test', str(argv))
+            if argv[:3] == ['docker', 'context', 'inspect']:
+                data = [{'Endpoints': {'docker': {'Host': 'unix:///synthetic/docker.sock'}}}]
+            elif argv[:3] == ['docker', 'image', 'inspect']:
+                data = [{'Id': 'sha256:'+image_id}]
+            elif argv[:3] == ['docker', 'container', 'inspect']:
+                inspections += 1
+                if inspections == 1:
+                    return subprocess.CompletedProcess(argv, 1, b'', b'not found')
+                self.assertEqual(kwargs['env']['DOCKER_HOST'], 'unix:///synthetic/docker.sock')
+                data = [{'Id': container_id, 'Config': {'Labels': {'domains-conversion-rehearsal': owner if matches else 'foreign-owner'}}}]
+            elif argv[:2] == ['docker', 'run']:
+                owner = argv[argv.index('--label')+1].split('=', 1)[1]
+                metadata = json.loads((Path(argv[argv.index('-v')+1].split(':')[0]).parent/'container.json').read_text())
+                self.assertEqual(metadata, {'name': harness.CONTAINER, 'label': owner, 'docker_host': 'unix:///synthetic/docker.sock'})
+                raise subprocess.TimeoutExpired(argv, 1)
+            elif argv[:2] == ['docker', 'stop']:
+                stopped.append(argv[-1]);data = None
+                self.assertEqual(kwargs['env']['DOCKER_HOST'], 'unix:///synthetic/docker.sock')
+            else:
+                data = None
+            return subprocess.CompletedProcess(argv, 0, json.dumps(data).encode() if data else b'', b'')
+        original_is_dir = Path.is_dir
+        def directories(path):
+            return True if str(path) == '/var/spool/cron/crontabs' else original_is_dir(path)
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, self.environment(directory), clear=True), \
+             mock.patch.object(harness.shutil, 'which', return_value='/synthetic/executable'), mock.patch.object(harness.subprocess, 'run', side_effect=execute), \
+             mock.patch.object(harness.native, 'verify', return_value=(None, {'fixture': 'digest'})), mock.patch.object(harness, 'memory_gate'), \
+             mock.patch.object(Path, 'is_dir', directories), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                harness.run()
+            self.assertEqual(stopped, [container_id] if matches else [])
+            receipt = json.loads(next(Path(directory).glob('c41r-*/receipt.json')).read_text())
+            self.assertFalse(receipt['complete'])
+            if matches:
+                self.assertTrue(receipt['container_stopped'])
+            else:
+                self.assertNotIn('container_stopped', receipt)
+            self.assertTrue(receipt['dependency_unchanged'])
+
+    def test_timed_out_start_only_stops_label_owned_immutable_id(self):
+        self.timed_out_start(True)
+
+    def test_timed_out_start_never_stops_foreign_label(self):
+        self.timed_out_start(False)
+
+
+if __name__ == '__main__':
+    unittest.main()

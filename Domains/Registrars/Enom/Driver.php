@@ -5,8 +5,9 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, CanonicalName, Capabilities, CatalogueRate, CostUnit, Discrepancy, Disposition, DomainSnapshot,
-    DriverResult, Evidence, ExpiryPrecision, Money, PrivacyMode, Query, QuoteEvidence, ReconciliationResult, RejectionBasis, RequestContext, ResultReason, SendState};
+    DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, PrivacyMode, Query, QuoteEvidence, ReconciliationResult, RejectionBasis, RequestContext, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand};
+use Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence;
 
 /** Named read adapter only; no admission, charging, persistence or account adoption. */
 final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader
@@ -44,7 +45,8 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
                     $fields['supported'] === true && $facts['requires_nameservers'] === false && $facts['registry_attributes'] !== null,
                     $facts['auto_renew_only'] === false, $fields['fields']);
             } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $error) { throw $error; }
-            catch (\Throwable) { $entries[$tld] = null; }
+            catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $error) { throw $error; }
+            catch (\Throwable $error) { $entries[$tld] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFailure(\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error)); }
         }
         return $entries;
     }
@@ -59,11 +61,18 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     {
         return is_string($value) ? match (strtolower($value)) { '1', 'true', 'yes' => true, '0', 'false', 'no' => false, default => null } : null;
     }
+    public static function autoRenew(ProtocolResult $renew): ?bool
+    {
+        if ($renew->status !== 'success') { return null; }
+        $auto = self::flag($renew->value('auto-renew', $renew->value('renewname')));
+        if ($renew->value('auto-renew') !== null && $renew->value('renewname') !== null && self::flag($renew->value('renewname')) !== $auto) { return null; }
+        return $auto;
+    }
     private function read(ReadCommand $command, array $parameters, #[\SensitiveParameter] RequestContext $context): ProtocolResult
     {
         $this->binding()->requireMatch($context->binding);
         try { return $this->client->read($command, $parameters, $context); }
-        catch (\RuntimeException) { return new ProtocolResult('unknown', 'context_refused'); }
+        catch (\RuntimeException $error) { $context->requireReadSuccess(false,$error); return new ProtocolResult('unknown', 'context_refused'); }
     }
     private function parts(string $name): array
     {
@@ -75,13 +84,8 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     {
         $reply = $this->read(ReadCommand::Balance, [], $context);
         if ($reply->status !== 'success') { return $this->neutral($reply); }
-        $value = $reply->value('availablebalance');
-        if ($reply->status !== 'success' || !is_string($value)
-            || !preg_match('/^(?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\.[0-9]{1,2})?$/D', $value)) {
-            return $this->neutral(new ProtocolResult('unknown', 'invalid_payload'));
-        }
-        try { $balance = new Money(str_replace(',', '', $value).(str_contains($value, '.') ? '' : '.00'), 'USD'); }
-        catch (\InvalidArgumentException) { return $this->neutral(new ProtocolResult('unknown', 'invalid_payload')); }
+        $balance = Balance::read($reply);
+        if ($balance === null) { return $this->neutral(new ProtocolResult('unknown', 'invalid_payload')); }
         return $this->neutral($reply, new Evidence(balance: $balance));
     }
     public function catalogue(#[\SensitiveParameter] RequestContext $context): ReadResult
@@ -102,7 +106,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         catch (\Throwable) { return $this->result(null); }
         return $this->result(['fields' => $schema, 'supported' => RegistryFields::supported($schema)]);
     }
-    /** Selected-term annual account rate; source product_price_unavailable alone means no price. */
+    /** Selected-term annual account rate; only explicit disablement means no price. */
     public function productPrice(string $tld, string $action, int $years, #[\SensitiveParameter] RequestContext $context): ReadResult
     {
         Catalogue::tld($tld);
@@ -111,12 +115,15 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $reply = $this->read(ReadCommand::ProductPrice, ['TLD' => $tld, 'ProductType' => $type, 'Years' => $years], $context);
         if ($reply->status !== 'success') { return $this->result(null); }
         $enabled = $reply->value('productprice.productenabled'); $price = $reply->value('productprice.price');
-        // Unlike malformed source no-price, unsupported extra precision must retain prior costs.
+        if (is_string($enabled) && in_array(strtolower($enabled), ['false', '0'], true)) {
+            return new ReadResult($this->binding(), 'no_price');
+        }
+        // Malformed replies, including unsupported precision, retain prior costs.
         if (is_string($price) && preg_match('/^[0-9]+\.[0-9]{5,}$/D', $price)) { return $this->result(null); }
         $currency = $reply->value('productprice.currency');
         if ($currency !== null && (!is_string($currency) || strtoupper($currency) !== 'USD')) { return $this->result(null); }
         if (!is_string($enabled) || !in_array(strtolower($enabled), ['true', '1'], true) || !is_string($price) || Pricing::annual($price) === null) {
-            return new ReadResult($this->binding(), 'no_price');
+            return $this->result(null);
         }
         return $this->result(['tld' => $tld, 'action' => $action, 'years' => $years, 'price' => $price]);
     }
@@ -134,6 +141,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         // Name-specific Check restrictions override the account/TLD catalogue. Missing bounds
         // retain the source 1..10 defaults; malformed or conflicting evidence is unknown.
         $properties = $row['properties'] ?? [];
+        if ($properties === '') { $properties = []; }
         if (!is_array($properties) || ($properties !== [] && array_is_list($properties))) { return $this->neutral(new ProtocolResult('unknown', 'invalid_payload')); }
         if ($query->action === Action::Register) {
         $min = $properties['minregyear'] ?? '1'; $max = $properties['maxregyear'] ?? '10';
@@ -153,41 +161,36 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     {
         $parts = $this->parts($name); $reply = $this->read(ReadCommand::Info, $parts, $context);
         if ($reply->status !== 'success') { return [$reply, $parts, null]; }
-        $info = $reply->value('getdomaininfo');
-        $domain = is_array($info) ? ($info['domainname'] ?? null) : null;
-        $label = is_array($domain) ? ($domain['#text'] ?? null) : $domain;
-        $attributes = is_array($domain) ? ($domain['@attributes'] ?? []) : [];
-        $status = is_array($info) ? ($info['status'] ?? null) : null;
-        if (!is_array($status) || !is_string($label) || strtolower($label) !== $name || !is_array($attributes)
-            || (isset($attributes['sld']) && (!is_string($attributes['sld']) || strtolower($attributes['sld']) !== $parts['SLD']))
-            || (isset($attributes['tld']) && (!is_string($attributes['tld']) || strtolower($attributes['tld']) !== $parts['TLD']))) { return [new ProtocolResult('unknown', 'invalid_payload'), $parts, null]; }
-        $owner = $status['belongs-to'] ?? null;
-        if (is_array($owner)) { $owner = $owner['#text'] ?? null; }
-        $id = $attributes['domainnameid'] ?? $info['domainnameid'] ?? null;
-        if ((isset($attributes['domainnameid'], $info['domainnameid']) && $attributes['domainnameid'] !== $info['domainnameid'])
-            || !is_string($owner) || !is_string($id) || !preg_match('/^[1-9][0-9]{0,19}$/D', $id)) { return [new ProtocolResult('unknown', 'invalid_payload'), $parts, null]; }
-        try { $owned = $this->binding()->matches(new AccountBinding('enom', $this->binding()->serverId, $this->binding()->environment, $owner)); }
-        catch (\InvalidArgumentException) { return [new ProtocolResult('unknown', 'invalid_payload'), $parts, null]; }
-        if (!$owned) { return [$reply, $parts, new DomainSnapshot($this->binding(), $name, false)]; }
-        return [$reply, $parts, new DomainSnapshot($this->binding(), $name, true, Expiry::read($reply), providerReference: $id)];
+        $domain = Identity::read($this->binding(), $name, $parts, $reply);
+        return [$domain === null ? new ProtocolResult('unknown', 'invalid_payload') : $reply, $parts, $domain];
     }
+
     public function readDomain(string $name, #[\SensitiveParameter] RequestContext $context): DriverResult
     {
         [$reply, $parts, $domain] = $this->identity($name, $context);
         if ($domain?->owned !== true) { return $this->neutral($reply, new Evidence(domain: $domain)); }
         $renew = $this->read(ReadCommand::Renewal, $parts, $context);
+        if ($renew->status !== 'success') { return $this->neutral($renew, new Evidence(domain: $domain)); }
         $lock = $this->read(ReadCommand::Lock, $parts, $context);
+        if ($lock->status !== 'success') { return $this->neutral($lock, new Evidence(domain: $domain)); }
         $privacy = $this->read(ReadCommand::Privacy, $parts, $context);
-        foreach ([$renew, $lock, $privacy] as $required) {
-            if ($required->status !== 'success') { return $this->neutral($required, new Evidence(domain: $domain)); }
-        }
-        $auto = self::flag($renew->value('auto-renew', $renew->value('renewname')));
-        if ($renew->value('auto-renew') !== null && $renew->value('renewname') !== null && self::flag($renew->value('renewname')) !== $auto) { $auto = null; }
+        if ($privacy->status !== 'success') { return $this->neutral($privacy, new Evidence(domain: $domain)); }
+        $auto = self::autoRenew($renew);
         $privacyFlag = self::flag($privacy->value('getwppsinfo.wppsenabled'));
         $allowed = self::flag($privacy->value('getwppsinfo.wppsallowed')); $exists = self::flag($privacy->value('getwppsinfo.wppsexists'));
         if ($allowed === null || $exists === null || ($privacyFlag === true && (!$allowed || !$exists))) { $privacyFlag = null; }
         $snapshot = new DomainSnapshot($this->binding(), $name, true, $domain->expiry, $auto,
             $privacyFlag, self::flag($lock->value('reg-lock')), $domain->providerReference);
+        return $this->neutral($reply, new Evidence(domain: $snapshot));
+    }
+    public function readRenewalDomain(string $name, #[\SensitiveParameter] RequestContext $context): DriverResult
+    {
+        [$reply, $parts, $domain] = $this->identity($name, $context);
+        if ($domain?->owned !== true) { return $this->neutral($reply, new Evidence(domain: $domain)); }
+        $renew = $this->read(ReadCommand::Renewal, $parts, $context);
+        if ($renew->status !== 'success') { return $this->neutral($renew, new Evidence(domain: $domain)); }
+        $snapshot = new DomainSnapshot($this->binding(), $name, true, $domain->expiry, self::autoRenew($renew),
+            providerReference: $domain->providerReference);
         return $this->neutral($reply, new Evidence(domain: $snapshot));
     }
     public function expiry(string $name, #[\SensitiveParameter] RequestContext $context): ReadResult
@@ -203,11 +206,11 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         [, $parts, $domain] = $this->identity($name, $context);
         if ($domain?->owned !== true) { return $this->result(null); }
         $reply = $this->read(ReadCommand::RenewalInfo, $parts, $context);
-        $info = $reply->value('getextendinfo');
-        if ($reply->status !== 'success' || !is_array($info) || array_is_list($info)) { return $this->result(null); }
-        $maximum = $info['maxextension'] ?? null;
+        $expiry = Expiry::read($reply);
+        if ($expiry === null) { return $this->result(null); }
+        $maximum = $reply->value('maxextension');
         return $this->result(['name' => $name, 'owned' => true, 'provider_reference' => $domain->providerReference,
-            'expiry' => Expiry::read($reply), 'registrar_hold' => self::flag($info['registrarhold'] ?? null),
+            'expiry' => $expiry, 'registrar_hold' => self::flag($reply->value('registrarhold')),
             'max_extension' => is_string($maximum) && preg_match('/^[0-9]{1,2}$/D', $maximum) && (int) $maximum <= 10 ? (int) $maximum : null,
             'grace_eligible' => null]);
     }
@@ -259,14 +262,14 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         [$reply, $parts, $domain] = $this->identity($query->name, $context);
         if ($domain?->owned !== true) { return $this->neutral($reply, new Evidence(domain: $domain)); }
         $extend = $this->read(ReadCommand::RenewalInfo, $parts, $context);
+        if ($extend->status !== 'success') { return $this->neutral($extend); }
         $check = $this->read(ReadCommand::Check, $parts + ['Version' => 2, 'IncludePrice' => 1, 'IncludeProperties' => 1, 'IncludeEAP' => 1], $context);
+        if ($check->status !== 'success') { return $this->neutral($check); }
         $now = $context->now(); $expired = null;
         if ($domain->expiry?->precision === ExpiryPrecision::Instant && new \DateTimeImmutable($domain->expiry->value) <= $now) {
             $expired = $this->read(ReadCommand::Expired, [], $context);
         }
-        foreach ([$extend, $check, $expired] as $required) {
-            if ($required !== null && $required->status !== 'success') { return $this->neutral($required); }
-        }
+        if ($expired !== null && $expired->status !== 'success') { return $this->neutral($expired); }
         return new DriverResult($this->binding(), Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
             Renewal::assess($query, $domain, $reply, $extend, $check, $expired, $now, $now->modify('+'.$this->priceMaxAgeSeconds.' seconds')));
     }
@@ -289,12 +292,15 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     public function reconcile(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
     {
         $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);
-        $domain = $this->readDomain($attempt->query->name, $context)->evidence()->domain;
+        $domain = ($attempt->query->action === Action::Renew
+            ? $this->readRenewalDomain($attempt->query->name, $context)
+            : $this->readDomain($attempt->query->name, $context))->evidence()->domain;
         if ($domain?->owned === true) {
             $expiry = $this->expiry($attempt->query->name, $context)->facts();
             $domain = new DomainSnapshot($this->binding(), $attempt->query->name, true,
                 ($expiry['provider_reference'] ?? null) === $domain->providerReference ? ($expiry['expiry'] ?? null) : null,
-                $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference);
+                $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference,
+                active: $domain->active, nameservers: $domain->nameservers);
         }
         $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
         if ($attempt->query->action === Action::Transfer && is_string($attempt->transferReference) && preg_match('/^[1-9][0-9]{0,19}$/D', $attempt->transferReference)) {
@@ -310,7 +316,45 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             $history = new History($this->client);
             $facts = $history->inspect($attempt, $context); $candidates = $facts->candidates; $complete = $facts->historyComplete;
         }
+        $proofFacts = new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete,
+            transfer: $transfer, transferReference: $attempt->transferReference);
+        if (ReconciliationEvidence::completion($attempt, $proofFacts, $context->now()) !== null
+            && ($attempt->query->action === Action::Register
+                || ($attempt->query->action === Action::Transfer && $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Completed))
+            && $domain?->owned === true) {
+            $reply = null;
+            try {
+                // The general read wrapper neutralizes RuntimeException; optional enrichment must expose unexpected failures.
+                $reply = $this->client->read(ReadCommand::Nameservers, $this->parts($attempt->query->name), $context);
+            } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) {
+                // Expected local admission failures cannot discard proven completion.
+            } catch (\DomainException $error) {
+                // RequestContext uses this exact base exception for a refused provider read.
+                if ($error::class !== \DomainException::class || $error->getMessage() !== 'Registrar read failed.') { throw $error; }
+            } catch (\RuntimeException $error) {
+                // Keep known request capacity failures neutral without hiding programming errors.
+                if ($error::class !== \RuntimeException::class || !in_array($error->getMessage(),
+                    ['Registrar request budget exhausted.', 'Registrar request deadline reached.'], true)) { throw $error; }
+            }
+            if ($reply !== null) {
+                $nameservers = self::readNameservers($reply, $context->now());
+                if ($nameservers) {
+                    $domain = new DomainSnapshot($domain->binding, $domain->name, $domain->owned, $domain->expiry,
+                        $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference,
+                        active: $domain->active, nameservers: $nameservers);
+                }
+            }
+        }
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown,
             SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference)));
+    }
+    private static function readNameservers(ProtocolResult $reply, \DateTimeImmutable $observedAt): ?NameserverEvidence
+    {
+        if ($reply->status !== 'success') { return null; }
+        $rows = $reply->value('dns');
+        if (is_string($rows)) { $rows = [$rows]; }
+        if (!is_array($rows) || !array_is_list($rows) || count(array_filter($rows, 'is_string')) !== count($rows)) { return null; }
+        try { return NameserverEvidence::observed($rows, 'enom_getdns', $observedAt); }
+        catch (\InvalidArgumentException) { return null; }
     }
 }

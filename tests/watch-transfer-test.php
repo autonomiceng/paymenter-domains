@@ -1,0 +1,120 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering. Offline watch comparison and real native cart.
+declare(strict_types=1);
+require __DIR__.'/Support/watch-notices.php';require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';require __DIR__.'/Support/storefront.php';
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\{Auth,DB,RateLimiter};
+use Paymenter\Extensions\Servers\Domains\Http\Controllers\{WatchTransferController,StorefrontController};
+use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
+use Paymenter\Extensions\Servers\Domains\Services\{WatchTransferPolicy,WatchTransfer,WatchTransferStrings,DomainSummaries,Storefront,CheckoutEligibility,TransferPrecheck,Rdap,CartAdmission};
+use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
+config(['settings.company_name'=>'Example Hosting']);
+config(['domains.watch_transfer.enabled'=>true]);$f=noticeFixture();extract($f);extract(commerceFixture(true,static fn()=>null));$clock=new FakeClock($now);$at=$now->getTimestamp();
+DB::table('domains_watch_names')->where('id',$id)->update(['registration'=>'external']);noticeRegistry($f,$at,45);
+$wire=(object)['status'=>['active'],'code'=>200,'during'=>null,'domainCalls'=>0,'failOn'=>null];
+$rdap=new Rdap(static function($url)use($wire,$at){if($wire->during){$run=$wire->during;$wire->during=null;$run();}if(!str_contains($url,'dns.json')){$wire->domainCalls++;}return ['status'=>str_contains($url,'dns.json')?200:($wire->domainCalls===$wire->failOn?503:$wire->code),'body'=>json_encode(str_contains($url,'dns.json')?['services'=>[[['com'],['https://rdap.example.com/']]]]:['objectClassName'=>'domain','ldhName'=>'example.com','status'=>$wire->status,'events'=>[['eventAction'=>'registration','eventDate'=>'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>gmdate('Y-m-d\TH:i:s\Z',$at+45*86400)]]])];});
+$eligibility=new CheckoutEligibility($bindings,$clock,new TransferPrecheck($rdap));$store=new Storefront($sellers,$prices,$native,$bindings,$eligibility,$clock);
+app()->instance(Storefront::class,$store);
+$selection=$sellers->selection('com','transfer',1,$now);App\Models\Server::find($selection->serverId)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
+require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';storefrontViews();$session=app('request')->session();
+$controller=new WatchTransferController(new WatchTransfer($store,new DomainSummaries,$native),$eligibility,$clock);app()->instance(StorefrontController::class,new StorefrontController($store));
+(new CartAdmission($native,$sellers,$eligibility,$clock))->boot();Auth::login($owner);
+$req=static function(array $data=[],?App\Models\User $actor=null)use($session,$owner){$r=Request::create('/domains/watches/1/transfer','POST',$data);$r->setLaravelSession($session);$r->setUserResolver(fn()=>$actor??$owner);return $r;};
+$post=static function(array $extra=[])use($req,$controller,$id){$r=$req();$key=FormKeys::issue($r,'watch-transfer:'.$id);return $controller->check($req(['_request_key'=>$key,'revision'=>'1',...$extra]),$id);};
+config(['domains.watch_transfer.enabled'=>false]);$offReads=$reads->calls;same(false,$controller->show($req(),$id)->getData()['canCheck'],'Default off GET');same(null,(new DomainSummaries)->one($owner,'watch',$id,$at)->urls['compareTransfer'],'Default off summary link');same('unavailable',$post()->getData()['state'],'Default off POST');same($offReads,$reads->calls,'Off gate makes no reads');config(['domains.watch_transfer.enabled'=>true]);commerceReject(fn()=>$eligibility->comparison('example.com',fn()=>true,fn()=>null));
+$before=$reads->calls;$help=$controller->show($req(),$id);same('help',$help->getData()['state'],'GET only helps');same($before,$reads->calls,'GET no provider calls');expect(!str_contains($help->render(),'Add transfer to cart'),'Unknown has no purchase action');
+try{$controller->show($req(actor:$other),$id);expect(false,'Foreign watch rejected');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}
+foreach([13=>false,14=>true,90=>true,91=>false]as$days=>$allowed){same($allowed,WatchTransferPolicy::window(gmdate('Y-m-d',$at+$days*86400),strtotime(gmdate('Y-m-d',$at).' UTC')),'Window '.$days);}
+same(false,WatchTransferPolicy::window('2027-02-30',$at),'Invalid date');
+$verified=['verified'=>true,'name'=>'example.com','currency'=>'USD','tax_basis'=>'exclusive','term'=>1,'observed'=>$at,'expires'=>$at+100,'minor'=>'2000'];
+same('$9.00',WatchTransferPolicy::saving($verified,'1100','example.com',$at),'Verified comparable saving');same(null,WatchTransferPolicy::saving(null,'1100','example.com',$at),'No source no savings');
+foreach(['currency'=>'EUR','tax_basis'=>'inclusive','term'=>2,'verified'=>false,'name'=>'foreign-placeholder.com','expires'=>$at,'observed'=>$at+1,'minor'=>'unknown']as$key=>$value){same(null,WatchTransferPolicy::saving([...$verified,$key=>$value],'1100','example.com',$at),'Reject incomparable '.$key);}
+$view=$post();same('eligible',$view->getData()['state'],'Strict evidence offers transfer');$html=$view->render();$norm=static fn($n)=>trim(preg_replace('/\s+/',' ',$n?->textContent??''));$dom=storefrontDom($html);
+same([0,1],[$dom->query('//input[@type="checkbox"]')->length,$dom->query('//form//input[@type="hidden" and @name="authority" and @value="1"]')->length],'Add to cart confirms authority without a checkbox');
+same(['Transfer example.com to Example Hosting','Domains / example.com','Price'],[$norm($dom->query('//h1')->item(0)),$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),$norm($dom->query('//h2')->item(0))],'Title, breadcrumb and Price heading');
+same(['Transfer (adds 1 year)','Renewal price'],array_map($norm,iterator_to_array($dom->query('//dt'))),'Price facts');
+expect(str_contains($html,'Plus tax where applicable.')&&str_contains($html,'You’ll enter the auth code after checkout.'),'Tax note and auth code hint');
+foreach(['Compare transfer price','Current transfer offer','Contact support','Check the current transfer price','Final availability','Domain details'] as $old){expect(!str_contains($html,$old),'Old transfer copy removed: '.$old);}
+$state=static fn(string $state,bool $canCheck=true)=>storefrontDom(view('domains::watch-transfer',[...$view->getData(),'state'=>$state,'canCheck'=>$canCheck])->render());
+$changed=$state('changed');same(['We need to check this transfer again.','Check again',route('domains.watch.transfer',$id)],[$norm($changed->query('//div[contains(@class,"domains-notice")]')->item(0)),$norm($changed->query('//a[contains(@class,"domains-btn")]')->item(0)),$changed->query('//a[contains(@class,"domains-btn")]/@href')->item(0)?->value],'Changed price: one line and Check again');
+same(['We can’t add this transfer. Try again later. If it keeps happening, contact support.',0],[$norm($state('unavailable')->query('//div[contains(@class,"domains-notice")]')->item(0)),$state('unavailable')->query('//a[contains(@class,"domains-btn")]')->length],'Unavailable: next steps, no purchase action');
+$help=$state('help');same([['Check price'],0],[array_map($norm,iterator_to_array($help->query('//form//button'))),$help->query('//div[contains(concat(" ",@class," ")," domains ")]/p')->length],'Unconfirmed: only a Check price button');
+expect(!str_contains($html,'less than your verified'),'No invented savings');
+foreach(['product_id','account_fingerprint','name="epp"','name="domain"']as$secret){expect(!str_contains($html,$secret),'No client authority '.$secret);}
+$before=$reads->calls;$missing=$post(['step'=>'confirm']);expect($missing instanceof Illuminate\Contracts\View\View,'Authority missing cannot reach cart');same('eligible',$missing->getData()['state'],'Authority required');same(1,storefrontDom($missing->render())->query('//form//input[@name="authority"][@value="1"]')->length,'Missing authority re-offers the confirm form');same($before,$reads->calls,'Missing authority no reads');
+RateLimiter::clear('domains.watch-transfer:'.$owner->id);
+foreach([['redemptionPeriod'],['pendingDelete'],['clientTransferProhibited'],['futureUnknownStatus']]as$status){$wire->status=$status;same('unavailable',$post()->getData()['state'],'Status fails closed');}$wire->status=['active'];
+$wire->code=503;$failed=$post();same('unavailable',$failed->getData()['state'],'Unknown RDAP no purchase');expect(str_contains($failed->render(),'We can’t add this transfer. Try again later. If it keeps happening, contact support.'),'Failed provider check offers retry and support');$wire->code=200;$reads->premium=true;same('unavailable',$post()->getData()['state'],'Premium refused');$reads->premium=false;
+RateLimiter::clear('domains.watch-transfer:'.$owner->id);$post();$wire->during=fn()=>DB::table('domains_watch_names')->where('id',$id)->update(['revision'=>2]);
+same('changed',$post(['step'=>'confirm','authority'=>'1'])->getData()['state'],'Revision race during provider read');DB::table('domains_watch_names')->where('id',$id)->update(['revision'=>1]);
+RateLimiter::clear('domains.watch-transfer:'.$owner->id);$post();$wire->failOn=$wire->domainCalls+2;$refused=$post(['step'=>'confirm','authority'=>'1']);same(0,App\Models\CartItem::count(),'Unknown final cart read cannot add a purchase');same('changed',$refused->getData()['state'],'Final read failure shows changed');expect(str_contains($refused->render(),'We need to check this transfer again.'),'Failed final read requests a new review');$wire->failOn=null;
+RateLimiter::clear('domains.watch-transfer:'.$owner->id);$post();
+$review=$session->get('domains.watch-transfer.'.$id);$session->put('domains.watch-transfer.'.$id,[...$review,'expires'=>$at]);
+$expired=$post(['step'=>'confirm','authority'=>'1']);same('changed',$expired->getData()['state'],'Expired review requests another review');expect(str_contains($expired->render(),'We need to check this transfer again.'),'Expired review does not invent a price change');
+RateLimiter::clear('domains.watch-transfer:'.$owner->id);for($attempt=0;$attempt<10;$attempt++){RateLimiter::hit('domains.watch-transfer:'.$owner->id,60);}
+$limited=$post();same('unavailable',$limited->getData()['state'],'Rate limit refuses purchase');expect(str_contains($limited->render(),'We can’t add this transfer. Try again later. If it keeps happening, contact support.'),'Rate limit offers retry and support');
+RateLimiter::clear('domains.watch-transfer:'.$owner->id);$wire->during=static function(){throw new \RuntimeException('Synthetic timeout');};
+$timeout=$post();same('unavailable',$timeout->getData()['state'],'Transport timeout refuses purchase');expect(str_contains($timeout->render(),'We can’t add this transfer. Try again later. If it keeps happening, contact support.'),'Timeout offers retry and support');
+foreach ([['Example Hosting','Ignored'],[null,' (local) ']] as [$company,$appName]) {
+    config(['settings.company_name'=>$company,'app.name'=>$appName]);
+    same('We can’t add this transfer. Try again later. If it keeps happening, contact support.',WatchTransferStrings::all()['watch.transfer_unavailable'],'Refusal message does not require a company name');
+    same('We need to check this transfer again.',WatchTransferStrings::all()['watch.transfer_changed'],'Review message does not require a company name');
+}
+config(['settings.company_name'=>'Example Hosting']);
+// A reservation appearing during the last unlocked native-cart read still refuses this handoff.
+RateLimiter::clear('domains.watch-transfer:'.$owner->id);$post();$reservation=null;
+$wire->during=function()use($wire,&$reservation,$selection,$other){$wire->during=function()use(&$reservation,$selection,$other){$reservation=DB::table('domains_domains')->insertGetId(['service_id'=>999999,'user_id'=>$other->id,'server_id'=>$selection->serverId,'registrar_key'=>$selection->registrar,'account_fingerprint'=>$selection->fingerprint,'domain'=>'example.com','reservation_name'=>'example.com','sld'=>'example','tld'=>'com','status'=>'pending']);};};
+$post(['step'=>'confirm','authority'=>'1']);expect($reservation!==null,'Final read reached reservation race');same(0,App\Models\CartItem::count(),'Concurrent reservation cannot bypass admission');DB::table('domains_domains')->where('id',$reservation)->delete();$wire->during=null;
+$post();$response=$post(['step'=>'confirm','authority'=>'1','domain'=>'forged.example.net','action'=>'register','product_id'=>'999','epp'=>'private-input']);same(route('cart'),$response->getTargetUrl(),'Normal cart adapter');
+$item=App\Models\CartItem::sole();same('example.com',$item->checkout_config['domain'],'Only canonical watch name');expect(!str_contains(json_encode($item->checkout_config),'private-input'),'Transfer code discarded');same('transfer',$native->mapping($item->product,$item->plan)['action'],'Transfer intent only');
+app('request')->cookies->set('cart',$item->cart->ulid);
+$assertInCart=static function($view,string $context):void {
+    same('in_cart',$view->getData()['state'],$context);$html=$view->render();$dom=storefrontDom($html);
+    expect(str_contains($html,WatchTransferStrings::all()['watch.transfer_in_cart']),'Already-in-cart notice');
+    same(1,$dom->query('//a[@href="'.route('cart').'" and normalize-space(.)="Go to cart"]')->length,'Native cart link');
+    expect(!str_contains($html,WatchTransferStrings::all()['watch.transfer_unavailable']),'No false unavailable notice');
+    same(0,$dom->query('//form')->length,'In-cart page offers no duplicate or check form');
+};
+$before=$reads->calls;$assertInCart($controller->show($req(),$id),'GET detects existing transfer');same($before,$reads->calls,'In-cart GET has no provider reads');
+RateLimiter::clear('domains.watch-transfer:'.$owner->id);$assertInCart($post(['step'=>'confirm','authority'=>'1']),'Stale confirmation detects existing transfer');same(1,App\Models\CartItem::count(),'Existing cart line retained');
+$registration=$store->offer('com','register',1);
+DB::table('cart_items')->where('id',$item->id)->update(['product_id'=>$registration['product']->id,'plan_id'=>$registration['plan']->id]);
+same('unavailable',$controller->show($req(),$id)->getData()['state'],'Matching registration is not a transfer');
+$before=$reads->calls;same('unavailable',$post(['step'=>'confirm','authority'=>'1'])->getData()['state'],'Registration conflict retains unavailable');same($before,$reads->calls,'Registration conflict makes no provider reads');same(1,App\Models\CartItem::count(),'Registration conflict adds no duplicate');
+DB::table('cart_items')->where('id',$item->id)->update(['product_id'=>$item->product_id,'plan_id'=>$item->plan_id]);
+// Matching names in another customer cart must never affect this customer's page, even with its cookie.
+DB::table('carts')->where('id',$item->cart_id)->update(['user_id'=>$other->id]);
+same('help',$controller->show($req(),$id)->getData()['state'],'Foreign cookie cannot reveal another cart');
+app('request')->cookies->remove('cart');same('help',$controller->show($req(),$id)->getData()['state'],'No cookie, no cart lookup');
+DB::table('carts')->where('id',$item->cart_id)->update(['user_id'=>$owner->id]);
+// A transfer appearing after the first page/check must still be caught by native cart admission.
+$post();$wire->during=fn()=>app('request')->cookies->set('cart',$item->cart->ulid);
+$assertInCart($post(['step'=>'confirm','authority'=>'1']),'Handoff exception detects transfer added during reads');same(1,App\Models\CartItem::count(),'Stale handoff adds no duplicate');
+// A matching line arriving during the final native-cart read must also stop this handoff.
+DB::table('cart_items')->where('id',$item->id)->delete();$post();$inserted=false;
+$wire->during=function()use($wire,$item,&$inserted){$wire->during=function()use($item,&$inserted){DB::table('cart_items')->insert($item->getAttributes());$inserted=true;};};
+$assertInCart($post(['step'=>'confirm','authority'=>'1']),'Final cart read detects concurrent transfer');expect($inserted,'Final-read insertion reached');same(1,App\Models\CartItem::count(),'Final read adds no duplicate');
+app('request')->cookies->remove('cart');
+require_once dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
+$watchPage=static fn($summary)=>view('domains::watch-notices',['summary'=>$summary,'name'=>'example.com','kind'=>'watch','id'=>$id,'editable'=>false,'preferences'=>['account'=>['enabled'=>true,'revision'=>1],'target'=>['enabled'=>true,'revision'=>1]],'notices'=>[],'portal'=>[],'key'=>null])->render();
+$summary=(new DomainSummaries)->one($owner,'watch',$id,$at);
+same(1,storefrontDom($watchPage($summary))->query('//a[@href="'.$summary->urls['compareTransfer'].'" and normalize-space(.)="Transfer to Example Hosting"]')->length,'Hosting domain page offers Transfer to Example Hosting');
+// Watch entry points follow the public transfer offer across repeated publication changes.
+foreach([false,true,false,true] as $enabled){
+    $tlds[0]->update(['transfer_enabled'=>$enabled]);$native->publish($tlds[0]->id,$clock->now());
+    same($enabled,$store->endings()[0]['transfer']!==null,'Public transfer offer follows the TLD');
+    $summary=(new DomainSummaries)->one($owner,'watch',$id,$at);
+    same($enabled,$summary->urls['compareTransfer']!==null,'Watch transfer entry follows the public offer');
+    same($enabled,str_contains($watchPage($summary),'Transfer to Example Hosting'),'Watch page omits unavailable transfers');
+    $compact=view('domains::partials.summary',['summary'=>$summary])->render();
+    same($enabled,str_contains($compact,'Compare transfer price'),'Hosting summary omits unavailable transfers');
+}
+// A retained native stock value can predate the current product edit guard.
+$product=$native->product($tlds[0],'transfer');$stock=$product->stock;DB::table('products')->where('id',$product->id)->update(['stock'=>0]);
+\Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueCache::invalidateAfterCommit();
+same(null,$store->endings()[0]['transfer'],'Out-of-stock public transfer is not offered');
+same(null,(new DomainSummaries)->one($owner,'watch',$id,$at)->urls['compareTransfer'],'Out-of-stock watch transfer has no entry');
+DB::table('products')->where('id',$product->id)->update(['stock'=>$stock]);
+config(['domains.watch_transfer.enabled'=>false]);$summary=(new DomainSummaries)->one($owner,'watch',$id,$at);
+expect(!str_contains($watchPage($summary),'Transfer to Example Hosting'),'Hosting domain page without an offer omits it');
+$nativeSuccessful=true;echo "Watch comparison: pure gates, no invented savings, owner/revision races, strict reads and neutral native cart passed.\n";

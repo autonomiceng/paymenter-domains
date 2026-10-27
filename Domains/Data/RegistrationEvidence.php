@@ -7,7 +7,7 @@ final readonly class RegistrationEvidence
 {
     public array $corrections;
     public function __construct(public Query $query, public ?string $orderReference, public ?DateEvidence $responseExpiry,
-        public ?DomainSnapshot $readback, array $corrections)
+        public ?DomainSnapshot $readback, array $corrections, public ?NameserverEvidence $nameservers = null)
     {
         if ($query->action !== Action::Register || count($corrections) > 4
             || array_diff($corrections, ['nameservers', 'contacts', 'auto_renew', 'privacy'])

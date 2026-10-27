@@ -14,7 +14,7 @@ same('domains-enom-s'.$enom->server_id.'-com-registration', $registration->slug,
 same('domains-namesilo-s'.$namesilo->server_id.'-com-registration', $native->product($namesilo, 'register')->slug, 'Separate registrar product');
 expect((bool) $registration->hidden && $registration->stock === null, 'Hidden acquisition remains directly orderable');
 same('separated', $registration->allow_quantity, 'Distinct domains share a product as separate lines');
-same(4, $registration->settings()->count(), 'Four neutral markers');
+same(['domains_action', 'domains_activation_information_initialized', 'domains_catalogue', 'domains_registrar', 'domains_tld_id'], $registration->settings()->orderBy('key')->pluck('key')->all(), 'Catalogue identity and once-only activation information markers');
 same([1, 3], $registration->plans()->orderBy('billing_period')->pluck('billing_period')->all(), 'Exact verified registration terms only');
 same([1], $native->product($namesilo, 'register')->plans()->pluck('billing_period')->all(), 'Annual-only provider never extrapolates');
 same('23.40', number_format((float) $registration->plans()->where('billing_period', 3)->sole()->prices()->sole()->price, 2, '.', ''), 'Native term-total retail');
@@ -30,13 +30,13 @@ same($enom->server_id, $registration->fresh()->server_id, 'Old product server ne
 commerceReject(static fn () => $native->mapping($registration, $native->annualPlan($transfer)));
 commerceReject(static fn () => DB::transaction(static fn () => $native->publish($enom->id, $now)));
 $enom->update(['enabled' => false]); $native->publish($enom->id, $now);
-expect($registration->fresh()->stock === 0, 'Disabled TLD withdraws native acquisition');
+expect($registration->fresh()->stock === null, 'Disabled TLD keeps unlimited stock');
 same(0, $registration->plans()->where('billing_period', 3)->sole()->prices()->count(), 'Withdrawn term price removed');
 same($annual->id, $native->annualPlan($registration)->id, 'Annual holding identity survives withdrawal');
 same(103, $registration->plans()->where('billing_period', 3)->sole()->sort, 'Withdrawn plan sorts after priced plans');
 $enom->update(['enabled' => true]); $native->publish($enom->id, $now);
 $native->publish($enom->id, $now->modify('+2 days'));
-expect($registration->fresh()->stock === 0, 'Stale price disables native sale');
+expect($registration->fresh()->stock === null, 'Stale prices keep unlimited stock');
 $native->publish($enom->id, $now);
 $registration->settings()->where('key', 'domains_registrar')->update(['value' => 'namesilo']);
 commerceReject(static fn () => $native->mapping($registration));

@@ -8,6 +8,10 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 final class ObligationAlerts
 {
     public const LABELS=[
+        'transfer_watch_relink'=>'External watch needs relinking after transfer · review source history and notices',
+        'acquisition_retirement_review'=>'Unpaid order needs review · automatic retirement was refused; the name stays reserved',
+        'acquisition_late_money'=>'Paid after order closed · check the invoice and its payments; nothing is sent to the registrar',
+        'native_identity_missing'=>'Customer, order or service missing. The domain and its name stay reserved until a later release adds a resolution step. Do not restore deleted records manually.',
         'unknown_expiry'=>'Expiry unknown · confirm the saved expiry before contacting the customer',
         'unknown_price'=>'Renewal price unknown · review pricing before contacting the customer',
         'unknown_cost'=>'Renewal cost unknown · review the holding account price',
@@ -35,7 +39,7 @@ final class ObligationAlerts
         if(!isset(self::LABELS[$code])){throw new \InvalidArgumentException('Unknown obligation alert.');}
         $key=self::key($d,$code,$operationId,$identity);
         $q=DB::table('domains_obligation_alerts')->where('alert_key',$key);$old=(clone $q)->first();
-        if($old){$q->update(['last_seen'=>$now,'resolved_at'=>null]);}
+        if($old){$q->update(['last_seen'=>$now,...($code==='acquisition_late_money'?[]:['resolved_at'=>null])]);}
         else{DB::table('domains_obligation_alerts')->insert(['alert_key'=>$key,'domain_id'=>$d->id,'generation'=>$d->authority_generation,'code'=>$code,
             'operation_id'=>$operationId,'first_seen'=>$now,'last_seen'=>$now]);}
         return $key;
@@ -61,14 +65,14 @@ final class ObligationAlerts
             $phase=isset($follow['operation_key'])&&($follow['generation']??null)===$d->authority_generation?hash('sha256',$follow['operation_key']):'holding';
             if(DB::table('domains_observation_work')->where('domain_id',$d->id)->where('generation',$d->authority_generation)
                 ->where('account_fingerprint',$d->account_fingerprint)->where('phase',$phase)
-                ->whereIn('safe_code',['budget_exhausted','read_unavailable'])->exists()){$keys[]=self::record($d,'observation_review',$now);}
+                ->whereIn('safe_code',['budget_exhausted','read_unavailable',...ReadFailure::CODES])->exists()){$keys[]=self::record($d,'observation_review',$now);}
         }
         return $keys;
     }
     /** Resolve only after a successful, complete inspection, retaining all historical rows. */
     public static function finish(Domain $d,array $active,int $now):void
     {
-        $q=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->whereNotIn('code',['template_failed','reminder_failed']);
+        $q=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->whereNotIn('code',['template_failed','reminder_failed','acquisition_retirement_review','acquisition_late_money','transfer_watch_relink']);
         if($active){$q->whereNotIn('alert_key',$active);}$q->update(['resolved_at'=>$now]);
     }
 }

@@ -7,15 +7,15 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEv
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, ResponseParser};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\TransferState;
 $b=new AccountBinding('enom',1,Environment::Test,'account-enom'); $now=new DateTimeImmutable('2026-10-18T12:06:00Z');
-$a=new AttemptEvidence($b,new Query('x.com',Action::Transfer,1),'transfer:1',1,ExecutionRecord::Recorded,SendState::Sent,$now->modify('-6 minutes'),$now->modify('-1 minute'),seal:DispatchSeal::Sealed,transferReference:'7001');
-$parse=static function($h,$d,$id='7001',$name='x',$errors='0',$extra=''){
+$a=new AttemptEvidence($b,new Query('example.com',Action::Transfer,1),'transfer:1',1,ExecutionRecord::Recorded,SendState::Sent,$now->modify('-6 minutes'),$now->modify('-1 minute'),seal:DispatchSeal::Sealed,transferReference:'7001');
+$parse=static function($h,$d,$id='7001',$name='example',$errors='0',$extra=''){
     return (new ResponseParser)->parse(ReadCommand::Transfer,'<interface-response><Command>TP_GetOrder</Command><ErrCount>'.$errors.'</ErrCount><Done>true</Done><TransferOrder><TransferOrderID>'.$id.'</TransferOrderID><StatusID>'.$h.'</StatusID><TransferOrderDetail><SLD>'.$name.'</SLD><TLD>com</TLD><StatusID>'.$d.'</StatusID></TransferOrderDetail>'.$extra.'</TransferOrder></interface-response>');
 };
 same(TransferStatus::Completed,TransferState::read($a,$parse('3','5')),'Exact paired completion');
 foreach (['2','4','6','7','8','15','16','17','18','19','20','21','22','23','24','25','26','27','30','31','32','33','34','36','37','45','101'] as $d) { same(TransferStatus::Rejected,TransferState::read($a,$parse('2',$d)),'Terminal failed detail'); }
 foreach (['0','1','4','5'] as $h) { foreach (['0','1','3','9','10','11','12','13','14','28','29','35','100'] as $d) { same(TransferStatus::Pending,TransferState::read($a,$parse($h,$d)),'Pending pair including draft/100'); } }
 foreach ([['3','32'],['2','5'],['1','32'],['3','100'],['999','5'],['3','999']] as [$h,$d]) { same(TransferStatus::Unknown,TransferState::read($a,$parse($h,$d)),'Contradictory/unknown pair unresolved'); }
-foreach ([$parse('3','5','7002'),$parse('3','5','7001','other'),$parse('3','5','7001','x','1'),$parse('3','5','7001','x','0','<TransferOrderDetail><SLD>x</SLD><TLD>com</TLD><StatusID>5</StatusID></TransferOrderDetail>')] as $reply) { same(TransferStatus::Unknown,TransferState::read($a,$reply),'Wrong ID/name/error/multiple unresolved'); }
+foreach ([$parse('3','5','7002'),$parse('3','5','7001','other'),$parse('3','5','7001','example','1'),$parse('3','5','7001','example','0','<TransferOrderDetail><SLD>example</SLD><TLD>com</TLD><StatusID>5</StatusID></TransferOrderDetail>')] as $reply) { same(TransferStatus::Unknown,TransferState::read($a,$reply),'Wrong ID/name/error/multiple unresolved'); }
 // NameSilo vendor facts use exact strings. Owned Active is never transfer status.
 $state=(object)['status'=>'Pending at Registry'];
 $wire=new class($state) implements Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\DeadlineTransport {
@@ -29,7 +29,7 @@ $wire=new class($state) implements Paymenter\Extensions\Servers\Domains\Registra
 };
 $b=new AccountBinding('namesilo',2,Environment::Test,'account-namesilo');
 $driver=new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client($b,'synthetic',$wire));
-$a=new AttemptEvidence($b,new Query('x.com',Action::Transfer,1),'transfer:2',1,ExecutionRecord::Recorded,SendState::Sent,$now->modify('-6 minutes'),$now->modify('-1 minute'),seal:DispatchSeal::Sealed);
+$a=new AttemptEvidence($b,new Query('example.com',Action::Transfer,1),'transfer:2',1,ExecutionRecord::Recorded,SendState::Sent,$now->modify('-6 minutes'),$now->modify('-1 minute'),seal:DispatchSeal::Sealed);
 // NameSilo transfer status list (account popup, captured 2026-10-18); status strings only.
 $official=file(__DIR__.'/fixtures/namesilo-transfer-statuses.txt',FILE_IGNORE_NEW_LINES);
 same(28,count($official),'Exactly 28 official NameSilo statuses');

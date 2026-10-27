@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
+use Paymenter\Extensions\Servers\Domains\Services\BalanceReads;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, Capabilities, Capability, ManagementRequest, ManagementResult, PrivacyMode, RequestContext, Support};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ManagementCommand as M, ProtocolResult, ReadCommand as R, ResponseParser};
 final class Management extends ManagementProtocol
@@ -22,7 +23,18 @@ final class Management extends ManagementProtocol
     private function parts(ManagementRequest $r): array
     { $p=CanonicalName::parse($r->name,[substr($r->name,strpos($r->name,'.')+1)]); return ['SLD'=>$p['sld'],'TLD'=>$p['tld']]; }
     private function get(ManagementRequest $r, RequestContext $c, R $cmd, ?array $p=null): ProtocolResult
-    { return (new ResponseParser)->parse($cmd,$this->read($r,$c,$cmd->value,$p??$this->parts($r))); }
+    {
+        $remaining=$c->budget->remaining();
+        try { $reply=(new ResponseParser)->parse($cmd,$this->read($r,$c,$cmd->value,$p??$this->parts($r))); }
+        catch (\Throwable $e) {
+            if($cmd===R::Balance){BalanceReads::recordRead($this->binding,$c,$remaining,'preflight',error:$e);}
+            throw $e;
+        }
+        if($cmd===R::Balance){
+            BalanceReads::recordRead($this->binding,$c,$remaining,'preflight',Balance::read($reply));
+        }
+        return $reply;
+    }
     private function owned(ManagementRequest $r, RequestContext $c): void
     {
         $v=$this->get($r,$c,R::Info); $d=$v->value('getdomaininfo.domainname'); $s=$v->value('getdomaininfo.status');
@@ -43,15 +55,15 @@ final class Management extends ManagementProtocol
             try {
                 $v=$this->get($r,$c,$command); $c->requireReadSuccess($v->status==='success');
                 $out[$kind]=['state'=>'complete','records'=>ManagementRead::records($v,$kind)];
-            } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $e) { throw $e; }
-            catch (\Throwable) { return $out; } // Stop at first failure; never retry a failed wire.
+            } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $e) { throw $e; }
+            catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); return $out; } // Stop at first failure; never retry a failed wire.
         }
         foreach (array_slice($knownGlue,0,13,true) as $host=>$prior) {
             try {
                 $ip=ManagementRead::glue($this->get($r,$c,R::HostStatus,['CheckNSName'=>$host]),$host);
                 if ($ip!==null) { \Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::publicIp($ip); $out['glue']['records'][$host]=$ip; } else { unset($out['glue']['records'][$host]); }
-            } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $e) { throw $e; }
-            catch (\Throwable) { $out['glue']['read_failed']=true; break; } // Retain partial history, never infer absence.
+            } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $e) { throw $e; }
+            catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); $out['glue']['read_failed']=true; break; } // Retain partial history, never infer absence.
         }
         $hosts=$out['glue']['records'];
         if (count($hosts)>13) { $out['glue']['records']=array_slice($hosts,13,null,true)+array_slice($hosts,0,13,true); }
@@ -75,9 +87,8 @@ final class Management extends ManagementProtocol
             if($s['allowed']!==true||$s['exists']===null||($a==='privacy_purchase'?$s['exists']!==false:$s['exists']!==true)){throw new \DomainException('Privacy precondition unavailable.');}
             if(in_array($a,['privacy_purchase','privacy_renew'],true)) {
                 if((!$billing&&$s['cost']===null)||($a==='privacy_renew'&&(!$s['expiry']||isset($p['privacy_terms'])&&$p['privacy_terms']['base']!==$s['expiry']))){throw new \DomainException('Privacy cost or expiry unknown.');}
-                if(!$billing){$balance=$this->get($r,$c,R::Balance,[])->value('availablebalance');
-                if(!is_string($balance)||!preg_match('/^(?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\.[0-9]{1,2})?$/D',$balance)
-                    || \Paymenter\Extensions\Servers\Domains\Services\WriteMoney::compare(str_replace(',','',$balance).(str_contains($balance,'.')?'':'.00'),$s['cost'])<0){throw new \DomainException('Privacy balance unknown or insufficient.');}}
+                if(!$billing){$balance=Balance::read($this->get($r,$c,R::Balance,[]));
+                    if($balance===null||\Paymenter\Extensions\Servers\Domains\Services\WriteMoney::compare($balance->amount,$s['cost'])<0){throw new \DomainException('Privacy balance unknown or insufficient.');}}
                 $base=$a==='privacy_renew'?$s['expiry']:$c->now()->format('Y-m-d');
                 $p['privacy_terms']=['base'=>$a==='privacy_renew'?$base:null,'expected'=>\Carbon\CarbonImmutable::parse($base)->addYearNoOverflow()->format('Y-m-d'),'cost'=>$s['cost']];
             }

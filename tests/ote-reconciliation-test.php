@@ -14,15 +14,23 @@ $header = ['order_number' => '901', 'order_date' => '2026-10-19 00:38:49', 'meth
 $item = ['description' => 'contract-ote-123456789abc.com - registration', 'years_qty' => '1', 'price' => '8.95', 'subtotal' => '8.95', 'status' => 'Processed'];
 $detail = $header + ['order_details' => [$item]];
 expect(ReconciliationProbe::consistent($header, $detail, $from, $to), 'Consistent synthetic registration is diagnostic evidence');
-$refuse = static function ($fn): void {
-    try { $fn(); } catch (Throwable) { return; } throw new RuntimeException('Expected refusal');
+$refuse = static function (callable $fn, string $expected): void {
+    try { $fn(); } catch (Throwable $error) {
+        same(RuntimeException::class, $error::class, 'Reconciliation refusal class');
+        same($expected, $error->getMessage(), 'Reconciliation refusal must name its guard'); return;
+    }
+    throw new RuntimeException('Expected refusal: '.$expected);
 };
 foreach ([[], ['checks' => ['purchase_unresolved' => false]] + $prior,
     ['requests' => array_merge($prior['requests'], $prior['requests'])] + $prior,
     ['requests' => [['command' => 'renewDomain', 'utc' => $prior['requests'][0]['utc']]]] + $prior,
     ['requests' => [['command' => 'registerDomain', 'utc' => '2026-02-30T00:38:49+00:00']]] + $prior,
-    ['requests' => [['command' => 'registerDomain', 'utc' => '2026-10-19T00:38:49-07:00']]] + $prior] as $bad) {
-    $refuse(fn () => ReconciliationProbe::window($bad));
+    ['requests' => [['command' => 'registerDomain', 'utc' => '2026-10-19T00:38:49-07:00']]] + $prior] as $index => $bad) {
+    $expected = match ($index) {
+        0, 1 => 'Unresolved attempt receipt required.', 2, 3 => 'Single original registration required.',
+        4 => 'Invalid original timestamp.', 5 => 'Original UTC timestamp required.',
+    };
+    $refuse(fn () => ReconciliationProbe::window($bad), $expected);
 }
 foreach (['2026-10-19 00:37:59', '2026-10-19 00:40:00', '2026-02-30 00:38:49', 'bad'] as $stamp) {
     $h = array_replace($header, ['order_date' => $stamp]); $d = array_replace($detail, ['order_date' => $stamp]);
@@ -31,14 +39,14 @@ foreach (['2026-10-19 00:37:59', '2026-10-19 00:40:00', '2026-02-30 00:38:49', '
 foreach (['total' => '8.96', 'order_number' => '902', 'order_date' => '2026-10-19 00:39:00'] as $field => $value) {
     same(false, ReconciliationProbe::consistent($header, array_replace($detail, [$field => $value]), $from, $to), 'Header and detail must agree');
 }
-foreach ([['description' => 'unrelated.com - registration'], ['description' => 'contract-ote-123456789abc.com - renewal'],
+foreach ([['description' => 'unrelated-placeholder.com - registration'], ['description' => 'contract-ote-123456789abc.com - renewal'],
     ['description' => 'contract-ote-123456789abc.org - registration'], ['years_qty' => '2'], ['status' => 'Credited'],
     ['price' => '8.96'], ['subtotal' => '8.96'], ['subtotal' => '0.00'], ['subtotal' => false], ['subtotal' => '8.950'],
     ['credited_amount' => null], ['credited_date' => null]] as $bad) {
     same(false, ReconciliationProbe::consistent($header, array_replace($detail, ['order_details' => [array_replace($item, $bad)]]), $from, $to), 'Malformed, unrelated or contradictory order excluded');
 }
 same(false, ReconciliationProbe::consistent($header, array_replace($detail, ['order_details' => [$item, $item]]), $from, $to), 'Multiple items never count as one purchase');
-$probe = static function (array $headers, array $details, int $cap = 15, bool $failedOrders = false, ?array $inventory = null, ?string $inventoryFailure = null) use ($prior): array {
+$probe = static function (array $headers, array $details, int $cap = 15, bool $failedOrders = false, ?array $inventory = null, ?string $inventoryFailure = null) use ($prior, $refuse): array {
     $output = sys_get_temp_dir().'/ote-reconciliation-'.bin2hex(random_bytes(6)); mkdir($output, 0700);
     try {
         $commands = [];
@@ -58,11 +66,8 @@ $probe = static function (array $headers, array $details, int $cap = 15, bool $f
                 'reply' => ['code' => $failedOrders && $command === 'listOrders' ? 400 : 300, 'detail' => 'synthetic'] + $reply], JSON_PRESERVE_ZERO_FRACTION));
         };
         $wire = new GuardedTransport('offline-secret-token', false, $output, $fake, static fn () => 21, $cap, true);
-        $refuseScope = static function ($fn): void {
-            try { $fn(); } catch (Throwable) { return; } throw new RuntimeException('Missing dedicated-scope refusal');
-        };
-        $refuseScope(fn () => new GuardedTransport('offline-secret-token', true, $output, $fake, static fn () => 21, 15, true));
-        $refuseScope(fn () => new GuardedTransport('offline-secret-token', false, $output, $fake, static fn () => 21, 16, true));
+        $refuse(fn () => new GuardedTransport('offline-secret-token', true, $output, $fake, static fn () => 21, 15, true), 'OTE reconciliation scope refused.');
+        $refuse(fn () => new GuardedTransport('offline-secret-token', false, $output, $fake, static fn () => 21, 16, true), 'OTE reconciliation scope refused.');
         $nameBefore = $wire->domain;
         $read = static function ($request) use ($wire) {
             return (new ResponseParser)->parse($wire->raw('https://ote.namesilo.com/apibatch', $request->command, $request->parameters()), $request, 'offline-secret-token');
@@ -72,7 +77,10 @@ $probe = static function (array $headers, array $details, int $cap = 15, bool $f
         same(true, $wire->receipt['checks']['purchase_unresolved'] ?? null, 'Original uncertainty always retained');
         if ($inventoryFailure !== null) {
             same(true, $wire->receipt['checks']['aborted'] ?? null, 'Inventory failure recorded');
-            same(null, $wire->receipt['checks']['completed'] ?? null, 'Aborted probe never marked completed');
+            expect(!array_key_exists('completed',$wire->receipt['checks']), 'Aborted probe has no completion field');
+        }
+        if ($inventoryFailure===null && $wire->receipt['mismatches'] !== []) {
+            same(false, $wire->receipt['checks']['completed'] ?? null, 'Mismatched read shapes cannot complete diagnostics');
         }
         same($nameBefore, $wire->domain, 'Inventory/order names never replace original transport scope');
         same('ambiguous', $facts['category'], 'Missing original identity/amount never resolves');
@@ -80,19 +88,18 @@ $probe = static function (array $headers, array $details, int $cap = 15, bool $f
         same(false, $facts['history_complete'], 'Observation never accepts history');
         same(false, $facts['original_amount_retained'], 'Observed order amount cannot become original authorization');
         foreach (['registerDomain', 'renewDomain', 'contactAdd', 'getAccountBalance', 'getPrices', 'checkRegisterAvailability', 'contactList'] as $command) {
-            $refused = false;
-            try { $wire->raw('https://ote.namesilo.com/apibatch', $command, []); } catch (Throwable) { $refused = true; }
-            expect($refused, 'Dedicated reconciliation transport refuses other commands');
+            $refuse(fn () => $wire->raw('https://ote.namesilo.com/apibatch', $command, []), 'OTE reconciliation reads only.');
         }
         $wire->receipt['reconciliation'] = $facts; $wire->save();
         $stored = file_get_contents($output.'/receipt.json');
-        foreach (['contract-ote-123456789abc.com', 'unrelated.com', '8.95', 'offline-secret-token', '901'] as $value) {
+        foreach (['contract-ote-123456789abc.com', 'unrelated-placeholder.com', '8.95', 'offline-secret-token', '901'] as $value) {
             expect(!str_contains($stored, $value), 'Scalar account/financial values omitted');
         }
-        return [$facts, $commands];
+        return [$facts, $commands, $wire->receipt['checks']];
     } finally { @unlink($output.'/receipt.json'); rmdir($output); }
 };
-[$facts, $commands] = $probe([], []);
+[$facts, $commands, $checks] = $probe([], []);
+same(true,$checks['completed']??null,'Known clean empty inventory completes diagnostics');
 same(0, $facts['consistent_registration_rows'], 'No match remains ambiguous');
 same(['listOrders', 'listDomains'], $commands, 'No speculative domain read or extra probe');
 same(true, $facts['inventory_empty'], 'Well-formed empty inventory is observed, never definitive absence');
@@ -109,7 +116,9 @@ same(['listOrders', 'listDomains'], $commands, 'Wrong window not followed');
 same(3, count($commands), 'Budget bounds detail exploration without retries');
 [$facts] = $probe([], [], failedOrders: true);
 same(false, $facts['orders_read_success'], 'Unknown history never means absent purchase');
-[$facts] = $probe([], [], inventory: ['domains' => null, 'pager' => ['page' => 1, 'pageSize' => 10]]);
+[$facts,,$checks] = $probe([], [], inventory: ['domains' => null, 'pager' => ['page' => 1, 'pageSize' => 10]]);
+same(false,$checks['completed']??null,'Known malformed non-aborted inventory explicitly fails completion');
+expect(!isset($checks['aborted']),'Malformed inventory completes the diagnostic read without aborting');
 same(null, $facts['inventory_empty'], 'Malformed inventory does not mean empty');
 foreach ([0, -1, 1.0, 'bad', 2] as $page) {
     [$facts] = $probe([], [], inventory: ['domains' => [], 'pager' => ['page' => $page, 'pageSize' => 10, 'total' => 0]]);

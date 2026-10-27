@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\{Cache, DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Management;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, WriteFeatures};
 Queue::fake(); $management = new DomainManagement($readBindings, $clock, new WriteFeatures(management:true), true);
-$ms = (object) ['calls'=>[], 'ns'=>['ns1.provider.net','ns2.provider.net'], 'locked'=>true, 'privacy'=>false, 'renew'=>false,
+$ms = (object) ['calls'=>[], 'ns'=>['ns1.provider.example.net','ns2.provider.example.net'], 'locked'=>true, 'privacy'=>false, 'renew'=>false,
     'ids'=>[], 'profiles'=>[], 'next'=>900000, 'apply'=>true, 'fault'=>'', 'during'=>null, 'route'=>'api'];
 $managementExchange = static function ($origin, $cmd, $p, $timeout) use ($ms): string {
     same(0, DB::transactionLevel(), 'Management I/O outside locks');
@@ -45,7 +45,7 @@ $holding = static function ($label, bool $complete=true) use ($prepare,$reconcil
     if ($complete) { same('succeeded',$reconcile->run($original->id)->state,'Native transfer completion establishes holding'); }
     Carbon\Carbon::setTestNow($clock->now()); Carbon\CarbonImmutable::setTestNow($clock->now());
     $ms->calls=[]; $ms->fault=''; $ms->apply=true; $ms->during=null; $ms->route='api';
-    $ms->ns=['ns1.provider.net','ns2.provider.net']; $ms->locked=true; $ms->privacy=false; $ms->renew=false; $ms->ids=[];
+    $ms->ns=['ns1.provider.example.net','ns2.provider.example.net']; $ms->locked=true; $ms->privacy=false; $ms->renew=false; $ms->ids=[];
     Cache::flush(); return [$original->domain()->firstOrFail(), new Management($binding,$managementExchange), $original->fresh()];
 };
 $seq=0; $key=static function () use (&$seq) { return hash('sha256','namesilo-management-'.++$seq); };

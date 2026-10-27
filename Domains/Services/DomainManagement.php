@@ -14,7 +14,7 @@ final class DomainManagement
     private ?array $receiptGrant = null;
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock,
         private readonly WriteFeatures $features = new WriteFeatures, private readonly bool $accepted = false,
-        private readonly int $intervalSeconds = 25) {}
+        private readonly int $intervalSeconds = 25, private readonly bool $testManagement = false) {}
     public static function capability(string $action): string
     {
         return match ($action) {
@@ -30,22 +30,27 @@ final class DomainManagement
     {
         if (!$actions) { return []; }
         try {
-            return DB::transaction(function()use($actor,$seed,$driver,$actions):array {
-                $l=HoldingLocks::take($seed,(int)$actor->id,advisory:true);
+            return (function()use($actor,$seed,$driver,$actions):array {
+                $l=HoldingLocks::take($seed,(int)$actor->id,true);
                 $this->peers($l);
                 return array_values(array_filter($actions,function($action)use($l,$actor,$driver):bool {
                     if ($action==='auth_code_email'&&$this->emailCooling($l)) { return false; }
-                    try { $this->authority($l,(int)$actor->id,$action,$driver); }
+                    try { $this->authority($l,(int)$actor->id,$action,$driver,advisory:true); }
                     catch (\Throwable) { return false; }
                     return $driver->capabilities()->get(self::capability($action))->support===Support::Supported;
                 }));
-            });
+            })();
         } catch (\Throwable) { return []; }
     }
     private function emailCooling(array $l): bool
     { return $l['operations']->contains(fn($op)=>$op->action==='auth_code_email'&&in_array($op->state,['queued','running','succeeded','uncertain'],true)&&$op->created_at->toDateTimeImmutable()>$this->clock->now()->modify('-10 minutes')); }
     public function request(User $actor, int $id, string $action, #[\SensitiveParameter] array $payload, string $nonce,
         ManagementProtocol $driver, string $reason = 'owner_request', ?string $correction = null, ?array $recordIdentity = null): Operation
+    {
+        return EntryDeadline::run($this->clock, fn ($deadline) => $this->requestEntered($actor, $id, $action, $payload, $nonce, $driver, $reason, $correction, $recordIdentity, $deadline), EntryDeadline::INTERACTIVE_SECONDS);
+    }
+    private function requestEntered(User $actor, int $id, string $action, #[\SensitiveParameter] array $payload, string $nonce,
+        ManagementProtocol $driver, string $reason, ?string $correction, ?array $recordIdentity, \DateTimeImmutable $deadline): Operation
     {
         OperationClaims::outside(); self::capability($action);
         if (!preg_match('/^[a-f0-9]{64}$/D', $nonce) || !in_array($reason,['owner_request','staff_correction'],true)) { throw new \DomainException('Invalid management request identity.'); }
@@ -58,7 +63,7 @@ final class DomainManagement
                 return [new ManagementRequest(CatalogueAcceptances::binding($l['account']), 'manage:'.$seed->id.':'.$nonce, $seed->domain, $action, [], $seed->provider_domain_id), $l['stamp'], $old];
             });
             if ($existing) { if ($existing->action !== $action || (int)$existing->authorized_by !== (int)$actor->id) { throw new \DomainException('Management key reused.'); } return $existing; }
-            $terms = $driver->billingTerms($request, new RequestContext($request->binding, RequestOrigin::Interactive, $this->clock->now()->modify('+250 seconds'), new RequestBudget(10), $this->clock));
+            $terms = $driver->billingTerms($request, new RequestContext($request->binding, RequestOrigin::Interactive, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter()));
         }
         return DB::transaction(function () use ($seed, $actor, $action, $payload, $nonce, $driver, $reason, $terms, $initial, $correction, $recordIdentity): Operation {
             $l = HoldingLocks::take($seed, (int) $actor->id); $d = $l['domain']; $this->authority($l, (int) $actor->id, $action, $driver, correction: $correction);
@@ -99,11 +104,20 @@ final class DomainManagement
                 if((int)$actor->id!==(int)$l['domain']->user_id||!$invoice||!in_array($invoice->status,['pending','cancelled'],true)||$l['transactions']->contains('invoice_id',$invoice->id)){throw new \DomainException('Privacy financial activity requires review.');}
                 $invoice->update(['status'=>'cancelled']);
             }
-            $op->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$this->clock->now(),
-                'attempt'=>[...($op->attempt??[]),'seal'=>'absent','send_state'=>'definitely_unsent','management_terminal'=>['actor_id'=>(int)$actor->id,'at'=>$this->clock->now()->format(DATE_ATOM)]]]);return $op;
+            $at=$this->clock->now();$terminal=$op->invoice_id?PrivacyRetirement::terminal($op,$l['domain'],(int)$actor->id,$at):['actor_id'=>(int)$actor->id,'at'=>$at->format(DATE_ATOM)];
+            $op->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$at,
+                'attempt'=>[...($op->attempt??[]),'seal'=>$op->attempt['seal']??'absent','send_state'=>'definitely_unsent','management_terminal'=>$terminal]]);return $op;
         });
     }
     public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive): Operation
+    {
+        $work=fn()=>EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
+            $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : EntryDeadline::INTERACTIVE_SECONDS);
+        if(!$this->testManagement){return $work();}
+        $op=Operation::findOrFail($id);$b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
+        return EnomTestManagement::enabled($b)?EnomTestWriteReservation::run($b,'management',$id,$work):$work();
+    }
+    private function runEntered(int $id, ManagementProtocol $driver, RequestOrigin $origin, \DateTimeImmutable $deadline): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $op = Operation::findOrFail($id);
@@ -113,7 +127,7 @@ final class DomainManagement
         }
         if (!in_array($op->state, ['queued', 'awaiting_payment'], true) || (($op->attempt ?? []) !== []&&!ManagementEvidence::retryable($op))) { return $op; }
         if ($op->funding_basis === 'paid_invoice' && \App\Models\Invoice::find($op->invoice_id)?->status !== 'paid') { return $op; }
-        $r = null; $claimed=false; $claim=$op->attempt['management_claim']??bin2hex(random_bytes(16));
+        $refusals=EnomTestCalls::refusalGeneration();$r = null; $claimed=false; $claim=$op->attempt['management_claim']??bin2hex(random_bytes(16));
         try {
             [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver,$claim): array {
                 $this->features->requireManagement();
@@ -128,7 +142,7 @@ final class DomainManagement
                 return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int)$op->authorized_by)['stamp']];
             });
             $claimed=true;
-            $ctx = new RequestContext($r->binding, $origin, $this->clock->now()->modify('+300 seconds'), new RequestBudget(10), $this->clock);
+            $ctx = new RequestContext($r->binding, $origin, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter());
             $prepared = $driver->prepare($r, $ctx);
             [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($prepared, $driver, $stamp): array {
                 if ($l['stamp'] !== $stamp) { throw new \DomainException('Management authority changed during preparation.'); }
@@ -144,10 +158,15 @@ final class DomainManagement
             finally { $this->grant = null; $this->receiptGrant = null; }
             return $this->finish($seed, $id, $driver, $result, null, true);
         } catch (\Throwable $error) {
-            return DB::transaction(function () use ($seed, $id, $claimed, $claim, $error): Operation {
+            return DB::transaction(function () use ($seed, $id, $claimed, $claim, $error, $refusals): Operation {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
                 if ($claimed && $op && ($op->attempt['management_claim']??null)===$claim && $op->state === 'running') {
-                    $history=$op->attempt['management_deferrals']??[];$defer=($op->attempt['seal']??null)==='absent'&&$error instanceof WriteHeld&&$error->reason==='write_rate_limited'&&count($history)<5;
+                    $b=CatalogueAcceptances::binding($l['account']);
+                    $cap=$this->testManagement&&(($op->attempt['seal']??null)==='absent'&&EnomTestCalls::refusedSince($refusals)
+                        ||$error instanceof EnomTestCallLimit&&EnomTestWriteReservation::unconsumed($b,'management',$id));
+                    if($cap){$op->update(['state'=>'held','safe_code'=>'enom_test_management_call_cap','lease_expires_at'=>null,
+                        'attempt'=>[...$op->attempt,'send_state'=>'definitely_unsent',...(($op->attempt['seal']??null)==='sealed'?['management_test_unsent'=>true]:[])]]);return $op;}
+                    $history=$op->attempt['management_deferrals']??[];$defer=($op->attempt['seal']??null)==='absent'&&($error instanceof ReadDeferred||$error instanceof WriteHeld&&$error->reason==='write_rate_limited')&&count($history)<5;
                     $op->update(['state'=>($op->attempt['seal']??null)==='sealed'?'uncertain':($defer?'queued':'held'),'safe_code'=>$defer?'management_deferred':'management_unconfirmed','lease_expires_at'=>null,
                         'attempt'=>[...$op->attempt,...($defer?['management_deferrals'=>[...$history,$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)]]:[])]]);
                 }
@@ -159,10 +178,11 @@ final class DomainManagement
     {
         $g = $this->grant; $this->grant = null;
         if (!$g || $g[0] !== $r || $g[1] !== $ctx || $g[2] !== $driver) { throw new \DomainException('No live management grant.'); }
-        $this->locked($g[4], $g[5], $driver, function ($l, $op) use ($g, $ctx): void {
+        $this->locked($g[4], $g[5], $driver, function ($l, $op) use ($g, $ctx, $r): void {
             $this->features->requireManagement(); $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action);
-            if (!$this->accepted || $l['stamp'] !== $g[3] || $ctx->deadline->getTimestamp() - $this->clock->now()->getTimestamp() < 25
+            if (!$this->accepted || $l['stamp'] !== $g[3] || $ctx->deadline < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')
                 || $op->state !== 'running' || ($op->attempt['seal'] ?? null) !== 'absent') { throw new \DomainException('Management authority changed.'); }
+            $ctx->requireReservedCapacity();EnomTestWriteReservation::prepare($r->binding,'management');
             if($op->action==='auth_code_email'){foreach($l['operations'] as $peer){$at=$peer->attempt['dispatch_attempted_at']??null;if($peer->id!==$op->id&&$peer->action===$op->action&&is_string($at)&&new \DateTimeImmutable($at)>$this->clock->now()->modify('-10 minutes')){throw new \DomainException('Transfer code cooldown active.');}}}
             $this->noInflight($op); $funding=$op->funding_basis==='paid_invoice'?RefundPayment::requireCurrent($op,$l):[];
             if(!Cache::add('domains-write-slot:'.$op->account_fingerprint,true,$this->intervalSeconds)){throw new WriteHeld('write_rate_limited');}
@@ -187,16 +207,22 @@ final class DomainManagement
     /** Explicit read-only reconciliation. Never calls prepare or perform, and cannot retry a write/email. */
     public function reconcile(int $id, ManagementProtocol $driver): Operation
     {
+        return EntryDeadline::run($this->clock, fn ($deadline) => $this->reconcileEntered($id, $driver, $deadline), EntryDeadline::INTERACTIVE_SECONDS);
+    }
+    private function reconcileEntered(int $id, ManagementProtocol $driver, \DateTimeImmutable $deadline): Operation
+    {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver): array {
-            if(count($op->attempt['management_reads']??[])>=20){throw new \DomainException('Management read budget exhausted.');}
-            if ($op->state === 'running' && $op->lease_expires_at > $this->clock->now()) { throw new \DomainException('Management worker still active.'); }
-            if (!in_array($op->state, ['uncertain', 'running'], true) || ($op->attempt['seal'] ?? null) !== 'sealed') { throw new \DomainException('No unresolved management readback.'); }
+        $read = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver): ?array {
+            if(count($op->attempt['management_reads']??[])>=20){return null;}
+            if ($op->state === 'running' && $op->lease_expires_at > $this->clock->now()) { return null; }
+            if (!in_array($op->state, ['uncertain', 'running'], true) || ($op->attempt['seal'] ?? null) !== 'sealed') { return null; }
             $b=CatalogueAcceptances::binding($l['account']); if(!$driver->bindsTo($b)){throw new \DomainException('Read binding changed.');}
             $this->bindings->requireReadableLocked($l['server'],$l['account']);
             return [$this->descriptor($op, $l), $l['stamp']];
         }, false, false);
-        $ctx = new RequestContext($r->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(10), $this->clock);
+        if ($read === null) { return Operation::findOrFail($id); }
+        [$r, $stamp] = $read;
+        $ctx = new RequestContext($r->binding, RequestOrigin::Background, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter());
         try { $result = $driver->observe($r, $ctx); return $this->finish($seed, $id, $driver, $result, $stamp); }
         catch (\Throwable) { return Operation::findOrFail($id); }
     }
@@ -216,6 +242,14 @@ final class DomainManagement
             if (count($history) >= 20) { throw new \DomainException('Management read budget exhausted.'); }
             $op->update(['state' => $ok ? 'succeeded' : ($terminal?'rejected':'uncertain'), 'safe_code' => $email ? 'auth_email_accepted' : ($ok ? 'readback_confirmed' : ($refused?'management_provider_refused':'management_unconfirmed')),
                 'attempt' => [...$op->attempt, 'management_reads' => [...$history, $entry], ...($ack ? ['management_ack'=>$ack] : []),...($refused?['management_refusal'=>['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,'action'=>$op->action]]:[])], 'completed_at' => ($ok||$terminal) ? $this->clock->now() : null, 'lease_expires_at' => null]);
+            if ($ok && $confirmed && ManagementEvidence::resolved($op,$l['domain'])) {
+                $section=match($op->action) {
+                    'nameservers','lock'=>$op->action,
+                    'privacy_purchase','privacy_renew','privacy_enable','privacy_disable'=>'privacy',
+                    default=>null,
+                };
+                if ($section!==null) { $projection['sections'][$section]=ObservationProjection::section($l['domain'],$entry); }
+            }
             $projection['management_sequence']=$sequence; $l['domain']->update(['observation'=>$projection]);
             return $op;
         }, false, false);
@@ -234,9 +268,10 @@ final class DomainManagement
                 if (isset($op->policy['management']['correction'])) { ManagementCorrections::require($l, $op->action, $op->policy['management']['input'], $op->policy['management']['correction']); } } return $use($l, $op);
         });
     }
-    private function authority(array $l, int $actor, string $action, ManagementProtocol $driver, bool $processing = true, ?string $correction = null): void
+    private function authority(array $l, int $actor, string $action, ManagementProtocol $driver, bool $processing = true, ?string $correction = null, bool $advisory = false): void
     {
         $d = $l['domain']; $b = CatalogueAcceptances::binding($l['account']);
+        if($this->testManagement){EnomTestManagement::requireAction($b,$action);}
         if(in_array($action,['privacy_purchase','privacy_renew'],true)){
             if($actor!==(int)$d->user_id){throw new \DomainException('Privacy billing is owner-only.');}
             $this->features->requireManagement(); if(!$this->accepted||$this->intervalSeconds<25||$this->intervalSeconds>86400){throw new \DomainException('Management acceptance required.');}
@@ -244,9 +279,10 @@ final class DomainManagement
         if ($actor !== (int) $d->user_id && (!$l['staff'] || !$l['staff']->hasPermission('admin.domains.manage'))) { throw new \DomainException('Management permission required.'); }
         if (!$driver->bindsTo($b) || !$driver->capabilities()->binding->matches($b)
             || $driver->capabilities()->get(self::capability($action))->support !== Support::Supported) { throw new \DomainException('Management capability unsupported.'); }
-        if ($processing) { $this->bindings->requireProcessingLocked($l['server'], $l['account'], $l['advisory']??false); }
+        if($advisory){$this->bindings->requireProcessing($b);}
+        elseif ($processing) { $this->bindings->requireProcessingLocked($l['server'], $l['account']); }
         else { $this->bindings->requireReadableLocked($l['server'], $l['account']); }
-        if ((($d->status !== 'active' || $l['service']->status !== 'active') && !ManagementCorrections::pending($l, $action, $correction)) || $l['cancel']->contains('service_id', $d->service_id)
+        if ((($d->status !== 'active' || $l['service']->status !== 'active') && !ManagementCorrections::pending($l, $action, $correction)) || RenewalStop::blocksExisting($l)
             || ($d->renewal_policy['automatic_spend_paused'] ?? false)) { throw new \DomainException('Management lifecycle held.'); }
         if (in_array($action, ['dns', 'srv', 'ds_add', 'ds_delete'], true)
             && !filter_var($l['settings']->firstWhere('key', 'domains_dns_tools')?->value ?? false, FILTER_VALIDATE_BOOLEAN)) { throw new \DomainException('DNS tools disabled.'); }

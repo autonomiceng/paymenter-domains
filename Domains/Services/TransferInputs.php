@@ -29,12 +29,26 @@ final class TransferInputs
             throw new \DomainException('Transfer input cutoff reached.');
         }
     }
+    /** Code entry and setup keep their cutoff; only frozen-code contact correction can outlive it. */
+    public static function contactsEditable(Operation $op, \DateTimeImmutable $now): bool
+    {
+        $deadline = self::deadline($op, $now);
+        if (!$deadline) { return false; }
+        if ($now < $deadline) { return true; }
+        $saved = $op->policy['code_saved_at'] ?? null;
+        if (!self::validCode($op->payload['epp'] ?? null) || !is_string($saved)
+            || !preg_match('/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\+00:00$/D', $saved)) { return false; }
+        try { $at = new \DateTimeImmutable($saved); } catch (\Throwable) { return false; }
+        return $at->format(DATE_ATOM) === $saved && $at >= $op->created_at && $at < $deadline;
+    }
     public static function guard(#[\SensitiveParameter] Operation $op): void
     {
         if ($op->action !== 'transfer') { return; }
         $before = $op->getOriginal('policy') ?? []; $after = $op->policy ?? [];
         if ((array_key_exists('paid_at', $before) && ($after['paid_at'] ?? null) !== $before['paid_at'])
-            || (!self::$writing && (array_key_exists('paid_at', $after) !== array_key_exists('paid_at', $before)
+            || (!self::$writing && (($after['code_saved_at'] ?? null) !== ($before['code_saved_at'] ?? null)
+                || array_key_exists('code_saved_at', $after) !== array_key_exists('code_saved_at', $before)
+                || array_key_exists('paid_at', $after) !== array_key_exists('paid_at', $before)
                 || ($op->payload['epp'] ?? null) !== ($op->getOriginal('payload')['epp'] ?? null)))) {
             throw new \DomainException('Transfer inputs require the owner input authority.');
         }
@@ -95,7 +109,8 @@ final class TransferInputs
                 if ((int) $l['user']->id !== (int) $request->user()->id) { throw new \DomainException; }
                 self::open($op, $l); $this->payment($op, $l); self::requireEditable($op, $this->clock->now());
                 if ($op->state === 'held' && !in_array($op->safe_code, ['contact_details_required', 'transfer_setup_review_required'], true)) { throw new \DomainException; }
-                self::write(fn () => $op->update(['payload' => [...($op->payload ?? []), 'epp' => $code]]));
+                self::write(fn () => $op->update(['payload' => [...($op->payload ?? []), 'epp' => $code],
+                    'policy' => [...($op->policy ?? []), 'code_saved_at' => $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)]]));
             });
         } catch (\Throwable) { throw new \DomainException('Transfer code could not be saved.'); }
     }
@@ -112,8 +127,10 @@ final class TransferInputs
             $attempt = ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent',
                 'transfer_timeout' => ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'deadline' => $deadline->format(DATE_ATOM)]];
             ContactSetup::recoveryWrite(fn () => $op->update(['state' => 'rejected', 'safe_code' => 'transfer_code_timeout', 'attempt' => $attempt, 'completed_at' => $this->clock->now()]));
+            AcquisitionRetirement::retainClosure($op,$l['transactions']->where('invoice_id',$op->invoice_id),
+                $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$this->clock->now(),cancelled:true);
             $l['domain']->update(['status' => 'transfer_rejected']);
-            $l['service']->update(['status' => 'cancelled', 'expires_at' => null]);
+            NativeDomainGuard::terminal($l, $op);
             return true;
         });
         return $rejected ? $this->refunds->creditRejected($id) : null;

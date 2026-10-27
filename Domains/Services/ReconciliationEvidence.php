@@ -55,8 +55,7 @@ final class ReconciliationEvidence
         if (!$order->query->matches($attempt->query) || !$order->binding->matches($attempt->binding)
             || !$domain || !$domain->binding->matches($attempt->binding) || $domain->name !== $attempt->query->name
             || ($attempt->providerReference !== null && $order->providerReference !== $attempt->providerReference)
-            || !$order->charge || $order->charge->currency !== 'USD' || !$date || $date->precision !== ExpiryPrecision::Instant
-            || new \DateTimeImmutable($date->value) < $attempt->windowStart || new \DateTimeImmutable($date->value) > $attempt->windowEnd
+            || !$order->charge || $order->charge->currency !== 'USD' || !$date || !self::processedWithin($attempt, $date, $order->providerReference)
             || (!$attempt->executionFacts && !$history)
             || ($attempt->providerReference === null && !$history)
             || !$domain || $domain->owned !== true || !$domain->expiry) { return null; }
@@ -76,11 +75,29 @@ final class ReconciliationEvidence
                 && new \DateTimeImmutable($order->afterExpiry->value) != new \DateTimeImmutable($domain->expiry->value)) { return null; }
         }
         return ['transfer_status' => $facts->transfer->value, 'base_expiry' => $attempt->beforeExpiry?->value, 'order_reference' => $order->providerReference, 'charge' => ['amount' => $order->charge->amount, 'currency' => 'USD'],
-            'processed_at' => $date->value, 'expiry' => $expiry, 'provider_domain_id' => $domain->providerReference,
+            'processed_at' => $date->value, 'processed_precision' => $date->precision->value,
+            'processed_source' => $date->source, 'processed_timezone' => $date->timezone, 'expiry' => $expiry, 'provider_domain_id' => $domain->providerReference,
             'operation_key' => $attempt->operationKey, 'generation' => $attempt->authorityGeneration,
             'fingerprint' => $attempt->binding->fingerprint, 'query' => ['name' => $attempt->query->name, 'action' => $attempt->query->action->value, 'years' => $attempt->query->years],
             'source' => $attempt->executionFacts && $attempt->providerReference !== null ? 'captured_order' : 'accepted_history',
             'expiry_precision' => $domain->expiry->precision->value, 'observed_corrections' => $domain->providerAutoRenew === false ? [] : ['auto_renew'], 'window_start' => $attempt->windowStart->format(DATE_ATOM),
             'window_end' => $attempt->windowEnd->format(DATE_ATOM)];
+    }
+    /** Local = UTC + offset: some offset in [-12h, +14h] must fit the sealed window. */
+    public static function processedWithin(AttemptEvidence $attempt, DateEvidence $date, ?string $reference): bool
+    {
+        $zone = new \DateTimeZone('UTC');
+        $start = $attempt->windowStart->setTimezone($zone); $end = $attempt->windowEnd->setTimezone($zone);
+        if ($date->precision === ExpiryPrecision::Instant) {
+            $instant = new \DateTimeImmutable($date->value);
+            return $instant >= $start && $instant <= $end;
+        }
+        if ($date->precision !== ExpiryPrecision::Local || $date->source !== 'enom_order_bill_date'
+            || $attempt->binding->registrarKey !== 'enom' || !$attempt->executionFacts
+            || $attempt->providerReference === null || $reference !== $attempt->providerReference) { return false; }
+        try { $attempt->executionFacts->requireAttempt($attempt); } catch (\InvalidArgumentException) { return false; }
+        // A coordinate for comparing wall clocks, not an assertion that the observation was UTC.
+        $local = new \DateTimeImmutable($date->value, $zone);
+        return $local >= $start->modify('-12 hours') && $local <= $end->modify('+14 hours');
     }
 }

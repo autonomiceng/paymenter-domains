@@ -7,9 +7,16 @@ namespace Paymenter\Extensions\Servers\Domains\Data;
 final readonly class CatalogueAcceptance
 {
     public array $endings;
-    public function __construct(public AccountBinding $binding, public int $revision, array $endings)
+    public function __construct(public AccountBinding $binding, public int $revision, array $endings,
+        public ?string $registrationRoute = null, public int $registrationIntervalSeconds = 0)
     {
         if ($revision < 1 || count($endings) > 500) { throw new \InvalidArgumentException('Invalid catalogue acceptance.'); }
+        if (($registrationRoute === null && $registrationIntervalSeconds !== 0)
+            || ($registrationRoute !== null && ($binding->registrarKey !== 'enom'
+                || $registrationRoute !== ($binding->environment === Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp')
+                || $registrationIntervalSeconds < 25 || $registrationIntervalSeconds > 86400))) {
+            throw new \InvalidArgumentException('Invalid registration acceptance.');
+        }
         $copy = [];
         foreach ($endings as $tld => $row) {
             if (!is_string($tld) || strlen($tld) > 63) { throw new \InvalidArgumentException('Invalid accepted ending.'); }

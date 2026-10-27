@@ -3,6 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
+require __DIR__.'/Support/staff-filter-lookalikes.php';
+require __DIR__.'/Support/domain-name-cell.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
@@ -15,21 +17,31 @@ use Paymenter\Extensions\Servers\Domains\Services\RefundCandidates as Selection;
 use Paymenter\Extensions\Servers\Domains\Services\AccountSpendingHolds;
 staffPanel(); [$held,$active,$long]=staffData();
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer); $ops=Operation::orderBy('id')->get();
+staffOperationFilterLookalikes($viewer, $active);
 DB::table('domains_operations')->where('id',$ops[0]->id)->update(['funding_basis'=>'paid_invoice','state'=>'uncertain']);
 DB::table('domains_operations')->where('id',$ops[2]->id)->update(['funding_basis'=>'paid_invoice','state'=>'rejected','safe_code'=>'transfer_provider_rejected']);
 $ops=Operation::orderBy('id')->get();
 $page=Livewire::actingAs($viewer)->test(ListOperations::class)->assertSuccessful()->assertCanSeeTableRecords($ops);
 expect(!str_contains($page->html().json_encode($page->snapshot),'PRIVATE-'),'Queue never serializes private evidence');
-foreach (['held'=>[], 'unresolved'=>[$ops[0]], 'failed_transfer'=>[$ops[2]], 'paid_uncertainty'=>[$ops[0],$ops[2]], 'credit_review'=>[]] as $name=>$yes) {
-    echo 'Filter '.$name."\n"; $p=Livewire::actingAs($viewer)->test(ListOperations::class)->filterTable($name,true);
+assertDomainNameWraps($page->html(),$long->domain,'Requests list');
+foreach (['under_review'=>[$ops[0]], 'in_progress'=>[], 'failed'=>[$ops[2]], 'completed'=>[$ops[1]]] as $name=>$yes) {
+    echo 'Filter '.$name."\n"; $p=Livewire::actingAs($viewer)->test(ListOperations::class)->filterTable('status',[$name]);
     $p->set('tableDeferredFilters',$p->get('tableFilters'))->call('applyTableFilters')->assertCanSeeTableRecords($yes)->assertCountTableRecords(count($yes));
 }
-Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$ops[2]->id])->assertSuccessful()
-    ->assertSee('Registrar refund is manual — request it from registrar support')->assertSee('No staff release or credit is available.');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Account spending holds')->assertSee('Request #'.$ops[2]->id);
-expect(str_contains(implode(' ',PaidUncertainty::for($held)),'hours (since'),'Account-wide hold includes age');
+Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$ops[2]->id])->assertSuccessful()->assertSee('Failed')
+    ->assertSee('Registrar rejected the transfer')->assertDontSee('Ask NameSilo support for a refund')->assertDontSee('No staff release');
+$costs=staffUser([Staff::VIEW,Staff::COSTS]);
+Livewire::actingAs($costs)->test(ViewOperation::class,['record'=>$ops[2]->id])->assertSee('Ask NameSilo support for a refund');
+// The orders-paused line sits in the request notice, not the domain page.
+Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$ops[0]->id])->assertSee('NameSilo has not confirmed this transfer.')
+    ->assertSee('New orders on this NameSilo account are paused until the result is known');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSuccessful()->assertDontSee('New orders on this NameSilo account are paused');
+same(['Request #'.$ops[0]->id.' unconfirmed'],PaidUncertainty::for($held),'Account-wide hold names the request');
+expect(preg_match('/ \((under 1 hour|1 hour|\d+ hours) so far\)\.$/',PaidUncertainty::holdSummary($ops[0]))===1,'Account-wide hold includes age');
 same(null,RequestFacts::for($ops[1])['reason'],'Absent reason remains absent');
-$completed=clone $ops[0];$completed->state='succeeded';same('Original send response was unknown; completion later confirmed',RequestFacts::review($completed)[0],'Completed readback explains original response uncertainty');
+$completed=clone $ops[0];$completed->state='succeeded';$completed->attempt=['execution'=>null];same([null,null],[RequestFacts::for($completed)['outcome'],RequestFacts::notice($completed)],'Completed readback has no unconfirmed notice');
+$completed->attempt=['seal'=>'sealed','execution'=>['provider_reference'=>'SYNTHETIC-ORDER']];
+same(null,RequestFacts::for($completed)['outcome'],'Confirmed completion takes precedence over sealed send history');
 // Engine and staff share all-generation spending holds; paid terminal review is a separate fact.
 same(null,PaidUncertainty::holdSummary($ops[2]),'Sent rejection is paid outcome review, not an in-flight spending hold');
 $nonCurrent=$ops[0]->replicate();$nonCurrent->operation_key='non-current-generation-complimentary';$nonCurrent->funding_basis='complimentary';$nonCurrent->save();DB::table('domains_operations')->where('id',$nonCurrent->id)->update(['authority_generation'=>2]);$nonCurrent->refresh();

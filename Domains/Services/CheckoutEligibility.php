@@ -10,9 +10,19 @@ use Paymenter\Extensions\Servers\Domains\Data\{Action, Disposition, Query, Reque
 /** Short-lived server-side read evidence. A receipt never replaces locked seller admission. */
 final class CheckoutEligibility
 {
+    private bool $comparisonSeen = false;
+    private ?string $comparisonName = null;
+    private ?\Closure $comparisonGuard = null;
+    /** Same singleton used by native cart listeners; scope cannot leak into later requests. */
+    public function comparison(string $name,callable $handoff,callable $guard): mixed
+    {
+        if ($this->comparisonName!==null) { throw new \LogicException('Comparison handoff already active.'); }
+        $this->comparisonName=$name;$this->comparisonGuard=\Closure::fromCallable($guard);
+        try { $result=$handoff();if (!$this->comparisonSeen) { throw new \DomainException('Comparison admission is unavailable.'); }return $result; } finally { $this->comparisonName=null;$this->comparisonGuard=null;$this->comparisonSeen=false; }
+    }
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock, private readonly ?TransferPrecheck $transfers = null) {}
 
-    public function observe(string $name, SaleSelection $selection, array $identity): string
+    public function observe(string $name, SaleSelection $selection, array $identity, bool $comparison = false): string
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Eligibility reads require an unlocked cart.'); }
         if (!in_array($selection->action, ['register', 'transfer'], true)) { throw new \DomainException('Acquisition unavailable.'); }
@@ -22,16 +32,21 @@ final class CheckoutEligibility
         $transfer = null;
         if ($selection->action === 'transfer') {
             $transfer = ($this->transfers ?? throw new \DomainException('Transfer eligibility is not configured.'))->check($name, $selection, $driver,
-                new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+25 seconds'), new RequestBudget(3), $this->clock));
+                new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+25 seconds'), new RequestBudget(3), $this->clock, Runtime::limiter()));
         } else {
         $result = $driver->availability(new Query($name, Action::Register, $selection->term),
-            new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock));
+            new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock, Runtime::limiter()));
         $driver->binding()->requireMatch($result->binding);
         if ($result->disposition !== Disposition::Accepted || $result->evidence()->premium !== false || $result->evidence()->available !== true
             || $this->clock->now() >= $started->modify('+10 seconds')) { throw new \DomainException('Domain eligibility could not be confirmed.'); }
         }
+        $comparison = $comparison || $this->comparisonName === $name;
+        if ($comparison && (!$transfer || !WatchTransferPolicy::eligible($transfer, $this->clock->now()->getTimestamp()))) {
+            throw new \DomainException('Transfer eligibility remains unverified.');
+        }
+        if ($this->comparisonName === $name) { ($this->comparisonGuard)();$this->comparisonSeen=true; }
         $token = bin2hex(random_bytes(32));
-        Cache::put('domains.checkout.'.$token, ['transfer' => $transfer, 'identity' => $identity, 'selection' => get_object_vars($selection),
+        Cache::put('domains.checkout.'.$token, ['comparison' => $comparison, 'transfer' => $transfer, 'identity' => $identity, 'selection' => get_object_vars($selection),
             'name' => $name, 'observed' => $started->getTimestamp(), 'expires' => $started->modify('+5 minutes')->getTimestamp()], 300);
         return $token;
     }
@@ -43,6 +58,7 @@ final class CheckoutEligibility
         $now = $this->clock->now()->getTimestamp();
         if (!is_array($receipt) || $receipt['identity'] !== $identity || $receipt['name'] !== $name
             || $receipt['observed'] > $now || $receipt['expires'] <= $now) { throw new \DomainException('Refresh the domain check.'); }
+        if (($receipt['comparison'] ?? false) && !WatchTransferPolicy::eligible($receipt['transfer'] ?? [], $now)) { throw new \DomainException('Refresh the comparison.'); }
         $s = new SaleSelection(...$receipt['selection']);
         if ($s->action === 'transfer' && (($receipt['transfer']['rules'] ?? null) !== TransferPrecheck::rules($s, $locked))) { throw new \DomainException('Transfer rules changed.'); }
         return $s;

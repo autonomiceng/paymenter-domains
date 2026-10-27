@@ -67,3 +67,22 @@ Fake Enom/NameSilo tests establish type invariants, bound routing, budgets and u
 They do not prove real provider mapping, contacts, account ownership, admission, actual spending,
 registry completion or native lifecycle compatibility. Driver adapters and management capabilities
 must carry the retained Enom scenario inventory and separately verified NameSilo acceptance gates.
+
+## Worker completion headroom
+
+Acquisition execution captures its monotonic-clock entry before routing and claim locks. The
+300-second worker budget includes those waits and preflight. A final seal requires all 25 request
+seconds to end by entry + 270 seconds, reserving 30 seconds for `finish()` and its ordered domain
+and operation lock waits. This is bounded headroom, not a guarantee against unbounded database
+blocking. The dispatch context uses the same cap, alongside the original started-at window,
+360-second lease/60-second cleanup checks and readiness expiry. Refusal holds unsealed work
+definitely unsent; it preserves funding and recovery evidence without granting a resend.
+
+The production `RunOperation` job uses the same timeout constant. Its runtime account lookups
+and deployment composition run before acquisition entry, as does framework job setup; that
+pre-entry work consumes part of the 30-second reserve and must remain bounded. The cap is
+relative to acquisition entry, not an assertion about arbitrarily slow job setup. SystemClock
+anchors monotonic time only for this execution and returns to wall time between daemon jobs.
+
+Worker finish-cap arithmetic uses UTC instants even on DST-observing sites; native persisted
+timestamps retain the configured site timezone for offset-free database round trips.

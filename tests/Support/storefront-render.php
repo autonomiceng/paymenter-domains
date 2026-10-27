@@ -22,7 +22,7 @@ foreach ($pages as $name => $html) {
     preg_match('#<body>(.*)</body>#s', $html, $body);
     // Static fixture: never execute search fetch, Livewire or theme scripts.
     $content = preg_replace('#<script\b[^>]*>.*?</script>#s', '', $body[1]);
-    file_put_contents(getenv('UI32_OUTPUT').'/'.$name.'.html', str_replace('@@SLOT@@', $content, $shell));
+    writeRenderArtifact(getenv('UI32_OUTPUT').'/'.$name.'.html', str_replace('@@SLOT@@', $content, $shell));
 }
 $nativeSuccessful = true;
 echo "Real Blade synthetic storefront pages rendered.\n";

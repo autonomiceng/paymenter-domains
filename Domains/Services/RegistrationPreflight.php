@@ -23,9 +23,13 @@ final readonly class RegistrationPreflight implements SealPreflight
         if (!is_bool($privacy)) { throw new WriteHeld('write_acceptance_required'); }
         if ($context->binding->registrarKey === 'enom') {
             if ($privacy) { throw new WriteHeld('write_acceptance_required'); }
-            \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers($servers);
+            try { \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers($servers); }
+            catch (\InvalidArgumentException) { throw new WriteHeld('nameservers_required'); }
         } else {
-            try { \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::register($query->name, $query->years, $privacy, '1', $servers); }
+            try { $nexus = RegistryInputs::nameSiloNexus($domain->tld, $op->payload['registry'] ?? null); }
+            catch (\DomainException) { throw new WriteHeld('registry_details_unsupported'); }
+            if ($nexus && $privacy) { throw new WriteHeld('registry_details_unsupported'); }
+            try { \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::register($query->name, $query->years, $privacy, '1', $servers, $nexus); }
             catch (\InvalidArgumentException) { throw new WriteHeld('nameservers_required'); }
         }
         if ($this->profiles && $context->binding->registrarKey === 'namesilo') {
@@ -33,9 +37,12 @@ final readonly class RegistrationPreflight implements SealPreflight
             $this->profiles->prepare($op, $context);
         }
         $capability = $this->accepted->requireCurrent($context->binding, $query, $op);
-        $reader = $this->bindings->reader($context->binding->serverId); $context->binding->requireMatch($reader->binding());
+        $reader = $context->binding->registrarKey==='enom'&&EnomTestRegistration::enabled($context->binding)
+            ?$this->bindings->registrationPreflightReader($context->binding)
+            :$this->bindings->reader($context->binding->serverId);
+        $context->binding->requireMatch($reader->binding());
         $observed = $context->now();
-        $availability = $reader->availability($query, $context); $quote = $reader->quote($query, $context); $balance = $reader->balance($context);
+        $availability = $reader->availability($query, $context); $quote = $reader->quote($query, $context); $balance = BalanceReads::read($reader, $context, 'preflight');
         foreach ([$availability, $quote, $balance] as $result) {
             $context->binding->requireMatch($result->binding);
             if ($result->disposition !== Disposition::Accepted) { throw new WriteHeld('write_acceptance_required'); }
