@@ -100,14 +100,14 @@ final class AccountChecklist
         return app(RuntimePorts::class)->registered($a)?self::row('Registrar runtime','Available')
             :self::row('Registrar runtime',null,'danger','Registrar runtime is not set up in the deployment. Registrations, transfers, renewals and DNS changes stay off.');
     }
-    /** Domains on this account with an open alert, linked to the Domains list filtered to them. The Alert column shows each domain's cause. */
+    /** Domains on this account with an open alert, linked to the filtered list. Open a domain for causes beyond its first. */
     public static function alerts(Account $a): array
     {
         $count=Schema::hasTable('domains_obligation_alerts')?DB::table('domains_obligation_alerts as a')->join('domains_domains as d','d.id','=','a.domain_id')
             ->where('d.server_id',$a->server_id)->whereNull('a.resolved_at')->distinct()->count('a.domain_id'):0;
         if ($count===0) { return self::row('Domain alerts','None','success'); }
         try { $url=DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$a->server_id],'alerts'=>['isActive'=>true]]]); } catch (\Throwable) { $url=null; }
-        return [...self::row('Domain alerts',$count.' domain'.($count===1?'':'s'),'warning','See the Alert column for each cause.'),
+        return [...self::row('Domain alerts',$count.' domain'.($count===1?'':'s'),'warning','See the Alert column. Open a domain for more causes.'),
             'buttons'=>[Action::make('domain_alerts')->label('View domains')->link()->size('sm')->url($url)->visible($url!==null)]];
     }
     /** Domain monitoring is on only when the runtime composes it; then its checks need the queue WatchWork::queueReady() accepts. */
