@@ -59,3 +59,6 @@ foreach(['card_fee','default_rule','override'] as $action){
     same('This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.',SettingsActions::refusal(new InvalidArgumentException('The calculated price is too large.'),$action),'Price overflow gives the correct remedy');
     same('No price can cover the card fee with this markup. Lower the markup or the card fee. Nothing was changed.',SettingsActions::refusal(new InvalidArgumentException('This percentage cannot cover the card fee. Lower the markup or card fee.'),$action),'Impossible fee gives the correct remedy');
 }
+
+same('Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.',SettingsActions::refusal(new InvalidArgumentException('Enter a card fee below 100% and a fixed amount from 0 to 100000.'),'card_fee'),'Card fee input refusal gives exact range and decimal guidance');
+same('Reload and check current permissions, saved facts and acceptance.',SettingsActions::refusal(new InvalidArgumentException('Enter a card fee below 100% and a fixed amount from 0 to 100000.'),'default_rule'),'Card fee input refusal keeps the generic default pricing fallback');
