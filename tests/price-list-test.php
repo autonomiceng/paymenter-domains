@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,PriceList as PriceListPage};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Price,Tld};
 use Paymenter\Extensions\Servers\Domains\Data\CatalogueUnavailable;
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,PriceCatalogue,PriceList,PricingRules};
@@ -15,6 +15,41 @@ Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domai
 $u=staffUser([Staff::VIEW,Staff::COSTS]);Auth::setUser($u);[$t,$other]=$tlds;
 App\Models\Server::whereKey($t->server_id)->update(['name'=>'<First & account>']);
 $service=new PriceList;
+// Extra fee-mode TLDs on the same accounts must not add settings reads to either staff list.
+DB::beginTransaction();
+try{
+    foreach([$t,$other] as $index=>$ending){
+        $server=App\Models\Server::findOrFail($ending->server_id);
+        $server->settings()->updateOrCreate(['key'=>'domains_pricing_default_rule'],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']]);
+        $server->settings()->updateOrCreate(['key'=>CardFee::KEY],['type'=>'array','encrypted'=>false,'value'=>['percent'=>(string)($index+2),'fixed'=>'0.30']]);
+    }
+    DB::table('domains_tlds')->where('id',$t->id)->update(['use_default_rule'=>false,'pricing_mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']);
+    $grants=Staff::requireView();
+    $measure=static function(callable $read):array{
+        DB::flushQueryLog();DB::enableQueryLog();
+        try{$result=$read();return [count(DB::getQueryLog()),$result];}
+        finally{DB::disableQueryLog();DB::flushQueryLog();}
+    };
+    $small=Tld::orderBy('id')->get();
+    [$pageSmall,$facts]=$measure(fn()=>TldFacts::page($small,$grants));
+    foreach($small as $ending){same(json_encode(TldFacts::snapshot($ending,$grants)['prices']),json_encode($facts[$ending->id]['prices']),'Batched rules agree with the individual account fee');}
+    [$labelsSmall]=$measure(fn()=>$small->map(fn($ending)=>TldFacts::pricing($ending)));
+    [$listSmall,$matrixSmall]=$measure(fn()=>$service->read());
+    same(2,count($matrixSmall['rows']),'Both fee-mode accounts are readable');same([],$matrixSmall['skipped'],'Valid fee-mode rules are not skipped');
+    foreach($small as $ending){for($i=0;$i<4;$i++){
+        $copy=$ending->replicate();$copy->tld='batch'.$i;$copy->use_default_rule=false;$copy->pricing_mode='markup_fee_percent';$copy->markup='30';$copy->save();
+    }}
+    $large=Tld::orderBy('id')->get();
+    [$pageLarge]=$measure(fn()=>TldFacts::page($large,$grants));
+    [$labelsLarge,$labels]=$measure(fn()=>$large->map(fn($ending)=>TldFacts::pricing($ending)));
+    [$listLarge,$matrixLarge]=$measure(fn()=>$service->read());
+    echo "Fee-mode query counts (2 to 10 rows): facts $pageSmall/$pageLarge, labels $labelsSmall/$labelsLarge, price list $listSmall/$listLarge.\n";
+    same(10,count($matrixLarge['rows']),'Additional custom fee rows remain readable');same([],$matrixLarge['skipped'],'Additional fee-mode rules are not skipped');
+    same(9,$labels->filter(fn($label)=>$label==='Custom markup')->count(),'Fee-mode rows retain their custom markup labels');
+    same($pageSmall,$pageLarge,'Extra custom fee rows add no page queries');
+    same($labelsSmall,$labelsLarge,'Extra custom fee rows add no pricing-label queries');
+    same($listSmall,$listLarge,'Extra custom fee rows add no price-list queries');
+}finally{DB::rollBack();}
 $before=DB::table('domains_prices')->orderBy('id')->get()->toJson();
 $matrix=$service->read(1,'all',$t->server_id);same(1,count($matrix['rows']),'Selected account has one TLD row');
 $row=$matrix['rows'][0];same('.com',$row['tld'],'TLD label');same('Default',$row['pricing'],'Rule source');
@@ -83,6 +118,28 @@ DB::rollBack();
 // Account labels cannot execute spreadsheet formulas.
 App\Models\Server::whereKey($t->server_id)->update(['name'=>'=1+1']);
 expect(str_contains($service->csv(1,'all',$t->server_id),"'=1+1"),'CSV neutralizes account formulas');
+
+// A real publication distinguishes the correct account fee from two readers agreeing on stale rows.
+foreach([$t,$other] as $index=>$ending){
+    $server=App\Models\Server::findOrFail($ending->server_id);
+    $server->settings()->updateOrCreate(['key'=>'domains_pricing_default_rule'],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']]);
+    $server->settings()->updateOrCreate(['key'=>CardFee::KEY],['type'=>'array','encrypted'=>false,'value'=>['percent'=>(string)($index+2),'fixed'=>'0.30']]);
+    DB::table('domains_tlds')->where('id',$ending->id)->update(['use_default_rule'=>$index===1,'pricing_mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']);
+    $native->publish($ending->id,$now,null,static fn(Tld $locked)=>null);
+}
+$published=Tld::whereKey([$t->id,$other->id])->get();$grants=Staff::requireView();
+$publicationStatus=static function(bool $changed)use($published,$grants,$t):void{
+    $page=TldFacts::page($published,$grants);
+    foreach($published as $ending){
+        foreach([$page[$ending->id],TldFacts::snapshot($ending,$grants)] as $facts){
+            expect(count($facts['prices'])>0,'Published fee-mode account has saved prices');
+            foreach($facts['prices'] as $price){same($changed&&$ending->id===$t->id,in_array('unpublished',$price['flags'],true),'Fee changes invalidate only that account in both readers');}
+        }
+    }
+};
+$publicationStatus(false);
+App\Models\Server::findOrFail($t->server_id)->settings()->where('key',CardFee::KEY)->sole()->update(['value'=>['percent'=>'4','fixed'=>'0.30']]);
+$publicationStatus(true);
 
 // Real quarantine retains billed renewal retail while costs/profit and acquisition prices become unknown.
 $priorRenewal=$prices->renewal($other->server_id,$other->account_fingerprint,'com','USD',$now);

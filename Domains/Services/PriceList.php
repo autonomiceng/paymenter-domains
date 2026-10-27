@@ -30,9 +30,9 @@ final class PriceList
             $fee=$fees[$id];
             if($fee===null){$skipped[]=[...$identity,'cause'=>'card_fee'];continue;}
             if($tld->use_default_rule){
-                if(!array_key_exists($id,$defaults)){$defaults[$id]=self::readSetting(fn()=>$rules->defaultRule($id));}
+                if(!array_key_exists($id,$defaults)){$defaults[$id]=self::readSetting(fn()=>$rules->defaultRule($id,false,$fee));}
                 $rule=$defaults[$id];
-            }else{$rule=self::readSetting(fn()=>$rules->rule($tld));}
+            }else{$rule=self::readSetting(fn()=>$rules->rule($tld,false,$fee));}
             if($rule===null){$skipped[]=[...$identity,'cause'=>$tld->use_default_rule?'default_rule':'custom_rule'];continue;}
             $row=[...$identity,'prices'=>[],
                 'formula'=>'Price = '.PricingRule::describe($rule).($rule['mode']==='fixed'?', times years.':', per year, times years.'),'fee'=>$fee,'fee_in_price'=>$rule['mode']==='markup_fee_percent'];

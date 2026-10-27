@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolicy,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,EnomTestRegistration,PriceCatalogue};
+use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,EnomTestRegistration,PriceCatalogue};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Saved facts only. No reader factory, credentials or provider calls. */
 final class TldFacts
@@ -37,17 +37,19 @@ final class TldFacts
         return self::build($tld,$grants,$accepted,$ruleHash,$saved,static fn():?int=>self::sellerId($tld->tld));
     }
     /** snapshot() for a page of TLD rows in a fixed number of reads: accounts, acceptances and default rules once per
-     * account; prices, sellers and domain counts once per page. Keyed by TLD id, each with 'seller' and 'holders' added. */
+     * account, including card fees; prices, sellers and domain counts once per page. Keyed by TLD id, each with 'seller' and 'holders' added. */
     public static function page(\Illuminate\Support\Collection $tlds, ?StaffGrants $grants = null): array
     {
         $grants ??= Staff::requireView();
         if($tlds->isEmpty()){return [];}
         $servers=$tlds->pluck('server_id')->map(fn($id)=>(int)$id)->unique()->values()->all();$names=$tlds->pluck('tld')->unique()->values()->all();
         $accounts=Account::whereIn('server_id',$servers)->orderBy('id')->get()->groupBy('server_id')->map->first();
-        $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;$accepted=[];$defaults=[];
+        $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;$accepted=[];$defaults=[];$fees=[];
         foreach($servers as $id){
             try{$accepted[$id]=CatalogueAcceptances::load(CatalogueAcceptances::binding($accounts[$id]??throw new \DomainException));}catch(\Throwable){$accepted[$id]=null;}
-            try{$defaults[$id]=$tlds->contains(fn(Tld $t)=>(int)$t->server_id===$id&&$t->use_default_rule)?self::ruleHash($rules->defaultRule($id)):null;}catch(\Throwable){$defaults[$id]=null;}
+            // An invalid snapshot fails fee rules without retrying the setting for every row.
+            try{$fees[$id]=CardFee::read($id);}catch(\Throwable){$fees[$id]=[];}
+            try{$defaults[$id]=$tlds->contains(fn(Tld $t)=>(int)$t->server_id===$id&&$t->use_default_rule)?self::ruleHash($rules->defaultRule($id,false,$fees[$id])):null;}catch(\Throwable){$defaults[$id]=null;}
         }
         $key=static fn($row)=>(int)$row->server_id.'|'.$row->account_fingerprint.'|'.$row->tld;
         $prices=Price::whereIn('server_id',$servers)->whereIn('tld',$names)->orderBy('action')->orderBy('term')->get()->groupBy($key);
@@ -56,7 +58,7 @@ final class TldFacts
             ->selectRaw('server_id, tld, account_fingerprint, count(*) as holders')->groupBy('server_id','tld','account_fingerprint')->get()->keyBy($key);
         $out=[];
         foreach($tlds as $t){
-            if($t->use_default_rule){$hash=$defaults[(int)$t->server_id];}else{try{$hash=self::ruleHash($rules->rule($t));}catch(\Throwable){$hash=null;}}
+            if($t->use_default_rule){$hash=$defaults[(int)$t->server_id];}else{try{$hash=self::ruleHash($rules->rule($t,false,$fees[(int)$t->server_id]));}catch(\Throwable){$hash=null;}}
             $seller=isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null;
             $out[$t->id]=[...self::build($t,$grants,$accepted[(int)$t->server_id],$hash,$prices[$key($t)]??collect(),static fn():?int=>$seller),
                 'seller'=>$seller,'holders'=>(int)($holders[$key($t)]->holders??0),'demo'=>DemoData::is($accounts[(int)$t->server_id]??null)];
@@ -87,6 +89,7 @@ final class TldFacts
     public static function pricing(Tld $t): string
     {
         if($t->use_default_rule){return 'Default pricing';}
+        if($t->pricing_mode!=='fixed'){return 'Custom markup';}
         try{return (new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($t)['mode']==='fixed'?'Fixed price':'Custom markup';}catch(\Throwable){return 'Custom markup';}
     }
     /** "USD 12.00"; costs keep their exact precision ("USD 12.3456"). Null when there is no amount. */
