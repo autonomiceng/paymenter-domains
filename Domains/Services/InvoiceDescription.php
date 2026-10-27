@@ -39,7 +39,7 @@ final class InvoiceDescription
 
     private static function term(int $years): string
     {
-        return $years.' '.($years === 1 ? 'year' : 'years');
+        return $years === 1 ? '1 year' : $years.' years';
     }
 
     private static function period(\DateTimeInterface $start, int $years): string
