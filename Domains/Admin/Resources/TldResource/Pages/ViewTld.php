@@ -17,9 +17,9 @@ class ViewTld extends ViewRecord
 {
     protected static string $resource=TldResource::class;
     public string $reviewStamp='';
-    /** Page names for the shared settings actions. Edit prices sits on the prices section and Edit on the grace rows. */
-    private const LABELS=['seller'=>'Change registrar','override'=>'Edit prices','tld_settings'=>'Edit terms','remove_override'=>'Use default pricing',
-        'default_rule'=>'Edit default pricing','publish'=>'Publish prices','lifecycle'=>'Edit grace and redemption'];
+    /** Page names for the shared settings actions. Edit prices is in More and on the prices section; Edit sits on the grace rows.
+     * Default pricing is edited on the registrar account page, and saving prices publishes them. */
+    private const LABELS=['seller'=>'Change registrar','override'=>'Edit prices','tld_settings'=>'Edit terms','lifecycle'=>'Edit grace and redemption'];
     public function mount(int|string $record): void
     {parent::mount($record);$this->reviewStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp((int)$this->getRecord()->server_id,(int)$this->getRecord()->id);}
     /** @return array<string,Action> */
@@ -34,10 +34,9 @@ class ViewTld extends ViewRecord
     }
     protected function getHeaderActions(): array
     {
-        $actions=$this->settings();$seller=$actions['seller'];unset($actions['seller'],$actions['override'],$actions['lifecycle']);
-        return [$seller->color('primary'),ActionGroup::make(array_values($actions))->label('More')->button()->color('gray')];
+        $actions=$this->settings();
+        return [$actions['seller']->color('primary'),ActionGroup::make([$actions['override'],$actions['tld_settings']])->label('More')->button()->color('gray')];
     }
-    public function overrideAction(): Action {return $this->settings()['override'];}
     public function lifecycleAction(): Action {return $this->settings()['lifecycle'];}
     protected function fillForm(): void {$this->data=[];}
     public function getTitle(): string {Staff::requireView();return '.'.$this->getRecord()->tld;}
@@ -89,7 +88,8 @@ class ViewTld extends ViewRecord
             Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()->schema([
                 Section::make('Sales')->schema($sales)->columnSpan(1),
                 Section::make('Price sync')->schema($sync)->columnSpan(1)]),
-            Section::make('Prices by registrar account')->afterHeader($override?->isVisible()?new HtmlString($override->button()->color('gray')->toHtml()):null)
+            // A copy renders as a button here; the menu keeps its own item view.
+            Section::make('Prices by registrar account')->afterHeader($override?->isVisible()?new HtmlString((clone $override)->button()->color('gray')->toHtml()):null)
                 ->schema([TextEntry::make('prices')->label('Prices by registrar account')->hiddenLabel()->state(fn()=>TldFacts::accountsTable($t,$grants))->html()])->columnSpanFull(),
             Section::make('History')
                 ->schema([TextEntry::make('history')->label('History')->hiddenLabel()->state(fn()=>TldFacts::historyTable(TldFacts::history((int)$t->server_id,(int)$t->id)))->html()])->columnSpanFull(),

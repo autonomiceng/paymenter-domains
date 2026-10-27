@@ -193,7 +193,7 @@ same(RenewalCode::Changed,$check()->code,'Grace computed before its deadline ref
 $state->duringCommand = null;
 $clock->instant = new DateTimeImmutable('2027-10-18T12:00:00Z');
 foreach([['conflicting'=>true],['auto_renew_only'=>true],['grace_supported'=>false],['grace_days'=>0],['grace_currency'=>'EUR'],
-    ['verified_at'=>$clock->now()->modify('-30 days')->format(DATE_ATOM)],['grace_verified_at'=>$clock->now()->modify('-30 days')->format(DATE_ATOM)]] as $change){
+    ['verified_at'=>$clock->now()->modify('+1 second')->format(DATE_ATOM)],['grace_verified_at'=>$clock->now()->modify('+1 second')->format(DATE_ATOM)]] as $change){
     storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),...$change]);
     same(RenewalCode::Grace,$check()->code,'Unusable lifecycle evidence refuses real admission');
 }
@@ -202,12 +202,12 @@ $state->duringCommand=ReadCommand::Balance;
 $state->during=static fn()=>storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),'conflicting'=>true]);
 same(RenewalCode::Changed,$check()->code,'Evidence changed during reads refuses under final locked stamp');
 storeLifecycleFixture($binding,lifecycleFixture($clock->now()));$state->duringCommand=null;
-storeLifecycleFixture($binding,lifecycleFixture($clock->now()->modify('-30 days +1 second')));
-same($clock->now()->modify('+1 second')->getTimestamp(),$check()->validUntil?->getTimestamp(),'Admission cannot outlive lifecycle evidence');
-$state->duringCommand=ReadCommand::Balance;
-$state->during=static fn()=>$clock->instant=$clock->now()->modify('+2 seconds');
-same(RenewalCode::Changed,$check()->code,'Lifecycle evidence expiring during reads refuses final admission');
-$clock->instant=$clock->now()->modify('-2 seconds');$state->duringCommand=null;
+// Saved lifecycle values stay until staff change them; a year-old save still admits grace renewal.
+storeLifecycleFixture($binding,lifecycleFixture($clock->now()->modify('-400 days')));
+same(RenewalCode::Admitted,$check()->code,'Old lifecycle values do not expire');
+$clock->instant=new DateTimeImmutable('2027-10-18T10:59:59Z');storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()->modify('-400 days')),'grace_days'=>1]);
+same('2027-10-18T11:00:00+00:00',$syntheticGrace($earlier)->validUntil?->setTimezone(new DateTimeZone('UTC'))->format(DATE_ATOM),'Old lifecycle values still end at the grace deadline');
+$clock->instant=new DateTimeImmutable('2027-10-18T12:00:00Z');
 storeLifecycleFixture($binding,lifecycleFixture($clock->now()));
 $state->price = '99.00'; same(RenewalCode::Admitted, $check()->code, 'Grace has no original-retail floor'); $state->price = '8.95';
 $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');

@@ -23,7 +23,7 @@ $action='lifecycle';
 
 // Field defaults share one lazy read per form, including an empty policy.
 $fields=static function(string $name)use($t):array{
-    $action=SettingsActions::make((int)$t->server_id,(int)$t->id,'unused',false,[$name])[0];$out=[];
+    $action=$name==='default_rule'?SettingsActions::setup((int)$t->server_id,'unused',$name):SettingsActions::make((int)$t->server_id,(int)$t->id,'unused',false,[$name])[0];$out=[];
     foreach($action->getSchema(\Filament\Schemas\Schema::make())->getComponents(withHidden:true) as $field){if($field instanceof \Filament\Forms\Components\Field){$out[$field->getName()]=$field;}}
     return $out;
 };
@@ -45,7 +45,7 @@ foreach(['default_rule'=>['mode','markup','round_up','fixed_register','fixed_ren
 
 // An unchanged retained installation has no lifecycle settings and no implied support.
 same(null,$saved(),'Old native settings have no inferred lifecycle facts');same(['grace'=>false,'restore'=>false],$cap(true),'Missing evidence closes both capabilities even with future acceptance');
-Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('No lifecycle policy saved')->assertActionVisible($action);
+Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('Not set')->assertSee('Late renewals are off for this TLD.')->assertDontSee('No lifecycle policy saved')->assertActionVisible($action);
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction($action)->assertActionMounted($action);
 $ticket=$page->get('mountedActions.0.data.review_key');
 same(null,$page->get('mountedActions.0.data.grace_extra'),'No default zero charge without verification');
@@ -125,7 +125,7 @@ $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountActi
 same($valid['grace_days'],(int)$page->get('mountedActions.0.data.grace_days'),'Fresh review after repair shows saved lifecycle facts');
 
 // Every malformed field is tested against a complete, positive baseline.
-foreach(Facts::FIELDS as $missing){$v=$valid;unset($v[$missing]);commerceReject(fn()=>Facts::validate($v));same(null,Facts::until($v,'grace',$now),'Missing '.$missing.' never offers grace');}
+foreach(Facts::FIELDS as $missing){$v=$valid;unset($v[$missing]);commerceReject(fn()=>Facts::validate($v));same(false,Facts::allows($v,'grace',$now),'Missing '.$missing.' never offers grace');}
 foreach([
     ['grace_days'=>-1],['grace_days'=>366],['restore_days'=>-1],['restore_days'=>366],['grace_days'=>'30'],['restore_days'=>1.5],
     ['grace_supported'=>1],['restore_supported'=>null],['auto_renew_only'=>'0'],['conflicting'=>0],['extra_field'=>'unverified'],
@@ -138,19 +138,21 @@ foreach(['','grace_','restore_'] as $prefix){
 }
 foreach(['grace','restore'] as $which){
     foreach([[$which.'_supported'=>false],[$which.'_days'=>0],['conflicting'=>true],[$which.'_currency'=>'EUR'],
-        ['verified_at'=>$now->modify('-30 days')->format(DATE_ATOM)],[$which.'_verified_at'=>$now->modify('-30 days')->format(DATE_ATOM)],
         ['verified_at'=>$now->modify('+1 second')->format(DATE_ATOM)],[$which.'_verified_at'=>$now->modify('+1 second')->format(DATE_ATOM)]] as $change){
-        same(null,Facts::until([...$valid,...$change],$which,$now),'Unsafe '.$which.' evidence refuses: '.json_encode($change));
+        same(false,Facts::allows([...$valid,...$change],$which,$now),'Unsafe '.$which.' evidence refuses: '.json_encode($change));
     }
-    $at=$now->modify('-30 days +1 second')->format(DATE_ATOM);
-    same($now->modify('+1 second')->getTimestamp(),Facts::until([...$valid,'verified_at'=>$at],$which,$now)?->getTimestamp(),'Freshness boundary one second before expiry');
-    same(null,Facts::until($valid,$which,$now->modify('+30 days')),'Exact freshness expiry closes capability');
+    // Saved values stay until staff change them: old verification never closes the capability.
+    $old=$now->modify('-400 days')->format(DATE_ATOM);
+    same(true,Facts::allows([...$valid,'verified_at'=>$old,$which.'_verified_at'=>$old],$which,$now),'Old saved '.$which.' values still apply');
+    same(true,Facts::allows($valid,$which,$now->modify('+10 years')),'Saved '.$which.' values never expire');
+    same(true,Facts::allows([...$valid,'verified_at'=>$now->format(DATE_ATOM),$which.'_verified_at'=>$now->format(DATE_ATOM)],$which,$now),'Verification at the current instant applies');
 }
-same(null,Facts::until([...$valid,'auto_renew_only'=>true],'grace',$now),'Auto-renew-only ending cannot use grace renewal');
-expect(Facts::until([...$valid,'auto_renew_only'=>true],'restore',$now)!==null,'Auto-renew-only flag does not invent a restore prohibition');
-same(null,Facts::until($valid,'register',$now),'Unknown action refuses');
+same(false,Facts::allows([...$valid,'auto_renew_only'=>true],'grace',$now),'Auto-renew-only ending cannot use grace renewal');
+same(true,Facts::allows([...$valid,'auto_renew_only'=>true],'restore',$now),'Auto-renew-only flag does not invent a restore prohibition');
+same(false,Facts::allows($valid,'register',$now),'Unknown action refuses');
 $offset=[...$valid,'verified_at'=>'2026-10-18T05:00:00-07:00','grace_verified_at'=>'2026-10-18T14:00:00+02:00'];
-same(Facts::until($valid,'grace',$now)?->getTimestamp(),Facts::until($offset,'grace',$now)?->getTimestamp(),'Verification uses instants across UTC offsets');
+same(true,Facts::allows($offset,'grace',$now),'Verification uses instants across UTC offsets');
+same(false,Facts::allows([...$valid,'grace_verified_at'=>'2026-10-18T14:00:01+02:00'],'grace',$now->modify('-2 hours')),'Offset instants after now refuse');
 foreach([0,365] as $days){same($days,Facts::validate([...$valid,'grace_days'=>$days,'restore_days'=>$days])['grace_days'],'Day boundary preserved');}
 
 // Actual published price/cost relation, independent of the configured rule mode.
@@ -172,22 +174,34 @@ foreach([['7.99','8.0000','0.0000','USD','USD'],['0.00','8.0000','0.0000','USD',
     commerceReject(fn()=>Facts::price($retail,new Money($base,$c1),new Money($fee,$c2)));
 }
 
+$unreadable=static function(string $case)use($saved,$cap,$t,$now):void{
+    same(null,$saved(),$case.': public read remains closed');same(['grace'=>false,'restore'=>false],$cap(true),$case.': both capabilities stay off');
+    $facts=Policies::facts($t,$now,true);
+    foreach(['Renewal grace period'=>'grace','Redemption period'=>'restore'] as $label=>$action){
+        same(null,$facts[$label]['value'],$case.': unreadable '.$label);
+        same("Saved settings can't be read. ".Policies::OFF[$action],$facts[$label]['sub'],$case.': plain unreadable cause');
+        same(true,$facts[$label]['edit'],$case.': existing edit flag remains');
+    }
+};
 // Corruption, duplicate settings and copied bindings never become offer authority.
 foreach([
     ['binding'=>$other->fingerprint,'tld'=>'com','facts'=>$valid],['binding'=>$b->fingerprint,'tld'=>'net','facts'=>$valid],
     ['binding'=>$b->fingerprint,'tld'=>'com','facts'=>[]],['binding'=>$b->fingerprint,'tld'=>'com','facts'=>'bad'],
-] as $value){$row->value=json_encode($value);$row->save();same(null,$saved(),'Wrong owner/ending/shape refuses');}
-$row->value='{';$row->save();same(null,$saved(),'Invalid JSON refuses');
-DB::table('settings')->where('id',$row->id)->update(['value'=>'invalid ciphertext']);same(null,$saved(),'Invalid encryption refuses');
-storeLifecycleFixture($b,$valid);$row=$row->fresh();$row->encrypted=false;$row->save();same(null,$saved(),'Unencrypted facts refused');
+] as $value){$row->value=json_encode($value);$row->save();same(null,$saved(),'Wrong owner/ending/shape refuses');$unreadable('Wrong owner/ending/shape');}
+$row->value='{';$row->save();same(null,$saved(),'Invalid JSON refuses');$unreadable('Invalid JSON');
+Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('Missing')->assertSee("Saved settings can't be read.")->assertDontSee('Not set');
+DB::table('settings')->where('id',$row->id)->update(['value'=>'invalid ciphertext']);same(null,$saved(),'Invalid encryption refuses');$unreadable('Invalid encryption refuses');
+storeLifecycleFixture($b,$valid);$row=$row->fresh();$row->encrypted=false;$row->save();same(null,$saved(),'Unencrypted facts refused');$unreadable('Unencrypted facts refused');
 // Simulate a damaged retained database that lost the native unique index.
 Schema::table('settings',fn($table)=>$table->dropUnique(['key','settingable_id','settingable_type']));
 storeLifecycleFixture($b,$valid);$duplicate=$server->settings()->create(['key'=>$key,'value'=>'duplicate','encrypted'=>true,'type'=>'string']);
-same(null,$saved(),'Duplicate evidence refuses');$assertRefusal(fn()=>$writer->run($review(),[...$valid,'verified'=>true],$now),'Conflicting lifecycle settings require repair.');$duplicate->delete();
+same(null,$saved(),'Duplicate evidence refuses');$unreadable('Duplicate evidence refuses');$assertRefusal(fn()=>$writer->run($review(),[...$valid,'verified'=>true],$now),'Conflicting lifecycle settings require repair.');$duplicate->delete();
 Schema::table('settings',fn($table)=>$table->unique(['key','settingable_id','settingable_type']));
-DB::table($t->getTable())->where('id',$t->id)->update(['account_fingerprint'=>$other->fingerprint]);same(null,$saved(),'Corrupt TLD account refuses');
+DB::table($t->getTable())->where('id',$t->id)->update(['account_fingerprint'=>$other->fingerprint]);same(null,$saved(),'Corrupt TLD account refuses');$unreadable('Corrupt TLD account refuses');
 DB::table($t->getTable())->where('id',$t->id)->update(['account_fingerprint'=>$b->fingerprint]);$t->refresh();
 expect($cap()['grace'],'Restored binding revalidates; no terminal marker');
+$missingAccount=clone $t;$missingAccount->server_id=PHP_INT_MAX;
+foreach(Policies::facts($missingAccount,$now,true) as $fact){same(null,$fact['value'],'Account lookup failure is unreadable');expect(str_starts_with($fact['sub'],"Saved settings can't be read."),'Account lookup cause is honest');}
 
 // Staff refusal, stale review and repeat verification are local, atomic changes.
 $before=serialize(DB::table('settings')->get());
@@ -200,8 +214,9 @@ $stale=$review();$writer->run($review(),[...$valid,'conflicting'=>true,'verified
 commerceReject(fn()=>$writer->run($stale,[...$valid,'verified'=>true],$now));
 $writer->run($review(),[...$valid,'verified'=>true],$now);same(['grace'=>true,'restore'=>false],$cap(),'Resolving conflict can enable policy again without enabling restore');
 foreach([false,true,false,true] as $support){$writer->run($review(),[...$valid,'grace_supported'=>$support,'verified'=>true],$now);same($support,$cap()['grace'],'Disable and reverify across cycles');}
-$old=[...$valid,'verified_at'=>$now->modify('-31 days')->format(DATE_ATOM)];$writer->run($review(),[...$old,'verified'=>true],$now);same(false,$cap()['grace'],'Saving stale facts never refreshes their age');
-$writer->run($review(),[...$valid,'verified'=>true],$now);same(true,$cap()['grace'],'New verification renews policy');
+$old=[...$valid,'verified_at'=>$now->modify('-400 days')->format(DATE_ATOM)];$writer->run($review(),[...$old,'verified'=>true],$now);same(true,$cap()['grace'],'Saved facts stay until staff change them, however old');
+same($old['verified_at'],$saved()['verified_at'],'Saving keeps the entered verification time');
+$writer->run($review(),[...$valid,'verified'=>true],$now);same(true,$cap()['grace'],'New verification keeps policy on');
 $before=serialize(DB::table('settings')->get());
 foreach([Staff::VIEW,Staff::COSTS,Staff::POLICY,Review::permission('lifecycle')] as $removed){
     $u->role->update(['permissions'=>array_values(array_diff($permissions,[$removed]))]);
@@ -209,7 +224,7 @@ foreach([Staff::VIEW,Staff::COSTS,Staff::POLICY,Review::permission('lifecycle')]
     if($removed!==Staff::VIEW){Livewire::actingAs($u->fresh())->test(ViewTld::class,['record'=>$t->id])->assertActionHidden($action);}
 }
 $u->role->update(['permissions'=>[Staff::VIEW]]);
-Livewire::actingAs($u->fresh())->test(ViewTld::class,['record'=>$t->id])->assertSee('Updated '.$now->setTimezone(new DateTimeZone('UTC'))->format('M j, Y'))->assertDontSee('USD 80.00')->assertDontSee('Restore fee')->assertActionHidden($action);
+Livewire::actingAs($u->fresh())->test(ViewTld::class,['record'=>$t->id])->assertSee('Last saved '.$now->setTimezone(new DateTimeZone('UTC'))->format('M j, Y'))->assertDontSee('USD 80.00')->assertDontSee('Restore fee')->assertActionHidden($action);
 $u->role->update(['permissions'=>$permissions]);
 foreach([
     new Review($u->id,$other->serverId,$t->id,'lifecycle',Review::ticket($u->id,$other->serverId,$t->id,'lifecycle',Review::stamp($other->serverId,$t->id)),'Foreign account review'),

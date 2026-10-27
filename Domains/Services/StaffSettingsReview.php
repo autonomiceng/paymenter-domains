@@ -20,6 +20,8 @@ final class StaffSettingsReview
     { $this->input=array_intersect_key($data,array_flip(['ending','history_action','delivery_id','alert_id','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days',...LifecycleFacts::FIELDS])); }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
         public readonly string $action,private readonly string $ticket,public readonly string $reason) {}
+    /** Saving these publishes prices, so they also need the publish permission. */
+    public const PUBLISHES=['override','remove_override','default_rule'];
     public static function permission(string $action): string
     {if(!isset(self::ACTIONS[$action])){throw new \DomainException('Unknown settings action.');}return 'admin.domains.settings.'.$action;}
     public static function stamp(int $serverId,?int $tldId,bool $lock=false): string
@@ -42,7 +44,7 @@ final class StaffSettingsReview
     {
         $u=User::whereKey($this->actorId)->lockForUpdate()->firstOrFail();
         $role=$u->role_id?Role::whereKey($u->role_id)->lockForUpdate()->first():null;$u->setRelation('role',$role);
-        foreach(['admin.domains.view','admin.domains.manage-policy',self::permission($this->action),...($this->action==='lifecycle'?['admin.domains.costs']:[])] as $p){
+        foreach(['admin.domains.view','admin.domains.manage-policy',self::permission($this->action),...($this->action==='lifecycle'?['admin.domains.costs']:[]),...(in_array($this->action,self::PUBLISHES,true)?[self::permission('publish')]:[])] as $p){
             if(!$u->hasPermission($p)){throw new \DomainException('Current staff permissions required.');}}
         StaffReason::require($this->reason);
     }
@@ -97,12 +99,12 @@ final class StaffSettingsReview
             return $rows;
         }catch(\Throwable){throw new \DomainException('Audit unavailable. Changes held.');}
     }
-    public function record(string $phase='completed'): void
+    public function record(string $phase='completed',?array $outcome=null): void
     {
         if(!$this->verified||DB::transactionLevel()!==1){throw new \LogicException('Locked review required.');}
         $s=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();
         self::append($s,['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
-            'reason'=>$this->reason,'phase'=>$phase,'input'=>$this->input,'tld_id'=>$this->action==='default_rule'?null:$this->tldId,'before'=>$this->before,'after'=>$this->state($this->serverId,$this->tldId)]);
+            'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>$this->action==='default_rule'?null:$this->tldId,'before'=>$this->before,'after'=>$this->state($this->serverId,$this->tldId)]);
     }
     /** Caller holds the server/account mutex; audit and the local change commit together. */
     public static function append(Server $s,array $entry): void
@@ -135,8 +137,8 @@ final class StaffSettingsReview
             'snapshot'=>self::stamp($server,$tld,true)];
     }
     /** Outcome audit grants no authority; retain it even if permissions or the saved state changed during I/O. */
-    public function finish(string $phase): void
-    {DB::transaction(function()use($phase){$this->lockAccounts();$this->record($phase);});}
+    public function finish(string $phase,?array $outcome=null): void
+    {DB::transaction(function()use($phase,$outcome){$this->lockAccounts();$this->record($phase,$outcome);});}
     public function local(\Closure $write,string $phase='completed'): mixed
     {
         if(DB::transactionLevel()!==0){throw new \LogicException('Staff review owns its transaction.');}

@@ -14,13 +14,13 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,Registrar
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolicy};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites,PricingRules,CatalogueAcceptances};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
-$f=commerceFixture(true);extract($f);tldPanel();Carbon\Carbon::setTestNow($now);$t=$tlds[0];
+$f=commerceFixture(true);extract($f);tldPanel();pinStaffClock($now);$t=$tlds[0];
 $permissions=[Staff::VIEW,Staff::POLICY,Staff::COSTS];foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
 $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($native,$sellers,$bindings,true);app()->instance(StaffSettingsWrites::class,$writer);
 $review=static fn(string $action,?int $ending=null,?int $account=null,?string $stamp=null,?string $key=null,string $reason='Synthetic reviewed change')=>new Review($u->id,$account??$t->server_id,$ending,$action,
     $key??Review::ticket($u->id,$account??$t->server_id,$ending,$action,$stamp??Review::stamp($account??$t->server_id,$ending)),$reason);
 $fixed=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'1.00','fixed_renew'=>'1.00','fixed_transfer'=>'1.00'];
-foreach(array_keys(Review::ACTIONS) as $action){
+foreach(array_diff(array_keys(Review::ACTIONS),staffNoButtonActions()) as $action){
     $page=Livewire::actingAs($u)->test(in_array($action,staffSetupActions(),true)?RegistrarAccount::class:ViewTld::class,
         in_array($action,staffSetupActions(),true)?['account'=>$t->server_id]:['record'=>$t->id]);
     $name=in_array($action,staffSetupActions(),true)?setupAction($action,$t->server_id):$action;
@@ -33,7 +33,8 @@ $u->role->update(['permissions'=>[Staff::VIEW,Staff::POLICY]]);
 foreach(array_keys(Review::ACTIONS) as $action){
     $setup=in_array($action,staffSetupActions(),true);
     $page=Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id]);
-    if(in_array($action,['configure','processing'],true)){$page->assertActionHidden(setupAction($action,$t->server_id));}elseif($setup){$page->assertActionDoesNotExist(setupAction($action,$t->server_id));}else{$page->assertActionHidden($action);}
+    if(in_array($action,staffNoButtonActions(),true)){$page->assertActionDoesNotExist($action);}
+    elseif(in_array($action,['configure','processing'],true)){$page->assertActionHidden(setupAction($action,$t->server_id));}elseif($setup){$page->assertActionDoesNotExist(setupAction($action,$t->server_id));}else{$page->assertActionHidden($action);}
 }
 $u->role->update(['permissions'=>$permissions]);
 $staleFirst=['processing','delivery_review','alert_review'];
@@ -44,12 +45,19 @@ foreach([...$staleFirst,...array_values(array_diff(array_keys(Review::ACTIONS),$
     tldRefusal(fn()=>$writer->run($bad,['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'account-enom'],'history_action'=>'register','confirmed'=>true,'enabled'=>false,'delivery_id'=>1,'alert_id'=>1], $now),'Settings changed. Reload this page.');
 }
 foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>$writer->run($review('default_rule',$t->id,reason:$bad),$fixed,$now));}
-$r=$review('default_rule',$t->id,reason:str_repeat('🦦',500));$writer->run($r,$fixed,$now);same('fixed',(new PricingRules)->defaultRule($t->server_id)['mode'],'Default saved');
+$r=$review('default_rule',$t->id,reason:str_repeat('🦦',500));same(['published'=>1,'failed'=>[]],$writer->run($r,$fixed,$now),'Default publishes the TLD that follows it');same('fixed',(new PricingRules)->defaultRule($t->server_id)['mode'],'Default saved');
+same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($t->fresh()),'Published below-cost default is not for sale');
+$auditBeforeReplay=Review::historyRows(App\Models\Server::findOrFail($t->server_id));
+same(['completed','publication_completed'],array_column($auditBeforeReplay,'phase'),'Default save and publication outcome audited');
+$historyBeforeReplay=TldFacts::history($t->server_id);
+tldRefusal(fn()=>$writer->run($r,$fixed,$now),'Settings changed. Reload this page.'); // This write changed its stamp.
+same($historyBeforeReplay,TldFacts::history($t->server_id),'Replay audit unchanged');
+same($auditBeforeReplay,Review::historyRows(App\Models\Server::findOrFail($t->server_id)),'Refused replay retains exact saved audit');
+expect(in_array('Default pricing changed',array_column(TldFacts::history($t->server_id,999),'change'),true),'Shared default appears in sibling history');
+// Costs out of date: the default is saved, but this TLD keeps its published prices and says so.
+same(['published'=>0,'failed'=>['.com']],$writer->run($review('default_rule',$t->id),[...$fixed,'fixed_renew'=>'2.00'],$now->modify('+2 days')),'Out of date TLD is named');
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Prices not published'],TldFacts::salesState($t->fresh()),'Unpublished rule blocks ready status');
 $rows=TldFacts::prices($t->fresh());expect($rows&&collect($rows)->every(fn($r)=>in_array('unpublished',$r['flags'],true)),'Unpublished rule has visible alert');
-tldRefusal(fn()=>$writer->run($r,$fixed,$now),'Settings changed. Reload this page.'); // This write changed its stamp.
-same(1,count(TldFacts::history($t->server_id)),'Replay audit unchanged');
-expect(in_array('Default pricing changed',array_column(TldFacts::history($t->server_id,999),'change'),true),'Shared default appears in sibling history');
 $same=['min_years'=>1,'max_years'=>3,'enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true];
 $writer->run($review('tld_settings',$t->id),$same,$now); // Settle the synthetic updated_at first.
 $stamp=Review::stamp($t->server_id,$t->id);$key=Review::ticket($u->id,$t->server_id,$t->id,'tld_settings',$stamp);
@@ -62,12 +70,12 @@ Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('tl
 $r=$review('publish',$t->id);$before=Price::where('server_id',$t->server_id)->pluck('revision','id')->all();$writer->run($r,[],$now);
 foreach(Price::where('server_id',$t->server_id)->get() as $p){same($before[$p->id]+1,$p->revision,'Revision incremented');same($p->action==='renew'?null:'below_cost',$p->hold_reason,'Margin rule');same('below_cost',$p->eligibility['staff_alert'],'Staff alert');}
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($t->fresh()),'Below-cost sales never reported ready');
-same('1.00',$prices->renewal($t->server_id,$t->account_fingerprint,'com','USD',$now)->retail,'Below-cost renewal billed at configured retail');
+same('2.00',$prices->renewal($t->server_id,$t->account_fingerprint,'com','USD',$now)->retail,'Below-cost renewal billed at configured retail');
 commerceReject(fn()=>$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now));
-$nativePage=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('publish')->assertActionMounted('publish');
+$nativePage=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('override')->assertActionMounted('override');
 $nativeKey=$nativePage->get('mountedActions.0.data.review_key');
-$nativePage->setActionData(['reason'=>'Confirm native publication'])->callMountedAction()->assertNotified('Change recorded')->assertSet('mountedActions',[]);
-tldRefusal(fn()=>$writer->run($review('publish',$t->id,null,null,$nativeKey),[],$now),'Settings changed. Reload this page.');
+$nativePage->setActionData(['pricing'=>'custom',...$fixed,'reason'=>'Confirm native publication'])->callMountedAction()->assertNotified('Prices published')->assertSet('mountedActions',[]);
+tldRefusal(fn()=>$writer->run($review('override',$t->id,null,null,$nativeKey),$fixed,$now),'Settings changed. Reload this page.');
 $r=$review('override',$t->id);$writer->run($r,[...$fixed,'fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00'],$now);
 expect(!$t->fresh()->use_default_rule,'Override enabled');$writer->run($review('publish',$t->id),[],$now);
 $r=$review('remove_override',$t->id);$writer->run($r,[],$now);expect($t->fresh()->use_default_rule,'Override removed');
@@ -140,6 +148,6 @@ same(2,CatalogueAcceptances::load(CatalogueAcceptances::binding(Account::where('
 commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\PublicationEligibility::require($tlds[1]->fresh(),'register',1),'Repair cannot reuse earlier import proof');
 $audit->value='invalid';$audit->save();$before=Price::pluck('revision','id')->all();
 commerceReject(fn()=>$writer->run($review('publish',$t->id),[],$now));same($before,Price::pluck('revision','id')->all(),'Corrupt audit rolls back writes');
-$u->role->update(['permissions'=>[Staff::VIEW]]);Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('publish');
+$u->role->update(['permissions'=>[Staff::VIEW]]);Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('override');
 echo "Native settings confirmations, denial, stale/replay, audit, pricing, seller, acceptance and fake setup passed.\n";$nativeSuccessful=true;
 }

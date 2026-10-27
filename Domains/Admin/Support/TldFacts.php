@@ -191,7 +191,7 @@ final class TldFacts
             PriceCatalogue::currentEvidence($renew,$ruleHash,$now);PriceCatalogue::currentEvidence($sale,$ruleHash,$now);
             return ['label'=>'For sale','tone'=>'success','reason'=>null];
         }catch(\Throwable){
-            // Publishing is still its own action, so a saved but unpublished rule keeps its own reason.
+            // Saving prices publishes them; a TLD still on an older rule missed a default change because its costs were out of date.
             if($flagged('unpublished')){return $off('Prices not published');}
             if($flagged('cost_missing')){return $off('Cost missing');}
             if(collect($rows)->contains(fn($r)=>!$r['fresh'])){return $off('Prices out of date');}
@@ -199,7 +199,7 @@ final class TldFacts
         }
     }
     /** Stored history labels, which are the action names staff saw, mapped to what changed. */
-    private const CHANGES=['Edit default rule'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Default pricing restored',
+    private const CHANGES=['Edit default rule'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Switched to the account default',
         'Select seller'=>'Registrar for new orders changed','Publish prices'=>'Prices published','Review TLD availability'=>'Terms changed',
         'Review lifecycle facts'=>'Grace and redemption changed'];
     /** Newest first: time, change, reason and who made it. Null when the saved history can't be read. */
@@ -211,7 +211,7 @@ final class TldFacts
             return array_map(static function($r){
                 $change=self::CHANGES[$r['action']]??$r['action'];
                 $phase=(string)$r['phase'];
-                if(str_ends_with($phase,'_requested')){$change.=': started';}elseif(str_ends_with($phase,'_refused')){$change.=': refused';}
+                if(str_ends_with($phase,'_requested')){$change.=': started';}elseif(str_ends_with($phase,'_refused')){$change.=': refused';}elseif($phase==='publication_completed'){$change.=': publishing finished';}
                 try{$at=\Carbon\CarbonImmutable::parse((string)$r['at'])->utc()->format('M j, Y H:i').' UTC';}catch(\Throwable){$at=(string)$r['at'];}
                 return ['time'=>$at,'change'=>$change,'reason'=>(string)$r['reason'],'by'=>'Staff #'.$r['actor_id']];
             },array_reverse(array_values($rows)));

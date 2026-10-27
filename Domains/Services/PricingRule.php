@@ -95,6 +95,22 @@ final class PricingRule
         return self::decimal($minor);
     }
 
+    /** Round-up choices in plain words, in ROUNDING order. */
+    public const ROUNDING_LABELS = ['none' => 'No rounding', 'whole' => 'Up to the next whole dollar', 'half' => 'Up to the next $0.50', 'ending_99' => 'Up to the next .99'];
+
+    /** The rule as staff read it, e.g. "cost + $1.00, rounded up to the next $0.50" or "cost + 30%". */
+    public static function describe(array $rule): string
+    {
+        $rule = self::validate($rule);
+        $money = static fn (string $amount): string => '$'.$amount;
+        if ($rule['mode'] === 'fixed') {
+            return $money($rule['fixed']['register']).' a year to register, '.$money($rule['fixed']['renew']).' to renew and '.$money($rule['fixed']['transfer']).' to transfer';
+        }
+        $markup = $rule['mode'] === 'markup_amount' ? $money($rule['markup']) : rtrim(rtrim($rule['markup'], '0'), '.').'%';
+        $round = ['none' => '', 'whole' => ', rounded up to the next whole dollar', 'half' => ', rounded up to the next $0.50', 'ending_99' => ', rounded up to the next .99'][$rule['round_up']];
+        return 'cost + '.$markup.$round;
+    }
+
     public static function covers(string $retail, string $cost): bool
     {
         return self::units($retail, 2) * 100 >= self::units($cost);

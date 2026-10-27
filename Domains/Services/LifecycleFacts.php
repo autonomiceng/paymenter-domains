@@ -3,10 +3,9 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
-/** Verified account/TLD policy and separate registrar charges. No spending authority. */
+/** Verified account/TLD policy and separate registrar charges. No spending authority. Saved facts stay until staff change them. */
 final class LifecycleFacts
 {
-    public const MAX_AGE=30*86400;
     public const FIELDS=['grace_days','restore_days','grace_supported','restore_supported','auto_renew_only','conflicting',
         'verified_at','source','grace_extra','grace_currency','grace_verified_at','grace_source',
         'restore_fee','restore_currency','restore_verified_at','restore_source'];
@@ -46,17 +45,15 @@ final class LifecycleFacts
         if($errors!==false&&($errors['warning_count']||$errors['error_count'])){throw new \DomainException('Invalid lifecycle verification time.');}
         return $at;
     }
-    public static function until(array $v,string $action,\DateTimeImmutable $now): ?\DateTimeImmutable
+    public static function allows(array $v,string $action,\DateTimeImmutable $now): bool
     {
-        if(!in_array($action,['grace','restore'],true)){return null;}
+        if(!in_array($action,['grace','restore'],true)){return false;}
         try{
             $v=self::validate($v);
             if($v['conflicting']||!$v[$action.'_supported']||$v[$action.'_days']===0
-                ||($action==='grace'&&$v['auto_renew_only'])||$v[$action.'_currency']!=='USD'){return null;}
-            $policy=self::instant($v['verified_at']);$fee=self::instant($v[$action.'_verified_at']);
-            $until=min($policy,$fee)->modify('+'.self::MAX_AGE.' seconds');
-            return $policy<=$now&&$fee<=$now&&$until>$now?$until:null;
-        }catch(\DomainException){return null;}
+                ||($action==='grace'&&$v['auto_renew_only'])||$v[$action.'_currency']!=='USD'){return false;}
+            return self::instant($v['verified_at'])<=$now&&self::instant($v[$action.'_verified_at'])<=$now;
+        }catch(\DomainException){return false;}
     }
     /** Preserve the published annual renewal markup, including fixed-price and rounded rules. */
     public static function price(string $annualNet,Money $renewalCost,Money $extra): Money

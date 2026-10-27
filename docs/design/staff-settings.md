@@ -34,7 +34,7 @@ retained holders depend on it.
 
 ## Post-expiry lifecycle facts
 
-**TLDs & pricing → Pricing & seller → Review lifecycle facts** records facts for
+**TLDs & pricing → a TLD → Edit grace and redemption** records facts for
 one registrar account and TLD. It requires view, policy, cost and lifecycle-setting
 permissions, a current one-use review and a reason. Before/after facts and sources
 stay in the encrypted staff audit. Viewing costs requires the cost permission.
@@ -50,8 +50,10 @@ status, conflicts, policy source and verification time. Extra grace charge and
 restore fee each retain their own amount, currency, source and verification time.
 Zero means independently verified no extra charge; absence never means zero.
 Verification requires an explicit UTC offset. Opening or saving a form does not
-refresh its verification time. Facts expire after 30 days; the policy and relevant
-charge must both be current. Non-USD facts are retained but cannot enable the
+refresh its verification time. Saved facts do not expire: they stay until staff
+change them, and the TLD page shows when they were last saved. The policy and the
+relevant charge must both be saved; a verification time in the future refuses.
+Unset facts show as "Not set" and keep late renewals and restores off. Non-USD facts are retained but cannot enable the
 current USD billing path. Conflicts, missing facts and zero/unsupported windows
 close the affected capability. Auto-renew-only endings never allow grace renewal.
 Grace admission starts at the provider expiry instant, ends strictly before the earlier provider or saved UTC expiry plus the verified whole grace days, and cannot remain valid beyond that deadline; unknown expiry instants refuse admission.
@@ -64,6 +66,24 @@ calendar date. Restore additionally requires separate provider acceptance from
 trusted deployment code; staff cannot enable it here. There is no restore writer.
 Enom `RGP` maps to redemption; `Extended RGP` maps to a distinct extended-redemption
 state for support handling. Both remain refused by ordinary renewal admission.
+
+## TLD prices
+
+The TLD page **More** menu holds **Edit prices** and **Edit terms**. **Edit prices**
+offers the account default or prices for that TLD only, shows the formula in words
+and previews register, renew and transfer for each sold term (cost, current price,
+price after saving, below-cost rows flagged). Saving publishes at once through the
+same publish path and price revisions: below-cost registration and transfer terms
+are held, below-cost renewals are still billed, both alert staff, and issued invoices
+keep their prices. Missing or stale costs refuse the save and change nothing.
+
+**Edit default pricing** lives on the registrar account page. Its dialog names the
+TLDs that use the default; saving publishes each of them and reports any it could not
+publish. Enom catalogue accounts, TEST and live, publish only when staff save; other
+accounts also republish in the background after each price sync. Choosing the account
+default in **Edit prices** runs the `remove_override` review; the `publish` review
+stays server-side with no button. Because saving publishes, both dialogs also need the
+publish permission.
 
 ## Registrar costs and renewal margin
 

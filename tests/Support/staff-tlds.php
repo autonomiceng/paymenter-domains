@@ -29,5 +29,18 @@ function tldRefusal(callable $call,string $message): void
 function staffSetupActions(): array
 {
     return ['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox',
-        'test_renewal','test_management','live_renewal','live_management','renewal_billing'];
+        'test_renewal','test_management','live_renewal','live_management','renewal_billing','default_rule'];
+}
+
+/** Actions with no button of their own: saving prices publishes, and "Use the account default" is a choice in Edit prices. */
+function staffNoButtonActions(): array
+{
+    return ['publish','remove_override'];
+}
+
+/** Pin the engine clock, as staff actions read it for cost freshness. */
+function pinStaffClock(DateTimeImmutable $at): void
+{
+    Carbon\Carbon::setTestNow($at);
+    app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new class($at) implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock{public function __construct(private DateTimeImmutable $at){} public function now():DateTimeImmutable{return $this->at;}});
 }

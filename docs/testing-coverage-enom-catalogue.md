@@ -14,14 +14,14 @@ fresh review and a reason:
 3. **Accept catalogue** records independently verified `com`, registration term 1,
    supported registry requirements and safe annual holder renewal; no reads.
    Leave transfer unaccepted for this baseline.
-4. Set a pricing default, then **Import accepted ending** for `com`: GetTLDList,
+4. Set the account default pricing on the registrar account page, then **Import accepted ending** for `com`: GetTLDList,
    GetTLDDetails, GetExtAttributes and two PE_GetProductPrice reads (register/renew).
    It imports costs and initializes an unselected seller policy. A new TLD stays
    disabled; re-import preserves withdrawn registration, transfer and renewal support, and publication.
    Costs expire 60 minutes after the read: re-import costs five reads again and
-   removes that ending’s existing TEST cart lines. Publish prices again locally.
-5. Open the TLD; explicitly verify/enable annual registration and renewal, publish
-   native prices, then select the account as seller. These steps make no reads.
+   removes that ending’s existing TEST cart lines. Save **Edit prices** again to republish.
+5. Open the TLD; explicitly verify/enable annual registration and renewal, save
+   **Edit prices** to publish native prices, then select the account as seller. These steps make no reads.
 6. Pricing/search pages show TEST and the accepted annual offer without reads.
    Explicit availability search makes one Check; adding a cart line makes another
    fresh Check. Checkout refuses with a TEST preview explanation before creating

@@ -89,6 +89,7 @@ class RegistrarAccount extends Page
             $sections[]=Group::make([
                 Section::make('Setup checklist')->schema($this->rows('setup',AccountChecklist::setup($a,$this->status())))->columnSpanFull(),
                 Section::make('Renewal invoices and reminders')->schema($renewals)->columnSpanFull(),
+                Section::make('Default pricing')->schema($this->defaultPricing($id))->visible(fn()=>Staff::can(Staff::POLICY))->columnSpanFull(),
                 Section::make('Other settings')->schema([$more])->collapsible()->collapsed()->columnSpanFull(),
             ])->key('account_'.$id)->extraAttributes(['class'=>'domains-account'])->columnSpanFull();
         }
@@ -96,6 +97,17 @@ class RegistrarAccount extends Page
         if ($system['passing']) { $checks[]=Section::make('Passing checks')->schema($this->rows('pass',$system['passing'],false))->collapsible()->collapsed()->compact(); }
         $sections[]=Section::make('System checks')->schema($checks)->key('system_checks')->extraAttributes(['class'=>'domains-account'])->columnSpanFull();
         return $schema->components($sections);
+    }
+    /** The account's default pricing and the TLDs that use it. Saving publishes those TLDs. */
+    private function defaultPricing(int $id): array
+    {
+        try { $rule=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::describe((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->defaultRule($id)); }
+        catch (\Throwable) { $rule=null; }
+        $tlds=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::bound(\Paymenter\Extensions\Servers\Domains\Models\Tld::query())->where('server_id',$id)->where('use_default_rule',true)->orderBy('tld')->pluck('tld');
+        $used=$tlds->isEmpty()?'No TLDs use it yet.':'Used by '.$tlds->count().' '.($tlds->count()===1?'TLD':'TLDs').': '.$tlds->map(fn($t)=>'.'.$t)->implode(', ').'.';
+        $entry=MissingEntry::apply(TextEntry::make('default_pricing')->label('Customer pays')->state($rule)->inlineLabel(),cause:$rule===null?"Saved default pricing can't be read":null)
+            ->belowContent($rule===null?null:$used.' TLDs with their own prices are not affected.');
+        return [Flex::make([$entry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'default_rule')])->grow(false)])->from('md')];
     }
     /** Fact rows with an optional button each: Missing shows in danger with its cause. */
     private function rows(string $prefix,array $rows,bool $buttons=true): array

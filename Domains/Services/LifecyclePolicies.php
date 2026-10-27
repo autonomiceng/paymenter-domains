@@ -11,25 +11,29 @@ final class LifecyclePolicies
     public static function key(string $tld): string
     {CanonicalName::parse('example.'.$tld,[$tld]);return 'domains_lifecycle.'.$tld;}
     public static function read(AccountBinding $binding,string $tld): ?array
+    { $saved=self::stored($binding,$tld);return is_array($saved)?$saved['facts']:null; }
+    /** Saved facts and when staff last saved them. */
+    private static function stored(AccountBinding $binding,string $tld): array|false|null
     {
         try{
             $a=Account::where('server_id',$binding->serverId)->firstOrFail();$binding->requireMatch(CatalogueAcceptances::binding($a));
-            if(!Tld::where(['server_id'=>$binding->serverId,'tld'=>$tld,'registrar_key'=>$binding->registrarKey,'account_fingerprint'=>$binding->fingerprint])->exists()){return null;}
+            if(!Tld::where(['server_id'=>$binding->serverId,'tld'=>$tld,'registrar_key'=>$binding->registrarKey,'account_fingerprint'=>$binding->fingerprint])->exists()){return false;}
             $s=Server::whereKey($binding->serverId)->where('extension','Domains')->firstOrFail();
             $rows=$s->settings()->where('key',self::key($tld))->get();
-            if($rows->count()!==1||!$rows[0]->encrypted){return null;}
+            if($rows->isEmpty()){return null;}
+            if($rows->count()!==1||!$rows[0]->encrypted){return false;}
             $v=json_decode($rows[0]->value,true,8,JSON_THROW_ON_ERROR);
-            if(!is_array($v)||($v['binding']??null)!==$binding->fingerprint||($v['tld']??null)!==$tld||!is_array($v['facts']??null)){return null;}
-            return LifecycleFacts::validate($v['facts']);
-        }catch(\Throwable){return null;}
+            if(!is_array($v)||($v['binding']??null)!==$binding->fingerprint||($v['tld']??null)!==$tld||!is_array($v['facts']??null)){return false;}
+            return ['facts'=>LifecycleFacts::validate($v['facts']),'saved_at'=>$rows[0]->updated_at?->toDateTimeImmutable()];
+        }catch(\Throwable){return false;}
     }
-    public static function until(AccountBinding $binding,string $tld,string $action,\DateTimeImmutable $now): ?\DateTimeImmutable
-    { $v=self::read($binding,$tld);return $v===null?null:LifecycleFacts::until($v,$action,$now); }
+    public static function allows(AccountBinding $binding,string $tld,string $action,\DateTimeImmutable $now): bool
+    { $v=self::read($binding,$tld);return $v!==null&&LifecycleFacts::allows($v,$action,$now); }
     /** Policy eligibility only. Owner checkout and provider writes require separate acceptance. */
     public static function capabilities(AccountBinding $binding,string $tld,\DateTimeImmutable $now,bool $restoreAccepted=false): array
     {
-        return ['grace'=>self::until($binding,$tld,'grace',$now)!==null,
-            'restore'=>$restoreAccepted&&self::until($binding,$tld,'restore',$now)!==null];
+        return ['grace'=>self::allows($binding,$tld,'grace',$now),
+            'restore'=>$restoreAccepted&&self::allows($binding,$tld,'restore',$now)];
     }
     public static function save(StaffSettingsReview $r,array $data,\DateTimeImmutable $now): void
     {
@@ -52,27 +56,32 @@ final class LifecyclePolicies
             if($rows->count()>1){throw new \DomainException('Conflicting lifecycle settings require repair.');}
             $row=$rows->first()??$s->settings()->make(['key'=>self::key($t->tld)]);
             $row->encrypted=true;$row->type='string';
-            $row->value=json_encode(['binding'=>$binding->fingerprint,'tld'=>$t->tld,'facts'=>$v],JSON_THROW_ON_ERROR);$row->save();
+            // The TLD page shows this as the last save, even when the facts are unchanged.
+            $row->value=json_encode(['binding'=>$binding->fingerprint,'tld'=>$t->tld,'facts'=>$v],JSON_THROW_ON_ERROR);$row->updated_at=\Carbon\Carbon::instance($now);$row->save();
         });
     }
     public const GRACE_HELP='Days after expiry when the domain can still be renewed at the normal price.';
     public const REDEMPTION_HELP='Period after grace when the domain can only be restored, for a restore fee.';
+    public const OFF=['grace'=>'Late renewals are off for this TLD.','restore'=>'Restoring expired domains is off for this TLD.'];
     /** Staff rows for the TLD page: label => value (null is Missing), sub (the cause when Missing), help and whether Edit applies. */
     public static function facts(Tld $t,\DateTimeImmutable $now,bool $costs): array
     {
-        try{$a=Account::where('server_id',$t->server_id)->firstOrFail();$b=CatalogueAcceptances::binding($a);$v=self::read($b,$t->tld);}
-        catch(\Throwable){$v=null;}
+        try{$a=Account::where('server_id',$t->server_id)->firstOrFail();$b=CatalogueAcceptances::binding($a);$saved=self::stored($b,$t->tld);}
+        catch(\Throwable){$saved=false;}
         $row=static fn(?string $value,?string $sub,?string $help=null,bool $edit=false)=>compact('value','sub','help','edit');
-        if($v===null){return ['Renewal grace period'=>$row(null,'No lifecycle policy saved',self::GRACE_HELP,true),
-            'Redemption period'=>$row(null,'No lifecycle policy saved',self::REDEMPTION_HELP,true)];}
-        $period=static function(string $action)use($v,$now,$row):array {
+        // Not set is a normal choice, not a fault: without saved values late renewal and restore stay off.
+        if($saved===null){return ['Renewal grace period'=>$row('Not set',self::OFF['grace'],self::GRACE_HELP,true),
+            'Redemption period'=>$row('Not set',self::OFF['restore'],self::REDEMPTION_HELP,true)];}
+        if($saved===false){return ['Renewal grace period'=>$row(null,"Saved settings can't be read. ".self::OFF['grace'],self::GRACE_HELP,true),
+            'Redemption period'=>$row(null,"Saved settings can't be read. ".self::OFF['restore'],self::REDEMPTION_HELP,true)];}
+        $v=$saved['facts'];$at=$saved['saved_at'];
+        $period=static function(string $action)use($v,$at,$row):array {
             $help=$action==='grace'?self::GRACE_HELP:self::REDEMPTION_HELP;
             if($v['conflicting']){return $row(null,'Sources disagree',$help,true);}
             if(!$v[$action.'_supported']||($action==='grace'&&$v['auto_renew_only'])){return $row('Not supported',null,$help,true);}
             if($v[$action.'_currency']!=='USD'){return $row(null,'Fee not in USD',$help,true);}
-            if($v[$action.'_days']!==0&&LifecycleFacts::until($v,$action,$now)===null){return $row(null,'Policy out of date',$help,true);}
             $days=(int)$v[$action.'_days'];
-            return $row($days.' '.($days===1?'day':'days'),'Updated '.(new \DateTimeImmutable($v['verified_at']))->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y'),$help,true);
+            return $row($days.' '.($days===1?'day':'days'),$at?'Last saved '.$at->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y'):null,$help,true);
         };
         $out=['Renewal grace period'=>$period('grace'),'Redemption period'=>$period('restore')];
         if($v['auto_renew_only']){$out['Registry auto-renew only']=$row('Yes',null);}
