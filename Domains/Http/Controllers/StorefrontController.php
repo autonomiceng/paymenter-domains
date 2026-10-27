@@ -8,7 +8,7 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\RateLimiter;
 use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Services\{PolicyEndings, Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{CartHandoffFailure, PolicyEndings, Storefront};
 
 /** Dormant until39 explicitly loads routes, views and the shared native cart admission hooks. */
 final class StorefrontController extends Controller
@@ -84,7 +84,7 @@ final class StorefrontController extends Controller
         } catch (\App\Exceptions\DisplayException $e) {
             return redirect()->route('domains.domains.search',['name'=>$input])->with('domains_notice',$e->getMessage());
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Domains cart handoff failed.',['exception_class'=>$e::class]);
+            \Illuminate\Support\Facades\Log::warning('Domains cart handoff failed.',['exception_class'=>$e::class,'exception_message_key'=>CartHandoffFailure::key($e)]);
             return redirect()->route('domains.domains.search', ['name' => $input])->with('domains_notice', 'We couldn’t add that name to your cart. Check the latest results below and try again.');
         }
         return redirect()->route('cart');

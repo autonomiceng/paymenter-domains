@@ -340,7 +340,8 @@
     "tests/runtime-refusal-test.php",
     "tests/storefront-transfer-offers-test.php",
     "tests/namesilo-fingerprint-reset-test.php",
-    "tests/staff-alert-visibility-test.php"
+    "tests/staff-alert-visibility-test.php",
+    "tests/storefront-cart-handoff-test.php"
   ],
   "ui": [],
   "runner": [
