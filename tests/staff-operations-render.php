@@ -47,11 +47,33 @@ foreach(StaffOperationReview::ACTIONS as $action=>$label){
         $page->call('$refresh');$render($page,'modal-'.$action);
     }
     if($action==='release'){
-        $refusal=Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$copy->id])->callAction('release');
-        $render($refusal,'refusal-server');$html=file_get_contents($out.'/refusal-server.html');
-        expect(str_contains($html,'update request')&&!str_contains($html,'A credit decision may be retained'),'Native nonfinancial refusal omits ledger warning');
+        // This display-only transfer has sealed attempt evidence and no native funding rows.
+        Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$copy->id])->assertActionHidden('release');
     }
     if($action==='refund'){$page->setActionData(['reason'=>'no'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);$page->call('$refresh');$render($page,'refusal-reason');}
 }
+// Release needs the real checkout, paid invoice, contacts and unsent request, not a display-only copy.
+$release=(static function(){
+    require __DIR__.'/Support/operation-fixture.php';
+    app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
+    $request=$new(placeholderComFixtureName('staff-render-release-placeholder.com'));
+    $request->update(['state'=>'held','safe_code'=>'staff_review_required']);
+    return $request->fresh();
+})();
+$attempt=$release->attempt;expect(($attempt??[])===[],'Release fixture has no attempt evidence');
+$page=Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$release->id])
+    ->assertActionVisible('release')->assertSee('Release hold');
+$render($page,'operation-release');
+// A still-releasable hold changed after opening the page. Its old review ticket must refuse.
+$release->update(['safe_code'=>'balance']);
+$page->callAction('release');
+same('held',$release->fresh()->state,'Stale release leaves the request held');
+$render($page,'refusal-server');$html=file_get_contents($out.'/refusal-server.html');
+expect(str_contains($html,StaffOperationReview::CHANGED)&&str_contains($html,'update request')
+    &&!str_contains($html,'A credit decision may be retained'),'Native nonfinancial refusal omits ledger warning');
+Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$release->id])->assertActionVisible('release')
+    ->callAction('release')->assertNotified('Hold released')->assertActionNotMounted('release');
+same('queued',$release->fresh()->state,'Fresh release queues the unsent funded request without a modal');
+same($attempt,$release->fresh()->attempt,'Release retains the unsent attempt');
 writeRenderArtifact($out.'/strings.json',json_encode($rows,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 echo "Native operation queue, view, four confirmation modals and refusal fixture rendered.\n";$nativeSuccessful=true;
