@@ -17,6 +17,8 @@ expect(!str_contains($html,'Related to your hosting')&&!str_contains($html,'No d
 same(1,$foreignDom->query('//section[@aria-label="Your domains"]')->length,'Foreign account receives the Domains list');
 same(0,$foreignDom->query('//section[@aria-label="Your domains"]//tbody/tr')->length,'Foreign account sees no domain rows');
 same(0,$foreignDom->query('//section[@aria-label="Your domains"]//a[contains(concat(" ",normalize-space(@class)," ")," domains-row-link ")]')->length,'Foreign account sees no domain row links');
+$foreignText=implode(' ',array_map(static fn(DOMNode $node)=>$node->textContent,iterator_to_array($foreignDom->query('//body//text()[not(ancestor::script or ancestor::style or ancestor::template)]'))));
+expect(!str_contains($foreignText,$watch->canonical_name),'Foreign account sees no owner domain name in displayed text');
 $queries=0;DB::listen(static function()use(&$queries){$queries++;});$view=$controller->show($request($owner),'watch',$id);$before=$queries;$html=$view->render();same($before,$queries,'Detail Blade queries no tables');expect(!str_contains($html,'Connection details unavailable')&&!str_contains($html,'Not pointed to'),'Unknown connection never claims empty and shows no unknown-only chip');
 $dom=storefrontDom($html);$text=static fn(DOMNode $node)=>trim($node->textContent);
 $nameservers='//li[@id="nameservers"]/span[@class="domains-row__v"]';
