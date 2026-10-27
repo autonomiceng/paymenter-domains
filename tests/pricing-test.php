@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
-use Paymenter\Extensions\Servers\Domains\Services\{MarginPolicy, PricingRule, RetailLine};
+use Paymenter\Extensions\Servers\Domains\Services\{CardFee, MarginPolicy, PricingRule, RetailLine};
 
 $rule = PricingRule::DEFAULT;
 same('13.00', PricingRule::price('10.0000', $rule, 'register'), 'Default percent');
@@ -52,4 +52,49 @@ $unknownRenewal = MarginPolicy::assess('renew', null, '10.00');
 same(false, $unknownRenewal->publishable, 'Unknown renewal retains prior published price');
 same(null, $unknownRenewal->hold, 'Unknown cost never creates renewal hold');
 same('unknown_price', $unknownRenewal->staffAlert, 'Staff must resolve unknown renewal');
+// Fee-inclusive markup covers the fee on the final rounded price.
+$feeRule = [...$rule, 'mode' => 'markup_fee_percent', 'markup' => '5.00', 'round_up' => 'ending_99',
+    'card_fee' => ['percent' => '2.90', 'fixed' => '0.30']];
+foreach (['2' => '2.99', '14' => '15.99', '40' => '43.99', '80' => '86.99'] as $cost => $expected) {
+    same($expected, PricingRule::price((string)$cost, $feeRule, 'register'), 'Fee-inclusive table '.$cost);
+}
+same('260.97', PricingRule::total(PricingRule::price('80', $feeRule, 'register'), 3), 'Fee retail rounds before multiplying years');
+same('1.00', PricingRule::price('1', [...$feeRule, 'markup'=>'0', 'round_up'=>'none', 'card_fee'=>['percent'=>'0','fixed'=>'0']], 'renew'), 'Exact fee boundary');
+same('1.01', PricingRule::price('1.0001', [...$feeRule, 'markup'=>'0', 'round_up'=>'none', 'card_fee'=>['percent'=>'0','fixed'=>'0']], 'renew'), 'Fee mode never rounds below required price');
+same('0.99', PricingRule::price('0.9900', [...$feeRule, 'markup'=>'0', 'card_fee'=>['percent'=>'0','fixed'=>'0']], 'renew'), 'Exact .99 fee boundary');
+same('1.99', PricingRule::price('0.9901', [...$feeRule, 'markup'=>'0', 'card_fee'=>['percent'=>'0','fixed'=>'0']], 'renew'), 'Above .99 fee boundary');
+$reject(static fn()=>PricingRule::price('1', [...$feeRule, 'markup'=>'5', 'card_fee'=>['percent'=>'99','fixed'=>'0']], 'renew'));
+$reject(static fn()=>PricingRule::price('99999999.9999', [...$feeRule, 'markup'=>'100000', 'card_fee'=>['percent'=>'0','fixed'=>'0']], 'renew'));
+$reject(static fn()=>PricingRule::validate([...$feeRule, 'card_fee'=>['percent'=>'100','fixed'=>'0']]));
+foreach (['validate', 'describe', 'price'] as $method) {
+    $missingFee=$feeRule;unset($missingFee['card_fee']);
+    $reject(static fn()=>$method==='price'?PricingRule::price('6',$missingFee,'register'):PricingRule::$method($missingFee));
+}
+$reject(static fn()=>PricingRule::validate([...$feeRule,'card_fee'=>'invalid']));
+same('0.6032', \Paymenter\Extensions\Servers\Domains\Services\CardFee::profit('2.99','2.0000',$feeRule['card_fee']), 'Rough profit includes fee on final price');
+same(true, \Paymenter\Extensions\Servers\Domains\Services\CardFee::losesMoney('2.00','2.0000',$feeRule['card_fee']), 'Separate fee loss above registrar cost');
+same('100000000.00', PricingRule::price('99999999.9999', [...$feeRule,'markup'=>'0','round_up'=>'none','card_fee'=>['percent'=>'0','fixed'=>'0']], 'register'), 'Large supported cost rounds safely');
+same('2.9% + $0.30',CardFee::describe(['percent'=>'2.9','fixed'=>'0.3']),'Shared fee description validates and canonicalizes input');
+same('0% + $0.00',CardFee::describe(['percent'=>'0','fixed'=>'0']),'Zero fee description');
+same('10% + $1.00',CardFee::describe(['percent'=>'10','fixed'=>'1']),'Whole percent description keeps significant zero');
+$reject(static fn()=>CardFee::describe(['percent'=>'100','fixed'=>'0']));
+// Numeric scalar inputs retain their existing canonicalization; malformed members fail before casting.
+foreach([0,1,1.25,'2.50',true] as $value){
+    same(CardFee::validate(['percent'=>(string)$value,'fixed'=>(string)$value]),CardFee::validate(['percent'=>$value,'fixed'=>$value]),'Scalar fee amounts keep their accepted behavior');
+    same(PricingRule::validate([...$rule,'markup'=>(string)$value]),PricingRule::validate([...$rule,'markup'=>$value]),'Scalar markup keeps its accepted behavior');
+    if($value!==0){
+        $values=array_fill_keys(['register','renew','transfer'],$value);
+        same(PricingRule::validate([...$fixed,'fixed'=>array_map('strval',$values)]),PricingRule::validate([...$fixed,'fixed'=>$values]),'Scalar fixed prices keep their accepted behavior');
+    }
+}
+$invalidAmount=static function(Closure $call):void{
+    try{$call();expect(false,'Malformed monetary member escaped');}
+    catch(InvalidArgumentException $error){same('Enter a valid nonnegative amount.',$error->getMessage(),'Malformed monetary member uses the existing validation exception');}
+};
+foreach([[],['nested'=>'1'],new stdClass] as $value){
+    foreach(['percent','fixed'] as $key){$invalidAmount(static fn()=>CardFee::validate([...CardFee::DEFAULT,$key=>$value]));}
+    $invalidAmount(static fn()=>PricingRule::validate([...$rule,'markup'=>$value]));
+    if(!is_array($value)){$invalidAmount(static fn()=>PricingRule::validate([...$fixed,'fixed'=>$value]));}
+    foreach(['register','renew','transfer'] as $action){$invalidAmount(static fn()=>PricingRule::validate([...$fixed,'fixed'=>[...$fixed['fixed'],$action=>$value]]));}
+}
 echo "Exact pricing and margin checks passed.\n";

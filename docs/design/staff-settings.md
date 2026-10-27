@@ -85,6 +85,27 @@ default in **Edit prices** runs the `remove_override` review; the `publish` revi
 stays server-side with no button. Because saving publishes, both dialogs also need the
 publish permission.
 
+## Card fee and Price list
+
+**Card fee** sits beside default pricing on each account. It starts at 2.9% + $0.30
+per payment. Changes need the card-fee and publish permissions and keep an audit row.
+Only TLDs using **Add a percentage to cost and card fee** get new prices after a fee
+change; other rules and published prices stay unchanged. Failed publications are named.
+
+The fee mode finds the smallest cent price covering `(cost + card fee on that price)`
+plus the markup, then rounds up as selected. It rounds each year's price before
+multiplying by the years. Impossible percentages and overflow refuse the change.
+Below-cost sales rules still compare with registrar cost alone.
+
+**TLDs & pricing → Price list** requires the costs permission, including downloads.
+It shows saved exact-term prices, never a recalculated or invented multi-year price,
+with registrar costs and estimated profit (Est. profit) after the account's current
+card fee. The fixed fee counts once per chosen term. Each TLD shows Default or Custom
+pricing. Filters and CSV use the same matrix. Loss after fees is a separate flag from
+below registrar cost. The explanation names the current rule;
+a missed publication can leave a saved price on an earlier rule. Issued invoices never
+change. These are estimates: international cards, refunds and shared payments differ.
+
 ## Registrar costs and renewal margin
 
 Regular renewal uses published annual net retail from `PriceCatalogue::renewal`

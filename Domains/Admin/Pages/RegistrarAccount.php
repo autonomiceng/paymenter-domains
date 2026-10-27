@@ -14,7 +14,7 @@ use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,MissingEntry,NameSiloAccountAction,PslActions,RegistrarFacts,ReminderAction,SettingsActions,Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,EnomTestCalls,RegistrarBalances as Balances,StaffSettingsReview};
+use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,EnomTestCalls,RegistrarBalances as Balances,StaffSettingsReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** One registrar account (a Domains server): status, balance and setup. Reached from the Registrars list. */
 class RegistrarAccount extends Page
@@ -107,7 +107,12 @@ class RegistrarAccount extends Page
         $used=$tlds->isEmpty()?'No TLDs use it yet.':'Used by '.$tlds->count().' '.($tlds->count()===1?'TLD':'TLDs').': '.$tlds->map(fn($t)=>'.'.$t)->implode(', ').'.';
         $entry=MissingEntry::apply(TextEntry::make('default_pricing')->label('Customer pays')->state($rule)->inlineLabel(),cause:$rule===null?"Saved default pricing can't be read":null)
             ->belowContent($rule===null?null:$used.' TLDs with their own prices are not affected.');
-        return [Flex::make([$entry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'default_rule')])->grow(false)])->from('md')];
+        try { $feeText=CardFee::describe(CardFee::read($id)).' per payment'; }
+        catch (\Throwable) { $feeText=null; }
+        $feeEntry=MissingEntry::apply(TextEntry::make('card_fee')->label('Card fee')->state($feeText)->inlineLabel(),cause:$feeText===null?"Saved card fee can't be read":null)
+            ->belowContent('Used for estimated profit on the Price list, and by pricing that adds a percentage to cost and card fee.');
+        return [Flex::make([$entry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'default_rule')])->grow(false)])->from('md'),
+            Flex::make([$feeEntry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'card_fee')])->grow(false)])->from('md')];
     }
     /** Fact rows with an optional button each: Missing shows in danger with its cause. */
     private function rows(string $prefix,array $rows,bool $buttons=true): array

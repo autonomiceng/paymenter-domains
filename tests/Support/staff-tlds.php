@@ -29,7 +29,7 @@ function tldRefusal(callable $call,string $message): void
 function staffSetupActions(): array
 {
     return ['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox',
-        'test_renewal','test_management','live_renewal','live_management','renewal_billing','default_rule'];
+        'test_renewal','test_management','live_renewal','live_management','renewal_billing','default_rule','card_fee'];
 }
 
 /** Actions with no button of their own: saving prices publishes, and "Use the account default" is a choice in Edit prices. */

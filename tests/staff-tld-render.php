@@ -16,7 +16,7 @@ $permissions=[Staff::VIEW,Staff::COSTS,Staff::POLICY];foreach(array_keys(Review:
 $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($native,$sellers,$bindings);app()->instance(StaffSettingsWrites::class,$writer);
 $key=Review::ticket($u->id,$t->server_id,null,'default_rule',Review::stamp($t->server_id,null));
 // Saving the default publishes .com, which follows it; the fixed $1 prices are below cost.
-same(['published'=>1,'failed'=>[]],$writer->run(new Review($u->id,$t->server_id,null,'default_rule',$key,'Review annual retail for saved catalogue'),['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'1','fixed_renew'=>'1','fixed_transfer'=>'1'],$now),'Default publishes');
+same(['published'=>1,'failed'=>[]],$writer->run(new Review($u->id,$t->server_id,null,'default_rule',$key,'Update yearly prices for these TLDs'),['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'1','fixed_renew'=>'1','fixed_transfer'=>'1'],$now),'Default publishes');
 \Paymenter\Extensions\Servers\Domains\Models\Domain::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,
     'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);
 $panel=Filament::getCurrentPanel();$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
@@ -81,5 +81,5 @@ $writer->run(new Review($u->id,$t->server_id,$t->id,'remove_override',Review::ti
 $account=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee(['Used by 1 TLD: .com'],false);$render($account,'account-default-pricing');
 $account->mountAction(setupAction('default_rule',$t->server_id))->call('$refresh');$sees($account,['1 TLD uses the account default: .com. Saving publishes its new prices.']);$render($account,'modal-default_rule-followers');
 writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-same(14,count($strings),'Fourteen settings modals rendered');
-echo "Native TLD list/detail/revisions, account page, fourteen modals, price preview and refusals rendered.\n";$nativeSuccessful=true;
+same(15,count($strings),'Fifteen settings modals rendered');
+echo "Native TLD list/detail/revisions, account page, fifteen modals, price preview and refusals rendered.\n";$nativeSuccessful=true;

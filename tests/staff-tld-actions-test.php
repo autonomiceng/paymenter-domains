@@ -26,13 +26,13 @@ $permissions=[Staff::VIEW,Staff::POLICY];foreach(array_keys(Review::ACTIONS) as 
 $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($native,$sellers,$bindings,true);app()->instance(StaffSettingsWrites::class,$writer);
 $fixed=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'20','fixed_renew'=>'21','fixed_transfer'=>'22'];
 // "Use the account default" is a choice in Edit prices; it saves as remove_override.
-$inputs=['default_rule'=>$fixed,'override'=>['pricing'=>'custom',...$fixed],'remove_override'=>['pricing'=>'default'],
+$inputs=['card_fee'=>['fee_percent'=>'3.10','fee_fixed'=>'0.40'],'default_rule'=>$fixed,'override'=>['pricing'=>'custom',...$fixed],'remove_override'=>['pricing'=>'default'],
     'tld_settings'=>['min_years'=>1,'max_years'=>3,'enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true],
     'seller'=>['seller'=>$t->server_id,'register'=>true,'transfer'=>true],
     'acceptance'=>['ending'=>'com','accept'=>true,'verified'=>true,'terms'=>[1,3],'registry'=>true,'transfer'=>true],
     'history'=>['history_action'=>'register','accept'=>true,'verified'=>true,'timezone'=>'America/Los_Angeles','lag'=>60,'retention'=>86400],
     'configure'=>['registrar'=>'enom','environment'=>'test','uid'=>'synthetic-user','token'=>'account-enom'],'probe'=>[]];
-$accountSide=['default_rule','acceptance','history','configure','probe'];
+$accountSide=['card_fee','default_rule','acceptance','history','configure','probe'];
 $mount=static function(string $action)use($u,$t,$accountSide){
     $setup=in_array($action,$accountSide,true);
     $name=$setup?setupAction($action,$t->server_id):($action==='remove_override'?'override':$action);
@@ -50,7 +50,7 @@ foreach($inputs as $action=>$input){
     $page->setActionData([...$input,'reason'=>"Reviewed\u{2028}settings"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
     same($key,$page->get('mountedActions.0.data.'.($action==='remove_override'?'default_key':'review_key')),'Settings reason error keeps the current review open');
     $page->setActionData([...$input,'reason'=>'Confirm native action with saved facts'])->callMountedAction()->assertHasNoActionErrors()
-        ->assertNotified($setup?($action==='probe'?'Balance updated':'Saved'):(in_array($action,['override','remove_override'],true)?'Prices published':'Change recorded'))->assertSet('mountedActions',[]);
+        ->assertNotified($action==='card_fee'?\Filament\Notifications\Notification::make()->success()->title('Saved')->body('Card fee saved. No TLDs count the card fee in their prices, so no prices changed.'):($setup?($action==='probe'?'Balance updated':'Saved'):(in_array($action,['override','remove_override'],true)?'Prices published':'Change recorded')))->assertSet('mountedActions',[]);
     if($action==='remove_override'){expect($t->fresh()->use_default_rule,'Account default chosen in Edit prices');}
     $review=new Review($u->id,$t->server_id,$ending,$action,$key,'Replay must refuse this native action');
     tldRefusal(fn()=>$writer->run($review,$input,$now),in_array($action,['tld_settings','probe'],true)?'Review key used.':'Settings changed. Reload this page.');

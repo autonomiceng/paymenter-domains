@@ -25,6 +25,22 @@ same(['published' => 2, 'failed' => ['.net'], 'failure_types' => ['.net' => Runt
 same('50.00', $rules->rule(Tld::where('server_id', 1)->where('tld', 'com')->firstOrFail())['markup'], 'Shared account default');
 same('30.00', $rules->rule($other)['markup'], 'Other account unaffected');
 same('2.00', $rules->rule($override)['markup'], 'Per-TLD override unaffected');
+// Read snapshots are supplied by a list, never retained as authority by the rule service.
+DB::beginTransaction();
+try {
+    $server = Server::findOrFail(1);
+    $server->settings()->where('key', 'domains_pricing_default_rule')->update(['value' => json_encode(['mode' => 'markup_fee_percent', 'markup' => '30', 'round_up' => 'none'])]);
+    $custom = $override->fresh(); $custom->pricing_mode = 'markup_fee_percent';
+    $default = Tld::where('server_id', 1)->where('tld', 'com')->firstOrFail();
+    $snapshot = ['percent' => '7.00', 'fixed' => '0.70'];
+    same($snapshot, $rules->rule($custom, false, $snapshot)['card_fee'], 'Custom rule uses the supplied account fee');
+    same($snapshot, $rules->defaultRule(1, false, $snapshot)['card_fee'], 'Default rule uses the supplied account fee');
+    same($snapshot, $rules->rule($default, false, $snapshot)['card_fee'], 'Default follower forwards the account fee');
+    $fresh = ['percent' => '3.00', 'fixed' => '0.40'];
+    \Paymenter\Extensions\Servers\Domains\Services\CardFee::saveLocked(1, $fresh);
+    same($fresh, $rules->rule($custom, true)['card_fee'], 'Locked custom rule reads the current fee after a list snapshot');
+    same($fresh, $rules->rule($default, true)['card_fee'], 'Locked default follower reads the current fee after a list snapshot');
+} finally { DB::rollBack(); }
 // Read persisted settings directly: an unbound server cannot use defaultRule().
 $unbound = Server::create(['id' => 3, 'name' => 'Unbound registrar', 'extension' => 'Domains', 'type' => 'server', 'enabled' => true]);
 $unbound->settings()->create(['key' => 'domains_pricing_default_rule', 'type' => 'array', 'encrypted' => false,

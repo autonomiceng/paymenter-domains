@@ -8,7 +8,7 @@ use Filament\Forms\Components\{Checkbox,CheckboxList,Hidden,Radio,Select,Textare
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestCalls,PriceCatalogue,PricingRule,PricingRules,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestCalls,CardFee,PriceCatalogue,PricingRule,PricingRules,StaffSettingsReview as Review,StaffSettingsWrites};
 final class SettingsActions
 {
     private const NOT_ENROLLED='If no Enrollment row appears and Account binding reads “Not configured”, nothing was enrolled.';
@@ -43,6 +43,7 @@ final class SettingsActions
             'delivery_review'=>'Record an independently checked notification outcome. This retains the original handoff claim and never sends the notification again.',
             'processing'=>'Registrar purchases and renewals can start for this account. Enable only after reviewing its accepted provider features and worker configuration.',
             'renewal_billing'=>'Scheduled renewal invoices are issued from the issue day until the due day for domains with renewal on. Owner requests let a customer ask for a renewal invoice for an active domain at any time before the confirmed expiry date. Both still need processing on and a confirmed registration expiry. Turning either off stops new invoices only; issued invoices stay payable. Calendar changes apply to invoices issued later; issued invoices keep their dates, term and amount.',
+            'card_fee'=>'Sets the estimated card fee for this account. Saving publishes new prices for TLDs whose pricing adds a percentage to cost and card fee. Other prices and issued invoices stay the same.',
             'default_rule'=>'Sets the pricing every TLD on this account uses unless it has its own. Saving publishes new prices for those TLDs at once. Issued invoices keep their prices.',
             'override'=>'Saving publishes these prices at once. Registrations and transfers below cost are not sold; renewals below cost are still billed. Both alert staff. Issued invoices keep their prices.',
             'remove_override'=>'Uses this account’s default pricing. Saving publishes the new prices at once. Issued invoices keep their prices.',
@@ -62,7 +63,7 @@ final class SettingsActions
     { return self::make($server,null,$stamp,true,[$name])[0]; }
     public static function make(int $server,?int $tld,string $stamp,bool $setup=false,?array $only=null): array
     {
-        $out=[];$names=$setup?['enroll_sandbox','configure','probe','acceptance','import','history','test_renewal','test_management','live_renewal','live_management','processing','renewal_billing','default_rule','delivery_review','alert_review']:['override','tld_settings','lifecycle','seller'];
+        $out=[];$names=$setup?['enroll_sandbox','configure','probe','acceptance','import','history','test_renewal','test_management','live_renewal','live_management','processing','renewal_billing','default_rule','card_fee','delivery_review','alert_review']:['override','tld_settings','lifecycle','seller'];
         if($only!==null){$names=array_values(array_intersect($names,$only));}
         $target=fn()=>\App\Models\Server::find($server)?->name ?? 'Server #'.$server;
         foreach($names as $name){
@@ -79,22 +80,29 @@ final class SettingsActions
                             fn($key)=>Staff::can(Review::permission($key==='default'?'remove_override':'override')),ARRAY_FILTER_USE_KEY))
                         ->default(fn()=>((Tld::find($tld)?->use_default_rule??true)&&Staff::can(Review::permission('remove_override')))||!Staff::can(Review::permission('override'))?'default':'custom');
                 }
-                $fields[]=Select::make('mode')->label('Pricing')->options(['markup_percent'=>'Add a percentage to cost','markup_amount'=>'Add an amount to cost','fixed'=>'Set my own price'])->required()->live()->default(fn()=>$rule()['mode'])->visible($own);
+                $fields[]=Select::make('mode')->label('Pricing')->options(['markup_percent'=>'Add a percentage to cost','markup_fee_percent'=>'Add a percentage to cost and card fee','markup_amount'=>'Add an amount to cost','fixed'=>'Set my own price'])->required()->live()->default(fn()=>$rule()['mode'])->visible($own);
                 $fields[]=TextInput::make('markup')->label(fn($get)=>$get('mode')==='markup_amount'?'Amount to add (USD)':'Percentage to add')->default(fn()=>$rule()['markup'])->required()->maxLength(12)->live(debounce:500)
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
                 $fields[]=Select::make('round_up')->label('Round up')->options(PricingRule::ROUNDING_LABELS)->default(fn()=>$rule()['round_up'])->required()->live()
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
                 foreach(['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'] as $key=>$label){$fields[]=TextInput::make('fixed_'.$key)->label($label.' price per year (USD)')->default(fn()=>$rule()['fixed'][$key])->maxLength(14)->live(debounce:500)
                     ->visible(fn($get)=>$own($get)&&$get('mode')==='fixed');}
-                $entered=static function($get)use($name,$default):?array{
+                $entered=static function($get)use($name,$default,$server):?array{
                     if($name==='override'&&$get('pricing')==='default'){return $default();}
                     try{return PricingRule::validate(['mode'=>$get('mode'),'markup'=>$get('markup')??'0','round_up'=>$get('round_up')??'none',
-                        'fixed'=>['register'=>$get('fixed_register'),'renew'=>$get('fixed_renew'),'transfer'=>$get('fixed_transfer')]]);}
+                        'fixed'=>['register'=>$get('fixed_register'),'renew'=>$get('fixed_renew'),'transfer'=>$get('fixed_transfer')],
+                        ...($get('mode')==='markup_fee_percent'?['card_fee'=>CardFee::read($server)]:[])]);}
                     catch(\Throwable){return null;}
                 };
                 $fields[]=\Filament\Schemas\Components\Text::make(fn($get)=>($r=$entered($get))===null?'Enter prices to see what customers pay.':'Customer pays: '.PricingRule::describe($r))->key('formula');
                 if($name==='override'){$fields[]=\Filament\Schemas\Components\Html::make(fn($get)=>self::preview($tld,$entered($get)))->key('preview');}
                 else{$fields[]=\Filament\Schemas\Components\Text::make(fn()=>self::followers($server))->key('followers');}
+            }
+            if($name==='card_fee'){
+                $fee=self::cached(static function()use($server):array{try{return CardFee::read($server);}catch(\Throwable){return CardFee::DEFAULT;}});
+                $fields[]=TextInput::make('fee_percent')->label('Card fee (%)')->default(fn()=>$fee()['percent'])->required()->maxLength(6);
+                $fields[]=TextInput::make('fee_fixed')->label('Plus a fixed amount (USD)')->default(fn()=>$fee()['fixed'])->required()->maxLength(12);
+                $fields[]=\Filament\Schemas\Components\Text::make('An estimate per payment. International cards and refunds can cost more, so set it a little high.');
             }
             if($name==='tld_settings'){
                 foreach(['min_years'=>'Minimum registration years','max_years'=>'Maximum registration years'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->integer()->minValue(1)->maxValue(10)->required()->default(fn()=>Tld::findOrFail($tld)->$key);}
@@ -217,7 +225,7 @@ final class SettingsActions
                         $summary=app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
                         Notification::make()->status(($summary['audit_failed']??false)?'warning':'success')->title(match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
                                 $name==='enroll_sandbox'=>'Account connected',$name==='override'=>'Prices published',$setup=>'Saved',default=>'Change recorded'})
-                            ->body($name==='processing'||$name==='probe'?null:($name==='default_rule'?self::published($summary??['published'=>0,'failed'=>[]]):($name==='enroll_sandbox'?'NameSilo OTE accepted the key in one read-only balance request. That balance was not saved; account ownership is unconfirmed, orders are paused and no TLDs are chosen. The next worker run may read the balance once; check Balance on this page for its result. Later scheduled reads are limited to one per day. Reload this page before another change.':'Reload this page before another change.')))->send();
+                            ->body($name==='processing'||$name==='probe'?null:(in_array($name,['default_rule','card_fee'],true)?self::published($summary??['published'=>0,'failed'=>[]],$name):($name==='enroll_sandbox'?'NameSilo OTE accepted the key in one read-only balance request. That balance was not saved; account ownership is unconfirmed, orders are paused and no TLDs are chosen. The next worker run may read the balance once; check Balance on this page for its result. Later scheduled reads are limited to one per day. Reload this page before another change.':'Reload this page before another change.')))->send();
                         if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$server]));}
                     }catch(\Throwable $error){
                         $message=self::refusal($error,$name,$data,$server);
@@ -268,12 +276,12 @@ final class SettingsActions
         $text=$tlds->count().' '.($tlds->count()===1?'TLD uses':'TLDs use').' the account default: '.$tlds->map(fn($t)=>'.'.$t->tld)->implode(', ').'. Saving publishes '.($tlds->count()===1?'its':'their').' new prices.';
         return $text.($waiting->isEmpty()?'':' Costs are out of date for '.$waiting->map(fn($t)=>'.'.$t->tld)->implode(', ').'. '.($waiting->count()===1?'Its prices':'Their prices').' stay the same until you sync prices and save again.');
     }
-    /** Notification text after a default pricing change. */
-    private static function published(array $summary): string
+    /** Notification text after a pricing or card fee change. */
+    private static function published(array $summary,string $name): string
     {
-        $text=$summary['published']===0&&$summary['failed']===[]?'No TLDs use the account default.':'Published new prices for '.$summary['published'].' '.($summary['published']===1?'TLD':'TLDs').'.';
+        $text=$summary['published']===0&&$summary['failed']===[]?($name==='card_fee'?'Card fee saved. No TLDs count the card fee in their prices, so no prices changed.':'No TLDs use the account default.'):'Published new prices for '.$summary['published'].' '.($summary['published']===1?'TLD':'TLDs').'.';
         return $text.($summary['failed']===[]?'':' Could not publish '.implode(', ',$summary['failed']).'. Sync prices on the account page, then save again.')
-            .(($summary['audit_failed']??false)?" Nothing was undone: the new default and any prices published stay in place. Only the record of this result couldn't be saved.":'');
+            .(($summary['audit_failed']??false)?" Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved.":'');
     }
     /** Renewals and DNS management are on when their saved acceptance is current. */
     private static function accepted(int $server,string $name): bool
@@ -287,23 +295,26 @@ final class SettingsActions
     {
         return match(true){$name==='processing'=>$processing?'Pause orders':'Resume orders',$name==='configure'=>$connected?'Edit API credentials':'Connect account',
             $name==='enroll_sandbox'=>'Connect NameSilo test account',$name==='probe'=>'Test connection',$name==='acceptance'=>'Edit',$name==='import'=>'Sync TLD prices',
-            $name==='renewal_billing'=>'Edit invoices',$name==='default_rule'=>'Edit default pricing',str_ends_with($name,'_renewal')||str_ends_with($name,'_management')=>$on?'Turn off':'Turn on',default=>Review::ACTIONS[$name]};
+            $name==='renewal_billing'=>'Edit invoices',$name==='default_rule'=>'Edit default pricing',$name==='card_fee'=>'Edit card fee',str_ends_with($name,'_renewal')||str_ends_with($name,'_management')=>$on?'Turn off':'Turn on',default=>Review::ACTIONS[$name]};
     }
     /** Dialog title: what the button does, as a question. */
     private static function setupHeading(string $name,bool $processing,bool $connected,bool $on): string
     {
         $feature=str_ends_with($name,'_renewal')?'renewals':(str_ends_with($name,'_management')?'DNS, nameservers and contacts':null);
-        return match(true){$feature!==null=>($on?'Turn off ':'Turn on ').$feature.'?',$name==='acceptance'=>'Edit supported TLDs?',$name==='renewal_billing'=>'Edit renewal invoices?',$name==='default_rule'=>'Edit default pricing?',
+        return match(true){$feature!==null=>($on?'Turn off ':'Turn on ').$feature.'?',$name==='acceptance'=>'Edit supported TLDs?',$name==='renewal_billing'=>'Edit renewal invoices?',$name==='default_rule'=>'Edit default pricing?',$name==='card_fee'=>'Edit card fee?',
             $name==='history'||str_ends_with($name,'_review')=>Review::ACTIONS[$name].'?',default=>self::setupLabel($name,$processing,$connected,$on).'?'};
     }
     private static function submitLabel(string $name,bool $processing,bool $connected,bool $on): string
     {
         return match(true){$name==='processing'=>$processing?'Pause orders':'Resume orders',$name==='enroll_sandbox'||($name==='configure'&&!$connected)=>'Connect',
-            $name==='probe'=>'Test connection',$name==='import'=>'Sync',$name==='default_rule'=>'Save and publish',str_ends_with($name,'_renewal')||str_ends_with($name,'_management')=>$on?'Turn off':'Turn on',default=>'Save'};
+            $name==='probe'=>'Test connection',$name==='import'=>'Sync',in_array($name,['default_rule','card_fee'],true)=>'Save and publish',str_ends_with($name,'_renewal')||str_ends_with($name,'_management')=>$on?'Turn off':'Turn on',default=>'Save'};
     }
     /** Staff text for a refused settings change; never echoes unrecognized exception text. */
     public static function refusal(\Throwable $error,string $name,array $data=[],int $server=0): string
     {
+        if($name==='card_fee'&&$error instanceof \InvalidArgumentException&&!in_array($error->getMessage(),['This percentage cannot cover the card fee. Lower the markup or card fee.','The calculated price is too large.'],true)){
+            return 'Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.';
+        }
         if ($name==='seller' && $error instanceof \Paymenter\Extensions\Servers\Domains\Services\ExpiredCostEvidence) {
             $action=match($error->action){'register'=>'registration','renew'=>'renewal','transfer'=>'transfer',default=>'saved'};
             $term=$error->term.' '.($error->term===1?'year':'years');
@@ -322,7 +333,7 @@ final class SettingsActions
         return $error instanceof EnomTestCallLimit
                 ?'Enom TEST request refused before sending. '.($name==='import'?'Earlier reads in this import may have been sent and counted. ':'')
                     .EnomTestCalls::refusedFacts()
-                :match($error->getMessage()){'Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',
+                :match($error->getMessage()){'The calculated price is too large.'=>'This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.','Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',
                 'Settings changed. Reload this page.'=>$name==='enroll_sandbox'?'This review expired, or this server changed after you opened it. No OTE key check was sent and nothing was saved. Reload this page and review the server before trying again.':'Settings changed. Reload this page.',
                 'Current staff permissions required.'=>$name==='enroll_sandbox'?'Your staff permission changed. No OTE key check was sent and nothing was saved. Reload this page before trying again.':'Your permission changed. Reload this page.',
                 'Runtime acceptance and shared workers are required.'=>'Provider acceptance and shared cache, sessions and queue workers are required before enabling processing.',
@@ -353,6 +364,7 @@ final class SettingsActions
                 'Sandbox enrollment could not be saved.'=>self::SAVED_OUTCOME_UNKNOWN,
                 'namesilo_identity_unavailable'=>'NameSilo identity verification is unavailable. This account cannot be connected.',
                 'Review key used.'=>$name==='enroll_sandbox'?'This enrollment confirmation was already used, so this submission sent no new OTE key check. An earlier submission may still be finishing. Wait for it to finish, then reload the account page. This page cannot show whether that submission is still running. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. If no Enrollment row appears and Account binding reads “Not configured” after the earlier submission finishes, nothing was enrolled. '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE:'This confirmation was already used. Reload this page.',
+                'This percentage cannot cover the card fee. Lower the markup or card fee.'=>'No price can cover the card fee with this markup. Lower the markup or the card fee. Nothing was changed.',
                 'Fresh costs required before publication.'=>'Costs are missing or out of date. Sync prices on the account page, then save again. Nothing was changed.',
                 'Complete lifecycle facts required.'=>'Complete all lifecycle fields. Nothing was saved.',
                 'Invalid lifecycle input.'=>'Reload the lifecycle form and check its fields. Nothing was saved.',

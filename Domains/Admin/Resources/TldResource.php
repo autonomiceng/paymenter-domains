@@ -7,7 +7,7 @@ use Filament\Support\Enums\FontFamily;
 use Filament\Tables\{Columns\TextColumn,Filters\SelectFilter,Table};
 use Illuminate\Database\Eloquent\{Builder,Model};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,PriceList,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
@@ -80,5 +80,5 @@ class TldResource extends Resource
         return $out;
     }
     public static function getPages(): array
-    {return ['index'=>ListTlds::route('/'),'view'=>ViewTld::route('/{record}')];}
+    {return ['index'=>ListTlds::route('/'),'price-list'=>PriceList::route('/price-list'),'view'=>ViewTld::route('/{record}')];}
 }

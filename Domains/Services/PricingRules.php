@@ -9,15 +9,17 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
 
 final class PricingRules
 {
-    public function rule(Tld $tld, bool $lock = false): array
+    /** Account-scoped fee snapshot for list reads; locked writers omit it. */
+    public function rule(Tld $tld, bool $lock = false, ?array $fee = null): array
     {
-        if ($tld->use_default_rule) { return $this->defaultRule((int) $tld->server_id, $lock); }
+        if ($tld->use_default_rule) { return $this->defaultRule((int) $tld->server_id, $lock, $fee); }
         return PricingRule::validate(['mode' => $tld->pricing_mode, 'markup' => $tld->markup ?? '0', 'round_up' => $tld->round_up,
-            'fixed' => ['register' => $tld->fixed_register, 'renew' => $tld->fixed_renew, 'transfer' => $tld->fixed_transfer]]);
+            'fixed' => ['register' => $tld->fixed_register, 'renew' => $tld->fixed_renew, 'transfer' => $tld->fixed_transfer],
+            ...($tld->pricing_mode === 'markup_fee_percent' ? ['card_fee' => $fee ?? CardFee::read((int)$tld->server_id, $lock)] : [])]);
     }
 
     /** One shared default across an account's TLDs; another account has its own retail table/rule. */
-    public function defaultRule(int $serverId, bool $lock = false): array
+    public function defaultRule(int $serverId, bool $lock = false, ?array $fee = null): array
     {
         if ($lock && DB::transactionLevel() === 0) { throw new \LogicException('Rule locks require an outer transaction.'); }
         $server = $this->server($serverId, $lock, false);
@@ -26,6 +28,7 @@ final class PricingRules
         $setting = $query->first();
         $rule = $setting ? $setting->value : PricingRule::DEFAULT;
         if (!is_array($rule)) { throw new \DomainException('Invalid default pricing rule.'); }
+        if (($rule['mode'] ?? null) === 'markup_fee_percent') { $rule['card_fee'] = $fee ?? CardFee::read($serverId, $lock); }
         return PricingRule::validate($rule);
     }
 
