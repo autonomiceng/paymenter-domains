@@ -11,10 +11,12 @@ final class WatchProductMap extends WatchRecord
     protected array $identity = ['id', 'product_id'];
     public function product(): \Illuminate\Database\Eloquent\Relations\BelongsTo {return $this->belongsTo(\App\Models\Product::class,'product_id');}
     public function dnsTemplate(): \Illuminate\Database\Eloquent\Relations\BelongsTo {return $this->belongsTo(WatchProfile::class,'expected_ns_profile_id');}
+    /** One scalar primary service field; alias lists cannot supply a monitored domain. */
+    public static function validPropertyKey(mixed $key): bool
+    {return is_string($key)&&preg_match('/\A[a-zA-Z][a-zA-Z0-9_-]{0,63}\z/D',$key)===1&&!preg_match('/(?:^|[_-])(?:alias(?:es)?|additional[_-]domains)(?:[_-]|$)|(?:alias(?:es)?|additionalDomains)$/i',$key);}
     protected function validateRecord(): void
     {
-        if (!is_string($this->property_key) || preg_match('/\A[a-zA-Z][a-zA-Z0-9_-]{0,63}\z/D', $this->property_key) !== 1 ||
-            preg_match('/(?:^|[_-])(?:alias(?:es)?|additional[_-]domains)(?:[_-]|$)|(?:alias(?:es)?|additionalDomains)$/i', $this->property_key) || ($this->enabled && (!$this->exists || $this->isDirty(['enabled','property_key','expected_ns_profile_id'])) && !\Paymenter\Extensions\Servers\Domains\Services\WatchMappings::enabling()) ||
+        if (!self::validPropertyKey($this->property_key) || ($this->enabled && (!$this->exists || $this->isDirty(['enabled','property_key','expected_ns_profile_id'])) && !\Paymenter\Extensions\Servers\Domains\Services\WatchMappings::enabling()) ||
             !is_string($this->reason) || trim($this->reason) === '' || !\Paymenter\Extensions\Servers\Domains\Services\StaffReason::valid($this->reason,1,1000) || !$this->edited_by) {
             throw new \DomainException('A scalar primary property key, editor and reason are required.');
         }

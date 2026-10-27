@@ -2,12 +2,14 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use App\Helpers\ExtensionHelper;
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Forms\Components\{Select,Textarea,TextInput};
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Fieldset;
-use Illuminate\Support\Facades\Auth;
+use Filament\Schemas\Components\Utilities\{Get,Set};
+use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{ProductMappingResource,RoutingProfileResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProductMap,WatchProfile};
 use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
@@ -71,14 +73,36 @@ final class WatchActions
             ->modalDescription($mapping?'Turn on monitoring for '.($row->product?->name??'Product #'.$row->product_id).'? Matched domains start being checked.':'Turn on '.$row->name.'? Monitoring checks start using it.')
             ->visible(fn()=>!$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
     }
+    /** Product field metadata only: native text options become service properties at checkout. No values are read. */
+    private static function domainFields(int $productId): array
+    {
+        $product=\App\Models\Product::find($productId);if(!$product){return [];}$fields=[];
+        foreach(ExtensionHelper::getCheckoutConfig($product) as $field){
+            $key=$field['name']??null;if(($field['type']??null)==='text'&&WatchProductMap::validPropertyKey($key)){$fields[$key]=$field['label']??$key;}
+        }
+        foreach($product->configOptions()->whereNull('parent_id')->where('type','text')->get(['config_options.name','config_options.env_variable']) as $option){
+            $key=$option->env_variable?:$option->name;if(WatchProductMap::validPropertyKey($key)){$fields[$key]=$option->name;}
+        }
+        $properties=DB::table('properties')->where('model_type',(new \App\Models\Service())->getMorphClass())
+            ->whereIn('model_id',\App\Models\Service::where('product_id',$productId)->select('id'))
+            ->groupBy('key')->orderBy('key')->get(['key',DB::raw('MIN(name) as label')]);
+        foreach($properties as $property){if(WatchProductMap::validPropertyKey($property->key)){$fields[$property->key]??=$property->label?:$property->key;}}
+        ksort($fields);return $fields;
+    }
     /** Add (no row) or Edit. Saving turns the row off until staff turn it on again. */
     public static function configuration(string $kind,WatchProfile|WatchProductMap|null $row,int $revision=0): Action
     {
         if($kind==='profile'&&$row&&$row->readProfile()===null){return self::action($kind,(int)$row->id,$revision,'save','Edit')->color('gray')->disabled();}
         $fields=[];$lines=fn(string $name,string $label,array $value)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->helperText('One per line.')->maxLength(8192)->rows(2);
         if($kind==='mapping'){
-            if(!$row){$fields[]=Select::make('product_id')->label('Hosting product')->options(fn()=>\App\Models\Product::whereHas('server',fn($q)=>$q->where('extension','<>','Domains'))->pluck('name','id')->all())->required();}
-            $fields[]=TextInput::make('property_key')->label('Domain field')->default($row?->property_key??'domain')->helperText('The service property that holds the hosting domain.')->required()->maxLength(64);
+            if(!$row){$fields[]=Select::make('product_id')->label('Hosting product')->options(fn()=>\App\Models\Product::whereHas('server',fn($q)=>$q->where('extension','<>','Domains'))->pluck('name','id')->all())->required()->live()->afterStateUpdated(fn(Set $set)=>$set('property_key',null));}
+            $productId=fn(Get $get):int=>(int)($row?->product_id??$get('product_id'));
+            $choices=[];$options=function(Get $get)use($productId,&$choices):array{$id=$productId($get);return $choices[$id]??=self::domainFields($id);};
+            $fields[]=Select::make('property_key')->label('Domain field')->default($row?->property_key)
+                ->options($options)->required()
+                ->disabled(fn(Get $get)=>$options($get)===[])
+                ->helperText(fn(Get $get)=>$productId($get)<1?'Choose a hosting product first.':($options($get)===[]
+                    ?'No domain fields found. Add a text option to the product or check its saved service properties.':'Choose the field that stores the main domain for each service.'));
             $fields[]=Select::make('expected_ns_profile_id')->label('DNS template')->options(fn()=>self::templates())->default($row?->expected_ns_profile_id);
             $note='Saving turns monitoring off until you turn it on again.';
         }else{

@@ -15,6 +15,16 @@ use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';$f=noticeFixture();extract($f);\Paymenter\Extensions\Servers\Domains\Services\StaffWatchSchema::install();staffPanel();$panel=Filament::getCurrentPanel();$resources=[WatchResource::class,ProductMappingResource::class,RoutingProfileResource::class];$panel->resources($resources);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($resources,$panel){foreach($resources as$r){$r::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 $manager=staffUser([Staff::VIEW,Writes::VIEW,Writes::MANAGE]);Auth::setUser($manager);
+// Monitoring-only configuration leaves the menu until the deployment supplies both activation gates.
+$monitoringReader=new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]);
+$discovery=new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null);
+foreach([[false,$discovery],[true,new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork()]] as [$enabled,$producer]){
+    app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($monitoringReader,$producer,$enabled));
+    foreach([ProductMappingResource::class,RoutingProfileResource::class] as $resource){same(false,$resource::shouldRegisterNavigation(),'Unconfigured monitoring hides '.$resource);}
+    same(true,WatchResource::shouldRegisterNavigation(),'Monitoring status remains reachable');
+}
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($monitoringReader,$discovery,true));
+foreach([ProductMappingResource::class,RoutingProfileResource::class] as $resource){same(true,$resource::shouldRegisterNavigation(),'Configured monitoring shows '.$resource);}
 // Clean copy: no em dash, no "unavailable", no internal terms.
 $clean=function(string $html,string $page):void{$text=html_entity_decode(strip_tags($html));expect(!str_contains($text,'—'),'No em dash on '.$page);foreach(['unavailable','Saved revision','revision','feature gates','Domain watch','routing profile','mapping'] as $word){expect(stripos($text,$word)===false,'No "'.$word.'" on '.$page);}};
 $column=fn($page,string $name)=>$page->instance()->getTable()->getColumn($name);
@@ -136,7 +146,41 @@ $spare->callAction('enable')->assertNotified('Saved');expect(WatchProfile::find(
 
 // Hosting products.
 $products=Livewire::actingAs($manager)->test(ListProducts::class)->assertCanSeeTableRecords([$map]);$clean($products->html(),'Hosting products');
-same('Hosting products',$products->instance()->getTitle(),'Products title');same(null,$products->instance()->getSubheading(),'No products subheading');same('Add hosting product',$products->instance()->getAction('save')->getLabel(),'Add product');
+same('Hosting products',$products->instance()->getTitle(),'Products title');same('Monitoring checks the domains saved on these hosting products for expiry and DNS changes.',$products->instance()->getSubheading(),'Products purpose');same('Add hosting product',$products->instance()->getAction('save')->getLabel(),'Add product');
+// Pick real product fields without loading customer values or accepting an arbitrary key.
+DB::beginTransaction();
+$option=\App\Models\ConfigOption::create(['name'=>'Primary hostname','env_variable'=>'primary_hostname','type'=>'text']);$option->products()->attach($f['product']->id);
+$fallback=\App\Models\ConfigOption::create(['name'=>'site','type'=>'text']);$fallback->products()->attach($f['product']->id);
+$notAProperty=\App\Models\ConfigOption::create(['name'=>'Server size','env_variable'=>'size','type'=>'select']);$notAProperty->products()->attach($f['product']->id);
+$f['service']->properties()->create(['key'=>'hostname','name'=>'Server hostname','value'=>'private-value.example.test']);
+$f['service']->properties()->create(['key'=>'additional_domains','name'=>'Other domains','value'=>'private-alias.example.test']);
+$another=$f['product']->replicate();$another->slug='other-domain-fields';$another->save();
+$otherField=\App\Models\ConfigOption::create(['name'=>'Other domain','env_variable'=>'other_domain','type'=>'text']);$otherField->products()->attach($another->id);
+$editProduct=Livewire::actingAs($manager)->test(ViewProduct::class,['record'=>$map->id])->mountAction('save')
+    ->assertFormFieldExists('property_key',fn($field)=>$field instanceof \Filament\Forms\Components\Select && $field->getOptions()===['domain'=>'Domain','hostname'=>'Server hostname','primary_hostname'=>'Primary hostname','site'=>'site'])
+    ->assertDontSee('private-value.example.test')->assertDontSee('private-alias.example.test');
+$editProduct->setActionData(['property_key'=>'made_up'])->callMountedAction()->assertHasActionErrors(['property_key']);
+same('domain',$map->fresh()->property_key,'Rejected key leaves the saved mapping unchanged');
+$addProduct=Livewire::actingAs($manager)->test(ListProducts::class)->mountAction('save')->assertFormFieldDisabled('property_key')
+    ->set('mountedActions.0.data.product_id',$f['product']->id)->set('mountedActions.0.data.property_key','domain')
+    ->set('mountedActions.0.data.product_id',$another->id)->assertFormSet(['property_key'=>null])
+    ->assertFormFieldExists('property_key',fn($field)=>$field->getOptions()===['other_domain'=>'Other domain']);
+$addProduct->setActionData(['product_id'=>$another->id,'property_key'=>'other_domain'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
+$added=\Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::where('product_id',$another->id)->sole();same('other_domain',$added->property_key,'Selected config option key is saved');same(false,$added->enabled,'New monitoring still saves disabled');
+$emptyProduct=$another->replicate();$emptyProduct->slug='no-domain-fields';$emptyProduct->save();
+Livewire::actingAs($manager)->test(ListProducts::class)->mountAction('save')->set('mountedActions.0.data.product_id',$emptyProduct->id)
+    ->assertFormFieldDisabled('property_key')->assertFormFieldExists('property_key',fn($field)=>str_contains($field->toHtml(),'No domain fields found. Add a text option to the product or check its saved service properties.'));
+// Native hosting checkout schemas declare domain before any customer has ordered the product.
+foreach(['CPanel','DirectAdmin','Plesk'] as $extension){
+    $nativeServer=$f['product']->server->replicate();$nativeServer->extension=$extension;$nativeServer->save();
+    $nativeProduct=$emptyProduct->replicate();$nativeProduct->server_id=$nativeServer->id;$nativeProduct->slug='checkout-'.strtolower($extension);$nativeProduct->save();
+    same(0,$nativeProduct->services()->count(),'Checkout-only product has no saved service properties');
+    Livewire::actingAs($manager)->test(ListProducts::class)->mountAction('save')->set('mountedActions.0.data.product_id',$nativeProduct->id)
+        ->assertFormFieldEnabled('property_key')->assertFormFieldExists('property_key',fn($field)=>$field->getOptions()===['domain'=>'Domain'])
+        ->setActionData(['product_id'=>$nativeProduct->id,'property_key'=>'domain'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
+    same('domain',\Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::where('product_id',$nativeProduct->id)->sole()->property_key,'Native checkout domain field is saved');
+}
+DB::rollBack();
 foreach(['product.name'=>'Product','property_key'=>'Domain field','template'=>'DNS template','enabled'=>'Monitoring'] as $name=>$label){same($label,$column($products,$name)->getLabel(),'Product column '.$name);}
 same('Synthetic defaults',$column($products,'template')->record($map)->getState(),'Template name');same('On',$column($products,'enabled')->record($map)->getState(),'Monitoring On');
 $product=Livewire::actingAs($manager)->test(ViewProduct::class,['record'=>$map->id])->assertSeeInOrder(['Settings','Product','Hosting','Domain field','domain','Monitoring','On','DNS template','Synthetic defaults','Matched services'])->assertActionHidden('enable');$clean($product->html(),'Hosting product');

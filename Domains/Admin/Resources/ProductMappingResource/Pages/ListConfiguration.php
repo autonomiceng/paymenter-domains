@@ -10,6 +10,6 @@ class ListConfiguration extends ListRecords
     protected static string $resource=ProductMappingResource::class;
     public function getTitle(): string{return 'Hosting products';}
     public function getBreadcrumbs(): array{return [];}
-    public function getSubheading(): ?string{return null;}
+    public function getSubheading(): ?string{return 'Monitoring checks the domains saved on these hosting products for expiry and DNS changes.';}
     protected function getHeaderActions(): array{return [WatchActions::configuration('mapping',null)];}
 }

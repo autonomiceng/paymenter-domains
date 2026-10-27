@@ -57,7 +57,7 @@ final class WatchMaintenance
         return ['outage'=>false,'reason'=>'current','since'=>$progress?:null];
     }
     private static function date(?int $at): string{return $at?gmdate('M j, Y H:i',$at).' UTC':'the first run';}
-    /** The Domain monitoring notice: one line, its tone and its one action (settings, failed_jobs or none). Normal states have none;
+    /** The Domain monitoring notice: one line, its tone and its resolver settings action, when it can help. Normal states have none;
      * a short queue timeout shows under Registrars > account > System checks instead. */
     public static function notice(array $health): ?array
     {
@@ -65,12 +65,13 @@ final class WatchMaintenance
         if ($health['reason']==='checks_unsuccessful') {
             $families=$health['families']??[$health['family']??'local'];
             $names=array_values(array_unique(array_map(static fn($f)=>['registry'=>'Expiry checks','watch_dns'=>'DNS checks','managed_dns'=>'DNS checks'][$f]??'Domain discovery',$families)));
-            $action=array_intersect(['watch_dns','managed_dns'],$families)?'settings':(in_array('local',$families,true)?'failed_jobs':null);
-            return ['text'=>implode(' and ',$names).(count($names)>1||$names[0]!=='Domain discovery'?' have':' has').' failed since '.$since.'.','tone'=>'danger','action'=>$action];
+            $local=in_array('local',$families,true);
+            $action=!$local&&array_intersect(['watch_dns','managed_dns'],$families)?'settings':null;
+            return ['text'=>implode(' and ',$names).(count($names)>1||$names[0]!=='Domain discovery'?' have':' has').' failed since '.$since.'.'.($local?' Ask your administrator to check the server logs.':''),'tone'=>'danger','action'=>$action];
         }
         return match($health['reason']) {
-            'disabled'=>['text'=>'Domain monitoring is off. Turn it on in Settings.','tone'=>'warning','action'=>'settings'],
-            'dispatch_overdue'=>['text'=>'Monitoring checks have not run since '.$since.'.','tone'=>'danger','action'=>'failed_jobs'],
+            'disabled'=>['text'=>'Domain monitoring is not set up on this server. Ask your administrator to turn it on.','tone'=>'warning','action'=>null],
+            'dispatch_overdue'=>['text'=>'Monitoring checks have not run since '.$since.'. Ask your administrator to check the scheduled task and background worker.','tone'=>'danger','action'=>null],
             default=>null,
         };
     }
