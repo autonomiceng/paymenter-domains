@@ -41,8 +41,13 @@ async function main() {
         // Shared styles are rendered inside body; keep test overrides after them.
         html = html.replace('</body>', `<style>${extraStyle}</style></body>`);
         // No application scripts, asset server, file navigation or network resources.
-        html = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">' + html;
+        const heads = html.match(/<head\b[^>]*>/gi) || [];
+        if (heads.length !== 1) throw new Error(`Expected exactly one opening head tag in ${file}; got ${heads.length}`);
+        html = html.replace(/<head\b[^>]*>/i, head => head +
+            '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">');
         await page.setContent(html, { waitUntil: 'domcontentloaded' });
+        const mode = await page.evaluate(() => document.compatMode);
+        if (mode !== 'CSS1Compat') throw new Error(`Expected standards mode before measurement; got ${mode}`);
         const node = page.locator(selector);
         if (await node.count() !== 1) throw new Error(`Expected one real fixture action: ${selector}`);
         return node.evaluate(button => {
