@@ -180,6 +180,7 @@
     "tests/runtime-presenter-test.php",
     "tests/runtime-notices-test.php",
     "tests/runtime-worker-test.php",
+    "tests/runtime-operations-test.php",
     "tests/runtime-wire-registration-test.php",
     "tests/runtime-wire-renewal-test.php",
     "tests/runtime-wire-management-test.php",
