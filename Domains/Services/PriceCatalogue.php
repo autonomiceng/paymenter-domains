@@ -260,10 +260,10 @@ final class PriceCatalogue
     }
 
     /** Saved rows a staff price change republishes, in register, renew, transfer order. */
-    public static function sold(Tld $tld): \Illuminate\Support\Collection
+    public static function sold(Tld $tld, ?\Illuminate\Support\Collection $preloaded = null): \Illuminate\Support\Collection
     {
         $order = ['register' => 0, 'renew' => 1, 'transfer' => 2];
-        return Price::where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get()
+        return ($preloaded ?? Price::where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get())
             ->reject(fn (Price $price): bool => ($price->eligibility['price_unavailable'] ?? false)
                 || ($price->action === 'register' && ($price->term < $tld->min_years || $price->term > $tld->max_years)))
             ->sortBy(fn (Price $price): int => $order[$price->action] * 100 + $price->term)->values();
@@ -287,9 +287,9 @@ final class PriceCatalogue
 
     /** Staff saves publish at once, so every saved term needs a current read and the one-year renewal needs a cost.
      * A current read without a cost means the registrar does not offer that term. */
-    public static function requireFreshCosts(Tld $tld, \DateTimeImmutable $now): void
+    public static function requireFreshCosts(Tld $tld, \DateTimeImmutable $now, ?\Illuminate\Support\Collection $preloaded = null): void
     {
-        $rows = self::sold($tld);
+        $rows = self::sold($tld, $preloaded);
         if (!$rows->contains(fn (Price $price): bool => $price->action === 'renew' && $price->term === 1 && $price->wholesale !== null)
             || $rows->contains(fn (Price $price): bool => $price->fresh_until === null
             || $price->fresh_until <= $now || $price->observed_at > $now)) { throw new \DomainException('Fresh costs required before publication.'); }

@@ -259,8 +259,12 @@ final class SettingsActions
     {
         $tlds=TldFacts::bound(Tld::query())->where('server_id',$server)->where('use_default_rule',true)->orderBy('tld')->get();
         if($tlds->isEmpty()){return 'No TLDs use the account default yet. Saving changes the default only.';}
+        $account=$tlds->first();
+        $prices=\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$server)
+            ->where('registrar_key',$account->registrar_key)->where('account_fingerprint',$account->account_fingerprint)
+            ->whereIn('tld',$tlds->pluck('tld'))->where('currency','USD')->orderBy('id')->get()->groupBy('tld');
         $now=now()->toDateTimeImmutable();
-        $waiting=$tlds->filter(function(Tld $t)use($now){try{PriceCatalogue::requireFreshCosts($t,$now);return false;}catch(\Throwable){return true;}});
+        $waiting=$tlds->filter(function(Tld $t)use($now,$prices){try{PriceCatalogue::requireFreshCosts($t,$now,$prices->get($t->tld,collect()));return false;}catch(\Throwable){return true;}});
         $text=$tlds->count().' '.($tlds->count()===1?'TLD uses':'TLDs use').' the account default: '.$tlds->map(fn($t)=>'.'.$t->tld)->implode(', ').'. Saving publishes '.($tlds->count()===1?'its':'their').' new prices.';
         return $text.($waiting->isEmpty()?'':' Costs are out of date for '.$waiting->map(fn($t)=>'.'.$t->tld)->implode(', ').'. '.($waiting->count()===1?'Its prices':'Their prices').' stay the same until you sync prices and save again.');
     }
