@@ -19,6 +19,74 @@ spec.loader.exec_module(runner)
 
 
 class SchedulingTests(unittest.TestCase):
+    def test_final_guard_interrupt_retains_run_receipt(self):
+        import signal
+        for target in ['runtime', 'dependency', 'worker']:
+            for signum in [signal.SIGTERM, signal.SIGINT]:
+                with self.subTest(target=target, signal=signum), tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary); (root/'Domains').mkdir()
+                    output = root/'output'; output.mkdir()
+                    original = runner.runtime_matches; calls = []
+                    def interrupt(*args):
+                        os.kill(os.getpid(), signum)
+                    def interrupt_final(*args):
+                        calls.append(True)
+                        if target == 'runtime' and len(calls) == 2:
+                            interrupt()
+                        return original(*args)
+                    previous = {number: signal.getsignal(number) for number in [signal.SIGTERM, signal.SIGINT]}
+                    try:
+                        for number in previous:
+                            signal.signal(number, runner.interrupted)
+                        with mock.patch.object(runner, 'ROOT', root), \
+                             mock.patch.object(runner, 'runtime_matches', interrupt_final), \
+                             mock.patch.object(runner.native, 'verify', side_effect=interrupt), \
+                             contextlib.redirect_stdout(io.StringIO()):
+                            try:
+                                status = runner.run([('provider', [sys.executable, '-c', "print('completed')"])],
+                                                    dict(os.environ), output, ['provider'], {}, jobs=1,
+                                                    dependency=(root, 'saved') if target == 'dependency' else None,
+                                                    worker_check=interrupt if target == 'worker' else None)
+                            except KeyboardInterrupt:
+                                self.fail('Final verification interrupt escaped without a run receipt')
+                    finally:
+                        for number, handler in previous.items():
+                            signal.signal(number, handler)
+                    self.assertEqual(status, 130)
+                    receipt = json.loads((output/'receipt.json').read_text())
+                    self.assertEqual(receipt['results'][0]['exit'], 0)
+                    self.assertTrue(receipt['results'][0]['guard_complete'])
+                    self.assertEqual(receipt['not_run'], [])
+                    self.assertEqual(len(receipt['plan']), 1)
+                    self.assertFalse(receipt['final_guard_complete'])
+                    self.assertEqual(receipt['final_guard_error'], 'KeyboardInterrupt')
+                    self.assertFalse(receipt['complete'])
+                    self.assertEqual((output/'000.stdout.txt').read_text(), 'completed\n')
+
+    def test_receipt_write_interrupt_retries_with_incomplete_run(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'Domains').mkdir()
+            output = root/'output'; output.mkdir()
+            original = Path.write_text; calls = []
+            def interrupt_once(path, *args, **kwargs):
+                if path.name == 'receipt.json' and not calls:
+                    calls.append(True)
+                    raise KeyboardInterrupt
+                return original(path, *args, **kwargs)
+            with mock.patch.object(runner, 'ROOT', root), mock.patch.object(Path, 'write_text', interrupt_once), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    status = runner.run([('provider', [sys.executable, '-c', "print('completed')"])],
+                                        dict(os.environ), output, ['provider'], {}, jobs=1)
+                except KeyboardInterrupt:
+                    self.fail('Receipt-write interrupt lost completed execution evidence')
+            self.assertEqual(status, 130)
+            receipt = json.loads((output/'receipt.json').read_text())
+            self.assertEqual(receipt['results'][0]['exit'], 0)
+            self.assertTrue(receipt['final_guard_complete'])
+            self.assertFalse(receipt['complete'])
+            self.assertEqual(receipt['runner_error'], 'KeyboardInterrupt')
+
     def test_serial_guard_interrupt_preserves_known_exit_and_captured_streams(self):
         import signal
         for signum in [signal.SIGTERM, signal.SIGINT]:

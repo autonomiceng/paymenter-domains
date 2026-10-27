@@ -397,49 +397,68 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                                     'guard_seconds': 0, 'started_seconds': started-started_run,
                                     'finished_seconds': time.monotonic()-started_run}
     results = [completed[index] for index in sorted(completed)]
-    with timing('final_guards', timings):
-        # A final guard catches changes after the last per-command check as well.
-        unchanged, runtime_error = runtime_matches(before, fingerprint)
-        if results and not unchanged:
-            results[-1].update(runtime_unchanged=False, runtime_error=runtime_error)
-        dependency_error = None
-        try:
-            dependency_unchanged = dependency is None or native.verify(dependency[0])[1] == dependency[1]
-            if worker_check:
-                worker_check()
-        except (ValueError, RuntimeError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
-            dependency_unchanged = False
-            dependency_error = type(error).__name__
-    complete = runner_error is None and len(results) == len(commands) and all(r['exit'] == 0 and r['runtime_unchanged'] for r in results) and dependency_unchanged
-    timings['run'] = time.monotonic() - started_run
-    planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
-    receipt = {'runner_error': runner_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
-               'fail_fast': fail_fast, 'first_failure': first_failure[0] if first_failure else None,
-               'commands_planned': len(commands),
-               'plan': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands)],
-               'not_run': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands) if index not in completed],
-               'requested_jobs': requested_jobs or jobs, 'memory_mib': memory_mib,
-               'categories': {kind: {'commands_run': len(rows),
-                                     'wall_seconds': max(row['finished_seconds'] for row in rows)-min(row['started_seconds'] for row in rows),
-                                     'child_seconds': sum(row['seconds'] for row in rows),
-                                     'peak_child_rss_kib': max((row['peak_rss_kib'] or 0 for row in rows), default=0)}
-                              for kind in selected if (rows := [row for row in results if row['kind'] == kind])},
-               'omitted_tests': [path for paths in suites.values() for path in paths if path not in planned],
-               'complete': complete, 'jobs': jobs, 'php_version': '8.4.27', 'results': results, 'runtime_sha256': before,
-               'selected_suites': selected, 'omitted_suites': [s for s in CATEGORIES if s not in selected],
-               'unimplemented_suites': [s for s, paths in suites.items() if not paths],
-               'dependency': {'commit': native.COMMIT, 'lock_sha256': native.LOCK_SHA256, 'source_sha256': dependency[1]} if dependency else None,
-               'skipped_suites': [r['kind'] for r in results if r['skipped']], 'dependency_unchanged': dependency_unchanged, 'dependency_error': dependency_error, 'real_provider_calls': 0,
-               'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
-    (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
-    print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands),
-                      'first_failure': first_failure[0] if first_failure else None,
-                      'cancelled_commands': sum(row['cancelled'] for row in results),
-                      'only_tests': sorted(set(only or [])), 'receipt': str(output/'receipt.json')}))
-    if (runner_error is None and len(results) == len(commands) and any(r['skipped'] for r in results) and dependency_unchanged
-            and all(r['exit'] in [0, 77] and r['runtime_unchanged'] for r in results)):
-        return 77
-    return 130 if runner_error == 'KeyboardInterrupt' else 0 if complete else 1
+    final_guard_complete, final_guard_error = False, None
+    dependency_unchanged, dependency_error = False, None
+    try:
+        with timing('final_guards', timings):
+            # A final guard catches changes after the last per-command check.
+            unchanged, runtime_error = runtime_matches(before, fingerprint)
+            if results and not unchanged:
+                results[-1].update(runtime_unchanged=False, runtime_error=runtime_error)
+            try:
+                dependency_unchanged = dependency is None or native.verify(dependency[0])[1] == dependency[1]
+                if worker_check:
+                    worker_check()
+            except (ValueError, RuntimeError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+                dependency_unchanged = False
+                dependency_error = type(error).__name__
+            final_guard_complete = True
+    except BaseException as error:
+        final_guard_error = type(error).__name__
+        runner_error = runner_error or final_guard_error
+        dependency_unchanged, dependency_error = False, final_guard_error
+    def finish():
+        complete = runner_error is None and len(results) == len(commands) and all(r['exit'] == 0 and r['runtime_unchanged'] for r in results) and dependency_unchanged
+        timings['run'] = time.monotonic() - started_run
+        planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
+        receipt = {'runner_error': runner_error, 'final_guard_complete': final_guard_complete,
+                   'final_guard_error': final_guard_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
+                   'fail_fast': fail_fast, 'first_failure': first_failure[0] if first_failure else None,
+                   'commands_planned': len(commands),
+                   'plan': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands)],
+                   'not_run': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands) if index not in completed],
+                   'requested_jobs': requested_jobs or jobs, 'memory_mib': memory_mib,
+                   'categories': {kind: {'commands_run': len(rows),
+                                         'wall_seconds': max(row['finished_seconds'] for row in rows)-min(row['started_seconds'] for row in rows),
+                                         'child_seconds': sum(row['seconds'] for row in rows),
+                                         'peak_child_rss_kib': max((row['peak_rss_kib'] or 0 for row in rows), default=0)}
+                                  for kind in selected if (rows := [row for row in results if row['kind'] == kind])},
+                   'omitted_tests': [path for paths in suites.values() for path in paths if path not in planned],
+                   'complete': complete, 'jobs': jobs, 'php_version': '8.4.27', 'results': results, 'runtime_sha256': before,
+                   'selected_suites': selected, 'omitted_suites': [s for s in CATEGORIES if s not in selected],
+                   'unimplemented_suites': [s for s, paths in suites.items() if not paths],
+                   'dependency': {'commit': native.COMMIT, 'lock_sha256': native.LOCK_SHA256, 'source_sha256': dependency[1]} if dependency else None,
+                   'skipped_suites': [r['kind'] for r in results if r['skipped']], 'dependency_unchanged': dependency_unchanged, 'dependency_error': dependency_error, 'real_provider_calls': 0,
+                   'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
+        (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
+        print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands),
+                          'first_failure': first_failure[0] if first_failure else None,
+                          'cancelled_commands': sum(row['cancelled'] for row in results),
+                          'only_tests': sorted(set(only or [])), 'receipt': str(output/'receipt.json')}))
+        if (runner_error is None and len(results) == len(commands) and any(r['skipped'] for r in results) and dependency_unchanged
+                and all(r['exit'] in [0, 77] and r['runtime_unchanged'] for r in results)):
+            return 77
+        return 130 if runner_error == 'KeyboardInterrupt' else 0 if complete else 1
+
+
+    try:
+        return finish()
+    except KeyboardInterrupt:
+        # The CLI handler masks repeated signals before raising. Rebuild and
+        # rewrite a receipt if the first signal interrupted its construction,
+        # persistence or console summary, without rerunning any command.
+        runner_error = 'KeyboardInterrupt'
+        return finish()
 
 
 def runtime_fingerprint():
