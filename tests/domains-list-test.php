@@ -101,7 +101,7 @@ expect(!str_contains($html,'Related services') && !str_contains($html,'View doma
 $empty=storefrontDom(view('domains::index',['domains'=>new LengthAwarePaginator([],0,25)])->render());
 same('No domains yet',$norm($empty->query('//*[contains(@class,"domains-empty")]/h2')->item(0)),'Empty heading');
 same('Register a new name.',$norm($empty->query('//*[contains(@class,"domains-empty")]/p')->item(0)),'Empty text says it once');
-same('yourbusiness.com',$empty->query('//*[contains(@class,"domains-empty")]//input[@name="name"]/@placeholder')->item(0)?->value,'Empty search placeholder');
+same('example.com',$empty->query('//*[contains(@class,"domains-empty")]//input[@name="name"]/@placeholder')->item(0)?->value,'Empty search placeholder');
 same(0,$empty->query('//*[contains(@class,"domains-head")]//a')->length,'Empty list has no header buttons: the search is the one path');
 same(0,$empty->query('//*[contains(@class,"domains-empty")]//a')->length,'No transfer link when no transfer is offered');
 $emptyTransfer=storefrontDom(view('domains::index',['domains'=>new LengthAwarePaginator([],0,25),'transfersOffered'=>true])->render());
