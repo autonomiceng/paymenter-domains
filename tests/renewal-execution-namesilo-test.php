@@ -17,8 +17,8 @@ $engine = new RenewalExecution($renewBindings,$authority,new RenewalAdmission($a
 $accountGuard=(object)['email'=>'expected@example.com','id'=>'900','default'=>'1','mode'=>'singleton','reads'=>0];
 $writes = 0;
 $writer = new RenewalWriter($binding,$features,$accepted,fn ()=>$engine,static function ($origin,$command,$params,$ms) use (&$writes,$accountGuard) {
-    if($command==='contactList'&&$params===[]){return nameSiloGuardWire($accountGuard);}
     same(0,Illuminate\Support\Facades\DB::transactionLevel(),'NameSilo wire outside locks'); same('https://ote.namesilo.com/apibatch',$origin,'Fixed background test route');
+    if($command==='contactList'&&$params===[]){return nameSiloGuardWire($accountGuard);}
     same('renewDomain',$command,'Named renewal only'); same(['domain'=>'native-history-placeholder.com','years'=>1,'auto_renew'=>0],$params,'Explicit annual renewal and auto-renew off, no card/restore overrides');
     $writes++; return json_encode(['request'=>['operation'=>'renewDomain'],'reply'=>['code'=>300,'detail'=>'synthetic','domain'=>'native-history-placeholder.com','order_amount'=>'8.95']]);
 });
