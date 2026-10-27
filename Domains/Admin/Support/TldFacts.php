@@ -211,7 +211,7 @@ final class TldFacts
             return array_map(static function($r){
                 $change=self::CHANGES[$r['action']]??$r['action'];
                 $phase=(string)$r['phase'];
-                if(str_ends_with($phase,'_requested')){$change.=': started';}elseif(str_ends_with($phase,'_refused')){$change.=': refused';}
+                if(str_ends_with($phase,'_requested')){$change.=': started';}elseif(str_ends_with($phase,'_refused')){$change.=': refused';}elseif($phase==='publication_completed'){$change.=': publishing finished';}
                 try{$at=\Carbon\CarbonImmutable::parse((string)$r['at'])->utc()->format('M j, Y H:i').' UTC';}catch(\Throwable){$at=(string)$r['at'];}
                 return ['time'=>$at,'change'=>$change,'reason'=>(string)$r['reason'],'by'=>'Staff #'.$r['actor_id']];
             },array_reverse(array_values($rows)));

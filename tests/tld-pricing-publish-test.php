@@ -83,7 +83,9 @@ same('markup_percent',(new PricingRules)->defaultRule($t->server_id)['mode'],'De
 $writer->run($review('override',$t->id),$fields($rule),$now);$before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
 same(['published'=>0,'failed'=>['.net']],$writer->run($review('default_rule',null),['mode'=>'markup_percent','markup'=>'40','round_up'=>'none'],$now),'Own-price TLD is not republished');
 same($before,array_map(fn(Price $p)=>$p->revision,$rows($t->fresh())),'Own-price TLD revisions unchanged');
-same('Default pricing changed',TldFacts::history($t->server_id,$t->id)[0]['change'],'Default change in TLD history');
+$history=TldFacts::history($t->server_id,$t->id);
+same('Default pricing changed: publishing finished',$history[0]['change'],'Newest history row names the publication result');
+same('Default pricing changed',$history[1]['change'],'Local-save history row keeps the original change label');
 // Saving prices publishes them, so staff without the publish permission cannot save.
 $weak=staffUser(array_values(array_diff($permissions,[Review::permission('publish')])));Auth::setUser($weak);
 $before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));$default=(new PricingRules)->defaultRule($t->server_id);
