@@ -196,9 +196,15 @@ final class StaffSettingsWrites
         });
         if($r->action!=='default_rule'){return null;}
         // The new default publishes to each TLD that follows it, one TLD at a time; one failure does not stop the rest.
-        $summary=['published'=>0,'failed'=>[]];
-        foreach(Tld::where('server_id',$r->serverId)->where('use_default_rule',true)->orderBy('tld')->get() as $tld){
-            try{$this->native->publish((int)$tld->id,$now,null,fn(Tld $t)=>PriceCatalogue::requireFreshCosts($t,$now));$summary['published']++;}
+        // A TLD that switched to its own prices meanwhile is left alone.
+        $summary=['published'=>0,'failed'=>[]];$a=Account::where('server_id',$r->serverId)->firstOrFail();
+        foreach(Tld::where(['server_id'=>$r->serverId,'registrar_key'=>$a->registrar_key,'account_fingerprint'=>$a->account_fingerprint,'use_default_rule'=>true])->orderBy('tld')->get() as $tld){
+            $follows=true;
+            try{
+                $this->native->publish((int)$tld->id,$now,null,function(Tld $t)use($now,&$follows):bool{
+                    if(!$t->use_default_rule){return $follows=false;}PriceCatalogue::requireFreshCosts($t,$now);return true;});
+                if($follows){$summary['published']++;}
+            }
             catch(\Throwable $error){
                 $summary['failed'][]='.'.$tld->tld;
                 if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains default pricing publish failed.',['tld'=>$tld->tld,'exception_class'=>$error::class]);}

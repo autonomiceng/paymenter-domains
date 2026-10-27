@@ -248,7 +248,8 @@ final class PriceCatalogue
     }
 
     /** Term retail for one rule and its margin decision. Publication and the staff preview share it.
-     * Below-cost renewals keep the prior retail; below-cost registrations and transfers are held. */
+     * Renewals that cannot be published (unknown or nonpositive price) keep the prior retail; below-cost renewals are
+     * still billed; below-cost registrations and transfers are held. */
     public static function quote(string $action, int $term, ?string $perYear, array $rule, ?string $prior): array
     {
         $annualRetail = $perYear === null ? null : PricingRule::price($perYear, $rule, $action);
@@ -284,12 +285,13 @@ final class PriceCatalogue
         })->all();
     }
 
-    /** Staff saves publish at once, so every saved term needs a current read and at least one has a cost.
+    /** Staff saves publish at once, so every saved term needs a current read and the one-year renewal needs a cost.
      * A current read without a cost means the registrar does not offer that term. */
     public static function requireFreshCosts(Tld $tld, \DateTimeImmutable $now): void
     {
         $rows = self::sold($tld);
-        if ($rows->whereNotNull('wholesale')->isEmpty() || $rows->contains(fn (Price $price): bool => $price->fresh_until === null
+        if (!$rows->contains(fn (Price $price): bool => $price->action === 'renew' && $price->term === 1 && $price->wholesale !== null)
+            || $rows->contains(fn (Price $price): bool => $price->fresh_until === null
             || $price->fresh_until <= $now || $price->observed_at > $now)) { throw new \DomainException('Fresh costs required before publication.'); }
     }
 

@@ -79,9 +79,11 @@ keep their prices. Missing or stale costs refuse the save and change nothing.
 
 **Edit default pricing** lives on the registrar account page. Its dialog names the
 TLDs that use the default; saving publishes each of them and reports any it could not
-publish. Live accounts also republish in the background; TEST accounts publish only
-when staff save. Choosing the account default in **Edit prices** runs the
-`remove_override` review; the `publish` review stays server-side with no button.
+publish. Enom catalogue accounts, TEST and live, publish only when staff save; other
+accounts also republish in the background after each price sync. Choosing the account
+default in **Edit prices** runs the `remove_override` review; the `publish` review
+stays server-side with no button. Because saving publishes, both dialogs also need the
+publish permission.
 
 ## Registrar costs and renewal margin
 

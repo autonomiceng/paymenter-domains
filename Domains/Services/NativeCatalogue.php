@@ -111,7 +111,8 @@ final class NativeCatalogue
         return $product->plans()->where(['type' => 'recurring', 'billing_unit' => 'year', 'billing_period' => 1])->sole();
     }
 
-    /** $change edits the locked TLD before republication, so a staff price change and its publication commit together. */
+    /** $change edits the locked TLD before republication, so a staff price change and its publication commit together.
+     * A $change that returns false leaves the TLD alone. */
     public function publish(int $tldId, \DateTimeImmutable $now, ?StaffSettingsReview $review = null, ?\Closure $change = null): void
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Native publication owns its lock prefix.'); }
@@ -138,7 +139,7 @@ final class NativeCatalogue
                 || $tld->registrar_key !== $account->registrar_key) { throw new \DomainException('Catalogue account unavailable.'); }
             if ($review && (!in_array($review->action, ['publish', 'override', 'remove_override'], true)
                 || $review->tldId !== (int) $tld->id || $review->serverId !== (int) $server->id)) { throw new \DomainException('Publication review mismatch.'); }
-            if ($change) { $change($tld); }
+            if ($change && $change($tld) === false) { return; }
             if ($review || $change) { $this->prices->republishLocked($tld); }
             foreach ($products as $product) {
                 $mapping = $this->mapping($product);

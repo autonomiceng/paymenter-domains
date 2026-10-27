@@ -89,7 +89,7 @@ class RegistrarAccount extends Page
             $sections[]=Group::make([
                 Section::make('Setup checklist')->schema($this->rows('setup',AccountChecklist::setup($a,$this->status())))->columnSpanFull(),
                 Section::make('Renewal invoices and reminders')->schema($renewals)->columnSpanFull(),
-                Section::make('Default pricing')->schema($this->defaultPricing($id))->columnSpanFull(),
+                Section::make('Default pricing')->schema($this->defaultPricing($id))->visible(fn()=>Staff::can(Staff::POLICY))->columnSpanFull(),
                 Section::make('Other settings')->schema([$more])->collapsible()->collapsed()->columnSpanFull(),
             ])->key('account_'.$id)->extraAttributes(['class'=>'domains-account'])->columnSpanFull();
         }
@@ -103,7 +103,7 @@ class RegistrarAccount extends Page
     {
         try { $rule=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::describe((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->defaultRule($id)); }
         catch (\Throwable) { $rule=null; }
-        $tlds=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$id)->where('use_default_rule',true)->orderBy('tld')->pluck('tld');
+        $tlds=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::bound(\Paymenter\Extensions\Servers\Domains\Models\Tld::query())->where('server_id',$id)->where('use_default_rule',true)->orderBy('tld')->pluck('tld');
         $used=$tlds->isEmpty()?'No TLDs use it yet.':'Used by '.$tlds->count().' '.($tlds->count()===1?'TLD':'TLDs').': '.$tlds->map(fn($t)=>'.'.$t)->implode(', ').'.';
         $entry=MissingEntry::apply(TextEntry::make('default_pricing')->label('Customer pays')->state($rule)->inlineLabel(),cause:$rule===null?"Saved default pricing can't be read":null)
             ->belowContent($rule===null?null:$used.' TLDs with their own prices are not affected.');

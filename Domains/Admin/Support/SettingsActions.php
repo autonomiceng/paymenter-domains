@@ -31,7 +31,7 @@ final class SettingsActions
     public static function description(string $name): string
     {
         if(config('domains.enom_identity.environment')==='live'&&in_array($name,['acceptance','import'],true)){
-            return $name==='acceptance'?'Accept independently verified exact terms and annual renewal support for this live account. Review live Purchase below. TEST acceptance grants no live authority. Changes pause new sales until a new import.':'Reads one accepted ending from the live Enom account. Each request uses its daily allowance. Costs expire after 60 minutes. Prices publish in the background with the TLD’s current pricing; select a seller separately. Processing remains separate.';
+            return $name==='acceptance'?'Accept independently verified exact terms and annual renewal support for this live account. Review live Purchase below. TEST acceptance grants no live authority. Changes pause new sales until a new import.':'Reads one accepted ending from the live Enom account. Each request uses its daily allowance. Costs expire after 60 minutes. To publish prices, save Edit prices on the TLD page; select a seller separately. Processing remains separate.';
         }
         return match($name){
             'lifecycle'=>'Set how long after expiry a domain can still be renewed (grace) or restored, and what the registrar charges for each. Check these with the registrar first and note where you checked. They stay until you change them. If they are not set, or your sources disagree, late renewals and restores stay off. Grace renewal is off for TLDs that only renew automatically. Customers pay the registrar charge plus the normal renewal markup. Saving does not turn on owner checkout or restores.',
@@ -207,7 +207,7 @@ final class SettingsActions
             $on=fn()=>self::accepted($server,$name);
             $label=$setup?fn()=>self::setupLabel($name,$processing(),$registrar()!==null,$on()):Review::ACTIONS[$name];
             $out[]=Action::make($name.($setup?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':($setup&&in_array($name,['import'],true)?'primary':'gray'))->modalWidth('lg')
-                ->visible(fn()=>!($setup&&$blocked())&&($name!=='lifecycle'||Staff::can(Staff::COSTS))&&(!str_starts_with($name,'live_')||(config('domains.enom_live.'.substr($name,5))===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','live')->exists()))&&Staff::can(Staff::POLICY)&&(Staff::can(Review::permission($name))||($name==='override'&&Staff::can(Review::permission('remove_override'))))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
+                ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||Staff::can(Review::permission('publish')))&&($name!=='lifecycle'||Staff::can(Staff::COSTS))&&(!str_starts_with($name,'live_')||(config('domains.enom_live.'.substr($name,5))===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','live')->exists()))&&Staff::can(Staff::POLICY)&&(Staff::can(Review::permission($name))||($name==='override'&&Staff::can(Review::permission('remove_override'))))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
                 ->requiresConfirmation()->modalHeading($setup?fn()=>self::setupHeading($name,$processing(),$registrar()!==null,$on()):$label)
                 ->modalDescription($name==='processing'?fn()=>$processing()?'New registrar requests on this account wait until you resume.':'Registrar requests on this account start sending again.':($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?"NameSilo accounts can't be connected with API credentials.":self::description($name):self::description($name)))
                 ->modalSubmitActionLabel($setup?fn()=>self::submitLabel($name,$processing(),$registrar()!==null,$on()):($name==='override'?'Save and publish':'Confirm'))->schema($fields)
@@ -248,7 +248,7 @@ final class SettingsActions
                 $row['alert']==='below_cost'=>'Below cost: still billed',$row['hold']!==null=>'Not sold',default=>null};
             $html.='<tr style="border-top:1px solid rgb(127 127 127 / .2)">'.$cell(e(ucfirst($row['action']).', '.$row['term'].' '.($row['term']===1?'year':'years')))
                 .($costs?$cell(e($money($row['cost']))):'').$cell(e($money($row['current'])))
-                .$cell(e($row['hold']===null?$money($row['new']):'Not sold').($note===null?'':'<div style="font-size:.75rem;color:rgb(217 119 6)">'.e($note).'</div>')).'</tr>';
+                .$cell(e(in_array($row['hold'],[null,'below_cost'],true)?$money($row['new']):'Not sold').($note===null?'':'<div style="font-size:.75rem;color:rgb(217 119 6)">'.e($note).'</div>')).'</tr>';
         }
         $html.='</tbody></table></div>';
         if($stale){$html.='<p style="margin-top:.5rem;color:rgb(220 38 38)">Some costs are out of date. Sync prices on the account page before saving. Saving now changes nothing.</p>';}
@@ -257,18 +257,18 @@ final class SettingsActions
     /** Which TLDs a default pricing change publishes to, and which of them will wait for a price sync. */
     private static function followers(int $server): string
     {
-        $tlds=Tld::where('server_id',$server)->where('use_default_rule',true)->orderBy('tld')->get();
+        $tlds=TldFacts::bound(Tld::query())->where('server_id',$server)->where('use_default_rule',true)->orderBy('tld')->get();
         if($tlds->isEmpty()){return 'No TLDs use the account default yet. Saving changes the default only.';}
         $now=now()->toDateTimeImmutable();
         $waiting=$tlds->filter(function(Tld $t)use($now){try{PriceCatalogue::requireFreshCosts($t,$now);return false;}catch(\Throwable){return true;}});
         $text=$tlds->count().' '.($tlds->count()===1?'TLD uses':'TLDs use').' the account default: '.$tlds->map(fn($t)=>'.'.$t->tld)->implode(', ').'. Saving publishes '.($tlds->count()===1?'its':'their').' new prices.';
-        return $text.($waiting->isEmpty()?'':' Costs are out of date for '.$waiting->map(fn($t)=>'.'.$t->tld)->implode(', ').', so '.($waiting->count()===1?'it publishes':'they publish').' after the next price sync.');
+        return $text.($waiting->isEmpty()?'':' Costs are out of date for '.$waiting->map(fn($t)=>'.'.$t->tld)->implode(', ').'. '.($waiting->count()===1?'Its prices':'Their prices').' stay the same until you sync prices and save again.');
     }
     /** Notification text after a default pricing change. */
     private static function published(array $summary): string
     {
         $text=$summary['published']===0&&$summary['failed']===[]?'No TLDs use the account default.':'Published new prices for '.$summary['published'].' '.($summary['published']===1?'TLD':'TLDs').'.';
-        return $text.($summary['failed']===[]?'':' Not published yet: '.implode(', ',$summary['failed']).'. Costs are missing or out of date; '.(count($summary['failed'])===1?'it publishes':'they publish').' with the new default after the next price sync.');
+        return $text.($summary['failed']===[]?'':' Could not publish '.implode(', ',$summary['failed']).'. Sync prices on the account page, then save again.');
     }
     /** Renewals and DNS management are on when their saved acceptance is current. */
     private static function accepted(int $server,string $name): bool

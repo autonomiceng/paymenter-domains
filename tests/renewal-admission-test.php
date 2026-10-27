@@ -205,6 +205,9 @@ storeLifecycleFixture($binding,lifecycleFixture($clock->now()));$state->duringCo
 // Saved lifecycle values stay until staff change them; a year-old save still admits grace renewal.
 storeLifecycleFixture($binding,lifecycleFixture($clock->now()->modify('-400 days')));
 same(RenewalCode::Admitted,$check()->code,'Old lifecycle values do not expire');
+$clock->instant=new DateTimeImmutable('2027-10-18T10:59:59Z');storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()->modify('-400 days')),'grace_days'=>1]);
+same('2027-10-18T11:00:00+00:00',$syntheticGrace($earlier)->validUntil?->setTimezone(new DateTimeZone('UTC'))->format(DATE_ATOM),'Old lifecycle values still end at the grace deadline');
+$clock->instant=new DateTimeImmutable('2027-10-18T12:00:00Z');
 storeLifecycleFixture($binding,lifecycleFixture($clock->now()));
 $state->price = '99.00'; same(RenewalCode::Admitted, $check()->code, 'Grace has no original-retail floor'); $state->price = '8.95';
 $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');

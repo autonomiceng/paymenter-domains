@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{Auth,Crypt,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,StaffAuditSchema,StaffSettingsReview as Review};
 extract(commerceFixture());Carbon\Carbon::setTestNow($now);$t=$tlds[0];
-$u=staffUser([Staff::VIEW,Staff::POLICY,Review::permission('default_rule')]);Auth::setUser($u);
+$u=staffUser([Staff::VIEW,Staff::POLICY,Review::permission('default_rule'),Review::permission('publish')]);Auth::setUser($u);
 $review=static fn(?string $ticket=null)=>new Review($u->id,$t->server_id,$t->id,'default_rule',$ticket??Review::ticket($u->id,$t->server_id,$t->id,'default_rule',Review::stamp($t->server_id,$t->id)),'Retain synthetic audit evidence');
 $unverified=$review();
 $inFlight=static function(Review $r):void {DB::transaction(function()use($r):void {$r->lockActor();$r->lockAccounts();$r->check(true);});};

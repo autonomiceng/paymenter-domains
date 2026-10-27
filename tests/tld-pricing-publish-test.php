@@ -77,4 +77,31 @@ $writer->run($review('override',$t->id),$fields($rule),$now);$before=array_map(f
 same(['published'=>0,'failed'=>['.net']],$writer->run($review('default_rule',null),['mode'=>'markup_percent','markup'=>'40','round_up'=>'none'],$now),'Own-price TLD is not republished');
 same($before,array_map(fn(Price $p)=>$p->revision,$rows($t->fresh())),'Own-price TLD revisions unchanged');
 same('Default pricing changed',TldFacts::history($t->server_id,$t->id)[0]['change'],'Default change in TLD history');
+// Saving prices publishes them, so staff without the publish permission cannot save.
+$weak=staffUser(array_values(array_diff($permissions,[Review::permission('publish')])));Auth::setUser($weak);
+$before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));$default=(new PricingRules)->defaultRule($t->server_id);
+foreach([['override',$t->id,$fields($rule)],['remove_override',$t->id,[]],['default_rule',null,['mode'=>'markup_percent','markup'=>'10','round_up'=>'none']]] as [$action,$tld,$data]){
+    $denied=new Review($weak->id,$t->server_id,$tld,$action,Review::ticket($weak->id,$t->server_id,$tld,$action,Review::stamp($t->server_id,$tld)),'Synthetic reviewed price change');
+    tldRefusal(fn()=>$writer->run($denied,$data,$now),'Current staff permissions required.');
+}
+same($before,array_map(fn(Price $p)=>$p->revision,$rows($t->fresh())),'Denied saves publish nothing');
+same($default,(new PricingRules)->defaultRule($t->server_id),'Denied default save changes nothing');
+Auth::setUser($u);
+// A sold term without a one-year renewal cost refuses the save.
+$renew=$rows($t->fresh())['renew1'];$cost=$renew->wholesale;Price::whereKey($renew->id)->update(['wholesale'=>null]);
+tldRefusal(fn()=>$writer->run($review('override',$t->id),$fields($low),$now),'Fresh costs required before publication.');
+same($before,array_map(fn(Price $p)=>$p->revision,$rows($t->fresh())),'Missing renewal cost publishes nothing');
+Price::whereKey($renew->id)->update(['wholesale'=>$cost]);
+// Only TLDs on this account follow its default, and a TLD that switches to its own prices meanwhile is left alone.
+// A TLD left over from an earlier account binding.
+$org=Tld::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,'tld'=>'org','enabled'=>true,'min_years'=>1,'max_years'=>1,'use_default_rule'=>true]);
+Tld::whereKey($org->id)->update(['account_fingerprint'=>'synthetic-earlier-account']);
+$writer->run($review('remove_override',$t->id),[],$now);$before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
+// The switch lands after the reviewed default is saved, before the TLD is published.
+$switch=$review('default_rule',null);$armed=true;
+Tld::retrieved(function(Tld $tld)use(&$armed,$t):void{if($armed&&$tld->id===$t->id&&Illuminate\Support\Facades\DB::transactionLevel()===0){$armed=false;Tld::whereKey($t->id)->update(['use_default_rule'=>false]);}});
+same(['published'=>0,'failed'=>['.net']],$writer->run($switch,['mode'=>'markup_percent','markup'=>'20','round_up'=>'none'],$now),'Other-account and switched TLDs are not published');
+same('markup_percent',(new PricingRules)->defaultRule($t->server_id)['mode'],'Default saved before the switch');same('20.00',(new PricingRules)->defaultRule($t->server_id)['markup'],'New default saved');
+expect(!$armed,'Switch happened during the default save');
+same($before,array_map(fn(Price $p)=>$p->revision,$rows($t->fresh())),'Switched TLD revisions unchanged');
 echo "Saving prices publishes them, matches the preview, keeps below-cost rules and refuses stale costs.\n";$nativeSuccessful=true;

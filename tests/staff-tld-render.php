@@ -58,7 +58,7 @@ $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountActi
     ->setActionData(['pricing'=>'custom','mode'=>'markup_amount','markup'=>'1.20','round_up'=>'half'])->call('$refresh');
 $sees($page,['Customer pays: cost + $1.20, rounded up to the next $0.50','After saving','$7.50','$22.50']);$render($page,'modal-override-preview');
 $page->setActionData(['pricing'=>'custom','mode'=>'fixed','fixed_register'=>'5','fixed_renew'=>'7','fixed_transfer'=>'9'])->call('$refresh');
-$sees($page,['Below cost: not sold','Below cost: still billed']);$render($page,'modal-override-below-cost');
+$sees($page,['$5.00<div style="font-size:.75rem;color:rgb(217 119 6)">Below cost: not sold','Below cost: still billed']);$render($page,'modal-override-below-cost');
 $page->setActionData(['pricing'=>'default'])->call('$refresh');$sees($page,['Customer pays: $1.00 a year to register']);$render($page,'modal-override-default');
 $page->setActionData(['pricing'=>'custom','mode'=>'markup_amount','markup'=>'1.20','round_up'=>'half','reason'=>'Publish reviewed prices'])->callMountedAction()
     ->assertNotified(\Filament\Notifications\Notification::make()->success()->title('Prices published')->body('Reload this page before another change.'));

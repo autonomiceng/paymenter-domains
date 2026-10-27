@@ -66,6 +66,11 @@ foreach($inputs as $action=>$input){
     }
     $u->role->update(['permissions'=>$permissions]);
 }
+// Saving prices publishes them, so price dialogs need the publish permission too.
+$u->role->update(['permissions'=>array_values(array_diff($permissions,[Review::permission('publish')]))]);
+Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('override')->assertActionVisible('tld_settings');
+Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSuccessful()->assertSee('Default pricing')->assertDontSee('Edit default pricing');
+$u->role->update(['permissions'=>$permissions]);
 $rows=Review::historyRows(App\Models\Server::find($t->server_id));
 foreach(array_keys($inputs) as $action){$label=Review::ACTIONS[$action];expect(count(array_filter($rows,fn($r)=>$r['action']===$label))>=1,'Every allowed native action audited');}
 $archives=Illuminate\Support\Facades\DB::table(AuditArchives::TABLE)->where('server_id',$t->server_id)->where('family','staff_settings')->count();
