@@ -174,22 +174,34 @@ foreach([['7.99','8.0000','0.0000','USD','USD'],['0.00','8.0000','0.0000','USD',
     commerceReject(fn()=>Facts::price($retail,new Money($base,$c1),new Money($fee,$c2)));
 }
 
+$unreadable=static function(string $case)use($saved,$cap,$t,$now):void{
+    same(null,$saved(),$case.': public read remains closed');same(['grace'=>false,'restore'=>false],$cap(true),$case.': both capabilities stay off');
+    $facts=Policies::facts($t,$now,true);
+    foreach(['Renewal grace period'=>'grace','Redemption period'=>'restore'] as $label=>$action){
+        same(null,$facts[$label]['value'],$case.': unreadable '.$label);
+        same("Saved settings can't be read. ".Policies::OFF[$action],$facts[$label]['sub'],$case.': plain unreadable cause');
+        same(true,$facts[$label]['edit'],$case.': existing edit flag remains');
+    }
+};
 // Corruption, duplicate settings and copied bindings never become offer authority.
 foreach([
     ['binding'=>$other->fingerprint,'tld'=>'com','facts'=>$valid],['binding'=>$b->fingerprint,'tld'=>'net','facts'=>$valid],
     ['binding'=>$b->fingerprint,'tld'=>'com','facts'=>[]],['binding'=>$b->fingerprint,'tld'=>'com','facts'=>'bad'],
-] as $value){$row->value=json_encode($value);$row->save();same(null,$saved(),'Wrong owner/ending/shape refuses');}
-$row->value='{';$row->save();same(null,$saved(),'Invalid JSON refuses');
-DB::table('settings')->where('id',$row->id)->update(['value'=>'invalid ciphertext']);same(null,$saved(),'Invalid encryption refuses');
-storeLifecycleFixture($b,$valid);$row=$row->fresh();$row->encrypted=false;$row->save();same(null,$saved(),'Unencrypted facts refused');
+] as $value){$row->value=json_encode($value);$row->save();same(null,$saved(),'Wrong owner/ending/shape refuses');$unreadable('Wrong owner/ending/shape');}
+$row->value='{';$row->save();same(null,$saved(),'Invalid JSON refuses');$unreadable('Invalid JSON');
+Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('Missing')->assertSee("Saved settings can't be read.")->assertDontSee('Not set');
+DB::table('settings')->where('id',$row->id)->update(['value'=>'invalid ciphertext']);same(null,$saved(),'Invalid encryption refuses');$unreadable('Invalid encryption refuses');
+storeLifecycleFixture($b,$valid);$row=$row->fresh();$row->encrypted=false;$row->save();same(null,$saved(),'Unencrypted facts refused');$unreadable('Unencrypted facts refused');
 // Simulate a damaged retained database that lost the native unique index.
 Schema::table('settings',fn($table)=>$table->dropUnique(['key','settingable_id','settingable_type']));
 storeLifecycleFixture($b,$valid);$duplicate=$server->settings()->create(['key'=>$key,'value'=>'duplicate','encrypted'=>true,'type'=>'string']);
-same(null,$saved(),'Duplicate evidence refuses');$assertRefusal(fn()=>$writer->run($review(),[...$valid,'verified'=>true],$now),'Conflicting lifecycle settings require repair.');$duplicate->delete();
+same(null,$saved(),'Duplicate evidence refuses');$unreadable('Duplicate evidence refuses');$assertRefusal(fn()=>$writer->run($review(),[...$valid,'verified'=>true],$now),'Conflicting lifecycle settings require repair.');$duplicate->delete();
 Schema::table('settings',fn($table)=>$table->unique(['key','settingable_id','settingable_type']));
-DB::table($t->getTable())->where('id',$t->id)->update(['account_fingerprint'=>$other->fingerprint]);same(null,$saved(),'Corrupt TLD account refuses');
+DB::table($t->getTable())->where('id',$t->id)->update(['account_fingerprint'=>$other->fingerprint]);same(null,$saved(),'Corrupt TLD account refuses');$unreadable('Corrupt TLD account refuses');
 DB::table($t->getTable())->where('id',$t->id)->update(['account_fingerprint'=>$b->fingerprint]);$t->refresh();
 expect($cap()['grace'],'Restored binding revalidates; no terminal marker');
+$missingAccount=clone $t;$missingAccount->server_id=PHP_INT_MAX;
+foreach(Policies::facts($missingAccount,$now,true) as $fact){same(null,$fact['value'],'Account lookup failure is unreadable');expect(str_starts_with($fact['sub'],"Saved settings can't be read."),'Account lookup cause is honest');}
 
 // Staff refusal, stale review and repeat verification are local, atomic changes.
 $before=serialize(DB::table('settings')->get());

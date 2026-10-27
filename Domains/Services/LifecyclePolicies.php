@@ -11,20 +11,21 @@ final class LifecyclePolicies
     public static function key(string $tld): string
     {CanonicalName::parse('example.'.$tld,[$tld]);return 'domains_lifecycle.'.$tld;}
     public static function read(AccountBinding $binding,string $tld): ?array
-    { return self::stored($binding,$tld)['facts']??null; }
+    { $saved=self::stored($binding,$tld);return is_array($saved)?$saved['facts']:null; }
     /** Saved facts and when staff last saved them. */
-    private static function stored(AccountBinding $binding,string $tld): ?array
+    private static function stored(AccountBinding $binding,string $tld): array|false|null
     {
         try{
             $a=Account::where('server_id',$binding->serverId)->firstOrFail();$binding->requireMatch(CatalogueAcceptances::binding($a));
-            if(!Tld::where(['server_id'=>$binding->serverId,'tld'=>$tld,'registrar_key'=>$binding->registrarKey,'account_fingerprint'=>$binding->fingerprint])->exists()){return null;}
+            if(!Tld::where(['server_id'=>$binding->serverId,'tld'=>$tld,'registrar_key'=>$binding->registrarKey,'account_fingerprint'=>$binding->fingerprint])->exists()){return false;}
             $s=Server::whereKey($binding->serverId)->where('extension','Domains')->firstOrFail();
             $rows=$s->settings()->where('key',self::key($tld))->get();
-            if($rows->count()!==1||!$rows[0]->encrypted){return null;}
+            if($rows->isEmpty()){return null;}
+            if($rows->count()!==1||!$rows[0]->encrypted){return false;}
             $v=json_decode($rows[0]->value,true,8,JSON_THROW_ON_ERROR);
-            if(!is_array($v)||($v['binding']??null)!==$binding->fingerprint||($v['tld']??null)!==$tld||!is_array($v['facts']??null)){return null;}
+            if(!is_array($v)||($v['binding']??null)!==$binding->fingerprint||($v['tld']??null)!==$tld||!is_array($v['facts']??null)){return false;}
             return ['facts'=>LifecycleFacts::validate($v['facts']),'saved_at'=>$rows[0]->updated_at?->toDateTimeImmutable()];
-        }catch(\Throwable){return null;}
+        }catch(\Throwable){return false;}
     }
     public static function allows(AccountBinding $binding,string $tld,string $action,\DateTimeImmutable $now): bool
     { $v=self::read($binding,$tld);return $v!==null&&LifecycleFacts::allows($v,$action,$now); }
@@ -66,11 +67,13 @@ final class LifecyclePolicies
     public static function facts(Tld $t,\DateTimeImmutable $now,bool $costs): array
     {
         try{$a=Account::where('server_id',$t->server_id)->firstOrFail();$b=CatalogueAcceptances::binding($a);$saved=self::stored($b,$t->tld);}
-        catch(\Throwable){$saved=null;}
+        catch(\Throwable){$saved=false;}
         $row=static fn(?string $value,?string $sub,?string $help=null,bool $edit=false)=>compact('value','sub','help','edit');
         // Not set is a normal choice, not a fault: without saved values late renewal and restore stay off.
         if($saved===null){return ['Renewal grace period'=>$row('Not set',self::OFF['grace'],self::GRACE_HELP,true),
             'Redemption period'=>$row('Not set',self::OFF['restore'],self::REDEMPTION_HELP,true)];}
+        if($saved===false){return ['Renewal grace period'=>$row(null,"Saved settings can't be read. ".self::OFF['grace'],self::GRACE_HELP,true),
+            'Redemption period'=>$row(null,"Saved settings can't be read. ".self::OFF['restore'],self::REDEMPTION_HELP,true)];}
         $v=$saved['facts'];$at=$saved['saved_at'];
         $period=static function(string $action)use($v,$at,$row):array {
             $help=$action==='grace'?self::GRACE_HELP:self::REDEMPTION_HELP;
