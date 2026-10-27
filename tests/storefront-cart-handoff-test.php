@@ -59,7 +59,9 @@ resetWire(['timeout' => true]); [$response, $used] = $order($name);
 same(route('domains.domains.search', ['name' => $name]), $response->getTargetUrl(), 'Failed second Check returns to search');
 same(0, $cart->items()->count(), 'No native cart item after failed fresh Check');
 same(1, count($GLOBALS['enomWire']['forms']), 'Exactly one physical fresh Check, no automatic retry');
-expect(str_contains($session->get('domains_notice'), 'Check the latest results'), 'Customer has a safe fresh-search recovery');
+$unconfirmed = 'We couldn’t confirm this name right now. Try again.';
+$generic = 'We couldn’t add that name to your cart. Check the latest results below and try again.';
+same($unconfirmed, $session->get('domains_notice'), 'An unconfirmed name says so in plain words');
 same(['Domains cart handoff failed.', ['exception_class' => DomainException::class, 'exception_message_key' => 'eligibility_unconfirmed']], end($logger->warnings), 'Fixed key identifies the refusal without raw exception text');
 try { FormKeys::verify($used, 'order:'.$name); expect(false, 'Failed handoff key cannot replay'); }
 catch (Symfony\Component\HttpKernel\Exception\HttpException $error) { same(419, $error->getStatusCode(), 'Retry needs fresh search intent'); }
@@ -77,13 +79,16 @@ foreach (['missing_flag', 'wrong_name', 'late_success'] as $mode) {
     $order($name);
     same(0, $cart->items()->count(), $mode.' leaves no cart item');
     same('eligibility_unconfirmed', end($logger->warnings)[1]['exception_message_key'], $mode.' uses an allowlisted refusal');
+    same($unconfirmed, $session->get('domains_notice'), $mode.' says the name could not be confirmed');
     same(1, count($GLOBALS['enomWire']['forms']), $mode.' has one physical Check');
 }
 $clock->instant = $now; resetWire(['reply' => $reply]);
 $order($name, '01'); same('invalid_action_or_term', end($logger->warnings)[1]['exception_message_key'], 'Bare DomainException is distinguished');
+same($generic, $session->get('domains_notice'), 'Other refusals keep the general notice');
 same([], $GLOBALS['enomWire']['forms'], 'Invalid term never reads provider');
 $product = $native->product($tlds[0], 'register'); $product->update(['stock' => 0]);
 $order($name); same('offer_unavailable', end($logger->warnings)[1]['exception_message_key'], 'Withdrawn offer is distinct');
+same($generic, $session->get('domains_notice'), 'A withdrawn offer keeps the general notice');
 $product->update(['stock' => null]);
 resetWire(['reply' => $reply]); [$response] = $order($name);
 same(route('cart'), $response->getTargetUrl(), 'Fresh user retry succeeds without widening any limits');

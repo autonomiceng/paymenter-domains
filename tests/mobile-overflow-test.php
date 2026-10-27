@@ -57,8 +57,13 @@ foreach ($pages as $page=>$html) {
     $styles = implode("\n", array_map(static fn($node)=>$node->textContent, iterator_to_array($dom->query('//style'))));
     expect(preg_match('/(?:^|[\s}])\.domains\s*\{[^}]*overflow-wrap:\s*anywhere\s*;/s', $styles) === 1,
         $page.' shared wrapping must reduce flex and grid minimum content width');
-    expect(preg_match('/\.domains\s+\.domains-btn\s*\{[^}]*white-space:\s*nowrap\s*;/s', $styles) === 1,
-        $page.' buttons retain their unbroken labels');
+    $button = preg_match('/\.domains\s+\.domains-btn\s*\{([^}]*)\}/s', $styles, $rule) === 1 ? $rule[1] : '';
+    expect(preg_match('/overflow-wrap:\s*break-word\s*;/', $button) === 1,
+        $page.' buttons preserve whole-word minimum width and can break an oversized word');
+    expect(preg_match('/max-width:\s*100%\s*;/', $button) === 1 && !str_contains($button, 'nowrap'),
+        $page.' a button too wide for its box, such as with large text, wraps between words instead of running past it');
+    expect(preg_match('/box-sizing:\s*border-box\s*;[^}]*min-height:\s*2\.5rem\s*;/', $button) === 1,
+        $page.' buttons size with their padding inside min-height, so one-line buttons keep their height on every page');
 }
 $nativeSuccessful = true;
 echo "Long domain text inherits shared wrapping across nine storefront views.\n";

@@ -8,18 +8,18 @@
 @endphp
 <section class="domains-panel" id="renewal" aria-labelledby="heading-renewal"><div class="domains-panel__h"><h2 id="heading-renewal" class="domains-h2">Renewal</h2></div><div class="domains-panel__b">
 <dl class="domains-card">
-<div><dt>Expires</dt><dd>@if ($expires['missing'])@include('domains::partials.missing', ['cause' => $expires['cause'], 'fix' => $expires['fix'], 'stack' => true])@else<span class="domains-date{{ $expires['tone'] ? ' domains-tone-text-'.$expires['tone'] : '' }}">@include('domains::partials.date', ['date' => $domain->expiry])</span>@if ($expires['note']) <span class="domains-sub">{{ $expires['note'] }}</span>@endif @endif</dd></div>
+<div><dt>Expires</dt><dd>@if ($expires['missing'])@include('domains::partials.missing', ['cause' => $expires['cause'], 'fix' => $expires['fix'], 'stack' => true])@else<span class="domains-date domains-card__v{{ $expires['tone'] ? ' domains-tone-text-'.$expires['tone'] : '' }}">@include('domains::partials.date', ['date' => $domain->expiry])</span>@if ($expires['note']) <span class="domains-sub">{{ $expires['note'] }}</span>@endif @endif</dd></div>
 @if ($domain->renewal !== '' && !$domain->setupPending)
-<div><dt>Auto-renew @include('domains::partials.help', ['id' => 'auto-renew', 'label' => 'Auto-renew'])</dt><dd>{{ $domain->autoRenew ? ($domain->autoRenew['enabled'] ? 'On' : 'Off') : $domain->renewal }}@if ($domain->autoRenew) <button type="submit" form="form-auto-renew" class="domains-a domains-linkbtn">{{ $domain->autoRenew['enabled'] ? 'Turn off' : 'Turn on' }}</button>@elseif ($domain->renewal === 'Off' && $support) <a class="domains-a" href="{{ $support }}">Contact support</a>@endif</dd></div>
+<div><dt>Auto-renew @include('domains::partials.help', ['id' => 'auto-renew', 'label' => 'Auto-renew'])</dt><dd><span class="domains-card__v">{{ $domain->autoRenew ? ($domain->autoRenew['enabled'] ? 'On' : 'Off') : $domain->renewal }}</span>@if ($domain->autoRenew) <span class="domains-row__a domains-card__a"><button type="submit" form="form-auto-renew" class="domains-a domains-linkbtn">{{ $domain->autoRenew['enabled'] ? 'Turn off' : 'Turn on' }}</button></span>@elseif ($domain->renewal === 'Off' && $support) <span class="domains-row__a domains-card__a"><a class="domains-a" href="{{ $support }}">Contact support</a></span>@endif</dd></div>
 @endif
 @if ($invoice)
-<div><dt>Next invoice</dt><dd>@if ($invoice['missing'] ?? false)@include('domains::partials.missing', ['cause' => $invoice['cause'] ?? null, 'fix' => $invoice['fix'] ?? null, 'stack' => true])@else{{ $invoice['value'] }}@isset($invoice['action']) <a class="domains-a" href="{{ $invoice['action']['url'] }}">{{ $invoice['action']['label'] }}</a>@endisset @endif</dd></div>
+<div><dt>Next invoice</dt><dd>@if ($invoice['missing'] ?? false)@include('domains::partials.missing', ['cause' => $invoice['cause'] ?? null, 'fix' => $invoice['fix'] ?? null, 'stack' => true])@else<span class="domains-card__v">{{ $invoice['value'] }}</span>@isset($invoice['action']) <span class="domains-row__a domains-card__a"><a class="domains-a" href="{{ $invoice['action']['url'] }}">{{ $invoice['action']['label'] }}</a></span>@endisset @endif</dd></div>
 @endif
 @if (isset($domain->actions['code']) && (($domain->transfer['received'] ?? false) || !($domain->transfer['open'] ?? false)))
-<div><dt>Auth code @include('domains::partials.help', ['id' => 'auth_code_email', 'label' => 'Auth code'])</dt><dd>@if ($domain->transfer['received'] ?? false)Saved @else @include('domains::partials.missing', ['cause' => null, 'fix' => null])@endif <a class="domains-a" href="{{ $domain->actions['code'] }}">View transfer</a></dd></div>
+<div><dt>Auth code @include('domains::partials.help', ['id' => 'auth_code_email', 'label' => 'Auth code'])</dt><dd>@if ($domain->transfer['received'] ?? false)<span class="domains-card__v">Saved</span> @else @include('domains::partials.missing', ['cause' => null, 'fix' => null])@endif <span class="domains-row__a domains-card__a"><a class="domains-a" href="{{ $domain->actions['code'] }}">View transfer</a></span></dd></div>
 @endif
 @if ($domain->renewalPrice && $domain->renewal === 'On' && !$domain->setupPending)
-<div><dt>Renewal price</dt><dd>{{ $domain->renewalPrice }}/yr</dd></div>
+<div><dt>Renewal price</dt><dd><span class="domains-card__v">{{ $domain->renewalPrice }}/yr</span></dd></div>
 @endif
 </dl>
 @include('domains::partials.owner-auto-renew')

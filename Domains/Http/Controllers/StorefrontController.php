@@ -87,8 +87,10 @@ final class StorefrontController extends Controller
         } catch (\App\Exceptions\DisplayException $e) {
             return redirect()->route('domains.domains.search',['name'=>$input])->with('domains_notice',$e->getMessage());
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Domains cart handoff failed.',['exception_class'=>$e::class,'exception_message_key'=>CartHandoffFailure::key($e)]);
-            return redirect()->route('domains.domains.search', ['name' => $input])->with('domains_notice', 'We couldn’t add that name to your cart. Check the latest results below and try again.');
+            $key = CartHandoffFailure::key($e);
+            \Illuminate\Support\Facades\Log::warning('Domains cart handoff failed.',['exception_class'=>$e::class,'exception_message_key'=>$key]);
+            $notice = $key === 'eligibility_unconfirmed' ? 'We couldn’t confirm this name right now. Try again.' : 'We couldn’t add that name to your cart. Check the latest results below and try again.';
+            return redirect()->route('domains.domains.search', ['name' => $input])->with('domains_notice', $notice);
         }
         return redirect()->route('cart');
     }

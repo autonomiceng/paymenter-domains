@@ -24,6 +24,14 @@ expect(str_contains($page->html(),'A TLD is only for sale when its saved prices 
 expect(str_contains($page->html(),'Registration: For sale'),'Before editing registration is available');
 expect(str_contains($page->html(),'Edit prices'),'Recovery names the available price editor');
 expect(!str_contains(PricingEditorNotice::render($tlds[0]->fresh()),'Publish prices'),'Recovery does not name the removed publish button');
+// Paragraphs use the panel's prose spacing; sale status lines stay together.
+$noticeDom=static function(string $html):DOMXPath{$d=new DOMDocument;@$d->loadHTML('<?xml encoding="utf-8" ?>'.$html);return new DOMXPath($d);};
+$x=$noticeDom(PricingEditorNotice::render($tlds[0]->fresh()));
+same(1,$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-prose ")]/p/strong[.="Price changes can stop domain sales"]')->length,'Notice text is spaced as panel prose');
+same(5,$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-prose ")]/p')->length,'Title, two paragraphs, status and footer are separate blocks');
+same(1,$x->query('//p[strong[.="Registration: For sale"] and strong[.="Transfer: For sale"]]')->length,'Sale status lines are grouped');
+same(0,$noticeDom(PricingEditorNotice::render(null))->query('//p[not(normalize-space())]')->length,'Account page notice has no empty status block');
+same(4,$noticeDom(PricingEditorNotice::render(null))->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-prose ")]/p')->length,'Account page has title, two paragraphs and footer without a status block');
 $page->mountAction('override')->setActionData(['pricing'=>'custom','mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00','reason'=>'Reviewed retail change'])->callMountedAction()->assertHasNoActionErrors();
 // The approved pricing UX publishes on save. This notice must agree with either writer.
 $clock=app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
@@ -55,4 +63,35 @@ $page->mountAction('override')->setActionData(['reason'=>'Restore saved TLD pric
 expect(str_contains($page->html(),'Registration: For sale'),'Saving Edit prices restores sale after a native price change');
 $hosting=App\Models\Product::create(['name'=>'Ordinary','slug'=>'ordinary','category_id'=>$product->category_id,'allow_quantity'=>'combined']);
 same('',PricingEditorNotice::render($hosting),'No pricing warning on unrelated products');
+// Product editors may lack Domains rights; instructions must match fresh action permissions.
+$ask='Ask a staff member who can edit domain pricing to open this TLD in TLDs &amp; pricing, open Edit prices and save.';
+$askTld='If one isn’t, ask a staff member who can edit domain pricing to open it in TLDs &amp; pricing, open Edit prices and save.';
+$direct='To fix it, open this TLD in TLDs &amp; pricing, open Edit prices and save.';
+$directTld='If one isn’t, open it in TLDs &amp; pricing, open Edit prices and save.';
+$sync='If its costs are out of date, use Sync TLD prices on the registrar account first.';
+$askSync='If its costs are out of date, ask a staff member who can sync TLD prices to use Sync TLD prices on the registrar account first.';
+foreach([
+    [[],true,true],
+    [[Staff::POLICY],false,false],
+    [[Staff::VIEW],false,false],
+    [[Review::permission('override')],false,true],
+    [[Review::permission('remove_override')],true,true],
+    [[Review::permission('override'),Review::permission('remove_override')],false,true],
+    [[Review::permission('publish')],false,true],
+    [[Review::permission('import')],true,false],
+]as[$revoked,$canEdit,$canSync]){
+    // Keep the acting user's loaded role stale while revoking its persisted grants.
+    Auth::setUser($u);$u->load('role');
+    Illuminate\Support\Facades\DB::table('roles')->where('id',$u->role_id)->update(['permissions'=>json_encode(array_values(array_diff($permissions,$revoked)))]);
+    $nativeNotice=PricingEditorNotice::render($product->fresh());$tldNotice=PricingEditorNotice::render($tlds[0]->fresh());$accountNotice=PricingEditorNotice::render(null);
+    expect(str_contains($nativeNotice,$canEdit?$direct:$ask),'Native recovery matches fresh edit permissions');
+    expect(!str_contains($nativeNotice,$canEdit?$ask:$direct),'Native recovery omits the unavailable instruction');
+    foreach([$tldNotice,$accountNotice]as$notice){
+        expect(str_contains($notice,$canEdit?$directTld:$askTld),'TLD/account recovery identifies the affected TLD and matches fresh edit permissions');
+        expect(!str_contains($notice,$canEdit?$askTld:$directTld),'TLD/account recovery omits unavailable editing steps');
+        expect(str_contains($notice,$canSync?$sync:$askSync),'Sync recovery matches its separate import permission');
+        expect(!str_contains($notice,$canSync?$askSync:$sync),'Sync recovery omits unavailable direct steps');
+    }
+    Illuminate\Support\Facades\DB::table('roles')->where('id',$u->role_id)->update(['permissions'=>json_encode($permissions)]);
+}
 $nativeSuccessful=true; echo "Pricing consequences before and after Domains/native edits passed.\n";
