@@ -53,6 +53,9 @@ class DomainResource extends Resource
             TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::status($record,$livewire)['label'])
                 ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone'])->description(fn(Domain $record,$livewire)=>self::status($record,$livewire)['reason']
                     ??match(self::row($record,$livewire)['sync']){'failed'=>'Sync failed','paused'=>'Sync paused',default=>null}),
+            TextColumn::make('alert')->label('Alert')->wrap()->color('warning')
+                ->state(fn(Domain $record,$livewire)=>self::row($record,$livewire)['alerts'][0]??null)
+                ->description(fn(Domain $record,$livewire)=>($count=count(self::row($record,$livewire)['alerts']))>1?'+'.($count-1).' more':null),
             TextColumn::make('provider_expires_at')->label('Expires')->state(fn(Domain $record)=>$record->provider_expires_at?->format('M j, Y')
                 ?? (self::registered($record)?Missing::LABEL:null))->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
                 ->description(fn(Domain $record,$state,$livewire)=>$state===Missing::LABEL?DomainFacts::unread($record,self::row($record,$livewire)['sync']):null)
@@ -112,13 +115,15 @@ class DomainResource extends Resource
             $adoptions=$ids?Adoption::whereIn('id',$ids)->get()->keyBy('id'):collect();
             $accounts=Account::whereIn('server_id',$page->pluck('server_id')->unique()->values()->all())->get();
             $stopped=ObservationWork::stoppedIds($page);
+            $alerts=DB::table('domains_obligation_alerts')->whereIn('domain_id',$page->pluck('id')->all())->whereNull('resolved_at')
+                ->orderBy('id')->get(['domain_id','code'])->groupBy('domain_id');
             foreach ($page as $d) {
                 try { $off=RenewalStop::stopped(['domain'=>$d,'adoption'=>$adoptions[$d->adoption_id]??null,
                     'cancel'=>$cancel->where('service_id',$d->service_id)->values()]); }
                 catch (\Throwable) { $off=null; }
                 $account=$accounts->first(fn(Account $a)=>(int)$a->server_id===(int)$d->server_id&&$a->registrar_key===$d->registrar_key
                     &&$a->account_fingerprint===$d->account_fingerprint);
-                $cached[$d->id]=['off'=>$off,'sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true)];
+                $cached[$d->id]=['alerts'=>($alerts[$d->id]??collect())->pluck('code')->unique()->map(fn($code)=>DomainFacts::alertCause($code))->unique()->values()->all(),'off'=>$off,'sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true)];
             }
             self::$rows[$records]=$cached;
         }

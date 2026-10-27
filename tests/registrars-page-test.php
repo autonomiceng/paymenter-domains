@@ -168,7 +168,7 @@ $alerts=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$en
 $row=array_values(array_filter($alerts->instance()->content(\Filament\Schemas\Schema::make($alerts->instance()))->getFlatComponents(),fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry&&$e->getLabel()==='Domain alerts'))[0];
 same(['1 domain','warning'],[$row->getState(),$row->getColor('1 domain')],'One domain with an open alert is a warning');
 $filtered=Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$enom->server_id],'alerts'=>['isActive'=>true]]]);
-$alerts->assertActionVisible(TestAction::make('domain_alerts')->schemaComponent('system_checks','content'))->assertSee('View domains')->assertSeeHtml('href="'.e($filtered).'"');
+$alerts->assertActionVisible(TestAction::make('domain_alerts')->schemaComponent('system_checks','content'))->assertSee('View domains')->assertSee('See the Alert column for each cause.')->assertSeeHtml('href="'.e($filtered).'"');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertDontSee('View domains');
 // The same alert on a domain whose service still exists: the Service row keeps its value and link, with the cause below in danger.
 Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>App\Admin\Resources\ServiceResource::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();

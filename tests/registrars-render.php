@@ -2,6 +2,7 @@
 // Registrars list and account pages for visual review, dark and light. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/registrars-page-test.php';
+$nativeSuccessful=false;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
@@ -21,6 +22,11 @@ $save=function(string $name,$test)use($out,$css):void{
     $html=str_replace('</head>','<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:"><style>'.$css.'*{animation:none!important;transition:none!important}</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>',$html);
     foreach(['dark','light'] as $mode){writeRenderArtifact($out.'/'.$name.'-'.$mode.'.html',preg_replace('~<html\b[^>]*>~','<html lang="en" class="'.$mode.'">',$html,1));}
 };
+// A pending domain without expiry, alongside the active domain's open service alert.
+$pending=\Paymenter\Extensions\Servers\Domains\Models\Domain::where('sld','registrars-due-placeholder')->sole()->replicate();
+$pending->fill(['domain'=>'pending-alert.example.test','sld'=>'pending-alert','tld'=>'example.test','service_id'=>9001,
+    'account_fingerprint'=>$enom->fresh()->account_fingerprint,'status'=>'registration_pending','provider_expires_at'=>null,'last_synced_at'=>null]);$pending->save();
+\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($pending,'unknown_expiry',time());
 // Show a read balance one cent below Due in 30 days, after the test's failed read.
 $clock->instant=$clock->instant->modify('+2 minutes');BalanceReads::record(CatalogueAcceptances::binding($enom),new Money('7.99','USD'),$clock->now(),'manual');
 $save('list',Livewire::actingAs($staff)->test(RegistrarSetup::class));

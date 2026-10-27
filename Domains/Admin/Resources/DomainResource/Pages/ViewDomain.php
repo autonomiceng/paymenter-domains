@@ -45,6 +45,10 @@ class ViewDomain extends ViewRecord
     public function infolist(Schema $schema): Schema
     {
         $d=$this->getRecord(); $facts=DomainFacts::for($d); $notice=DomainFacts::notice($d); $components=[];
+        if (isset($facts['Open alerts'])) {
+            $alert=$facts['Open alerts'];
+            $components[]=Callout::make('Open alerts')->description(implode(' · ',$alert['value']))->status($alert['tone'])->columnSpanFull();
+        }
         if ($notice) {
             $buttons=[];
             $resume=($notice['resume']??false)?$this->getAction('resume_observation',false):null;

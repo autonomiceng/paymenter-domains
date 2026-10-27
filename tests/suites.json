@@ -334,7 +334,8 @@
     "tests/acquisition-payment-review-test.php",
     "tests/runtime-refusal-test.php",
     "tests/storefront-transfer-offers-test.php",
-    "tests/namesilo-fingerprint-reset-test.php"
+    "tests/namesilo-fingerprint-reset-test.php",
+    "tests/staff-alert-visibility-test.php"
   ],
   "ui": [],
   "runner": [
