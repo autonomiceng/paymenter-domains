@@ -12,11 +12,16 @@ use Paymenter\Extensions\Servers\Domains\Services\{HookRegistration,NativeIdenti
 /** Persistent consequences before and after edits, including Paymenter's native plan repeater. */
 final class PricingEditorNotice
 {
+    private const SCOPES=[ViewTld::class=>'getRecord',RegistrarAccount::class=>null,\App\Admin\Resources\ProductResource\Pages\EditProduct::class=>'getRecord'];
     public static function boot(): void
     {
-        if(($missing=self::missing())!==null){logger()->warning('Domain pricing notice paused: '.$missing);return;}
-        if(!HookRegistration::claim(FilamentView::getFacadeRoot(),self::class)){return;}
-        $scopes=[ViewTld::class,RegistrarAccount::class,\App\Admin\Resources\ProductResource\Pages\EditProduct::class];
+        $paused=self::missingScopes();$scopes=[];
+        foreach(self::SCOPES as$scope=>$method){
+            $missing=$paused[$scope]??null;
+            if($missing!==null){logger()->warning('Domain pricing notice paused: '.$scope.' (missing '.$missing.')');continue;}
+            $scopes[]=$scope;
+        }
+        if($scopes===[]||!HookRegistration::claim(FilamentView::getFacadeRoot(),self::class)){return;}
         FilamentView::registerRenderHook(PanelsRenderHook::PAGE_START,static function():string {
             $page=\Livewire\Livewire::current();
             if($page instanceof RegistrarAccount){return self::render(null);}
@@ -26,8 +31,22 @@ final class PricingEditorNotice
     }
     public static function missing(): ?string
     {
-        foreach([\Filament\Support\View\ViewManager::class=>'registerRenderHook',\Livewire\LivewireManager::class=>'current',
-            \App\Admin\Resources\ProductResource\Pages\EditProduct::class=>'getRecord',ViewTld::class=>'getRecord']as$class=>$method){
+        $missing=array_unique(array_values(self::missingScopes()));
+        return $missing===[]?null:implode(', ',$missing);
+    }
+    /** @return array<class-string,string> */
+    private static function missingScopes(): array
+    {
+        $shared=self::sharedMissing();$paused=[];
+        foreach(self::SCOPES as$scope=>$method){
+            $missing=$shared??(!class_exists($scope)?$scope:($method!==null&&!method_exists($scope,$method)?$scope.'::'.$method:null));
+            if($missing!==null){$paused[$scope]=$missing;}
+        }
+        return $paused;
+    }
+    private static function sharedMissing(): ?string
+    {
+        foreach([\Filament\Support\View\ViewManager::class=>'registerRenderHook',\Livewire\LivewireManager::class=>'current']as$class=>$method){
             if(!class_exists($class)||!method_exists($class,$method)){return $class.'::'.$method;}
         }
         return defined(PanelsRenderHook::class.'::PAGE_START')?null:PanelsRenderHook::class.'::PAGE_START';

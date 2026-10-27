@@ -15,7 +15,8 @@ unset($original['id']);
 $ids=[];
 for($i=0;$i<28;$i++){
     $ids[]=DB::table('domains_operations')->insertGetId([...$original,'invoice_item_id'=>null,
-        'operation_key'=>'operation-sweep-'.$i,'state'=>'queued']);
+        'operation_key'=>'operation-sweep-'.$i,'state'=>'queued',
+        'authority_generation'=>$i===0?(int)$original['authority_generation']+1:$original['authority_generation']]);
 }
 $tables=['domains_domains','domains_tlds','domains_prices','domains_observation_queues',
     'domains_reminder_schedules','invoices','invoice_items','invoice_transactions','services','credits'];
@@ -26,13 +27,17 @@ $ports->registerInitialManagedRecordObservations(static function()use(&$extra):v
 $runtime=new RuntimeWork($clock,$ports);
 $runtime->tickOperations();
 DB::table('domains_runtime_turns')->where('server_id',$domain->server_id)->update(['domain_cursor'=>71,'tld_cursor'=>83]);
-same(25,Queue::pushed(RunOperation::class)->count(),'Operations-only turn keeps the existing 25-operation bound');
-same($ids[24],(int)DB::table('domains_runtime_turns')->where('server_id',$domain->server_id)->value('operation_cursor'),'Durable cursor retains the first batch');
+same(24,Queue::pushed(RunOperation::class)->count(),'Rejected operation consumes a place in the bounded scan without dispatch');
+expect(!Queue::pushed(RunOperation::class)->contains(fn($job)=>$job->operationId===$ids[0]),'Mismatched authority operation is not dispatched');
+expect(Queue::pushed(RunOperation::class)->contains(fn($job)=>$job->operationId===$ids[1]),'Eligible operation after the rejection is dispatched');
+$cursor=(int)DB::table('domains_runtime_turns')->where('server_id',$domain->server_id)->value('operation_cursor');
+same($ids[24],$cursor,'Durable cursor retains the first batch');
 $runtime->tickOperations();
-same(25,Queue::pushed(RunOperation::class)->count(),'An early repeated turn remains deferred');
+expect($cursor>$ids[0],'Durable cursor advances past the rejected operation');
+same(24,Queue::pushed(RunOperation::class)->count(),'An early repeated turn remains deferred');
 $clock->instant=$clock->now()->modify('+61 seconds');
 $runtime->tickOperations();
-same($ids,Queue::pushed(RunOperation::class)->map(static fn($job)=>$job->operationId)->all(),'Next due turn reaches every remaining operation');
+same(array_slice($ids,1),Queue::pushed(RunOperation::class)->map(static fn($job)=>$job->operationId)->all(),'Next due turn reaches every eligible operation after the rejection');
 same(0,(int)DB::table('domains_runtime_turns')->where('server_id',$domain->server_id)->value('operation_cursor'),'Completed operation scan wraps');
 same(71,(int)DB::table('domains_runtime_turns')->max('domain_cursor'),'Operation mode leaves domain scans untouched');
 same(83,(int)DB::table('domains_runtime_turns')->max('tld_cursor'),'Operation mode leaves catalogue scans untouched');
