@@ -93,8 +93,9 @@ same(['All contacts','Owner','Admin','Tech','Billing'],array_map($norm,iterator_
 $visible=implode(' ',array_map(static fn($n)=>$n->nodeValue,iterator_to_array($dom->query('//body//text()[not(ancestor::style) and not(ancestor::script)]'))));
 expect(stripos($visible,'registrant')===false,'Page text says owner, never registrant');
 // Renewal card at desktop width: labels and Missing plus its fix stay on one line each; the cause sits below.
-expect(str_contains($html,'.domains .domains-card dt { display: inline-flex; flex: none; align-items: center; gap: .375rem; white-space: nowrap;'),'Renewal card labels never wrap, phone width included');
-expect(str_contains($html,'.domains .domains-card__v { white-space: nowrap; }'),'Renewal card values like a due date never wrap');
+expect(str_contains($html,'.domains .domains-card > div { position: relative; display: flex; flex-wrap: wrap;'),'Renewal card rows put the value under the label when both do not fit, large text included');
+expect(str_contains($html,'.domains .domains-card dd { flex: 1 1 7rem; min-width: 0;'),'Renewal card values keep room beside the label at phone width and can wrap');
+expect(!preg_match('/\\.domains \\.domains-card (dt|dd)[^{]*\\{[^}]*nowrap|\\.domains-card__v \\{[^}]*nowrap/',$html),'Renewal card labels and values never force one line, so large text cannot run past the card');
 expect(str_contains($html,'.domains .domains-card__a { display: flex; justify-content: flex-end;'),'Renewal card actions sit right-aligned on their own line');
 expect(str_contains($html,'.domains .domains-missing__line { flex-wrap: nowrap; white-space: nowrap; }'),'Missing and its fix share one line at desktop width');
 expect(str_contains($html,'Up to 50 records. Saving replaces the list.'),'DNS limit hint');
