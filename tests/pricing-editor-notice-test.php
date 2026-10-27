@@ -65,7 +65,7 @@ $hosting=App\Models\Product::create(['name'=>'Ordinary','slug'=>'ordinary','cate
 same('',PricingEditorNotice::render($hosting),'No pricing warning on unrelated products');
 // Product editors may lack Domains rights; instructions must match fresh action permissions.
 $ask='Ask a staff member who can edit domain pricing to open this TLD in TLDs &amp; pricing, open Edit prices and save.';
-$askTld='Ask a staff member who can edit domain pricing to open it in TLDs &amp; pricing, open Edit prices and save.';
+$askTld='If one isn’t, ask a staff member who can edit domain pricing to open it in TLDs &amp; pricing, open Edit prices and save.';
 $direct='To fix it, open this TLD in TLDs &amp; pricing, open Edit prices and save.';
 $directTld='If one isn’t, open it in TLDs &amp; pricing, open Edit prices and save.';
 $sync='If its costs are out of date, use Sync TLD prices on the registrar account first.';

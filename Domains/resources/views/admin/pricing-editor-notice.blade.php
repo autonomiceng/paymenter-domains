@@ -26,7 +26,7 @@
                 @if ($canEditPrices)
                     If one isn’t, open it in TLDs &amp; pricing, open Edit prices and save.
                 @else
-                    Ask a staff member who can edit domain pricing to open it in TLDs &amp; pricing, open Edit prices and save.
+                    If one isn’t, ask a staff member who can edit domain pricing to open it in TLDs &amp; pricing, open Edit prices and save.
                 @endif
                 @if ($canSyncPrices)
                     If its costs are out of date, use Sync TLD prices on the registrar account first.
