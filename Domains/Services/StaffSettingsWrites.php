@@ -13,7 +13,8 @@ final class StaffSettingsWrites
         private readonly AccountBindings $bindings,private readonly bool $allowInjectedProbes=false) {}
     public function connectionAvailable(?string $registrar=null): bool
     {return $this->allowInjectedProbes&&($registrar===null||$this->bindings->hasRegistrar($registrar));}
-    public function run(StaffSettingsReview $r,#[\SensitiveParameter] array $data,?\DateTimeImmutable $now=null): void
+    /** Returns the publish summary for a default pricing change, otherwise null. */
+    public function run(StaffSettingsReview $r,#[\SensitiveParameter] array $data,?\DateTimeImmutable $now=null): ?array
     {
         $clock=app()->bound(Clock::class)?app(Clock::class):new SystemClock;
         if($now!==null){
@@ -25,16 +26,16 @@ final class StaffSettingsWrites
             };
         }
         $now??=$clock->now();$r->input($data);
-        if($r->action==='lifecycle'){LifecyclePolicies::save($r,$data,$now);return;}
-        if(in_array($r->action,['test_management','live_management'],true)){EnomTestManagement::review($r,$data);return;}
-        if(in_array($r->action,['test_renewal','live_renewal'],true)){EnomTestRenewal::review($r,$data);return;}
-        if($r->action==='renewal_billing'){RenewalBillingSettings::save($r,$data);return;}
+        if($r->action==='lifecycle'){LifecyclePolicies::save($r,$data,$now);return null;}
+        if(in_array($r->action,['test_management','live_management'],true)){EnomTestManagement::review($r,$data);return null;}
+        if(in_array($r->action,['test_renewal','live_renewal'],true)){EnomTestRenewal::review($r,$data);return null;}
+        if($r->action==='renewal_billing'){RenewalBillingSettings::save($r,$data);return null;}
         if($r->action==='enroll_sandbox'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Sandbox contract confirmation required.');}
             if(!is_string($data['label']??null)||array_diff(array_keys($data),['environment','label','api_key','confirmed','reason','review_key'])){throw new \DomainException('Invalid sandbox enrollment input.');}
             if(($data['environment']??null)!=='test'){throw new \DomainException('Sandbox enrollment unavailable.');}
             $this->bindings->enrollSandbox($r->serverId,Environment::Test,
-                $data['label'],['api_key'=>$data['api_key']??''],$r);return;
+                $data['label'],['api_key'=>$data['api_key']??''],$r);return null;
         }
         if($r->action==='alert_review'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Explicit notification check confirmation required.');}
@@ -45,7 +46,7 @@ final class StaffSettingsWrites
                     throw new \DomainException('Current notification check alert required.');
                 }
                 \Illuminate\Support\Facades\DB::table('domains_obligation_alerts')->where('id',$alert->id)->update(['resolved_at'=>$now->getTimestamp()]);
-            });return;
+            });return null;
         }
         if($r->action==='delivery_review'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Explicit notification confirmation required.');}
@@ -56,7 +57,7 @@ final class StaffSettingsWrites
                     throw new \DomainException('Current notification claim required.');
                 }
                 \Illuminate\Support\Facades\DB::table('domains_reminder_deliveries')->where('id',$delivery->id)->update(['state'=>'reviewed']);
-            });return;
+            });return null;
         }
         if($r->action==='processing'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Explicit processing confirmation required.');}
@@ -75,14 +76,23 @@ final class StaffSettingsWrites
                     }
                     $this->bindings->requireReadableLocked($server,$account);
                 });
-            });return;
+            });return null;
         }
-        if($r->action==='import'){TestCatalogue::import($r,$data,$this->bindings,$clock);return;}
-        if($r->action==='publish'){$this->native->publish($r->tldId??0,$now,$r);return;}
+        if($r->action==='import'){TestCatalogue::import($r,$data,$this->bindings,$clock);return null;}
+        if($r->action==='publish'){$this->native->publish($r->tldId??0,$now,$r);return null;}
+        if(in_array($r->action,['override','remove_override'],true)){
+            // Saving prices publishes them in the same transaction; missing or stale costs refuse the whole change.
+            $this->native->publish($r->tldId??0,$now,$r,function(Tld $t)use($r,$data,$now):void{
+                $rule=$r->action==='override'?self::rule($data):null;
+                $t->update($rule===null?['use_default_rule'=>true]:['use_default_rule'=>false,'pricing_mode'=>$rule['mode'],'markup'=>$rule['markup'],'round_up'=>$rule['round_up'],
+                    'fixed_register'=>$rule['fixed']['register'],'fixed_renew'=>$rule['fixed']['renew'],'fixed_transfer'=>$rule['fixed']['transfer']]);
+                PriceCatalogue::requireFreshCosts($t,$now);
+            });return null;
+        }
         if($r->action==='seller'){
             $t=Tld::findOrFail($r->tldId);$p=SalesPolicy::where('tld',$t->tld)->firstOrFail();
             $id=($data['seller']??'')===''?null:(int)$data['seller'];
-            $this->sellers->change($t->tld,$p->revision,$id,(bool)($data['register']??false),(bool)($data['transfer']??false),$now,$r);return;
+            $this->sellers->change($t->tld,$p->revision,$id,(bool)($data['register']??false),(bool)($data['transfer']??false),$now,$r);return null;
         }
         if($r->action==='history'&&($data['accept']??false)===true){
             $a=Account::where('server_id',$r->serverId)->firstOrFail();$binding=CatalogueAcceptances::binding($a);
@@ -91,7 +101,7 @@ final class StaffSettingsWrites
             $vocabulary=$binding->registrarKey.match($action){\Paymenter\Extensions\Servers\Domains\Data\Action::Register=>'_registration_v1',\Paymenter\Extensions\Servers\Domains\Data\Action::Renew=>'_renewal_v1',\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer=>'_transfer_v1',default=>throw new \DomainException('History action unsupported.')};
             $lag=filter_var($data['lag']??null,FILTER_VALIDATE_INT);$retention=filter_var($data['retention']??null,FILTER_VALIDATE_INT);
             if($lag===false||$retention===false){throw new \DomainException('Integer history limits required.');}
-            HistoryAcceptances::save(new \Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance($binding,(string)($data['timezone']??''),$lag,$retention,$vocabulary),$r);return;
+            HistoryAcceptances::save(new \Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance($binding,(string)($data['timezone']??''),$lag,$retention,$vocabulary),$r);return null;
         }
         if(in_array($r->action,['configure','probe'],true)){
             // Production boot explicitly opts into connection reads; processing remains independent.
@@ -99,7 +109,7 @@ final class StaffSettingsWrites
             if(!$this->connectionAvailable($registrar)){throw new \DomainException('Connection checks are unavailable.');}
             if($r->action==='configure'){
                 $credentials=$data['credentials']??($registrar==='enom'?['uid'=>$data['uid']??'','token'=>$data['token']??'']:['api_key'=>$data['api_key']??'']);
-                $this->bindings->configure($r->serverId,$registrar,Environment::from((string)($data['environment']??'')),$credentials,$r);return;
+                $this->bindings->configure($r->serverId,$registrar,Environment::from((string)($data['environment']??'')),$credentials,$r);return null;
             }
             $r->local(fn()=>null,'connection_requested');$phase='connection_refused';
             try{
@@ -109,7 +119,7 @@ final class StaffSettingsWrites
                 \Illuminate\Support\Facades\DB::transaction(function()use($r,$result){$r->lockActor();$r->lockAccounts();$r->check(true);
                     $r->record($result->disposition===\Paymenter\Extensions\Servers\Domains\Data\Disposition::Accepted?'connection_verified':'connection_unverified');});
                 if($result->disposition!==\Paymenter\Extensions\Servers\Domains\Data\Disposition::Accepted){throw new \DomainException('Connection not verified.');}$phase='connection_finished';
-            }finally{$r->finish($phase);}return;
+            }finally{$r->finish($phase);}return null;
         }
         $r->local(function()use($r,$data):void{
             $s=Server::whereKey($r->serverId)->lockForUpdate()->firstOrFail();$a=Account::where('server_id',$s->id)->lockForUpdate()->firstOrFail();$t=$r->tldId?Tld::whereKey($r->tldId)->lockForUpdate()->firstOrFail():null;
@@ -117,14 +127,7 @@ final class StaffSettingsWrites
             if($r->action==='history'){
                 HistoryAcceptances::revokeLocked(CatalogueAcceptances::binding($a),\Paymenter\Extensions\Servers\Domains\Data\Action::from((string)($data['history_action']??'')));return;
             }
-            if(in_array($r->action,['default_rule','override','remove_override'],true)){
-                if($r->action==='remove_override'){if(!$t){throw new \DomainException('TLD required.');}$t->update(['use_default_rule'=>true]);return;}
-                $rule=PricingRule::validate(['mode'=>$data['mode']??null,'markup'=>$data['markup']??'0','round_up'=>$data['round_up']??'none',
-                    'fixed'=>['register'=>$data['fixed_register']??null,'renew'=>$data['fixed_renew']??null,'transfer'=>$data['fixed_transfer']??null]]);
-                if($r->action==='default_rule'){(new PricingRules)->saveDefaultRuleLocked((int)$s->id,$rule);}
-                else{if(!$t){throw new \DomainException('TLD required.');}$t->update(['use_default_rule'=>false,'pricing_mode'=>$rule['mode'],'markup'=>$rule['markup'],'round_up'=>$rule['round_up'],
-                    'fixed_register'=>$rule['fixed']['register'],'fixed_renew'=>$rule['fixed']['renew'],'fixed_transfer'=>$rule['fixed']['transfer']]);}return;
-            }
+            if($r->action==='default_rule'){(new PricingRules)->saveDefaultRuleLocked((int)$s->id,self::rule($data));return;}
             if($r->action==='tld_settings'){
                 if(!$t){throw new \DomainException('TLD required.');}
                 $min=filter_var($data['min_years']??null,FILTER_VALIDATE_INT);$max=filter_var($data['max_years']??null,FILTER_VALIDATE_INT);
@@ -191,5 +194,22 @@ final class StaffSettingsWrites
                 $row->transfer_enabled=$row->transfer_enabled&&($accepted['registry']??false)&&!empty($accepted['transfer']);$row->save();}
             TestCatalogue::withdrawCarts($binding);
         });
+        if($r->action!=='default_rule'){return null;}
+        // The new default publishes to each TLD that follows it, one TLD at a time; one failure does not stop the rest.
+        $summary=['published'=>0,'failed'=>[]];
+        foreach(Tld::where('server_id',$r->serverId)->where('use_default_rule',true)->orderBy('tld')->get() as $tld){
+            try{$this->native->publish((int)$tld->id,$now,null,fn(Tld $t)=>PriceCatalogue::requireFreshCosts($t,$now));$summary['published']++;}
+            catch(\Throwable $error){
+                $summary['failed'][]='.'.$tld->tld;
+                if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains default pricing publish failed.',['tld'=>$tld->tld,'exception_class'=>$error::class]);}
+            }
+        }
+        return $summary;
+    }
+
+    private static function rule(array $data): array
+    {
+        return PricingRule::validate(['mode'=>$data['mode']??null,'markup'=>$data['markup']??'0','round_up'=>$data['round_up']??'none',
+            'fixed'=>['register'=>$data['fixed_register']??null,'renew'=>$data['fixed_renew']??null,'transfer'=>$data['fixed_transfer']??null]]);
     }
 }

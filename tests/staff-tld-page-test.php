@@ -37,10 +37,10 @@ $list->assertDontSee('Price sync failed');$clean($list->html(),'List synced');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful();
 same('.com',$page->instance()->getTitle(),'TLD page title is the TLD');
 foreach(['For sale','Change registrar','More','Sales','Registrar for new orders','Existing domains stay with their registrar','Terms','1 to 3 years',
-    'Renewal grace period','Redemption period','No lifecycle policy saved','Price sync','Last sync','Oct 18, 2026 12:00 UTC','Valid until Oct 19, 2026 12:00 UTC',
+    'Renewal grace period','Redemption period','Not set','Late renewals are off for this TLD.','Restoring expired domains is off for this TLD.','Price sync','Last sync','Oct 18, 2026 12:00 UTC','Valid until Oct 19, 2026 12:00 UTC',
     'Prices by registrar account','Edit prices','Account','Pricing','Registration','Renewal','Transfer','Default pricing','New orders','History','No changes yet'] as $see){$page->assertSee($see);}
 $plain=$text($page->html());
-expect(substr_count($plain,'Missing')>=2,'Grace and redemption without a policy are Missing');
+expect(!str_contains($plain,'No lifecycle policy saved'),'Unset grace and redemption are not a fault');
 expect(str_contains($plain,'OFFLINE DEMO NameSilo (synthetic) Demo'),'Prices table: Demo tag after the demo account');
 expect(str_contains($plain,'Enom TEST identity check New orders'),'Prices table: the account for new orders is marked');
 $page->assertDontSee('Last good prices')->assertDontSee('Sync failed');$clean($page->html(),'TLD page synced');
@@ -124,9 +124,10 @@ $server->settings()->create(['key'=>LifecyclePolicies::key('com'),'type'=>'strin
     'grace_days'=>30,'restore_days'=>30,'grace_supported'=>true,'restore_supported'=>true,'auto_renew_only'=>false,'conflicting'=>false,
     'verified_at'=>$at,'source'=>'https://registry.example.test/policy','grace_extra'=>'0.0000','grace_currency'=>'USD','grace_verified_at'=>$at,'grace_source'=>'Registrar price list',
     'restore_fee'=>'80.0000','restore_currency'=>'USD','restore_verified_at'=>$at,'restore_source'=>'Registrar price list']],JSON_THROW_ON_ERROR)]);
+DB::table('settings')->where('key',LifecyclePolicies::key('com'))->update(['updated_at'=>'2026-10-17 09:00:00']);
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()
-    ->assertSee('30 days')->assertSee('Updated Oct 17, 2026')->assertSee('Restore fee')->assertSee('USD 80.00')->assertDontSee('Late renewal fee')
-    ->assertDontSee('No lifecycle policy saved')->assertDontSee('Registry auto-renew only');
+    ->assertSee('30 days')->assertSee('Last saved Oct 17, 2026')->assertSee('Restore fee')->assertSee('USD 80.00')->assertDontSee('Late renewal fee')
+    ->assertDontSee('Late renewals are off for this TLD.')->assertDontSee('Registry auto-renew only');
 $clean($page->html(),'TLD page lifecycle');
 
 // Below cost: red Cost with its reason, and the TLD is not for sale.

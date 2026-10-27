@@ -111,11 +111,12 @@ final class NativeCatalogue
         return $product->plans()->where(['type' => 'recurring', 'billing_unit' => 'year', 'billing_period' => 1])->sole();
     }
 
-    public function publish(int $tldId, \DateTimeImmutable $now, ?StaffSettingsReview $review = null): void
+    /** $change edits the locked TLD before republication, so a staff price change and its publication commit together. */
+    public function publish(int $tldId, \DateTimeImmutable $now, ?StaffSettingsReview $review = null, ?\Closure $change = null): void
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Native publication owns its lock prefix.'); }
         $seed = Tld::findOrFail($tldId);
-        DB::transaction(function () use ($seed, $now, $review): void {
+        DB::transaction(function () use ($seed, $now, $review, $change): void {
             $review?->lockActor();
             // Native category mutex serializes first publication: native slugs have no unique index.
             $category = Category::where('slug', 'domains')->lockForUpdate()->first();
@@ -135,10 +136,10 @@ final class NativeCatalogue
             $tld = Tld::whereKey($seed->id)->lockForUpdate()->firstOrFail();
             if (!$server->enabled || $server->extension !== 'Domains' || $tld->account_fingerprint !== $account->account_fingerprint
                 || $tld->registrar_key !== $account->registrar_key) { throw new \DomainException('Catalogue account unavailable.'); }
-            if ($review) {
-                if ($review->action !== 'publish' || $review->tldId !== (int) $tld->id || $review->serverId !== (int) $server->id) { throw new \DomainException('Publication review mismatch.'); }
-                $this->prices->republishLocked($tld);
-            }
+            if ($review && (!in_array($review->action, ['publish', 'override', 'remove_override'], true)
+                || $review->tldId !== (int) $tld->id || $review->serverId !== (int) $server->id)) { throw new \DomainException('Publication review mismatch.'); }
+            if ($change) { $change($tld); }
+            if ($review || $change) { $this->prices->republishLocked($tld); }
             foreach ($products as $product) {
                 $mapping = $this->mapping($product);
                 if (!$mapping || $mapping['tld']->id !== $tld->id) { throw new \DomainException('Reserved domain slug collision.'); }

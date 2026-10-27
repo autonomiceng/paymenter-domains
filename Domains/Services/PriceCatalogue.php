@@ -237,17 +237,60 @@ final class PriceCatalogue
             'term' => $rate->term, 'currency' => $rate->currency])->lockForUpdate()->first();
         if ($price && $price->observed_at > $rate->observedAt) { throw new \DomainException('Stale provider read.'); }
         $wholesale = $rate->perYear === null ? null : PricingRule::decimal(PricingRule::units($rate->perYear) * $rate->term, 4);
-        $annualRetail = $rate->perYear === null ? null : PricingRule::price($rate->perYear, $rule, $rate->action);
-        $retail = $annualRetail === null ? null : PricingRule::total($annualRetail, $rate->term);
-        $margin = MarginPolicy::assess($rate->action, $rate->perYear, $annualRetail);
+        [$retail, $margin] = self::quote($rate->action, $rate->term, $rate->perYear, $rule, $price?->retail);
         if ($wholesale !== null) { self::cost($wholesale); }
-        if ($rate->action === 'renew' && !$margin->publishable) { $retail = $price?->retail; }
         $price ??= new Price(['server_id' => $tld->server_id, 'registrar_key' => $tld->registrar_key, 'account_fingerprint' => $tld->account_fingerprint,
             'tld' => $tld->tld, 'action' => $rate->action, 'term' => $rate->term, 'currency' => $rate->currency, 'revision' => 0]);
         $price->fill(['wholesale' => $wholesale, 'retail' => $retail, 'unit' => 'term_total', 'source' => $rate->source,
             'observed_at' => $rate->observedAt, 'fresh_until' => $rate->freshUntil, 'revision' => $price->revision + 1,
             'eligibility' => [...$publication, 'source_unit' => $rate->action === 'register' ? 'exact_term_annual_rate' : 'annual', 'staff_alert' => $margin->staffAlert, 'rule_hash' => $hash],
             'hold_reason' => $margin->hold])->save();
+    }
+
+    /** Term retail for one rule and its margin decision. Publication and the staff preview share it.
+     * Below-cost renewals keep the prior retail; below-cost registrations and transfers are held. */
+    public static function quote(string $action, int $term, ?string $perYear, array $rule, ?string $prior): array
+    {
+        $annualRetail = $perYear === null ? null : PricingRule::price($perYear, $rule, $action);
+        $retail = $annualRetail === null ? null : PricingRule::total($annualRetail, $term);
+        $margin = MarginPolicy::assess($action, $perYear, $annualRetail);
+        if ($action === 'renew' && !$margin->publishable) { $retail = $prior; }
+        return [$retail, $margin];
+    }
+
+    /** Saved rows a staff price change republishes, in register, renew, transfer order. */
+    public static function sold(Tld $tld): \Illuminate\Support\Collection
+    {
+        $order = ['register' => 0, 'renew' => 1, 'transfer' => 2];
+        return Price::where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get()
+            ->reject(fn (Price $price): bool => ($price->eligibility['price_unavailable'] ?? false)
+                || ($price->action === 'register' && ($price->term < $tld->min_years || $price->term > $tld->max_years)))
+            ->sortBy(fn (Price $price): int => $order[$price->action] * 100 + $price->term)->values();
+    }
+
+    /** What saving a rule would publish: cost, current and new term retail, without writing. */
+    public static function preview(Tld $tld, array $rule, \DateTimeImmutable $now): array
+    {
+        $rule = PricingRule::validate($rule);
+        return self::sold($tld)->map(function (Price $price) use ($rule, $now): array {
+            $cost = $price->wholesale === null ? null : self::cost($price->wholesale);
+            $units = $cost === null ? null : PricingRule::units($cost);
+            $perYear = $units === null || $units % $price->term !== 0 ? null : PricingRule::decimal(intdiv($units, $price->term), 4);
+            $current = $price->retail === null ? null : self::retail($price->retail);
+            [$retail, $margin] = self::quote($price->action, $price->term, $perYear, $rule, $current);
+            return ['action' => $price->action, 'term' => $price->term, 'cost' => $cost, 'current' => $current,
+                'new' => $retail === null ? null : self::retail($retail), 'hold' => $margin->hold, 'alert' => $margin->staffAlert,
+                'fresh' => $price->fresh_until !== null && $price->fresh_until > $now && $price->observed_at <= $now];
+        })->all();
+    }
+
+    /** Staff saves publish at once, so every saved term needs a current read and at least one has a cost.
+     * A current read without a cost means the registrar does not offer that term. */
+    public static function requireFreshCosts(Tld $tld, \DateTimeImmutable $now): void
+    {
+        $rows = self::sold($tld);
+        if ($rows->whereNotNull('wholesale')->isEmpty() || $rows->contains(fn (Price $price): bool => $price->fresh_until === null
+            || $price->fresh_until <= $now || $price->observed_at > $now)) { throw new \DomainException('Fresh costs required before publication.'); }
     }
 
     private static function ruleHash(array $rule): string

@@ -82,7 +82,9 @@ same(0,App\Models\Product::where('server_id',$server->id)->count(),'Runtime leav
 same(2,Price::where('server_id',$server->id)->count(),'Only annual registration and renewal imported');same([],$front->endings(),'No seller after import');
 $availability=['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true];
 $write('tld_settings',$availability,$tld->id);
-Livewire::actingAs($staff)->test(ViewTld::class,['record'=>$tld->id])->mountAction('publish')->setActionData(['reason'=>'Publish accepted annual TEST prices'])->callMountedAction()->assertNotified('Change recorded');
+// Saving Edit prices publishes; this TLD keeps the account default.
+Livewire::actingAs($staff)->test(ViewTld::class,['record'=>$tld->id])->mountAction('override')->assertSet('mountedActions.0.data.pricing','default')
+    ->setActionData(['reason'=>'Publish accepted annual TEST prices'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Prices published');
 $write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id);
 $rows=$front->endings();same(['com'],array_column($rows,'tld'),'Only published accepted ending appears');same(true,$rows[0]['testEnvironment'],'TEST provenance retained');same('$13.00',$rows[0]['register'],'Exact retail visible');
 same([1],$rows[0]['terms'],'Only accepted annual term offered');$refuse(fn()=>$front->offer('com','register',2),'Seller action or term is unavailable.');
