@@ -5,6 +5,7 @@ import argparse
 from contextlib import contextmanager
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -20,6 +21,110 @@ import test_workers
 
 ROOT = Path(__file__).resolve().parents[1]
 CATEGORIES = ['lint', 'provider', 'contracts', 'native', 'ui', 'runner', 'package', 'mariadb']
+ORDER = ['lint', 'provider', 'contracts', 'runner', 'package', 'ui', 'native', 'mariadb']
+WORKER_MEMORY_MIB = 1024
+
+
+def kill_tree(pid):
+    """Freeze parents before discovering children, including detached sessions."""
+    owned, pending, stopped = set(), [pid], False
+    try:
+        try:
+            os.killpg(pid, signal.SIGSTOP)
+            stopped = True
+        except ProcessLookupError:
+            pass
+        while pending:
+            current = pending.pop()
+            if current in owned:
+                continue
+            try:
+                os.kill(current, signal.SIGSTOP)
+            except ProcessLookupError:
+                continue
+            owned.add(current)
+            # A child may have been created by any thread in this process.
+            for path in Path(f'/proc/{current}/task').glob('*/children'):
+                try:
+                    pending.extend(int(child) for child in path.read_text().split())
+                except FileNotFoundError:
+                    pass
+    finally:
+        for current in owned:
+            try:
+                os.kill(current, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    return stopped or bool(owned)
+
+
+class Processes:
+    """Cancel registered trees, including children racing with cancellation."""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.stopped = False
+        self.running = {}
+        self.cancelled = set()
+
+    def kill(self, index, process):
+        if kill_tree(process.pid):
+            self.cancelled.add(index)
+
+    def register(self, index, process):
+        with self.lock:
+            self.running[index] = process
+            if self.stopped:
+                self.kill(index, process)
+
+    def unregister(self, index):
+        with self.lock:
+            self.running.pop(index, None)
+
+    def cancel(self):
+        with self.lock:
+            self.stopped = True
+            for index, process in self.running.items():
+                self.kill(index, process)
+
+
+def available_memory_mib():
+    return next(int(line.split()[1])//1024 for line in Path('/proc/meminfo').read_text().splitlines()
+                if line.startswith('MemAvailable:'))
+
+
+def bounded_jobs(requested, memory_mib):
+    # Reserve one GiB per worker and leave another GiB for the host. Installed
+    # package commands retain their exclusive barrier and their own memory gate.
+    budget = min(memory_mib, available_memory_mib()-1024)
+    if budget < WORKER_MEMORY_MIB:
+        raise ValueError('Insufficient available memory for one test worker (plus host reserve).')
+    return min(requested, budget//WORKER_MEMORY_MIB)
+
+
+def history(path):
+    result = {}
+    if path:
+        for row in json.loads(Path(path).read_text())['results']:
+            if row.get('cancelled'):
+                continue
+            seconds = float(row['seconds'])
+            if not math.isfinite(seconds) or seconds < 0:
+                raise ValueError('Invalid command duration in timing receipt.')
+            result[(row['kind'], row['argv'][-1])] = (row['exit'] != 0, seconds)
+    return result
+
+
+def order_commands(commands, previous=None):
+    previous = previous or {}
+    def priority(item):
+        index, (kind, argv) = item
+        failed, seconds = previous.get((kind, argv[-1]), previous.get(argv[-1], (False, math.inf)))
+        return ORDER.index(kind), not failed, seconds, index
+    return [command for _, command in sorted(enumerate(commands), key=priority)]
 
 
 def hashes():
@@ -40,9 +145,13 @@ def manifest():
     return suites
 
 
-def execute(argv, *, cwd, env, timeout=60, graceful=0):
+def execute(argv, *, cwd, env, timeout=60, graceful=0, processes=None, index=None, rss_path=None):
+    if rss_path is not None:
+        argv = ['/usr/bin/time', '-f', '%M', '-o', str(rss_path), '--', *argv]
     with subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           start_new_session=True) as process:
+        if processes is not None:
+            processes.register(index, process)
         try:
             stdout, stderr = process.communicate(timeout=timeout)
             return stdout, stderr, process.returncode, False
@@ -67,6 +176,15 @@ def execute(argv, *, cwd, env, timeout=60, graceful=0):
                 # An escaped session may still own the pipes. Keep cumulative output.
                 stdout, stderr = drain.output or b'', drain.stderr or b''
             return stdout, stderr, 124, True
+        except BaseException:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            raise
+        finally:
+            if processes is not None:
+                processes.unregister(index)
 
 
 @contextmanager
@@ -79,7 +197,17 @@ def timing(name, timings):
         print(json.dumps({'timing': 'stage', 'stage': name, 'seconds': timings[name]}), flush=True)
 
 
-def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None):
+@contextmanager
+def cancel_on_error(processes):
+    try:
+        yield
+    except BaseException:
+        processes.cancel()
+        raise
+
+
+def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None,
+        fail_fast=False, requested_jobs=None, memory_mib=None):
     started_run = time.monotonic()
     timings = {} if timings is None else timings
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
@@ -88,6 +216,15 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         before = hashes()
         fingerprint = runtime_fingerprint() if jobs > 1 else None
     stopped, scheduling = threading.Event(), threading.Lock()
+    processes, first_failure = Processes(), []
+
+    def stop(index):
+        with scheduling:
+            if not stopped.is_set():
+                first_failure.append(index)
+            stopped.set()
+            if fail_fast:
+                processes.cancel()
 
     def command(index, worker):
         kind, argv = commands[index]
@@ -95,18 +232,25 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         installed_package = Path(argv[-1]).name.startswith('test_installed_')
         timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and installed_package
                    else 120 if kind == 'native' else 60)
-        stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=workers[worker] if workers else env, timeout=timeout, graceful=60 if kind == 'mariadb' else 0)
+        rss_path = output/f'{index:03d}.rss.txt'
+        stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=workers[worker] if workers else env,
+                                                timeout=timeout, graceful=60 if kind == 'mariadb' else 0,
+                                                processes=processes if fail_fast else None, index=index, rss_path=rss_path)
         seconds = time.monotonic() - started
-        if code:
-            with scheduling:
-                stopped.set()
+        cancelled = index in processes.cancelled
+        if code and not cancelled:
+            stop(index)
         started_guard = time.monotonic()
         unchanged, runtime_error = runtime_matches(before, fingerprint)
         guard_seconds = time.monotonic() - started_guard
         if not unchanged:
-            with scheduling:
-                stopped.set()
+            stop(index)
+        try:
+            peak_rss = int(rss_path.read_text().splitlines()[-1])
+        except (OSError, ValueError, IndexError):
+            peak_rss = None
         return stdout, stderr, {'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out,
+                               'cancelled': cancelled, 'peak_rss_kib': peak_rss,
                                'runtime_unchanged': unchanged, 'runtime_error': runtime_error,
                                'skipped': kind == 'mariadb' and code == 77, 'seconds': seconds,
                                'guard_seconds': guard_seconds, 'started_seconds': started - started_run,
@@ -132,7 +276,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                 if stopped.is_set():
                     break
         else:
-            with ThreadPoolExecutor(max_workers=jobs) as pool:
+            with ThreadPoolExecutor(max_workers=jobs) as pool, cancel_on_error(processes):
                 pending, index, available = {}, 0, list(range(jobs))
                 exclusive_running = False
                 while pending or (index < len(commands) and not stopped.is_set()):
@@ -177,6 +321,16 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     timings['run'] = time.monotonic() - started_run
     planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
     receipt = {'timings': timings, 'only_tests': sorted(set(only or [])),
+               'fail_fast': fail_fast, 'first_failure': first_failure[0] if first_failure else None,
+               'commands_planned': len(commands),
+               'plan': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands)],
+               'not_run': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands) if index not in completed],
+               'requested_jobs': requested_jobs or jobs, 'memory_mib': memory_mib,
+               'categories': {kind: {'commands_run': len(rows),
+                                     'wall_seconds': max(row['finished_seconds'] for row in rows)-min(row['started_seconds'] for row in rows),
+                                     'child_seconds': sum(row['seconds'] for row in rows),
+                                     'peak_child_rss_kib': max((row['peak_rss_kib'] or 0 for row in rows), default=0)}
+                              for kind in selected if (rows := [row for row in results if row['kind'] == kind])},
                'omitted_tests': [path for paths in suites.values() for path in paths if path not in planned],
                'complete': complete, 'jobs': jobs, 'php_version': '8.4.27', 'results': results, 'runtime_sha256': before,
                'selected_suites': selected, 'omitted_suites': [s for s in CATEGORIES if s not in selected],
@@ -185,7 +339,10 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                'skipped_suites': [r['kind'] for r in results if r['skipped']], 'dependency_unchanged': dependency_unchanged, 'dependency_error': dependency_error, 'real_provider_calls': 0,
                'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
     (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
-    print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands), 'only_tests': sorted(set(only or [])), 'receipt': str(output/'receipt.json')}))
+    print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands),
+                      'first_failure': first_failure[0] if first_failure else None,
+                      'cancelled_commands': sum(row['cancelled'] for row in results),
+                      'only_tests': sorted(set(only or [])), 'receipt': str(output/'receipt.json')}))
     if (len(results) == len(commands) and any(r['skipped'] for r in results) and dependency_unchanged
             and all(r['exit'] in [0, 77] and r['runtime_unchanged'] for r in results)):
         return 77
@@ -235,6 +392,10 @@ def main():
                            help='Run only exact registered test paths; not a full boundary run.')
     parser.add_argument('--jobs', type=positive_jobs,
                         default=os.environ.get('DOMAINS_TEST_JOBS', max(1, min(4, (os.cpu_count() or 1)//2))))
+    parser.add_argument('--memory-mib', type=positive_jobs, default=2048,
+                        help='Worker memory reservation budget; one GiB per parallel worker.')
+    parser.add_argument('--fail-fast', action='store_true', help='Kill in-flight command groups on the first failure.')
+    parser.add_argument('--timings-from', metavar='RECEIPT', help='Prioritize previously failing and faster commands within each category.')
     args = parser.parse_args()
     os.umask(0o077)
     output = Path(tempfile.mkdtemp(prefix='domains-tests-'))
@@ -244,6 +405,9 @@ def main():
     timings = {}
     try:
         suites = manifest()
+        previous = history(args.timings_from)
+        if not Path('/usr/bin/time').is_file():
+            raise ValueError('GNU time (/usr/bin/time) is required for per-command peak RSS.')
         requested = set(args.only or [])
         unknown = requested - {path for paths in suites.values() for path in paths}
         if unknown:
@@ -269,7 +433,7 @@ def main():
             with timing('php_runtime', timings):
                 runtime, binary, extension = prepare(native='native' in selected)
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
-               'PHPRC': '', 'PHP_INI_SCAN_DIR': ''}
+               'PHPRC': '', 'PHP_INI_SCAN_DIR': '', 'TMPDIR': str(output), 'PYTHONDONTWRITEBYTECODE': '1'}
         if 'DOMAINS_UPGRADE_FROM' in os.environ:
             env['DOMAINS_UPGRADE_FROM'] = os.environ['DOMAINS_UPGRADE_FROM']
         if binary:
@@ -292,14 +456,17 @@ def main():
                                 for p in paths if not requested or p in requested)
         if not commands:
             raise ValueError('No runnable suites selected.')
-        jobs = 1 if 'mariadb' in selected else args.jobs
+        commands = order_commands(commands, previous)
+        if args.memory_mib < 2048 and any(Path(argv[-1]).name.startswith('test_installed_') for kind, argv in commands if kind != 'lint'):
+            raise ValueError('Installed-package checks require a memory budget of at least 2048 MiB.')
+        jobs = 1 if 'mariadb' in selected else bounded_jobs(args.jobs, args.memory_mib)
         worker_check = None
         if jobs > 1:
             with timing('worker_environments', timings):
                 workers, fixture_snapshot, runtime_snapshot = test_workers.environments(env, output, jobs, runtime)
             worker_check = lambda: test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
-                   timings=timings, only=args.only)
+                   timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib)
     except BaseException as error:
         if not (output/'receipt.json').exists():
             (output/'receipt.json').write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,

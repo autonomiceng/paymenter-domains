@@ -34,6 +34,9 @@ Python 3, dpkg-deb and compatible system libraries are required; no system PHP o
 
 ## Suites and receipts
 
+See [scheduling and fail-fast receipts](test-scheduling.md) for concurrency, memory
+reservations, ordering and per-command measurements.
+
 `tests/suites.json` registers provider, contracts, native, UI, runner and package categories.
 All `*-test.php` and `test_*.py` paths must be registered exactly once and exist.
 Detected `*-test.cjs` files are refused until a JavaScript runner is implemented.

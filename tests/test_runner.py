@@ -638,7 +638,7 @@ class RunnerTests(unittest.TestCase):
                 for key in ['argv', 'seconds', 'guard_seconds', 'exit', 'timed_out']:
                     self.assertEqual(logged[key], saved[key])
 
-    def test_only_paths_keep_manifest_order_and_native_fixture_requirements(self):
+    def test_only_paths_keep_manifest_cases_and_native_fixture_requirements(self):
         suites = runner.manifest()
         cases = [(['tests/test_package.py'], ['package']),
                  (['tests/test_schema_mariadb.py'], ['mariadb']),
@@ -655,7 +655,7 @@ class RunnerTests(unittest.TestCase):
                 (Path(temp)/'runtime').mkdir()
                 self.assertEqual(runner.main(), 0)
                 expected = [(kind, path) for kind, paths in suites.items() for path in paths if path in requested]
-                self.assertEqual([(kind, argv[-1]) for kind, argv in run.call_args.args[0]], expected)
+                self.assertCountEqual([(kind, argv[-1]) for kind, argv in run.call_args.args[0]], expected)
                 self.assertEqual(run.call_args.args[3], selected)
                 if selected == ['mariadb']:
                     php_prepare.assert_not_called()
@@ -713,7 +713,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(runner.main(), 0)
         commands = run.call_args.args[0]
         expected = [(kind, path) for kind, paths in suites.items() if kind != 'mariadb' for path in paths]
-        self.assertEqual([(kind, argv[-1]) for kind, argv in commands if kind != 'lint'], expected)
+        self.assertCountEqual([(kind, argv[-1]) for kind, argv in commands if kind != 'lint'], expected)
         lint = [[str(ROOT/'scripts/php-test'), '-l', str(path.relative_to(ROOT))]
                 for area in ['Domains', 'tests'] for path in sorted((ROOT/area).rglob('*.php'))]
         lint.append([str(ROOT/'scripts/php-test'), 'tests/php83-compatibility-test.php'])
