@@ -356,7 +356,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                                 index += 1
                         if not pending:
                             break
-                        done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                        done, _ = wait(pending, timeout=.1, return_when=FIRST_COMPLETED)
                         # Drain every completed result before assigning another command.
                         for future in done:
                             position, worker = pending.pop(future)
@@ -569,8 +569,15 @@ def main():
             shutil.rmtree(fixture, ignore_errors=True)
 
 
+def interrupted(signum, frame):
+    # Once shutdown begins, another signal must not interrupt tree draining or
+    # receipt finalization. The finite scheduler wait dispatches the first one.
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    raise KeyboardInterrupt
+
+
 if __name__ == '__main__':
-    def interrupted(signum, frame):
-        raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     raise SystemExit(main())

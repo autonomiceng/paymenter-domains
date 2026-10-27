@@ -296,5 +296,50 @@ class SchedulingTests(unittest.TestCase):
         for signum in [supervisor.signal.SIGTERM, supervisor.signal.SIGINT]:
             self.assertEqual(snapshots[0][signum], supervisor.signal.SIG_IGN)
 
+    def test_outer_runner_paired_signals_clean_up_and_receipt(self):
+        import ctypes
+        import signal
+        import subprocess
+        source = ROOT/'scripts/test.py'
+        supervisor_path = source.with_name('process_supervisor.py')
+        spec = importlib.util.spec_from_file_location('probe_cleanup', supervisor_path)
+        owner = importlib.util.module_from_spec(spec); spec.loader.exec_module(owner)
+        libc = ctypes.CDLL(None, use_errno=True); previous = ctypes.c_int()
+        self.assertEqual(libc.prctl(37, ctypes.byref(previous), 0, 0, 0), 0)
+        self.assertEqual(libc.prctl(36, 1, 0, 0, 0), 0)
+        try:
+            for trial in range(20):
+                with self.subTest(trial=trial), tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary); (root/'Domains').mkdir()
+                    ready, cleaned = root/'ready', root/'cleaned'
+                    child = "import os,signal,sys,time; from pathlib import Path; signal.signal(signal.SIGTERM,lambda *a:(Path(%r).touch(),sys.exit(0))); Path(%r).write_text(str(os.getpid())); time.sleep(30)" % (str(cleaned), str(ready))
+                    driver = ("import importlib.util,os,signal,sys; from pathlib import Path; "
+                              "sys.path.insert(0,%r); spec=importlib.util.spec_from_file_location('subject',%r); subject=importlib.util.module_from_spec(spec); spec.loader.exec_module(subject); subject.ROOT=Path(%r); "
+                              "signal.signal(signal.SIGTERM,subject.interrupted); signal.signal(signal.SIGINT,subject.interrupted); "
+                              "output=subject.ROOT/'output'; output.mkdir(); raise SystemExit(subject.run([('provider',[sys.executable,'-c',%r])],dict(os.environ),output,['provider'],{},jobs=2))") % (str(source.parent), str(source), str(root), child)
+                    try:
+                        with (root/'stdout').open('wb') as out, (root/'stderr').open('wb') as err:
+                            process = subprocess.Popen([sys.executable, '-c', driver], stdout=out, stderr=err, start_new_session=True)
+                        deadline = time.monotonic()+5
+                        while not ready.exists() and process.poll() is None and time.monotonic()<deadline:
+                            time.sleep(.002)
+                        self.assertTrue(ready.exists(), (root/'stderr').read_text())
+                        signals = [signal.SIGTERM, signal.SIGINT]
+                        if trial % 2:
+                            signals.reverse()
+                        for signum in signals:
+                            os.kill(process.pid, signum)
+                        status = process.wait(timeout=3)
+                        receipt, = root.rglob('receipt.json')
+                        self.assertEqual(status, 130, receipt.read_text())
+                        self.assertTrue(cleaned.exists())
+                        self.assertFalse(Path('/proc/'+ready.read_text()).exists())
+                        receipt, = root.rglob('receipt.json')
+                        self.assertFalse(json.loads(receipt.read_text())['complete'])
+                    finally:
+                        owner.cleanup(None)
+        finally:
+            libc.prctl(36, previous.value, 0, 0, 0)
+
 if __name__ == '__main__':
     unittest.main()
