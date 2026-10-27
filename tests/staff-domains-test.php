@@ -287,6 +287,7 @@ $excluded=[
     'ProviderSendGuard.php'=>['not_callable','clock_failed','guard_threw'], // Structured log fields.
     'StaffSettingsReview.php'=>['unavailable'], // Configuration snapshot sentinel.
     'TransferInputs.php'=>['transfer_code'], // Request field name.
+    'OwnerFormValidation.php'=>['mx_pref','priority','weight'], // Owner form field names in grouped match arms.
     'RefundProof.php'=>['unsent'], // Driver execution disposition.
     'NativeCatalogue.php'=>['registration','transfer'], // Product slug suffixes.
     'RenewalStop.php'=>['cancellation','staff','adopted'], // Renewal intent source, presented separately.
