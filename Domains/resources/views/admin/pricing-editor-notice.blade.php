@@ -3,8 +3,7 @@
     $policy = \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::POLICY);
     $canEditPrices = $policy
         && \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('publish'))
-        && (\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('override'))
-            || \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('remove_override')));
+        && \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('override'));
     $canSyncPrices = $policy && \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('import'));
 @endphp
 <div role="status" style="margin-bottom:1.5rem">

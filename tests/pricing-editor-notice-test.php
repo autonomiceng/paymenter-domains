@@ -74,7 +74,7 @@ foreach([
     [[],true,true],
     [[Staff::POLICY],false,false],
     [[Staff::VIEW],false,false],
-    [[Review::permission('override')],true,true],
+    [[Review::permission('override')],false,true],
     [[Review::permission('remove_override')],true,true],
     [[Review::permission('override'),Review::permission('remove_override')],false,true],
     [[Review::permission('publish')],false,true],
