@@ -20,7 +20,27 @@ $run=static function($case)use(&$registration,$makeEngine,$binding,$exchange,$ru
     $registration->calls=[];$makeEngine($binding,$exchange);
     return $runRegistration($nsNew(placeholderComFixtureName('guard-'.$case.'-placeholder.com')));
 };
-$result=$run('email-first');
+$handler=new class extends \Monolog\Handler\AbstractHandler {
+    public array $warnings=[];public bool $fail=false;
+    public function handle(\Monolog\LogRecord $record):bool
+    {
+        if($record->message!=='NameSilo account guard held a request.'){return false;}
+        $this->warnings[]=['level'=>$record->level,'message'=>$record->message,'context'=>$record->context];
+        if($this->fail){throw new RuntimeException('Synthetic private logger failure');}return true;
+    }
+};
+$logger=logger()->getLogger();$logger->pushHandler($handler);
+try {
+    $result=$run('email-first');
+    $handler->fail=true;$guard->mode='failure';
+    $loggerFailure=$run('logger-failure');
+    same('held',$loggerFailure->state,'A throwing warning handler cannot bypass the account hold');
+    same('namesilo_account_guard',$loggerFailure->safe_code,'Logging failure retains the account guard reason');
+    expect(!isset($loggerFailure->attempt['dispatch_attempted_at']),'Logging failure creates no possible-send seal');
+}finally{$logger->popHandler();$guard->mode='email';}
+same(array_map(static fn($class)=>['level'=>\Monolog\Level::Warning,'message'=>'NameSilo account guard held a request.',
+    'context'=>['exception_class'=>$class]],[DomainException::class,RuntimeException::class]),$handler->warnings,
+    'Warnings contain only the exception class, never private exception messages or data');
 same('held',$result->state,'Wrong default email holds funded registration');
 expect(!in_array('registerDomain',$registration->calls,true),'Email refusal sends no paid request');
 same('namesilo_account_guard',$result->safe_code,'Staff sees the account guard reason');

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\Server;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{DB,Log};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DefaultContact;
@@ -44,6 +44,10 @@ final class NameSiloAccountGuard
                 }
             });
         }catch(ReadDeferred $deferred){throw $deferred;}
-        catch(\Throwable){throw new WriteHeld('namesilo_account_guard');}
+        catch(\Throwable $e){
+            try{Log::warning('NameSilo account guard held a request.',['exception_class'=>$e::class]);}
+            catch(\Throwable){ /* Diagnostics must not bypass the hold. */ }
+            throw new WriteHeld('namesilo_account_guard');
+        }
     }
 }
