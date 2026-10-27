@@ -152,7 +152,7 @@ catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(419, $e->
 $reads->premium = null; $failKey = FormKeys::issue($req(), 'order:unknown-placeholder.com');
 $response = $controller->order($req(['domain' => 'unknown-placeholder.com', 'action' => 'register', 'term' => '1', '_request_key' => $failKey], user: $user));
 same(302, $response->getStatusCode(), 'Native eligibility failure returns to search');
-expect(str_contains($session->get('domains_notice'), 'Check the latest results'), 'Neutral native add refusal has recovery');
+same('We couldn’t confirm this name right now. Try again.', $session->get('domains_notice'), 'Unknown eligibility says the name could not be confirmed');
 same(1, $cart->items()->count(), 'Unknown cannot add a line'); $reads->premium = false;
 Illuminate\Support\Facades\Auth::logout(); Illuminate\Support\Once::flush();
 $guestKey = FormKeys::issue($req(), 'order:guest-placeholder.com');
