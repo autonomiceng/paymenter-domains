@@ -22,6 +22,8 @@ PricingEditorNotice::boot();
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id]);
 expect(str_contains($page->html(),'A TLD is only for sale when its saved prices match its published prices.'),'Staff sees the consequence before editing');
 expect(str_contains($page->html(),'Registration: For sale'),'Before editing registration is available');
+expect(str_contains($page->html(),'Edit prices'),'Recovery names the available price editor');
+expect(!str_contains(PricingEditorNotice::render($tlds[0]->fresh()),'Publish prices'),'Recovery does not name the removed publish button');
 $page->mountAction('override')->setActionData(['pricing'=>'custom','mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00','reason'=>'Reviewed retail change'])->callMountedAction()->assertHasNoActionErrors();
 // The approved pricing UX publishes on save. This notice must agree with either writer.
 $clock=app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
@@ -44,7 +46,11 @@ foreach($edit->get('data.plan') as $planKey=>$plan){foreach($plan['pricing'] as 
 }}
 $edit->call('save')->assertHasNoFormErrors();
 expect(str_contains($edit->html(),'Registration: Not for sale'),'Native price save shows the resulting pause');
-expect(str_contains($edit->html(),'To fix it, open this TLD in TLDs &amp; pricing and use Publish prices.'),'Native recovery is explicit after saving');
+expect(str_contains($edit->html(),'To fix it, open this TLD in TLDs &amp; pricing, open Edit prices and save.'),'Native recovery is explicit after saving');
+// Follow the notice using the existing pricing unchanged: saving restores native prices.
+$page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id]);
+$page->mountAction('override')->setActionData(['reason'=>'Restore saved TLD prices'])->callMountedAction()->assertHasNoActionErrors();
+expect(str_contains($page->html(),'Registration: For sale'),'Saving Edit prices restores sale after a native price change');
 $hosting=App\Models\Product::create(['name'=>'Ordinary','slug'=>'ordinary','category_id'=>$product->category_id,'allow_quantity'=>'combined']);
 same('',PricingEditorNotice::render($hosting),'No pricing warning on unrelated products');
 $nativeSuccessful=true; echo "Pricing consequences before and after Domains/native edits passed.\n";
