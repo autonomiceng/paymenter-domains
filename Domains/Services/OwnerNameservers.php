@@ -9,8 +9,9 @@ final class OwnerNameservers
     {
         return is_string($text)?array_values(array_filter(array_map('trim',preg_split('/\r\n|\n|\r/',$text)),static fn($v)=>$v!=='')):[];
     }
-    public static function parse(#[\SensitiveParameter] mixed $text,bool $defaults,int $max,string $registrar,?string $purchaseDomain=null): array
+    public static function parse(#[\SensitiveParameter] mixed $text,bool $defaults,string $registrar,?string $purchaseDomain=null): array
     {
+        $max=$registrar==='enom'?12:13;
         $fail=static function(string $kind,?int $row=null)use($defaults,$max):never {
             throw new OwnerFormValidation(['nameservers'],['kind'=>$kind,'row'=>$row,'defaults'=>$defaults,'max'=>$max]);
         };
@@ -42,7 +43,7 @@ final class OwnerNameservers
         $duplicate=strtolower(str_ends_with($value,'.')?substr($value,0,-1):$value);
         return match($reason['kind']??null) {
             'few'=>'Enter at least 2 nameservers, one per line'.(($reason['defaults']??false)?', or leave this blank to use '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers().'.':'.'),
-            'many'=>'Enter no more than '.($reason['max']??12).' nameservers.',
+            'many'=>'Enter no more than '.$reason['max'].' nameservers.',
             'hostname'=>$value." isn't a valid hostname. Use a name like ns1.example.com.",
             'duplicate'=>$duplicate.' is listed more than once.',
             'external'=>'Use nameservers outside '.$domain.', such as ns1.example.com.',

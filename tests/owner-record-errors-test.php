@@ -34,8 +34,17 @@ foreach(['dns'=>['records'=>[['name'=>'bad host','type'=>'A','address'=>'secret-
     expect(!str_contains($html,'private-extra-not-for-html')&&!str_contains(serialize($session->all()),'private-extra-not-for-html'),'Private request extras are never retained');
     if($action!=='nameservers'){expect(!str_contains($html,'value="'.$nonce.'"'),'Direct retry issues fresh intent keys');}
     foreach($invalid as$field){expect($field->hasAttribute('aria-describedby'),'Field error is described');}
-    if($action==='dns'){expect(str_contains($html,'value="secret-invalid-value"'),'Public DNS draft is retained only in direct escaped response');expect(str_contains($html,'Enter @, *, or a hostname such as www.'),'DNS name error explains the grammar');expect(str_contains($html,'Enter an address for this record type:'),'DNS address error explains the grammar');}
-    if($action==='srv'){foreach(['Choose TCP or UDP.','Enter a number from 0 to 65535.','Enter a hostname ending in a dot, such as sip.example.com.'] as $message){expect(str_contains($html,$message),'SRV field explains the invalid value');}}
+    if($action==='dns'){expect(str_contains($html,'value="secret-invalid-value"'),'Public DNS draft is retained only in direct escaped response');}
+    $fieldMessages=match($action) {
+        'dns'=>['name'=>'Enter @, *, or a hostname such as www.','address'=>'Enter an address for this record type: an IP for A or AAAA, a hostname ending in a dot for CNAME or MX, a web address for URL or FRAME, or text for TXT.'],
+        'srv'=>['protocol'=>'Choose TCP or UDP.','priority'=>'Enter a number from 0 to 65535.','weight'=>'Enter a number from 0 to 65535.','port'=>'Enter a number from 0 to 65535.','target'=>'Enter a hostname ending in a dot, such as sip.example.com.'],
+        default=>[],
+    };
+    foreach($fieldMessages as$field=>$message){
+        $input=$dom->query('//*[@id="'.$action.'-0-'.$field.'"][@aria-invalid="true"]');same(1,$input->length,'Expected invalid '.$action.' '.$field);
+        $descriptions=[];foreach(explode(' ',$input->item(0)->getAttribute('aria-describedby'))as$id){foreach($dom->query('//*[@id="'.$id.'"]')as$node){$descriptions[]=trim($node->textContent);}}
+        expect(in_array($message,$descriptions,true),'Exact error describes '.$action.' '.$field);
+    }
     if($action==='glue_update'){same(1,$invalid->length,'Only the submitted host IP is invalid');same('glue-0-ip',$invalid->item(0)->getAttribute('id'),'Error targets matching host');same(['edit-glue'],array_map(fn($n)=>$n->getAttribute('id'),iterator_to_array($dom->query('//dialog[contains(@class,"domains-edit")][@open]'))),'Only submitted editor opens');}
     if($action==='ds_add'){expect(str_contains($html,'value="secret-invalid-value"'),'Public DS draft retained');}
 

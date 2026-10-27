@@ -76,6 +76,9 @@ $cart=commerceCart($user);commerceAdd($cart,$native->product($tlds[1],'register'
 $d=Domain::where('domain',$name)->sole();$op=$d->operations()->sole();
 foreach ([
     ['', 'Enter at least 2 nameservers, one per line.'],
+    [implode("\n",array_map(fn($i)=>'ns'.$i.'.example.com',range(1,14))),'Enter no more than 13 nameservers.'],
+    ["192.0.2.1\nns2.example.com","192.0.2.1 isn't a valid hostname. Use a name like ns1.example.com."],
+    ["NS1.EXAMPLE.COM.\nns1.example.com",'ns1.example.com is listed more than once.'],
     ['ns1.'.$d->domain."\nns2.example.com",'Use nameservers outside '.$d->domain.', such as ns1.example.com.'],
     ["xn--bad.example.com\nns2.example.com","xn--bad.example.com isn't a valid hostname. Use a name like ns1.example.com."],
 ] as [$text,$message]) {

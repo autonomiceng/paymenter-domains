@@ -84,6 +84,18 @@ foreach([['lock',['locked'=>'0','confirmed'=>'0']],['lock',['locked'=>'0']],['na
     same(1,$confirmDom->query('//li[@id="'.$action.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][@open][not(ancestor::dialog[not(@open)])]//button[@name="confirmed"][@value="1"]')->length,'Inline confirm step without script: '.$action);
 }
 expect(str_contains($response->getContent(),'Email the auth code?'),'Confirm step names the concrete action');
+// Provider-specific contact errors come from real engine validation, before any request is created.
+$invalidContact=$registrant;$invalidContact['country']='US';$invalidContact['state_province']='';$invalidContact['first_name']=str_repeat('x',$free?33:256);
+$before=Operation::count();$r=$post('contacts',['role'=>'all','contact'=>$invalidContact]);$controller->manage($r,$d->id,'contacts');
+same($before,Operation::count(),'Invalid provider contact fields create no operation');
+$contactMessages=['state_province'=>$free?'For the US or Canada, enter the 2-letter state or province code. For other countries, enter its name.':'Enter your state or province for the US, Canada or Australia.','first_name'=>'Enter your first name (up to '.($free?32:255).' characters).'];
+app('view')->share('errors',$session->get('errors'));$contactDom=storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render());
+foreach($contactMessages as$field=>$message){
+    same($message,$session->get('errors')->first('contact.'.$field),'Exact registrar-specific contact error: '.$field);
+    $input=$contactDom->query('//form[contains(@action,"/manage/contacts")]//*[@name="contact['.$field.']"][@aria-invalid="true"]');same(1,$input->length,'Contact field has its own error');
+    $descriptions=[];foreach(explode(' ',$input->item(0)->getAttribute('aria-describedby'))as$id){foreach($contactDom->query('//*[@id="'.$id.'"]')as$node){$descriptions[]=trim($node->textContent);}}
+    expect(in_array($message,$descriptions,true),'Exact contact error describes '.$field);
+}
 // Plain edits need no acknowledgement: this contacts request reaches engine validation.
 $r=$post('contacts',['role'=>'all','contact'=>[]]);$r->request->remove('confirmed');$controller->manage($r,$d->id,'contacts');
 expect($session->get('errors')->has('contact.phone'),'Engine contact paths map to submitted fields');

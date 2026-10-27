@@ -37,7 +37,7 @@ final readonly class OwnerActionController
     {
         return $this->submit($request,$domain,'setup',function()use($request,$domain):void {
             $d=$this->owners->owned($request->user(),$domain);
-            $servers=OwnerNameservers::parse(($request->request->all()['nameservers']??null),$d->registrar_key==='enom',$d->registrar_key==='enom'?12:13,$d->registrar_key,$d->domain);
+            $servers=OwnerNameservers::parse(($request->request->all()['nameservers']??null),$d->registrar_key==='enom',$d->registrar_key,$d->domain);
             if (!in_array($request->request->get('privacy','0'),['0','1'],true)) { throw new \Paymenter\Extensions\Servers\Domains\Services\SetupValidation(['privacy']); }
             $this->setup->save($request->user(),$domain,['nameservers'=>$servers,'privacy'=>$request->request->get('privacy')==='1']);
         },'Setup saved.');
@@ -62,7 +62,7 @@ final readonly class OwnerActionController
             $current=in_array($action,['dns','srv'],true)?(\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::forDomain($d)[$action]??throw new \DomainException('Current records required.')):null;
             $payload=match($action) {
                 'nameservers'=>($p['use_default']??null)==='1' && $d->registrar_key==='enom'
-                    ? ['nameservers'=>[],'use_default'=>true] : ['nameservers'=>OwnerNameservers::parse($p['nameservers']??null,false,$d->registrar_key==='enom'?12:13,$d->registrar_key)],
+                    ? ['nameservers'=>[],'use_default'=>true] : ['nameservers'=>OwnerNameservers::parse($p['nameservers']??null,false,$d->registrar_key)],
                 'lock'=>['locked'=>match($p['locked']??null){'1'=>true,'0'=>false,default=>throw new \DomainException}],
                 'contacts','contact_profile'=>['role'=>$p['role']??'all','contact'=>$p['contact']??[]],
                 'dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'=>\Paymenter\Extensions\Servers\Domains\Services\OwnerRecordInput::payload($action,$p,$d->domain),
