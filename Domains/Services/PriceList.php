@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Price,Tld};
 /** Saved exact-term totals only. Never republishes, recomputes retail or contacts a registrar. */
 final class PriceList
 {
-    public const FILTERS=['all'=>'All TLDs','below_cost'=>'Below cost','loses_money'=>'Loses money after card fee','default'=>'Follows account default','own'=>'Own rule'];
+    public const FILTERS=['all'=>'All TLDs','below_cost'=>'Below cost','loses_money'=>'Loses money after card fee','default'=>'Default pricing','own'=>'Custom pricing'];
     public const ACTIONS=['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'];
     public static function authorize(): void {abort_unless(Staff::can(Staff::COSTS),403);}
     public function read(int $years=1,string $filter='all',?int $serverId=null): array
@@ -24,7 +24,7 @@ final class PriceList
             $id=(int)$tld->server_id;$fee=$fees[$id]??=CardFee::read($id);
             $rule=$tld->use_default_rule?($defaults[$id]??=$rules->defaultRule($id)):$rules->rule($tld);
             $row=['id'=>(int)$tld->id,'tld'=>'.'.$tld->tld,'server_id'=>$id,'account'=>(string)$tld->server->name,'years'=>$years,
-                'pricing'=>$tld->use_default_rule?'Account default':'Own rule','currency'=>'USD','prices'=>[],
+                'pricing'=>$tld->use_default_rule?'Default':'Custom','currency'=>'USD','prices'=>[],
                 'formula'=>'Price = '.PricingRule::describe($rule).($rule['mode']==='fixed'?', times years.':', per year, times years.'),'fee'=>$fee,'fee_in_price'=>$rule['mode']==='markup_fee_percent'];
             $below=$loss=false;
             foreach(self::ACTIONS as $action=>$label){
@@ -57,7 +57,7 @@ final class PriceList
     public function headings(): array
     {
         $out=['TLD','Registrar account','Years','Pricing','Currency'];
-        foreach(self::ACTIONS as $label){foreach(['cost','price','rough profit','status'] as $name){$out[]=$label.' '.$name;}}
+        foreach(self::ACTIONS as $label){foreach(['cost','price','est. profit','status'] as $name){$out[]=$label.' '.$name;}}
         return [...$out,'Current pricing formula','Card fee'];
     }
     /** Shared display strings keep downloads and the visible matrix equal, including missing values. */
@@ -67,7 +67,7 @@ final class PriceList
         foreach(self::ACTIONS as $action=>$label){$p=$row['prices'][$action];$out=[...$out,self::money($p['cost']),$p['price']??'Missing',self::money($p['profit'],true),$p['status']==='Missing'?'':$p['status']];}
         return [...$out,$row['formula'],CardFee::describe($row['fee'])];
     }
-    /** Display cents only; round rough profit down, including a loss, without changing saved values. */
+    /** Display cents only; round estimated profit down, including a loss, without changing saved values. */
     private static function money(?string $value,bool $down=false): string
     {
         if($value===null){return 'Missing';}

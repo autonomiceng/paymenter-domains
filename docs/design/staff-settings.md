@@ -99,9 +99,10 @@ Below-cost sales rules still compare with registrar cost alone.
 
 **TLDs & pricing → Price list** requires the costs permission, including downloads.
 It shows saved exact-term prices, never a recalculated or invented multi-year price,
-with registrar costs and rough profit after the account's current card fee. The fixed
-fee counts once per chosen term. Filters and CSV use the same matrix. Loss after fees
-is a separate flag from below registrar cost. The explanation names the current rule;
+with registrar costs and estimated profit (Est. profit) after the account's current
+card fee. The fixed fee counts once per chosen term. Each TLD shows Default or Custom
+pricing. Filters and CSV use the same matrix. Loss after fees is a separate flag from
+below registrar cost. The explanation names the current rule;
 a missed publication can leave a saved price on an earlier rule. Issued invoices never
 change. These are estimates: international cards, refunds and shared payments differ.
 

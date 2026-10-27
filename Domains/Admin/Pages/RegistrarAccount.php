@@ -110,7 +110,7 @@ class RegistrarAccount extends Page
         try { $feeText=CardFee::describe(CardFee::read($id)).' per payment'; }
         catch (\Throwable) { $feeText=null; }
         $feeEntry=MissingEntry::apply(TextEntry::make('card_fee')->label('Card fee')->state($feeText)->inlineLabel(),cause:$feeText===null?"Saved card fee can't be read":null)
-            ->belowContent('Used for rough profit on the Price list, and by pricing that adds a percentage to cost and card fee.');
+            ->belowContent('Used for estimated profit on the Price list, and by pricing that adds a percentage to cost and card fee.');
         return [Flex::make([$entry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'default_rule')])->grow(false)])->from('md'),
             Flex::make([$feeEntry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'card_fee')])->grow(false)])->from('md')];
     }

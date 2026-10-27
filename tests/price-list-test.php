@@ -17,7 +17,7 @@ App\Models\Server::whereKey($t->server_id)->update(['name'=>'<First & account>']
 $service=new PriceList;
 $before=DB::table('domains_prices')->orderBy('id')->get()->toJson();
 $matrix=$service->read(1,'all',$t->server_id);same(1,count($matrix['rows']),'Selected account has one TLD row');
-$row=$matrix['rows'][0];same('.com',$row['tld'],'TLD label');same('Account default',$row['pricing'],'Rule source');
+$row=$matrix['rows'][0];same('.com',$row['tld'],'TLD label');same('Default',$row['pricing'],'Rule source');
 same('Price = cost + 30%, per year, times years.',$row['formula'],'Formula includes account numbers');
 foreach(['register','renew','transfer'] as $action){
     $saved=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>$action,'term'=>1])->sole();$cell=$row['prices'][$action];
@@ -31,24 +31,27 @@ $two=$service->read(2,'all',$t->server_id)['rows'][0]['prices'];same(null,$two['
 // A rule edit without publication must not reprice the saved totals.
 App\Models\Server::findOrFail($t->server_id)->settings()->updateOrCreate(['key'=>'domains_pricing_default_rule'],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_percent','markup'=>'80','round_up'=>'whole']]);
 same('7.80',$service->read(1,'all',$t->server_id)['rows'][0]['prices']['register']['price'],'Current rule does not recompute published price');
-// Distinct below-cost and fee-loss rows, plus account default / own rule filters.
+// Distinct below-cost and fee-loss rows, plus Default and Custom pricing filters.
 DB::table('domains_tlds')->where('id',$other->id)->update(['use_default_rule'=>false,'pricing_mode'=>'markup_amount','markup'=>'1.25','round_up'=>'none']);
 DB::table('domains_prices')->where(['server_id'=>$t->server_id,'action'=>'register','term'=>1])->update(['retail'=>'5.00']);
 DB::table('domains_prices')->where(['server_id'=>$other->server_id,'action'=>'renew','term'=>1])->update(['retail'=>'8.10']);
 $before=DB::table('domains_prices')->orderBy('id')->get()->toJson();
 same([$t->id],array_column($service->read(1,'below_cost')['rows'],'id'),'Below cost checks wholesale only');
 same([$t->id,$other->id],array_column($service->read(1,'loses_money')['rows'],'id'),'Fee loss includes price above wholesale');
-same([$t->id],array_column($service->read(1,'default')['rows'],'id'),'Default filter');same([$other->id],array_column($service->read(1,'own')['rows'],'id'),'Own rule filter');
-same('Price = cost + $1.25, per year, times years.',$service->read(1,'own')['rows'][0]['formula'],'Own rule numbers shown');
+same([$t->id],array_column($service->read(1,'default')['rows'],'id'),'Default filter');same([$other->id],array_column($service->read(1,'own')['rows'],'id'),'Custom filter');
+same('Price = cost + $1.25, per year, times years.',$service->read(1,'own')['rows'][0]['formula'],'Custom rule numbers shown');
 // Page and CSV are the same selected visible matrix, not an unfiltered export.
-$page=Livewire::actingAs($u)->test(PriceListPage::class)->assertSuccessful()->set('years',1)->set('filter','own')->assertSee('Own rule')->assertSee('How prices are worked out');
+$page=Livewire::actingAs($u)->test(PriceListPage::class)->assertSuccessful()->set('years',1)->set('filter','own')->assertSee('Custom')->assertSee('How prices are worked out');
+same(['all'=>'All TLDs','below_cost'=>'Below cost','loses_money'=>'Loses money after card fee','default'=>'Default pricing','own'=>'Custom pricing'],PriceList::FILTERS,'Filter labels use Default and Custom');
+$page->assertSee('Est. profit')->assertDontSee('Rough profit')->assertDontSee('Own rule')->assertDontSee('Account default');
 $page->assertSee('International cards and refunds can cost more, so treat it as an estimate.')->assertSee('Issued invoices keep their prices.');
 $page->call('downloadCsv')->assertFileDownloaded('domain-prices-1-year.csv');
 $matrix=$service->read(1,'own');$csv=$service->csv(1,'own');$lines=preg_split('/\r?\n/',trim($csv));$records=array_map(static fn($line)=>str_getcsv($line,',','"',''),$lines);
 same(2,count($records),'CSV contains only the visible filtered TLD');same($service->headings(),$records[0],'CSV headings match matrix headings');
-$values=$records[1];same(['.com','Synthetic','1','Own rule','USD'],$values===[]?[]:array_slice($values,0,5),'CSV selected identity');
+$values=$records[1];same(['.com','Synthetic','1','Custom','USD'],$values===[]?[]:array_slice($values,0,5),'CSV selected identity');
 same(['6.00','7.80','1.27','', '8.00','8.10','-0.44','Loses money after card fee','7.00','9.10','1.53',''],array_slice($values,5,12),'CSV exact visible action amounts and flags');
 same($matrix['rows'][0]['formula'],$values[17],'CSV includes visible explanation');
+same(['Register est. profit','Renew est. profit','Transfer est. profit'],[$records[0][7],$records[0][11],$records[0][15]],'CSV profit headers match the table');
 $dom=new DOMDocument();@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);foreach($values as $i=>$value){
     if(in_array($i,[2,4,17,18],true)){continue;}
     same($value,$xpath->evaluate('normalize-space(//table[@data-price-list]/tbody/tr//*[@data-price-value="'.$i.'"])'),'CSV equals rendered table value '.$i);
@@ -56,6 +59,10 @@ $dom=new DOMDocument();@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);
 same($values[2],$xpath->evaluate('normalize-space(//*[@data-price-years])'),'CSV years equal visible caption');
 same($values[4],$xpath->evaluate('normalize-space(//*[@data-price-currency])'),'CSV currency equals visible caption');
 $page->assertSee($values[17])->assertSee('Card fee: '.$values[18]);
+// The explanation panel names each account and pricing type, with the formula in its own code line.
+same($values[17],$xpath->evaluate('normalize-space(//*[@data-price-explanation]//code[@data-price-formula])'),'Formula shown as a code line');
+same('Custom',$xpath->evaluate('normalize-space(//*[@data-price-explanation]//*[@data-price-pricing])'),'Panel pricing badge matches the table');
+same(3,(int)$xpath->evaluate('count(//ul[@data-price-notes]/li)'),'Panel notes are a short list');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('Price list');expect(str_contains(TldResource::getUrl('price-list'),'/price-list'),'Price list has a named resource route');
 $escaped=Livewire::actingAs($u)->test(PriceListPage::class)->assertSuccessful()->set('serverId',(string)$t->server_id);expect(str_contains($escaped->html(),'&lt;First &amp; account&gt;'),'Account names are escaped');
 same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Page, filters and CSV leave all revisions and prices unchanged');same(0,$reads->calls,'No provider calls');
