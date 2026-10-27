@@ -47,8 +47,12 @@ foreach([...$staleFirst,...array_values(array_diff(array_keys(Review::ACTIONS),$
 foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>$writer->run($review('default_rule',$t->id,reason:$bad),$fixed,$now));}
 $r=$review('default_rule',$t->id,reason:str_repeat('🦦',500));same(['published'=>1,'failed'=>[]],$writer->run($r,$fixed,$now),'Default publishes the TLD that follows it');same('fixed',(new PricingRules)->defaultRule($t->server_id)['mode'],'Default saved');
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($t->fresh()),'Published below-cost default is not for sale');
+$auditBeforeReplay=Review::historyRows(App\Models\Server::findOrFail($t->server_id));
+same(['completed','publication_completed'],array_column($auditBeforeReplay,'phase'),'Default save and publication outcome audited');
+$historyBeforeReplay=TldFacts::history($t->server_id);
 tldRefusal(fn()=>$writer->run($r,$fixed,$now),'Settings changed. Reload this page.'); // This write changed its stamp.
-same(1,count(TldFacts::history($t->server_id)),'Replay audit unchanged');
+same($historyBeforeReplay,TldFacts::history($t->server_id),'Replay audit unchanged');
+same($auditBeforeReplay,Review::historyRows(App\Models\Server::findOrFail($t->server_id)),'Refused replay retains exact saved audit');
 expect(in_array('Default pricing changed',array_column(TldFacts::history($t->server_id,999),'change'),true),'Shared default appears in sibling history');
 // Costs out of date: the default is saved, but this TLD keeps its published prices and says so.
 same(['published'=>0,'failed'=>['.com']],$writer->run($review('default_rule',$t->id),[...$fixed,'fixed_renew'=>'2.00'],$now->modify('+2 days')),'Out of date TLD is named');

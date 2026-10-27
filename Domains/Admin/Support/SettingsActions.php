@@ -215,7 +215,7 @@ final class SettingsActions
                     try{$default=$name==='override'&&($data['pricing']??null)==='default';
                         $r=new Review((int)Auth::id(),$server,$tld,$default?'remove_override':$name,(string)($data[$default?'default_key':'review_key']??''),trim((string)($data['reason']??'')));
                         $summary=app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
-                        Notification::make()->success()->title(match(true){$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
+                        Notification::make()->status(($summary['audit_failed']??false)?'warning':'success')->title(match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
                                 $name==='enroll_sandbox'=>'Account connected',$name==='override'=>'Prices published',$setup=>'Saved',default=>'Change recorded'})
                             ->body($name==='processing'||$name==='probe'?null:($name==='default_rule'?self::published($summary??['published'=>0,'failed'=>[]]):($name==='enroll_sandbox'?'NameSilo OTE accepted the key in one read-only balance request. That balance was not saved; account ownership is unconfirmed, orders are paused and no TLDs are chosen. The next worker run may read the balance once; check Balance on this page for its result. Later scheduled reads are limited to one per day. Reload this page before another change.':'Reload this page before another change.')))->send();
                         if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$server]));}
@@ -268,7 +268,8 @@ final class SettingsActions
     private static function published(array $summary): string
     {
         $text=$summary['published']===0&&$summary['failed']===[]?'No TLDs use the account default.':'Published new prices for '.$summary['published'].' '.($summary['published']===1?'TLD':'TLDs').'.';
-        return $text.($summary['failed']===[]?'':' Could not publish '.implode(', ',$summary['failed']).'. Sync prices on the account page, then save again.');
+        return $text.($summary['failed']===[]?'':' Could not publish '.implode(', ',$summary['failed']).'. Sync prices on the account page, then save again.')
+            .(($summary['audit_failed']??false)?" Nothing was undone: the new default and any prices published stay in place. Only the record of this result couldn't be saved.":'');
     }
     /** Renewals and DNS management are on when their saved acceptance is current. */
     private static function accepted(int $server,string $name): bool

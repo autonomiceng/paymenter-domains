@@ -67,8 +67,15 @@ expect(collect(PriceCatalogue::preview($t->fresh(),$rule,$late))->every(fn($r)=>
 // Saving the account default publishes every TLD that follows it and names the ones it could not publish.
 $net=Tld::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,'tld'=>'net','enabled'=>true,'min_years'=>1,'max_years'=>1,'use_default_rule'=>true]);
 $before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
-$summary=$writer->run($review('default_rule',null),['mode'=>'markup_percent','markup'=>'50','round_up'=>'whole'],$now);
+$defaultReview=$review('default_rule',null);
+$summary=$writer->run($defaultReview,['mode'=>'markup_percent','markup'=>'50','round_up'=>'whole'],$now);
 same(['published'=>1,'failed'=>['.net']],$summary,'Default change publishes followers and names skipped TLDs');
+$history=Review::historyRows(App\Models\Server::findOrFail($t->server_id));$outcome=array_pop($history);$save=array_pop($history);
+same('publication_completed',$outcome['phase'],'Publication outcome is durably recorded after the loop');
+same($summary,$outcome['outcome'],'Reloaded outcome retains published count and failed TLDs');
+same('completed',$save['phase'],'Original local-save audit remains');
+foreach(['key','actor_id','reason','action','input'] as $field){same($save[$field],$outcome[$field],'Publication outcome retains review '.$field);}
+same($u->id,$outcome['actor_id'],'Outcome actor is the reviewing staff member');
 same('9.00',$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now)->retail,'Follower published with the new default');
 foreach($rows($t->fresh()) as $key=>$p){same($before[$key]+1,$p->revision,'Follower revision advanced');}
 same('markup_percent',(new PricingRules)->defaultRule($t->server_id)['mode'],'Default saved');
@@ -104,4 +111,33 @@ same(['published'=>0,'failed'=>['.net']],$writer->run($switch,['mode'=>'markup_p
 same('markup_percent',(new PricingRules)->defaultRule($t->server_id)['mode'],'Default saved before the switch');same('20.00',(new PricingRules)->defaultRule($t->server_id)['markup'],'New default saved');
 expect(!$armed,'Switch happened during the default save');
 same($before,array_map(fn(Price $p)=>$p->revision,$rows($t->fresh())),'Switched TLD revisions unchanged');
+// An empty follower set still records its completed outcome.
+Tld::where('server_id',$t->server_id)->update(['use_default_rule'=>false]);
+$empty=$writer->run($review('default_rule',null),['mode'=>'markup_percent','markup'=>'25','round_up'=>'none'],$now);
+same(['published'=>0,'failed'=>[]],$empty,'No followers changes only the default');
+$history=Review::historyRows(App\Models\Server::findOrFail($t->server_id));same($empty,end($history)['outcome'],'Empty publication outcome is retained');
+// Losing the final audit cannot undo the already committed default and follower publication.
+Tld::whereKey($t->id)->update(['use_default_rule'=>true]);$auditWrites=0;$failAudit=true;
+App\Models\Setting::saving(static function($setting)use(&$auditWrites,&$failAudit):void{
+    if($failAudit&&$setting->key===Review::KEY&&++$auditWrites===2){throw new RuntimeException('Synthetic outcome audit failure');}
+});
+$before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
+$failedAudit=$writer->run($review('default_rule',null),['mode'=>'markup_percent','markup'=>'30','round_up'=>'none'],$now);$failAudit=false;
+same(['published'=>1,'failed'=>[],'audit_failed'=>true],$failedAudit,'Audit failure honestly preserves the completed publication summary');
+same(2,$auditWrites,'Failure was injected into the separate outcome audit');
+same('30.00',(new PricingRules)->defaultRule($t->server_id)['markup'],'Audit failure leaves the committed default in place');
+foreach($rows($t->fresh()) as $key=>$p){same($before[$key]+1,$p->revision,'Audit failure does not roll back published prices');}
+$history=Review::historyRows(App\Models\Server::findOrFail($t->server_id));same('completed',end($history)['phase'],'Failed outcome audit leaves the original save audit');
+$published=new ReflectionMethod(SettingsActions::class,'published');
+same("Published new prices for 1 TLD. Nothing was undone: the new default and any prices published stay in place. Only the record of this result couldn't be saved.",$published->invoke(null,$failedAudit),'Warning body gives exact publication results without claiming rollback');
+// The real staff action sends a warning, with the committed publication count, instead of claiming refusal.
+app()->instance(StaffSettingsWrites::class,$writer);pinStaffClock($now);$auditWrites=0;$failAudit=true;
+Livewire\Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$t->server_id])
+    ->mountAction(setupAction('default_rule',$t->server_id))->assertActionMounted(setupAction('default_rule',$t->server_id))
+    ->setActionData(['mode'=>'markup_percent','markup'=>'35','round_up'=>'none','reason'=>'Record a synthetic publication audit failure'])
+    ->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->warning()
+        ->title("Saved, but the result wasn't recorded")
+        ->body("Published new prices for 1 TLD. Nothing was undone: the new default and any prices published stay in place. Only the record of this result couldn't be saved."));
+$failAudit=false;same(2,$auditWrites,'Staff warning exercises the failed outcome audit');
+same('35.00',(new PricingRules)->defaultRule($t->server_id)['markup'],'Staff warning leaves the new default committed');
 echo "Saving prices publishes them, matches the preview, keeps below-cost rules and refuses stale costs.\n";$nativeSuccessful=true;

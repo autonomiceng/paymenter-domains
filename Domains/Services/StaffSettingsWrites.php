@@ -210,6 +210,12 @@ final class StaffSettingsWrites
                 if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains default pricing publish failed.',['tld'=>$tld->tld,'exception_class'=>$error::class]);}
             }
         }
+        // Each publication has committed independently; losing this audit cannot undo it.
+        try{$r->finish('publication_completed',$summary);}
+        catch(\Throwable $error){
+            $summary['audit_failed']=true;
+            \Illuminate\Support\Facades\Log::warning('Domains pricing publication outcome audit failed.',['action'=>$r->action,'exception_class'=>$error::class]);
+        }
         return $summary;
     }
 

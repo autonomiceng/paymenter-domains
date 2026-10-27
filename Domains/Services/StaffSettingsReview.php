@@ -99,12 +99,12 @@ final class StaffSettingsReview
             return $rows;
         }catch(\Throwable){throw new \DomainException('Audit unavailable. Changes held.');}
     }
-    public function record(string $phase='completed'): void
+    public function record(string $phase='completed',?array $outcome=null): void
     {
         if(!$this->verified||DB::transactionLevel()!==1){throw new \LogicException('Locked review required.');}
         $s=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();
         self::append($s,['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
-            'reason'=>$this->reason,'phase'=>$phase,'input'=>$this->input,'tld_id'=>$this->action==='default_rule'?null:$this->tldId,'before'=>$this->before,'after'=>$this->state($this->serverId,$this->tldId)]);
+            'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>$this->action==='default_rule'?null:$this->tldId,'before'=>$this->before,'after'=>$this->state($this->serverId,$this->tldId)]);
     }
     /** Caller holds the server/account mutex; audit and the local change commit together. */
     public static function append(Server $s,array $entry): void
@@ -137,8 +137,8 @@ final class StaffSettingsReview
             'snapshot'=>self::stamp($server,$tld,true)];
     }
     /** Outcome audit grants no authority; retain it even if permissions or the saved state changed during I/O. */
-    public function finish(string $phase): void
-    {DB::transaction(function()use($phase){$this->lockAccounts();$this->record($phase);});}
+    public function finish(string $phase,?array $outcome=null): void
+    {DB::transaction(function()use($phase,$outcome){$this->lockAccounts();$this->record($phase,$outcome);});}
     public function local(\Closure $write,string $phase='completed'): mixed
     {
         if(DB::transactionLevel()!==0){throw new \LogicException('Staff review owns its transaction.');}
