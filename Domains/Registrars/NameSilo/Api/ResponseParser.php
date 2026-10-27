@@ -20,7 +20,9 @@ final class ResponseParser
     private function decode(#[\SensitiveParameter] string $body, RegistrarRequest|PurchaseMapping $request,
         #[\SensitiveParameter] string $key): RegistrarResult
     {
-        $data = $this->json($body);
+        // Contact IDs must retain their wire type, matching the paid-call account guard.
+        // The money decoder intentionally turns numeric lexemes into strings for other commands.
+        $data = $request->command === 'contactList' ? json_decode($body, true, 24, JSON_THROW_ON_ERROR) : $this->json($body);
         if (!is_array($data) || ($data['request']['operation'] ?? null) !== $request->command
             || !is_array($data['reply'] ?? null) || !is_string($data['reply']['detail'] ?? null)) {
             return new RegistrarResult(Outcome::Unknown);
@@ -45,6 +47,7 @@ final class ResponseParser
         if (in_array($request->command, ['checkRegisterAvailability', 'checkTransferAvailability'], true)) {
             $reply = $this->availability($request, $reply);
         }
+        if ($request->command === 'contactList') { $reply['default_contact'] = \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DefaultContact::fromReply($reply); }
         if (!$this->validSuccess($request, $reply)) { return new RegistrarResult(Outcome::Unknown, 300); }
         unset($reply['code'], $reply['detail'], $reply['message']);
         return new RegistrarResult(Outcome::Success, 300, $this->sanitize($this->project($request->command, $reply), $key));
@@ -151,6 +154,7 @@ final class ResponseParser
                 && is_string($reply['created']) && is_string($reply['expires']) && is_string($reply['status'])
                 && $this->flags($reply),
             'checkTransferStatus' => is_string($reply['date'] ?? null) && is_string($reply['status'] ?? null) && is_string($reply['message'] ?? null),
+            'contactList' => is_array($reply['default_contact'] ?? null),
             'getAccountBalance' => $this->amount($reply['balance'] ?? null),
             'listOrders' => isset($reply['order']) && is_array($reply['order']),
             'orderDetails' => $this->identifier($reply['order_number'] ?? null) === $request->parameters()['order_number']
@@ -217,6 +221,7 @@ final class ResponseParser
             'getDomainInfo' => ['created', 'expires', 'status', 'locked', 'private', 'auto_renew', 'traffic_type',
                 'email_verification_required', 'portfolio', 'nameservers', 'contact_ids'],
             'checkTransferStatus' => ['date', 'status', 'expiration'],
+            'contactList' => ['default_contact'],
             'getAccountBalance' => ['balance'],
             'listOrders' => ['order'],
             'orderDetails' => ['order_number', 'order_date', 'method', 'total', 'order_details'],
@@ -238,6 +243,7 @@ final class ResponseParser
             $result['history_complete'] = !array_diff(array_keys($reply), ['code', 'detail', 'message', ...$allowed]);
         }
         $records = [
+            'default_contact' => ['contact_id', 'email'],
             'available' => ['domain', 'price', 'premium', 'duration'], 'unavailable' => ['domain'], 'invalid' => ['domain'],
             'nameservers' => ['nameserver', 'position'],
             'contact_ids' => ['registrant', 'administrative', 'technical', 'billing'],

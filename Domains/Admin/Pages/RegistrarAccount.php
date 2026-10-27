@@ -12,7 +12,7 @@ use Filament\Schemas\{Schema,Components\Actions,Components\Flex,Components\Group
 use Filament\Support\Enums\FontFamily;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,MissingEntry,PslActions,RegistrarFacts,ReminderAction,SettingsActions,Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,MissingEntry,NameSiloAccountAction,PslActions,RegistrarFacts,ReminderAction,SettingsActions,Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,EnomTestCalls,RegistrarBalances as Balances,StaffSettingsReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
@@ -51,7 +51,7 @@ class RegistrarAccount extends Page
         $id=$this->account;$setup=fn(string $name)=>SettingsActions::setup($id,$this->reviewStamp,$name);
         $actions=[Action::make('check_balance')->label('Check balance')->visible(RegistrarFacts::connected($this->record(),$this->status()))->action(fn()=>$this->checkBalance())];
         if (!$this->record()) { return [...$actions,$setup('configure'),$setup('enroll_sandbox')]; }
-        return [...$actions,$setup('processing'),ActionGroup::make([$setup('configure'),
+        return [...$actions,$setup('processing'),ActionGroup::make([$setup('configure'),NameSiloAccountAction::make($id),
             Action::make('price_history')->label('View price history')->color('gray')->visible(fn()=>Staff::can(Staff::POLICY))->modalHeading('Price history')
                 ->modalSubmitAction(false)->modalCancelActionLabel('Close')->schema(fn()=>[TextEntry::make('history')->hiddenLabel()->state(TldFacts::history($id)?:['No changes yet'])->listWithLineBreaks()])])
             ->label('More')->button()->color('gray')->icon('heroicon-m-chevron-down')->iconPosition('after')];

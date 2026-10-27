@@ -14,7 +14,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
  * EnableServices, DisableServices, PurchaseServices, RenewServices, SetHosts,
  * SetDomainSRVHosts, AddDnsSec, DeleteDnsSec, RegisterNameServer, UpdateNameServer, DeleteNameServer.
  * NameSilo API commands: getAccountBalance, getPrices, checkRegisterAvailability,
- * checkTransferAvailability, getDomainInfo, checkTransferStatus, listOrders, orderDetails.
+ * checkTransferAvailability, getDomainInfo, checkTransferStatus, listOrders, orderDetails, contactList.
  * Fourth argument: extension Clock::now() converted to UTC. No payload or credentials are passed.
  */
 final class ProviderSendGuard

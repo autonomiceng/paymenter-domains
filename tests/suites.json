@@ -15,7 +15,8 @@
     "tests/dns-reader-test.php",
     "tests/dns-signals-test.php",
     "tests/public-registry-test.php",
-    "tests/rdap-transport-test.php"
+    "tests/rdap-transport-test.php",
+    "tests/namesilo-default-contact-test.php"
   ],
   "contracts": [
     "tests/ote-reconciliation-test.php",
@@ -332,7 +333,8 @@
     "tests/staff-recovery-copy-test.php",
     "tests/acquisition-payment-review-test.php",
     "tests/runtime-refusal-test.php",
-    "tests/storefront-transfer-offers-test.php"
+    "tests/storefront-transfer-offers-test.php",
+    "tests/namesilo-fingerprint-reset-test.php"
   ],
   "ui": [],
   "runner": [
