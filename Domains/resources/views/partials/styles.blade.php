@@ -52,8 +52,9 @@
 @media (max-width: 639px) { .domains .domains-head > .domains-btn--ghost { margin-left: -.5rem; } }
 
 /* Buttons */
-.domains .domains-btn { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.5rem; padding: 0 1rem;
-    border-radius: .375rem; border: 1px solid transparent; font-size: .875rem; font-weight: 600; line-height: 1.25rem; white-space: nowrap;
+/* Border-box, as the app's base styles already set: one-line buttons keep their min-height; the padding gives a label that must wrap room. */
+.domains .domains-btn { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; box-sizing: border-box; min-height: 2.5rem; max-width: 100%; padding: .375rem 1rem;
+    border-radius: .375rem; border: 1px solid transparent; font-size: .875rem; font-weight: 600; line-height: 1.25rem; text-align: center; overflow-wrap: normal;
     cursor: pointer; transition: background-color .15s, border-color .15s, color .15s; text-decoration: none; }
 .domains .domains-btn--primary { background: var(--e-accent); color: #fff; }
 .domains .domains-btn--primary:hover { background: hsl(var(--color-primary) / .85); }
