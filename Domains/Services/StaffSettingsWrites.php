@@ -83,7 +83,7 @@ final class StaffSettingsWrites
         if(in_array($r->action,['override','remove_override'],true)){
             // Saving prices publishes them in the same transaction; missing or stale costs refuse the whole change.
             $this->native->publish($r->tldId??0,$now,$r,function(Tld $t)use($r,$data,$now):void{
-                $rule=$r->action==='override'?self::rule($data):null;
+                $rule=$r->action==='override'?self::rule($data,$r->serverId):null;
                 $t->update($rule===null?['use_default_rule'=>true]:['use_default_rule'=>false,'pricing_mode'=>$rule['mode'],'markup'=>$rule['markup'],'round_up'=>$rule['round_up'],
                     'fixed_register'=>$rule['fixed']['register'],'fixed_renew'=>$rule['fixed']['renew'],'fixed_transfer'=>$rule['fixed']['transfer']]);
                 PriceCatalogue::requireFreshCosts($t,$now);
@@ -127,7 +127,16 @@ final class StaffSettingsWrites
             if($r->action==='history'){
                 HistoryAcceptances::revokeLocked(CatalogueAcceptances::binding($a),\Paymenter\Extensions\Servers\Domains\Data\Action::from((string)($data['history_action']??'')));return;
             }
-            if($r->action==='default_rule'){(new PricingRules)->saveDefaultRuleLocked((int)$s->id,self::rule($data));return;}
+            if($r->action==='card_fee'){
+                $fee=CardFee::validate(['percent'=>$data['fee_percent']??'', 'fixed'=>$data['fee_fixed']??'']);
+                $rules=new PricingRules;$default=$rules->defaultRule((int)$s->id,true);
+                if($default['mode']==='markup_fee_percent'){PricingRule::validate([...$default,'card_fee'=>$fee]);}
+                foreach(Tld::where(['server_id'=>$s->id,'account_fingerprint'=>$a->account_fingerprint,'registrar_key'=>$a->registrar_key,'use_default_rule'=>false,'pricing_mode'=>'markup_fee_percent'])->orderBy('id')->lockForUpdate()->get() as $own){
+                    PricingRule::validate([...$rules->rule($own,true),'card_fee'=>$fee]);
+                }
+                CardFee::saveLocked((int)$s->id,$fee);return;
+            }
+            if($r->action==='default_rule'){(new PricingRules)->saveDefaultRuleLocked((int)$s->id,self::rule($data,$r->serverId));return;}
             if($r->action==='tld_settings'){
                 if(!$t){throw new \DomainException('TLD required.');}
                 $min=filter_var($data['min_years']??null,FILTER_VALIDATE_INT);$max=filter_var($data['max_years']??null,FILTER_VALIDATE_INT);
@@ -194,15 +203,25 @@ final class StaffSettingsWrites
                 $row->transfer_enabled=$row->transfer_enabled&&($accepted['registry']??false)&&!empty($accepted['transfer']);$row->save();}
             TestCatalogue::withdrawCarts($binding);
         });
-        if($r->action!=='default_rule'){return null;}
-        // The new default publishes to each TLD that follows it, one TLD at a time; one failure does not stop the rest.
+        if(!in_array($r->action,['default_rule','card_fee'],true)){return null;}
+        // Publish affected TLDs independently; one failure does not stop the rest.
         // A TLD that switched to its own prices meanwhile is left alone.
         $summary=['published'=>0,'failed'=>[]];$a=Account::where('server_id',$r->serverId)->firstOrFail();
-        foreach(Tld::where(['server_id'=>$r->serverId,'registrar_key'=>$a->registrar_key,'account_fingerprint'=>$a->account_fingerprint,'use_default_rule'=>true])->orderBy('tld')->get() as $tld){
+        $targets=Tld::where(['server_id'=>$r->serverId,'registrar_key'=>$a->registrar_key,'account_fingerprint'=>$a->account_fingerprint]);
+        if($r->action==='default_rule'){$targets->where('use_default_rule',true);}
+        else{
+            $defaultFee=(new PricingRules)->defaultRule($r->serverId)['mode']==='markup_fee_percent';
+            $targets->where(function($q)use($defaultFee):void{
+                $q->where(fn($own)=>$own->where('use_default_rule',false)->where('pricing_mode','markup_fee_percent'));
+                if($defaultFee){$q->orWhere('use_default_rule',true);}
+            });
+        }
+        foreach($targets->orderBy('tld')->get() as $tld){
             $follows=true;
             try{
-                $this->native->publish((int)$tld->id,$now,null,function(Tld $t)use($now,&$follows):bool{
-                    if(!$t->use_default_rule){return $follows=false;}PriceCatalogue::requireFreshCosts($t,$now);return true;});
+                $this->native->publish((int)$tld->id,$now,null,function(Tld $t)use($r,$now,&$follows):bool{
+                    if($r->action==='default_rule'?!$t->use_default_rule:(new PricingRules)->rule($t,true)['mode']!=='markup_fee_percent'){return $follows=false;}
+                    PriceCatalogue::requireFreshCosts($t,$now);return true;});
                 if($follows){$summary['published']++;}
             }
             catch(\Throwable $error){
@@ -219,9 +238,10 @@ final class StaffSettingsWrites
         return $summary;
     }
 
-    private static function rule(array $data): array
+    private static function rule(array $data,int $serverId): array
     {
         return PricingRule::validate(['mode'=>$data['mode']??null,'markup'=>$data['markup']??'0','round_up'=>$data['round_up']??'none',
-            'fixed'=>['register'=>$data['fixed_register']??null,'renew'=>$data['fixed_renew']??null,'transfer'=>$data['fixed_transfer']??null]]);
+            'fixed'=>['register'=>$data['fixed_register']??null,'renew'=>$data['fixed_renew']??null,'transfer'=>$data['fixed_transfer']??null],
+            ...(($data['mode']??null)==='markup_fee_percent'?['card_fee'=>CardFee::read($serverId,true)]:[])]);
     }
 }

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages;
 use Filament\Resources\Pages\ListRecords;
+use Filament\Actions\Action;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Filament\Schemas\Components\{Callout,EmbeddedTable,RenderHook};
 use Filament\Schemas\Schema;
 use Filament\View\PanelsRenderHook;
@@ -14,6 +16,8 @@ class ListTlds extends ListRecords
     protected static string $resource=TldResource::class;
     public function getTitle(): string{return 'TLDs & pricing';}
     public function getBreadcrumbs(): array{return [];}
+    protected function getHeaderActions(): array
+    {return [Action::make('price_list')->label('Price list')->url(TldResource::getUrl('price-list'))->visible(fn()=>Staff::can(Staff::COSTS))];}
     public function content(Schema $schema): Schema
     {
         $failures=TldResource::syncFailures();

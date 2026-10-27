@@ -52,4 +52,21 @@ $unknownRenewal = MarginPolicy::assess('renew', null, '10.00');
 same(false, $unknownRenewal->publishable, 'Unknown renewal retains prior published price');
 same(null, $unknownRenewal->hold, 'Unknown cost never creates renewal hold');
 same('unknown_price', $unknownRenewal->staffAlert, 'Staff must resolve unknown renewal');
+// Fee-inclusive markup covers the fee on the final rounded price.
+$feeRule = [...$rule, 'mode' => 'markup_fee_percent', 'markup' => '5.00', 'round_up' => 'ending_99',
+    'card_fee' => ['percent' => '2.90', 'fixed' => '0.30']];
+foreach (['2' => '2.99', '14' => '15.99', '40' => '43.99', '80' => '86.99'] as $cost => $expected) {
+    same($expected, PricingRule::price((string)$cost, $feeRule, 'register'), 'Fee-inclusive table '.$cost);
+}
+same('260.97', PricingRule::total(PricingRule::price('80', $feeRule, 'register'), 3), 'Fee retail rounds before multiplying years');
+same('1.00', PricingRule::price('1', [...$feeRule, 'markup'=>'0', 'round_up'=>'none', 'card_fee'=>['percent'=>'0','fixed'=>'0']], 'renew'), 'Exact fee boundary');
+same('1.01', PricingRule::price('1.0001', [...$feeRule, 'markup'=>'0', 'round_up'=>'none', 'card_fee'=>['percent'=>'0','fixed'=>'0']], 'renew'), 'Fee mode never rounds below required price');
+same('0.99', PricingRule::price('0.9900', [...$feeRule, 'markup'=>'0', 'card_fee'=>['percent'=>'0','fixed'=>'0']], 'renew'), 'Exact .99 fee boundary');
+same('1.99', PricingRule::price('0.9901', [...$feeRule, 'markup'=>'0', 'card_fee'=>['percent'=>'0','fixed'=>'0']], 'renew'), 'Above .99 fee boundary');
+$reject(static fn()=>PricingRule::price('1', [...$feeRule, 'markup'=>'5', 'card_fee'=>['percent'=>'99','fixed'=>'0']], 'renew'));
+$reject(static fn()=>PricingRule::price('99999999.9999', [...$feeRule, 'markup'=>'100000', 'card_fee'=>['percent'=>'0','fixed'=>'0']], 'renew'));
+$reject(static fn()=>PricingRule::validate([...$feeRule, 'card_fee'=>['percent'=>'100','fixed'=>'0']]));
+same('0.6032', \Paymenter\Extensions\Servers\Domains\Services\CardFee::profit('2.99','2.0000',$feeRule['card_fee']), 'Rough profit includes fee on final price');
+same(true, \Paymenter\Extensions\Servers\Domains\Services\CardFee::losesMoney('2.00','2.0000',$feeRule['card_fee']), 'Separate fee loss above registrar cost');
+same('100000000.00', PricingRule::price('99999999.9999', [...$feeRule,'markup'=>'0','round_up'=>'none','card_fee'=>['percent'=>'0','fixed'=>'0']], 'register'), 'Large supported cost rounds safely');
 echo "Exact pricing and margin checks passed.\n";

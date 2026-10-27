@@ -54,3 +54,8 @@ foreach ([
     same('Reload and check current permissions, saved facts and acceptance.', SettingsActions::refusal(new DomainException($message), 'acceptance'), 'Deliberate generic refusal: '.$message);
 }
 echo "Live and TEST refusal guidance and unknown fallback passed.\n";
+
+foreach(['card_fee','default_rule','override'] as $action){
+    same('This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.',SettingsActions::refusal(new InvalidArgumentException('The calculated price is too large.'),$action),'Price overflow gives the correct remedy');
+    same('No price can cover the card fee with this markup. Lower the markup or the card fee. Nothing was changed.',SettingsActions::refusal(new InvalidArgumentException('This percentage cannot cover the card fee. Lower the markup or card fee.'),$action),'Impossible fee gives the correct remedy');
+}

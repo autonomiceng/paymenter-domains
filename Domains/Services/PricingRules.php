@@ -13,7 +13,8 @@ final class PricingRules
     {
         if ($tld->use_default_rule) { return $this->defaultRule((int) $tld->server_id, $lock); }
         return PricingRule::validate(['mode' => $tld->pricing_mode, 'markup' => $tld->markup ?? '0', 'round_up' => $tld->round_up,
-            'fixed' => ['register' => $tld->fixed_register, 'renew' => $tld->fixed_renew, 'transfer' => $tld->fixed_transfer]]);
+            'fixed' => ['register' => $tld->fixed_register, 'renew' => $tld->fixed_renew, 'transfer' => $tld->fixed_transfer],
+            ...($tld->pricing_mode === 'markup_fee_percent' ? ['card_fee' => CardFee::read((int)$tld->server_id, $lock)] : [])]);
     }
 
     /** One shared default across an account's TLDs; another account has its own retail table/rule. */
@@ -26,6 +27,7 @@ final class PricingRules
         $setting = $query->first();
         $rule = $setting ? $setting->value : PricingRule::DEFAULT;
         if (!is_array($rule)) { throw new \DomainException('Invalid default pricing rule.'); }
+        if (($rule['mode'] ?? null) === 'markup_fee_percent') { $rule['card_fee'] = CardFee::read($serverId, $lock); }
         return PricingRule::validate($rule);
     }
 

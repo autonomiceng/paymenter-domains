@@ -199,7 +199,7 @@ final class TldFacts
         }
     }
     /** Stored history labels, which are the action names staff saw, mapped to what changed. */
-    private const CHANGES=['Edit default rule'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Switched to the account default',
+    private const CHANGES=['Edit card fee'=>'Card fee changed','Edit default rule'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Switched to the account default',
         'Select seller'=>'Registrar for new orders changed','Publish prices'=>'Prices published','Review TLD availability'=>'Terms changed',
         'Review lifecycle facts'=>'Grace and redemption changed'];
     /** Newest first: time, change, reason and who made it. Null when the saved history can't be read. */

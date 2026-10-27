@@ -53,7 +53,7 @@ final class PricingRule
 
     public static function validate(array $rule): array
     {
-        if (!in_array($rule['mode'] ?? null, ['fixed', 'markup_amount', 'markup_percent'], true)
+        if (!in_array($rule['mode'] ?? null, ['fixed', 'markup_amount', 'markup_percent', 'markup_fee_percent'], true)
             || !in_array($rule['round_up'] ?? null, self::ROUNDING, true)) { throw new InvalidArgumentException('Choose a pricing mode and rounding rule.'); }
         $markup = self::units((string) ($rule['markup'] ?? '0'), 2);
         if ($markup > 10000000) { throw new InvalidArgumentException('Enter a markup from 0 to 100000.'); }
@@ -65,7 +65,12 @@ final class PricingRule
                 throw new InvalidArgumentException('Enter all three prices, at least $0.01 each.');
             }
         }
-        return ['mode' => $rule['mode'], 'markup' => self::decimal($markup), 'round_up' => $rule['round_up'], 'fixed' => $fixed];
+        $validated = ['mode' => $rule['mode'], 'markup' => self::decimal($markup), 'round_up' => $rule['round_up'], 'fixed' => $fixed];
+        if ($rule['mode'] === 'markup_fee_percent') {
+            $validated['card_fee'] = CardFee::validate($rule['card_fee'] ?? CardFee::DEFAULT);
+            CardFee::minimum('0', $validated['markup'], $validated['card_fee']);
+        }
+        return $validated;
     }
 
     /** Per-year retail, rounded before multiplying by the purchased years. */
@@ -73,6 +78,17 @@ final class PricingRule
     {
         if (!in_array($action, ['register', 'renew', 'transfer'], true)) { throw new InvalidArgumentException('Unknown price action.'); }
         $rule = self::validate($rule);
+        if ($rule['mode'] === 'markup_fee_percent') {
+            $minor = CardFee::minimum($cost, $rule['markup'], $rule['card_fee']);
+            $minor = match ($rule['round_up']) {
+                'none' => $minor,
+                'whole' => intdiv($minor + 99, 100) * 100,
+                'half' => intdiv($minor + 49, 50) * 50,
+                'ending_99' => intdiv($minor, 100) * 100 + 99,
+            };
+            if ($minor > 999999999999) { throw new InvalidArgumentException('The calculated price is too large.'); }
+            return self::decimal($minor);
+        }
         $units = self::units($cost);
         $markup = self::units($rule['markup'], 2);
         $remainder = 0;
@@ -108,7 +124,7 @@ final class PricingRule
         }
         $markup = $rule['mode'] === 'markup_amount' ? $money($rule['markup']) : rtrim(rtrim($rule['markup'], '0'), '.').'%';
         $round = ['none' => '', 'whole' => ', rounded up to the next whole dollar', 'half' => ', rounded up to the next $0.50', 'ending_99' => ', rounded up to the next .99'][$rule['round_up']];
-        return 'cost + '.$markup.$round;
+        return ($rule['mode'] === 'markup_fee_percent' ? '(cost + card fee) + ' : 'cost + ').$markup.$round;
     }
 
     public static function covers(string $retail, string $cost): bool

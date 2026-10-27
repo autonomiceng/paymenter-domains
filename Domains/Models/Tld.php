@@ -12,7 +12,7 @@ class Tld extends Model
 {
     use InvalidatesStorefront;
 
-    public const MODES = ['fixed', 'markup_amount', 'markup_percent'];
+    public const MODES = ['fixed', 'markup_amount', 'markup_percent', 'markup_fee_percent'];
     public const ACTIONS = ['register', 'renew', 'transfer'];
 
     use HasAccountBinding;

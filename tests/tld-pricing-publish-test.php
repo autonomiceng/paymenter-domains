@@ -129,7 +129,8 @@ same('30.00',(new PricingRules)->defaultRule($t->server_id)['markup'],'Audit fai
 foreach($rows($t->fresh()) as $key=>$p){same($before[$key]+1,$p->revision,'Audit failure does not roll back published prices');}
 $history=Review::historyRows(App\Models\Server::findOrFail($t->server_id));same('completed',end($history)['phase'],'Failed outcome audit leaves the original save audit');
 $published=new ReflectionMethod(SettingsActions::class,'published');
-same("Published new prices for 1 TLD. Nothing was undone: the new default and any prices published stay in place. Only the record of this result couldn't be saved.",$published->invoke(null,$failedAudit),'Warning body gives exact publication results without claiming rollback');
+same("Published new prices for 1 TLD. Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved.",$published->invoke(null,$failedAudit,'default_rule'),'Warning body gives exact publication results without claiming rollback');
+same("Card fee saved. No TLDs count the card fee in their prices, so no prices changed. Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved.",$published->invoke(null,['published'=>0,'failed'=>[],'audit_failed'=>true],'card_fee'),'Card-fee audit warning retains its own empty-result wording without claiming a default changed');
 // The real staff action sends a warning, with the committed publication count, instead of claiming refusal.
 app()->instance(StaffSettingsWrites::class,$writer);pinStaffClock($now);$auditWrites=0;$failAudit=true;
 Livewire\Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$t->server_id])
@@ -137,7 +138,7 @@ Livewire\Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admi
     ->setActionData(['mode'=>'markup_percent','markup'=>'35','round_up'=>'none','reason'=>'Record a synthetic publication audit failure'])
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->warning()
         ->title("Saved, but the result wasn't recorded")
-        ->body("Published new prices for 1 TLD. Nothing was undone: the new default and any prices published stay in place. Only the record of this result couldn't be saved."));
+        ->body("Published new prices for 1 TLD. Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved."));
 $failAudit=false;same(2,$auditWrites,'Staff warning exercises the failed outcome audit');
 same('35.00',(new PricingRules)->defaultRule($t->server_id)['markup'],'Staff warning leaves the new default committed');
 echo "Saving prices publishes them, matches the preview, keeps below-cost rules and refuses stale costs.\n";$nativeSuccessful=true;
