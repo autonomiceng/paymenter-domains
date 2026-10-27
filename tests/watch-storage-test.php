@@ -47,7 +47,7 @@ $staff->role()->first()->update(['permissions'=>[Staff::VIEW,'admin.domains.watc
 $denied=false;try{$writer->save($staff,$product->id,'domain',1,'Denied');}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Fresh manage required');
 $staff->role()->first()->update(['permissions'=>[Staff::VIEW,'admin.domains.watch.view','admin.domains.watch.manage']]);
 watchRefused(fn()=>$writer->save($staff,$product->id,'domain',0,'Stale edit'),'Old mapping revision');
-foreach (['aliases','alias','domain-aliases','serverAlias','additional-domains','additional_domains','nested.domain','domains[]','domain,alias','',str_repeat('x',65)] as $key) {
+foreach (['aliases','alias','domain-aliases','serverAlias','additional-domains','additional_domains','additionalDomains','additional-domain','additional_domain','additionalDomain','nested.domain','domains[]','domain,alias','',str_repeat('x',65)] as $key) {
     watchRefused(fn()=>$writer->save($staff,$product->id,$key,1,'Invalid key'),'Only exact primary scalar keys');
 }
 watchRefused(fn()=>$writer->save($staff,$product->id,'domain',1,' '),'Reason required');

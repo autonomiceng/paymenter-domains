@@ -153,7 +153,7 @@ $option=\App\Models\ConfigOption::create(['name'=>'Primary hostname','env_variab
 $fallback=\App\Models\ConfigOption::create(['name'=>'site','type'=>'text']);$fallback->products()->attach($f['product']->id);
 $notAProperty=\App\Models\ConfigOption::create(['name'=>'Server size','env_variable'=>'size','type'=>'select']);$notAProperty->products()->attach($f['product']->id);
 $f['service']->properties()->create(['key'=>'hostname','name'=>'Server hostname','value'=>'private-value.example.test']);
-$f['service']->properties()->create(['key'=>'additional_domains','name'=>'Other domains','value'=>'private-alias.example.test']);
+foreach(['additional_domains','additional_domain','additionalDomain'] as $additional){$f['service']->properties()->create(['key'=>$additional,'name'=>'Other domains','value'=>'private-alias.example.test']);}
 $another=$f['product']->replicate();$another->slug='other-domain-fields';$another->save();
 $otherField=\App\Models\ConfigOption::create(['name'=>'Other domain','env_variable'=>'other_domain','type'=>'text']);$otherField->products()->attach($another->id);
 $editProduct=Livewire::actingAs($manager)->test(ViewProduct::class,['record'=>$map->id])->mountAction('save')

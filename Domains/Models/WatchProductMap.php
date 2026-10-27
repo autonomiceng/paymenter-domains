@@ -13,7 +13,7 @@ final class WatchProductMap extends WatchRecord
     public function dnsTemplate(): \Illuminate\Database\Eloquent\Relations\BelongsTo {return $this->belongsTo(WatchProfile::class,'expected_ns_profile_id');}
     /** One scalar primary service field; alias lists cannot supply a monitored domain. */
     public static function validPropertyKey(mixed $key): bool
-    {return is_string($key)&&preg_match('/\A[a-zA-Z][a-zA-Z0-9_-]{0,63}\z/D',$key)===1&&!preg_match('/(?:^|[_-])(?:alias(?:es)?|additional[_-]domains)(?:[_-]|$)|(?:alias(?:es)?|additionalDomains)$/i',$key);}
+    {return is_string($key)&&preg_match('/\A[a-zA-Z][a-zA-Z0-9_-]{0,63}\z/D',$key)===1&&!preg_match('/(?:^|[_-])(?:alias(?:es)?|additional[_-]domains?)(?:[_-]|$)|(?:alias(?:es)?|additionalDomains?)$/i',$key);}
     protected function validateRecord(): void
     {
         if (!self::validPropertyKey($this->property_key) || ($this->enabled && (!$this->exists || $this->isDirty(['enabled','property_key','expected_ns_profile_id'])) && !\Paymenter\Extensions\Servers\Domains\Services\WatchMappings::enabling()) ||
