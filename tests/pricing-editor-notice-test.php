@@ -29,8 +29,10 @@ $page->mountAction('override')->setActionData(['pricing'=>'custom','mode'=>'fixe
 $clock=app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
 $store=new Paymenter\Extensions\Servers\Domains\Services\Storefront($sellers,$prices,$native,$bindings,new Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility($bindings,$clock),$clock);
 Illuminate\Support\Facades\Cache::flush();
-$expected=collect($store->endings())->contains(fn($row)=>$row['terms']!==[])?'For sale':'Not for sale';
-expect(str_contains($page->html(),'Registration: '.$expected),'After saving staff sees the actual registration state');
+expect(str_contains($page->html(),'Registration: For sale'),'Successful override publishes registration for sale');
+$ending=collect($store->endings())->firstWhere('tld',$tlds[0]->tld);
+expect($ending!==null,'The edited fixture TLD remains in the storefront');
+expect($ending['terms']!==[],'The edited fixture TLD has registration terms');
 // Retained pre-publication edits must also be clear when reopening the page.
 $tlds[0]->fresh()->update(['fixed_register'=>'23.00']);
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id]);
