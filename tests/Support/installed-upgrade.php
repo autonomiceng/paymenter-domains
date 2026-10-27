@@ -8,7 +8,7 @@ function seedInstalledUpgrade(): void
     // Use only APIs and tables supplied by the installed baseline; never create
     // current schema or import the source-tree runtime into the older process.
     require_once __DIR__.'/staff-panel.php';
-    $staff=staffUser(['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.default_rule']);
+    $staff=staffUser(['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.default_rule','admin.domains.settings.publish']);
     if(Schema::hasTable('domains_staff_review_keys')&&class_exists(StaffSettingsReview::class)){
         $t=Paymenter\Extensions\Servers\Domains\Models\Tld::firstOrFail();
         $ticket=StaffSettingsReview::ticket($staff->id,$t->server_id,$t->id,'default_rule',StaffSettingsReview::stamp($t->server_id,$t->id));
