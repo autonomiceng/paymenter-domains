@@ -46,7 +46,7 @@ final class PricingEditorNotice
         if($tld){
             // Never use the 30-second customer display cache after a native price save.
             $read=app(StorefrontCatalogueRead::class);
-            foreach(['register'=>'registration','transfer'=>'transfers'] as $action=>$label){
+            foreach(['register'=>'Registration','transfer'=>'Transfer'] as $action=>$label){
                 $available=false;
                 foreach($action==='register'?range(1,10):[1] as $term){
                     try{$read->offer($tld->tld,$action,$term);$available=true;break;}

@@ -25,7 +25,7 @@
     </div>
 
     @if (!$rows)
-        <div class="domains-notice domains-notice--warn" role="status"><x-ri-information-fill aria-hidden="true" /><div>No domain prices are available right now. Please check back later.</div></div>
+        <div class="domains-notice domains-notice--warn" role="status"><x-ri-information-fill aria-hidden="true" /><div>Domain prices aren’t available right now. Please check back later.</div></div>
     @else
         <form method="GET" action="{{ route('domains.domains.search') }}" role="search">
             <div class="domains-searchbar">

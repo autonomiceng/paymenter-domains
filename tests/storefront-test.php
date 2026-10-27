@@ -36,7 +36,7 @@ Illuminate\Support\Facades\Cache::flush();
 $transferOnly = $controller->search($req(['name'=>'example.com','tld'=>'com'], 'GET'));
 same([], $transferOnly->getData()['endings'], 'Transfer-only endings are not registration choices');
 same([], $transferOnly->getData()['results'], 'Transfer-only endings get no registration search result');
-expect(str_contains($transferOnly->render(), 'No domain registrations are available right now.'), 'Empty registration copy does not claim the shop never opened');
+expect(str_contains($transferOnly->render(), 'Domain registration isn’t available right now. Please check back later.'), 'Empty registration copy does not claim the shop never opened');
 same(true, $transferOnly->getData()['transfersOffered'], 'Transfer-only catalogue keeps the transfer entry point');
 Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->update(['register_enabled'=>true]);
 Illuminate\Support\Facades\Cache::flush();
@@ -215,7 +215,7 @@ foreach (['1 or 3 years', '1 to 10 years', '1 year'] as $terms) { expect(str_con
 same(1, $dom->query('//*[@aria-live="polite"]')->length, 'One aggregate search announcement');
 same(0, $dom->query('//li[@data-domains-result]//*[@role="status"]')->length, 'No noisy per-result live regions');
 $data['endings'] = []; $data['results'] = [];
-expect(str_contains(view('domains::search', $data)->render(), 'No domain registrations are available right now.'), 'Closed storefront view');
+expect(str_contains(view('domains::search', $data)->render(), 'Domain registration isn’t available right now. Please check back later.'), 'Closed storefront view');
 same('$9,999,999,999.99', Storefront::money('9999999999.99'), 'Exact large-money display');
 require __DIR__.'/Support/customer-polish-views.php';
 $nativeSuccessful = true; echo "Dormant storefront native controller, DOM states, privacy and budget checks passed.\n";
