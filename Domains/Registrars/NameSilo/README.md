@@ -45,3 +45,14 @@ policy. 18 owns contact/profile isolation and .us/fallback acceptance. 20 requir
 sealed/funded/owned writes, identity/routing acceptance and safe renewal controls. 22 owns unique
 actual-charge correlation, historical date zones/statuses/completeness and lag acceptance. No
 provider calls or production usability are established by offline tests.
+
+Paid registration, transfer and renewal now require **Expected default contact email (NameSilo)**
+in the native Domains server configuration. Each dispatch reads the account's default contact;
+the email must match after trimming and ignoring case. The first accepted contact ID and email
+are retained encrypted in that server's settings and must continue to match. This is a contact
+continuity check, not provider account identity proof. A missing setting, unreadable inventory,
+missing/ambiguous default or changed fingerprint holds the funded request before any paid call.
+Staff can correct the key or expected email and release the hold for fresh checks. Editing the
+expected email never replaces the retained fingerprint. A deliberate profile change needs a
+separately reviewed fingerprint migration; no reset action ships. Availability and pricing reads
+remain independent of this guard.

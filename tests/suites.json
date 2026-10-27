@@ -74,6 +74,8 @@
     "tests/write-preflight-test.php",
     "tests/registration-enom-test.php",
     "tests/registration-namesilo-test.php",
+    "tests/namesilo-account-guard-test.php",
+    "tests/namesilo-account-guard-transfer-test.php",
     "tests/registration-namesilo-profile-test.php",
     "tests/reconciliation-test.php",
     "tests/reconciliation-dns-test.php",

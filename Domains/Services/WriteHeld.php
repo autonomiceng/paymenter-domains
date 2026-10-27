@@ -6,7 +6,7 @@ final class WriteHeld extends \DomainException
 {
     public function __construct(public readonly string $reason)
     {
-        if (!in_array($reason, ['transfer_not_registered', 'write_disabled', 'write_acceptance_required', 'write_rate_limited', 'contact_profile_proof_required', 'nameservers_required', 'registry_details_unsupported', 'usd_balance_required','enom_test_transfer_usd_balance_required', 'enom_test_setup_required'], true)) {
+        if (!in_array($reason, ['namesilo_account_guard', 'transfer_not_registered', 'write_disabled', 'write_acceptance_required', 'write_rate_limited', 'contact_profile_proof_required', 'nameservers_required', 'registry_details_unsupported', 'usd_balance_required','enom_test_transfer_usd_balance_required', 'enom_test_setup_required'], true)) {
             throw new \InvalidArgumentException('Invalid write hold.');
         }
         parent::__construct('Registrar write is held.');

@@ -2,6 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/reconciliation-namesilo-test.php'; $nativeSuccessful = false;
+require_once __DIR__.'/Support/namesilo-account-guard.php';
+nameSiloGuardExpected($binding,'expected@example.com');
 require __DIR__.'/Support/lifecycle-scenarios.php';
 use App\Models\Role;
 use Illuminate\Support\Facades\{Cache, DB, Queue};
@@ -14,8 +16,10 @@ $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot
 $billing = new DomainBilling($bindings, $guard, $clock); $cycles = new RenewalCycles($bindings, $clock); $holding = $result->domain->fresh();
 $accepted = new RenewalAcceptance($binding, true, true, 25); $features = new WriteFeatures(renewal: true);
 $engine = new RenewalExecution($renewBindings, $authority, new RenewalAdmission($authority, $renewBindings, $accepted, $clock), $accepted, $features, $clock);
+$accountGuard=(object)['email'=>'expected@example.com','id'=>'900','default'=>'1','mode'=>'singleton','reads'=>0];
 $writes = 0; $loseResponse = false; $duringSend = null; $sendSwitches = 0;
-$writer = new RenewalWriter($binding, $features, $accepted, fn () => $engine, static function ($origin, $command, $params, $timeout) use (&$writes, &$loseResponse, &$duringSend) {
+$writer = new RenewalWriter($binding, $features, $accepted, fn () => $engine, static function ($origin, $command, $params, $timeout) use (&$writes, &$loseResponse, &$duringSend, $accountGuard) {
+    if($command==='contactList'&&$params===[]){return nameSiloGuardWire($accountGuard);}
     same(0, DB::transactionLevel(), 'Renewal send outside locks'); expect($timeout > 0 && $timeout <= 25000, 'Bounded send');
     same('https://ote.namesilo.com/apibatch', $origin, 'Original NameSilo route'); same('renewDomain', $command, 'Only holder renewal');
     same(['domain' => 'native-history-placeholder.com', 'years' => 1, 'auto_renew' => 0], $params, 'Fixed annual term with explicit auto-renew off'); $writes++;
@@ -48,7 +52,7 @@ foreach (['paid', 'cap-exact-unknown', 'cap-over'] as $cycle => $case) {
         scenarioSwitch($sellers, $clock, $tlds[1]->server_id); $sendSwitches++;
     };
     $sent = $engine->run($op->id, $writer); $loseResponse = false;
-    same($switchesBefore + ($case === 'cap-over' ? 0 : 1), $sendSwitches, 'Seller callback runs exactly at an admitted write');
+    same($switchesBefore + ($case === 'cap-over' ? 0 : 1), $sendSwitches, 'Seller callback runs exactly at an admitted write: '.$sent->state.' '.$sent->safe_code);
     $duringSend = null;
     same($case === 'cap-over' ? 'held' : ($case === 'paid' ? 'pending' : 'uncertain'), $sent->state, 'Non-default NameSilo '.$case.' result: '.$sent->state.' '.$sent->safe_code);
     same($before + ($case === 'cap-over' ? 0 : 1), $writes, 'One capped NameSilo send');

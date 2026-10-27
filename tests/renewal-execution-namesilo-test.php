@@ -2,6 +2,8 @@
 // NameSilo ordinary no-ID renewals and repeated final margin; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/reconciliation-namesilo-test.php'; $nativeSuccessful = false;
+require_once __DIR__.'/Support/namesilo-account-guard.php';
+nameSiloGuardExpected($binding,'expected@example.com');
 use Illuminate\Support\Facades\{Cache, Queue};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
@@ -12,8 +14,10 @@ $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot
 $billing = new DomainBilling($bindings, $guard, $clock); $holding = $result->domain->fresh();
 $accepted = new RenewalAcceptance($binding, true, true, 25); $features = new WriteFeatures(renewal:true);
 $engine = new RenewalExecution($renewBindings,$authority,new RenewalAdmission($authority,$renewBindings,$accepted,$clock),$accepted,$features,$clock);
+$accountGuard=(object)['email'=>'expected@example.com','id'=>'900','default'=>'1','mode'=>'singleton','reads'=>0];
 $writes = 0;
-$writer = new RenewalWriter($binding,$features,$accepted,fn ()=>$engine,static function ($origin,$command,$params,$ms) use (&$writes) {
+$writer = new RenewalWriter($binding,$features,$accepted,fn ()=>$engine,static function ($origin,$command,$params,$ms) use (&$writes,$accountGuard) {
+    if($command==='contactList'&&$params===[]){return nameSiloGuardWire($accountGuard);}
     same(0,Illuminate\Support\Facades\DB::transactionLevel(),'NameSilo wire outside locks'); same('https://ote.namesilo.com/apibatch',$origin,'Fixed background test route');
     same('renewDomain',$command,'Named renewal only'); same(['domain'=>'native-history-placeholder.com','years'=>1,'auto_renew'=>0],$params,'Explicit annual renewal and auto-renew off, no card/restore overrides');
     $writes++; return json_encode(['request'=>['operation'=>'renewDomain'],'reply'=>['code'=>300,'detail'=>'synthetic','domain'=>'native-history-placeholder.com','order_amount'=>'8.95']]);
@@ -50,6 +54,7 @@ for ($cycle=0;$cycle<2;$cycle++) {
         expect(!isset($renewal->fresh()->policy['renewal_execution']),'Released renewal has no stale hold alert or credit-candidate flag');
         same(0,$writes,'NameSilo release grants no dispatch');$wire->auto='No';$wire->commands=[];Cache::flush();Illuminate\Support\Facades\Auth::login($user);
     }
+    if($cycle===0){require __DIR__.'/Support/namesilo-account-guard-renewal.php';}
     same('pending',$engine->run($renewal->id,$writer)->state,'No-ID renewal acknowledged after all required reads recover');
     same(8,count($wire->commands),'Full status, margin, flags and balance repeated before send');
     same($year.'-10-18',$holding->fresh()->provider_expires_at->format('Y-m-d'),'Acknowledgement is not expiry');

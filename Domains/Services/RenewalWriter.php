@@ -13,6 +13,10 @@ final class RenewalWriter implements AdmittedRegistrarDriver
     public function __construct(private readonly AccountBinding $binding, private readonly WriteFeatures $features,
         private readonly RenewalAcceptance $accepted, private readonly \Closure $engine, #[\SensitiveParameter] \Closure $exchange)
     { $this->exchange = new \SensitiveParameterValue($exchange); }
+    public function guardAccount(RequestContext $context): void
+    {
+        if($this->binding->registrarKey==='namesilo'){NameSiloAccountGuard::check($this->binding,$context,$this->exchange->getValue());}
+    }
     public function requirePolicy(AccountBinding $binding, WriteFeatures $features, RenewalAcceptance $accepted): void
     {
         $this->binding->requireMatch($binding);

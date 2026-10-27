@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require dirname(__DIR__).'/native-app.php';
 require __DIR__.'/commerce.php';
+require_once __DIR__.'/namesilo-account-guard.php';
 require __DIR__.'/native-commerce.php';
 require_once __DIR__.'/native-financial-snapshot.php';
 use Illuminate\Support\Facades\{Cache, DB};
@@ -54,6 +55,7 @@ foreach (['enom','namesilo'] as $key) {
 }
 $freshBindings = new AccountBindings($registry); $claims = new OperationClaims($bindings,$clock);
 $exchange = static function ($origin,$command,$p,$timeout) use ($state): string {
+    if($command==='contactList'&&$p===[]){return nameSiloDefaultContactReply();}
     same(0,DB::transactionLevel(),'Wire outside locks'); expect($timeout > 0 && $timeout <= 25000,'Bounded wire'); $state->calls[] = $command;
     $reply = ['code'=>300,'detail'=>'synthetic'];
     if ($command === 'contactAdd') { $state->profile=$p; $reply['contact_id']=(string)++$state->id; }
@@ -77,8 +79,9 @@ $exchange = static function ($origin,$command,$p,$timeout) use ($state): string 
     }
     return json_encode(['request'=>['operation'=>$command],'reply'=>$reply]);
 };
-$makeTransfer = static function (int $i=0, ?WriteFeatures $features=null) use ($tlds,$claims,$clock,$freshBindings,$rdap,$exchange,&$engine,&$bridge,&$protocol,&$fresh,&$accepted,&$profiles,&$binding): void {
+$makeTransfer = static function (int $i=0, ?WriteFeatures $features=null) use ($tlds,$claims,$clock,$freshBindings,$rdap,&$exchange,&$engine,&$bridge,&$protocol,&$fresh,&$accepted,&$profiles,&$binding): void {
     $binding = CatalogueAcceptances::binding(Account::where('server_id',$tlds[$i]->server_id)->sole()); $features ??= new WriteFeatures(transfer:true);
+    if($binding->registrarKey==='namesilo'&&!\App\Models\Server::findOrFail($binding->serverId)->settings()->where('key','domains_namesilo_expected_default_contact_email')->exists()){\App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>'domains_namesilo_expected_default_contact_email'],['value'=>'expected@example.com','type'=>'string','encrypted'=>true]);}
     $profiles = new RegistrationProfiles($binding,$claims,$clock,$exchange); $accepted = new WriteAcceptance($binding,true,true,25,$profiles);
     $fresh = new TransferPreflight($freshBindings,$features,$accepted,new TransferPrecheck($rdap),$profiles);
     $class='Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($i===0?'Enom':'NameSilo').'\\';
