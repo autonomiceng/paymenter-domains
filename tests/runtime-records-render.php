@@ -21,7 +21,9 @@ $emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
     foreach(['dns','srv']as$kind){
         expect(isset($dto->management[$kind]),'Actual owner projection retains '.$kind.' capability');
         $copy=new OwnedDomain(...[...get_object_vars($dto),'management'=>[$kind=>$dto->management[$kind]]]);
-        $html=view('domains::show',['domain'=>$copy,'keys'=>array_fill_keys(['setup','recovery','code','renew','auto-renew',...\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS],str_repeat('a',64))])->render();
+        $pageKeys=array_fill_keys(['setup','recovery','code','renew','auto-renew',...\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS],str_repeat('a',64));
+        $pageKeys['auto-renew']=str_repeat('b',64);
+        $html=view('domains::show',['domain'=>$copy,'keys'=>$pageKeys])->render();
         $dom=storefrontDom($html);
         $rows=$dom->query('//li[@id="'.$kind.'"]');
         same(1,$rows->length,'Customer record section remains visible: '.$kind.' '.$stateName);
@@ -30,7 +32,7 @@ $emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
         same($dto->autoRenew['url'],$forms->item(0)->getAttribute('action'),'Auto-renew form retains its actual owner URL');
         $keys=$dom->query('.//input[@name="_request_key"]',$forms->item(0));
         same(1,$keys->length,'Auto-renew form has one request key');
-        same(str_repeat('a',64),$keys->item(0)->getAttribute('value'),'Auto-renew form receives its page-level key');
+        same($pageKeys['auto-renew'],$keys->item(0)->getAttribute('value'),'Auto-renew form receives its own action key');
         if ($stateName==='complete') {
             same(12,$dom->query('//table[contains(@class,"domains-records")]/tbody/tr[@data-record]')->length,'Complete customer inventory retains all 12 '.$kind.' records');
             foreach (range(0,11) as $i) {
