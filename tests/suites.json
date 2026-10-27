@@ -143,6 +143,7 @@
     "tests/status-pages-test.php",
     "tests/domains-list-test.php",
     "tests/domain-page-test.php",
+    "tests/test_domain_page_artifact.py",
     "tests/mobile-overflow-test.php",
     "tests/missing-test.php",
     "tests/demo-data-test.php",
