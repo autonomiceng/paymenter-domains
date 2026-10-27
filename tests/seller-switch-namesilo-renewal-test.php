@@ -19,8 +19,8 @@ $engine = new RenewalExecution($renewBindings, $authority, new RenewalAdmission(
 $accountGuard=(object)['email'=>'expected@example.com','id'=>'900','default'=>'1','mode'=>'singleton','reads'=>0];
 $writes = 0; $loseResponse = false; $duringSend = null; $sendSwitches = 0;
 $writer = new RenewalWriter($binding, $features, $accepted, fn () => $engine, static function ($origin, $command, $params, $timeout) use (&$writes, &$loseResponse, &$duringSend, $accountGuard) {
-    if($command==='contactList'&&$params===[]){return nameSiloGuardWire($accountGuard);}
     same(0, DB::transactionLevel(), 'Renewal send outside locks'); expect($timeout > 0 && $timeout <= 25000, 'Bounded send');
+    if($command==='contactList'&&$params===[]){return nameSiloGuardWire($accountGuard);}
     same('https://ote.namesilo.com/apibatch', $origin, 'Original NameSilo route'); same('renewDomain', $command, 'Only holder renewal');
     same(['domain' => 'native-history-placeholder.com', 'years' => 1, 'auto_renew' => 0], $params, 'Fixed annual term with explicit auto-renew off'); $writes++;
     if ($duringSend) { $hook = $duringSend; $duringSend = null; $hook(); }
