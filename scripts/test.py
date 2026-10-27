@@ -70,10 +70,25 @@ class Processes:
         self.stopped = False
         self.running = {}
         self.cancelled = set()
+        self.watchdogs = {}
 
     def kill(self, index, process):
-        if kill_tree(process.pid):
-            self.cancelled.add(index)
+        if index in self.cancelled or process.poll() is not None:
+            return
+        self.cancelled.add(index)
+        try:
+            os.kill(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        # Keep the adopting supervisor alive to drain/reap descendants. This is
+        # only an escalation if its own bounded cleanup does not return.
+        def escalate():
+            if process.poll() is None:
+                kill_tree(process.pid)
+        watchdog = threading.Timer(5, escalate)
+        watchdog.daemon = True
+        self.watchdogs[index] = watchdog
+        watchdog.start()
 
     def register(self, index, process):
         with self.lock:
@@ -84,6 +99,9 @@ class Processes:
     def unregister(self, index):
         with self.lock:
             self.running.pop(index, None)
+            watchdog = self.watchdogs.pop(index, None)
+            if watchdog:
+                watchdog.cancel()
 
     def cancel(self):
         with self.lock:
@@ -152,6 +170,7 @@ def manifest():
 
 
 def shutdown(process, graceful, *, supervised):
+    graceful = max(graceful, 1) if supervised else graceful
     if graceful:
         try:
             # The supervisor forwards TERM exactly once to each descendant;
@@ -163,7 +182,7 @@ def shutdown(process, graceful, *, supervised):
         except ProcessLookupError:
             pass
         try:
-            stdout, stderr = process.communicate(timeout=graceful+2 if supervised else graceful)
+            stdout, stderr = process.communicate(timeout=graceful+3 if supervised else graceful)
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
@@ -186,7 +205,7 @@ def shutdown(process, graceful, *, supervised):
 
 def execute(argv, *, cwd, env, timeout=60, graceful=0, processes=None, index=None, rss_path=None):
     if rss_path is not None:
-        argv = [sys.executable, str(SUPERVISOR), '--grace-seconds', str(graceful), '--',
+        argv = [sys.executable, str(SUPERVISOR), '--grace-seconds', str(max(graceful, 1)), '--',
                 '/usr/bin/time', '-f', '%M', '-o', str(rss_path), '--', *argv]
     with subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           start_new_session=True) as process:
@@ -198,8 +217,8 @@ def execute(argv, *, cwd, env, timeout=60, graceful=0, processes=None, index=Non
         except subprocess.TimeoutExpired:
             stdout, stderr = shutdown(process, graceful, supervised=rss_path is not None)
             return stdout, stderr, 124, True
-        except BaseException:
-            shutdown(process, graceful, supervised=rss_path is not None)
+        except BaseException as error:
+            error.captured_output = shutdown(process, graceful, supervised=rss_path is not None)
             raise
         finally:
             if processes is not None:
@@ -230,7 +249,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     started_run = time.monotonic()
     timings = {} if timings is None else timings
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
-    completed, attempted, submitted = {}, {}, {}
+    completed, attempted, submitted, interrupted_values = {}, {}, {}, {}
     with timing('runtime_snapshot', timings):
         before = hashes()
         fingerprint = runtime_fingerprint() if jobs > 1 else None
@@ -253,11 +272,17 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and installed_package
                    else 120 if kind == 'native' else 60)
         rss_path = output/f'{index:03d}.rss.txt'
-        stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=workers[worker] if workers else env,
-                                                timeout=timeout, graceful=60 if kind == 'mariadb' else 0,
-                                                processes=processes, index=index, rss_path=rss_path)
+        interrupted = None
+        try:
+            stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=workers[worker] if workers else env,
+                                                    timeout=timeout, graceful=60 if kind == 'mariadb' else 0,
+                                                    processes=processes, index=index, rss_path=rss_path)
+        except BaseException as error:
+            interrupted = error
+            stdout, stderr = getattr(error, 'captured_output', (b'', b''))
+            code, timed_out = 130 if isinstance(error, KeyboardInterrupt) else None, False
         seconds = time.monotonic() - started
-        cancelled = index in processes.cancelled
+        cancelled = interrupted is not None or index in processes.cancelled
         if code and not cancelled:
             stop(index)
         started_guard = time.monotonic()
@@ -269,18 +294,26 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             peak_rss = int(rss_path.read_text().splitlines()[-1])
         except (OSError, ValueError, IndexError):
             peak_rss = None
-        return stdout, stderr, {'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out,
+        value = stdout, stderr, {'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out,
                                'cancelled': cancelled, 'peak_rss_kib': peak_rss,
                                'runtime_unchanged': unchanged, 'runtime_error': runtime_error,
                                'skipped': kind == 'mariadb' and code == 77, 'seconds': seconds,
                                'guard_seconds': guard_seconds, 'started_seconds': started - started_run,
                                'finished_seconds': time.monotonic() - started_run}
+        if interrupted is not None:
+            interrupted_values[index] = value
+            raise interrupted
+        return value
 
     def record(index, value):
         stdout, stderr, result = value
         completed[index] = result
-        (output/f'{index:03d}.stdout.txt').write_bytes(stdout)
-        (output/f'{index:03d}.stderr.txt').write_bytes(stderr)
+        try:
+            (output/f'{index:03d}.stdout.txt').write_bytes(stdout)
+            (output/f'{index:03d}.stderr.txt').write_bytes(stderr)
+        except OSError as error:
+            result['output_error'] = type(error).__name__
+            raise
         print(json.dumps({'timing': 'command', 'index': index, **{key: result[key] for key in
                          ['kind', 'argv', 'exit', 'timed_out', 'seconds', 'guard_seconds',
                           'started_seconds', 'finished_seconds']}}), flush=True)
@@ -330,12 +363,17 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     except BaseException as error:
         runner_error = type(error).__name__
         processes.cancel()
-        # The pool has drained after cancellation. Preserve metadata even when
-        # writing a command's output failed or a future raised unexpectedly.
+        # Finalize output and metadata together after the pool has drained.
         for future, index in submitted.items():
             if index not in completed:
                 try:
-                    completed[index] = future.result()[2]
+                    record(index, future.result())
+                except BaseException:
+                    pass
+        for index, value in interrupted_values.items():
+            if index not in completed:
+                try:
+                    record(index, value)
                 except BaseException:
                     pass
         for index, (kind, argv, started) in attempted.items():
@@ -449,6 +487,7 @@ def main():
     try:
         suites = manifest()
         previous = history(args.timings_from)
+        Path(f'/proc/{os.getpid()}/task/{os.getpid()}/children').read_text()
         if not Path('/usr/bin/time').is_file():
             raise ValueError('GNU time (/usr/bin/time) is required for per-command peak RSS.')
         requested = set(args.only or [])

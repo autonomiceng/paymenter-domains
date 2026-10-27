@@ -18,10 +18,13 @@ they require a budget of at least 2048 MiB. Worker fixtures remain private.
 Linux subreapers retain ownership when a test parent exits before a detached
 child. Normal completion also drains owned descendants. Resource-owner timeouts
 and interruptions allow their existing bounded graceful cleanup before escalation.
+Peer cancellation gives cleanup handlers one second, then the supervisor kills
+and reaps remaining descendants. An external five-second watchdog escalates only
+if the supervisor fails to return. A readable kernel child inventory is required.
 
 GNU time supplies per-command peak child RSS in KiB. Receipts include the complete
 command plan, first failure index, cancelled results and `not_run` commands.
 Cancelled commands can have unknown RSS; they never count as passes. Output files
 use plan indexes even when commands finish out of order. Category summaries report
 summed child time and maximum child RSS, not aggregate simultaneous memory.
-
+Interrupted commands retain captured output; output-write failures are recorded.

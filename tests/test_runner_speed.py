@@ -151,5 +151,98 @@ class SchedulingTests(unittest.TestCase):
             self.assertFalse(escaped.exists(), 'Detached child survived parent exit and cancellation')
 
 
+    def test_missing_kernel_child_list_refuses_before_spawning(self):
+        spec = importlib.util.spec_from_file_location('ownership_probe', ROOT/'scripts/process_supervisor.py')
+        supervisor = importlib.util.module_from_spec(spec); spec.loader.exec_module(supervisor)
+        with mock.patch.object(sys, 'argv', ['supervisor', '--', 'unstarted']), \
+             mock.patch.object(supervisor.ctypes, 'CDLL') as libc, \
+             mock.patch.object(Path, 'read_text', side_effect=FileNotFoundError('no kernel child list')), \
+             mock.patch.object(supervisor.subprocess, 'Popen') as spawn, \
+             mock.patch.object(supervisor.os, 'waitpid', side_effect=[(123, 0), (0, 0)]), \
+             mock.patch.object(supervisor.signal, 'signal'):
+            libc.return_value.prctl.return_value = 0
+            spawn.return_value.pid = 123
+            with self.assertRaises(OSError):
+                supervisor.main()
+            spawn.assert_not_called()
+
+    def test_empty_kernel_inventory_refuses_before_spawning(self):
+        spec = importlib.util.spec_from_file_location('ownership_probe', ROOT/'scripts/process_supervisor.py')
+        supervisor = importlib.util.module_from_spec(spec); spec.loader.exec_module(supervisor)
+        with mock.patch.object(sys, 'argv', ['supervisor', '--', 'unstarted']), \
+             mock.patch.object(supervisor.ctypes, 'CDLL') as libc, \
+             mock.patch.object(Path, 'glob', return_value=[]), \
+             mock.patch.object(supervisor.subprocess, 'Popen') as spawn, \
+             mock.patch.object(supervisor.os, 'waitpid', side_effect=[(123, 0), (0, 0)]), \
+             mock.patch.object(supervisor.signal, 'signal'):
+            libc.return_value.prctl.return_value = 0
+            spawn.return_value.pid = 123
+            with self.assertRaises(OSError):
+                supervisor.main()
+            spawn.assert_not_called()
+
+    def test_parallel_interrupt_preserves_captured_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'Domains').mkdir()
+            output = root/'output'; output.mkdir()
+            ready = [root/str(index) for index in range(2)]
+            commands = [('provider', [sys.executable, '-c',
+                        f"from pathlib import Path; import time; print('marker-{index}',flush=True); Path({str(path)!r}).touch(); time.sleep(30)"])
+                        for index, path in enumerate(ready)]
+            def interrupt(*args, **kwargs):
+                deadline = time.monotonic()+5
+                while not all(path.exists() for path in ready) and time.monotonic()<deadline:
+                    time.sleep(.01)
+                self.assertTrue(all(path.exists() for path in ready))
+                raise KeyboardInterrupt
+            with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'wait', interrupt), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                status = runner.run(commands, dict(os.environ), output, ['provider'], {}, jobs=2)
+            self.assertEqual(status, 130)
+            receipt = json.loads((output/'receipt.json').read_text())
+            self.assertEqual(len(receipt['results']), 2)
+            self.assertEqual(receipt['not_run'], [])
+            for index in range(2):
+                self.assertIn(f'marker-{index}', (output/f'{index:03d}.stdout.txt').read_text())
+
+    def test_serial_interrupt_preserves_captured_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'Domains').mkdir()
+            output = root/'output'; output.mkdir(); ready = root/'ready'
+            child = f"from pathlib import Path; import time; print('serial-marker',flush=True); Path({str(ready)!r}).touch(); time.sleep(30)"
+            communicate = runner.subprocess.Popen.communicate
+            calls = []
+            def interrupt_once(process, *args, **kwargs):
+                if not calls:
+                    calls.append(True); deadline = time.monotonic()+5
+                    while not ready.exists() and time.monotonic()<deadline:
+                        time.sleep(.01)
+                    self.assertTrue(ready.exists()); raise KeyboardInterrupt
+                return communicate(process, *args, **kwargs)
+            with mock.patch.object(runner, 'ROOT', root), \
+                 mock.patch.object(runner.subprocess.Popen, 'communicate', interrupt_once), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                status = runner.run([('provider', [sys.executable, '-c', child])], dict(os.environ), output, ['provider'], {})
+            self.assertEqual(status, 130)
+            self.assertIn('serial-marker', (output/'000.stdout.txt').read_text())
+
+
+    def test_peer_cancellation_allows_cleanup_and_reaps_adopted_child(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'Domains').mkdir()
+            output = root/'output'
+            ready, cleaned, adopted, pidfile = [root/name for name in ['ready', 'cleaned', 'adopted', 'pid']]
+            grandchild = "import os,signal,time; from pathlib import Path; signal.signal(signal.SIGTERM,signal.SIG_IGN); Path(%r).write_text(str(os.getpid())); time.sleep(30)" % str(pidfile)
+            intermediate = "import subprocess,sys,signal,time; from pathlib import Path; subprocess.Popen([sys.executable,'-c',%r],start_new_session=True); signal.signal(signal.SIGTERM,lambda *args:(Path(%r).touch(),sys.exit(0))); time.sleep(30)" % (grandchild, str(adopted))
+            slow = "import subprocess,sys,signal,time; from pathlib import Path; subprocess.Popen([sys.executable,'-c',%r],start_new_session=True); signal.signal(signal.SIGTERM,lambda *args:(Path(%r).touch(),sys.exit(0))); deadline=time.monotonic()+5\nwhile not Path(%r).exists() and time.monotonic()<deadline: time.sleep(.01)\nassert Path(%r).exists(); Path(%r).touch(); time.sleep(30)" % (intermediate, str(cleaned), str(pidfile), str(pidfile), str(ready))
+            fail = "import time; from pathlib import Path; deadline=time.monotonic()+5\nwhile not Path(%r).exists() and time.monotonic()<deadline: time.sleep(.01)\nassert Path(%r).exists(); raise SystemExit(7)" % (str(ready), str(ready))
+            output.mkdir()
+            commands = [('provider', [sys.executable, '-c', code]) for code in [slow, fail]]
+            with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(runner.run(commands, dict(os.environ), output, ['provider'], {}, jobs=2, fail_fast=True), 1)
+            self.assertTrue(cleaned.exists(), 'Command cleanup was skipped')
+            self.assertTrue(adopted.exists(), 'Detached intermediate did not exit during cancellation')
+            self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Adopted child was not killed and reaped')
+
 if __name__ == '__main__':
     unittest.main()

@@ -16,7 +16,13 @@ class Shutdown(BaseException):
 
 def children(pid):
     found = set()
-    for path in Path(f'/proc/{pid}/task').glob('*/children'):
+    paths = list(Path(f'/proc/{pid}/task').glob('*/children'))
+    if pid == os.getpid():
+        # An unavailable inventory is not an empty, verified child list.
+        found.update(int(child) for child in Path(f'/proc/{pid}/task/{pid}/children').read_text().split())
+        if not paths:
+            raise OSError('Kernel child inventory is unavailable')
+    for path in paths:
         try:
             found.update(int(child) for child in path.read_text().split())
         except FileNotFoundError:
@@ -94,6 +100,7 @@ def main():
     libc = ctypes.CDLL(None, use_errno=True)
     if libc.prctl(36, 1, 0, 0, 0):  # PR_SET_CHILD_SUBREAPER
         raise OSError(ctypes.get_errno(), 'Cannot establish descendant ownership')
+    children(os.getpid())
     def interrupted(signum, frame):
         raise Shutdown(signum)
     signal.signal(signal.SIGTERM, interrupted)
