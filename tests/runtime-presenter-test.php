@@ -2,6 +2,7 @@
 // Installed customer DTO ownership and binding acceptance. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
+$pricingNoticeScopes=require __DIR__.'/Support/pricing-editor-notice-scopes.php';
 require __DIR__.'/native-app.php';require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';require __DIR__.'/Support/installed.php';require_once __DIR__.'/Support/staff-panel.php';
 use App\Models\{Invoice,Service};
 use Illuminate\Support\Facades\DB;
@@ -77,4 +78,5 @@ try{$setting->update(['value'=>true]);expect(false,'Legacy toggle refused');}cat
 DB::table('settings')->where('id',$setting->id)->update(['value'=>'1']);
 \Livewire\Livewire::actingAs($staff)->test(\App\Admin\Resources\ServerResource\Pages\CreateServer::class)->fillForm(['name'=>'Refused native registrar','extension'=>'Domains'])->call('create')->assertHasFormErrors(['extension']);
 expect(!\App\Models\Server::where('name','Refused native registrar')->exists(),'Active legacy refusal precedes persistence');DB::table('settings')->where('id',$setting->id)->update(['value'=>'0']);
+$pricingNoticeScopes();
 echo "Installed paired native checkout, held status, service/batch/invoice DTO and foreign-owner refusal passed.\n";$nativeSuccessful=true;

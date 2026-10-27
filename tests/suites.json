@@ -180,6 +180,7 @@
     "tests/runtime-presenter-test.php",
     "tests/runtime-notices-test.php",
     "tests/runtime-worker-test.php",
+    "tests/runtime-operations-test.php",
     "tests/runtime-wire-registration-test.php",
     "tests/runtime-wire-renewal-test.php",
     "tests/runtime-wire-management-test.php",
@@ -232,6 +233,7 @@
     "tests/watch-dns-storage-test.php",
     "tests/watch-dns-observer-test.php",
     "tests/native-lifecycle-test.php",
+    "tests/pricing-editor-notice-test.php",
     "tests/staff-holding-test.php",
     "tests/native-cancellation-audit-test.php",
     "tests/holding-adoption-test.php",
@@ -340,7 +342,8 @@
     "tests/runtime-refusal-test.php",
     "tests/storefront-transfer-offers-test.php",
     "tests/namesilo-fingerprint-reset-test.php",
-    "tests/staff-alert-visibility-test.php"
+    "tests/staff-alert-visibility-test.php",
+    "tests/storefront-cart-handoff-test.php"
   ],
   "ui": [],
   "runner": [

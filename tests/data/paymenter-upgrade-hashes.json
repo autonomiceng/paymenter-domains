@@ -364,6 +364,20 @@
           "themes/default/views/services/show.blade.php": "28d4ce7feb15cec2fb7c6894aec7cb3f5cf60369d227b054849fa8faebf56e2e",
           "app/Livewire/Services/Show.php": "57ffe70f9a7e4e6e87b043d6e7d8214f18d32de49310ac560c099fd5c6046cdb"
         }
+      },
+      "native-pricing-notice": {
+        "consumers": [
+          "Domains/Admin/Support/PricingEditorNotice.php"
+        ],
+        "review": "Re-review scoped PAGE_START rendering before and after native product plan/price saves, current Livewire component identity and public getRecord access. Keep availability reads uncached and warnings limited to managed domain products.",
+        "files": {
+          "app/Admin/Resources/ProductResource.php": "7afd0f68e8d2f7f90f1483e99626135d62c67b91d55008f5da2c17dc745142a7",
+          "app/Admin/Resources/ProductResource/Pages/EditProduct.php": "b36a1aee3e9bd0213478e7ab76a01b2184bd466a75a27b01e67c54c950ed303f",
+          "vendor/filament/support/src/View/ViewManager.php": "ecf4f0602d93c14ea440e0e793f2785a925206494ece852d68a1297c8d3935be",
+          "vendor/filament/filament/src/Pages/Page.php": "56197a6c90a635f776ef44035ba12465cfae341e9522b496aaa7eea71d7c5ad1",
+          "vendor/filament/filament/resources/views/components/page/index.blade.php": "ce8e58689b7339206e079427076bb95366e94b98d8618d1db4f882c409269b58",
+          "vendor/livewire/livewire/src/LivewireManager.php": "fc947ef755ae2c8fb8c11fa9cbee8f171460e38e0a4f1dd07881cbbd82f4af7f"
+        }
       }
     },
     "watch": {

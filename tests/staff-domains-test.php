@@ -285,6 +285,7 @@ $excluded=[
     'ManagedPublicEnrollment.php'=>['managed_enrollment'],
     'NativeServiceRefusal.php'=>['identity','price'], // Structured log fields.
     'ProviderSendGuard.php'=>['not_callable','clock_failed','guard_threw'], // Structured log fields.
+    'CartHandoffFailure.php'=>['unclassified'], // Structured cart handoff log key, never a staff reason.
     'StaffSettingsReview.php'=>['unavailable'], // Configuration snapshot sentinel.
     'TransferInputs.php'=>['transfer_code'], // Request field name.
     'OwnerFormValidation.php'=>['mx_pref','priority','weight'], // Owner form field names in grouped match arms.

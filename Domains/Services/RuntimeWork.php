@@ -47,12 +47,21 @@ final readonly class RuntimeWork
             app(DomainBilling::class)->invoice((int)$d->id);
         },(int)$d->id);
     }
-    public function tick(): void
+    public function tick(): void { $this->turn(false); }
+    /** Dispatch existing operations only. The full scheduler must be off when using this entry point. */
+    public function tickOperations(): void { $this->turn(true); }
+    private function turn(bool $operationsOnly): void
     {
         OperationClaims::outside();if(!Schema::hasTable('domains_runtime_turns')){return;}
+        // Producer enrollment can be absent after an operations-only deployment.
+        if(!$operationsOnly){
+            foreach(Account::where(fn($q)=>$q->whereNotIn('server_id',DB::table('domains_reminder_schedules')->select('server_id'))
+                ->orWhereNotIn('server_id',DB::table('domains_observation_queues')->select('server_id')))->orderBy('server_id')->limit(8)->get() as $a){
+                $this->attempt('enrollment',function()use($a):void {ReminderSchedules::enroll((int)$a->server_id);app(ObservationWork::class)->enroll((int)$a->server_id);},(int)$a->server_id);
+            }
+        }
         foreach(Account::whereNotIn('server_id',DB::table('domains_runtime_turns')->select('server_id'))->orderBy('server_id')->limit(8)->get() as $a){
             $this->attempt('enrollment',function()use($a):void {
-                ReminderSchedules::enroll((int)$a->server_id);app(ObservationWork::class)->enroll((int)$a->server_id);
                 DB::table('domains_runtime_turns')->insertOrIgnore(['server_id'=>$a->server_id,'account_fingerprint'=>$a->account_fingerprint]);
             },(int)$a->server_id);
         }
@@ -65,10 +74,14 @@ final readonly class RuntimeWork
             });if(!$row){break;}
             $a=Account::where('server_id',$row->server_id)->first();
             if(!$a||$a->account_fingerprint!==$row->account_fingerprint){continue;}
-            $balanceAccounts[]=$a;
+            if(!$operationsOnly){$balanceAccounts[]=$a;}
             $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->where('id','>',$row->operation_cursor)
                 ->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])->orderBy('id')->limit(25)->get();
             foreach($ops as $op){if($op->action==='transfer'){$this->transferPayment($op);}$this->attempt('operation',fn()=>$this->enqueue((int)$op->id),(int)$op->id);}
+            if($operationsOnly){
+                DB::table('domains_runtime_turns')->where('id',$row->id)->update(['operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
+                continue;
+            }
             $domains=Domain::where('server_id',$a->server_id)->where('id','>',$row->domain_cursor)->orderBy('id')->limit(25)->get();
             foreach($domains as $d){if(in_array($d->provenance,[null,'purchased','converted_purchase'],true)){$this->attempt('transfer_watch_enrollment',fn()=>(new TransferWatchEnrollment())->repair((int)$d->id,(int)$d->user_id,$this->clock->now()->getTimestamp()),(int)$d->id);}if($d->provenance==='adopted'){$this->attempt('adoption_enrollment',fn()=>app(AdoptionEnrollment::class)->repair((int)$d->id),(int)$d->id);}$this->attempt('acquisition_retirement',fn()=>app(AcquisitionRetirement::class)->inspect((int)$d->id),(int)$d->id);$this->attempt('native_identity',fn()=>NativeIdentityDiscrepancies::inspect($d,$this->clock->now()->getTimestamp()),(int)$d->id);$this->bill($d);}
             $tlds=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->where('id','>',$row->tld_cursor)->orderBy('id')->limit(25)->get();
@@ -82,6 +95,7 @@ final readonly class RuntimeWork
             },(int)$a->server_id);
             DB::table('domains_runtime_turns')->where('id',$row->id)->update(['tld_cursor'=>$tldCursor,'operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'domain_cursor'=>$domains->count()===25?$domains->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
         }
+        if($operationsOnly){return;}
         $this->attempt('initial_managed_records',fn()=>$this->ports->initialManagedRecordObservations());
         foreach(ObservationCandidates::next('refund') as $ids){foreach($ids as $id){$this->attempt('refund',fn()=>app(Refunds::class)->creditRejected((int)$id),(int)$id);}}
         foreach(ObservationCandidates::next('timeout') as $ids){foreach($ids as $id){$this->attempt('timeout',fn()=>app(TransferInputs::class)->expireMissingCode((int)$id),(int)$id);}}

@@ -8,7 +8,7 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\RateLimiter;
 use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Services\{PolicyEndings, Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{CartHandoffFailure, PolicyEndings, Storefront};
 
 /** Dormant until39 explicitly loads routes, views and the shared native cart admission hooks. */
 final class StorefrontController extends Controller
@@ -17,7 +17,10 @@ final class StorefrontController extends Controller
 
     public function search(Request $request)
     {
-        $endings = $this->storefront->endings(); $names = array_column($endings, 'tld');
+        $allEndings = $this->storefront->endings();
+        $transfersOffered = collect($allEndings)->contains(static fn ($row) => $row['transfer'] !== null);
+        $endings = array_values(array_filter($allEndings, static fn ($row) => $row['terms'] !== []));
+        $names = array_column($endings, 'tld');
         $raw = $this->string($request->query('name'), 300); $chosen = $this->string($request->query('tld'), 190);
         $preferred = in_array($chosen, $names, true) ? $chosen : ($names[0] ?? null);
         $parsed = $raw === '' ? ['sld' => null, 'ending' => null, 'error' => null] : self::parseName($raw);
@@ -36,7 +39,7 @@ final class StorefrontController extends Controller
                     'testEnvironment' => collect($endings)->firstWhere('tld', $ending)['testEnvironment']];
             }
         }
-        return view('domains::search', ['endings' => $endings, 'name' => $raw, 'preferred' => $preferred,
+        return view('domains::search', ['endings' => $endings, 'transfersOffered' => $transfersOffered, 'name' => $raw, 'preferred' => $preferred,
             'sld' => $sld, 'error' => $error, 'notice' => $notice, 'results' => $results, 'years' => null,
             'guest' => !$request->user(), 'testEnvironment' => $this->storefront->testEnvironment($endings), 'checkKey' => FormKeys::issue($request, 'search')]);
     }
@@ -84,7 +87,7 @@ final class StorefrontController extends Controller
         } catch (\App\Exceptions\DisplayException $e) {
             return redirect()->route('domains.domains.search',['name'=>$input])->with('domains_notice',$e->getMessage());
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Domains cart handoff failed.',['exception_class'=>$e::class]);
+            \Illuminate\Support\Facades\Log::warning('Domains cart handoff failed.',['exception_class'=>$e::class,'exception_message_key'=>CartHandoffFailure::key($e)]);
             return redirect()->route('domains.domains.search', ['name' => $input])->with('domains_notice', 'We couldn’t add that name to your cart. Check the latest results below and try again.');
         }
         return redirect()->route('cart');
