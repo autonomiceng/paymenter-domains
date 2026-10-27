@@ -48,6 +48,16 @@ final class ManagementEvidence
         }
         $x=$old['management_deferrals']??[];$y=$new['management_deferrals']??[];if(!self::deferrals($new)||count($y)<count($x)||array_slice($y,0,count($x))!==$x){throw new \DomainException('Management deferrals frozen.');}
         if(isset($old['management_refusal'])&&($new['management_refusal']??null)!==$old['management_refusal']){throw new \DomainException('Management refusal frozen.');}
+        // A sealed operation owns a lifetime observation count. Never reconstruct
+        // unknown usage from completed reads: failed reads did not leave history.
+        $count = $new['management_observation_attempts'] ?? null;
+        if (array_key_exists('management_observation_attempts', $new)) {
+            if (!is_int($count) || $count < 1 || $count > 20 || ($new['seal'] ?? null) !== 'sealed') { throw new \DomainException('Invalid management observation count.'); }
+            if (!array_key_exists('management_observation_attempts', $old)
+                && (($old['seal'] ?? null) === 'sealed' || $count !== 1)) { throw new \DomainException('Unknown management observation history.'); }
+        }
+        if (array_key_exists('management_observation_attempts', $old)
+            && (!is_int($count) || $count < $old['management_observation_attempts'] || $count > $old['management_observation_attempts'] + 1)) { throw new \DomainException('Management observation count cannot reset.'); }
         $before=$old['management_reads']??[];$after=$new['management_reads']??[];
         if(!is_array($before)||!array_is_list($before)||!is_array($after)||!array_is_list($after)||count($after)>20||count($after)<count($before)||array_slice($after,0,count($before))!==$before){throw new \DomainException('Management reads are append-only.');}
         if(array_key_exists('management_terminal',$old)&&($new['management_terminal']??null)!==$old['management_terminal']){throw new \DomainException('Management retirement frozen.');}

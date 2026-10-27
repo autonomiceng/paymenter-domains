@@ -65,7 +65,14 @@ final class RegistrarFacts
     public static function calls(Account $account): ?array
     {
         if ($account->registrar_key!=='enom'||$account->environment!=='test') { return null; }
-        ['used'=>$used,'limit'=>$limit]=EnomTestCalls::usage();
+        $usage=EnomTestCalls::usage();
+        ['used'=>$used,'limit'=>$limit]=$usage;
+        if(\Paymenter\Extensions\Servers\Domains\Services\EnomTestRunBudget::enabled()){
+            $available=EnomTestCalls::callsRemain();
+            return ['label'=>'API calls this run','value'=>$used===null||$limit===null?null:$used.' of '.$limit,
+                'tone'=>$available?null:'danger','sub'=>EnomTestCalls::facts(),
+                'help'=>'This deployment limits Enom TEST requests by run and over the last 24 hours.'];
+        }
         if ($limit===null) { return ['value'=>null,'tone'=>null,'sub'=>'The Enom test call limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.','help'=>null]; }
         if ($used===null) { return ['value'=>null,'tone'=>null,'sub'=>"Couldn't read today's call count",'help'=>null]; }
         $full=$used>=$limit;

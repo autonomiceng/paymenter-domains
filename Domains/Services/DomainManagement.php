@@ -186,7 +186,8 @@ final class DomainManagement
             if($op->action==='auth_code_email'){foreach($l['operations'] as $peer){$at=$peer->attempt['dispatch_attempted_at']??null;if($peer->id!==$op->id&&$peer->action===$op->action&&is_string($at)&&new \DateTimeImmutable($at)>$this->clock->now()->modify('-10 minutes')){throw new \DomainException('Transfer code cooldown active.');}}}
             $this->noInflight($op); $funding=$op->funding_basis==='paid_invoice'?RefundPayment::requireCurrent($op,$l):[];
             if(!Cache::add('domains-write-slot:'.$op->account_fingerprint,true,$this->intervalSeconds)){throw new WriteHeld('write_rate_limited');}
-            $op->update(['attempt'=>[...$op->attempt,'seal'=>'sealed','send_state'=>'possibly_sent','dispatch_attempted_at'=>$this->clock->now()->format(DATE_ATOM)],
+            if (array_key_exists('management_observation_attempts', $op->attempt)) { throw new \DomainException('Management observation budget already started.'); }
+            $op->update(['attempt'=>[...$op->attempt,'management_observation_attempts'=>1,'seal'=>'sealed','send_state'=>'possibly_sent','dispatch_attempted_at'=>$this->clock->now()->format(DATE_ATOM)],
                 'funding'=>[...($op->funding??[]),...($funding?['seal'=>$funding]:[])]]);
         });
         $this->receiptGrant=[$r,$ctx,$driver,$g[4],$g[5]];
@@ -218,7 +219,12 @@ final class DomainManagement
             if (!in_array($op->state, ['uncertain', 'running'], true) || ($op->attempt['seal'] ?? null) !== 'sealed') { return null; }
             $b=CatalogueAcceptances::binding($l['account']); if(!$driver->bindsTo($b)){throw new \DomainException('Read binding changed.');}
             $this->bindings->requireReadableLocked($l['server'],$l['account']);
-            return [$this->descriptor($op, $l), $l['stamp']];
+            // Reserve before I/O, including reads that throw or lose their result.
+            // Older sealed attempts have unknown read usage and cannot be resumed.
+            $count = $op->attempt['management_observation_attempts'] ?? null;
+            if (!is_int($count) || $count < 1 || $count >= 20) { return null; }
+            $op->update(['attempt' => [...$op->attempt, 'management_observation_attempts' => $count + 1]]);
+            return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int) $op->authorized_by)['stamp']];
         }, false, false);
         if ($read === null) { return Operation::findOrFail($id); }
         [$r, $stamp] = $read;
