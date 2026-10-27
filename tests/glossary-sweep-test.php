@@ -76,7 +76,7 @@ foreach([...priorReminderDefaults(),...priorWatchDefaults()] as $key=>$fields){
 
 // Invoice lines: WHOIS privacy, still capped at 255 characters.
 $issued=new DateTimeImmutable('2026-10-19T12:00:00Z');
-same('WHOIS privacy example.com: Oct 19, 2026 - Oct 19, 2027 (from purchase)',InvoiceDescription::privacy('example.com',null,$issued),'Privacy invoice line');
+same('WHOIS privacy: example.com (1 year, Oct 19, 2026 to Oct 19, 2027)',InvoiceDescription::privacy('example.com',null,$issued),'Privacy invoice line');
 $long=str_repeat('a',63).'.'.str_repeat('b',63).'.'.str_repeat('c',63).'.'.str_repeat('d',57).'.com';
 same(255,mb_strlen(InvoiceDescription::privacy($long,null,$issued)),'Long privacy line stays at the cap');
 

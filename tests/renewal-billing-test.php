@@ -69,9 +69,9 @@ same(true, $op->policy['price']['retained'], 'Stale costs retain published holde
 same('stale', $d->fresh()->observation['renewal_price_alert']['code'], 'Stale margin is a staff alert');
 same(3, (int) $op->term, 'Obligation fixes requested term independently of annual plan');
 same('2030-10-18', $op->expected_expires_at->format('Y-m-d'), 'Exact expected term expiry recorded');
-same('Renew billing-held-placeholder.com: Oct 18, 2027 - Oct 18, 2030', $renewal->items->sole()->description, 'Renewal dates use frozen registrar expiry and requested years');
+same('Domain renewal: billing-held-placeholder.com (3 years, Oct 18, 2027 to Oct 18, 2030)', $renewal->items->sole()->description, 'Renewal dates use frozen registrar expiry and requested years');
 DB::table('domains_domains')->where('id', $d->id)->update(['provider_expires_at' => '2031-01-01']);
-same('Renew billing-held-placeholder.com: Oct 18, 2027 - Oct 18, 2030', $renewal->fresh()->items->sole()->description, 'Renewal text stays frozen after expiry changes');
+same('Domain renewal: billing-held-placeholder.com (3 years, Oct 18, 2027 to Oct 18, 2030)', $renewal->fresh()->items->sole()->description, 'Renewal text stays frozen after expiry changes');
 DB::table('domains_domains')->where('id', $d->id)->update(['provider_expires_at' => '2027-10-18']);
 same('renew:'.$d->id.':g1:2027-10-18', $op->operation_key, 'One obligation key per expiry and generation');
 same('2027-10-11', $renewal->due_at->format('Y-m-d'), 'Due calendar frozen');
@@ -132,7 +132,7 @@ $lowPrice = Price::where(['server_id' => $server->id, 'action' => 'renew'])->sol
 $lowPrice->update(['revision' => $lowPrice->revision + 1, 'observed_at' => '2027-09-26 12:00:00', 'fresh_until' => '2027-09-28 12:00:00']);
 $clock->instant = new DateTimeImmutable('2027-09-27T00:00:00Z'); $bill = $billing->invoice($next->domain_id);
 $low = Operation::where('invoice_id', $bill->id)->sole();
-same('Renew billing-below-placeholder.com: Oct 18, 2027 - Oct 18, 2028', $bill->items->sole()->description, 'Annual renewal dates');
+same('Domain renewal: billing-below-placeholder.com (1 year, Oct 18, 2027 to Oct 18, 2028)', $bill->items->sole()->description, 'Annual renewal dates');
 same('1.00', $low->amount, 'Below-cost renewal invoices without floor, subsidy or hold');
 same('awaiting_payment', $low->state, 'Below-cost obligation remains billable');
 same('below_cost', $next->domain->fresh()->observation['renewal_price_alert']['code'], 'Fresh below-cost margin alerts staff');

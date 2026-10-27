@@ -26,7 +26,7 @@ same($originalPlan, $op->policy['checkout']['plan_id'], 'Original native plan fr
 same(1, (int) $service->plan->billing_period, 'Same product annual service plan'); same($product->id, $service->product_id, 'Permanent product retained');
 same('10.40', number_format((float) $service->price, 2, '.', ''), 'Annual renewal uses holder retail');
 same(null, $service->expires_at, 'No native expiry before confirmed provider expiry'); same(null, $service->coupon_id, 'Checkout coupons do not reprice renewals');
-same('three-placeholder.com', $service->label, 'Native service label is the name'); same('Register three-placeholder.com: 3 years (Oct 18, 2026 - Oct 18, 2029, from registration)', $item->description, 'Native invoice summary includes name and checkout term');
+same('three-placeholder.com', $service->label, 'Native service label is the name'); same('Domain registration: three-placeholder.com (3 years, Oct 18, 2026 to Oct 18, 2029)', $item->description, 'Native invoice summary includes name and checkout term');
 same('18.0000', $op->cost['estimated'], 'Estimated wholesale remains separate from final retail');
 expect($op->payload['setup_required'] && count($op->payload['contacts']) === 4 && !array_key_exists('epp', $op->payload), 'Contact setup snapshot bound without EPP');
 expect(!$service->properties()->where('key', 'domains_check')->exists(), 'Temporary receipt removed from service');
@@ -38,7 +38,7 @@ same(serialize($before), serialize(DB::table('domains_operations')->where('id', 
 same(2, Operation::count(), 'Duplicate event creates no operation');
 DB::table('domains_domains')->where('id', $domain->id)->update(['provider_expires_at' => '2031-01-01']);
 Event::dispatch(new App\Events\InvoiceItem\Created($item));
-same('Register three-placeholder.com: 3 years (Oct 18, 2026 - Oct 18, 2029, from registration)', $item->fresh()->description, 'Provider expiry never rewrites registration dates');
+same('Domain registration: three-placeholder.com (3 years, Oct 18, 2026 to Oct 18, 2029)', $item->fresh()->description, 'Provider expiry never rewrites registration dates');
 DB::table('domains_domains')->where('id', $domain->id)->update(['provider_expires_at' => null]);
 // Binding/checkout facts cannot be changed through ordinary model saves.
 foreach (['term' => 1, 'amount' => '1.00', 'currency' => 'EUR', 'invoice_item_id' => 999, 'operation_key' => 'forged'] as $key => $value) {
@@ -99,7 +99,7 @@ same($coupon->id, $discounted->service->coupon_id, 'Coupon association retained 
 same(1, $coupon->services()->count(), 'Domain acquisition consumes a native coupon use');
 try { App\Classes\Cart::validateCoupon($coupon->code); expect(false, 'Per-user limited coupon must refuse reuse'); }
 catch (App\Exceptions\DisplayException $e) { expect(str_contains($e->getMessage(), 'maximum number'), 'Native per-user coupon limit explains refusal'); }
-same('Register one-placeholder.com: 1 year (Oct 18, 2026 - Oct 18, 2027, from registration)', InvoiceItem::findOrFail(Domain::where('domain', 'one-placeholder.com')->sole()->operations()->sole()->invoice_item_id)->description, 'Singular invoice wording');
+same('Domain registration: one-placeholder.com (1 year, Oct 18, 2026 to Oct 18, 2027)', InvoiceItem::findOrFail(Domain::where('domain', 'one-placeholder.com')->sole()->operations()->sole()->invoice_item_id)->description, 'Singular invoice wording');
 // Funding locks the complete native invoice prefix BEFORE domain then operation rows.
 $funded = static function () use ($op): array {
     return DB::transaction(static function () use ($op): array {

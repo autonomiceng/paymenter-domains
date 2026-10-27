@@ -111,7 +111,7 @@ $first=$req($d,['years'=>'2']);$stale=clone $first;$response=$controller->renew(
 $op=Operation::where('domain_id',$d->id)->where('action','renew')->sole();$invoice=Invoice::findOrFail($op->invoice_id);
 same(route('invoices.show',$invoice),$response->getTargetUrl(),'Owner lands on the renewal invoice');
 same([2,'awaiting_payment','2027-10-11',(int)$user->id],[(int)$op->term,$op->state,$invoice->due_at->format('Y-m-d'),(int)$invoice->user_id],'Requested term, due date and owner recorded');
-same('Renew owner-renew-placeholder.com: Oct 18, 2027 - Oct 18, 2029',$invoice->items->sole()->description,'Invoice names the requested term');
+same('Domain renewal: owner-renew-placeholder.com (2 years, Oct 18, 2027 to Oct 18, 2029)',$invoice->items->sole()->description,'Invoice names the requested term');
 $replay(fn()=>$controller->renew($stale,$d->id));$issued=$ledger();
 same(route('invoices.show',$invoice),$controller->renew($req($d,['years'=>'2']),$d->id)->getTargetUrl(),'Fresh duplicate returns the same invoice');
 same($issued,$ledger(),'Duplicate submit creates no second invoice');

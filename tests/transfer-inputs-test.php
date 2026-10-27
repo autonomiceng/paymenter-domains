@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, ContactRecovery, ContactSetup, InvoiceBinding, NativeDomainGuard, HolderPricing, PricingRule, Rdap, Refunds, TransferInputs, TransferPrecheck};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $op=$new(placeholderComFixtureName('transfer-input-placeholder.com')); $inputs->paymentAccepted($op->id);
-same('Transfer transfer-input-placeholder.com: adds 1 year to the current expiry', App\Models\InvoiceItem::findOrFail($op->invoice_item_id)->description, 'Transfer promises an added year without guessing an unknown expiry');
+same('Domain transfer: transfer-input-placeholder.com (1 year, added to the current expiry date)', App\Models\InvoiceItem::findOrFail($op->invoice_item_id)->description, 'Transfer promises an added year without guessing an unknown expiry');
 $paid=$op->fresh()->policy['paid_at']; same('awaiting_code',$op->fresh()->state,'Paid code missing');
 $nativeBeforeReplay=nativeFinancialSnapshot($op);$operationBeforeReplay=$op->fresh()->getRawOriginal();
 $inputs->paymentAccepted($op->id); same($paid,$op->fresh()->policy['paid_at'],'Payment replay preserves cutoff');
