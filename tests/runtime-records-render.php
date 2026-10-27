@@ -17,9 +17,32 @@ app(\Paymenter\Extensions\Servers\Domains\Services\ObservationWork::class)->enro
 same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Actual installed scheduled record producer');
 $emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
     $dto=$owners->present($d->fresh());storefrontViews();app('view')->getFinder()->flush();
+    expect($dto->autoRenew!==[],'Actual owner projection retains local auto-renew');
     foreach(['dns','srv']as$kind){
+        expect(isset($dto->management[$kind]),'Actual owner projection retains '.$kind.' capability');
         $copy=new OwnedDomain(...[...get_object_vars($dto),'management'=>[$kind=>$dto->management[$kind]]]);
-        $html=view('domains::show',['domain'=>$copy,'keys'=>array_fill_keys(\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS,str_repeat('a',64))])->render();
+        $html=view('domains::show',['domain'=>$copy,'keys'=>array_fill_keys(['setup','recovery','code','renew','auto-renew',...\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS],str_repeat('a',64))])->render();
+        $dom=storefrontDom($html);
+        $rows=$dom->query('//li[@id="'.$kind.'"]');
+        same(1,$rows->length,'Customer record section remains visible: '.$kind.' '.$stateName);
+        $forms=$dom->query('//form[@id="form-auto-renew" and @method="POST"]');
+        same(1,$forms->length,'Customer auto-renew form remains available: '.$kind.' '.$stateName);
+        same($dto->autoRenew['url'],$forms->item(0)->getAttribute('action'),'Auto-renew form retains its actual owner URL');
+        $keys=$dom->query('.//input[@name="_request_key"]',$forms->item(0));
+        same(1,$keys->length,'Auto-renew form has one request key');
+        same(str_repeat('a',64),$keys->item(0)->getAttribute('value'),'Auto-renew form receives its page-level key');
+        if ($stateName==='complete') {
+            same(12,$dom->query('//table[contains(@class,"domains-records")]/tbody/tr[@data-record]')->length,'Complete customer inventory retains all 12 '.$kind.' records');
+            foreach (range(0,11) as $i) {
+                $field=$kind==='dns'?'name':'service';$prefix=$kind==='dns'?'record':'sip';
+                $input=$dom->query('//input[@id="'.$kind.'-'.$i.'-'.$field.'"]');
+                same(1,$input->length,'Record input exists at numeric index '.$i);
+                same($prefix.($i+1),$input->item(0)->getAttribute('value'),'Customer '.$kind.' record order is numeric');
+            }
+        } else {
+            $expected=$stateName==='unknown'?'Shows after the next sync':'Shows when our team resumes record checks';
+            expect(str_contains($rows->item(0)->textContent,$expected),'Record note explains recovery for '.$kind.' '.$stateName);
+        }
         preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;
         writeRenderArtifact($out.'/customer-'.$kind.'-'.$stateName.'.html',str_replace('@@SLOT@@',$content,$shell));
     }
