@@ -248,7 +248,7 @@ final class DomainManagement
         [$r, $stamp] = $read;
         $ctx = new RequestContext($r->binding, RequestOrigin::Background, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter());
         try { $result = $driver->observe($r, $ctx); return $this->finish($seed, $id, $driver, $result, $stamp); }
-        catch (\Throwable) { return Operation::findOrFail($id); }
+        catch (\Throwable $error) { if($reviewed){throw $error;} return Operation::findOrFail($id); }
     }
     private function finish(Domain $seed, int $id, ManagementProtocol $driver, ManagementResult $result, ?string $stamp = null, bool $writeResult = false): Operation
     {

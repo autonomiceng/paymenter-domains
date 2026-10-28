@@ -139,7 +139,11 @@ $staff->role->update(['permissions'=>['admin.domains.view']]);
 commerceReject(fn()=>$staffRun($op));same($before,count($state->calls),'Permission refusal makes no recovery reads');
 $staff->role->update(['permissions'=>['admin.domains.view','admin.domains.operations.recheck']]);
 for($i=1;$i<=20;$i++){
-    $staffRun($op);
+    $failed=false;
+    try{$staffRun($op);}catch(RuntimeException $error){$failed=true;}
+    $audit=$op->fresh()->policy['staff_actions'];
+    same('read_failed',end($audit)['phase'],'Failed recovery read is not audited as completed');
+    same(true,$failed,'Failed recovery read reaches the staff action error handler');
     same($i,$op->fresh()->attempt['management_legacy_observation_attempts'],'Failed legacy observation consumes recovery slot '.$i);
 }
 same($before+40,count($state->calls),'Twenty failed recovery observations are bounded');
