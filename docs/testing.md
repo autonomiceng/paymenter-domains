@@ -662,8 +662,9 @@ Coverage details are in the [testing coverage index](testing-coverage.md), with 
 
 ## Parallel offline suites
 
-`python3 scripts/test.py --jobs 4` requests four workers, capped by the memory budget
-and available host memory. `--jobs 1` keeps serial execution.
+`python3 scripts/test.py --jobs 4 --memory-mib 4096` requests four workers. An explicit
+`--jobs` or `DOMAINS_TEST_JOBS` count that exceeds the memory budget or available host
+memory fails at setup. CPU-based defaults shrink to fit. `--jobs 1` keeps serial execution.
 `DOMAINS_TEST_JOBS` sets the default; otherwise it is half the CPU count, between one and four.
 Each worker owns its fixture, PHP runtime and temporary paths. Source and copied dependencies are checked before commands start and after the run.
 Console output prints each command's block as it completes; receipts keep scheduled
