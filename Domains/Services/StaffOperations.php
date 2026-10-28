@@ -36,7 +36,7 @@ final readonly class StaffOperations
             case 'recheck':
                 $op=\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($operation);
                 if(!in_array($op->action,['register','transfer','renew'],true)){
-                    app(DomainManagement::class)->reconcileReviewed($operation,app(OwnerPorts::class)->forDomain($op->domain),$r);
+                    app(DomainManagement::class)->reconcileReviewed($operation,fn()=>app(OwnerPorts::class)->forDomain($op->domain),$r);
                 }else{$r->read(function()use($operation,$op){
                     if($op->action==='renew'){app(RenewalCompletion::class)->run($operation);}
                     else{app(OperationReconciliation::class)->run($operation);}

@@ -211,14 +211,14 @@ final class DomainManagement
         return EntryDeadline::run($this->clock, fn ($deadline) => $this->reconcileEntered($id, $driver, $deadline), EntryDeadline::INTERACTIVE_SECONDS);
     }
     /** Legacy reads require a current, one-use staff review; earlier usage remains unknown. */
-    public function reconcileReviewed(int $id, ManagementProtocol $driver, StaffOperationReview $review): Operation
+    public function reconcileReviewed(int $id, ManagementProtocol|\Closure $driver, StaffOperationReview $review): Operation
     {
         $op=Operation::findOrFail($id);
         if($review->operationId!==$id || $review->domainId!==$op->domain_id || $review->action!=='recheck'){
             throw new \DomainException('Management review does not match.');
         }
         return EntryDeadline::run($this->clock, fn($deadline)=>$review->read(
-            fn()=>$this->reconcileEntered($id,$driver,$deadline,true)),EntryDeadline::INTERACTIVE_SECONDS);
+            fn()=>$this->reconcileEntered($id,$driver instanceof \Closure ? $driver() : $driver,$deadline,true)),EntryDeadline::INTERACTIVE_SECONDS);
     }
     private function reconcileEntered(int $id, ManagementProtocol $driver, \DateTimeImmutable $deadline, bool $reviewed=false): Operation
     {

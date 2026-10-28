@@ -123,6 +123,18 @@ $history=$op->fresh()->policy['staff_actions'];same(['read_requested','read_fini
 commerceReject(fn()=>$staffRun($op,$key));
 same(true,ManagementEvidence::resolved($op->fresh(),$d->fresh()),'Recovered prior operation no longer blocks management');
 same('queued',$submit($d,$driver,'lock',['locked'=>true])->state,'A new management request can follow the recovered operation');
+// Port resolution belongs to the same one-use audited read as provider observation.
+[$portDomain,$portDriver,$portOp]=$uncertain('bound-port-failure');
+$review=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::class;
+$portKey=$review::ticket($staff->id,$portOp->domain_id,$portOp->id,'recheck',$review::stamp($portOp->fresh(),$portOp->domain->fresh()),$clock);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(static function(){throw new DomainException('Offline owner port unavailable');}));
+$beforePort=count($state->calls);
+commerceReject(fn()=>$staffRun($portOp,$portKey));
+$portAudit=$portOp->fresh()->policy['staff_actions']??[];
+same(['read_requested','read_failed'],array_column($portAudit,'phase'),'Port resolution failure is audited in one read');
+same($beforePort,count($state->calls),'Port resolution failure sends nothing');
+commerceReject(fn()=>$staffRun($portOp,$portKey));
+same($portAudit,$portOp->fresh()->policy['staff_actions'],'Failed port ticket cannot be replayed');
 // Failed legacy reads spend slots durably; owner/background reconciliation cannot spend them.
 [$d,$driver,$op]=$uncertain('bound-legacy-failed');
 $attempt=array_diff_key($op->fresh()->attempt,['management_observation_attempts'=>true]);
