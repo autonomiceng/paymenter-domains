@@ -176,6 +176,29 @@ class SchedulingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'only 2 worker'):
                 runner.bounded_jobs(4, 2048, explicit=True)
 
+    def test_available_memory_uses_cgroup_headroom_when_lower(self):
+        mib = 1024*1024
+        cases = [('2 GiB limit', {'memory.max': f'{2048*mib}\n', 'memory.current': f'{512*mib}\n'}, 1536),
+                 ('reclaimable cache', {'memory.max': f'{2048*mib}\n', 'memory.current': f'{1536*mib}\n',
+                                        'memory.stat': f'anon 1\ninactive_file {512*mib}\n'}, 1024),
+                 ('over limit', {'memory.max': f'{1024*mib}\n', 'memory.current': f'{1100*mib}\n'}, 0),
+                 ('no limit', {'memory.max': 'max\n', 'memory.current': f'{512*mib}\n'}, 16384),
+                 ('limit above host', {'memory.max': f'{65536*mib}\n', 'memory.current': '0\n'}, 16384),
+                 ('missing files', {}, 16384),
+                 ('missing current', {'memory.max': f'{2048*mib}\n'}, 16384),
+                 ('malformed limit', {'memory.max': 'lots\n', 'memory.current': '0\n'}, 16384),
+                 ('malformed stat', {'memory.max': f'{2048*mib}\n', 'memory.current': f'{512*mib}\n',
+                                     'memory.stat': 'inactive_file many\n'}, 16384)]
+        for name, files, expected in cases:
+            with self.subTest(name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                meminfo = root/'meminfo'
+                meminfo.write_text('MemTotal: 33554432 kB\nMemAvailable: 16777216 kB\n')
+                cgroup = root/'cgroup'; cgroup.mkdir()
+                for filename, content in files.items():
+                    (cgroup/filename).write_text(content)
+                self.assertEqual(runner.available_memory_mib(meminfo=meminfo, cgroup=cgroup), expected)
+
     def test_implicit_jobs_reduce_to_serial_and_record_memory_reduction(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); (root/'Domains').mkdir()

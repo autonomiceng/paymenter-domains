@@ -110,9 +110,25 @@ class Processes:
                 self.kill(index, process)
 
 
-def available_memory_mib():
-    return next(int(line.split()[1])//1024 for line in Path('/proc/meminfo').read_text().splitlines()
-                if line.startswith('MemAvailable:'))
+def available_memory_mib(meminfo=Path('/proc/meminfo'), cgroup=Path('/sys/fs/cgroup')):
+    available = next(int(line.split()[1])//1024 for line in meminfo.read_text().splitlines()
+                     if line.startswith('MemAvailable:'))
+    # MemAvailable ignores a container's cgroup v2 limit. Use the lower headroom, counting
+    # reclaimable inactive file cache as free; unreadable or malformed files keep MemAvailable.
+    try:
+        limit = (cgroup/'memory.max').read_text().strip()
+        if limit == 'max':
+            return available
+        used = int((cgroup/'memory.current').read_text())
+        try:
+            stat = (cgroup/'memory.stat').read_text().splitlines()
+        except OSError:
+            stat = []
+        cache = next((int(line.split()[1]) for line in stat if line.startswith('inactive_file ')), 0)
+        headroom = max(0, int(limit)-used+cache)//(1024*1024)
+    except (OSError, ValueError, IndexError):
+        return available
+    return min(available, headroom)
 
 
 def bounded_jobs(requested, memory_mib, *, explicit=False):

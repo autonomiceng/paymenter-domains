@@ -8,7 +8,10 @@ puts previous failures and faster files first within each category; it never
 changes the selected case set.
 
 `--memory-mib` defaults to 2048 and reserves 1024 MiB per worker. Parallel
-concurrency is bounded by `min(--memory-mib, MemAvailable - 1024) // 1024`.
+concurrency is bounded by `min(--memory-mib, available - 1024) // 1024`.
+Available memory is `MemAvailable`, lowered to the cgroup v2 headroom
+(`memory.max - memory.current + inactive_file`) inside a memory-capped container.
+A `max` limit or unreadable or malformed cgroup files leave `MemAvailable` alone.
 The 1024 MiB host reserve applies only to available memory; the default budget
 permits two workers. Explicit `--jobs 1` retains serial support on small hosts
 and requires only a budget of at least 1024 MiB. This is a scheduling reservation,
