@@ -178,26 +178,43 @@ class SchedulingTests(unittest.TestCase):
 
     def test_available_memory_uses_cgroup_headroom_when_lower(self):
         mib = 1024*1024
-        cases = [('2 GiB limit', {'memory.max': f'{2048*mib}\n', 'memory.current': f'{512*mib}\n'}, 1536),
-                 ('reclaimable cache', {'memory.max': f'{2048*mib}\n', 'memory.current': f'{1536*mib}\n',
-                                        'memory.stat': f'anon 1\ninactive_file {512*mib}\n'}, 1024),
-                 ('over limit', {'memory.max': f'{1024*mib}\n', 'memory.current': f'{1100*mib}\n'}, 0),
-                 ('no limit', {'memory.max': 'max\n', 'memory.current': f'{512*mib}\n'}, 16384),
-                 ('limit above host', {'memory.max': f'{65536*mib}\n', 'memory.current': '0\n'}, 16384),
-                 ('missing files', {}, 16384),
-                 ('missing current', {'memory.max': f'{2048*mib}\n'}, 16384),
-                 ('malformed limit', {'memory.max': 'lots\n', 'memory.current': '0\n'}, 16384),
-                 ('malformed stat', {'memory.max': f'{2048*mib}\n', 'memory.current': f'{512*mib}\n',
-                                     'memory.stat': 'inactive_file many\n'}, 16384)]
-        for name, files, expected in cases:
+        def capped(limit, used, prefix=''):
+            return {f'{prefix}memory.max': f'{limit*mib}\n', f'{prefix}memory.current': f'{used*mib}\n'}
+        cases = [('2 GiB limit', capped(2048, 512), None, 1536),
+                 ('reclaimable cache', {**capped(2048, 1536), 'memory.stat': f'anon 1\ninactive_file {512*mib}\n'},
+                  None, 1024),
+                 ('over limit', capped(1024, 1100), None, 0),
+                 ('no limit', {'memory.max': 'max\n', 'memory.current': f'{512*mib}\n'}, None, 16384),
+                 ('limit above host', capped(65536, 0), None, 16384),
+                 ('missing files', {}, None, 16384),
+                 ('missing current', {'memory.max': f'{2048*mib}\n'}, None, 16384),
+                 ('malformed limit', {'memory.max': 'lots\n', 'memory.current': '0\n'}, None, 16384),
+                 ('malformed stat', {**capped(2048, 512), 'memory.stat': 'inactive_file many\n'}, None, 16384),
+                 ('capped child of uncapped root', capped(2048, 512, 'a/b/'), '0::/a/b\n', 1536),
+                 ('uncapped leaf under capped parent',
+                  {**capped(3072, 1024, 'a/'), 'a/b/memory.max': 'max\n', 'a/b/memory.current': '0\n'},
+                  '0::/a/b\n', 2048),
+                 ('lowest level wins', {**capped(8192, 0), **capped(4096, 0, 'a/'), **capped(6144, 0, 'a/b/')},
+                  '1:name=systemd:/x\n0::/a/b\n', 4096),
+                 ('malformed level ignored', {**capped(2048, 0, 'a/'), 'a/b/memory.max': 'lots\n'},
+                  '0::/a/b\n', 2048),
+                 ('escaping membership uses root', {**capped(2048, 0), **capped(1024, 0, 'a/')},
+                  '0::/../a\n', 2048),
+                 ('no v2 membership uses root', capped(2048, 512), '1:memory:/a\n', 1536)]
+        for name, files, membership, expected in cases:
             with self.subTest(name), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 meminfo = root/'meminfo'
                 meminfo.write_text('MemTotal: 33554432 kB\nMemAvailable: 16777216 kB\n')
                 cgroup = root/'cgroup'; cgroup.mkdir()
                 for filename, content in files.items():
+                    (cgroup/filename).parent.mkdir(parents=True, exist_ok=True)
                     (cgroup/filename).write_text(content)
-                self.assertEqual(runner.available_memory_mib(meminfo=meminfo, cgroup=cgroup), expected)
+                member = root/'membership'
+                if membership is not None:
+                    member.write_text(membership)
+                self.assertEqual(runner.available_memory_mib(meminfo=meminfo, cgroup=cgroup, membership=member),
+                                 expected)
 
     def test_implicit_jobs_reduce_to_serial_and_record_memory_reduction(self):
         with tempfile.TemporaryDirectory() as temporary:

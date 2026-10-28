@@ -110,25 +110,47 @@ class Processes:
                 self.kill(index, process)
 
 
-def available_memory_mib(meminfo=Path('/proc/meminfo'), cgroup=Path('/sys/fs/cgroup')):
-    available = next(int(line.split()[1])//1024 for line in meminfo.read_text().splitlines()
-                     if line.startswith('MemAvailable:'))
-    # MemAvailable ignores a container's cgroup v2 limit. Use the lower headroom, counting
-    # reclaimable inactive file cache as free; unreadable or malformed files keep MemAvailable.
+def cgroup_headroom_mib(group):
+    """Return a cgroup v2 group's memory headroom, or None if unlimited or unreadable."""
     try:
-        limit = (cgroup/'memory.max').read_text().strip()
+        limit = (group/'memory.max').read_text().strip()
         if limit == 'max':
-            return available
-        used = int((cgroup/'memory.current').read_text())
+            return None
+        used = int((group/'memory.current').read_text())
         try:
-            stat = (cgroup/'memory.stat').read_text().splitlines()
+            stat = (group/'memory.stat').read_text().splitlines()
         except OSError:
             stat = []
+        # Inactive file cache counts in memory.current but the kernel reclaims it first.
         cache = next((int(line.split()[1]) for line in stat if line.startswith('inactive_file ')), 0)
-        headroom = max(0, int(limit)-used+cache)//(1024*1024)
+        return max(0, int(limit)-used+cache)//(1024*1024)
     except (OSError, ValueError, IndexError):
-        return available
-    return min(available, headroom)
+        return None
+
+
+def cgroup_ancestry(cgroup, membership):
+    """Return the process's cgroup v2 directory and its ancestors, leaf first.
+
+    Without a readable v2 entry, or with a path outside the mount, only the mount root is returned."""
+    try:
+        member = next(line[3:] for line in membership.read_text().splitlines() if line.startswith('0::'))
+        parts = [part for part in member.strip().split('/') if part]
+    except (OSError, StopIteration):
+        parts = []
+    if '..' in parts:
+        parts = []
+    return [cgroup.joinpath(*parts[:depth]) for depth in range(len(parts), -1, -1)]
+
+
+def available_memory_mib(meminfo=Path('/proc/meminfo'), cgroup=Path('/sys/fs/cgroup'),
+                         membership=Path('/proc/self/cgroup')):
+    available = next(int(line.split()[1])//1024 for line in meminfo.read_text().splitlines()
+                     if line.startswith('MemAvailable:'))
+    # MemAvailable ignores cgroup v2 limits. A limit on the runner's group or any ancestor
+    # applies, so take the lowest headroom along that path; unlimited or unreadable groups add none.
+    limits = [headroom for headroom in map(cgroup_headroom_mib, cgroup_ancestry(cgroup, membership))
+              if headroom is not None]
+    return min([available, *limits])
 
 
 def bounded_jobs(requested, memory_mib, *, explicit=False):

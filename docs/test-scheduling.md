@@ -9,9 +9,11 @@ changes the selected case set.
 
 `--memory-mib` defaults to 2048 and reserves 1024 MiB per worker. Parallel
 concurrency is bounded by `min(--memory-mib, available - 1024) // 1024`.
-Available memory is `MemAvailable`, lowered to the cgroup v2 headroom
-(`memory.max - memory.current + inactive_file`) inside a memory-capped container.
-A `max` limit or unreadable or malformed cgroup files leave `MemAvailable` alone.
+Available memory is `MemAvailable`, lowered to the smallest cgroup v2 headroom
+(`memory.max - memory.current + inactive_file`) of the runner's group, from
+`/proc/self/cgroup`, and its ancestors. A group with a `max` limit, or with an
+unreadable or malformed `memory.max`, `memory.current` or `inactive_file`, sets
+no bound. A missing `memory.stat` gives no cache credit.
 The 1024 MiB host reserve applies only to available memory; the default budget
 permits two workers. Explicit `--jobs 1` retains serial support on small hosts
 and requires only a budget of at least 1024 MiB. This is a scheduling reservation,
