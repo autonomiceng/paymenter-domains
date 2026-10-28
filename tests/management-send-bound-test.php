@@ -123,6 +123,15 @@ $history=$op->fresh()->policy['staff_actions'];same(['read_requested','read_fini
 commerceReject(fn()=>$staffRun($op,$key));
 same(true,ManagementEvidence::resolved($op->fresh(),$d->fresh()),'Recovered prior operation no longer blocks management');
 same('queued',$submit($d,$driver,'lock',['locked'=>true])->state,'A new management request can follow the recovered operation');
+// An unreviewed increment below the limit must reach the review guard.
+[$unreviewedDomain,$unreviewedDriver,$unreviewed]=$uncertain('bound-unreviewed-legacy');
+$unreviewedAttempt=array_diff_key($unreviewed->fresh()->attempt,['management_observation_attempts'=>true]);
+DB::table('domains_operations')->where('id',$unreviewed->id)->update(['attempt'=>$unreviewed->fresh()->forceFill(['attempt'=>$unreviewedAttempt])->getAttributes()['attempt']]);
+try{
+    $unreviewed->fresh()->update(['attempt'=>[...$unreviewedAttempt,'management_legacy_observation_attempts'=>1]]);
+    expect(false,'Unreviewed legacy increment must refuse below the cap');
+}catch(DomainException $error){same('Reviewed legacy management recovery required.',$error->getMessage(),'Review gate rejects unreviewed increment');}
+same($unreviewedAttempt,$unreviewed->fresh()->attempt,'Unreviewed increment retains the sealed evidence');
 // Port resolution belongs to the same one-use audited read as provider observation.
 [$portDomain,$portDriver,$portOp]=$uncertain('bound-port-failure');
 $review=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::class;
