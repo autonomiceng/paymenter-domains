@@ -44,5 +44,10 @@ same(2,Budget::status()['rolling_used'],'Dated residual expires after its date u
 $next=runPolicy('next',12,2,$fp);runRefuses(fn()=>Budget::prepare($next,1),'Debt survives run change and exhausts rolling cap');
 $next=runPolicy('next',12,12,$fp);same(1,Budget::prepare($next,1)['remaining'],'New credits fit only alongside permanent debt');
 same(2,(int)DB::table(Tables::PERMITS)->where('action','legacy')->count(),'Exact historical attempts remain permanent');
+// A retained receipt alone must prevent fallback after partial table loss.
+DB::table(Tables::RUNS)->delete();
+\Illuminate\Support\Facades\Schema::drop(Tables::LOCK);
+config(['domains.enom_test_run_policy'=>null]);
+runRefuses(fn()=>Calls::reserve(Environment::Test),'Receipt without marker or runs cannot restore daily sends');
 echo "Retained v1 timestamped attempts, debt, replay and midnight migration passed\n";
 $nativeSuccessful=true;

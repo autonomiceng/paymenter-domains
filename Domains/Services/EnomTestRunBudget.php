@@ -22,6 +22,7 @@ final class EnomTestRunBudget
         if (config('domains.enom_test_run_policy') !== null) { return true; }
         try {
             if(!Schema::hasTable(EnomTestRunBudgetSchema::LOCK)){
+                if(Schema::hasTable(EnomTestLegacyBudgetSchema::TABLE) && DB::table(EnomTestLegacyBudgetSchema::TABLE)->exists()){throw new EnomTestCallLimit;}
                 if(Schema::hasTable(EnomTestRunBudgetSchema::RUNS) && DB::table(EnomTestRunBudgetSchema::RUNS)->exists()){throw new EnomTestCallLimit;}
                 return false;
             }
