@@ -90,4 +90,6 @@ A migrated budget sets deployment lock version 3 while its policy stays version 
 The marker requires the retained receipt even when there are no historical attempts,
 and survives closing and preparing later runs. Existing version 2 migrations gain the
 marker on their first successful write with an authenticated receipt. A receipt lost
-before that upgrade cannot be distinguished from a fresh version 2 run.
+before that upgrade cannot be distinguished from a fresh version 2 run. A receipt
+beside a marker other than version 2 or 3, such as a reset version 0 lock, refuses
+run-budget calls and daily TEST sends.

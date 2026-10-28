@@ -30,6 +30,7 @@ final class EnomTestRunBudget
             }
             $version=DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->value('version');
             if($version===null || !in_array((int)$version,[0,self::CONTRACT,self::MIGRATED],true)){throw new EnomTestCallLimit;}
+            if((int)$version===0 && Schema::hasTable(EnomTestLegacyBudgetSchema::TABLE) && DB::table(EnomTestLegacyBudgetSchema::TABLE)->exists()){throw new EnomTestCallLimit;}
             return in_array((int)$version,[self::CONTRACT,self::MIGRATED],true);
         } catch (\Throwable) { EnomTestCalls::refuse(); }
     }
@@ -98,7 +99,8 @@ final class EnomTestRunBudget
                         || abs(($now-(int)$lock->last_time)-($monotonic-(int)$lock->monotonic_time))>5000000))) { throw new EnomTestCallLimit; }
                 if(!$readOnly){DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['last_time'=>$now,'clock_id'=>$clockId,'monotonic_time'=>$monotonic]);}
                 $legacy=DB::table(EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->first();
-                if(!$legacy && (int)$lock->version===self::MIGRATED){throw new EnomTestCallLimit;}
+                // A receipt is only written together with a migrated marker, so each needs the other.
+                if($legacy ? !in_array((int)$lock->version,[self::CONTRACT,self::MIGRATED],true) : (int)$lock->version===self::MIGRATED){throw new EnomTestCallLimit;}
                 if($legacy){
                     if(!hash_equals($legacy->proof_hash,hash('sha256',$legacy->proof))){throw new EnomTestCallLimit;}
                     $retained=[];

@@ -94,6 +94,15 @@ $debtReceipt=(array)DB::table(\Paymenter\Extensions\Servers\Domains\Services\Eno
 DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->delete();
 runRefuses(fn()=>Budget::reserve($fp),'Debt-only migrated run requires its receipt without historical permits');
 DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->insert($debtReceipt);
+// A receipt is only written with the migrated marker, so a reset marker beside it must refuse.
+$resetRuns=DB::table(Tables::RUNS)->get()->map(fn($row)=>(array)$row)->all();
+DB::table(Tables::RUNS)->delete();
+DB::table(Tables::LOCK)->update(['version'=>0,'run_id'=>null]);
+runRefuses(fn()=>Budget::prepare(runPolicy('after_reset',12,12,$fp),1),'Receipt beside a reset marker cannot admit a new run');
+DB::table(Tables::RUNS)->insert($resetRuns);
+runRefuses(fn()=>Budget::status($debtOnly,true),'Receipt beside a reset marker refuses read-only status');
+config(['domains.enom_test_run_policy'=>null]);
+runRefuses(fn()=>Calls::reserve(Environment::Test),'Receipt beside a reset marker cannot restore daily sends');
 // A retained receipt alone must prevent fallback after partial table loss.
 DB::table(Tables::RUNS)->delete();
 \Illuminate\Support\Facades\Schema::drop(Tables::LOCK);
