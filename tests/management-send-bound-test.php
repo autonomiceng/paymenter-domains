@@ -150,6 +150,7 @@ $before=count($state->calls);
 $staff->role->update(['permissions'=>['admin.domains.view']]);
 commerceReject(fn()=>$staffRun($op));same($before,count($state->calls),'Permission refusal makes no recovery reads');
 $staff->role->update(['permissions'=>['admin.domains.view','admin.domains.operations.recheck']]);
+$failedHistory=count($op->fresh()->attempt['management_reads']??[]);
 for($i=1;$i<=20;$i++){
     $failed=false;
     try{$staffRun($op);}catch(RuntimeException $error){$failed=true;}
@@ -158,6 +159,7 @@ for($i=1;$i<=20;$i++){
     same(true,$failed,'Failed recovery read reaches the staff action error handler');
     same($i,$op->fresh()->attempt['management_legacy_observation_attempts'],'Failed legacy observation consumes recovery slot '.$i);
 }
+same($failedHistory,count($op->fresh()->attempt['management_reads']??[]),'Failed legacy reads add no completed history');
 same($before+40,count($state->calls),'Twenty failed recovery observations are bounded');
 $management->reconcile($op->id,$driver);$staffRun($op);
 same($before+40,count($state->calls),'Owner/background and exhausted staff entries cannot add sends');
