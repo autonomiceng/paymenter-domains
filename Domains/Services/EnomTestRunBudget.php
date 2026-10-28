@@ -161,6 +161,7 @@ final class EnomTestRunBudget
                 if ((int)$row->initial_credits!==$credits) { throw new EnomTestCallLimit; }
                 return self::facts($row,$policy,$now);
             }
+            if(DB::table(EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->where('run_id',$policy['run_id'])->exists()){throw new EnomTestCallLimit;}
             if (DB::table(EnomTestRunBudgetSchema::RUNS)->whereIn('phase',['preparing','active','disabled'])->exists()
                 || (DB::table(EnomTestCallSchema::TABLE)->where('used','>',0)->exists()
                     && !DB::table(EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->exists())) { throw new EnomTestCallLimit; }
