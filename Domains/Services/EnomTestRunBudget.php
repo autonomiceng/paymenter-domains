@@ -87,6 +87,7 @@ final class EnomTestRunBudget
                 if(!$readOnly){DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['last_time'=>$now,'clock_id'=>$clockId,'monotonic_time'=>$monotonic]);}
                 $legacy=DB::table(EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->first();
                 if($legacy){
+                    if(!hash_equals($legacy->proof_hash,hash('sha256',$legacy->proof))){throw new EnomTestCallLimit;}
                     $retained=[];
                     foreach(DB::table(EnomTestCallSchema::TABLE)->orderBy('day')->get() as $row){$retained[]=['day'=>$row->day,'used'=>(int)$row->used];}
                     if($retained!==json_decode($legacy->proof,true,32,JSON_THROW_ON_ERROR)['native']){throw new EnomTestCallLimit;}
