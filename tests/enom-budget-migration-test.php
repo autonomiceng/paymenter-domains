@@ -15,6 +15,12 @@ $policy=runPolicy('retained',12,12,$fp);
 DB::table(EnomTestCallSchema::TABLE)->insert(['day'=>'2026-10-27','used'=>3]);
 $history=['native'=>[['day'=>'2026-10-27','used'=>3]],'attempts'=>[1793145599000000,1793145598000000],
     'undated_debt'=>2,'source_hash'=>str_repeat('a',64)];
+$before=serialize([DB::table(Tables::LOCK)->get()->all(),DB::table(Tables::RUNS)->get()->all(),DB::table(Tables::PERMITS)->get()->all(),DB::table(EnomTestCallSchema::TABLE)->get()->all()]);
+$preview=Budget::previewLegacy($policy,$history,8);
+same([5,5,0,13,13,1,1],[$preview['native_used'],$preview['rolling_used'],$preview['outstanding_credits'],$preview['native_required'],$preview['rolling_required'],$preview['native_short'],$preview['rolling_short']],'Read-only exact shortage inventory');
+same($before,serialize([DB::table(Tables::LOCK)->get()->all(),DB::table(Tables::RUNS)->get()->all(),DB::table(Tables::PERMITS)->get()->all(),DB::table(EnomTestCallSchema::TABLE)->get()->all()]),'Preflight issues no credits/permits or clock writes');
+$rolling=Budget::previewLegacy(runPolicy('retained',900,4,$fp),$history,8);
+same([0,9],[$rolling['native_short'],$rolling['rolling_short']],'Read-only rolling shortage is independent of run cap');
 // Existing source refuses used v1 state. This retained-state path must not erase it.
 runRefuses(fn()=>Budget::prepare($policy,4),'ordinary prepare still cannot silently adopt used history');
 runRefuses(fn()=>Budget::migrateLegacy($policy,$history,8),'Native cap exhaustion leaves no partial import');
@@ -28,6 +34,7 @@ same($s,Budget::migrateLegacy($policy,$history,4),'Replay does not issue credits
 runRefuses(fn()=>Budget::migrateLegacy($policy, array_replace($history,['undated_debt'=>1]),4),'Proof cannot change');
 runRefuses(fn()=>Budget::migrateLegacy(runPolicy('other',12,12,$fp),$history,4),'Cannot reimport into a second run');
 Budget::activate($policy);config(['domains.enom_test_run_policy'=>$policy]);
+$before=DB::table(Tables::LOCK)->get()->toJson();Budget::status($policy,true);same($history['source_hash'],Budget::legacySourceHash($policy),'Read-only source authentication');same($before,DB::table(Tables::LOCK)->get()->toJson(),'Status/source reads preserve native clock revision');
 $p=Budget::reserve($fp);Budget::consume($p,$fp);runRefuses(fn()=>Budget::consume($p),'Exactly once after migration');
 config(['domains.enom_test_run_policy'=>null]);runRefuses(fn()=>Calls::reserve(Environment::Test),'Missing policy cannot restore v1 sends');
 config(['domains.enom_test_run_policy'=>$policy]);runAdvance('+2 seconds');
