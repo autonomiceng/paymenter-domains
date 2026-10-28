@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
@@ -133,6 +134,11 @@ def cgroup_parts(path):
     return None if '..' in parts else parts
 
 
+def mountinfo_path(field):
+    # mountinfo escapes space, tab, newline and backslash as three octal digits.
+    return re.sub(r'\\([0-7]{3})', lambda escape: chr(int(escape.group(1), 8)), field)
+
+
 def cgroup_ancestry(cgroup, membership, mountinfo):
     """Return the process's cgroup v2 directory and its ancestors, leaf first.
 
@@ -143,8 +149,8 @@ def cgroup_ancestry(cgroup, membership, mountinfo):
         for line in mountinfo.read_text().splitlines():
             fields, _, filesystem = line.partition(' - ')
             fields = fields.split()
-            if filesystem.split()[:1] == ['cgroup2'] and len(fields) > 4 and fields[4] == str(cgroup):
-                mounted = fields[3]
+            if filesystem.split()[:1] == ['cgroup2'] and len(fields) > 4 and mountinfo_path(fields[4]) == str(cgroup):
+                mounted = mountinfo_path(fields[3])
     except OSError:
         pass
     try:
