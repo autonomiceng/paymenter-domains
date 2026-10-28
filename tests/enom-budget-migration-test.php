@@ -15,6 +15,11 @@ $policy=runPolicy('retained',12,12,$fp);
 DB::table(EnomTestCallSchema::TABLE)->insert(['day'=>'2026-10-27','used'=>3]);
 $history=['native'=>[['day'=>'2026-10-27','used'=>3]],'attempts'=>[1793145599000000,1793145598000000],
     'undated_debt'=>2,'source_hash'=>str_repeat('a',64)];
+// Inventory arithmetic must stay exact at the integer boundary.
+foreach([[PHP_INT_MAX,0],[PHP_INT_MAX-3,1]] as [$debt,$credits]){
+    $large=array_replace($history,['undated_debt'=>$debt]);
+    runRefuses(fn()=>Budget::previewLegacy(runPolicy('overflow',PHP_INT_MAX,PHP_INT_MAX,$fp),$large,$credits),'Overflow inventory refuses before float conversion');
+}
 $before=serialize([DB::table(Tables::LOCK)->get()->all(),DB::table(Tables::RUNS)->get()->all(),DB::table(Tables::PERMITS)->get()->all(),DB::table(EnomTestCallSchema::TABLE)->get()->all()]);
 $preview=Budget::previewLegacy($policy,$history,8);
 same([5,5,0,13,13,1,1],[$preview['native_used'],$preview['rolling_used'],$preview['outstanding_credits'],$preview['native_required'],$preview['rolling_required'],$preview['native_short'],$preview['rolling_short']],'Read-only exact shortage inventory');

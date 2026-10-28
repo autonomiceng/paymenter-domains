@@ -58,6 +58,16 @@ final class EnomTestRunBudget
 
     private static function json(array $value): string
     { return json_encode($value,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES); }
+    /** Refuse before PHP promotes an overflowing integer sum to float. */
+    private static function add(int ...$values): int
+    {
+        $total=0;
+        foreach($values as $value){
+            if($value<0 || $total>PHP_INT_MAX-$value){throw new EnomTestCallLimit;}
+            $total+=$value;
+        }
+        return $total;
+    }
     private static function fingerprint(?string $fingerprint): void
     { if ($fingerprint!==null && !preg_match('/^[a-f0-9]{64}$/D',$fingerprint)) { throw new EnomTestCallLimit; } }
     private static function configured(): array
@@ -248,18 +258,19 @@ final class EnomTestRunBudget
         foreach($history['attempts'] as $time){$day=gmdate('Y-m-d',intdiv($time,1000000));$dated[$day]=($dated[$day]??0)+1;}
         $debt=$history['undated_debt'];$rollingDebt=$debt;
         foreach($native as $row){
-            $residual=max(0,$row['used']-($dated[$row['day']]??0));$debt+=$residual;
+            $residual=max(0,$row['used']-($dated[$row['day']]??0));$debt=self::add($debt,$residual);
             $exclusive=(new \DateTimeImmutable($row['day'].'T00:00:00Z'))->modify('+2 days')->getTimestamp()*1000000;
-            if($now<$exclusive){$rollingDebt+=$residual;}
+            if($now<$exclusive){$rollingDebt=self::add($rollingDebt,$residual);}
         }
-        $used=$count+$debt;
-        $rolling=count(array_filter($history['attempts'],static fn($t)=>$t>$now-86400000000))+$rollingDebt;
+        $used=self::add($count,$debt);
+        $rolling=self::add(count(array_filter($history['attempts'],static fn($t)=>$t>$now-86400000000)),$rollingDebt);
         $outstanding=(int)DB::table(EnomTestRunBudgetSchema::RUNS)->sum('remaining');
+        $nativeRequired=self::add($used,$credits);$rollingRequired=self::add($rolling,$outstanding,$credits);
         return ['native_used'=>$used,'rolling_used'=>$rolling,'legacy_debt'=>$debt,
             'physical_used'=>$count,'outstanding_credits'=>$outstanding,'required_credits'=>$credits,
-            'native_required'=>$used+$credits,'rolling_required'=>$rolling+$outstanding+$credits,
-            'native_short'=>max(0,$used+$credits-$policy['cap']),
-            'rolling_short'=>max(0,$rolling+$outstanding+$credits-$policy['rolling_cap'])];
+            'native_required'=>$nativeRequired,'rolling_required'=>$rollingRequired,
+            'native_short'=>max(0,$nativeRequired-$policy['cap']),
+            'rolling_short'=>max(0,$rollingRequired-$policy['rolling_cap'])];
     }
 
     public static function legacySourceHash(array $policy): ?string
