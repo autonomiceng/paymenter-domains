@@ -48,6 +48,7 @@ foreach($actions as $action=>$payload){
     $op = $engine->request($user, $d->id, $action, $payload, hash('sha256', 'native-bound-'.$action), $driver);
     $policy=runPolicy('management_'.$action,60,120,$binding->fingerprint);
     \Paymenter\Extensions\Servers\Domains\Services\EnomTestRunBudgetSchema::install();
+    \Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::install();
     config(['domains.enom_test_run_policy'=>$policy]);
     $runClock=$clock; // Share the management fixture's clock with the paired monotonic fixture.
     if($action==='lock'){$clock->instant=new DateTimeImmutable('2026-10-18T23:59:59Z');}

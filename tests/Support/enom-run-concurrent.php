@@ -12,7 +12,7 @@ DB::disconnect();config(['database.connections.sqlite.database'=>$path,'database
 $fp=hash('sha256','synthetic');$p=runPolicy('concurrent',2,2,$fp);config(['domains.enom_test_run_policy'=>$p]);
 $mode=$argv[1];
 try{
-    if($mode==='setup'){EnomTestCallSchema::install();Tables::install();}
+    if($mode==='setup'){EnomTestCallSchema::install();Tables::install();\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::install();}
     elseif($mode==='admit'){
         Budget::prepare($p,1);Budget::allocate($p,1,'shared-envelope');Budget::activate($p);
         same(2,Budget::status()['remaining'],'Concurrent resume/allocation is idempotent');
