@@ -11,7 +11,8 @@ changes the selected case set.
 concurrency is bounded by `min(--memory-mib, available - 1024) // 1024`.
 Available memory is `MemAvailable`, lowered to the smallest cgroup v2 headroom
 (`memory.max - memory.current + inactive_file`) of the runner's group, from
-`/proc/self/cgroup`, and its ancestors. A group with a `max` limit, or with an
+`/proc/self/cgroup` mapped through the cgroup2 mount root in `/proc/self/mountinfo`,
+and its visible ancestors. A group with a `max` limit, or with an
 unreadable or malformed `memory.max`, `memory.current` or `inactive_file`, sets
 no bound. A missing `memory.stat` gives no cache credit.
 The 1024 MiB host reserve applies only to available memory; the default budget

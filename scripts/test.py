@@ -128,27 +128,44 @@ def cgroup_headroom_mib(group):
         return None
 
 
-def cgroup_ancestry(cgroup, membership):
+def cgroup_parts(path):
+    parts = [part for part in path.strip().split('/') if part]
+    return None if '..' in parts else parts
+
+
+def cgroup_ancestry(cgroup, membership, mountinfo):
     """Return the process's cgroup v2 directory and its ancestors, leaf first.
 
-    Without a readable v2 entry, or with a path outside the mount, only the mount root is returned."""
+    Membership is relative to the cgroup namespace root; mountinfo gives the subtree mounted at cgroup.
+    If membership cannot be mapped under the mount, only the mount root is returned."""
+    mounted = '/'
+    try:
+        for line in mountinfo.read_text().splitlines():
+            fields, _, filesystem = line.partition(' - ')
+            fields = fields.split()
+            if filesystem.split()[:1] == ['cgroup2'] and len(fields) > 4 and fields[4] == str(cgroup):
+                mounted = fields[3]
+    except OSError:
+        pass
     try:
         member = next(line[3:] for line in membership.read_text().splitlines() if line.startswith('0::'))
-        parts = [part for part in member.strip().split('/') if part]
     except (OSError, StopIteration):
+        member = '/'
+    root, parts = cgroup_parts(mounted), cgroup_parts(member)
+    if root is None or parts is None or parts[:len(root)] != root:
         parts = []
-    if '..' in parts:
-        parts = []
+    else:
+        parts = parts[len(root):]
     return [cgroup.joinpath(*parts[:depth]) for depth in range(len(parts), -1, -1)]
 
 
 def available_memory_mib(meminfo=Path('/proc/meminfo'), cgroup=Path('/sys/fs/cgroup'),
-                         membership=Path('/proc/self/cgroup')):
+                         membership=Path('/proc/self/cgroup'), mountinfo=Path('/proc/self/mountinfo')):
     available = next(int(line.split()[1])//1024 for line in meminfo.read_text().splitlines()
                      if line.startswith('MemAvailable:'))
     # MemAvailable ignores cgroup v2 limits. A limit on the runner's group or any ancestor
     # applies, so take the lowest headroom along that path; unlimited or unreadable groups add none.
-    limits = [headroom for headroom in map(cgroup_headroom_mib, cgroup_ancestry(cgroup, membership))
+    limits = [headroom for headroom in map(cgroup_headroom_mib, cgroup_ancestry(cgroup, membership, mountinfo))
               if headroom is not None]
     return min([available, *limits])
 

@@ -200,8 +200,11 @@ class SchedulingTests(unittest.TestCase):
                   '0::/a/b\n', 2048),
                  ('escaping membership uses root', {**capped(2048, 0), **capped(1024, 0, 'a/')},
                   '0::/../a\n', 2048),
-                 ('no v2 membership uses root', capped(2048, 512), '1:memory:/a\n', 1536)]
-        for name, files, membership, expected in cases:
+                 ('no v2 membership uses root', capped(2048, 512), '1:memory:/a\n', 1536),
+                 ('subtree mount', capped(2048, 512, 'worker/'), '0::/tenant/worker\n', 1536, '/tenant'),
+                 ('membership outside subtree mount uses root', {**capped(4096, 0), **capped(1024, 0, 'other/')},
+                  '0::/other\n', 4096, '/tenant')]
+        for name, files, membership, expected, *mount in cases:
             with self.subTest(name), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 meminfo = root/'meminfo'
@@ -213,8 +216,12 @@ class SchedulingTests(unittest.TestCase):
                 member = root/'membership'
                 if membership is not None:
                     member.write_text(membership)
-                self.assertEqual(runner.available_memory_mib(meminfo=meminfo, cgroup=cgroup, membership=member),
-                                 expected)
+                mountinfo = root/'mountinfo'
+                if mount:
+                    mountinfo.write_text(f'24 30 0:22 / /proc rw - proc proc rw\n'
+                                         f'35 30 0:30 {mount[0]} {cgroup} rw - cgroup2 cgroup2 rw\n')
+                self.assertEqual(runner.available_memory_mib(meminfo=meminfo, cgroup=cgroup, membership=member,
+                                                             mountinfo=mountinfo), expected)
 
     def test_implicit_jobs_reduce_to_serial_and_record_memory_reduction(self):
         with tempfile.TemporaryDirectory() as temporary:
