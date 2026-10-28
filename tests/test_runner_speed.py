@@ -204,6 +204,8 @@ class SchedulingTests(unittest.TestCase):
                  ('subtree mount', capped(2048, 512, 'worker/'), '0::/tenant/worker\n', 1536, '/tenant'),
                  ('escaped subtree mount', capped(2048, 512, 'worker/'), '0::/tenant one\\x/worker\n', 1536,
                   '/tenant\\040one\\134x'),
+                 ('trailing space in names', capped(2048, 512, 'tenant /worker /'), '0::/tenant /worker \n', 1536,
+                  '/'),
                  ('membership outside subtree mount uses root', {**capped(4096, 0), **capped(1024, 0, 'other/')},
                   '0::/other\n', 4096, '/tenant')]
         for name, files, membership, expected, *mount in cases:

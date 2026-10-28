@@ -130,7 +130,7 @@ def cgroup_headroom_mib(group):
 
 
 def cgroup_parts(path):
-    parts = [part for part in path.strip().split('/') if part]
+    parts = [part for part in path.split('/') if part]
     return None if '..' in parts else parts
 
 
