@@ -35,7 +35,15 @@ runRefuses(fn()=>Budget::migrateLegacy($policy, array_replace($history,['undated
 runRefuses(fn()=>Budget::migrateLegacy(runPolicy('other',12,12,$fp),$history,4),'Cannot reimport into a second run');
 Budget::activate($policy);config(['domains.enom_test_run_policy'=>$policy]);
 $before=DB::table(Tables::LOCK)->get()->toJson();Budget::status($policy,true);same($history['source_hash'],Budget::legacySourceHash($policy),'Read-only source authentication');same($before,DB::table(Tables::LOCK)->get()->toJson(),'Status/source reads preserve native clock revision');
-$p=Budget::reserve($fp);Budget::consume($p,$fp);runRefuses(fn()=>Budget::consume($p),'Exactly once after migration');
+// Receipt loss must refuse both admission and consumption, including debt-only imports.
+$held=Budget::reserve($fp);
+$receipt=(array)DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->sole();
+DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->delete();
+runRefuses(fn()=>Budget::reserve($fp),'Missing migrated receipt cannot admit a permit');
+runRefuses(fn()=>Budget::consume($held,$fp),'Missing migrated receipt cannot consume a permit');
+DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->insert($receipt);
+Budget::consume($held,$fp);
+$p=$held;runRefuses(fn()=>Budget::consume($p),'Exactly once after migration');
 config(['domains.enom_test_run_policy'=>null]);runRefuses(fn()=>Calls::reserve(Environment::Test),'Missing policy cannot restore v1 sends');
 config(['domains.enom_test_run_policy'=>$policy]);runAdvance('+2 seconds');
 same(6,Budget::status()['rolling_used'],'Midnight does not discard debt');
@@ -50,6 +58,17 @@ $changed=json_decode($receipt->proof,true,32,JSON_THROW_ON_ERROR);$changed['unda
 DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->update(['proof'=>json_encode($changed,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES)]);
 runRefuses(fn()=>Budget::status($next),'Changed debt with original receipt hash refuses');
 DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->update(['proof'=>$receipt->proof]);
+DB::table(Tables::PERMITS)->delete();DB::table(Tables::RUNS)->delete();
+DB::table(EnomTestCallSchema::TABLE)->delete();
+DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->delete();
+DB::table(Tables::LOCK)->update(['version'=>0,'run_id'=>null]);
+$debtOnly=runPolicy('debt_only',12,12,$fp);
+Budget::migrateLegacy($debtOnly,['native'=>[],'attempts'=>[],'undated_debt'=>2,'source_hash'=>str_repeat('b',64)],2);
+Budget::activate($debtOnly);config(['domains.enom_test_run_policy'=>$debtOnly]);
+$debtReceipt=(array)DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->sole();
+DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->delete();
+runRefuses(fn()=>Budget::reserve($fp),'Debt-only migrated run requires its receipt without historical permits');
+DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->insert($debtReceipt);
 // A retained receipt alone must prevent fallback after partial table loss.
 DB::table(Tables::RUNS)->delete();
 \Illuminate\Support\Facades\Schema::drop(Tables::LOCK);

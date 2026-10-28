@@ -85,3 +85,9 @@ at 20 entries. New TEST reads must also pass the current run and rolling budgets
 Recovery never resends the mutation, changes funding, or fabricates the earlier count.
 Only the normal result checks can complete the request and clear its prior-outcome block.
 The 47-send lifetime bound for newly sealed requests does not describe this unknown history.
+
+A migrated budget sets deployment lock version 3 while its policy stays version 2.
+The marker requires the retained receipt even when there are no historical attempts,
+and survives closing and preparing later runs. Existing version 2 migrations gain the
+marker on their first successful write with an authenticated receipt. A receipt lost
+before that upgrade cannot be distinguished from a fresh version 2 run.

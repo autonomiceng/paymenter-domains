@@ -12,6 +12,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 final class EnomTestRunBudget
 {
     public const CONTRACT = 2;
+    // Lock version 3 retains the requirement for a migration receipt across later runs.
+    private const MIGRATED = 3;
     private static ?string $pending = null;
     private const FIELDS = ['version','run_id','generation','cap','rolling_cap','policy_hash',
         'ledger_dev','ledger_ino','ledger_uid','ledger_gid','account_fingerprint','configuration_intent'];
@@ -27,8 +29,8 @@ final class EnomTestRunBudget
                 return false;
             }
             $version=DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->value('version');
-            if($version===null || !in_array((int)$version,[0,self::CONTRACT],true)){throw new EnomTestCallLimit;}
-            return (int)$version===self::CONTRACT;
+            if($version===null || !in_array((int)$version,[0,self::CONTRACT,self::MIGRATED],true)){throw new EnomTestCallLimit;}
+            return in_array((int)$version,[self::CONTRACT,self::MIGRATED],true);
         } catch (\Throwable) { EnomTestCalls::refuse(); }
     }
 
@@ -86,11 +88,13 @@ final class EnomTestRunBudget
                         || abs(($now-(int)$lock->last_time)-($monotonic-(int)$lock->monotonic_time))>5000000))) { throw new EnomTestCallLimit; }
                 if(!$readOnly){DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['last_time'=>$now,'clock_id'=>$clockId,'monotonic_time'=>$monotonic]);}
                 $legacy=DB::table(EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->first();
+                if(!$legacy && (int)$lock->version===self::MIGRATED){throw new EnomTestCallLimit;}
                 if($legacy){
                     if(!hash_equals($legacy->proof_hash,hash('sha256',$legacy->proof))){throw new EnomTestCallLimit;}
                     $retained=[];
                     foreach(DB::table(EnomTestCallSchema::TABLE)->orderBy('day')->get() as $row){$retained[]=['day'=>$row->day,'used'=>(int)$row->used];}
                     if($retained!==json_decode($legacy->proof,true,32,JSON_THROW_ON_ERROR)['native']){throw new EnomTestCallLimit;}
+                    if(!$readOnly){DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['version'=>self::MIGRATED]);$lock->version=self::MIGRATED;}
                 }
                 return $work($lock,$now);
             });
@@ -106,7 +110,7 @@ final class EnomTestRunBudget
     private static function active(object $lock,array $policy): object
     {
         $row=self::run($policy);
-        if ((int)$lock->version!==self::CONTRACT || $lock->run_id!==$row->run_id || $row->phase!=='active') { throw new EnomTestCallLimit; }
+        if (!in_array((int)$lock->version,[self::CONTRACT,self::MIGRATED],true) || $lock->run_id!==$row->run_id || $row->phase!=='active') { throw new EnomTestCallLimit; }
         return $row;
     }
     private static function rolling(int $now): int
@@ -166,7 +170,7 @@ final class EnomTestRunBudget
             DB::table(EnomTestRunBudgetSchema::RUNS)->insert(['run_id'=>$policy['run_id'],'generation'=>$policy['generation'],
                 'policy'=>self::json($policy),'phase'=>'preparing','account_fingerprint'=>$policy['account_fingerprint'],
                 'used'=>0,'remaining'=>$credits,'initial_credits'=>$credits]);
-            DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['version'=>self::CONTRACT,'run_id'=>$policy['run_id']]);
+            DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['version'=>(int)$lock->version===self::MIGRATED?self::MIGRATED:self::CONTRACT,'run_id'=>$policy['run_id']]);
             return self::facts(self::run($policy),$policy,$now);
         });
     }
@@ -202,7 +206,7 @@ final class EnomTestRunBudget
                     'run_id'=>$policy['run_id'],'account_fingerprint'=>$policy['account_fingerprint'],
                     'action'=>'legacy','operation_id'=>null,'attempt_time'=>$time]);
             }
-            DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['version'=>self::CONTRACT,'run_id'=>$policy['run_id']]);
+            DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['version'=>self::MIGRATED,'run_id'=>$policy['run_id']]);
             return self::facts(self::run($policy),$policy,$now);
         });
     }
