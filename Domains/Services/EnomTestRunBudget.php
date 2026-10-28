@@ -21,7 +21,10 @@ final class EnomTestRunBudget
     {
         if (config('domains.enom_test_run_policy') !== null) { return true; }
         try {
-            if(!Schema::hasTable(EnomTestRunBudgetSchema::LOCK)){return false;}
+            if(!Schema::hasTable(EnomTestRunBudgetSchema::LOCK)){
+                if(Schema::hasTable(EnomTestRunBudgetSchema::RUNS) && DB::table(EnomTestRunBudgetSchema::RUNS)->exists()){throw new EnomTestCallLimit;}
+                return false;
+            }
             $version=DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->value('version');
             if($version===null || !in_array((int)$version,[0,self::CONTRACT],true)){throw new EnomTestCallLimit;}
             return (int)$version===self::CONTRACT;
@@ -396,4 +399,5 @@ final class EnomTestRunBudget
         if (self::$pending===$permit) { self::$pending=null; }
     }
     public static function pendingPermit(): ?string { return self::$pending; }
+    public static function clearPending(): void { self::$pending=null; }
 }

@@ -97,5 +97,55 @@ DB::table('domains_operations')->where('id', $op->id)->update(['attempt' => $op-
 $before = count($state->calls); $management->reconcile($op->id, $driver);
 same($before, count($state->calls), 'Unknown legacy usage refuses before I/O');
 commerceReject(fn () => $op->fresh()->update(['attempt' => [...$op->fresh()->attempt, 'management_observation_attempts' => 1]]));
+// A current one-use staff review can read old sealed operations without replaying their mutation.
+require __DIR__.'/Support/staff-panel.php';
+$staff=staffUser(['admin.domains.view','admin.domains.operations.recheck']);
+app()->instance(DomainManagement::class,$management);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(static fn()=>$driver));
+$staffRun=static function($op,?string $key=null)use($staff,$clock):string{
+    $review=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::class;
+    $key??=$review::ticket($staff->id,$op->domain_id,$op->id,'recheck',$review::stamp($op->fresh(),$op->domain->fresh()),$clock);
+    (new \Paymenter\Extensions\Servers\Domains\Services\StaffOperations($clock))->run($staff,$op->domain_id,$op->id,'recheck',$key,'Review retained management result');
+    return $key;
+};
+$original=$op->fresh()->attempt;$funding=$op->fresh()->funding;
+$state->locked=false;
+$key=$staffRun($op);
+same('succeeded',$op->fresh()->state,'Reviewed legacy readback can resolve the original operation');
+same(1,$op->fresh()->attempt['management_legacy_observation_attempts'],'Recovery reads have a separate durable budget');
+same(false,isset($op->fresh()->attempt['management_observation_attempts']),'Unknown earlier usage is never reconstructed');
+foreach($original as $field=>$value){
+    if($field!=='management_reads'){same($value,$op->fresh()->attempt[$field],'Original attempt evidence retained');}
+}
+same($funding,$op->fresh()->funding,'Read recovery never changes funding');
+same($before+2,count($state->calls),'Recovery performs only the ownership and lock reads');
+$history=$op->fresh()->policy['staff_actions'];same(['read_requested','read_finished'],array_column($history,'phase'),'Recovery audit brackets provider I/O');
+commerceReject(fn()=>$staffRun($op,$key));
+same(true,ManagementEvidence::resolved($op->fresh(),$d->fresh()),'Recovered prior operation no longer blocks management');
+same('queued',$submit($d,$driver,'lock',['locked'=>true])->state,'A new management request can follow the recovered operation');
+// Failed legacy reads spend slots durably; owner/background reconciliation cannot spend them.
+[$d,$driver,$op]=$uncertain('bound-legacy-failed');
+$attempt=array_diff_key($op->fresh()->attempt,['management_observation_attempts'=>true]);
+DB::table('domains_operations')->where('id',$op->id)->update(['attempt'=>$op->fresh()->forceFill(['attempt'=>$attempt])->getAttributes()['attempt']]);
+$driver=new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management(
+    $driver->capabilities()->binding,static function($origin,$command,$parameters,$timeout)use($exchange):string{
+        $reply=$exchange($origin,$command,$parameters,$timeout);
+        if($command==='GetRegLock'){throw new RuntimeException('Offline recovery read failure');}
+        return $reply;
+    });
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(static fn()=>$driver));
+$before=count($state->calls);
+$staff->role->update(['permissions'=>['admin.domains.view']]);
+commerceReject(fn()=>$staffRun($op));same($before,count($state->calls),'Permission refusal makes no recovery reads');
+$staff->role->update(['permissions'=>['admin.domains.view','admin.domains.operations.recheck']]);
+for($i=1;$i<=20;$i++){
+    $staffRun($op);
+    same($i,$op->fresh()->attempt['management_legacy_observation_attempts'],'Failed legacy observation consumes recovery slot '.$i);
+}
+same($before+40,count($state->calls),'Twenty failed recovery observations are bounded');
+$management->reconcile($op->id,$driver);$staffRun($op);
+same($before+40,count($state->calls),'Owner/background and exhausted staff entries cannot add sends');
+commerceReject(fn()=>$op->fresh()->update(['attempt'=>[...$op->fresh()->attempt,'management_legacy_observation_attempts'=>1]]));
+commerceReject(fn()=>$op->fresh()->update(['attempt'=>array_diff_key($op->fresh()->attempt,['management_legacy_observation_attempts'=>true])]));
 $nativeSuccessful = true;
 echo "Management lifetime send bound: throwing read, deferrals, full history, concurrent observer, legacy refusal, 47-send maximum passed.\n";

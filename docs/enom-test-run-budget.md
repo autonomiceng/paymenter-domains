@@ -72,3 +72,16 @@ It refuses backward UTC, a UTC/monotonic discontinuity over five seconds, and a 
 boot or clock source. Restarting PHP workers on the same source is safe. A machine reboot
 or a different source requires separately qualified recovery; this release does not reset
 clock evidence automatically. SQLite tests do not establish MariaDB locking acceptance.
+
+## Older sealed management requests
+
+Older sealed requests have no durable observation count. Owner and background checks refuse
+these requests because earlier failed reads cannot be counted from completed read history.
+Staff can use **Check status** on the original request. Each check requires its current,
+one-use review ticket and records the actor, reason and before/after state before reading.
+A separate `management_legacy_observation_attempts` counter permits at most 20 recovery
+observations, including failed reads, and cannot reset. Completed read history still stops
+at 20 entries. New TEST reads must also pass the current run and rolling budgets.
+Recovery never resends the mutation, changes funding, or fabricates the earlier count.
+Only the normal result checks can complete the request and clear its prior-outcome block.
+The 47-send lifetime bound for newly sealed requests does not describe this unknown history.

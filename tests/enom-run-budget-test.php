@@ -123,6 +123,9 @@ foreach([Tables::verify(...),Tables::install(...)] as $verify){
 }
 config(['domains.enom_test_run_policy'=>null]);runRefuses(fn()=>Calls::reserve(Environment::Test),'Lost durable marker never restores daily sends');
 DB::table(Tables::LOCK)->insert($lock);config(['domains.enom_test_run_policy'=>$bootstrap]);
+// A removed marker table cannot turn retained run history back into fresh daily credit.
+Schema::drop(Tables::LOCK);config(['domains.enom_test_run_policy'=>null]);
+runRefuses(fn()=>Calls::reserve(Environment::Test),'Lost marker table with retained runs never restores daily sends');
 // Schema retention: lost tables must never be repaired by normal installation verification.
 Schema::drop(Tables::PERMITS);
 try{Tables::verify();throw new LogicException('Lost permits accepted');}catch(\Illuminate\Database\QueryException|RuntimeException){}

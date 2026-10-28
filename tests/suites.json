@@ -352,7 +352,8 @@
     "tests/namesilo-fingerprint-reset-test.php",
     "tests/staff-alert-visibility-test.php",
     "tests/storefront-cart-handoff-test.php",
-    "tests/enom-budget-migration-test.php"
+    "tests/enom-budget-migration-test.php",
+    "tests/enom-run-failure-facts-test.php"
   ],
   "ui": [],
   "runner": [
