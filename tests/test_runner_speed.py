@@ -19,6 +19,29 @@ spec.loader.exec_module(runner)
 
 
 class SchedulingTests(unittest.TestCase):
+    def test_category_rss_preserves_unknown_and_measured_zero(self):
+        cases = [('lint', [None, None], None), ('provider', [None, None], None),
+                 ('provider', [0], 0), ('provider', [None, 0, 2048], 2048)]
+        for kind, peaks, expected in cases:
+            with self.subTest(kind=kind, peaks=peaks), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); (root/'Domains').mkdir()
+                output = root/'output'; output.mkdir()
+                commands = [(kind, ['php-test', *(['-l'] if kind == 'lint' else []), str(index)])
+                            for index in range(len(peaks))]
+                def execute(argv, **kwargs):
+                    peak = peaks[int(argv[-1])]
+                    if peak is not None:
+                        kwargs['rss_path'].write_text(str(peak)+'\n')
+                    return b'ok', b'', 0, False
+                with mock.patch.object(runner, 'ROOT', root), \
+                     mock.patch.object(runner, 'execute', side_effect=execute), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(runner.run(commands, {}, output, [kind], {}), 0)
+                receipt = json.loads((output/'receipt.json').read_text())
+                self.assertTrue(receipt['complete'])
+                self.assertEqual([row['peak_rss_kib'] for row in receipt['results']], peaks)
+                self.assertEqual(receipt['categories'][kind]['peak_child_rss_kib'], expected)
+
     def test_final_guard_interrupt_retains_run_receipt(self):
         import signal
         for target in ['runtime', 'dependency', 'worker']:

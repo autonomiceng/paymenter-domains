@@ -33,5 +33,6 @@ Receipts include the complete
 command plan, first failure index, cancelled results and `not_run` commands.
 Cancelled commands can have unknown RSS; they never count as passes. Output files
 use plan indexes even when commands finish out of order. Category summaries report
-summed child time and maximum child RSS, not aggregate simultaneous memory.
+summed child time and maximum known child RSS, not aggregate simultaneous memory.
+Category RSS is null when no measurement is known.
 Interrupted commands retain captured output; output-write failures are recorded.

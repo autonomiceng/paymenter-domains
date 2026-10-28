@@ -437,7 +437,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                    'categories': {kind: {'commands_run': len(rows),
                                          'wall_seconds': max(row['finished_seconds'] for row in rows)-min(row['started_seconds'] for row in rows),
                                          'child_seconds': sum(row['seconds'] for row in rows),
-                                         'peak_child_rss_kib': max((row['peak_rss_kib'] or 0 for row in rows), default=0)}
+                                         'peak_child_rss_kib': max((row['peak_rss_kib'] for row in rows
+                                                                    if row['peak_rss_kib'] is not None), default=None)}
                                   for kind in selected if (rows := [row for row in results if row['kind'] == kind])},
                    'omitted_tests': [path for paths in suites.values() for path in paths if path not in planned],
                    'complete': complete, 'jobs': jobs, 'php_version': '8.4.27', 'results': results, 'runtime_sha256': before,
