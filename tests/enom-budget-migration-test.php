@@ -40,8 +40,17 @@ runRefuses(fn()=>Budget::migrateLegacy($policy, array_replace($history,['undated
 runRefuses(fn()=>Budget::migrateLegacy(runPolicy('other',12,12,$fp),$history,4),'Cannot reimport into a second run');
 Budget::activate($policy);config(['domains.enom_test_run_policy'=>$policy]);
 $before=DB::table(Tables::LOCK)->get()->toJson();Budget::status($policy,true);same($history['source_hash'],Budget::legacySourceHash($policy),'Read-only source authentication');same($before,DB::table(Tables::LOCK)->get()->toJson(),'Status/source reads preserve native clock revision');
+// Upgrading old receipts must never normalize an invalid deployment marker.
+$marker=DB::table(Tables::LOCK)->where('id',1)->value('version');
+DB::table(Tables::LOCK)->where('id',1)->update(['version'=>99]);
+runRefuses(fn()=>Budget::reserve($fp),'Receipt cannot repair an invalid deployment marker');
+DB::table(Tables::LOCK)->where('id',1)->update(['version'=>$marker]);
+// A valid older migration upgrades only on a write, preserving read-only status.
+DB::table(Tables::LOCK)->where('id',1)->update(['version'=>2]);
+Budget::status($policy,true);same(2,(int)DB::table(Tables::LOCK)->value('version'),'Read-only status does not upgrade old marker');
 // Receipt loss must refuse both admission and consumption, including debt-only imports.
 $held=Budget::reserve($fp);
+same(3,(int)DB::table(Tables::LOCK)->value('version'),'Authenticated older migration retains receipt marker before sending');
 $receipt=(array)DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->sole();
 DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->delete();
 runRefuses(fn()=>Budget::reserve($fp),'Missing migrated receipt cannot admit a permit');
@@ -57,6 +66,10 @@ same(2,Budget::status()['rolling_used'],'Dated residual expires after its date u
 $next=runPolicy('next',12,2,$fp);runRefuses(fn()=>Budget::prepare($next,1),'Debt survives run change and exhausts rolling cap');
 $next=runPolicy('next',12,12,$fp);same(1,Budget::prepare($next,1)['remaining'],'New credits fit only alongside permanent debt');
 same(2,(int)DB::table(Tables::PERMITS)->where('action','legacy')->count(),'Exact historical attempts remain permanent');
+$nextReceipt=(array)DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->sole();
+DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->delete();
+runRefuses(fn()=>Budget::status($next),'Later runs still require the retained migration receipt');
+DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestLegacyBudgetSchema::TABLE)->insert($nextReceipt);
 // A receipt retains run identity even if its run row is lost.
 $lostRun=(array)DB::table(Tables::RUNS)->where('run_id',$policy['run_id'])->sole();
 DB::table(Tables::RUNS)->where('run_id',$policy['run_id'])->delete();

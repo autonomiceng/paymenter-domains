@@ -104,7 +104,7 @@ final class EnomTestRunBudget
                     $retained=[];
                     foreach(DB::table(EnomTestCallSchema::TABLE)->orderBy('day')->get() as $row){$retained[]=['day'=>$row->day,'used'=>(int)$row->used];}
                     if($retained!==json_decode($legacy->proof,true,32,JSON_THROW_ON_ERROR)['native']){throw new EnomTestCallLimit;}
-                    if(!$readOnly){DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['version'=>self::MIGRATED]);$lock->version=self::MIGRATED;}
+                    if(!$readOnly && (int)$lock->version===self::CONTRACT){DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['version'=>self::MIGRATED]);$lock->version=self::MIGRATED;}
                 }
                 return $work($lock,$now);
             });
