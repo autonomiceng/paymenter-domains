@@ -15,10 +15,14 @@ if($phase==='seed'){
 config(['database.connections.mysql.prefix'=>$prefix]);DB::purge('mysql');Schema::clearResolvedInstance('db.schema');
 Runtime::register();
 if($phase==='seed'){
+    $seedNow=(int)(microtime(true)*1000000)-1000000;
+    $seedDay=gmdate('Y-m-d',intdiv($seedNow,1000000));
+    // Keep both synthetic attempts inside the native row's UTC day, even at its first microsecond.
+    $seedEarlier=max($seedNow-1,intdiv($seedNow,86400000000)*86400000000);
     (new Installation)->install();
     App\Models\Server::create(['id'=>1,'type'=>'server','name'=>'Synthetic budget','extension'=>'Domains','enabled'=>true]);
     Account::withVerifiedBindingWrite(static fn()=>Account::create(['server_id'=>1,'registrar_key'=>'enom','environment'=>'test','stable_identity'=>'synthetic','processing_enabled'=>false]));
-    DB::table(EnomTestCallSchema::TABLE)->insert(['day'=>gmdate('Y-m-d'),'used'=>3]);
+    DB::table(EnomTestCallSchema::TABLE)->insert(['day'=>$seedDay,'used'=>3]);
 }
 $account=Account::where('server_id',1)->sole();
 $policy=['version'=>2,'run_id'=>'mariadb_retained','generation'=>'mariadb_retained','cap'=>30,'rolling_cap'=>30,
@@ -26,8 +30,7 @@ $policy=['version'=>2,'run_id'=>'mariadb_retained','generation'=>'mariadb_retain
 ksort($policy);$policy['policy_hash']=hash('sha256',json_encode($policy,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
 config(['domains.enom_test_run_policy'=>$policy]);
 if($phase==='seed'){
-    $now=(int)(microtime(true)*1000000)-1000000;
-    file_put_contents($root.'/history',json_encode(['native'=>[['day'=>gmdate('Y-m-d'),'used'=>3]],'attempts'=>[$now,$now-1],'undated_debt'=>0,'source_hash'=>str_repeat('a',64)]));
+    file_put_contents($root.'/history',json_encode(['native'=>[['day'=>$seedDay,'used'=>3]],'attempts'=>[$seedNow,$seedEarlier],'undated_debt'=>0,'source_hash'=>str_repeat('a',64)]));
 }elseif($phase==='migrate'||$phase==='recover'){
     $history=json_decode(file_get_contents($root.'/history'),true,32,JSON_THROW_ON_ERROR);
     Budget::migrateLegacy($policy,$history,0);
