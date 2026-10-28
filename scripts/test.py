@@ -115,7 +115,7 @@ def available_memory_mib():
                 if line.startswith('MemAvailable:'))
 
 
-def bounded_jobs(requested, memory_mib):
+def bounded_jobs(requested, memory_mib, *, explicit=False):
     if memory_mib < WORKER_MEMORY_MIB:
         raise ValueError('Memory budget must reserve at least 1024 MiB per worker.')
     # Serial runs cannot reduce concurrency further; preserve small-host support.
@@ -124,9 +124,10 @@ def bounded_jobs(requested, memory_mib):
     # Reserve one GiB per worker and leave another GiB for the host. Installed
     # package commands retain their exclusive barrier and their own memory gate.
     budget = min(memory_mib, available_memory_mib()-1024)
-    if budget < WORKER_MEMORY_MIB:
-        raise ValueError('Insufficient available memory for one test worker (plus host reserve).')
-    return min(requested, budget//WORKER_MEMORY_MIB)
+    fitting = max(1, budget//WORKER_MEMORY_MIB)
+    if explicit and requested > fitting:
+        raise ValueError(f'Requested {requested} workers, but only {fitting} worker(s) fit the memory budget and host reserve.')
+    return min(requested, fitting)
 
 
 def history(path):
@@ -245,7 +246,7 @@ def cancel_on_error(processes):
 
 
 def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None,
-        fail_fast=False, requested_jobs=None, memory_mib=None):
+        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False):
     started_run = time.monotonic()
     timings = {} if timings is None else timings
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
@@ -272,7 +273,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         installed_package = Path(argv[-1]).name.startswith('test_installed_')
         timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and installed_package
                    else 120 if kind == 'native' else 60)
-        rss_path = output/f'{index:03d}.rss.txt'
+        syntax_lint = kind == 'lint' and len(argv) == 3 and argv[1] == '-l'
+        rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
         interrupted = None
         try:
             stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=workers[worker] if workers else env,
@@ -302,10 +304,11 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             result.update(runtime_unchanged=unchanged, runtime_error=runtime_error, guard_complete=True)
             if not unchanged:
                 stop(index)
-            try:
-                result['peak_rss_kib'] = int(rss_path.read_text().splitlines()[-1])
-            except (OSError, ValueError, IndexError):
-                pass
+            if rss_path is not None:
+                try:
+                    result['peak_rss_kib'] = int(rss_path.read_text().splitlines()[-1])
+                except (OSError, ValueError, IndexError):
+                    pass
         finally:
             result.update(guard_seconds=time.monotonic()-started_guard,
                           finished_seconds=time.monotonic()-started_run)
@@ -428,6 +431,9 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                    'plan': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands)],
                    'not_run': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands) if index not in completed],
                    'requested_jobs': requested_jobs or jobs, 'memory_mib': memory_mib,
+                   'jobs_explicit': jobs_explicit,
+                   'jobs_reduction': ({'requested': requested_jobs, 'actual': jobs, 'reason': 'memory'}
+                                      if requested_jobs and jobs < requested_jobs and not jobs_explicit and 'mariadb' not in selected else None),
                    'categories': {kind: {'commands_run': len(rows),
                                          'wall_seconds': max(row['finished_seconds'] for row in rows)-min(row['started_seconds'] for row in rows),
                                          'child_seconds': sum(row['seconds'] for row in rows),
@@ -502,13 +508,18 @@ def main():
     selection.add_argument('--suite', choices=CATEGORIES, action='append')
     selection.add_argument('--only', nargs='+', action='extend', metavar='TEST_PATH',
                            help='Run only exact registered test paths; not a full boundary run.')
-    parser.add_argument('--jobs', type=positive_integer,
-                        default=os.environ.get('DOMAINS_TEST_JOBS', max(1, min(4, (os.cpu_count() or 1)//2))))
+    parser.add_argument('--jobs', type=positive_integer)
     parser.add_argument('--memory-mib', type=positive_integer, default=2048,
                         help='Worker memory reservation budget; one GiB per parallel worker.')
     parser.add_argument('--fail-fast', action='store_true', help='Kill in-flight process trees on the first failure.')
     parser.add_argument('--timings-from', metavar='RECEIPT', help='Prioritize previously failing and faster commands within each category.')
     args = parser.parse_args()
+    jobs_explicit = args.jobs is not None or 'DOMAINS_TEST_JOBS' in os.environ
+    if args.jobs is None:
+        try:
+            args.jobs = positive_integer(os.environ['DOMAINS_TEST_JOBS']) if 'DOMAINS_TEST_JOBS' in os.environ else max(1, min(4, (os.cpu_count() or 1)//2))
+        except (ValueError, argparse.ArgumentTypeError) as error:
+            parser.error(str(error))
     os.umask(0o077)
     output = Path(tempfile.mkdtemp(prefix='domains-tests-'))
     selected = args.suite or []
@@ -572,14 +583,15 @@ def main():
         commands = order_commands(commands, previous)
         if args.memory_mib < 2048 and any(Path(argv[-1]).name.startswith('test_installed_') for kind, argv in commands if kind != 'lint'):
             raise ValueError('Installed-package checks require a memory budget of at least 2048 MiB.')
-        jobs = 1 if 'mariadb' in selected else bounded_jobs(args.jobs, args.memory_mib)
+        jobs = 1 if 'mariadb' in selected else bounded_jobs(args.jobs, args.memory_mib, explicit=jobs_explicit)
         worker_check = None
         if jobs > 1:
             with timing('worker_environments', timings):
                 workers, fixture_snapshot, runtime_snapshot = test_workers.environments(env, output, jobs, runtime)
             worker_check = lambda: test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
-                   timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib)
+                   timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib,
+                   jobs_explicit=jobs_explicit)
     except BaseException as error:
         if not (output/'receipt.json').exists():
             (output/'receipt.json').write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,

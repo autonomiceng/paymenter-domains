@@ -144,10 +144,84 @@ class SchedulingTests(unittest.TestCase):
             self.assertEqual(runner.bounded_jobs(1, 4096), 1)
         with mock.patch.object(runner, 'available_memory_mib', return_value=1800):
             self.assertEqual(runner.bounded_jobs(1, 2048), 1)
+            self.assertEqual(runner.bounded_jobs(4, 2048), 1)
             with self.assertRaises(ValueError):
                 runner.bounded_jobs(1, 512)
-            with self.assertRaises(ValueError):
-                runner.bounded_jobs(2, 4096)
+            with self.assertRaisesRegex(ValueError, 'only 1 worker'):
+                runner.bounded_jobs(2, 4096, explicit=True)
+        with mock.patch.object(runner, 'available_memory_mib', return_value=8192):
+            with self.assertRaisesRegex(ValueError, 'only 2 worker'):
+                runner.bounded_jobs(4, 2048, explicit=True)
+
+    def test_implicit_jobs_reduce_to_serial_and_record_memory_reduction(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'Domains').mkdir()
+            output = root/'output'; output.mkdir()
+            environment = dict(os.environ)
+            environment.pop('DOMAINS_TEST_JOBS', None)
+            with mock.patch.dict(os.environ, environment, clear=True), \
+                 mock.patch.object(runner.sys, 'argv', ['test.py']), \
+                 mock.patch.object(runner, 'ROOT', root), \
+                 mock.patch.object(runner.os, 'cpu_count', return_value=8), \
+                 mock.patch.object(runner, 'available_memory_mib', return_value=1800), \
+                 mock.patch.object(runner.tempfile, 'mkdtemp', return_value=str(output)), \
+                 mock.patch.object(runner, 'default_suites', return_value=['provider']), \
+                 mock.patch.object(runner, 'manifest', return_value={'provider': ['tests/probe.php']}), \
+                 mock.patch.object(runner, 'prepare', return_value=(None, None, None)), \
+                 mock.patch.object(runner, 'execute', return_value=(b'ok', b'', 0, False)), \
+                 mock.patch.object(runner.test_workers, 'environments') as workers, \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(runner.main(), 0)
+            workers.assert_not_called()
+            receipt = json.loads((output/'receipt.json').read_text())
+            self.assertTrue(receipt['complete'])
+            self.assertEqual(receipt['jobs'], 1)
+            self.assertEqual(receipt['requested_jobs'], 4)
+            self.assertFalse(receipt['jobs_explicit'])
+            self.assertEqual(receipt['jobs_reduction'], {'requested': 4, 'actual': 1, 'reason': 'memory'})
+
+    def test_explicit_cli_and_environment_jobs_refuse_insufficient_memory(self):
+        for arguments, environment in [(['--jobs', '2'], {}), ([], {'DOMAINS_TEST_JOBS': '2'})]:
+            with self.subTest(arguments=arguments, environment=environment), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary)
+                with mock.patch.dict(os.environ, environment, clear=True), \
+                     mock.patch.object(runner.sys, 'argv', ['test.py', *arguments]), \
+                     mock.patch.object(runner, 'available_memory_mib', return_value=1800), \
+                     mock.patch.object(runner.tempfile, 'mkdtemp', return_value=str(output)), \
+                     mock.patch.object(runner, 'default_suites', return_value=['provider']), \
+                     mock.patch.object(runner, 'manifest', return_value={'provider': ['tests/probe.php']}), \
+                     mock.patch.object(runner, 'prepare', return_value=(None, None, None)), \
+                     mock.patch.object(runner, 'run') as run, contextlib.redirect_stdout(io.StringIO()), \
+                     contextlib.redirect_stderr(io.StringIO()), self.assertRaisesRegex(ValueError, 'only 1 worker'):
+                    runner.main()
+                run.assert_not_called()
+                receipt = json.loads((output/'receipt.json').read_text())
+                self.assertFalse(receipt['complete'])
+                self.assertEqual(receipt['phase'], 'setup')
+
+    def test_only_syntax_lint_bypasses_supervisor_and_rss_measurement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'Domains').mkdir()
+            output = root/'output'; output.mkdir()
+            commands = [('lint', ['php-test', '-l', 'Domains/Probe.php']),
+                        ('lint', ['php-test', 'tests/php83-compatibility-test.php']),
+                        ('provider', ['php-test', 'tests/probe-test.php'])]
+            with mock.patch.object(runner, 'ROOT', root), \
+                 mock.patch.object(runner.subprocess, 'Popen') as popen, contextlib.redirect_stdout(io.StringIO()):
+                process = popen.return_value.__enter__.return_value
+                process.communicate.return_value = (b'ok', b'')
+                process.returncode = 0
+                self.assertEqual(runner.run(commands, {}, output, ['lint', 'provider'], {}), 0)
+            invocations = [call.args[0] for call in popen.call_args_list]
+            self.assertEqual(invocations[0], commands[0][1])
+            for invocation, (_, argv) in zip(invocations[1:], commands[1:]):
+                self.assertEqual(invocation[:2], [sys.executable, str(runner.SUPERVISOR)])
+                self.assertIn('/usr/bin/time', invocation)
+                self.assertEqual(invocation[-len(argv):], argv)
+            receipt = json.loads((output/'receipt.json').read_text())
+            self.assertTrue(receipt['complete'])
+            self.assertIsNone(receipt['results'][0]['peak_rss_kib'])
+            self.assertFalse((output/'000.rss.txt').exists())
 
     def test_fail_fast_kills_running_process_group_and_discloses_unstarted_work(self):
         with tempfile.TemporaryDirectory() as temporary:
