@@ -15,8 +15,10 @@ Available memory is `MemAvailable`, lowered to the smallest cgroup v2 headroom
 and its visible ancestors. A group with a `max` limit, or with an
 unreadable or malformed `memory.max`, `memory.current` or `inactive_file`, sets
 no bound. A missing `memory.stat` gives no cache credit.
-Cache protected by `memory.min` in a sibling group still counts as reclaimable, so
-a host that sets `memory.min` on a sibling of the runner should pass `DOMAINS_TEST_JOBS`.
+The runner counts cache protected by `memory.min` in a sibling group as reclaimable.
+On such hosts, set `DOMAINS_TEST_JOBS` to a worker count that fits the memory available
+without reclaiming that protected cache. Explicit counts are still checked against the
+runner's calculated budget.
 The 1024 MiB host reserve applies only to available memory; the default budget
 permits two workers. Explicit `--jobs 1` retains serial support on small hosts
 and requires only a budget of at least 1024 MiB. This is a scheduling reservation,
