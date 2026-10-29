@@ -4,12 +4,14 @@ declare(strict_types=1);
 require_once __DIR__.'/reserved-fixtures.php';
 use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,DomainBilling,EnomTestRenewal,EnomTestCalls,EnomTestCallSchema,NativeDomainGuard,Refunds,RuntimePorts,RuntimeWork,StaffOperationReview,StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,DomainBilling,EnomTestRenewal,EnomTestSendLimit,EnomTestSendLimitSchema,NativeDomainGuard,Refunds,RuntimePorts,RuntimeWork,StaffOperationReview,StaffOperations};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 // The preceding registration scenario proves this holder's real native checkout,
 // synthetic payment, captured-order charge and expiry. It leaves renewals off.
 $staff->role->update(['permissions'=>[...$staff->role->permissions,'admin.invoice_transactions.create']]);
-$nativeSuccessful=false;config(['domains.enom_test_daily_call_cap'=>1000]);
+$nativeSuccessful=false;config(['domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
+// The limit counts this login's sends in the rolling 24 hours before the scenario clock.
+$recentSends=static fn():int=>EnomTestSendLimit::usage('test-uid')['day'];
 $clock->at=new DateTimeImmutable('2026-10-22T00:10:00Z');Cache::flush();DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();resetWire(['reply'=>$reply]);
 // Discard only the preceding scenario's synthetic transfer acceptance before this independent annual import.
 $write('acceptance',['ending'=>'com','accept'=>true,'terms'=>[1],'registry'=>true,'verified'=>true,'test_registration_accepted'=>true,'transfer'=>false]);
@@ -68,10 +70,10 @@ same(['queued','renewal_acceptance_required',[]],[$op->fresh()->state,$op->fresh
 $write('test_renewal',['accept'=>false]);Cache::flush();(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same([],$GLOBALS['enomWire']['forms'],'Missing action acceptance refuses before preflight');
 $write('test_renewal',['accept'=>true,'verified'=>true]);
 $GLOBALS['enomWire']['during']=static function(array $p)use($op,$clock):void {if($p['Command']==='Extend'){(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);}};
-Cache::flush();$used=(int)(DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used')??0);
+Cache::flush();$used=DB::table(EnomTestSendLimitSchema::SENDS)->count();
 (new RuntimeWork($clock,new RuntimePorts))->operation($op->id);$commands=array_column($GLOBALS['enomWire']['forms'],'Command');
 same(['GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','Extend'],$commands,'Two bounded six-read assessments and one Extend');
-same('pending',$op->fresh()->state,'Paid renewal acknowledged once');same($used+13,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'Write reservation counted once');same($before,$money(),'Renewal dispatch changes no native financial bytes');
+same('pending',$op->fresh()->state,'Paid renewal acknowledged once');same($used+13,DB::table(EnomTestSendLimitSchema::SENDS)->count(),'Extend counted once among the 13 sends');same($before,$money(),'Renewal dispatch changes no native financial bytes');
 $extend=end($GLOBALS['enomWire']['forms']);same(['1','no'],[$extend['NumYears'],$extend['UseCreditCard']],'One annual renewal without card');
 $s->after=true;$s->bill=(new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A');
 foreach([['2027-10-21','10.00'],['2028-10-20','10.00'],['2028-10-21','invalid']] as [$expiry,$charge]){
@@ -79,26 +81,25 @@ foreach([['2027-10-21','10.00'],['2028-10-20','10.00'],['2028-10-21','invalid']]
     same('pending',$op->fresh()->state,'Missing full-year expiry or valid charge cannot complete');same($before,$money(),'Incomplete confirmation keeps paid money unchanged');
 }
 $s->confirmed='2028-10-21';$s->charge='10.00';
-$capUsed=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');
-config(['domains.enom_test_daily_call_cap'=>$capUsed+4]);$count=count($GLOBALS['enomWire']['forms']);$attempt=$op->fresh()->attempt;$polls=$op->fresh()->policy['renewal_polls']??0;
+config(['domains.enom_test_sends_per_day'=>$recentSends()+4]);$count=count($GLOBALS['enomWire']['forms']);$attempt=$op->fresh()->attempt;$polls=$op->fresh()->policy['renewal_polls']??0;
 Cache::flush();(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
 same(['GetDomainInfo','GetRenew','GetDomainInfo','GetDomainExp'],array_column(array_slice($GLOBALS['enomWire']['forms'],$count),'Command'),'Mid-confirmation cap retains fresh four-read prefix without reordering');
 same(['pending',$attempt,$polls],[$op->fresh()->state,$op->fresh()->attempt,$op->fresh()->policy['renewal_polls']??0],'Partial capped confirmation keeps original attempt and covered-poll count');same($before,$money(),'Partial confirmation never refunds or resends');
-config(['domains.enom_test_daily_call_cap'=>1000]);
+config(['domains.enom_test_sends_per_day'=>1000]);
 Cache::flush();$count=count($GLOBALS['enomWire']['forms']);(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
 same('succeeded',$op->fresh()->state,'Unique renewal charge and full-year owned expiry complete cycle');same(['GetDomainInfo','GetRenew','GetDomainInfo','GetDomainExp','GetOrderDetail'],array_column(array_slice($GLOBALS['enomWire']['forms'],$count),'Command'),'Captured renewal uses exactly five reconciliation reads');
 same(['amount'=>'10.00','currency'=>'USD'],$op->fresh()->cost['actual'],'Actual renewal cost retained');same('2028-10-21',$op->domain()->firstOrFail()->provider_expires_at->format('Y-m-d'),'Expiry advances one year');expect($stopDomain->fresh()->renewal_policy['renewals_stopped'],'Completion preserves future stop');same(null,$op->domain()->firstOrFail()->service->expires_at,'Native expiry remains null');
 $count=count($GLOBALS['enomWire']['forms']);Cache::flush();(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same($count,count($GLOBALS['enomWire']['forms']),'Repeated completed worker sends nothing');
-$start('cap');$op=$ops['cap'];$capUsed=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');config(['domains.enom_test_daily_call_cap'=>$capUsed+12]);
-(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same(['held','enom_test_renewal_call_cap'],[$op->fresh()->state,$op->fresh()->safe_code],'Cap before write is held safely');same([],array_values(array_filter($GLOBALS['enomWire']['forms'],fn($p)=>$p['Command']==='Extend')),'Cap sends no write');same([],(array)$op->fresh()->attempt,'Cap precedes seal');same(12,count($GLOBALS['enomWire']['forms']),'All completed preflight reads counted');
-config(['domains.enom_test_daily_call_cap'=>1000,'domains.enom_writes.renewal'=>false]);$domain=$op->domain()->firstOrFail();$offTicket=StaffOperationReview::ticket($staff->id,$domain->id,$op->id,'release',StaffOperationReview::stamp($op->fresh(),$domain),$clock);
+$start('cap');$op=$ops['cap'];config(['domains.enom_test_sends_per_day'=>$recentSends()+11]);
+(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same(['held','enom_test_renewal_call_cap'],[$op->fresh()->state,$op->fresh()->safe_code],'Cap before write is held safely');same([],array_values(array_filter($GLOBALS['enomWire']['forms'],fn($p)=>$p['Command']==='Extend')),'Cap sends no write');same([],(array)$op->fresh()->attempt,'Cap precedes seal');same(11,count($GLOBALS['enomWire']['forms']),'The refused twelfth read is not sent');
+config(['domains.enom_test_sends_per_day'=>1000,'domains.enom_writes.renewal'=>false]);$domain=$op->domain()->firstOrFail();$offTicket=StaffOperationReview::ticket($staff->id,$domain->id,$op->id,'release',StaffOperationReview::stamp($op->fresh(),$domain),$clock);
 try{(new StaffOperations($clock))->run($staff,$domain->id,$op->id,'release',$offTicket,'Reviewed hold while TEST renewal is off');throw new LogicException('Off cannot release renewal cap');}catch(DomainException){}
 same('held',$op->fresh()->state,'Deployment off retains cap hold');config(['domains.enom_writes.renewal'=>true]);$ticket=StaffOperationReview::ticket($staff->id,$domain->id,$op->id,'release',StaffOperationReview::stamp($op->fresh(),$domain),$clock);
 (new StaffOperations($clock))->run($staff,$domain->id,$op->id,'release',$ticket,'Reviewed unsent renewal and restored TEST call capacity');same('queued',$op->fresh()->state,'Audited release makes unsent cap retryable');
 Cache::flush();(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same('pending',$op->fresh()->state,'Released cap renewal freshly admits');same(1,count(array_filter($GLOBALS['enomWire']['forms'],fn($p)=>$p['Command']==='Extend')),'Released cap sends one Extend');
-file_put_contents($receipt.'.renewal',json_encode(['operation'=>$op->id,'used'=>(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'money'=>$money()],JSON_THROW_ON_ERROR));
-$start('partial');$used=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');config(['domains.enom_test_daily_call_cap'=>$used+5]);
-(new RuntimeWork($clock,new RuntimePorts))->operation($ops['partial']->id);same(['held','enom_test_renewal_call_cap'],[$ops['partial']->fresh()->state,$ops['partial']->fresh()->safe_code],'Cap swallowed by preflight remains a safe unsent hold');same(5,count($GLOBALS['enomWire']['forms']),'Partial preflight never oversends');same([],(array)$ops['partial']->fresh()->attempt,'Partial preflight is unsealed');config(['domains.enom_test_daily_call_cap'=>1000]);
+file_put_contents($receipt.'.renewal',json_encode(['operation'=>$op->id,'used'=>DB::table(EnomTestSendLimitSchema::SENDS)->count(),'money'=>$money()],JSON_THROW_ON_ERROR));
+$start('partial');config(['domains.enom_test_sends_per_day'=>$recentSends()+5]);
+(new RuntimeWork($clock,new RuntimePorts))->operation($ops['partial']->id);same(['held','enom_test_renewal_call_cap'],[$ops['partial']->fresh()->state,$ops['partial']->fresh()->safe_code],'Cap swallowed by preflight remains a safe unsent hold');same(5,count($GLOBALS['enomWire']['forms']),'Partial preflight never oversends');same([],(array)$ops['partial']->fresh()->attempt,'Partial preflight is unsealed');config(['domains.enom_test_sends_per_day'=>1000]);
 $start('anchor');$s->day='10/22/2027';(new RuntimeWork($clock,new RuntimePorts))->operation($ops['anchor']->id);expect(!in_array('Extend',array_column($GLOBALS['enomWire']['forms'],'Command'),true),'Assessment anchor drift refuses write');same([],(array)$ops['anchor']->fresh()->attempt,'Anchor drift is unsealed');
 $start('overrun');$s->price='11.00';(new RuntimeWork($clock,new RuntimePorts))->operation($ops['overrun']->id);same('renewal_cost_overrun',$ops['overrun']->fresh()->safe_code,'Frozen cost cap holds overrun');expect($holders['overrun']->fresh()->renewal_policy['automatic_spend_paused'],'Overrun pauses future spending');expect(!in_array('Extend',array_column($GLOBALS['enomWire']['forms'],'Command'),true),'Overrun no spending write');
 $start('auto');$s->auto='1';(new RuntimeWork($clock,new RuntimePorts))->operation($ops['auto']->id);same('provider_auto_renew_unconfirmed',$ops['auto']->fresh()->safe_code,'Auto-renew must stay off');expect(!in_array('Extend',array_column($GLOBALS['enomWire']['forms'],'Command'),true),'Auto-renew refuses spend');
@@ -117,6 +118,6 @@ foreach([[],['9002','9003'],['9002']] as $ids){
 
 require __DIR__.'/enom-renewal-replacement.php';
 Auth::setUser($staff);$count=count($GLOBALS['enomWire']['forms']);\Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->assertSeeInOrder(['Setup checklist','Renewals','On','DNS, nameservers and contacts']);same($count,count($GLOBALS['enomWire']['forms']),'Staff page makes zero provider calls');
-$continued=json_decode(file_get_contents($receipt.'.renewal'),true,512,JSON_THROW_ON_ERROR);$continued['race_operation']=$ops['race']->id;$continued['issuance_domain']=$holders['issuance']->id;$continued['user']=$user->id;$continued['money']=$money();$continued['used']=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');file_put_contents($receipt.'.renewal',json_encode($continued,JSON_THROW_ON_ERROR));
+$continued=json_decode(file_get_contents($receipt.'.renewal'),true,512,JSON_THROW_ON_ERROR);$continued['race_operation']=$ops['race']->id;$continued['issuance_domain']=$holders['issuance']->id;$continued['user']=$user->id;$continued['money']=$money();$continued['used']=DB::table(EnomTestSendLimitSchema::SENDS)->count();file_put_contents($receipt.'.renewal',json_encode($continued,JSON_THROW_ON_ERROR));
 file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));$nativeSuccessful=true;
 echo "Installed TEST renewal: native payment, cap, unique charge/expiry, restart and uncertainty passed.\n";

@@ -11,12 +11,14 @@ set_exception_handler(static function (Throwable $error): never {
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory;
-use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCalls, EnomTestCallSchema, EnomTestManagement, Rdap, RenewalAcceptance, Runtime, TransferPrecheck, WriteAcceptance, WriteFeatures};
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestManagement, EnomTestSendLimitSchema, Rdap, RenewalAcceptance, Runtime, TransferPrecheck, WriteAcceptance, WriteFeatures};
 
 app()->instance(Clock::class, $clock);
-EnomTestCallSchema::install();
+EnomTestSendLimitSchema::install();
+$sends = static fn (): int => DB::table(EnomTestSendLimitSchema::SENDS)->count();
 $nativePolicy = ['domains.enom_identity.environment' => 'test', 'domains.enom_catalogue.enabled' => true,
-    'domains.enom_writes.management' => true, 'domains.enom_test_daily_call_cap' => 1000];
+    'domains.enom_writes.management' => true, 'domains.enom_test_sends_per_day' => 1000, 'domains.enom_test_sends_per_minute' => 100000];
 $previousPolicy = array_map(static fn ($key) => config($key), array_combine(array_keys($nativePolicy), array_keys($nativePolicy)));
 foreach (['lock' => ['locked' => false], 'nameservers' => ['nameservers' => ['ns3.example.com', 'ns4.example.com']]] as $action => $payload) {
     [$d, $original] = $holding(placeholderComFixtureName('bound-native-'.$action.'-placeholder.com'));
@@ -42,24 +44,24 @@ foreach (['lock' => ['locked' => false], 'nameservers' => ['nameservers' => ['ns
     ]);
     $state->apply = false;
     $op = $engine->request($user, $d->id, $action, $payload, hash('sha256', 'native-bound-'.$action), $driver);
-    $baseline = EnomTestCalls::usage()['used'];
+    $baseline = $sends();
     for ($i = 1; $i <= 5; $i++) {
         $state->during = static function () use ($op): void { Cache::put('domains-write-slot:'.$op->account_fingerprint, true, 25); };
         same('queued', $engine->run($op->id, $driver)->state, 'Native mutation reservation survives a pre-seal deferral');
-        same($baseline + 2 * $i, EnomTestCalls::usage()['used'], 'Deferred preparation reserves a read and an unsent mutation');
+        same($baseline + $i, $sends(), 'Deferred preparation counts only its read; the unsent mutation counts nothing');
         same($i, count($GLOBALS['enomWire']['forms']), 'Only the preparation read reaches fake cURL');
         Cache::flush();
     }
     same('uncertain', $engine->run($op->id, $driver)->state, 'Sixth native preparation seals once');
     for ($i = 1; $i < 20; $i++) { $engine->reconcile($op->id, $driver); }
     same(47, count($GLOBALS['enomWire']['forms']), 'Physical lifetime maximum for '.$action);
-    same($baseline + 52, EnomTestCalls::usage()['used'], 'Native reservation lifetime maximum for '.$action);
+    same($baseline + 47, $sends(), 'Every physical send counted once for '.$action);
     same(1, count(array_filter($GLOBALS['enomWire']['forms'], static fn ($form) => in_array($form['Command'], ['SetRegLock', 'ModifyNS'], true))), 'Exactly one physical mutation');
     $engine->reconcile($op->id, $driver); $engine->run($op->id, $driver);
     same(47, count($GLOBALS['enomWire']['forms']), 'At the lifetime limit, no more physical sends');
-    same($baseline + 52, EnomTestCalls::usage()['used'], 'At the lifetime limit, no more native reservations');
+    same($baseline + 47, $sends(), 'At the lifetime limit, nothing more is counted');
     app()->offsetUnset(Runtime::class);
     config($previousPolicy);
 }
 $nativeSuccessful = true;
-echo "Management native lifetime bound: both actions use at most 47 physical sends and 52 reservations; at-limit refusal passed.\n";
+echo "Management native lifetime bound: both actions use at most 47 physical sends, each counted once; at-limit refusal passed.\n";

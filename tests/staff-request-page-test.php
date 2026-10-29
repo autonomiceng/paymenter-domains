@@ -29,7 +29,7 @@ same(['In progress','info',null],array_values(Labels::requestStatus(new Operatio
 same(['Cancelled','gray',null],array_values(Labels::requestStatus(new Operation(['state'=>'disposed']))),'Closed by staff is Cancelled');
 same(['Put on hold by staff','Not sent: orders paused','Not sent: low registrar balance','Old registrar needs approval','Missing'],
     [Labels::reason('staff_review_required'),Labels::reason('processing'),Labels::reason('balance'),Labels::reason('transfer_needs_action'),Labels::reason(null)],'Reason lines');
-same('Not sent: Enom test daily limit reached',Labels::reason('enom_test_call_cap'),'Enom test limit is one short line');
+same('Not sent: stopped by our TEST send check',Labels::reason('enom_test_call_cap'),'Enom test limit is one short line');
 same(null,Labels::reason('refreshed'),'Internal codes have no reason line');
 same(['Transfer lock','Auth code email','DNS records','Other'],[Labels::action('lock'),Labels::action('auth_code_email'),Labels::action('dns'),Labels::action('future')],'Type names');
 same(['Auto Pay: charged','Auto Pay skipped: no saved card','Auto Pay: result missing'],

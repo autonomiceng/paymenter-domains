@@ -1,11 +1,11 @@
 <?php
 // Installed unsent-cycle settlement; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling,EnomTestCalls,EnomTestCallSchema,RuntimePorts,RuntimeWork,StaffOperationReview,StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling,RuntimePorts,RuntimeWork,StaffOperationReview,StaffOperations};
 use Illuminate\Support\Facades\{Cache,DB};
-$start('replacement');$op=$ops['replacement'];$used=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');
-config(['domains.enom_test_daily_call_cap'=>$used+5]);(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same('held',$op->fresh()->state,'Replacement begins with proven unsent cap hold');
-config(['domains.enom_test_daily_call_cap'=>1000]);
+$start('replacement');$op=$ops['replacement'];
+config(['domains.enom_test_sends_per_day'=>$recentSends()+5]);(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same('held',$op->fresh()->state,'Replacement begins with proven unsent cap hold');
+config(['domains.enom_test_sends_per_day'=>1000]);
 $reviewAction=static function(string $action)use($op,$staff,$clock):void {
     $domain=$op->domain()->firstOrFail();$ticket=StaffOperationReview::ticket($staff->id,$domain->id,$op->id,$action,StaffOperationReview::stamp($op->fresh(),$domain),$clock);
     (new StaffOperations($clock))->run($staff,$domain->id,$op->id,$action,$ticket,'Review unsent renewal settlement and replacement');

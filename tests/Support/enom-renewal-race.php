@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DomainBilling,NativeDomainGuard,RuntimePorts,RuntimeWork};
 $data=json_decode(file_get_contents($receipt.'.renewal'),true,512,JSON_THROW_ON_ERROR);$worker=(int)getenv('PACKAGE_RACE_WORKER');
 $clock=new class implements Clock {public string $day='2027-09-30';public function now():DateTimeImmutable{return new DateTimeImmutable($this->day.'T12:00:00Z');}};
-app()->instance(Clock::class,$clock);config(['domains.enom_test_daily_call_cap'=>1000,'settings.credits_auto_use'=>false]);
+app()->instance(Clock::class,$clock);config(['domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000,'settings.credits_auto_use'=>false]);
 $wait=static function(string $path):void{$until=microtime(true)+20;while(!is_file($path)&&microtime(true)<$until){usleep(25000);}expect(is_file($path),'Competing process reached its barrier');};
 if($phase==='enom-test-renewal-race-issue'){
     file_put_contents($receipt.'.issue-ready-'.$worker,'ready');$wait($receipt.'.issue-ready-'.(3-$worker));

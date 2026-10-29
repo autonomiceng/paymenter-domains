@@ -47,15 +47,15 @@ $calls=count($observation->calls);$clock->instant=$clock->now()->modify('+60 sec
 same('refreshed',$work->tick(1)[$d->server_id],'Capacity recovery needs no staff resume');expect(count($observation->calls)>$calls,'Next due tick performs read');
 same($before,$original->fresh()->getAttributes(),'Cap recovery preserves original operation evidence');
 // A disabled TEST limit is the same non-consuming refusal, even over successive due turns.
-$capConfig=config('domains.enom_test_daily_call_cap');config(['domains.enom_test_daily_call_cap'=>0]);
+$capConfig=config('domains.enom_test_sends_per_day');config(['domains.enom_test_sends_per_day'=>0]);
 foreach([1,2] as $turn){
  DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$clock->now()->getTimestamp()]);
- $observation->during=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::reserve(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test);
+ $observation->during=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::admit(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,'synthetic-uid','GetDomainInfo');
  same('read_deferred',$work->tick(1)[$d->server_id],'Cap zero remains deferred on due turn '.$turn);
  $zero=DB::table('domains_observation_work')->where('id',$job->id)->sole();same([0,'refreshed',null,0,$clock->now()->getTimestamp()+60],[$zero->tries,$zero->safe_code,$zero->claim,$zero->lease_until,$zero->due_at],'Cap zero never spends a failure try or stops work');
  $clock->instant=$clock->now()->modify('+60 seconds');
 }
-config(['domains.enom_test_daily_call_cap'=>$capConfig]);same('refreshed',$work->tick(1)[$d->server_id],'Restored capacity recovers without staff resume');
+config(['domains.enom_test_sends_per_day'=>$capConfig]);same('refreshed',$work->tick(1)[$d->server_id],'Restored capacity recovers without staff resume');
 // Separately authorized correction: immutable link and appended readback progress, never closure.
 $bindings->setProcessing($d->server_id, true, syntheticActivation());$op=$management->request($user,$d->id,'auto_renew_off',[],$key(),$driver,correction:$original->operation_key);
 same('auto_renew',$op->policy['management']['correction_link']['section'],'Frozen section link');same('succeeded',$management->run($op->id,$driver)->state,'Separate correction execution');

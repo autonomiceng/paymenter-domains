@@ -16,8 +16,7 @@
     "tests/dns-signals-test.php",
     "tests/public-registry-test.php",
     "tests/rdap-transport-test.php",
-    "tests/namesilo-default-contact-test.php",
-    "tests/enom-budget-seed-test.php"
+    "tests/namesilo-default-contact-test.php"
   ],
   "contracts": [
     "tests/ote-reconciliation-test.php",
@@ -41,13 +40,9 @@
     "tests/ote-collection-shapes-test.php"
   ],
   "native": [
-    "tests/test_enom_run_guards.py",
-    "tests/test_enom_run_concurrency.py",
-    "tests/enom-run-transports-test.php",
-    "tests/enom-run-management-test.php",
+    "tests/test_enom_send_limit_concurrency.py",
     "tests/management-send-bound-test.php",
     "tests/management-send-reservations-test.php",
-    "tests/enom-run-budget-test.php",
     "tests/walk-layout-test.php",
     "tests/transfer-entry-test.php",
     "tests/enom-curl-test.php",
@@ -353,8 +348,10 @@
     "tests/namesilo-fingerprint-reset-test.php",
     "tests/staff-alert-visibility-test.php",
     "tests/storefront-cart-handoff-test.php",
-    "tests/enom-budget-migration-test.php",
-    "tests/enom-run-failure-facts-test.php"
+    "tests/enom-test-send-limit-test.php",
+    "tests/enom-send-limit-upgrade-test.php",
+    "tests/enom-send-limit-unsent-writes-test.php",
+    "tests/enom-send-limit-unsent-purchase-test.php"
   ],
   "ui": [],
   "runner": [
@@ -365,7 +362,8 @@
     "tests/test_blade_verbatim.py",
     "tests/test_native.py",
     "tests/test_conversion_inventory.py",
-    "tests/test_conversion_mariadb_guards.py"
+    "tests/test_conversion_mariadb_guards.py",
+    "tests/test_runner_speed.py"
   ],
   "package": [
     "tests/test_package.py"
@@ -374,6 +372,6 @@
     "tests/test_conversion_mariadb.py",
     "tests/test_schema_mariadb.py",
     "tests/test_user_deletion_mariadb.py",
-    "tests/test_enom_run_budget_mariadb.py"
+    "tests/test_enom_send_limit_mariadb.py"
   ]
 }

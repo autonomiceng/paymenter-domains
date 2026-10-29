@@ -23,7 +23,6 @@ final class ProviderSendGuard
 
     public static function beforeSend(string $registrar,string $environment,string $command): void
     {
-        if($registrar!=='enom' || $environment!=='test'){EnomTestRunBudget::clearPending();}
         $reason=null;
         try {
             $guard=function_exists('config')?config('domains.provider_send_guard'):null;

@@ -30,11 +30,14 @@ reads inside admission. Grace and redemption remain unavailable.
 One ordinary renewal performs two complete six-read assessments:
 GetDomainInfo, GetExtendInfo, Check, GetDomainInfo, GetRenew,
 GetBalance. Then one Extend spends TEST account funds. It uses one
-year and UseCreditCard=no. A daily call unit is reserved before sealing, bound to
-account, operation and UTC day, consumed once before transport and never refunded.
-A refusal before the seal holds the unattempted paid obligation with
+year and UseCreditCard=no. It is counted against the per-login TEST send limit
+right before transport and never refunded; the scope is bound to account and operation.
+A limit refusal during assessment reads holds the unsealed paid obligation with
 `enom_test_renewal_call_cap`; an audited Release unsent hold restores eligibility
-for a fresh assessment. Partial read-cap refusal takes the same safe path.
+for a fresh assessment. A refusal at Extend after sealing records
+`held / renewal_definitely_unsent` and retains the seal. It uses the existing paid-unsent
+recovery/refund path; ordinary release is unavailable. A refusal after cURL entry
+leaves the renewal uncertain and cannot prove it unsent.
 
 Captured-order confirmation takes five reads: GetDomainInfo, GetRenew,
 GetDomainInfo, GetDomainExp, GetOrderDetail. Completion
@@ -55,7 +58,9 @@ and before the write, release and exactly one Extend, paid unsent credit/replace
 price cap, expiry drift, auto-renew, grace refusal, negative charge/expiry evidence,
 lost reply, zero/duplicate/unique accepted history, page silence and redaction.
 `enom-test-renewal-guards-test.php` covers explicit-runtime default-off parity,
-annual-only admission, revoked/drifted acceptance and one-use/day-bound reservation.
+annual-only admission, revoked/drifted acceptance and account/operation-bound armed
+TEST scopes without a day. It also covers sticky consumption, pre-seal read holds,
+sealed unsent refusals and uncertainty after cURL entry.
 
 All responses are socket-free synthetic XML through the reviewed protocol objects.
 They establish installed composition, not real provider renewal acceptance,
