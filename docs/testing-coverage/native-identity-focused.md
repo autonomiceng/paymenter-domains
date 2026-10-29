@@ -27,7 +27,7 @@ MariaDB scenario registrations are recorded separately below; they require a sup
 MariaDB environment and are not included in offline pass counts.
 
 ```sh
-python3 scripts/test.py --jobs 4 --only \
+python3 scripts/test.py --jobs 2 --only \
   tests/acquisition-binding-test.php tests/acquisition-payment-review-test.php \
   tests/acquisition-retirement-refusals-test.php tests/acquisition-retirement-staff-test.php \
   tests/acquisition-retirement-test.php tests/adopted-complimentary-test.php \

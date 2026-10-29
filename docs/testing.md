@@ -34,6 +34,9 @@ Python 3, dpkg-deb and compatible system libraries are required; no system PHP o
 
 ## Suites and receipts
 
+See [scheduling and fail-fast receipts](test-scheduling.md) for concurrency, memory
+reservations, ordering and per-command measurements.
+
 `tests/suites.json` registers provider, contracts, native, UI, runner and package categories.
 All `*-test.php` and `test_*.py` paths must be registered exactly once and exist.
 Detected `*-test.cjs` files are refused until a JavaScript runner is implemented.
@@ -659,16 +662,20 @@ Coverage details are in the [testing coverage index](testing-coverage.md), with 
 
 ## Parallel offline suites
 
-`python3 scripts/test.py --jobs 4` uses four workers. `--jobs 1` keeps serial execution.
+`python3 scripts/test.py --jobs 4 --memory-mib 4096` requests four workers. An explicit
+`--jobs` or `DOMAINS_TEST_JOBS` count that exceeds the memory budget or available host
+memory fails at setup. CPU-based defaults shrink to fit. `--jobs 1` keeps serial execution.
 `DOMAINS_TEST_JOBS` sets the default; otherwise it is half the CPU count, between one and four.
 Each worker owns its fixture, PHP runtime and temporary paths. Source and copied dependencies are checked before commands start and after the run.
-Console output prints each command's block as it completes; receipts keep manifest order and indexed output files.
+Console output prints each command's block as it completes; receipts keep scheduled
+plan order and indexed output files.
 Receipts add `jobs` and command `seconds` for concurrency and timing.
 Installed-package commands (`test_installed_*.py`, including NameSilo enrollment) run alone.
 The pool drains before each one and resumes after its integrity check finishes.
 Command `started_seconds` and `finished_seconds` are monotonic offsets from run start;
 the finish includes the integrity check, so receipts can verify that commands did not overlap.
-The first failure stops new work; running commands finish. Runs that include MariaDB run serially.
+The first failure stops new work; running commands finish by default. `--fail-fast`
+cancels those peers. Runs that include MariaDB run serially.
 In parallel runs, writes to `Domains/`, even when restored, fail.
 
 Public registry expiry tests use synthetic bootstrap/HTTP bodies, endpoint DNS and clocks.
@@ -746,7 +753,7 @@ python3 scripts/test.py --only tests/test_installed_package_previous.py
 ```
 
 The second command requires `PAYMENTER_TEST_APP`, just like the native suite. Selection
-keeps manifest order, deduplicates paths and never adds implicit lint. Unknown paths,
+uses scheduled plan order, deduplicates paths and never adds implicit lint. Unknown paths,
 invalid manifests and mixing `--only` with `--suite` fail. Category selection remains
 available through `--suite`. A focused pass is not full boundary acceptance: receipts
 record `only_tests`, `omitted_tests` and selected/omitted categories. `complete` describes
