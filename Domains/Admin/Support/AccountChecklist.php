@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Filament\Actions\Action;
 use Illuminate\Support\Facades\{DB,Schema};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,TldResource};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
@@ -55,10 +55,17 @@ final class AccountChecklist
         $hold=Schema::hasTable('domains_observation_queues')?DB::table('domains_observation_queues')->where('server_id',$a->server_id)->value('catalogue_hold'):null;
         if ($hold!==null) {
             $at=is_int($failure['at']??null)?' '.self::date($failure['at']):'';
-            return self::row('TLD prices','Sync failed','danger','Failed'.$at.': '.self::syncCause($failure['code']??$hold).'. Saved prices are kept.','import');
+            $row=self::row('TLD prices','Sync failed','danger','Failed'.$at.': '.self::syncCause($failure['code']??$hold).'. Saved prices are kept.');
+            return [...$row,'buttons'=>self::openTlds($a)];
         }
         $synced=Price::where('server_id',$a->server_id)->max('observed_at');
-        return self::row('TLD prices',$synced?'Synced '.gmdate('M j, Y H:i \U\T\C',strtotime((string)$synced.' UTC')):null,null,$synced?null:'Not synced yet','import');
+        return [...self::row('TLD prices',$synced?'Synced '.gmdate('M j, Y H:i \U\T\C',strtotime((string)$synced.' UTC')):null,null,$synced?null:'Not synced yet'),'buttons'=>self::openTlds($a)];
+    }
+    /** Prices sync from the TLD list, for every TLD of the account at once. */
+    private static function openTlds(Account $a): array
+    {
+        try { $url=TldResource::getUrl('index'); } catch (\Throwable) { $url=null; }
+        return [Action::make('open_tlds_'.$a->server_id)->label('Open TLDs')->link()->size('sm')->url($url)->visible($url!==null)];
     }
     /** Plain cause for a stored catalogue failure code. */
     public static function syncCause(string $code): string

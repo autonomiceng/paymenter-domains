@@ -47,9 +47,6 @@ final class Labels
         if ($reason===self::FEATURE_OFF) {
             return 'Not sent: '.(['renew'=>'Renewals','transfer'=>'Transfers','register'=>'Registrations'][$op->action]??'Changes').' off for this account';
         }
-        $cache=app('request')->attributes;$key='domains.account.environment.'.$op->server_id;
-        if($op->registrar_key==='enom'&&!$cache->has($key)){$cache->set($key,\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->value('environment'));}
-        if($op->registrar_key==='enom'&&$cache->get($key)==='live'&&$reason===self::reason('enom_test_call_cap')){ return self::reason('write_rate_limited'); }
         return $reason;
     }
     private const FEATURE_OFF='Not sent: feature off for this account';
@@ -71,7 +68,7 @@ final class Labels
             'renewal_admitted'=>null,'renewal_authority_invalid'=>'Not sent: registrar account changed',
             'renewal_anchor_changed'=>'Not sent: expiry date changed','renewal_prior_outcome_unresolved'=>'Registrar has not confirmed the result',
             'automatic_spend_paused'=>'Not sent: orders paused','renewal_acceptance_required'=>'Not sent: Renewals off for this account',
-            'renewal_rate_limited'=>'Not sent: registrar API limit reached','renewal_binding_changed'=>'Not sent: registrar account changed',
+            'renewal_rate_limited'=>'Not sent: our request safety limit reached','renewal_binding_changed'=>'Not sent: registrar account changed',
             'renewal_reads_unavailable'=>'Status check failed','provider_membership_unconfirmed'=>'Not sent: domain not in registrar account',
             'provider_auto_renew_unconfirmed'=>'Not sent: registrar auto-renew may be on','renewal_restore_refused'=>'Not sent: domain in redemption',
             'renewal_state_unconfirmed'=>'Registrar has not confirmed the result','renewal_term_refused'=>'Not sent: term not supported',
@@ -93,7 +90,7 @@ final class Labels
             'enom_test_transfer_setup_required'=>'Not sent: registrar account not set up','enom_test_setup_required'=>'Not sent: registrar account not set up',
             'enom_test_transfer_usd_balance_required'=>'Not sent: check the registrar balance first','usd_balance_required'=>'Not sent: check the registrar balance first',
             'configuration_unavailable'=>"Not sent: couldn't load the registrar account's settings",
-            'write_rate_limited'=>'Not sent: registrar API limit reached','write_acceptance_required'=>self::FEATURE_OFF,
+            'write_rate_limited'=>'Not sent: our request safety limit reached','write_acceptance_required'=>self::FEATURE_OFF,
             'nameservers_required'=>'Not sent: nameservers missing','registry_details_unsupported'=>'Not sent: registry needs extra details',
             'renewal_funding_or_authority'=>'Not sent: low registrar balance','renewal_cost_overrun'=>'Not sent: cost above limit',
             'target_changed'=>'Not sent: domain status changed','term'=>'Not sent: term not supported','balance'=>'Not sent: low registrar balance',

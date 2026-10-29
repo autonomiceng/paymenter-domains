@@ -43,13 +43,12 @@ final class SellerPolicies
                     if (!$enabled) { continue; }
                     if (!$catalogue->{$action.'_enabled'}) { throw new \DomainException('Seller action is unsupported.'); }
                     $terms = $action === 'transfer' ? [1] : array_filter(range(1, 10), static fn (int $term): bool => $term >= $catalogue->min_years && $term <= $catalogue->max_years);
-                    $available = false; $expired = null;
+                    $available = false;
                     foreach ($terms as $term) {
                         try { PublicationEligibility::require($catalogue, $action, $term, true); $this->prices->current($serverId, $account->account_fingerprint, $tld, $action, $term, 'USD', $now, true, $catalogue); $available = true; }
-                        catch (ExpiredCostEvidence $error) { $expired ??= $error; }
                         catch (\DomainException) { /* Another supported registration term may still be available. */ }
                     }
-                    if (!$available) { throw $expired ?? new \DomainException('Seller has no eligible action price.'); }
+                    if (!$available) { throw new \DomainException('Seller has no eligible action price.'); }
                 }
             }
             $previous = $policy->server_id === null ? null : Account::where('server_id', $policy->server_id)->first();
@@ -147,7 +146,9 @@ final class SellerPolicies
             PublicationEligibility::require($tld, $selected->action, $selected->term, true);
             $this->prices->current($selected->serverId, $selected->fingerprint, $selected->tld, 'renew', 1, 'USD', $now, true, $tld);
             $price = $this->prices->current($selected->serverId, $selected->fingerprint, $selected->tld, $selected->action, $selected->term, 'USD', $now, true, $tld);
-            if ($price->id !== $selected->priceId || $price->revision !== $selected->priceRevision) { throw new \DomainException('Stale price revision.'); }
+            // A price sync bumps the revision; checkout then takes the current row. The cart still refuses when the
+            // shown price no longer matches, and current() refuses a missing cost or a price below cost.
+            if ($price->id !== $selected->priceId || $price->revision < $selected->priceRevision) { throw new \DomainException('Stale price revision.'); }
             $prices[] = $price;
         }
         return $prices;

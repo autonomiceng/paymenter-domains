@@ -348,6 +348,7 @@
     "tests/namesilo-fingerprint-reset-test.php",
     "tests/staff-alert-visibility-test.php",
     "tests/storefront-cart-handoff-test.php",
+    "tests/storefront-cart-replace-test.php",
     "tests/enom-test-send-limit-test.php",
     "tests/enom-send-limit-upgrade-test.php",
     "tests/enom-send-limit-unsent-writes-test.php",

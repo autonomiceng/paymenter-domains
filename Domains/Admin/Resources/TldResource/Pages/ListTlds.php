@@ -4,7 +4,9 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Actions\Action;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
+use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,TestCatalogue};
 use Filament\Schemas\Components\{Callout,EmbeddedTable,RenderHook};
 use Filament\Schemas\Schema;
 use Filament\View\PanelsRenderHook;
@@ -17,7 +19,14 @@ class ListTlds extends ListRecords
     public function getTitle(): string{return 'TLDs & pricing';}
     public function getBreadcrumbs(): array{return [];}
     protected function getHeaderActions(): array
-    {return [Action::make('price_list')->label('Price list')->url(TldResource::getUrl('price-list'))->visible(fn()=>Staff::can(Staff::COSTS))];}
+    {
+        $servers=[];
+        foreach(Account::query()->whereIn('server_id',\App\Models\Server::where('extension','Domains')->where('type','server')->select('id'))->orderBy('server_id')->get() as $a){
+            try{if(TestCatalogue::enabled(CatalogueAcceptances::binding($a))){$servers[]=(int)$a->server_id;}}catch(\Throwable){}
+        }
+        return [...array_map(fn(int $s)=>SettingsActions::syncAll($s,count($servers)>1),$servers),
+            Action::make('price_list')->label('Price list')->url(TldResource::getUrl('price-list'))->visible(fn()=>Staff::can(Staff::COSTS))];
+    }
     public function content(Schema $schema): Schema
     {
         $failures=TldResource::syncFailures();

@@ -24,7 +24,7 @@ final class RenewalReminders
         $rate=$l['prices']->where('term',1)->where('currency','USD')->where('account_fingerprint',$d->account_fingerprint)->first();
         $unknown=false;$complimentary=$d->price_mode==='complimentary';
         if(!$rate||$rate->retail===null||PricingRule::minor(PriceCatalogue::retail($rate->retail))<=0){$alert('unknown_price');$unknown=true;}
-        if(!$rate||$rate->wholesale===null||!$rate->fresh_until||!$rate->observed_at||$rate->observed_at>$now||$rate->fresh_until<=$now){$alert('unknown_cost');}
+        if(!$rate||$rate->wholesale===null||!$rate->fresh_until||!$rate->observed_at||$rate->observed_at>$now){$alert('unknown_cost');}
         if($op&&in_array($op->state,['held','uncertain'],true)){$alert('held_obligation',(int)$op->id);if(!$expired){return null;}}
         if(!$expired&&$op&&in_array($op->state,['queued','running','pending','succeeded'],true)){return null;}
         $settings=$l['settings']->pluck('value','key');

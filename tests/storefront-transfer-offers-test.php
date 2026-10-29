@@ -90,7 +90,10 @@ expect(Paymenter\Extensions\Servers\Domains\Support\DemoData::present(), 'Real d
 $parity(true, 'Offline demo display');
 config(['domains.enom_identity.environment' => 'test']);
 $parity(true, 'Demo with test deployment');
-$clock->instant = $now->modify('+1 day'); $parity(false, 'Expired prices');
+$savedRows = $store->endings(); $before = $reads->calls;
+$clock->instant = $now->modify('+1 day'); $parity(true, 'Saved prices after one day');
+same($savedRows, $store->endings(), 'Age preserves exact public transfer prices and terms');
+same($before, $reads->calls, 'Older transfer prices require no provider reads');
 DB::table('domains_sales_policies')->delete(); $parity(false, 'No policies');
 $nativeSuccessful = true;
 echo "Transfer existence display parity and early-return query bounds passed.\n";

@@ -150,7 +150,7 @@
                 const response = await fetch(list.dataset.domainsResults, {method: 'POST', credentials: 'same-origin',
                     headers: {'Content-Type': 'application/json', 'Accept': 'application/json',
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''},
-                    body: JSON.stringify({domain: row.dataset.domain, _request_key: list.dataset.requestKey})});
+                    body: JSON.stringify({domain: row.dataset.domain, _request_key: list.dataset.requestKey, ...(list.dataset.replace ? {replace: list.dataset.replace} : {})})});
                 if (response.status === 429) note = 'Too many searches. Wait a minute, then retry.';
                 if (response.status === 419) note = 'This page expired. Reload to try again.';
                 if (!response.ok) throw new Error();

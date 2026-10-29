@@ -73,17 +73,17 @@ class ViewTld extends ViewRecord
             if($fact['edit']&&$edit){$entry->hint($edit);}
             $sales[]=$entry;
         }
-        $last=TldFacts::lastPrices((int)$t->server_id);$failure=TldFacts::syncFailure((int)$t->server_id,$last);
-        $until=collect($snapshot['prices'])->pluck('until')->filter()->min();
-        $valid=$until?'Valid until '.\Carbon\CarbonImmutable::parse($until)->utc()->format('M j, Y H:i').' UTC':null;
-        $stamp=static fn($at)=>$at->format('M j, Y H:i').' UTC';
+        // Sales keep the last synced cost; old prices get a quiet warning, never a stop.
+        $synced=TldFacts::lastSynced($snapshot['prices']);$failure=TldFacts::syncFailure((int)$t->server_id);
+        $old=$synced!==null&&$synced->lt(now()->subDays(TldFacts::SYNC_WARN_DAYS));
+        $rule='Sales use the last synced cost. They stop only if there is no cost or the price is below cost.';
+        $sync=[];
         if($failure){
             $cause=e($failure['cause'].($failure['at']?' · '.$failure['at']:''));$link=self::link();
-            $sync=[self::entry('Last sync','Sync failed',new HtmlString($cause.($link?'<div>'.$link->toHtml().'</div>':'')),'danger')];
-            if($last){$sync[]=self::entry('Last good prices',$stamp($last),$valid);}
-        }else{
-            $sync=[self::entry('Last sync',$last?$stamp($last):null,$last?$valid:'Not synced yet')->hint($last?null:self::link())];
+            $sync[]=self::entry('Last sync','Sync failed',new HtmlString($cause.($link?'<div>'.$link->toHtml().'</div>':'')),'danger');
         }
+        $sync[]=self::entry('Prices last synced',$synced?->format('M j, Y'),$synced===null?'Not synced yet':new HtmlString(
+            ($old?'<div style="color:rgb(217 119 6)">More than '.TldFacts::SYNC_WARN_DAYS.' days ago. Sync prices to get current costs.</div>':'').'<div>'.e($rule).'</div>'),$old?'warning':null);
         $override=$this->getAction('override',false);
         return $schema->components([
             Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()->schema([

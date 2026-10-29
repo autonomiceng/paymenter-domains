@@ -248,7 +248,10 @@ $next = $sync->refresh(1, $context(1, 5)); same(1, $next['synced'], 'Next cadenc
 expect($first['failed'] !== $next['failed'], 'Tail ending is not permanently starved');
 same(1, $sync->refresh(1, $context(1, 5), new CatalogueFreshness, ['net'])['synced'], 'Explicit bounded subset reaches tail holder');
 $reject(fn () => $sync->refresh(1, $context(1), new CatalogueFreshness, ['invalid']), 'Unaccepted refresh subset.');
+$saved = $prices->renewal(2, $bound[2]->fingerprint, 'com', 'USD', $clock->now());
 $clock->at = $clock->at->modify('+2 hours');
-same(true, $prices->renewal(2, $bound[2]->fingerprint, 'com', 'USD', $clock->now())->retained, 'Failure margin expiry retains holder retail');
+$later = $prices->renewal(2, $bound[2]->fingerprint, 'com', 'USD', $clock->now());
+same(false, $later->retained, 'Saved cost stays current past the former failure margin');
+same([$saved->id, $saved->revision, $saved->retail], [$later->id, $later->revision, $later->retail], 'Age never changes the holder price or its identity');
 $nativeSuccessful = true;
 echo "Shared dual-driver catalogue, acceptance revisions, publication and retained-holder checks passed.\n";

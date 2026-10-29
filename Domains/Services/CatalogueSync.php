@@ -10,10 +10,11 @@ use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry, CatalogueFailure,
 final class CatalogueSync
 {
     public function __construct(private readonly AccountBindings $bindings, private readonly PriceCatalogue $prices) {}
-    public function refresh(int $serverId, RequestContext $context, CatalogueFreshness $freshness = new CatalogueFreshness, ?array $suffixes = null, ?StaffSettingsReview $review = null): array
+    public function refresh(int $serverId, RequestContext $context, CatalogueFreshness $freshness = new CatalogueFreshness, ?array $suffixes = null, ?StaffSettingsReview $review = null, bool $scheduled = false): array
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Catalogue reads must finish outside locks.'); }
-        if (TestCatalogue::enabled($context->binding) && $review === null) { throw new \DomainException('TEST catalogue import requires staff review.'); }
+        // Staff review, or the daily price sync, which checks the account's daily call cap first.
+        if (TestCatalogue::enabled($context->binding) && $review === null && !$scheduled) { throw new \DomainException('TEST catalogue import requires staff review.'); }
         $reader = $this->bindings->reader($serverId); // enabled, identity, credentials, site BEFORE any provider read
         if (!$reader instanceof CatalogueReader) { throw new \DomainException('Catalogue reader unavailable.'); }
         $reader->binding()->requireMatch($context->binding);
@@ -64,7 +65,7 @@ final class CatalogueSync
                         throw new \DomainException('Unaccepted catalogue evidence.');
                     }
                 }
-                $this->prices->import($entry, $accepted, $recheck, $context->now(), $review);
+                $this->prices->import($entry, $accepted, $recheck, $context->now(), $review, $scheduled);
                 $summary['synced']++;
             } catch (ReadDeferred|EnomTestCallLimit $error) { throw $error; }
             catch (\Throwable $error) {

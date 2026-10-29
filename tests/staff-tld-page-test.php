@@ -79,13 +79,13 @@ foreach([
 Auth::setUser($u);
 same('.com',$page->instance()->getTitle(),'TLD page title is the TLD');
 foreach(['For sale','Change registrar','More','Sales','Registrar for new orders','Existing domains stay with their registrar','Terms','1 to 3 years',
-    'Renewal grace period','Redemption period','Not set','Late renewals are off for this TLD.','Restoring expired domains is off for this TLD.','Price sync','Last sync','Oct 18, 2026 12:00 UTC','Valid until Oct 19, 2026 12:00 UTC',
+    'Renewal grace period','Redemption period','Not set','Late renewals are off for this TLD.','Restoring expired domains is off for this TLD.','Price sync','Prices last synced','Oct 18, 2026','Sales use the last synced cost. They stop only if there is no cost or the price is below cost.',
     'Prices by registrar account','Edit prices','Account','Pricing','Registration','Renewal','Transfer','Default pricing','New orders','History','No changes yet'] as $see){$page->assertSee($see);}
 $plain=$text($page->html());
 expect(!str_contains($plain,'No lifecycle policy saved'),'Unset grace and redemption are not a fault');
 expect(str_contains($plain,'OFFLINE DEMO NameSilo (synthetic) Demo'),'Prices table: Demo tag after the demo account');
 expect(str_contains($plain,'Enom TEST identity check New orders'),'Prices table: the account for new orders is marked');
-$page->assertDontSee('Last good prices')->assertDontSee('Sync failed');$clean($page->html(),'TLD page synced');
+$page->assertDontSee('Last good prices')->assertDontSee('Sync failed')->assertDontSee('Valid until');$clean($page->html(),'TLD page synced');
 same(['label'=>'For sale','tone'=>'success','reason'=>null],TldFacts::salesState($enom->fresh()),'Healthy TLD is for sale');
 
 // The detail table shares page facts for prices, sellers and holders as accounts grow.
@@ -134,7 +134,7 @@ $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()
     ->assertSee('Price sync failed for 1 registrar account.')->assertSee('Enom TEST identity check: '.$cause.'.')->assertSee('Saved prices are still used.')->assertSee('Open Registrars');
 $clean($list->html(),'List sync failed');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()
-    ->assertSee('Sync failed')->assertSee($cause.' · Oct 18, 2026 13:05 UTC')->assertSee('Open Registrars')->assertSee('Last good prices')->assertSee('Valid until Oct 19, 2026 12:00 UTC');
+    ->assertSee('Sync failed')->assertSee($cause.' · Oct 18, 2026 13:05 UTC')->assertSee('Open Registrars')->assertSee('Prices last synced')->assertSee('Oct 18, 2026')->assertDontSee('Valid until');
 $clean($page->html(),'TLD page sync failed');
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('Sync failed');
 DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['catalogue_hold'=>'read_unavailable','catalogue_audit'=>'[]']);

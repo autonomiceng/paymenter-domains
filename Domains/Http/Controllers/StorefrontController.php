@@ -8,12 +8,14 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\RateLimiter;
 use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-use Paymenter\Extensions\Servers\Domains\Services\{CartHandoffFailure, PolicyEndings, Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{CartHandoffFailure, CartLines, PolicyEndings, Storefront};
 
 /** Dormant until39 explicitly loads routes, views and the shared native cart admission hooks. */
 final class StorefrontController extends Controller
 {
-    public function __construct(private readonly Storefront $storefront) {}
+    public function __construct(private readonly Storefront $storefront, private readonly ?CartLines $cartLines = null) {}
+
+    private function lines(): CartLines { return $this->cartLines ?? app(CartLines::class); }
 
     public function search(Request $request)
     {
@@ -41,7 +43,7 @@ final class StorefrontController extends Controller
         }
         return view('domains::search', ['endings' => $endings, 'transfersOffered' => $transfersOffered, 'name' => $raw, 'preferred' => $preferred,
             'sld' => $sld, 'error' => $error, 'notice' => $notice, 'results' => $results, 'years' => null,
-            'guest' => !$request->user(), 'testEnvironment' => $this->storefront->testEnvironment($endings), 'checkKey' => FormKeys::issue($request, 'search')]);
+            'replace' => $this->lines()->find($request->query('replace')), 'guest' => !$request->user(), 'testEnvironment' => $this->storefront->testEnvironment($endings), 'checkKey' => FormKeys::issue($request, 'search')]);
     }
 
     public function searchAlias(Request $request)
@@ -61,13 +63,31 @@ final class StorefrontController extends Controller
         if ($limited = $this->limit($request)) { return $limited; }
         $input = $request->input('domain');
         if (!is_string($input) || strlen($input) > 253) { return response()->json(['status' => 'invalid', 'message' => 'Enter a valid domain name.'], 422); }
+        // A name already in the cart needs no registrar read: it is the customer's own line.
+        try { $name = CanonicalName::normalize($input); }
+        catch (\InvalidArgumentException) { return response()->json(['status' => 'invalid', 'message' => 'Enter a valid domain name.'], 422); }
+        $replace = $this->lines()->find($request->input('replace'));
+        // A replace page whose line left the cart (removed in another tab) stays in replace mode: order() refuses it
+        // with a notice instead of quietly adding a second name.
+        if (!$replace && is_string($stale = $request->input('replace')) && preg_match('/^[1-9][0-9]{0,18}$/D', $stale)) {
+            $replace = ['id' => (int) $stale, 'name' => null, 'action' => null, 'term' => null];
+        }
+        if ($this->lines()->contains($name)) {
+            try { $ending = PolicyEndings::parse($name)['tld']; } catch (\Throwable) { $ending = substr((string) strstr($name, '.'), 1); }
+            $result = ['domain' => $name, 'sld' => substr($name, 0, -strlen($ending) - 1), 'tld' => $ending, 'status' => 'in_cart'];
+            return response()->json(['status' => 'in_cart', 'html' => view('domains::partials.result', ['result' => $result, 'first' => false])->render()]);
+        }
         try { $result = $this->storefront->check($input); }
         catch (\InvalidArgumentException) { return response()->json(['status' => 'invalid', 'message' => 'Enter a valid domain name.'], 422); }
         catch (\Throwable $e) { \Illuminate\Support\Facades\Log::warning('Domains search failed.',['exception_class'=>$e::class]); return response()->json(['status' => 'error', 'message' => 'Couldn’t check this name.'], 503); }
         if (in_array($result['status'], ['available', 'transferable'], true)) {
             $result['key'] = FormKeys::issue($request, 'order:'.$result['domain']);
         }
-        return response()->json(['status' => $result['status'], 'html' => view('domains::partials.result', ['result' => $result, 'first' => false])->render()]);
+        // Replace mode keeps the line's term when this ending sells it.
+        if ($replace && $result['status'] === 'available' && $replace['term'] !== null && isset($result['terms'][$replace['term']])) {
+            $result['term'] = $replace['term']; $result['price'] = $result['terms'][$replace['term']];
+        }
+        return response()->json(['status' => $result['status'], 'html' => view('domains::partials.result', ['result' => $result, 'first' => false, 'replace' => $replace])->render()]);
     }
 
     /** Native cart handoff through a neutral POST. No product/account ID in customer URLs or form values. */
@@ -80,10 +100,14 @@ final class StorefrontController extends Controller
             return redirect()->route('domains.domains.search', ['name' => $input])->with('domains_notice', 'Too many searches. Wait a minute, then retry.');
         }
         FormKeys::consume($request, 'order:'.$input);
+        $replace = null;
+        if ($request->has('replace') && !($replace = $this->lines()->find($request->input('replace')))) {
+            return redirect()->route('domains.domains.search', ['name' => $input])->with('domains_notice', 'That cart line changed. Check your cart and try again.');
+        }
         try {
             $name = CanonicalName::normalize($input); $action = $request->input('action'); $term = $request->input('term');
             if (!in_array($action, ['register', 'transfer'], true) || !is_string($term) || !preg_match('/^(?:[1-9]|10)$/D', $term)) { throw new \DomainException; }
-            $this->add($name,$action,(int)$term);
+            $this->add($name,$action,(int)$term,$replace['id'] ?? null);
         } catch (\App\Exceptions\DisplayException $e) {
             return redirect()->route('domains.domains.search',['name'=>$input])->with('domains_notice',$e->getMessage());
         } catch (\Throwable $e) {
@@ -104,10 +128,11 @@ final class StorefrontController extends Controller
         catch (\Throwable $error) { if ($item!==null) { \App\Models\CartItem::whereKey($item)->delete(); }throw $error; }
         return redirect()->route('cart');
     }
-    private function add(string $name,string $action,int $term): int
+    /** A replaced line keeps its cart line id: native Cart updates it in place and admission re-checks it. */
+    private function add(string $name,string $action,int $term,?int $replace=null): int
     {
         $ending=PolicyEndings::parse($name)['tld'];$offer=$this->storefront->offer($ending,$action,$term);
-        return \App\Classes\Cart::add($offer['product'],$offer['plan'],[],['domain'=>$name]);
+        return \App\Classes\Cart::add($offer['product'],$offer['plan'],[],['domain'=>$name],1,$replace);
     }
 
     private function limit(Request $request)

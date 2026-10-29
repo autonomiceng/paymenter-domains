@@ -6,6 +6,8 @@ require __DIR__.'/Support/enom-catalogue-wire.php';
 require __DIR__.'/Support/enom-catalogue.php';
 use Illuminate\Support\Facades\{DB,Log};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCatalogue,TestCatalogue};
+// This separate cart-cleanup case starts a later read-budget window, after the shared catalogue scenarios.
+DB::table('domains_read_budgets')->where('server_id',$server->id)->update(['window_at'=>0]);
 $withdrawn=commerceCart($user);$lineIds=[];
 foreach(['first','second','healthy'] as $suffix){commerceAdd($withdrawn,$product,placeholderComFixtureName('withdraw-'.$suffix.'-placeholder.com'));}
 $lineIds=$withdrawn->items()->orderBy('id')->pluck('id')->all();same(3,count($lineIds),'Three eligible retained cart lines');

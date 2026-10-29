@@ -28,9 +28,9 @@
                     If one isn’t, ask a staff member who can edit domain pricing to open it in TLDs &amp; pricing, open Edit prices and save.
                 @endif
                 @if ($canSyncPrices)
-                    If its costs are out of date, use Sync TLD prices on the registrar account first.
+                    If it has no costs, use Sync prices on the TLD list first.
                 @else
-                    If its costs are out of date, ask a staff member who can sync TLD prices to use Sync TLD prices on the registrar account first.
+                    If it has no costs, ask a staff member who can sync TLD prices to use Sync prices on the TLD list first.
                 @endif
                 Registration and transfer prices below cost are never put on sale.
             </p>
