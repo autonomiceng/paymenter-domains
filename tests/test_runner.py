@@ -494,12 +494,14 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'Domains').mkdir(); (root/'output').mkdir()
             with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', return_value=(b'image unavailable', b'', 77, False)), contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(runner.run([('mariadb', ['probe'])], {}, root/'output', ['mariadb'], {}, jobs=4), 77)
+                self.assertEqual(runner.run([('mariadb', ['probe'])], {}, root/'output', ['mariadb'], {},
+                                            jobs=4, requested_jobs=4, jobs_explicit=True), 77)
             receipt = json.loads((root/'output/receipt.json').read_text())
             self.assertFalse(receipt['complete'])
             self.assertEqual(receipt['skipped_suites'], ['mariadb'])
             self.assertTrue(receipt['results'][0]['skipped'])
             self.assertEqual(receipt['jobs'], 1)
+            self.assertEqual(receipt['jobs_reduction'], {'requested': 4, 'actual': 1, 'reason': 'mariadb'})
 
     def test_mariadb_is_always_explicit_opt_in(self):
         for source in ['', '/synthetic/dependency']:

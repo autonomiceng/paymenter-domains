@@ -310,7 +310,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False):
     started_run = time.monotonic()
     timings = {} if timings is None else timings
-    jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
+    mariadb = any(kind == 'mariadb' for kind, _ in commands)
+    jobs = 1 if mariadb else jobs
     completed, attempted, submitted = {}, {}, {}
     captured, outputs_saved = {}, set()
     with timing('runtime_snapshot', timings):
@@ -493,8 +494,9 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                    'not_run': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands) if index not in completed],
                    'requested_jobs': requested_jobs or jobs, 'memory_mib': memory_mib,
                    'jobs_explicit': jobs_explicit,
-                   'jobs_reduction': ({'requested': requested_jobs, 'actual': jobs, 'reason': 'memory'}
-                                      if requested_jobs and jobs < requested_jobs and not jobs_explicit and 'mariadb' not in selected else None),
+                   'jobs_reduction': ({'requested': requested_jobs, 'actual': jobs,
+                                       'reason': 'mariadb' if mariadb else 'memory'}
+                                      if requested_jobs and jobs < requested_jobs and (mariadb or not jobs_explicit) else None),
                    'categories': {kind: {'commands_run': len(rows),
                                          'wall_seconds': max(row['finished_seconds'] for row in rows)-min(row['started_seconds'] for row in rows),
                                          'child_seconds': sum(row['seconds'] for row in rows),

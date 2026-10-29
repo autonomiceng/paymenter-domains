@@ -256,6 +256,33 @@ class SchedulingTests(unittest.TestCase):
             self.assertFalse(receipt['jobs_explicit'])
             self.assertEqual(receipt['jobs_reduction'], {'requested': 4, 'actual': 1, 'reason': 'memory'})
 
+    def test_mariadb_receipt_explains_cli_and_environment_worker_reductions(self):
+        for arguments, environment, requested in [(['--jobs', '4'], {}, 4),
+                                                   ([], {'DOMAINS_TEST_JOBS': '4'}, 4),
+                                                   (['--jobs', '1'], {}, 1)]:
+            with self.subTest(arguments=arguments, environment=environment), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); (root/'Domains').mkdir()
+                output = root/'output'; output.mkdir()
+                with mock.patch.dict(os.environ, environment, clear=True), \
+                     mock.patch.object(runner.sys, 'argv', ['test.py', '--suite', 'mariadb', *arguments]), \
+                     mock.patch.object(runner, 'ROOT', root), \
+                     mock.patch.object(runner.tempfile, 'mkdtemp', return_value=str(output)), \
+                     mock.patch.object(runner, 'manifest', return_value={'mariadb': ['tests/probe.py']}), \
+                     mock.patch.object(runner, 'prepare') as prepare, \
+                     mock.patch.object(runner, 'execute', return_value=(b'unavailable', b'', 77, False)), \
+                     mock.patch.object(runner.test_workers, 'environments') as workers, \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(runner.main(), 77)
+                prepare.assert_not_called(); workers.assert_not_called()
+                receipt = json.loads((output/'receipt.json').read_text())
+                self.assertEqual(receipt['jobs'], 1)
+                self.assertEqual(receipt['requested_jobs'], requested)
+                self.assertTrue(receipt['jobs_explicit'])
+                self.assertEqual(receipt['jobs_reduction'],
+                                 {'requested': 4, 'actual': 1, 'reason': 'mariadb'} if requested == 4 else None)
+                self.assertFalse(receipt['complete'])
+                self.assertEqual(receipt['skipped_suites'], ['mariadb'])
+
     def test_explicit_cli_and_environment_jobs_refuse_insufficient_memory(self):
         for arguments, environment in [(['--jobs', '2'], {}), ([], {'DOMAINS_TEST_JOBS': '2'})]:
             with self.subTest(arguments=arguments, environment=environment), tempfile.TemporaryDirectory() as temporary:
