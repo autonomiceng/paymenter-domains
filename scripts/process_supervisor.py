@@ -2,6 +2,7 @@
 """Keep ownership of command descendants after their original parents exit."""
 import argparse
 import ctypes
+import math
 import os
 from pathlib import Path
 import signal
@@ -94,8 +95,8 @@ def main():
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
-    if not command or args.grace_seconds < 0:
-        parser.error('A command and nonnegative grace period are required.')
+    if not command or not math.isfinite(args.grace_seconds) or args.grace_seconds < 0:
+        parser.error('A command and finite nonnegative grace period are required.')
     # Linux reparents orphaned descendants here, rather than to the host init.
     libc = ctypes.CDLL(None, use_errno=True)
     if libc.prctl(36, 1, 0, 0, 0):  # PR_SET_CHILD_SUBREAPER

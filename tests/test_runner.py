@@ -137,6 +137,31 @@ class RunnerTests(unittest.TestCase):
         memory = mock.patch.object(runner, 'available_memory_mib', return_value=8192)
         memory.start(); self.addCleanup(memory.stop)
 
+    def test_supervisor_validates_grace_before_spawning(self):
+        spec = importlib.util.spec_from_file_location('process_supervisor', ROOT/'scripts/process_supervisor.py')
+        supervisor = importlib.util.module_from_spec(spec); spec.loader.exec_module(supervisor)
+        for grace in ['inf', '-inf', 'nan', '-1', '0', '0.5']:
+            with self.subTest(grace=grace), \
+                 mock.patch.object(sys, 'argv', ['supervisor', '--grace-seconds='+grace, '--', 'probe']), \
+                 mock.patch.object(supervisor.ctypes, 'CDLL') as libc, \
+                 mock.patch.object(supervisor, 'children', return_value=set()), \
+                 mock.patch.object(supervisor.signal, 'signal'), \
+                 mock.patch.object(supervisor.os, 'waitpid', return_value=(123, 0)), \
+                 mock.patch.object(supervisor, 'cleanup', return_value=True), \
+                 mock.patch.object(supervisor.subprocess, 'Popen') as spawn, \
+                 contextlib.redirect_stderr(io.StringIO()):
+                libc.return_value.prctl.return_value = 0
+                spawn.return_value.pid = 123
+                if grace in ['0', '0.5']:
+                    self.assertEqual(supervisor.main(), 0)
+                    spawn.assert_called_once_with(['probe'])
+                else:
+                    with self.assertRaises(SystemExit) as caught:
+                        supervisor.main()
+                    self.assertEqual(caught.exception.code, 2)
+                    spawn.assert_not_called()
+                    libc.assert_not_called()
+
     def test_ote_output_resolves_symlinked_tmpdir(self):
         spec = importlib.util.spec_from_file_location('ote_contract', ROOT/'scripts/ote-contract.py')
         ote = importlib.util.module_from_spec(spec); spec.loader.exec_module(ote)
