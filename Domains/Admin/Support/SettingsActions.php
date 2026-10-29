@@ -31,7 +31,7 @@ final class SettingsActions
     public static function description(string $name): string
     {
         if(config('domains.enom_identity.environment')==='live'&&in_array($name,['acceptance','import'],true)){
-            return $name==='acceptance'?'Accept independently verified exact terms and annual renewal support for this live account. Review live Purchase below. TEST acceptance grants no live authority. Changes pause new sales until a new import.':'Gets current costs for all TLDs from the live Enom account. Counts against its daily Enom call limit.';
+            return $name==='acceptance'?'Accept independently verified exact terms and annual renewal support for this live account. Review live Purchase below. TEST acceptance grants no live authority. Changes pause new sales until a new import.':'Gets current costs for all TLDs from the live Enom account.';
         }
         return match($name){
             'lifecycle'=>'Set how long after expiry a domain can still be renewed (grace) or restored, and what the registrar charges for each. Check these with the registrar first and note where you checked. They stay until you change them. If they are not set, or your sources disagree, late renewals and restores stay off. Grace renewal is off for TLDs that only renew automatically. Customers pay the registrar charge plus the normal renewal markup. Saving does not turn on owner checkout or restores.',
@@ -50,7 +50,7 @@ final class SettingsActions
             'publish'=>'Publishes prices from saved costs and the current pricing. It does not refresh costs or change issued invoices.',
             'tld_settings'=>'Narrow term bounds or pause new sales. Widening and restoring sales require explicit verification and current acceptance. Retained holders require annual renewal support. For Enom TEST, ineligible cart lines are removed.',
             'seller'=>'Selects the registrar for new sales only. Existing domains and renewal obligations keep their holding registrar. No automatic fallback. For Enom TEST, previous seller cart lines for this ending are removed.',
-            'import'=>'Gets current costs for all TLDs from Enom. Counts against your Enom API rate limits.',
+            'import'=>'Gets current costs for all TLDs from Enom.',
             'acceptance'=>config('domains.enom_writes.transfer')===true?'Accept only independently verified exact terms. For Enom TEST, review Purchase / TP_CreateOrder at the fixed TEST route and request interval below. Annual transfers also need accepted registry details, the transfer ending policy, processing and a recent successful USD balance read. Any change holds new sales on this account until a new import and removes its TEST cart lines. Retained holders keep accepted annual renewal support.':'Accept only independently verified exact terms. For opted-in Enom TEST, also review and accept the Purchase route and request interval shown below. Any change holds new sales for every TLD on this account until a new import and removes its TEST cart lines. Retained holders keep accepted annual renewal support.',
             'history'=>'Accept only a verified complete USD history contract for this action. Revocation stops new reconciliation reads; saved attempts and financial evidence stay retained.',
             'enroll_sandbox'=>'Sends one read-only balance request to NameSilo OTE to check whether the key works. The balance is not saved. NameSilo does not confirm which account owns the key; the account label is entered by staff and remains unconfirmed. If the check succeeds, the key is saved encrypted as an immutable OTE enrollment on this server. Processing starts off and no catalogue terms are accepted. The next worker tick may send one scheduled daily read through /apibatch/getAccountBalance; NameSilo has not confirmed OTE support for this route. An unsupported reply appears as Read failed; another daily attempt is no sooner than the next day. Later scheduled reads are limited to one per day. Check balance can make one separate OTE balance request and show the result on the account page. Each key can be enrolled once on this site. To change the key or label, use a different OTE key on a fresh Domains server. Holdings, acceptances and operations stay with the old enrollment.',
@@ -238,19 +238,34 @@ final class SettingsActions
     }
     /** Sync prices for every accepted TLD of one account, from the TLD list header: one short question, no typed TLD and
      * no reason. The audit records who synced, when and which TLDs. */
+    /** The Sync prices question: what it reads, and its share of our own daily call cap. */
+    private static function syncDescription(int $server): string
+    {
+        $text=self::description('import');
+        try{
+            $binding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Account::where('server_id',$server)->sole());
+            $accepted=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);$today=\Paymenter\Extensions\Servers\Domains\Services\PriceSync::callsToday($binding);
+            if($accepted->endings===[]||$today===null||$today['limit']<1){return $text;}
+            $calls=\Paymenter\Extensions\Servers\Domains\Services\PriceSync::batchedCalls($accepted,array_keys($accepted->endings));
+            return $text.' Uses about '.$calls.' of today\'s '.$today['limit'].' registrar calls (a safety limit you set).';
+        }catch(\Throwable){return $text;}
+    }
     public static function syncAll(int $server,bool $named=false): Action
     {
         return Action::make('sync_prices_'.$server)->label(fn()=>'Sync prices'.($named?': '.(\App\Models\Server::find($server)?->name ?? 'Server #'.$server):''))->color('gray')
             ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('import')))
-            ->requiresConfirmation()->modalHeading('Sync prices')->modalDescription(self::description('import'))->modalSubmitActionLabel('Sync prices')
+            ->requiresConfirmation()->modalHeading('Sync prices')->modalDescription(fn()=>self::syncDescription($server))->modalSubmitActionLabel('Sync prices')
             ->fillForm(fn()=>['review_key'=>Review::ticket((int)Auth::id(),$server,null,'import',Review::stamp($server,null))])
             ->schema([Hidden::make('review_key')])
             ->action(function(#[\SensitiveParameter] array $data,$livewire)use($server){
                 try{
                     $result=app(StaffSettingsWrites::class)->run(new Review((int)Auth::id(),$server,null,'import',(string)($data['review_key']??''),''),[]);
-                    $failed=array_keys($result['failed']??[]);
-                    Notification::make()->success()->title('Prices synced')
-                        ->body($failed===[]?null:'Not synced: '.implode(', ',array_map(fn($e)=>'.'.$e,$failed)).'. They keep their last cost.')->send();
+                    $list=fn(array $endings)=>implode(', ',array_map(fn($e)=>'.'.$e,$endings));
+                    $failed=array_keys($result['failed']??[]);$later=$result['deferred']??[];
+                    Notification::make()->success()->title('Prices synced')->body(implode(' ',array_filter([
+                        $failed===[]?null:'Not synced: '.$list($failed).'. They keep their last cost.',
+                        $later===[]?null:'Not synced yet: '.$list($later).'. One sync reads only so many TLDs. Sync prices again in a minute to get these.',
+                    ]))?:null)->send();
                 }catch(\Throwable $error){
                     if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains price sync failed.',['exception_class'=>$error::class]);}
                     Notification::make()->danger()->title("Couldn't sync prices")->body(self::refusal($error,'import',[],$server))->send();
@@ -335,9 +350,9 @@ final class SettingsActions
         if($name==='card_fee'&&$error instanceof \InvalidArgumentException&&!in_array($error->getMessage(),['This percentage cannot cover the card fee. Lower the markup or card fee.','The calculated price is too large.'],true)){
             return 'Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.';
         }
-        if($error instanceof EnomTestCallLimit&&Account::where('server_id',$server)->value('environment')==='live'){return 'Live Enom request refused before sending. Earlier reads may have been sent. Check the live site, account binding and daily limits on the account page.';}
+        if($error instanceof EnomTestCallLimit&&Account::where('server_id',$server)->value('environment')==='live'){return 'Our own safety guard stopped this live Enom request before sending. Earlier reads may have been sent. Check the live site, account binding and our daily limits on the account page.';}
         return $error instanceof EnomTestCallLimit
-                ?'Enom TEST request refused before sending. '.($name==='import'?'Earlier reads in this sync may have been sent and counted. ':'')
+                ?'Our own safety guard stopped this Enom TEST request before sending. '.($name==='import'?'Earlier reads in this sync may have been sent and counted. ':'')
                     .EnomTestCalls::refusedFacts()
                 :match($error->getMessage()){'The calculated price is too large.'=>'This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.','Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',
                 'Settings changed. Reload this page.'=>$name==='enroll_sandbox'?'This review expired, or this server changed after you opened it. No OTE key check was sent and nothing was saved. Reload this page and review the server before trying again.':'Settings changed. Reload this page.',
