@@ -18,7 +18,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceReads,BalanceSchema,CatalogueAcceptances,ContactDetails,EnomTestCallSchema,EnomTestCalls,ObservationSchema,RegistrarBalances,ReminderSchedules,ReminderSchema,StaffSettingsReview};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceReads,BalanceSchema,CatalogueAcceptances,ContactDetails,EnomTestSendLimit,EnomTestSendLimitSchema,ObservationSchema,RegistrarBalances,ReminderSchedules,ReminderSchema,StaffSettingsReview};
 // Expose the unchanged factories even when the real checklist omits their buttons.
 class RegistrarAccountLiveActionsTestPage extends RegistrarAccount
 {
@@ -28,7 +28,7 @@ class RegistrarAccountLiveActionsTestPage extends RegistrarAccount
     }
 }
 extract(commerceFixture(true));$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now);
-app()->instance(AccountBindings::class,$bindings);app()->instance(Clock::class,$clock);app()->instance(RegistrarBalances::class,new RegistrarBalances($bindings,$clock,new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock)));BalanceSchema::install();ObservationSchema::install();EnomTestCallSchema::install();
+app()->instance(AccountBindings::class,$bindings);app()->instance(Clock::class,$clock);app()->instance(RegistrarBalances::class,new RegistrarBalances($bindings,$clock,new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock)));BalanceSchema::install();ObservationSchema::install();EnomTestSendLimitSchema::install();
 $enom=Account::where('server_id',$tlds[0]->server_id)->sole();$silo=Account::where('server_id',$tlds[1]->server_id)->sole();
 App\Models\Server::whereKey($enom->server_id)->update(['name'=>'Enom test account']);App\Models\Server::whereKey($silo->server_id)->update(['name'=>'NameSilo test account']);
 $user=commerceUser();$product=$native->product($tlds[0],'register');
@@ -87,7 +87,7 @@ Livewire::actingAs($creator)->test(RegistrarSetup::class)->assertActionDoesNotEx
 // Account page.
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful();
 foreach(['Enom test account','Active','Check balance','Account','Registrar','Enom','Mode','Test','Balance','USD 7.99','Low balance','Add funds','Due in 30 days','USD 8.00',
-    'Domains','API calls today','0 of 50','Last sync','Not synced yet'] as $needle){$page->assertSee($needle);}
+    'Domains','API calls, last 24 hours','0 of 1000','Last sync','Not synced yet'] as $needle){$page->assertSee($needle);}
 $html=$page->html();
 foreach(['https://cp.enom.com/','Registrars'] as $needle){expect(str_contains($html,$needle),'Account page: '.$needle);}
 foreach(['Server #','Unknown','Enom TEST daily calls','Verified user ID','Retained domains','Environment',"\u{2014}"] as $needle){expect(!str_contains($html,$needle),'Account page never shows: '.$needle);}
@@ -193,29 +193,38 @@ $flat=$psl->instance()->content(\Filament\Schemas\Schema::make($psl->instance())
 same('danger',array_values(array_filter($flat,fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry&&$e->getLabel()==='Public suffix list'))[0]->getColor('Not downloaded'),'A list never downloaded is danger');
 Livewire::actingAs(staffUser([Staff::VIEW,PslPage::VIEW]))->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Not downloaded')
     ->assertActionDoesNotExist(TestAction::make('psl_download')->schemaComponent('system_checks','content'))->assertActionDoesNotExist(TestAction::make('psl_source')->schemaComponent('system_checks','content'));
-DB::table(EnomTestCallSchema::TABLE)->insert(['day'=>EnomTestCalls::day(),'used'=>50]);
-Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('50 of 50')->assertSee('Resets 00:00 UTC');
 $capAccount=Account::where('server_id',$enom->server_id)->sole();
 $capFacts=Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::class;
-same('50 of 50',$capFacts::calls($capAccount)['value'],'Absent setting uses the default cap of 50');
-config(['domains.enom_test_daily_call_cap'=>0]);same('50 of 0',$capFacts::calls($capAccount)['value'],'Zero explicitly refuses all test calls');
-$beforeCap=[DB::table('domains_operations')->count(),(array)DB::table(EnomTestCallSchema::TABLE)->sole()];
-foreach(['many',-1] as $invalidCap){
-    config(['domains.enom_test_daily_call_cap'=>$invalidCap]);
-    same('The Enom test call limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.',$capFacts::calls($capAccount)['sub'],'Invalid cap explains refusal');
+same('0 of 1000',$capFacts::calls($capAccount)['value'],'Absent setting uses the default limit of 1000');
+$capKey=EnomTestSendLimit::account((string)$capAccount->stable_identity);DB::table(EnomTestSendLimitSchema::ACCOUNTS)->insert(['account'=>$capKey]);
+DB::table(EnomTestSendLimitSchema::SENDS)->insert(array_fill(0,50,['account'=>$capKey,'command'=>'GetBalance','sent_at'=>$clock->now()->getTimestamp()-3600]));
+config(['domains.enom_test_sends_per_day'=>50]);
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('50 of 50')->assertSee('Limit reached. Try again later.');
+same('50 of 50',$capFacts::calls($capAccount)['value'],'Sends from the last 24 hours fill the limit');
+config(['domains.enom_test_sends_per_day'=>0]);same('50 of 0',$capFacts::calls($capAccount)['value'],'Zero explicitly refuses all test calls');
+foreach([[0,60],[50,0]] as [$dayLimit,$minuteLimit]){
+    config(['domains.enom_test_sends_per_day'=>$dayLimit,'domains.enom_test_sends_per_minute'=>$minuteLimit]);
+    same('The Enom test send limit is 0, so no Enom test requests are sent.',$capFacts::calls($capAccount)['sub'],'Zero limit explains that waiting cannot restore capacity');
+    Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('The Enom test send limit is 0, so no Enom test requests are sent.')->assertDontSee('Limit reached. Try again later.');
 }
-same($beforeCap,[DB::table('domains_operations')->count(),(array)DB::table(EnomTestCallSchema::TABLE)->sole()],'Reading bad cap facts changes no requests or counters');
-config(['domains.enom_test_daily_call_cap'=>50]);
-Illuminate\Support\Facades\Schema::rename(EnomTestCallSchema::TABLE,'domains_test_calls_saved');
-same("Couldn't read today's call count",$capFacts::calls($capAccount)['sub'],'Unreadable counter has its own cause');
-Illuminate\Support\Facades\Schema::rename('domains_test_calls_saved',EnomTestCallSchema::TABLE);
+config(['domains.enom_test_sends_per_day'=>0,'domains.enom_test_sends_per_minute'=>60]);
+$beforeCap=[DB::table('domains_operations')->count(),DB::table(EnomTestSendLimitSchema::SENDS)->count()];
+foreach(['many',-1] as $invalidCap){
+    config(['domains.enom_test_sends_per_day'=>$invalidCap]);
+    same('The Enom test send limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.',$capFacts::calls($capAccount)['sub'],'Invalid limit explains refusal');
+}
+same($beforeCap,[DB::table('domains_operations')->count(),DB::table(EnomTestSendLimitSchema::SENDS)->count()],'Reading bad limit facts changes no requests or counts');
+config(['domains.enom_test_sends_per_day'=>50]);
+Illuminate\Support\Facades\Schema::rename(EnomTestSendLimitSchema::SENDS,'domains_test_sends_saved');
+same("Couldn't read the Enom test send count, so Enom test requests are refused. Try again.",$capFacts::calls($capAccount)['sub'],'Unreadable count has its own cause');
+Illuminate\Support\Facades\Schema::rename('domains_test_sends_saved',EnomTestSendLimitSchema::SENDS);
 $liveCap=clone $capAccount;$liveCap->environment='live';same(null,$capFacts::calls($liveCap),'Live account omits the TEST cap');
 
-config(['domains.enom_test_daily_call_cap'=>'many']);
-Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Missing')->assertSee('The Enom test call limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.');
-config(['domains.enom_test_daily_call_cap'=>50]);
+config(['domains.enom_test_sends_per_day'=>'many']);
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Missing')->assertSee('The Enom test send limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.');
+config(['domains.enom_test_sends_per_day'=>1000]);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('NameSilo test account')->assertSee('Missing')->assertSee('Not checked yet')
-    ->assertSee('Add funds')->assertSeeHtml('https://ote.namesilo.com/cart/add-funds')->assertDontSee('API calls today');
+    ->assertSee('Add funds')->assertSeeHtml('https://ote.namesilo.com/cart/add-funds')->assertDontSee('API calls, last 24 hours');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$off->id])->assertSee('Not connected')->assertSee('Off in Paymenter')->assertDontSee('Add funds');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$empty->id])->assertSee('Not connected')->assertDontSee('Check balance');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$demo->server_id])->assertSee('Demo NameSilo')->assertSee('Demo');

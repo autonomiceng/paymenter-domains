@@ -8,7 +8,7 @@ use Filament\Forms\Components\{Checkbox,CheckboxList,Hidden,Radio,Select,Textare
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestCalls,CardFee,PriceCatalogue,PricingRule,PricingRules,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestSendLimit,CardFee,PriceCatalogue,PricingRule,PricingRules,StaffSettingsReview as Review,StaffSettingsWrites};
 final class SettingsActions
 {
     private const NOT_ENROLLED='If no Enrollment row appears and Account binding reads “Not configured”, nothing was enrolled.';
@@ -332,7 +332,7 @@ final class SettingsActions
         if($error instanceof EnomTestCallLimit&&Account::where('server_id',$server)->value('environment')==='live'){return 'Live Enom request refused before sending. Earlier reads may have been sent. Check the live site, account binding and daily limits on the account page.';}
         return $error instanceof EnomTestCallLimit
                 ?'Enom TEST request refused before sending. '.($name==='import'?'Earlier reads in this import may have been sent and counted. ':'')
-                    .EnomTestCalls::refusedFacts()
+                    .EnomTestSendLimit::facts(($account=Account::where('server_id',$server)->first())?EnomTestSendLimit::login($account):null)
                 :match($error->getMessage()){'The calculated price is too large.'=>'This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.','Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',
                 'Settings changed. Reload this page.'=>$name==='enroll_sandbox'?'This review expired, or this server changed after you opened it. No OTE key check was sent and nothing was saved. Reload this page and review the server before trying again.':'Settings changed. Reload this page.',
                 'Current staff permissions required.'=>$name==='enroll_sandbox'?'Your staff permission changed. No OTE key check was sent and nothing was saved. Reload this page before trying again.':'Your permission changed. Reload this page.',

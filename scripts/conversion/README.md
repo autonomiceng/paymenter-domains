@@ -109,7 +109,8 @@ development-only tool excluded from the runtime ZIP. Independently review the so
 account and selected holdings first: `--accepted-by` records a staff member with
 source view and policy permissions, and `--reason` is a bounded snake-case reason.
 The collector reads encrypted existing server settings in memory and accepts only
-authenticated `GetDomainInfo` ownership reads. It does not accept credentials on the
+authenticated `GetDomainInfo` ownership reads. Its TEST reads are not counted by the Enom TEST send
+limit, because its database session is read-only. It does not accept credentials on the
 command line. SQLite and MySQL/MariaDB primary sessions are made read-only; other
 database drivers and read/write replicas refuse. A lost database session refuses
 reconnection, preserving the read-only boundary. Keep the application stopped so

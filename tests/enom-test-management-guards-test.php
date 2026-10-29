@@ -5,10 +5,10 @@ require __DIR__.'/Support/management.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
-use Paymenter\Extensions\Servers\Domains\Services\{EnomTestManagement as Policy,EnomTestCallSchema,EnomTestWriteReservation as Reservation,EnomTestCallLimit,ManagementEvidence,DomainManagement,WriteFeatures};
-app()->instance(Clock::class,$clock);EnomTestCallSchema::install();
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestManagement as Policy,EnomTestSendLimitSchema,EnomTestWriteReservation as Reservation,EnomTestCallLimit,ManagementEvidence,DomainManagement,WriteFeatures};
+app()->instance(Clock::class,$clock);EnomTestSendLimitSchema::install();
 [$d,$driver]=$holding(placeholderComFixtureName('management-test-policy-placeholder.com'));$b=$driver->capabilities()->binding;
-config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.management'=>true,'domains.enom_test_daily_call_cap'=>1000]);
+config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.management'=>true,'domains.enom_test_sends_per_day'=>1000]);
 $setting=$product->server->settings()->firstOrNew(['key'=>Policy::KEY]);$setting->encrypted=true;$setting->type='string';$setting->value=json_encode(['fingerprint'=>$b->fingerprint,...Policy::protocol()]);$setting->save();
 foreach([false,'true',1,null] as $off){config(['domains.enom_writes.management'=>$off]);expect(!Policy::enabled($b),'Strict boolean opt-in');}config(['domains.enom_writes.management'=>true]);
 $stored=$setting->fresh()->value;
@@ -32,7 +32,9 @@ Reservation::run($b,'management',(int)$op->id,function()use($b,$op,$valid,$refus
     foreach(['management_reads'=>[],'management_ack'=>[]] as $key=>$value){$op->attempt=[$key=>$value]+$valid;expect(!ManagementEvidence::idle($op),'Read or acknowledgement cannot be proven unsent');}
     $op->attempt=$valid;$op->provider_order_id='900';commerceReject(fn()=>ManagementEvidence::guard($op));$op->provider_order_id=null;
     foreach(['state'=>'uncertain','safe_code'=>'other','funding_basis'=>'paid_invoice'] as $key=>$value){$old=$op->$key;$op->$key=$value;commerceReject(fn()=>ManagementEvidence::guard($op));$op->$key=$old;}
-    $day=Reservation::prepare($b,'management');Reservation::consume($b,'management',$day);expect(!Reservation::unconsumed($b,'management',(int)$op->id),'Consumed wire cannot become unsent');commerceReject(fn()=>ManagementEvidence::guard($op));
+    $day=Reservation::prepare($b,'management');same('',$day,'TEST arms the scope without a day');Reservation::consume($b,'management',$day);expect(!Reservation::unconsumed($b,'management',(int)$op->id),'Consumed wire cannot become unsent');commerceReject(fn()=>ManagementEvidence::guard($op));
+    $refuse(fn()=>Reservation::reserve($b,'management'));expect(!Reservation::unconsumed($b,'management',(int)$op->id),'Consumed is sticky for the scope');
 });
+same(0,DB::table(EnomTestSendLimitSchema::SENDS)->count(),'Arming and consuming the scope record no send; the limiter counts at the wire');
 $op->attempt=$valid;$op->syncOriginalAttribute('attempt');$op->attempt=array_diff_key($valid,['management_test_unsent'=>true]);commerceReject(fn()=>ManagementEvidence::guard($op));
 echo "TEST management current policy and unsent-proof guards passed\n";$nativeSuccessful=true;

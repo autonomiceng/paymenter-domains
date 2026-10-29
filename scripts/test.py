@@ -25,6 +25,8 @@ SUPERVISOR = Path(__file__).with_name('process_supervisor.py')
 CATEGORIES = ['lint', 'provider', 'contracts', 'native', 'ui', 'runner', 'package', 'mariadb']
 ORDER = ['lint', 'provider', 'contracts', 'runner', 'package', 'ui', 'native', 'mariadb']
 WORKER_MEMORY_MIB = 1024
+# About 85 s alone; parallel load pushed it past the 120 s native limit.
+SLOW_NATIVE = {'management-privacy-retirement-test.php'}
 
 
 def kill_tree(pid):
@@ -331,8 +333,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         kind, argv = commands[index]
         started = time.monotonic()
         attempted[index] = (kind, argv, started)
-        installed_package = Path(argv[-1]).name.startswith('test_installed_')
-        timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and installed_package
+        slow = Path(argv[-1]).name.startswith('test_installed_') or Path(argv[-1]).name in SLOW_NATIVE
+        timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and slow
                    else 120 if kind == 'native' else 60)
         syntax_lint = kind == 'lint' and len(argv) == 3 and argv[1] == '-l'
         rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
@@ -357,7 +359,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         # Execution evidence must survive interruption in the integrity guard,
         # RSS read or failure handling, before the main thread can record it.
         captured[index] = value
-        if code and not cancelled:
+        if code and not cancelled and not result['skipped']:
             stop(index)
         started_guard = time.monotonic()
         try:
@@ -493,8 +495,10 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                    'not_run': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands) if index not in completed],
                    'requested_jobs': requested_jobs or jobs, 'memory_mib': memory_mib,
                    'jobs_explicit': jobs_explicit,
-                   'jobs_reduction': ({'requested': requested_jobs, 'actual': jobs, 'reason': 'memory'}
-                                      if requested_jobs and jobs < requested_jobs and not jobs_explicit and 'mariadb' not in selected else None),
+                   'jobs_reduction': ({'requested': requested_jobs, 'actual': jobs,
+                                       'reason': 'mariadb' if 'mariadb' in selected else 'memory'}
+                                      if requested_jobs and jobs < requested_jobs
+                                      and ('mariadb' in selected or not jobs_explicit) else None),
                    'categories': {kind: {'commands_run': len(rows),
                                          'wall_seconds': max(row['finished_seconds'] for row in rows)-min(row['started_seconds'] for row in rows),
                                          'child_seconds': sum(row['seconds'] for row in rows),

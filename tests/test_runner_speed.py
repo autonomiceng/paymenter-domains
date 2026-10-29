@@ -19,6 +19,46 @@ spec.loader.exec_module(runner)
 
 
 class SchedulingTests(unittest.TestCase):
+    def test_mariadb_skips_continue_remaining_commands_and_return_skip(self):
+        for fail_fast in [False, True]:
+            with self.subTest(fail_fast=fail_fast), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); (root/'Domains').mkdir()
+                output = root/'output'; output.mkdir()
+                commands = [('mariadb', [sys.executable, '-c', script]) for script in
+                            ["print('first skip'); raise SystemExit(77)",
+                             "print('second skip'); raise SystemExit(77)", "print('continued')"]]
+                with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
+                    status = runner.run(commands, dict(os.environ), output, ['mariadb'], {},
+                                        jobs=4, fail_fast=fail_fast)
+                self.assertEqual(status, 77)
+                receipt = json.loads((output/'receipt.json').read_text())
+                self.assertFalse(receipt['complete'])
+                self.assertEqual(receipt['jobs'], 1)
+                self.assertIsNone(receipt['first_failure'])
+                self.assertEqual(receipt['not_run'], [])
+                self.assertEqual([row['exit'] for row in receipt['results']], [77, 77, 0])
+                self.assertEqual([row['skipped'] for row in receipt['results']], [True, True, False])
+                self.assertTrue(all(not row['cancelled'] for row in receipt['results']))
+                self.assertIn('continued', (output/'002.stdout.txt').read_text())
+
+    def test_mariadb_serial_reduction_records_reason_for_implicit_and_explicit_jobs(self):
+        for explicit in [False, True]:
+            for requested, scheduled in [(4, 4), (4, 1), (1, 1)]:
+                with self.subTest(explicit=explicit, requested=requested, scheduled=scheduled), tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary); (root/'Domains').mkdir()
+                    output = root/'output'; output.mkdir()
+                    commands = [('mariadb', [sys.executable, '-c', "print('serial')"])]
+                    with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
+                        status = runner.run(commands, dict(os.environ), output, ['mariadb'], {},
+                                            jobs=scheduled, requested_jobs=requested, jobs_explicit=explicit)
+                    self.assertEqual(status, 0)
+                    receipt = json.loads((output/'receipt.json').read_text())
+                    self.assertTrue(receipt['complete'])
+                    self.assertEqual(receipt['jobs'], 1)
+                    self.assertEqual(receipt['requested_jobs'], requested)
+                    expected = {'requested': 4, 'actual': 1, 'reason': 'mariadb'} if requested == 4 else None
+                    self.assertEqual(receipt['jobs_reduction'], expected)
+
     def test_category_rss_preserves_unknown_and_measured_zero(self):
         cases = [('lint', [None, None], None), ('provider', [None, None], None),
                  ('provider', [0], 0), ('provider', [None, 0, 2048], 2048)]
