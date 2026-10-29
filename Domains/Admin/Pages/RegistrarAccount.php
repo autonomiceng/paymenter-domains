@@ -69,6 +69,7 @@ class RegistrarAccount extends Page
     }
     private static function testRefusal(): string
     {
+        if(\Paymenter\Extensions\Servers\Domains\Services\EnomTestRunBudget::enabled()){return EnomTestCalls::refusedFacts();}
         if (EnomTestCalls::usage()['limit']===null) { return 'The Enom test call limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.'; }
         return EnomTestCalls::callsRemain()?"Couldn't count Enom test calls. Try again.":'Enom test daily limit reached. Try again after 00:00 UTC.';
     }
@@ -154,7 +155,7 @@ class RegistrarAccount extends Page
         }
         $entries[]=TextEntry::make('domains')->label('Domains')->state((string)\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count())->inlineLabel();
         if ($calls=RegistrarFacts::calls($a)) {
-            $entry=MissingEntry::apply(TextEntry::make('calls')->label('API calls today')->state($calls['value'])->inlineLabel(),cause:$calls['value']===null?$calls['sub']:null,color:$calls['tone']);
+            $entry=MissingEntry::apply(TextEntry::make('calls')->label($calls['label']??'API calls today')->state($calls['value'])->inlineLabel(),cause:$calls['value']===null?$calls['sub']:null,color:$calls['tone']);
             if ($calls['value']!==null&&$calls['sub']) { $entry->belowContent($calls['sub']); }
             if ($calls['help']) { $entry->hintIcon('heroicon-m-question-mark-circle',$calls['help']); }
             $entries[]=$entry;

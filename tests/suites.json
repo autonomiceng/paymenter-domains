@@ -40,6 +40,13 @@
     "tests/ote-collection-shapes-test.php"
   ],
   "native": [
+    "tests/test_enom_run_guards.py",
+    "tests/test_enom_run_concurrency.py",
+    "tests/enom-run-transports-test.php",
+    "tests/enom-run-management-test.php",
+    "tests/management-send-bound-test.php",
+    "tests/management-send-reservations-test.php",
+    "tests/enom-run-budget-test.php",
     "tests/walk-layout-test.php",
     "tests/transfer-entry-test.php",
     "tests/enom-curl-test.php",

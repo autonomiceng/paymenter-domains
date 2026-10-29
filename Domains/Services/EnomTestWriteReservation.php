@@ -11,7 +11,7 @@ final class EnomTestWriteReservation
     {
         if(self::$scope!==null&&self::$scope->fingerprint===$b->fingerprint&&self::$scope->action===$action&&self::$scope->id===$id){return $work();}
         if(self::$scope!==null||$b->registrarKey!=='enom'||($b->environment!==Environment::Test&&!EnomLive::enabled($b,$action))||$id<1||!in_array($action,['renewal','management'],true)){throw new EnomTestCallLimit;}
-        self::$scope=(object)['fingerprint'=>$b->fingerprint,'action'=>$action,'id'=>$id,'day'=>null,'consumed'=>false];
+        self::$scope=(object)['fingerprint'=>$b->fingerprint,'action'=>$action,'id'=>$id,'day'=>null,'consumed'=>false,'runPermit'=>$b->environment===Environment::Test&&EnomTestRunBudget::enabled()];
         try{return $work();}finally{self::$scope=null;}
     }
     public static function active(AccountBinding $b,string $action): bool
@@ -23,8 +23,9 @@ final class EnomTestWriteReservation
         if(self::$scope===null){return;}
         self::requireScope($b,$action);
         if(self::$scope->day!==null){throw new EnomTestCallLimit;}
-        self::$scope->day=$b->environment===Environment::Live?EnomLiveCalls::reserve($b,$cost):EnomTestCalls::reserve($b->environment);
-        EnomTestCalls::assertReservedDay(self::$scope->day);
+        self::$scope->day=self::$scope->runPermit?EnomTestRunBudget::reserve($b->fingerprint,$action,self::$scope->id)
+            :($b->environment===Environment::Live?EnomLiveCalls::reserve($b,$cost):EnomTestCalls::reserve($b->environment));
+        if(!self::$scope->runPermit){EnomTestCalls::assertReservedDay(self::$scope->day);}
     }
     private static function requireScope(AccountBinding $b,string $action): void
     {
@@ -35,11 +36,17 @@ final class EnomTestWriteReservation
         if(self::$scope===null){return null;}
         self::requireScope($b,$action);
         if(self::$scope->day===null){throw new EnomTestCallLimit;}
-        EnomTestCalls::assertReservedDay(self::$scope->day);return self::$scope->day;
+        if(self::$scope->runPermit){
+            // The financial seal checks only its original worker-local reservation.
+            // Recheck durable authority outside those locks, immediately before sending.
+            if(\Illuminate\Support\Facades\DB::transactionLevel()===0){EnomTestRunBudget::assertPermit(self::$scope->day,$b->fingerprint,$action,self::$scope->id);}
+        }
+        else{EnomTestCalls::assertReservedDay(self::$scope->day);}return self::$scope->day;
     }
     public static function consume(AccountBinding $b,string $action,string $day): void
     {
         if(self::prepare($b,$action)!==$day){throw new EnomTestCallLimit;}
+        if(self::$scope->runPermit){EnomTestRunBudget::consume($day,$b->fingerprint,$action,self::$scope->id);}
         self::$scope->consumed=true;
     }
 }

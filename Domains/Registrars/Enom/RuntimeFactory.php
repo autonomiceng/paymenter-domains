@@ -83,7 +83,7 @@ final class RuntimeFactory
                 if(!curl_setopt_array($handle,$options)){throw new \RuntimeException('Enom exchange incomplete.');}
                 $purchase=$named===RegistrationCommand::Purchase||$this->testTransfer&&$named===RegistrationCommand::Transfer;
                 $reserved=($role==='renewal'||$role==='management'&&$named instanceof ManagementCommand)?\Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::prepare($this->binding,$role):null;
-                if($this->binding->environment===Environment::Live&&($role==='renewal'||$named instanceof ManagementCommand)&&$reserved===null){throw new EnomTestCallLimit;}
+                if(($this->binding->environment===Environment::Live||\Paymenter\Extensions\Servers\Domains\Services\EnomTestRunBudget::enabled())&&($role==='renewal'||$named instanceof ManagementCommand)&&$reserved===null){throw new EnomTestCallLimit;}
                 $day=$reserved??\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::prepareSend($this->binding,$purchase);
                 \Paymenter\Extensions\Servers\Domains\Services\ProviderSendGuard::beforeSend('enom',$this->binding->environment->value,$named->value);
                 $timeoutMs=intdiv($deadline-hrtime(true),1000000);
