@@ -55,6 +55,12 @@ categories, omitting native without a dependency. Empty categories are unimpleme
 Native `test_client_scripts.py` needs Node.js on PATH, renders the shared client script and every
 including view with real Blade, then checks each inline script with `node --check`.
 
+For change checks, `scripts/test.py --suite lint --lint-base github/main` lints PHP changed against
+that commit, including staged, unstaged and untracked files under `Domains/` and `tests/`.
+Deleted files are omitted. The PHP 8.3 compatibility check still runs over all shipped PHP.
+Lint uses the parallel worker pool (`--jobs` controls its size). Receipts record `lint_base`;
+omit the option for complete lint at merge and release.
+
 Clean environment/PHP settings disable URL streams, cURL execution, sockets, process launch and mail.
 Exception arguments are hidden except in explicit redaction cases; synthetic namespaced cURL inspects
 configuration without sockets. These are runtime guards, not an OS sandbox. Native PDO loads only SQLite.

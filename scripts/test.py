@@ -309,7 +309,7 @@ def cancel_on_error(processes):
 
 
 def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None,
-        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False):
+        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None):
     started_run = time.monotonic()
     timings = {} if timings is None else timings
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
@@ -489,6 +489,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
         receipt = {'runner_error': runner_error, 'final_guard_complete': final_guard_complete,
                    'final_guard_error': final_guard_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
+                   'lint_base': lint_base,
                    'fail_fast': fail_fast, 'first_failure': first_failure[0] if first_failure else None,
                    'commands_planned': len(commands),
                    'plan': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands)],
@@ -568,18 +569,37 @@ def default_suites():
     return [s for s in CATEGORIES if s != 'mariadb' and (s != 'native' or os.environ.get('PAYMENTER_TEST_APP'))]
 
 
+def lint_files(base=None):
+    if base is None:
+        return [str(p.relative_to(ROOT)) for area in ['Domains', 'tests']
+                for p in sorted((ROOT/area).rglob('*.php'))]
+    # Resolve the ref first so a leading dash cannot become a diff option.
+    revision = subprocess.check_output(['git', 'rev-parse', '--verify', '--end-of-options', base+'^{commit}'],
+                                       cwd=ROOT).decode().strip()
+    changed = subprocess.check_output(['git', 'diff', '--name-only', '-z', '--diff-filter=ACMRTUXB',
+                                      revision, '--', 'Domains', 'tests'], cwd=ROOT)
+    untracked = subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard', '-z',
+                                        '--', 'Domains', 'tests'], cwd=ROOT)
+    return sorted({os.fsdecode(p) for p in (changed+untracked).split(b'\0') if p
+                   and os.fsdecode(p).endswith('.php') and (ROOT/os.fsdecode(p)).is_file()})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--suite', choices=CATEGORIES, action='append')
     selection.add_argument('--only', nargs='+', action='extend', metavar='TEST_PATH',
                            help='Run only exact registered test paths; not a full boundary run.')
+    parser.add_argument('--lint-base', metavar='REF',
+                        help='With --suite lint, lint changed PHP against REF, including uncommitted and untracked files.')
     parser.add_argument('--jobs', type=positive_integer)
     parser.add_argument('--memory-mib', type=positive_integer, default=2048,
                         help='Worker memory reservation budget; one GiB per parallel worker.')
     parser.add_argument('--fail-fast', action='store_true', help='Kill in-flight process trees on the first failure.')
     parser.add_argument('--timings-from', metavar='RECEIPT', help='Prioritize previously failing and faster commands within each category.')
     args = parser.parse_args()
+    if args.lint_base is not None and args.suite != ['lint']:
+        parser.error('--lint-base requires --suite lint alone.')
     jobs_explicit = args.jobs is not None or 'DOMAINS_TEST_JOBS' in os.environ
     if args.jobs is None:
         try:
@@ -610,6 +630,7 @@ def main():
                     raise ValueError('Suite not implemented: '+name)
                 print('Not implemented: '+name, flush=True)
         dependency = None
+        php_files = lint_files(args.lint_base) if 'lint' in selected else []
         if 'native' in selected:
             source = os.environ.get('PAYMENTER_TEST_APP')
             if not source:
@@ -644,8 +665,7 @@ def main():
             env.update(PAYMENTER_TEST_FIXTURE=str(fixture), PAYMENTER_TEST_NATIVE_EXTENSIONS=str(extension.parent),
                        LD_LIBRARY_PATH=str(runtime/'usr/lib/x86_64-linux-gnu'))
         php = str(ROOT/'scripts/php-test')
-        commands = [('lint', [php, '-l', str(p.relative_to(ROOT))]) for area in ['Domains', 'tests']
-                    for p in sorted((ROOT/area).rglob('*.php'))] if 'lint' in selected else []
+        commands = [('lint', [php, '-l', path]) for path in php_files]
         if 'lint' in selected:
             commands.append(('lint', [php, 'tests/php83-compatibility-test.php']))
         for kind, paths in suites.items():
@@ -665,11 +685,11 @@ def main():
             worker_check = lambda: test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
                    timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib,
-                   jobs_explicit=jobs_explicit)
+                   jobs_explicit=jobs_explicit, lint_base=args.lint_base)
     except BaseException as error:
         if not (output/'receipt.json').exists():
             (output/'receipt.json').write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,
-                                                          'only_tests': args.only or [], 'timings': timings})+'\n')
+                                                          'only_tests': args.only or [], 'lint_base': args.lint_base, 'timings': timings})+'\n')
             print('Setup failed; receipt: '+str(output/'receipt.json'), file=sys.stderr)
         raise
     finally:
