@@ -133,7 +133,7 @@ class InstalledPhaseTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
-    def test_keep_going_reports_all_failures_but_stops_for_runtime_changes(self):
+    def test_default_reports_all_failures_but_stops_for_runtime_changes(self):
         for jobs in [1, 2]:
             for mutate in [False, True]:
                 with self.subTest(jobs=jobs, mutate=mutate), tempfile.TemporaryDirectory() as temp:
@@ -149,11 +149,12 @@ class RunnerTests(unittest.TestCase):
                     with mock.patch.object(runner, 'ROOT', root), \
                          contextlib.redirect_stdout(io.StringIO()) as stdout:
                         self.assertEqual(runner.run(commands, dict(os.environ), output, ['provider'], {},
-                                                    jobs=jobs, keep_going=True), 1)
+                                                    jobs=jobs), 1)
                     receipt = json.loads((output/'receipt.json').read_text())
                     expected = commands[:1] if mutate else commands
                     self.assertEqual([row['argv'] for row in receipt['results']], [argv for _, argv in expected])
                     self.assertFalse(receipt['complete'])
+                    self.assertTrue(receipt['keep_going'])
                     summary = json.loads(stdout.getvalue().splitlines()[-1])
                     self.assertEqual([row['argv'] for row in summary['failed_commands']],
                                      [argv for index, (_, argv) in enumerate(expected) if index in [0, 2]])
@@ -240,7 +241,7 @@ class RunnerTests(unittest.TestCase):
                 return b'failed', b'problem', 1, False
             with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute) as called, \
                  contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(runner.run(commands, {}, output, ['provider'], {}, jobs=2), 1)
+                self.assertEqual(runner.run(commands, {}, output, ['provider'], {}, jobs=2, keep_going=False), 1)
             self.assertEqual(called.call_count, 2)
             receipt = json.loads((output/'receipt.json').read_text())
             self.assertFalse(receipt['complete'])
@@ -300,7 +301,7 @@ class RunnerTests(unittest.TestCase):
                     return b'output', b'', int(argv == commands[failed][1]), False
                 with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute) as called, \
                      contextlib.redirect_stdout(io.StringIO()):
-                    self.assertEqual(runner.run(commands, {}, output, ['native'], {}, jobs=4), 1)
+                    self.assertEqual(runner.run(commands, {}, output, ['native'], {}, jobs=4, keep_going=False), 1)
                 receipt = json.loads((output/'receipt.json').read_text())
                 self.assertFalse(receipt['complete'])
                 self.assertEqual(called.call_count, failed+1)
@@ -507,9 +508,9 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual('native' in runner.default_suites(), bool(source))
         self.assertIn('mariadb', runner.CATEGORIES)
 
-    def test_failure_timeout_or_source_mutation_saves_output_and_stops(self):
-        for failure in ['timeout', 'exit', 'mutation']:
-            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
+    def test_failure_timeout_or_source_mutation_preserves_output_and_stop_policy(self):
+        for failure, fail_fast in [('timeout', False), ('timeout', True), ('exit', True), ('mutation', False)]:
+            with self.subTest(failure=failure, fail_fast=fail_fast), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp); (root/'Domains').mkdir(); (root/'output').mkdir()
                 runtime = root/'Domains/Probe.php'; runtime.write_bytes(b'<?php')
                 def execute(argv, **kwargs):
@@ -520,11 +521,14 @@ class RunnerTests(unittest.TestCase):
                     return b'partial', b'problem', 1 if failure == 'exit' else 0, False
                 with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute) as called, \
                      contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                    self.assertEqual(runner.run([('provider', ['php', 'probe']), ('provider', ['php', 'next'])], {}, root/'output', ['provider'], {}), 1)
-                called.assert_called_once()
+                    self.assertEqual(runner.run([('provider', ['php', 'probe']), ('provider', ['php', 'next'])], {}, root/'output', ['provider'], {},
+                                                **({'keep_going': False} if fail_fast else {})), 1)
+                expected = 1 if fail_fast or failure == 'mutation' else 2
+                self.assertEqual(called.call_count, expected)
                 receipt = json.loads((root/'output/receipt.json').read_text())
                 self.assertFalse(receipt['complete'])
-                self.assertEqual(len(receipt['results']), 1)
+                self.assertEqual(len(receipt['results']), expected)
+                self.assertEqual(receipt['keep_going'], not fail_fast)
                 self.assertEqual(receipt['results'][0]['timed_out'], failure == 'timeout')
                 self.assertEqual(receipt['results'][0]['runtime_unchanged'], failure != 'mutation')
                 self.assertEqual((root/'output/000.stdout.txt').read_bytes(), b'partial')
@@ -668,15 +672,15 @@ class RunnerTests(unittest.TestCase):
 
     def test_only_paths_keep_manifest_order_and_native_fixture_requirements(self):
         suites = runner.manifest()
-        cases = [(['tests/test_package.py'], ['package']),
-                 (['tests/test_schema_mariadb.py'], ['mariadb']),
+        cases = [(['tests/test_package.py'], ['package'], [], True),
+                 (['tests/test_schema_mariadb.py'], ['mariadb'], ['--fail-fast'], False),
                  (['tests/test_package.py', 'tests/test_installed_package_previous.py', 'tests/test_package.py'],
-                  ['native', 'package'])]
-        for requested, selected in cases:
+                  ['native', 'package'], ['--keep-going'], True)]
+        for requested, selected, policy, keep_going in cases:
             with self.subTest(requested=requested), tempfile.TemporaryDirectory() as temp, \
                  mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine'}), \
                  mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
-                 mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', '--keep-going', '--only', *requested]), \
+                 mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', *policy, '--only', *requested]), \
                  mock.patch.object(runner.native, 'prepare', return_value={'source': 'digest'}) as native_prepare, \
                  mock.patch.object(runner, 'prepare', return_value=(Path(temp)/'runtime', Path(temp)/'runtime/php', Path(temp)/'runtime/curl.so')) as php_prepare, \
                  mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stdout(io.StringIO()):
@@ -691,7 +695,7 @@ class RunnerTests(unittest.TestCase):
                     php_prepare.assert_called_once_with(native='native' in selected)
                 self.assertEqual(native_prepare.call_count, int('native' in selected))
                 self.assertEqual(run.call_args.kwargs['only'], requested)
-                self.assertTrue(run.call_args.kwargs['keep_going'])
+                self.assertEqual(run.call_args.kwargs['keep_going'], keep_going)
                 if 'native' in selected:
                     self.assertEqual(run.call_args.args[1]['PAYMENTER_TEST_FIXTURE'], str(Path(temp)/'paymenter'))
                     self.assertEqual(run.call_args.args[5], ('pristine', {'source': 'digest'}))
@@ -714,12 +718,14 @@ class RunnerTests(unittest.TestCase):
                     receipt = json.loads((Path(temp)/'receipt.json').read_text())
                     self.assertFalse(receipt['complete']); self.assertEqual(receipt['only_tests'], [path])
 
-    def test_only_cannot_combine_with_suite_or_bypass_manifest_validation(self):
-        with mock.patch.object(runner.sys, 'argv', ['test.py', '--suite', 'runner', '--only', 'tests/test_runner.py']), \
-             mock.patch.object(runner.tempfile, 'mkdtemp') as output, contextlib.redirect_stderr(io.StringIO()), \
-             self.assertRaises(SystemExit):
-            try: runner.main()
-            finally: output.assert_not_called()
+    def test_conflicting_flags_and_only_manifest_validation(self):
+        for arguments in [['--suite', 'runner', '--only', 'tests/test_runner.py'], ['--keep-going', '--fail-fast']]:
+            with self.subTest(arguments=arguments), mock.patch.object(runner.sys, 'argv', ['test.py', *arguments]), \
+                 mock.patch.object(runner.tempfile, 'mkdtemp') as output, contextlib.redirect_stderr(io.StringIO()), \
+                 self.assertRaises(SystemExit) as caught:
+                try: runner.main()
+                finally: output.assert_not_called()
+            self.assertEqual(caught.exception.code, 2)
         with tempfile.TemporaryDirectory() as temp, \
              mock.patch.object(runner.sys, 'argv', ['test.py', '--only', 'tests/test_runner.py']), \
              mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
@@ -748,6 +754,7 @@ class RunnerTests(unittest.TestCase):
         lint.append([str(ROOT/'scripts/php-test'), 'tests/php83-compatibility-test.php'])
         self.assertEqual([argv for kind, argv in commands if kind == 'lint'], lint)
         self.assertIsNone(run.call_args.kwargs['only'])
+        self.assertTrue(run.call_args.kwargs['keep_going'])
 
     def test_conventions_exceptions_are_empty(self):
         doc = (ROOT/'docs/paymenter-extension-conventions.md').read_text()

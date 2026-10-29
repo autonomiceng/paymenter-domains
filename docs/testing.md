@@ -48,10 +48,11 @@ Clean environment and PHP settings disable URL streams, cURL execution, sockets,
 and mail. Exception arguments are hidden by default; redaction cases explicitly enable them.
 Synthetic namespaced cURL functions inspect configuration without sockets. These are runtime
 guards, not an OS sandbox. SQLite is the only loaded PDO driver in native runs; no database sockets.
-Failure, timeout (60 seconds), or changed runtime bytes stops the run by default.
-Use `scripts/test.py --keep-going --only <test paths>` to run every selected file after test
-failures or timeouts. The final JSON summary lists all failed commands and the run exits nonzero.
-Runtime integrity failures still stop scheduling new files. Timeout termination
+Every selected file runs by default, including after test failures or timeouts (60 seconds).
+The final JSON summary lists all failed commands and the run exits nonzero if any failed.
+Use `scripts/test.py --fail-fast` to stop scheduling after the first failure or timeout;
+running commands finish. `--keep-going` remains accepted for explicit continuation.
+Runtime integrity failures always stop scheduling new files. Timeout termination
 kills the command process group, including nested children, before cleaning up the fixture. Private
 `/tmp/domains-tests-*/receipt.json` records command exits, partial outputs, hashes, omitted and
 unimplemented categories. Setup failures also leave a receipt; final dependency guard failures preserve command results. Laravel suites must explicitly
@@ -671,7 +672,8 @@ Installed-package commands (`test_installed_*.py`, including NameSilo enrollment
 The pool drains before each one and resumes after its integrity check finishes.
 Command `started_seconds` and `finished_seconds` are monotonic offsets from run start;
 the finish includes the integrity check, so receipts can verify that commands did not overlap.
-The first failure stops new work; running commands finish. Runs that include MariaDB run serially.
+Failures do not stop new work unless `--fail-fast` is set; running commands finish.
+Runtime integrity failures always stop new work. Runs that include MariaDB run serially.
 In parallel runs, writes to `Domains/`, even when restored, fail.
 
 Public registry expiry tests use synthetic bootstrap/HTTP bodies, endpoint DNS and clocks.

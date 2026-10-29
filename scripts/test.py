@@ -79,7 +79,7 @@ def timing(name, timings):
         print(json.dumps({'timing': 'stage', 'stage': name, 'seconds': timings[name]}), flush=True)
 
 
-def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None, keep_going=False):
+def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None, keep_going=True):
     started_run = time.monotonic()
     timings = {} if timings is None else timings
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
@@ -237,8 +237,11 @@ def main():
     selection.add_argument('--suite', choices=CATEGORIES, action='append')
     selection.add_argument('--only', nargs='+', action='extend', metavar='TEST_PATH',
                            help='Run only exact registered test paths; not a full boundary run.')
-    parser.add_argument('--keep-going', action='store_true',
-                        help='Run remaining tests after failures or timeouts; integrity failures still stop scheduling.')
+    failure_policy = parser.add_mutually_exclusive_group()
+    failure_policy.add_argument('--keep-going', action='store_true', default=True,
+                                help='Run remaining tests after failures or timeouts (default); integrity failures still stop scheduling.')
+    failure_policy.add_argument('--fail-fast', dest='keep_going', action='store_false',
+                                help='Stop scheduling after the first failure or timeout; running commands finish.')
     parser.add_argument('--jobs', type=positive_jobs,
                         default=os.environ.get('DOMAINS_TEST_JOBS', max(1, min(4, (os.cpu_count() or 1)//2))))
     args = parser.parse_args()
