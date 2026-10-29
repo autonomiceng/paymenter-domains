@@ -56,7 +56,6 @@ final class CartHandoffFailure
             'transfer_previous_lock' => 'transfer_previous_lock',
             'transfer_maximum_term' => 'transfer_maximum_term',
         ],
-        ExpiredCostEvidence::class => ['Saved cost evidence expired.' => 'saved_cost_expired'],
         RuntimeIneligible::class => ['Registrar processing is disabled.' => 'processing_disabled'],
         ReadDeferred::class => ['Account read budget unavailable.' => 'account_read_budget_unavailable'],
         EnomTestCallLimit::class => ['Enom TEST daily call limit, counter, or UTC day change refused the send.' => 'test_call_limit'],

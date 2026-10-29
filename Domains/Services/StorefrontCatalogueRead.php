@@ -63,7 +63,7 @@ final class StorefrontCatalogueRead
     {
         $now = $this->clock->now();
         if (!$price || $price->wholesale === null || $price->retail === null || $price->hold_reason !== null
-            || $price->unit !== 'term_total' || !$price->fresh_until || $price->observed_at > $now || $price->fresh_until <= $now) {
+            || $price->unit !== 'term_total' || !$price->fresh_until || $price->observed_at > $now) {
             throw new \DomainException('No current eligible price.');
         }
         if (($price->eligibility['rule_hash'] ?? null) !== hash('sha256', json_encode($rule, JSON_THROW_ON_ERROR))) {

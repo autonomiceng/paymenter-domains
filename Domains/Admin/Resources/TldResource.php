@@ -6,7 +6,7 @@ use Filament\Resources\Resource;
 use Filament\Support\Enums\FontFamily;
 use Filament\Tables\{Columns\TextColumn,Filters\SelectFilter,Table};
 use Illuminate\Database\Eloquent\{Builder,Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,PriceList,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
@@ -67,6 +67,7 @@ class TldResource extends Resource
                 ->color(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['tone'])->description(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['reason']),
         ])->filters([SelectFilter::make('registrar_key')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo']),
             SelectFilter::make('server_id')->label('Registrar account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all())])
+            ->recordActions([SettingsActions::sync()->link()])
             ->recordUrl(fn($record)=>self::getUrl('view',['record'=>$record]))->defaultSort('tld')->paginated([25,50,100])
             ->emptyStateHeading('No TLDs yet')->emptyStateDescription(null);
     }

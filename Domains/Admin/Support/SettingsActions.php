@@ -31,7 +31,7 @@ final class SettingsActions
     public static function description(string $name): string
     {
         if(config('domains.enom_identity.environment')==='live'&&in_array($name,['acceptance','import'],true)){
-            return $name==='acceptance'?'Accept independently verified exact terms and annual renewal support for this live account. Review live Purchase below. TEST acceptance grants no live authority. Changes pause new sales until a new import.':'Reads one accepted ending from the live Enom account. Each request uses its daily allowance. Costs expire after 60 minutes. To publish prices, save Edit prices on the TLD page; select a seller separately. Processing remains separate.';
+            return $name==='acceptance'?'Accept independently verified exact terms and annual renewal support for this live account. Review live Purchase below. TEST acceptance grants no live authority. Changes pause new sales until a new import.':'Gets the current costs for one accepted TLD from the live Enom account. Each read uses its daily allowance. Sales keep the last synced cost until the next sync.';
         }
         return match($name){
             'lifecycle'=>'Set how long after expiry a domain can still be renewed (grace) or restored, and what the registrar charges for each. Check these with the registrar first and note where you checked. They stay until you change them. If they are not set, or your sources disagree, late renewals and restores stay off. Grace renewal is off for TLDs that only renew automatically. Customers pay the registrar charge plus the normal renewal markup. Saving does not turn on owner checkout or restores.',
@@ -50,7 +50,7 @@ final class SettingsActions
             'publish'=>'Publishes prices from saved costs and the current pricing. It does not refresh costs or change issued invoices.',
             'tld_settings'=>'Narrow term bounds or pause new sales. Widening and restoring sales require explicit verification and current acceptance. Retained holders require annual renewal support. For Enom TEST, ineligible cart lines are removed.',
             'seller'=>'Selects the registrar for new sales only. Existing domains and renewal obligations keep their holding registrar. No automatic fallback. For Enom TEST, previous seller cart lines for this ending are removed.',
-            'import'=>'Reads one accepted TEST ending from Enom and imports current costs and registry requirements. To publish prices, save Edit prices on the TLD page; select a seller separately. Processing stays off; withdrawn registration, transfer and renewal support stay off. Costs expire 60 minutes after the read; re-import before continuing preview. An annual registration and renewal baseline takes five reads; each additional accepted term or transfer adds up to one. Existing TEST cart lines for this ending are removed.',
+            'import'=>'Gets the current Enom costs for one accepted TLD. Any of that TLD in customer carts is removed.',
             'acceptance'=>config('domains.enom_writes.transfer')===true?'Accept only independently verified exact terms. For Enom TEST, review Purchase / TP_CreateOrder at the fixed TEST route and request interval below. Annual transfers also need accepted registry details, the transfer ending policy, processing and a recent successful USD balance read. Any change holds new sales on this account until a new import and removes its TEST cart lines. Retained holders keep accepted annual renewal support.':'Accept only independently verified exact terms. For opted-in Enom TEST, also review and accept the Purchase route and request interval shown below. Any change holds new sales for every TLD on this account until a new import and removes its TEST cart lines. Retained holders keep accepted annual renewal support.',
             'history'=>'Accept only a verified complete USD history contract for this action. Revocation stops new reconciliation reads; saved attempts and financial evidence stay retained.',
             'enroll_sandbox'=>'Sends one read-only balance request to NameSilo OTE to check whether the key works. The balance is not saved. NameSilo does not confirm which account owns the key; the account label is entered by staff and remains unconfirmed. If the check succeeds, the key is saved encrypted as an immutable OTE enrollment on this server. Processing starts off and no catalogue terms are accepted. The next worker tick may send one scheduled daily read through /apibatch/getAccountBalance; NameSilo has not confirmed OTE support for this route. An unsupported reply appears as Read failed; another daily attempt is no sooner than the next day. Later scheduled reads are limited to one per day. Check balance can make one separate OTE balance request and show the result on the account page. Each key can be enrolled once on this site. To change the key or label, use a different OTE key on a fresh Domains server. Holdings, acceptances and operations stay with the old enrollment.',
@@ -134,7 +134,7 @@ final class SettingsActions
                 $fields[]=Select::make('seller')->label('Seller account')->options(fn()=>Account::orderBy('server_id')->get()->mapWithKeys(fn($a)=>[$a->server_id=>TldFacts::registrar($a->registrar_key).' · account #'.$a->server_id])->all())->placeholder('No seller')->default(fn()=>$policy()?->server_id);
                 $fields[]=Checkbox::make('register')->label('Allow registrations')->default(fn()=>$policy()?->register_enabled??false);$fields[]=Checkbox::make('transfer')->label('Allow transfers')->default(fn()=>$policy()?->transfer_enabled??false);
             }
-            if($name==='import'){$fields[]=TextInput::make('ending')->label('Accepted TLD without leading dot')->required()->maxLength(63);}
+            if($name==='import'){$fields[]=Select::make('ending')->label('TLD')->options(fn()=>self::acceptedEndings($server))->required();}
             if($name==='acceptance'){
                 $fields[]=TextInput::make('ending')->label('TLD without leading dot')->required()->maxLength(63);
                 $fields[]=Checkbox::make('accept')->label('Accept this TLD (clear to revoke new sales)');
@@ -205,7 +205,7 @@ final class SettingsActions
                 $fields[]=Select::make('environment')->label('Environment')->options(['test'=>'TEST','live'=>'Live'])->default(fn()=>Account::where('server_id',$server)->value('environment')??'test')->required();
                 foreach(['uid'=>'Enom user ID','token'=>'Enom API token','api_key'=>'NameSilo API key'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->password()->autocomplete('new-password')->maxLength(4096)->visible(fn($get)=>$get('registrar')===($key==='api_key'?'namesilo':'enom'))->required();}
             }
-            $fields[]=Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])->helperText('Use one line. Do not include credentials.');
+            if(!in_array($name,Review::NO_REASON,true)){$fields[]=Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])->helperText('Use one line. Do not include credentials.');}
             $processing=fn()=>(bool)Account::where('server_id',$server)->value('processing_enabled');
             $cannotEnable=fn()=>$name==='processing'&&!$processing()&&(!Account::where('server_id',$server)->exists()||app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class)->configurationStatus($server)!=='matched');
             $registrar=fn()=>Account::where('server_id',$server)->value('registrar_key');
@@ -237,6 +237,45 @@ final class SettingsActions
         }
         return $out;
     }
+    /** Sync prices for one TLD from its own row or page: one short question, no typed TLD and no reason.
+     * The audit records who synced and when. */
+    public static function sync(): Action
+    {
+        $available=[];
+        $can=static function(Tld $record)use(&$available):bool{
+            $server=(int)$record->server_id;
+            return $available[$server]??=(static function()use($server):bool{
+                try{return \Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Account::where('server_id',$server)->firstOrFail()));}
+                catch(\Throwable){return false;}
+            })();
+        };
+        return Action::make('sync')->label('Sync prices')->color('gray')
+            ->visible(fn(Tld $record)=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('import'))&&$can($record))
+            ->requiresConfirmation()->modalHeading(fn(Tld $record)=>'Get the current Enom costs for .'.$record->tld.'?')
+            ->modalDescription(fn(Tld $record)=>'Any .'.$record->tld.' in customer carts is removed.')->modalSubmitActionLabel('Sync prices')
+            ->fillForm(fn(Tld $record)=>['review_key'=>Review::ticket((int)Auth::id(),(int)$record->server_id,null,'import',Review::stamp((int)$record->server_id,null))])
+            ->schema([Hidden::make('review_key')])
+            ->action(function(#[\SensitiveParameter] array $data,Tld $record,$livewire){
+                $server=(int)$record->server_id;
+                try{
+                    app(StaffSettingsWrites::class)->run(new Review((int)Auth::id(),$server,null,'import',(string)($data['review_key']??''),''),['ending'=>(string)$record->tld]);
+                    Notification::make()->success()->title('Prices synced')->send();
+                    // Other actions on the TLD page were reviewed against the old prices.
+                    if(property_exists($livewire,'reviewStamp')){$livewire->reviewStamp=Review::stamp($server,(int)$record->id);}
+                }catch(\Throwable $error){
+                    if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains price sync failed.',['exception_class'=>$error::class]);}
+                    Notification::make()->danger()->title("Couldn't sync prices")->body(self::refusal($error,'import',[],$server))->send();
+                }finally{$livewire->mountedActions=[];}
+            });
+    }
+    /** Accepted endings an account can sync, for the account page picker. */
+    private static function acceptedEndings(int $server): array
+    {
+        try{$endings=array_keys(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Account::where('server_id',$server)->firstOrFail()))->endings);}
+        catch(\Throwable){return [];}
+        sort($endings);
+        return array_combine($endings,array_map(static fn($e)=>'.'.$e,$endings));
+    }
     /** Live preview: each sold term's cost, current price and the price saving would publish. */
     private static function preview(?int $tld,?array $rule): \Illuminate\Support\HtmlString
     {
@@ -244,22 +283,22 @@ final class SettingsActions
         if($t===null||$rule===null){return new \Illuminate\Support\HtmlString('');}
         $now=now()->toDateTimeImmutable();
         try{$rows=PriceCatalogue::preview($t,$rule,$now);}catch(\Throwable){$rows=[];}
-        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>No costs yet. Sync prices on the account page before saving. Saving now changes nothing.</p>');}
+        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>No costs yet. Sync prices for this TLD before saving. Saving now changes nothing.</p>');}
         $costs=Staff::can(Staff::COSTS);$money=static fn(?string $v)=>$v===null?'None':'$'.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$v);
         $cell=static fn(string $html)=>'<td style="padding:6px 10px;vertical-align:top;white-space:nowrap">'.$html.'</td>';
         $html='<div style="max-width:100%;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.875rem"><thead><tr>';
         foreach(['Price',...($costs?['Cost']:[]),'Now','After saving'] as $label){$html.='<th scope="col" style="padding:6px 10px;text-align:left;white-space:nowrap;font-weight:500">'.e($label).'</th>';}
-        $html.='</tr></thead><tbody>';$stale=false;
+        $html.='</tr></thead><tbody>';$missing=false;
         foreach($rows as $row){
-            $stale=$stale||!$row['fresh'];
-            $note=match(true){!$row['fresh']=>'Cost out of date',$row['cost']===null=>'Not offered by the registrar',$row['hold']==='below_cost'=>'Below cost: not sold',
+            $missing=$missing||!$row['synced'];
+            $note=match(true){!$row['synced']=>'No synced cost',$row['cost']===null=>'Not offered by the registrar',$row['hold']==='below_cost'=>'Below cost: not sold',
                 $row['alert']==='below_cost'=>'Below cost: still billed',$row['hold']!==null=>'Not sold',default=>null};
             $html.='<tr style="border-top:1px solid rgb(127 127 127 / .2)">'.$cell(e(ucfirst($row['action']).', '.$row['term'].' '.($row['term']===1?'year':'years')))
                 .($costs?$cell(e($money($row['cost']))):'').$cell(e($money($row['current'])))
                 .$cell(e(in_array($row['hold'],[null,'below_cost'],true)?$money($row['new']):'Not sold').($note===null?'':'<div style="font-size:.75rem;color:rgb(217 119 6)">'.e($note).'</div>')).'</tr>';
         }
         $html.='</tbody></table></div>';
-        if($stale){$html.='<p style="margin-top:.5rem;color:rgb(220 38 38)">Some costs are out of date. Sync prices on the account page before saving. Saving now changes nothing.</p>';}
+        if($missing){$html.='<p style="margin-top:.5rem;color:rgb(220 38 38)">Some costs are missing. Sync prices for this TLD before saving. Saving now changes nothing.</p>';}
         return new \Illuminate\Support\HtmlString($html);
     }
     /** Which TLDs a default pricing change publishes to, and which of them will wait for a price sync. */
@@ -272,15 +311,15 @@ final class SettingsActions
             ->where('registrar_key',$account->registrar_key)->where('account_fingerprint',$account->account_fingerprint)
             ->whereIn('tld',$tlds->pluck('tld'))->where('currency','USD')->orderBy('id')->get()->groupBy('tld');
         $now=now()->toDateTimeImmutable();
-        $waiting=$tlds->filter(function(Tld $t)use($now,$prices){try{PriceCatalogue::requireFreshCosts($t,$now,$prices->get($t->tld,collect()));return false;}catch(\Throwable){return true;}});
+        $waiting=$tlds->filter(function(Tld $t)use($now,$prices){try{PriceCatalogue::requireCosts($t,$now,$prices->get($t->tld,collect()));return false;}catch(\Throwable){return true;}});
         $text=$tlds->count().' '.($tlds->count()===1?'TLD uses':'TLDs use').' the account default: '.$tlds->map(fn($t)=>'.'.$t->tld)->implode(', ').'. Saving publishes '.($tlds->count()===1?'its':'their').' new prices.';
-        return $text.($waiting->isEmpty()?'':' Costs are out of date for '.$waiting->map(fn($t)=>'.'.$t->tld)->implode(', ').'. '.($waiting->count()===1?'Its prices':'Their prices').' stay the same until you sync prices and save again.');
+        return $text.($waiting->isEmpty()?'':' Costs are missing for '.$waiting->map(fn($t)=>'.'.$t->tld)->implode(', ').'. '.($waiting->count()===1?'Its prices':'Their prices').' stay the same until you sync prices and save again.');
     }
     /** Notification text after a pricing or card fee change. */
     private static function published(array $summary,string $name): string
     {
         $text=$summary['published']===0&&$summary['failed']===[]?($name==='card_fee'?'Card fee saved. No TLDs count the card fee in their prices, so no prices changed.':'No TLDs use the account default.'):'Published new prices for '.$summary['published'].' '.($summary['published']===1?'TLD':'TLDs').'.';
-        return $text.($summary['failed']===[]?'':' Could not publish '.implode(', ',$summary['failed']).'. Sync prices on the account page, then save again.')
+        return $text.($summary['failed']===[]?'':' Could not publish '.implode(', ',$summary['failed']).'. Sync prices for '.(count($summary['failed'])===1?'that TLD':'those TLDs').', then save again.')
             .(($summary['audit_failed']??false)?" Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved.":'');
     }
     /** Renewals and DNS management are on when their saved acceptance is current. */
@@ -307,27 +346,13 @@ final class SettingsActions
     private static function submitLabel(string $name,bool $processing,bool $connected,bool $on): string
     {
         return match(true){$name==='processing'=>$processing?'Pause orders':'Resume orders',$name==='enroll_sandbox'||($name==='configure'&&!$connected)=>'Connect',
-            $name==='probe'=>'Test connection',$name==='import'=>'Sync',in_array($name,['default_rule','card_fee'],true)=>'Save and publish',str_ends_with($name,'_renewal')||str_ends_with($name,'_management')=>$on?'Turn off':'Turn on',default=>'Save'};
+            $name==='probe'=>'Test connection',$name==='import'=>'Sync prices',in_array($name,['default_rule','card_fee'],true)=>'Save and publish',str_ends_with($name,'_renewal')||str_ends_with($name,'_management')=>$on?'Turn off':'Turn on',default=>'Save'};
     }
     /** Staff text for a refused settings change; never echoes unrecognized exception text. */
     public static function refusal(\Throwable $error,string $name,array $data=[],int $server=0): string
     {
         if($name==='card_fee'&&$error instanceof \InvalidArgumentException&&!in_array($error->getMessage(),['This percentage cannot cover the card fee. Lower the markup or card fee.','The calculated price is too large.'],true)){
             return 'Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.';
-        }
-        if ($name==='seller' && $error instanceof \Paymenter\Extensions\Servers\Domains\Services\ExpiredCostEvidence) {
-            $action=match($error->action){'register'=>'registration','renew'=>'renewal','transfer'=>'transfer',default=>'saved'};
-            $term=$error->term.' '.($error->term===1?'year':'years');
-            $expiry=$error->freshUntil->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i').' UTC';
-            $account=Account::where('server_id',$error->serverId)->first();
-            $binding=$account ? \Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account) : null;
-            $registrar=TldFacts::registrar((string)$account?->registrar_key);
-            $imports=$binding && \Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled($binding);
-            $test=$binding && \Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::testDeployment($binding);
-            $remedy=$imports ? "On the account page for account #{$error->serverId}, use Sync TLD prices to refresh {$error->tld} costs, then try again."
-                : ($test ? 'Sync TLD prices is unavailable for this account; ask the installation administrator to restore TEST catalogue import and refresh costs before trying again.'
-                    : "Check Cost refresh on .{$error->tld} for account #{$error->serverId}; wait for fresh costs from its scheduled catalogue read, or ask the installation administrator to restore reads if refresh failed or was interrupted.");
-            return "Cannot select {$registrar} account #{$error->serverId} for .{$error->tld}: its {$action} cost for {$term} expired at {$expiry}. ".$remedy;
         }
         if($error instanceof EnomTestCallLimit&&Account::where('server_id',$server)->value('environment')==='live'){return 'Live Enom request refused before sending. Earlier reads may have been sent. Check the live site, account binding and daily limits on the account page.';}
         return $error instanceof EnomTestCallLimit
@@ -365,7 +390,7 @@ final class SettingsActions
                 'namesilo_identity_unavailable'=>'NameSilo identity verification is unavailable. This account cannot be connected.',
                 'Review key used.'=>$name==='enroll_sandbox'?'This enrollment confirmation was already used, so this submission sent no new OTE key check. An earlier submission may still be finishing. Wait for it to finish, then reload the account page. This page cannot show whether that submission is still running. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. If no Enrollment row appears and Account binding reads “Not configured” after the earlier submission finishes, nothing was enrolled. '.self::UNAVAILABLE_RECOVERY.' '.self::RETRY_GUIDANCE:'This confirmation was already used. Reload this page.',
                 'This percentage cannot cover the card fee. Lower the markup or card fee.'=>'No price can cover the card fee with this markup. Lower the markup or the card fee. Nothing was changed.',
-                'Fresh costs required before publication.'=>'Costs are missing or out of date. Sync prices on the account page, then save again. Nothing was changed.',
+                'Costs required before publication.'=>'Costs are missing. Sync prices for this TLD, then save again. Nothing was changed.',
                 'Complete lifecycle facts required.'=>'Complete all lifecycle fields. Nothing was saved.',
                 'Invalid lifecycle input.'=>'Reload the lifecycle form and check its fields. Nothing was saved.',
                 'Invalid lifecycle support.'=>'Check the grace, restore, auto-renew and conflicting-source flags. Nothing was saved.',

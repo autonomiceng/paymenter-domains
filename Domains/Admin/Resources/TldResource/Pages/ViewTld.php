@@ -39,6 +39,7 @@ class ViewTld extends ViewRecord
     }
     public function overrideAction(): Action {return $this->settings()['override'];}
     public function lifecycleAction(): Action {return $this->settings()['lifecycle'];}
+    public function syncAction(): Action {return SettingsActions::sync()->record($this->getRecord());}
     protected function fillForm(): void {$this->data=[];}
     public function getTitle(): string {Staff::requireView();return '.'.$this->getRecord()->tld;}
     public function getHeading(): HtmlString
@@ -73,22 +74,23 @@ class ViewTld extends ViewRecord
             if($fact['edit']&&$edit){$entry->hint($edit);}
             $sales[]=$entry;
         }
-        $last=TldFacts::lastPrices((int)$t->server_id);$failure=TldFacts::syncFailure((int)$t->server_id,$last);
-        $until=collect($snapshot['prices'])->pluck('until')->filter()->min();
-        $valid=$until?'Valid until '.\Carbon\CarbonImmutable::parse($until)->utc()->format('M j, Y H:i').' UTC':null;
-        $stamp=static fn($at)=>$at->format('M j, Y H:i').' UTC';
+        // Sales keep the last synced cost; old prices get a quiet warning, never a stop.
+        $synced=TldFacts::lastSynced($snapshot['prices']);$failure=TldFacts::syncFailure((int)$t->server_id);
+        $old=$synced!==null&&$synced->lt(now()->subDays(TldFacts::SYNC_WARN_DAYS));
+        $rule='Sales use the last synced cost. They stop only if there is no cost or the price is below cost.';
+        $sync=[];
         if($failure){
             $cause=e($failure['cause'].($failure['at']?' · '.$failure['at']:''));$link=self::link();
-            $sync=[self::entry('Last sync','Sync failed',new HtmlString($cause.($link?'<div>'.$link->toHtml().'</div>':'')),'danger')];
-            if($last){$sync[]=self::entry('Last good prices',$stamp($last),$valid);}
-        }else{
-            $sync=[self::entry('Last sync',$last?$stamp($last):null,$last?$valid:'Not synced yet')->hint($last?null:self::link())];
+            $sync[]=self::entry('Last sync','Sync failed',new HtmlString($cause.($link?'<div>'.$link->toHtml().'</div>':'')),'danger');
         }
+        $sync[]=self::entry('Prices last synced',$synced?->format('M j, Y'),$synced===null?'Not synced yet':new HtmlString(
+            ($old?'<div style="color:rgb(217 119 6)">More than '.TldFacts::SYNC_WARN_DAYS.' days ago. Sync prices to get current costs.</div>':'').'<div>'.e($rule).'</div>'),$old?'warning':null);
+        $syncAction=$this->getAction('sync',false);
         $override=$this->getAction('override',false);
         return $schema->components([
             Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()->schema([
                 Section::make('Sales')->schema($sales)->columnSpan(1),
-                Section::make('Price sync')->schema($sync)->columnSpan(1)]),
+                Section::make('Price sync')->afterHeader($syncAction?->isVisible()?new HtmlString((clone $syncAction)->button()->color('gray')->toHtml()):null)->schema($sync)->columnSpan(1)]),
             // A copy renders as a button here; the menu keeps its own item view.
             Section::make('Prices by registrar account')->afterHeader($override?->isVisible()?new HtmlString((clone $override)->button()->color('gray')->toHtml()):null)
                 ->schema([TextEntry::make('prices')->label('Prices by registrar account')->hiddenLabel()->state(fn()=>TldFacts::accountsTable($t,$grants))->html()])->columnSpanFull(),

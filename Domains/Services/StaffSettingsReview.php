@@ -20,6 +20,8 @@ final class StaffSettingsReview
     { $this->input=array_intersect_key($data,array_flip(['ending','history_action','delivery_id','alert_id','fee_percent','fee_fixed','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days',...LifecycleFacts::FIELDS])); }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
         public readonly string $action,private readonly string $ticket,public readonly string $reason) {}
+    /** Syncing prices asks no reason; the audit still records who and when. */
+    public const NO_REASON=['import'];
     /** Saving these publishes prices, so they also need the publish permission. */
     public const PUBLISHES=['override','remove_override','default_rule','card_fee'];
     public static function permission(string $action): string
@@ -46,7 +48,7 @@ final class StaffSettingsReview
         $role=$u->role_id?Role::whereKey($u->role_id)->lockForUpdate()->first():null;$u->setRelation('role',$role);
         foreach(['admin.domains.view','admin.domains.manage-policy',self::permission($this->action),...($this->action==='lifecycle'?['admin.domains.costs']:[]),...(in_array($this->action,self::PUBLISHES,true)?[self::permission('publish')]:[])] as $p){
             if(!$u->hasPermission($p)){throw new \DomainException('Current staff permissions required.');}}
-        StaffReason::require($this->reason);
+        if(!in_array($this->action,self::NO_REASON,true)){StaffReason::require($this->reason);}
     }
     /** Canonical shared mutex: all servers, then accounts, policies, TLDs, prices, settings. */
     public function lockAccounts(): void

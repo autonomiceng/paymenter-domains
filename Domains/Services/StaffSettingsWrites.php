@@ -86,7 +86,7 @@ final class StaffSettingsWrites
                 $rule=$r->action==='override'?self::rule($data,$r->serverId):null;
                 $t->update($rule===null?['use_default_rule'=>true]:['use_default_rule'=>false,'pricing_mode'=>$rule['mode'],'markup'=>$rule['markup'],'round_up'=>$rule['round_up'],
                     'fixed_register'=>$rule['fixed']['register'],'fixed_renew'=>$rule['fixed']['renew'],'fixed_transfer'=>$rule['fixed']['transfer']]);
-                PriceCatalogue::requireFreshCosts($t,$now);
+                PriceCatalogue::requireCosts($t,$now);
             });return null;
         }
         if($r->action==='seller'){
@@ -224,7 +224,7 @@ final class StaffSettingsWrites
             try{
                 $this->native->publish((int)$tld->id,$now,null,function(Tld $t)use($r,$now,&$follows):bool{
                     if($r->action==='default_rule'?!$t->use_default_rule:(new PricingRules)->rule($t,true)['mode']!=='markup_fee_percent'){return $follows=false;}
-                    PriceCatalogue::requireFreshCosts($t,$now);return true;});
+                    PriceCatalogue::requireCosts($t,$now);return true;});
                 if($follows){$summary['published']++;}
             }
             catch(\Throwable $error){

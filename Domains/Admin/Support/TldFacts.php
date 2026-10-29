@@ -79,7 +79,7 @@ final class TldFacts
             if($p->action!=='renew'&&($accepted===null||($p->eligibility['catalogue_revision']??null)!==$accepted->revision)){$flags[]='needs_sync';}
             if($ruleHash===null||($p->eligibility['rule_hash']??null)!==$ruleHash){$flags[]='unpublished';}
             $row=['action'=>$p->action,'term'=>(int)$p->term,'retail'=>$unavailable&&$p->action!=='renew'?null:self::money($p->retail),'flags'=>$flags,
-                'fresh'=>$p->observed_at<=now()&&$p->fresh_until&&$p->fresh_until>now(),'observed'=>$p->observed_at,'until'=>$p->fresh_until];
+                'synced'=>$p->observed_at<=now()&&$p->fresh_until!==null,'observed'=>$p->observed_at];
             if($grants->costs){$row['cost']=self::money($p->wholesale,4);}
             $out[]=$row;
         }
@@ -194,25 +194,29 @@ final class TldFacts
             PriceCatalogue::currentEvidence($renew,$ruleHash,$now);PriceCatalogue::currentEvidence($sale,$ruleHash,$now);
             return ['label'=>'For sale','tone'=>'success','reason'=>null];
         }catch(\Throwable){
-            // Saving prices publishes them; a TLD still on an older rule missed a default change because its costs were out of date.
+            // Saving prices publishes them; a TLD still on an older rule missed a default change because its costs were missing.
             if($flagged('unpublished')){return $off('Prices not published');}
-            if($flagged('cost_missing')){return $off('Cost missing');}
-            if(collect($rows)->contains(fn($r)=>!$r['fresh'])){return $off('Prices out of date');}
+            if($flagged('cost_missing')||collect($rows)->contains(fn($r)=>!$r['synced'])){return $off('Cost missing');}
             return $off($flagged('below_cost')?'Below cost':'Price missing');
         }
     }
     /** Stored history labels, which are the action names staff saw, mapped to what changed. */
     private const CHANGES=['Edit card fee'=>'Card fee changed','Edit default rule'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Switched to the account default',
         'Select seller'=>'Registrar for new orders changed','Publish prices'=>'Prices published','Review TLD availability'=>'Terms changed',
-        'Review lifecycle facts'=>'Grace and redemption changed'];
+        'Review lifecycle facts'=>'Grace and redemption changed','Sync TLD prices'=>'Prices synced'];
     /** Newest first: time, change, reason and who made it. Null when the saved history can't be read. */
     public static function history(int $serverId,?int $tldId=null): ?array
     {
         try{
             $rows=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::historyRows(\App\Models\Server::findOrFail($serverId));
-            if($tldId){$rows=array_filter($rows,fn($r)=>!$r['tld_id']||$r['tld_id']===$tldId);}
+            if($tldId){
+                // A price sync is saved for the account; show it only on the TLD it synced.
+                $ending=Tld::whereKey($tldId)->value('tld');
+                $rows=array_filter($rows,fn($r)=>$r['tld_id']===$tldId||(!$r['tld_id']&&($r['action']!=='Sync TLD prices'||($r['input']['ending']??null)===$ending)));
+            }
             return array_map(static function($r){
                 $change=self::CHANGES[$r['action']]??$r['action'];
+                if($r['action']==='Sync TLD prices'&&is_string($r['input']['ending']??null)){$change.=' for .'.$r['input']['ending'];}
                 $phase=(string)$r['phase'];
                 if(str_ends_with($phase,'_requested')){$change.=': started';}elseif(str_ends_with($phase,'_refused')){$change.=': refused';}elseif($phase==='publication_completed'){$change.=': publishing finished';}
                 try{$at=\Carbon\CarbonImmutable::parse((string)$r['at'])->utc()->format('M j, Y H:i').' UTC';}catch(\Throwable){$at=(string)$r['at'];}
@@ -236,6 +240,14 @@ final class TldFacts
     {
         $failure=self::syncFailure($serverId);
         return $failure?'Sync failed: '.$failure['cause']:'Synced';
+    }
+    /** Synced prices older than this get a quiet warning; they still sell. */
+    public const SYNC_WARN_DAYS=7;
+    /** When this TLD's costs were last read, from its saved price rows. Null when none were. */
+    public static function lastSynced(array $prices): ?\Carbon\CarbonImmutable
+    {
+        $at=collect($prices)->where('synced',true)->pluck('observed')->filter()->max();
+        return $at===null?null:\Carbon\CarbonImmutable::parse($at)->utc();
     }
     /** Latest saved price time for an account, the time of its last good sync. */
     public static function lastPrices(int $serverId): ?\Carbon\CarbonImmutable
