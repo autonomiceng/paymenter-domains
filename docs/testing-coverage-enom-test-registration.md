@@ -13,7 +13,7 @@ domains.enom_test_daily_call_cap: 50
 ```
 
 `domains.enom_writes.registration` must be boolean `true`, and registration stays closed unless the identity
-environment is `test` and the TEST catalogue is enabled. Set the call cap as an integer (default `50`, `0` refuses
+environment is `test` and the TEST catalogue is enabled. Set our safety call cap as an integer (default `50`, `0` refuses
 every Enom TEST request); if a source setting is a string, cast it to an integer when creating Laravel config. An
 invalid value or unavailable counter refuses requests. One UTC-day counter is shared across every TEST account and
 counts failed or timed-out requests as well as successful ones. This configuration never enables live registration.

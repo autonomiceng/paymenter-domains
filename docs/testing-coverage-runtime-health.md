@@ -5,7 +5,7 @@ interactive request and a background request and checks that both count against 
 shared minute budget.
 This budget includes balance and catalogue reads as well as registrar changes;
 identity verification and the
-Enom TEST deployment-wide daily limit remain separate.
+our Enom TEST deployment-wide daily safety call cap remain separate.
 These are synthetic offline SQLite checks; no registrar traffic or shared-database
 concurrency acceptance is implied.
 

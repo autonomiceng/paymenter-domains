@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,Money};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-/** Daily UTC reservations. Failed and unsent attempts retain both call and spend reservations. */
+/** Our daily UTC call and spend safety reservations. Failed and unsent attempts retain both call and spend reservations. */
 final class EnomLiveCalls
 {
     private static function micros(string $amount): int
@@ -37,7 +37,7 @@ final class EnomLiveCalls
             $row=DB::table(EnomLiveCallSchema::TABLE)->where(['account'=>hash('sha256',$uid),'day'=>EnomTestCalls::day()])->first();
             $micros=(int)($row->spend_micros??0);$amount=intdiv($micros,1000000).'.'.str_pad((string)($micros%1000000),6,'0',STR_PAD_LEFT);
             return ($row->used??0).' / '.($config['daily_call_cap']??0).' calls; '.$amount.' / '.($config['daily_spend_limit_usd']??'0.00').' USD reserved today (UTC). Failed and unsent reservations remain counted.';
-        }catch(\Throwable){return 'Live account limits unavailable; sends are refused.';}
+        }catch(\Throwable){return 'Our live account safety caps are unavailable; sends are refused.';}
     }
     public static function read(string $uid): string
     {

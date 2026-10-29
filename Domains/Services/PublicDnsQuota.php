@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
-/** Shared public pool only. Admission is durable and never waits or borrows registrar quotas. */
+/** Shared public pool only. Admission is durable and never waits or borrows our registrar call budgets. */
 final class PublicDnsQuota
 {
     public const TABLE = 'domains_public_dns_pool';

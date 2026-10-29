@@ -11,7 +11,7 @@ independent public-notice preferences. Encrypted append-only managed observation
 use the same normalized facts as watch DNS, with holding/generation/config stamps.
 Public target descriptors identify either a watch or a holding; they grant no authority.
 The public pool stores independent DNS admission and a repair cursor, never registrar
-account quotas. Installation verifies all retained tables and upgrade history even
+local account safety budgets. Installation verifies all retained tables and upgrade history even
 when migrations skip, and refuses partial upgrades rather than filling lost history.
 
 This storage boundary adds no reader, dispatch, job, route, staff copy or activation.

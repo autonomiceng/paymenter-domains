@@ -27,6 +27,10 @@ restoration questions resolved. Availability premium=null means unknown, not ord
 Run the [offline tests](../docs/testing.md). Provider/sandbox acceptance and Paymenter 1.5.9
 compatibility remain unverified. The distributable license is [MIT](LICENSE).
 
+Registrar call caps and send budgets are our safety guards against runaway loops.
+Enom imposes no rate or daily limit that we know of; the default 50-call TEST
+daily cap is ours. NameSilo call budgets configured here are also our safety guards.
+
 ## Public suffix list
 
 Domains → Public suffix list shows saved local status. Viewing requires domain-view and

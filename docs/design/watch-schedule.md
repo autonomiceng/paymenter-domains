@@ -19,7 +19,7 @@ An abandoned claim enters per-kind backoff before another read, yielding its own
 
 RDAP reserves at most 30 requests/minute globally, six per host and one in flight per host.
 Endpoint resolution spends the existing shared 60-query/two-active-job DNS pool.
-RDAP circuits/backoff never borrow registrar quotas or replace DNS observations.
+RDAP circuits/backoff never borrow our registrar call budgets or replace DNS observations.
 Five endpoint failures open an hourly probe circuit; 429 Retry-After is capped at 24 hours.
 Transient per-kind retries use 15m/1h/6h/24h plus deterministic jitter up to ten percent.
 Local saturation defers 60 seconds without failure or invalidating still-fresh evidence.
