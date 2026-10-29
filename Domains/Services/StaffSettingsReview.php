@@ -16,8 +16,10 @@ final class StaffSettingsReview
     private array $verified=[];
     private array $before=[];
     private array $input=[];
+    /** Snapshot after this review's last synced TLD; null until one is written. */
+    private ?string $synced=null;
     public function input(array $data): void
-    { $this->input=array_intersect_key($data,array_flip(['ending','history_action','delivery_id','alert_id','fee_percent','fee_fixed','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days',...LifecycleFacts::FIELDS])); }
+    { $this->input=array_intersect_key($data,array_flip(['ending','endings','history_action','delivery_id','alert_id','fee_percent','fee_fixed','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days',...LifecycleFacts::FIELDS])); }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
         public readonly string $action,private readonly string $ticket,public readonly string $reason) {}
     /** Syncing prices asks no reason; the audit still records who and when. */
@@ -71,7 +73,7 @@ final class StaffSettingsReview
         try{$t=json_decode(Crypt::decryptString($this->ticket),true,8,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Invalid review key.');}
         if(($t['actor']??null)!==$this->actorId||($t['server']??null)!==$this->serverId||($t['tld']??null)!==$this->tldId||($t['action']??null)!==$this->action
             ||!is_int($t['until']??null)||$t['until']<=time()||!is_string($t['key']??null)||!preg_match('/^[a-f0-9]{32}$/D',$t['key'])||!is_string($t['stamp']??null)
-            ||!hash_equals($t['stamp'],self::stamp($this->serverId,$this->tldId,true))){throw new \DomainException('Settings changed. Reload this page.');}
+            ||!hash_equals($this->synced??$t['stamp'],self::stamp($this->serverId,$this->tldId,true))){throw new \DomainException('Settings changed. Reload this page.');}
         // The account mutex serializes checks; the primary key also prevents duplicate claims.
         $keys=DB::table(self::KEYS)->where('server_id',$this->serverId)->where('review_key',$t['key']);
         $used=(clone $keys)->lockForUpdate()->exists();
@@ -107,6 +109,8 @@ final class StaffSettingsReview
         $s=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();
         self::append($s,['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
             'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>in_array($this->action,['default_rule','card_fee'],true)?null:$this->tldId,'before'=>$this->before,'after'=>$this->state($this->serverId,$this->tldId)]);
+        // One sync writes TLD after TLD under one review: the next TLD checks against this run's own last write.
+        if($phase==='catalogue_imported'){$this->synced=self::stamp($this->serverId,$this->tldId,true);}
     }
     /** Caller holds the server/account mutex; audit and the local change commit together. */
     public static function append(Server $s,array $entry): void

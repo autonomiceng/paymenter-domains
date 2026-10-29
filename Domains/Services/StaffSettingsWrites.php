@@ -78,7 +78,7 @@ final class StaffSettingsWrites
                 });
             });return null;
         }
-        if($r->action==='import'){TestCatalogue::import($r,$data,$this->bindings,$clock);return null;}
+        if($r->action==='import'){return TestCatalogue::import($r,$data,$this->bindings,$clock);}
         if($r->action==='publish'){$this->native->publish($r->tldId??0,$now,$r);return null;}
         if(in_array($r->action,['override','remove_override'],true)){
             // Saving prices publishes them in the same transaction; missing or stale costs refuse the whole change.

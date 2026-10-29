@@ -210,10 +210,13 @@ final class TldFacts
         try{
             $rows=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::historyRows(\App\Models\Server::findOrFail($serverId));
             if($tldId){
-                // A price sync is saved for the account; show it only on the TLD it synced.
+                // A price sync is saved for the account; show it only on the TLDs it synced.
                 $ending=Tld::whereKey($tldId)->value('tld');
-                $rows=array_filter($rows,fn($r)=>$r['tld_id']===$tldId||(!$r['tld_id']&&($r['action']!=='Sync TLD prices'||($r['input']['ending']??null)===$ending)));
+                $rows=array_filter($rows,fn($r)=>$r['tld_id']===$tldId||(!$r['tld_id']&&($r['action']!=='Sync TLD prices'
+                    ||(is_string($ending)&&(($r['input']['ending']??null)===$ending||in_array($ending,(array)($r['input']['endings']??[]),true))))));
             }
+            // One row per sync, not one per TLD it wrote.
+            $rows=array_filter($rows,fn($r)=>$r['phase']!=='catalogue_imported');
             return array_map(static function($r){
                 $change=self::CHANGES[$r['action']]??$r['action'];
                 if($r['action']==='Sync TLD prices'&&is_string($r['input']['ending']??null)){$change.=' for .'.$r['input']['ending'];}

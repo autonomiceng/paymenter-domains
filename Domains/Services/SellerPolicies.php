@@ -146,7 +146,9 @@ final class SellerPolicies
             PublicationEligibility::require($tld, $selected->action, $selected->term, true);
             $this->prices->current($selected->serverId, $selected->fingerprint, $selected->tld, 'renew', 1, 'USD', $now, true, $tld);
             $price = $this->prices->current($selected->serverId, $selected->fingerprint, $selected->tld, $selected->action, $selected->term, 'USD', $now, true, $tld);
-            if ($price->id !== $selected->priceId || $price->revision !== $selected->priceRevision) { throw new \DomainException('Stale price revision.'); }
+            // A price sync bumps the revision; checkout then takes the current row. The cart still refuses when the
+            // shown price no longer matches, and current() refuses a missing cost or a price below cost.
+            if ($price->id !== $selected->priceId || $price->revision < $selected->priceRevision) { throw new \DomainException('Stale price revision.'); }
             $prices[] = $price;
         }
         return $prices;

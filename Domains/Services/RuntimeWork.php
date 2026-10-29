@@ -108,6 +108,7 @@ final readonly class RuntimeWork
                 $test=EnomTestRegistration::enabled($binding)||EnomTestManagement::enabled($binding)||EnomTestTransfer::enabled($binding)||EnomTestRenewal::enabled($binding);
                 if(!$test){app(RegistrarBalances::class)->daily($a);}
             },(int)$a->server_id);
+            $this->attempt('price_sync',fn()=>app(PriceSync::class)->daily($a),(int)$a->server_id);
         }
     }
 }

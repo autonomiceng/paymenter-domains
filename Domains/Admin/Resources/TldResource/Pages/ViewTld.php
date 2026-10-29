@@ -39,7 +39,6 @@ class ViewTld extends ViewRecord
     }
     public function overrideAction(): Action {return $this->settings()['override'];}
     public function lifecycleAction(): Action {return $this->settings()['lifecycle'];}
-    public function syncAction(): Action {return SettingsActions::sync()->record($this->getRecord());}
     protected function fillForm(): void {$this->data=[];}
     public function getTitle(): string {Staff::requireView();return '.'.$this->getRecord()->tld;}
     public function getHeading(): HtmlString
@@ -85,12 +84,11 @@ class ViewTld extends ViewRecord
         }
         $sync[]=self::entry('Prices last synced',$synced?->format('M j, Y'),$synced===null?'Not synced yet':new HtmlString(
             ($old?'<div style="color:rgb(217 119 6)">More than '.TldFacts::SYNC_WARN_DAYS.' days ago. Sync prices to get current costs.</div>':'').'<div>'.e($rule).'</div>'),$old?'warning':null);
-        $syncAction=$this->getAction('sync',false);
         $override=$this->getAction('override',false);
         return $schema->components([
             Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()->schema([
                 Section::make('Sales')->schema($sales)->columnSpan(1),
-                Section::make('Price sync')->afterHeader($syncAction?->isVisible()?new HtmlString((clone $syncAction)->button()->color('gray')->toHtml()):null)->schema($sync)->columnSpan(1)]),
+                Section::make('Price sync')->schema($sync)->columnSpan(1)]),
             // A copy renders as a button here; the menu keeps its own item view.
             Section::make('Prices by registrar account')->afterHeader($override?->isVisible()?new HtmlString((clone $override)->button()->color('gray')->toHtml()):null)
                 ->schema([TextEntry::make('prices')->label('Prices by registrar account')->hiddenLabel()->state(fn()=>TldFacts::accountsTable($t,$grants))->html()])->columnSpanFull(),

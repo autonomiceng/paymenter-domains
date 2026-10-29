@@ -46,14 +46,14 @@ final class PriceCatalogue
 
     /** Shared batch import; no native product locks/writes here. */
     public function import(\Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry $entry,
-        \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, \Closure $recheck, \DateTimeImmutable $now, ?StaffSettingsReview $review = null): void
+        \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, \Closure $recheck, \DateTimeImmutable $now, ?StaffSettingsReview $review = null, bool $keepStaffSettings = false): void
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Import owns its locks.'); }
         $accepted->binding->requireMatch($entry->binding);
         $tld = new Tld(['server_id' => $entry->binding->serverId, 'registrar_key' => $entry->binding->registrarKey,
             'account_fingerprint' => $entry->binding->fingerprint, 'tld' => $entry->tld]);
-        $this->locked($tld, function (Tld $locked, Server $server, Account $account) use ($entry, $accepted, $recheck, $now, $review): void {
-            $prior = $review && !$locked->wasRecentlyCreated ? [$locked->register_enabled, $locked->transfer_enabled, $locked->renew_enabled] : null;
+        $this->locked($tld, function (Tld $locked, Server $server, Account $account) use ($entry, $accepted, $recheck, $now, $review, $keepStaffSettings): void {
+            $prior = ($review || $keepStaffSettings) && !$locked->wasRecentlyCreated ? [$locked->register_enabled, $locked->transfer_enabled, $locked->renew_enabled] : null;
             $recheck($server, $account); $row = $accepted->endings[$entry->tld];
             $rates = array_filter($entry->rates, static fn (CatalogueRate $rate): bool => $rate->action !== 'register'
                 || ($rate->term >= $locked->min_years && $rate->term <= $locked->max_years));
