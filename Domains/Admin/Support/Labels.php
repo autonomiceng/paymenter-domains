@@ -88,7 +88,7 @@ final class Labels
             'management_deferred'=>null,'readback_confirmed'=>null,
             'auth_email_accepted'=>'Auth code email sent','actual_charge_changed'=>'Registrar charged a different amount',
             'contact_profile_proof_required'=>'Not sent: contact details need fixing','write_disabled'=>self::FEATURE_OFF,
-            'enom_test_transfer_call_cap'=>'Not sent: Enom test request refused','enom_test_call_cap'=>'Not sent: Enom test request refused','enom_test_management_call_cap'=>'Not sent: Enom test request refused','enom_test_renewal_call_cap'=>'Not sent: Enom test request refused',
+            'enom_test_transfer_call_cap'=>'Not sent: stopped by our TEST send check','enom_test_call_cap'=>'Not sent: stopped by our TEST send check','enom_test_management_call_cap'=>'Not sent: stopped by our TEST send check','enom_test_renewal_call_cap'=>'Not sent: stopped by our TEST send check',
             'enom_test_reconciliation_call_cap'=>'Registrar has not confirmed the result','enom_test_transfer_reconciliation_call_cap'=>'Registrar has not confirmed the result',
             'enom_test_transfer_setup_required'=>'Not sent: registrar account not set up','enom_test_setup_required'=>'Not sent: registrar account not set up',
             'enom_test_transfer_usd_balance_required'=>'Not sent: check the registrar balance first','usd_balance_required'=>'Not sent: check the registrar balance first',

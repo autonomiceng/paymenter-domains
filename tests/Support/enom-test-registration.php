@@ -236,7 +236,7 @@ same(1,count($capOp->fresh()->attempt['test_call_refusals']??[]),'Refused claim 
 same('purchase',$capOp->fresh()->attempt['test_call_refusals'][0]['phase']??null,'The limit refused the Purchase itself, at send');same([$used+3,$purchasesBefore],[enomTestSendCount(),enomTestSendCount('Purchase')],'Three preflights counted; the refused Purchase records no attempt');
 try{$capOp->fresh()->update(['attempt'=>[]]);throw new LogicException('Refusal history cannot be erased.');}catch(DomainException){}
 same(1,count($capOp->fresh()->attempt['test_call_refusals']??[]),'Cap refusal history remains append-only');
-same('Not sent: Enom test request refused',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('enom_test_call_cap'),'Staff wording directs safe cap recovery and states the USD evidence requirement');
+same('Not sent: stopped by our TEST send check',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('enom_test_call_cap'),'Staff wording directs safe cap recovery and states the USD evidence requirement');
 expect(str_contains(EnomTestSendLimit::facts('test-uid'),'Limit reached. Try again later.'),'Staff sees the reached limit');
 $capViewer=Auth::user();Auth::setUser($staff);
 expect(OperationActions::relevant('release',$capOp->fresh()),'Retained registration cap proof offers release');
