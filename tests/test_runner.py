@@ -327,16 +327,28 @@ class RunnerTests(unittest.TestCase):
             env = {'PATH': os.environ['PATH'], 'PAYMENTER_TEST_FIXTURE': str(fixture),
                    'PAYMENTER_TEST_PHP': str(runtime/'usr/bin/php8.4')}
             workers, fixture_snapshot, runtime_snapshot = runner.test_workers.environments(env, output, 2, runtime)
+            vendor = fixture/'vendor/autoload.php'
+            for worker in workers:
+                linked = Path(worker['PAYMENTER_TEST_FIXTURE'])/'vendor/autoload.php'
+                self.assertEqual(linked.stat().st_ino, vendor.stat().st_ino)
+                self.assertEqual(linked.stat().st_mode & 0o222, 0)
+                private = Path(worker['PAYMENTER_TEST_FIXTURE'])/'pristine'
+                self.assertNotEqual(private.stat().st_ino, (fixture/'pristine').stat().st_ino)
             self.assertTrue(all(worker['PYTHONDONTWRITEBYTECODE'] == '1' for worker in workers))
             rendezvous = root/'ready'; rendezvous.mkdir()
-            script = ("import os,time; from pathlib import Path; "
+            script = ("import os,sqlite3,time; from pathlib import Path; "
                       "fixture=Path(os.environ['PAYMENTER_TEST_FIXTURE']); token=str(os.getpid()); "
                       "(fixture/'state').write_text(token); "
+                      "database=sqlite3.connect(fixture/'state.sqlite'); "
+                      "database.execute('create table state (token text)'); "
+                      "database.execute('insert into state values (?)',(token,)); database.commit(); "
                       "Path(os.environ['TMPDIR'],'state').write_text(token); "
                       f"ready=Path({str(rendezvous)!r}); (ready/token).touch(); deadline=time.monotonic()+5; "
                       "\nwhile len(list(ready.iterdir()))<2 and time.monotonic()<deadline: time.sleep(.01)"
                       "\nassert len(list(ready.iterdir()))==2"
                       "\nassert (fixture/'state').read_text()==token"
+                      "\nassert database.execute('select token from state').fetchall()==[(token,)]"
+                      "\ndatabase.close()"
                       "\nassert Path(os.environ['TMPDIR'],'state').read_text()==token"
                       "\nprint(fixture)")
             with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
@@ -344,6 +356,7 @@ class RunnerTests(unittest.TestCase):
                                             ['runner'], {}, jobs=2, workers=workers), 0)
             self.assertNotEqual((output/'000.stdout.txt').read_bytes(), (output/'001.stdout.txt').read_bytes())
             self.assertFalse((fixture/'state').exists())
+            self.assertFalse((fixture/'state.sqlite').exists())
             for key in ['PAYMENTER_TEST_FIXTURE', 'PAYMENTER_TEST_PHP', 'TMPDIR']:
                 self.assertNotEqual(workers[0][key], workers[1][key])
             runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
@@ -351,8 +364,12 @@ class RunnerTests(unittest.TestCase):
             Path(workers[1]['PAYMENTER_TEST_PHP']).write_text('changed')
             with self.assertRaises(RuntimeError): runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
             Path(workers[1]['PAYMENTER_TEST_PHP']).write_text('binary')
-            Path(workers[1]['PAYMENTER_TEST_FIXTURE'], 'vendor/autoload.php').write_text('changed')
+            # Replace the directory entry rather than writing the shared read-only file.
+            altered = Path(workers[1]['PAYMENTER_TEST_FIXTURE'], 'vendor/autoload.php')
+            altered.unlink(); altered.write_text('changed')
             with self.assertRaises(ValueError): runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
+            self.assertEqual(vendor.read_text(), '<?php')
+            self.assertEqual(Path(workers[0]['PAYMENTER_TEST_FIXTURE'], 'vendor/autoload.php').read_text(), '<?php')
 
     def test_worker_copies_use_canonical_paths_under_a_linked_output_parent(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -411,23 +428,43 @@ class RunnerTests(unittest.TestCase):
                 runner.main()
             self.assertEqual(error.exception.code, 2)
 
+    def test_stopped_or_timed_out_run_removes_owned_copies_and_processes(self):
+        spec = importlib.util.spec_from_file_location('runner_process_cases', ROOT/'tests/Support/runner-process.py')
+        cases = importlib.util.module_from_spec(spec); spec.loader.exec_module(cases)
+        cases.stopped_runs(self, ROOT)
+
     def test_graceful_timeout_allows_resource_cleanup(self):
-        code = "import signal,time; signal.signal(signal.SIGTERM,lambda *args:(print('cleaned',flush=True),exit(0))); time.sleep(30)"
-        stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT, env=os.environ, timeout=2, graceful=3)
-        self.assertEqual((status, timed_out, stdout, stderr), (124, True, b'cleaned\n', b''))
+        for mode in ['timeout', 'stop', 'stop-int', 'during-grace']:
+            with self.subTest(mode=mode):
+                code = ("import os,signal,time\ndef cleanup(*args):\n"
+                        + (" os.kill(os.getppid(),signal.SIGTERM)\n" if mode == 'during-grace' else '')
+                        + " print('cleaned',flush=True)\n exit(0)\nsignal.signal(signal.SIGTERM,cleanup)\n"
+                        + ("os.kill(os.getppid(),signal.SIGINT)\n" if mode == 'stop-int' else
+                           "os.kill(os.getppid(),signal.SIGTERM)\n" if mode == 'stop' else '') + "time.sleep(30)")
+                control = runner.CommandProcesses()
+                with runner.stop_signals(control):
+                    result = runner.execute([sys.executable, '-c', code], cwd=ROOT, env=os.environ,
+                                            timeout=2, graceful=3, control=control)
+                self.assertEqual(result, (b'cleaned\n', b'', 124 if mode == 'timeout' else
+                                         130 if mode == 'stop-int' else 143, not mode.startswith('stop')))
 
     def test_graceful_timeout_escalates_when_sigterm_is_ignored(self):
-        code = "import os,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print(os.getpid(),flush=True); time.sleep(30)"
-        started = time.monotonic()
-        stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT,
-                                                         env=os.environ, timeout=2, graceful=1)
-        elapsed = time.monotonic() - started
-        self.assertEqual((status, timed_out, stderr), (124, True, b''))
-        self.assertGreaterEqual(elapsed, 3)
-        self.assertLess(elapsed, 8)
-        pid = int(stdout.strip())
-        with self.assertRaises(ProcessLookupError):
-            os.kill(pid, 0)
+        for stopped in [False, True]:
+            with self.subTest(stopped=stopped):
+                code = ("import os,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print(os.getpid(),flush=True); "
+                        + ("os.kill(os.getppid(),signal.SIGTERM); " if stopped else '') + "time.sleep(30)")
+                control = runner.CommandProcesses()
+                started = time.monotonic()
+                with runner.stop_signals(control):
+                    stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT,
+                                                                     env=os.environ, timeout=2, graceful=1, control=control)
+                elapsed = time.monotonic() - started
+                self.assertEqual((status, timed_out, stderr), (143 if stopped else 124, not stopped, b''))
+                self.assertGreaterEqual(elapsed, 1 if stopped else 3)
+                self.assertLess(elapsed, 8)
+                pid = int(stdout.strip())
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(pid, 0)
 
     def test_mariadb_non_skip_failure_is_receipted_as_failure(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -640,18 +677,22 @@ class RunnerTests(unittest.TestCase):
 
     def test_only_paths_keep_manifest_order_and_native_fixture_requirements(self):
         suites = runner.manifest()
+        def capture(*args, **kwargs):
+            if args[3] == ['mariadb']:
+                Path(args[1]['TMPDIR'], 'retained-evidence.json').write_text('evidence')
+            return 0
         cases = [(['tests/test_package.py'], ['package']),
                  (['tests/test_schema_mariadb.py'], ['mariadb']),
                  (['tests/test_package.py', 'tests/test_installed_package_previous.py', 'tests/test_package.py'],
                   ['native', 'package'])]
         for requested, selected in cases:
             with self.subTest(requested=requested), tempfile.TemporaryDirectory() as temp, \
-                 mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine'}), \
+                 mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine', 'TMPDIR': temp}), \
                  mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
                  mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', '--only', *requested]), \
                  mock.patch.object(runner.native, 'prepare', return_value={'source': 'digest'}) as native_prepare, \
                  mock.patch.object(runner, 'prepare', return_value=(Path(temp)/'runtime', Path(temp)/'runtime/php', Path(temp)/'runtime/curl.so')) as php_prepare, \
-                 mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stdout(io.StringIO()):
+                 mock.patch.object(runner, 'run', side_effect=capture) as run, contextlib.redirect_stdout(io.StringIO()):
                 (Path(temp)/'runtime').mkdir()
                 self.assertEqual(runner.main(), 0)
                 expected = [(kind, path) for kind, paths in suites.items() for path in paths if path in requested]
@@ -659,8 +700,13 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(run.call_args.args[3], selected)
                 if selected == ['mariadb']:
                     php_prepare.assert_not_called()
+                    self.assertEqual(run.call_args.args[1]['TMPDIR'], temp)
+                    self.assertNotIn('TMP', run.call_args.args[1])
+                    self.assertNotIn('TEMP', run.call_args.args[1])
+                    self.assertEqual((Path(temp)/'retained-evidence.json').read_text(), 'evidence')
                 else:
                     php_prepare.assert_called_once_with(native='native' in selected)
+                    self.assertFalse(Path(run.call_args.args[1]['TMPDIR']).exists())
                 self.assertEqual(native_prepare.call_count, int('native' in selected))
                 self.assertEqual(run.call_args.kwargs['only'], requested)
                 if 'native' in selected:

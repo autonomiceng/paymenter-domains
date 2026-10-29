@@ -1,4 +1,4 @@
-"""Private, reusable worker environments for the offline runner."""
+"""Private worker state with shared read-only dependencies for the offline runner."""
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -25,7 +25,13 @@ def environment(index, *, env, output, runtime, fixture, fixture_snapshot, runti
                  PYTHONDONTWRITEBYTECODE='1')
     if fixture:
         copy = directory/'paymenter'
-        shutil.copytree(fixture, copy)
+        def copy_file(source, destination):
+            # App files can be changed by upgrade checks. Only vendor bytes are
+            # immutable; directory entries and all generated state stay private.
+            if Path(source).is_relative_to(fixture/'vendor'):
+                return os.link(source, destination)
+            return shutil.copy2(source, destination)
+        shutil.copytree(fixture, copy, copy_function=copy_file)
         native.verify(copy, fixture_snapshot=fixture_snapshot)
         child['PAYMENTER_TEST_FIXTURE'] = str(copy)
     if runtime:
@@ -44,10 +50,17 @@ def environments(env, output, jobs, runtime=None):
     output = output.resolve()
     fixture = Path(env['PAYMENTER_TEST_FIXTURE']) if env.get('PAYMENTER_TEST_FIXTURE') else None
     fixture_snapshot = native.hashes(fixture) if fixture else None
+    if fixture:
+        # This is the run-owned export, never the pristine dependency checkout.
+        # Freeze it before linking so no worker can write shared vendor bytes.
+        for name in fixture_snapshot:
+            if name.startswith('vendor/'):
+                path = fixture/name
+                path.chmod(path.stat().st_mode & ~0o222)
     runtime_snapshot = runtime_hashes(runtime) if runtime else None
     create = partial(environment, env=env, output=output, runtime=runtime, fixture=fixture,
                      fixture_snapshot=fixture_snapshot, runtime_snapshot=runtime_snapshot)
-    # Commands start only after every private copy has been verified.
+    # Commands start only after every worker's files have been verified.
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         workers = list(pool.map(create, range(jobs)))
     return workers, fixture_snapshot, runtime_snapshot
