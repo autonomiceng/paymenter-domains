@@ -79,7 +79,7 @@ def timing(name, timings):
         print(json.dumps({'timing': 'stage', 'stage': name, 'seconds': timings[name]}), flush=True)
 
 
-def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None):
+def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None, keep_going=True):
     started_run = time.monotonic()
     timings = {} if timings is None else timings
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
@@ -97,7 +97,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                    else 120 if kind == 'native' else 60)
         stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=workers[worker] if workers else env, timeout=timeout, graceful=60 if kind == 'mariadb' else 0)
         seconds = time.monotonic() - started
-        if code:
+        if (code or timed_out) and not keep_going:
             with scheduling:
                 stopped.set()
         started_guard = time.monotonic()
@@ -173,10 +173,12 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         except (ValueError, RuntimeError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
             dependency_unchanged = False
             dependency_error = type(error).__name__
-    complete = len(results) == len(commands) and all(r['exit'] == 0 and r['runtime_unchanged'] for r in results) and dependency_unchanged
+    failed_commands = [{key: result[key] for key in ['argv', 'exit', 'timed_out', 'runtime_unchanged']}
+                       for result in results if result['exit'] or result['timed_out'] or not result['runtime_unchanged']]
+    complete = len(results) == len(commands) and not failed_commands and dependency_unchanged
     timings['run'] = time.monotonic() - started_run
     planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
-    receipt = {'timings': timings, 'only_tests': sorted(set(only or [])),
+    receipt = {'timings': timings, 'only_tests': sorted(set(only or [])), 'keep_going': keep_going,
                'omitted_tests': [path for paths in suites.values() for path in paths if path not in planned],
                'complete': complete, 'jobs': jobs, 'php_version': '8.4.27', 'results': results, 'runtime_sha256': before,
                'selected_suites': selected, 'omitted_suites': [s for s in CATEGORIES if s not in selected],
@@ -185,9 +187,11 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                'skipped_suites': [r['kind'] for r in results if r['skipped']], 'dependency_unchanged': dependency_unchanged, 'dependency_error': dependency_error, 'real_provider_calls': 0,
                'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
     (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
-    print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands), 'only_tests': sorted(set(only or [])), 'receipt': str(output/'receipt.json')}))
+    print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands),
+                      'failed_commands': failed_commands, 'dependency_unchanged': dependency_unchanged,
+                      'only_tests': sorted(set(only or [])), 'receipt': str(output/'receipt.json')}))
     if (len(results) == len(commands) and any(r['skipped'] for r in results) and dependency_unchanged
-            and all(r['exit'] in [0, 77] and r['runtime_unchanged'] for r in results)):
+            and all(r['exit'] in [0, 77] and not r['timed_out'] and r['runtime_unchanged'] for r in results)):
         return 77
     return 0 if complete else 1
 
@@ -233,6 +237,11 @@ def main():
     selection.add_argument('--suite', choices=CATEGORIES, action='append')
     selection.add_argument('--only', nargs='+', action='extend', metavar='TEST_PATH',
                            help='Run only exact registered test paths; not a full boundary run.')
+    failure_policy = parser.add_mutually_exclusive_group()
+    failure_policy.add_argument('--keep-going', action='store_true', default=True,
+                                help='Run remaining tests after failures or timeouts (default); integrity failures still stop scheduling.')
+    failure_policy.add_argument('--fail-fast', dest='keep_going', action='store_false',
+                                help='Stop scheduling after the first failure or timeout; running commands finish.')
     parser.add_argument('--jobs', type=positive_jobs,
                         default=os.environ.get('DOMAINS_TEST_JOBS', max(1, min(4, (os.cpu_count() or 1)//2))))
     args = parser.parse_args()
@@ -299,7 +308,7 @@ def main():
                 workers, fixture_snapshot, runtime_snapshot = test_workers.environments(env, output, jobs, runtime)
             worker_check = lambda: test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
-                   timings=timings, only=args.only)
+                   timings=timings, only=args.only, keep_going=args.keep_going)
     except BaseException as error:
         if not (output/'receipt.json').exists():
             (output/'receipt.json').write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,
