@@ -70,7 +70,7 @@ final class RegistrarFacts
         $full=$u['day']>=$u['day_limit']||$u['minute']>=$u['minute_limit'];
         $off=$u['day_limit']===0||$u['minute_limit']===0;
         return ['value'=>$u['day'].' of '.$u['day_limit'],'tone'=>$full?'danger':null,'sub'=>$off?EnomTestSendLimit::facts($uid):($full?'Limit reached. Try again later.':null),
-            'help'=>'Enom test requests are limited per login: '.$u['day_limit'].' in any 24 hours and '.$u['minute_limit'].' per minute. Failed requests count too.'];
+            'help'=>'Our TEST send limit allows '.$u['day_limit'].' requests per login in any 24 hours and '.$u['minute_limit'].' per minute. Failed requests count too.'];
     }
     public static function lastSync(Server $server): ?string
     {

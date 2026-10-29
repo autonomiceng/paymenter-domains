@@ -35,14 +35,14 @@ $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>false,'renew
 $write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id);
 same(7,count($GLOBALS['enomWire']['forms']),'Identity, probe and annual import total seven reads');same(7,enomTestSendCount(),'Every setup send counted');same(1000,EnomTestSendLimit::limits()['day'],'Default rolling ceiling one thousand');
 same('7 of 1000 sends in the last 24 hours and 7 of 100000 in the last minute for this login. Failed sends count too.',EnomTestSendLimit::facts('test-uid'),'Staff sees current TEST send usage for the login');
-same('Enom test requests are limited per login to 1000 in any 24 hours and 100000 per minute.',EnomTestSendLimit::facts(null),'Staff sees the limits before a login is known');
+same('Our TEST send limit allows 1000 Enom test requests per login in any 24 hours and 100000 per minute.',EnomTestSendLimit::facts(null),'Staff sees the limits before a login is known');
 $catalogueUsed=enomTestSendCount();config(['domains.enom_test_sends_per_day'=>$catalogueUsed+1]);$beforeImport=count($GLOBALS['enomWire']['forms']);
 try{$write('import',['ending'=>'com']);throw new LogicException('A mid-import TEST cap refusal must reach staff.');}catch(EnomTestCallLimit){}
 same($catalogueUsed+1,enomTestSendCount(),'Mid-import limit leaves its earlier read counted');
 same($beforeImport+1,count($GLOBALS['enomWire']['forms']),'Mid-import limit stops before the next catalogue request');config(['domains.enom_test_sends_per_day'=>1000]);
 expect(!str_contains(EnomTestSendLimit::facts('test-uid'),'Limit reached'),'Facts report sends left below the configured limit');config(['domains.enom_test_sends_per_day'=>enomTestSendCount()]);
 expect(str_contains(EnomTestSendLimit::facts('test-uid'),'Limit reached. Try again later.'),'Facts report the reached limit');config(['domains.enom_test_sends_per_day'=>1000]);
-same('Enom send refused before sending: send limit, setting, counter or UTC day change.',(new EnomTestCallLimit)->getMessage(),'Internal refusal names the send limit');
+same('Our send check stopped this Enom request before sending: send limit, setting, counter or UTC day change.',(new EnomTestCallLimit)->getMessage(),'Internal refusal names the send limit');
 EnomTestSendLimit::admit(Environment::Live,'test-uid','GetBalance');same($catalogueUsed+1,enomTestSendCount(),'Live requests do not use the TEST limit');
 $reader=$bindings->reader($server->id,true);$generalReader=$bindings->reader($server->id);
 $readContext=new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Interactive,
@@ -273,7 +273,7 @@ config(['domains.enom_test_sends_per_day'=>500]);$refundOp=$new(placeholderComFi
 $worker->operation($refundOp->id);same(['held','enom_test_call_cap'],[$refundOp->fresh()->state,$refundOp->fresh()->safe_code],'Refund case starts from a proven-unsent cap hold');
 same(['amount'=>$refundOp->amount,'currency'=>'USD'],app(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class)->refundHeld($staff,$refundOp->id,'enom_test_call_cap'),'Cap-held operation can be refunded exactly once');
 expect(isset($refundOp->fresh()->funding['refund']),'Cap refusal history remains valid through account credit');
-config(['domains.enom_test_sends_per_day'=>0]);same('The Enom test send limit is 0, so no Enom test requests are sent.',EnomTestSendLimit::facts('test-uid'),'Zero limit wording is accurate');$beforeCalls=count($GLOBALS['enomWire']['forms']);$beforeUsed=enomTestSendCount();
+config(['domains.enom_test_sends_per_day'=>0]);same('Our TEST send limit is 0, so no Enom test requests are sent.',EnomTestSendLimit::facts('test-uid'),'Zero limit wording is accurate');$beforeCalls=count($GLOBALS['enomWire']['forms']);$beforeUsed=enomTestSendCount();
 $balanceBeforeRefusal=DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->first();
 $capRead=static fn()=>new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),
     new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(1),$clock,Runtime::limiter());
@@ -283,11 +283,11 @@ same($beforeUsed,enomTestSendCount(),'Zero cap does not increment');same($before
 $clock->at=$clock->at->modify('+61 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();
 $beforeCalls=count($GLOBALS['enomWire']['forms']);$evidenceBefore=array_intersect_key((array)$balanceBeforeRefusal,array_flip(['amount','currency','source','attempted_at','read_at','last_error_code']));
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
-    ->callAction('check_balance')->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't check balance")->body('The Enom test send limit is 0, so no Enom test requests are sent.'));
+    ->callAction('check_balance')->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't check balance")->body('Our TEST send limit is 0, so no Enom test requests are sent.'));
 same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Staff Refresh now honors the exhausted cap before transport');
 $evidenceAfter=DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->first();
 same($evidenceBefore,array_intersect_key((array)$evidenceAfter,array_flip(['amount','currency','source','attempted_at','read_at','last_error_code'])),'Staff cap refusal preserves the prior successful USD evidence');
-config(['domains.enom_test_sends_per_day'=>'50']);same('The Enom test send limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.',EnomTestSendLimit::facts('test-uid'),'Non-integer limit wording says who fixes it');
+config(['domains.enom_test_sends_per_day'=>'50']);same('Our TEST send limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.',EnomTestSendLimit::facts('test-uid'),'Non-integer limit wording says who fixes it');
 $beforeCalls=count($GLOBALS['enomWire']['forms']);$beforeUsed=enomTestSendCount();
 try{Paymenter\Extensions\Servers\Domains\Services\BalanceReads::read($reader,$capRead(),'manual');throw new LogicException('Non-integer cap must refuse');}catch(EnomTestCallLimit){}
 same($beforeUsed,enomTestSendCount(),'Non-integer cap refuses without increment');same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Non-integer cap refuses before transport send');

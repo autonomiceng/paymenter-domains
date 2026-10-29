@@ -5,5 +5,5 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 /** No provider request entered. Never retain a database exception or request arguments. */
 final class EnomTestCallLimit extends \DomainException
 {
-    public function __construct() { parent::__construct('Enom send refused before sending: send limit, setting, counter or UTC day change.'); }
+    public function __construct() { parent::__construct('Our send check stopped this Enom request before sending: send limit, setting, counter or UTC day change.'); }
 }

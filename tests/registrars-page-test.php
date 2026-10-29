@@ -204,24 +204,24 @@ same('50 of 50',$capFacts::calls($capAccount)['value'],'Sends from the last 24 h
 config(['domains.enom_test_sends_per_day'=>0]);same('50 of 0',$capFacts::calls($capAccount)['value'],'Zero explicitly refuses all test calls');
 foreach([[0,60],[50,0]] as [$dayLimit,$minuteLimit]){
     config(['domains.enom_test_sends_per_day'=>$dayLimit,'domains.enom_test_sends_per_minute'=>$minuteLimit]);
-    same('The Enom test send limit is 0, so no Enom test requests are sent.',$capFacts::calls($capAccount)['sub'],'Zero limit explains that waiting cannot restore capacity');
-    Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('The Enom test send limit is 0, so no Enom test requests are sent.')->assertDontSee('Limit reached. Try again later.');
+    same('Our TEST send limit is 0, so no Enom test requests are sent.',$capFacts::calls($capAccount)['sub'],'Zero limit explains that waiting cannot restore capacity');
+    Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Our TEST send limit is 0, so no Enom test requests are sent.')->assertDontSee('Limit reached. Try again later.');
 }
 config(['domains.enom_test_sends_per_day'=>0,'domains.enom_test_sends_per_minute'=>60]);
 $beforeCap=[DB::table('domains_operations')->count(),DB::table(EnomTestSendLimitSchema::SENDS)->count()];
 foreach(['many',-1] as $invalidCap){
     config(['domains.enom_test_sends_per_day'=>$invalidCap]);
-    same('The Enom test send limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.',$capFacts::calls($capAccount)['sub'],'Invalid limit explains refusal');
+    same('Our TEST send limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.',$capFacts::calls($capAccount)['sub'],'Invalid limit explains refusal');
 }
 same($beforeCap,[DB::table('domains_operations')->count(),DB::table(EnomTestSendLimitSchema::SENDS)->count()],'Reading bad limit facts changes no requests or counts');
 config(['domains.enom_test_sends_per_day'=>50]);
 Illuminate\Support\Facades\Schema::rename(EnomTestSendLimitSchema::SENDS,'domains_test_sends_saved');
-same("Couldn't read the Enom test send count, so Enom test requests are refused. Try again.",$capFacts::calls($capAccount)['sub'],'Unreadable count has its own cause');
+same("Couldn't read our TEST send count, so no Enom test requests are sent. Try again.",$capFacts::calls($capAccount)['sub'],'Unreadable count has its own cause');
 Illuminate\Support\Facades\Schema::rename('domains_test_sends_saved',EnomTestSendLimitSchema::SENDS);
 $liveCap=clone $capAccount;$liveCap->environment='live';same(null,$capFacts::calls($liveCap),'Live account omits the TEST cap');
 
 config(['domains.enom_test_sends_per_day'=>'many']);
-Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Missing')->assertSee('The Enom test send limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.');
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Missing')->assertSee('Our TEST send limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.');
 config(['domains.enom_test_sends_per_day'=>1000]);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('NameSilo test account')->assertSee('Missing')->assertSee('Not checked yet')
     ->assertSee('Add funds')->assertSeeHtml('https://ote.namesilo.com/cart/add-funds')->assertDontSee('API calls, last 24 hours');
