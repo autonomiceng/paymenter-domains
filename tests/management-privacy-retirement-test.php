@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/management.php';
+require_once __DIR__.'/Support/fixture-checkpoint.php';
 use App\Models\{Credit,Invoice,InvoiceItem,InvoiceTransaction,Role};
 use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,ManagementRequest,ManagementResult,RequestContext};
@@ -20,20 +21,29 @@ $staffCredit=static function($op,?string $ticket=null)use($staff,$staffOps,$cloc
     $staffOps->run($staff,$d->id,$op->id,'credit',$ticket,'Reviewed late privacy payment');return $ticket;};
 $balance=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)(Credit::where('user_id',$user->id)->value('amount')??'0.00'));
 $payment=static fn($op,$amount=null,$status='succeeded')=>InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$amount??$op->amount,'fee'=>'0.00','status'=>$status]);
-$seq=0;$issue=static function($action,$claim='')use(&$seq,$holding,$state,$submit,$clock){
-    [$d,$driver]=$holding(placeholderComFixtureName('privacy-retired-'.++$seq.'-placeholder.com'));$state->privacy=$action==='privacy_renew';$state->enabled=$state->privacy;$state->expiry='2027-10-18';$state->cost='8.00';
-    $op=$submit($d,$driver,$action);
-    if($claim!==''){$a=['seal'=>'absent','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32)];
-        if($claim==='deferral'){$a['management_deferrals']=[$clock->now()->format(DATE_ATOM),$clock->now()->format(DATE_ATOM)];}
-        $op->update(['state'=>$claim==='deferral'?'queued':'held','safe_code'=>$claim==='deferral'?'management_deferred':'management_unconfirmed','started_at'=>$clock->now(),'attempt'=>$a]);}
-    return [$d,$driver,$op->fresh()];};
+$seq=0;
+$seedCredit=static fn()=>Credit::firstOrCreate(['user_id'=>$user->id,'currency_code'=>'USD'],['amount'=>'3.00']);
 $visible=static function($op,$d){
     expect(RefundCandidates::query(Operation::query())->whereKey($op->id)->exists(),'Request credit-review SQL includes retired privacy independently of eligibility');
     expect(DomainQueries::creditReview(Domain::query())->whereKey($d->id)->exists(),'Holding credit-review SQL includes retired privacy independently of eligibility');
     expect(RefundCandidates::matches($op->fresh(),$op->fresh()->funding??[]),'Presentation candidate includes uncredited retirement');};
 foreach(['privacy_purchase','privacy_renew'] as $action){
+    // Each action keeps a real registration, privacy request and native invoice. Only repeated setup is restored.
+    [$fixtureDomain,$fixtureDriver]=$holding(placeholderComFixtureName('privacy-retired-'.++$seq.'-placeholder.com'));
+    $state->privacy=$action==='privacy_renew';$state->enabled=$state->privacy;$state->expiry='2027-10-18';$state->cost='8.00';
+    $fixtureOperation=$submit($fixtureDomain,$fixtureDriver,$action)->fresh();
+    $restore=nativeFixtureCheckpoint();$fixtureState=clone $state;
+    $issue=static function($claim='')use($restore,$fixtureState,$fixtureDomain,$fixtureDriver,$fixtureOperation,$state,$clock,$user){
+        $restore();Auth::setUser($user);
+        foreach(get_object_vars($fixtureState) as $key=>$value){$state->$key=$value;}
+        $op=$fixtureOperation->fresh();
+        same($fixtureOperation->getRawOriginal(),$op->getRawOriginal(),'Privacy starts from the exact issued request');
+        if($claim!==''){$a=['seal'=>'absent','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32)];
+            if($claim==='deferral'){$a['management_deferrals']=[$clock->now()->format(DATE_ATOM),$clock->now()->format(DATE_ATOM)];}
+            $op->update(['state'=>$claim==='deferral'?'queued':'held','safe_code'=>$claim==='deferral'?'management_deferred':'management_unconfirmed','started_at'=>$clock->now(),'attempt'=>$a]);}
+        return [$fixtureDomain->fresh(),$fixtureDriver,$op->fresh()];};
     foreach ([false,true] as $deferred) {
-        [$d,$driver,$op]=$issue($action); $payment($op); $preparations=0; $observed=null;
+        [$d,$driver,$op]=$issue(); $payment($op); $preparations=0; $observed=null;
         $prepare=static function () use ($op,$deferred,&$preparations,&$observed): void {
             $preparations++;
             $entered=$op->fresh(); $observed=[$entered->state,$entered->attempt['management_claim']??null];
@@ -73,7 +83,9 @@ foreach(['privacy_purchase','privacy_renew'] as $action){
     }
 
     foreach(['native','cancelled','claim','deferral','staff'] as $mode){
-        [$d,$driver,$op]=$issue($action,in_array($mode,['claim','deferral'],true)?$mode:'');
+        [$d,$driver,$op]=$issue(in_array($mode,['claim','deferral'],true)?$mode:'');
+        // Keep both first-credit insertion and credit added to an existing positive balance.
+        if($action==='privacy_renew'||$mode!=='native'){$seedCredit();}
         $item=InvoiceItem::findOrFail($op->invoice_item_id);commerceReject(fn()=>$item->update(['description'=>'Changed pending privacy line']));$item->refresh();$itemBytes=$item->getRawOriginal();$serviceBytes=$d->service->getRawOriginal();
         if($mode==='staff'){$op->update(['policy'=>[...$op->policy,'staff_actions'=>[['action'=>'hold','phase'=>'completed','actor_id'=>$staff->id,'reason'=>'[redacted]','at'=>$clock->now()->format(DATE_ATOM)]]]]);}
         $calls=count($state->calls);$op=$management->retire($user,$op->id);$attempt=$op->attempt;expect(PrivacyRetirement::safe($op,$d),'Exact new retirement is independently verified');
@@ -96,19 +108,21 @@ foreach(['privacy_purchase','privacy_renew'] as $action){
         commerceReject(fn()=>$op->update(['policy'=>array_replace($op->policy,['privacy'=>[]])]));
     }
     // A native write failure rolls back both credit and once marker; the same staff action can retry.
-    [$d,$driver,$op]=$issue($action);$op=$management->retire($user,$op->id);$payment($op);$before=$balance();
+    [$d,$driver,$op]=$issue();$op=$management->retire($user,$op->id);$payment($op);
+    // The injected UPDATE failure requires an existing native credit row.
+    $seedCredit();$before=$balance();
     DB::unprepared("CREATE TRIGGER privacy_credit_fail BEFORE UPDATE ON credits BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END");
     try{$refunds->creditRejected($op->id);expect(false,'Expected native credit failure');}catch(\Illuminate\Database\QueryException){}
     DB::unprepared('DROP TRIGGER privacy_credit_fail');same($before,$balance(),'Failed credit transaction rolls back');expect(!array_key_exists('refund',$op->fresh()->funding??[]),'Failed credit has no once marker');$staffCredit($op);
     foreach(['partial','failed','reversed'] as $kind){
-        [$d,$driver,$op]=$issue($action);$op=$management->retire($user,$op->id);$visible($op,$d);
+        [$d,$driver,$op]=$issue();$op=$management->retire($user,$op->id);$visible($op,$d);
         if($kind==='partial'){$payment($op,'1.00');}elseif($kind==='failed'){$payment($op,null,'failed');}else{$payment($op);$payment($op,'-1.00');}
         DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);$before=$balance();$calls=count($state->calls);
         commerceReject(fn()=>$refunds->creditRejected($op->id));commerceReject(fn()=>$staffCredit($op));same($before,$balance(),'Partial/failed/reversed funding cannot credit');same($calls,count($state->calls),'Funding refusal is local');
         expect(!array_key_exists('refund',$op->fresh()->funding??[]),'Funding refusal retains uncredited request');$visible($op,$d);
     }
     foreach(['processing','failed','succeeded'] as $status){
-        [$d,$driver,$op]=$issue($action);$payment($op,'1.00',$status);commerceReject(fn()=>$management->retire($user,$op->id));expect(!isset($op->fresh()->attempt['management_terminal']),'Any pre-retirement native transaction blocks retirement');
+        [$d,$driver,$op]=$issue();$payment($op,'1.00',$status);commerceReject(fn()=>$management->retire($user,$op->id));expect(!isset($op->fresh()->attempt['management_terminal']),'Any pre-retirement native transaction blocks retirement');
     }
     // Corrupt encrypted records via a deliberate test-only bypass; the production writer still rejects them.
     $bad=[
@@ -140,19 +154,20 @@ foreach(['privacy_purchase','privacy_renew'] as $action){
         'stale-binding'=>fn($op)=>['authority_generation'=>$op->authority_generation+1],
     ];
     foreach($bad as $kind=>$corrupt){
-        [$d,$driver,$op]=$issue($action);$op=$management->retire($user,$op->id);$payment($op);
+        [$d,$driver,$op]=$issue();$op=$management->retire($user,$op->id);$payment($op);
         Operation::withoutEvents(fn()=>$op->update($corrupt($op)));expect(!PrivacyRetirement::safe($op->fresh(),$d),'Verifier itself refuses '.$kind);$before=$balance();$calls=count($state->calls);
         commerceReject(fn()=>$refunds->creditRejected($op->id));same($before,$balance(),'Forged/sent '.$kind.' cannot credit');expect(!isset($op->fresh()->funding['refund']),'Unsafe proof retains no credit marker');same($calls,count($state->calls),'Unsafe retirement never calls registrar');
     }
     foreach(['description'=>'Changed issued line','quantity'=>2,'price'=>'1.00','reference_type'=>'foreign','reference_id'=>99] as $field=>$value){
-        [$d,$driver,$op]=$issue($action);$op=$management->retire($user,$op->id);$payment($op);DB::table('invoice_items')->where('id',$op->invoice_item_id)->update([$field=>$value]);$before=$balance();
+        [$d,$driver,$op]=$issue();$op=$management->retire($user,$op->id);$payment($op);DB::table('invoice_items')->where('id',$op->invoice_item_id)->update([$field=>$value]);$before=$balance();
         commerceReject(fn()=>$refunds->creditRejected($op->id));same($before,$balance(),'Changed exact issued line refuses credit');$visible($op,$d);
     }
     foreach(['2026-10-18T11:59:59+00:00','2026-10-18T12:00:01+00:00'] as $outside){
-        [$d,$driver,$op]=$issue($action,'claim');$op=$management->retire($user,$op->id);$payment($op);Operation::withoutEvents(fn()=>$op->update(['started_at'=>$outside]));expect(!PrivacyRetirement::safe($op->fresh(),$d),'Claim start outside issued/retired window refuses');commerceReject(fn()=>$refunds->creditRejected($op->id));
+        [$d,$driver,$op]=$issue('claim');$op=$management->retire($user,$op->id);$payment($op);Operation::withoutEvents(fn()=>$op->update(['started_at'=>$outside]));expect(!PrivacyRetirement::safe($op->fresh(),$d),'Claim start outside issued/retired window refuses');commerceReject(fn()=>$refunds->creditRejected($op->id));
     }
     foreach([['management_claim'=>'bad'],['management_deferrals'=>['2026-02-30T12:00:00+00:00']],['management_deferrals'=>['2026-10-18T12:00:01+00:00']],['management_deferrals'=>[]]] as $corrupt){
-        [$d,$driver,$op]=$issue($action,'deferral');$op=$management->retire($user,$op->id);$payment($op);Operation::withoutEvents(fn()=>$op->update(['attempt'=>array_replace($op->attempt,$corrupt)]));commerceReject(fn()=>$refunds->creditRejected($op->id));
+        [$d,$driver,$op]=$issue('deferral');$op=$management->retire($user,$op->id);$payment($op);Operation::withoutEvents(fn()=>$op->update(['attempt'=>array_replace($op->attempt,$corrupt)]));commerceReject(fn()=>$refunds->creditRejected($op->id));
     }
+    $restore();
 }
 $nativeSuccessful=true;echo "retired privacy native payment, staff credit, atomic retry and refusal boundaries passed\n";
