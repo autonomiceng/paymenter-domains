@@ -352,6 +352,7 @@
     "tests/fixture-policy-test.php",
     "tests/php83-compatibility-test.php",
     "tests/test_runner.py",
+    "tests/test_lint.py",
     "tests/test_blade_verbatim.py",
     "tests/test_native.py",
     "tests/test_conversion_inventory.py",

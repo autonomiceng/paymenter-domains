@@ -41,6 +41,11 @@ Lint includes every runtime/test PHP file. Unknown, missing or explicit unimplem
 Default runs execute all implemented categories except native when no dependency is supplied;
 empty categories are reported as unimplemented. `--suite` selects categories; receipts disclose
 omissions. No UI suite exists yet. Synthetic provider tests do not establish provider acceptance.
+For change checks, `scripts/test.py --suite lint --lint-base origin/main` lints PHP changed against
+that commit, including staged, unstaged and untracked files under `Domains/` and `tests/`.
+Deleted files are omitted. The PHP 8.3 compatibility check still runs over all shipped PHP.
+Lint uses the parallel worker pool (`--jobs` controls its size). Receipts record `lint_base`;
+omit the option for complete lint at merge and release.
 Native `test_client_scripts.py` requires Node.js on PATH. It renders the shared client script
 and every including view with real Blade, then syntax-checks each inline script with `node --check`.
 
