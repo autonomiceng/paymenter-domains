@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
-/** Deployment-wide TEST reservations. Independent commits precede send; never refund a unit. */
+/** Our deployment-wide TEST safety reservations; the default daily cap is 50. Independent commits precede send; never refund a unit. */
 final class EnomTestCalls
 {
     private static ?object $purchase=null;
@@ -110,14 +110,14 @@ final class EnomTestCalls
     }
     public static function facts(): string
     {
-        if(EnomTestRunBudget::enabled()){try{$s=EnomTestRunBudget::status();return $s['used'].' / '.$s['cap'].' requests used in TEST run '.$s['run_id'].'. '.$s['remaining'].' credits remain. Phase: '.$s['phase'].'. Failed attempts remain counted.';}catch(\Throwable){return 'Enom TEST run budget unavailable; requests are refused.';}}
+        if(EnomTestRunBudget::enabled()){try{$s=EnomTestRunBudget::status();return $s['used'].' / '.$s['cap'].' requests used in TEST run '.$s['run_id'].'. '.$s['remaining'].' credits remain. Phase: '.$s['phase'].'. Failed attempts remain counted.';}catch(\Throwable){return 'Our Enom TEST safety run budget is unavailable; requests are refused.';}}
         $limit=self::configuredLimit();
         if(!is_int($limit)||$limit<0){return 'Deployment setting domains.enom_test_daily_call_cap is invalid; all Enom TEST requests are refused. Contact the deployment administrator.';}
         try {
             $used=(int)(DB::table(EnomTestCallSchema::TABLE)->where('day',self::day())->value('used')??0);
-            if($limit===0){return 'Daily limit is 0; all Enom TEST requests are refused. '.$used.' used today (UTC).';}
+            if($limit===0){return 'Our daily safety call cap is 0; all Enom TEST requests are refused. '.$used.' used today (UTC).';}
             $summary=$used.' / '.$limit.' used today (UTC), shared by all Enom TEST accounts. Every reserved request counts, including ones that failed, timed out or were stopped before sending.';
-            return $used>=$limit?$summary.' Limit reached; Enom TEST requests are refused until 00:00 UTC or until the deployment raises the limit.':$summary;
+            return $used>=$limit?$summary.' Our safety call cap is reached; Enom TEST requests are refused until 00:00 UTC or until the deployment raises the limit.':$summary;
         } catch (\Throwable) { return 'Enom TEST call counter unavailable; all Enom TEST requests are refused until the counter can be read and updated. Ask the deployment administrator to repair it.'; }
     }
     /** Staff refusal facts; explains a refusal while calls remain (counter error or UTC day change). */

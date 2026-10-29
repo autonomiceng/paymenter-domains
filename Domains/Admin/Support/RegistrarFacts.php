@@ -61,7 +61,7 @@ final class RegistrarFacts
         return ['value'=>$f['balance'],'checked'=>$f['checked'],'low'=>$f['low'],'cause'=>$f['cause'],'due'=>$f['total'],'without_cost'=>$f['unknown'],
             'funds'=>RegistrarBalances::fundsUrl($account->registrar_key,$account->environment)];
     }
-    /** Enom test accounts share one daily call limit. @return ?array{value:?string,tone:?string,sub:?string,help:?string} */
+    /** Our daily safety call cap is shared by all Enom test accounts. @return ?array{value:?string,tone:?string,sub:?string,help:?string} */
     public static function calls(Account $account): ?array
     {
         if ($account->registrar_key!=='enom'||$account->environment!=='test') { return null; }
@@ -73,11 +73,11 @@ final class RegistrarFacts
                 'tone'=>$available?null:'danger','sub'=>EnomTestCalls::facts(),
                 'help'=>'This deployment limits Enom TEST requests by run and over the last 24 hours.'];
         }
-        if ($limit===null) { return ['value'=>null,'tone'=>null,'sub'=>'The Enom test call limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.','help'=>null]; }
+        if ($limit===null) { return ['value'=>null,'tone'=>null,'sub'=>'Our Enom test safety call cap in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.','help'=>null]; }
         if ($used===null) { return ['value'=>null,'tone'=>null,'sub'=>"Couldn't read today's call count",'help'=>null]; }
         $full=$used>=$limit;
         return ['value'=>$used.' of '.$limit,'tone'=>$full?'danger':null,'sub'=>$full?'Resets 00:00 UTC':null,
-            'help'=>'Enom limits test accounts to '.$limit.' calls per day (UTC), shared by all test accounts.'];
+            'help'=>'Our daily safety call cap is '.$limit.' calls (UTC), shared by all Enom test accounts. Enom imposes no rate or daily limit that we know of.'];
     }
     public static function lastSync(Server $server): ?string
     {

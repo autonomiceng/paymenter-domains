@@ -2,7 +2,9 @@
 
 A trusted deployment may set `domains.enom_test_run_policy` to a version 2 policy.
 `EnomTestRunBudget::CONTRACT` is `2`. This policy applies only to Enom TEST requests.
-LIVE call and spending limits keep their existing daily accounting.
+Our LIVE safety call and spending caps keep their existing daily accounting.
+Daily caps, run caps and rolling caps are our guards against runaway loops;
+Enom imposes no rate or daily limit that we know of.
 
 The canonical policy contains `version`, `run_id`, `generation`, `cap`, `rolling_cap`,
 `policy_hash`, `ledger_dev`, `ledger_ino`, `ledger_uid`, `ledger_gid`,

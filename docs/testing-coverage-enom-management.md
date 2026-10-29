@@ -14,7 +14,7 @@ current initial inventory authorizes whole-list editors; dispatch independently
 checks ownership, provider ID and preimage. Unknown or partial readback cannot
 claim success or expose destructive forms. Other actions remain unavailable.
 
-Every physical request counts against `domains.enom_test_daily_call_cap`. One
+Every physical request counts against our safety cap `domains.enom_test_daily_call_cap`. One
 write unit is reserved before the durable seal and consumed once before transport;
 no unit is refunded. A proven cap/deadline refusal with an unconsumed reservation
 stays held and definitely unsent. The owner can submit a fresh request when capacity remains. A consumed/lost-response write remains uncertain, with read-only

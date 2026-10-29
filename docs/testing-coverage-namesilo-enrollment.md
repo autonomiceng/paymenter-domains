@@ -26,7 +26,7 @@ The first worker tick after enrollment can make one automatic daily read through
 `/apibatch/getAccountBalance` (25-second cap); OTE support and its reply contract for this route are
 unconfirmed. An unsupported reply is shown as **Read failed** and does not retry before the next
 daily schedule. A read-limiter deferral sends no provider request and schedules another attempt no sooner than
-60 seconds later. Automatic provider reads are limited to one per day. **Read balance** and **Refresh now**
+60 seconds later. Our safety policy limits automatic provider reads to one per day. **Read balance** and **Refresh now**
 are separate interactive reads and store their amounts under Registrar balances.
 
 The encrypted enrollment facts contain a random enrollment identifier, server ID, staff label,
