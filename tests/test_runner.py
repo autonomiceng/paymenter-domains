@@ -133,6 +133,35 @@ class InstalledPhaseTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
+    def setUp(self):
+        memory = mock.patch.object(runner, 'available_memory_mib', return_value=8192)
+        memory.start(); self.addCleanup(memory.stop)
+
+    def test_supervisor_validates_grace_before_spawning(self):
+        spec = importlib.util.spec_from_file_location('process_supervisor', ROOT/'scripts/process_supervisor.py')
+        supervisor = importlib.util.module_from_spec(spec); spec.loader.exec_module(supervisor)
+        for grace in ['inf', '-inf', 'nan', '-1', '0', '0.5']:
+            with self.subTest(grace=grace), \
+                 mock.patch.object(sys, 'argv', ['supervisor', '--grace-seconds='+grace, '--', 'probe']), \
+                 mock.patch.object(supervisor.ctypes, 'CDLL') as libc, \
+                 mock.patch.object(supervisor, 'children', return_value=set()), \
+                 mock.patch.object(supervisor.signal, 'signal'), \
+                 mock.patch.object(supervisor.os, 'waitpid', return_value=(123, 0)), \
+                 mock.patch.object(supervisor, 'cleanup', return_value=True), \
+                 mock.patch.object(supervisor.subprocess, 'Popen') as spawn, \
+                 contextlib.redirect_stderr(io.StringIO()):
+                libc.return_value.prctl.return_value = 0
+                spawn.return_value.pid = 123
+                if grace in ['0', '0.5']:
+                    self.assertEqual(supervisor.main(), 0)
+                    spawn.assert_called_once_with(['probe'])
+                else:
+                    with self.assertRaises(SystemExit) as caught:
+                        supervisor.main()
+                    self.assertEqual(caught.exception.code, 2)
+                    spawn.assert_not_called()
+                    libc.assert_not_called()
+
     def test_ote_output_resolves_symlinked_tmpdir(self):
         spec = importlib.util.spec_from_file_location('ote_contract', ROOT/'scripts/ote-contract.py')
         ote = importlib.util.module_from_spec(spec); spec.loader.exec_module(ote)
@@ -465,12 +494,14 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'Domains').mkdir(); (root/'output').mkdir()
             with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', return_value=(b'image unavailable', b'', 77, False)), contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(runner.run([('mariadb', ['probe'])], {}, root/'output', ['mariadb'], {}, jobs=4), 77)
+                self.assertEqual(runner.run([('mariadb', ['probe'])], {}, root/'output', ['mariadb'], {},
+                                            jobs=4, requested_jobs=4, jobs_explicit=True), 77)
             receipt = json.loads((root/'output/receipt.json').read_text())
             self.assertFalse(receipt['complete'])
             self.assertEqual(receipt['skipped_suites'], ['mariadb'])
             self.assertTrue(receipt['results'][0]['skipped'])
             self.assertEqual(receipt['jobs'], 1)
+            self.assertEqual(receipt['jobs_reduction'], {'requested': 4, 'actual': 1, 'reason': 'mariadb'})
 
     def test_mariadb_is_always_explicit_opt_in(self):
         for source in ['', '/synthetic/dependency']:
@@ -638,7 +669,7 @@ class RunnerTests(unittest.TestCase):
                 for key in ['argv', 'seconds', 'guard_seconds', 'exit', 'timed_out']:
                     self.assertEqual(logged[key], saved[key])
 
-    def test_only_paths_keep_manifest_order_and_native_fixture_requirements(self):
+    def test_only_paths_keep_manifest_cases_and_native_fixture_requirements(self):
         suites = runner.manifest()
         cases = [(['tests/test_package.py'], ['package']),
                  (['tests/test_schema_mariadb.py'], ['mariadb']),
@@ -655,6 +686,7 @@ class RunnerTests(unittest.TestCase):
                 (Path(temp)/'runtime').mkdir()
                 self.assertEqual(runner.main(), 0)
                 expected = [(kind, path) for kind, paths in suites.items() for path in paths if path in requested]
+                expected.sort(key=lambda item: runner.ORDER.index(item[0]))
                 self.assertEqual([(kind, argv[-1]) for kind, argv in run.call_args.args[0]], expected)
                 self.assertEqual(run.call_args.args[3], selected)
                 if selected == ['mariadb']:
@@ -713,6 +745,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(runner.main(), 0)
         commands = run.call_args.args[0]
         expected = [(kind, path) for kind, paths in suites.items() if kind != 'mariadb' for path in paths]
+        expected.sort(key=lambda item: runner.ORDER.index(item[0]))
         self.assertEqual([(kind, argv[-1]) for kind, argv in commands if kind != 'lint'], expected)
         lint = [[str(ROOT/'scripts/php-test'), '-l', str(path.relative_to(ROOT))]
                 for area in ['Domains', 'tests'] for path in sorted((ROOT/area).rglob('*.php'))]
