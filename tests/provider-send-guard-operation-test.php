@@ -63,7 +63,7 @@ same('Not sent: Enom test send limit reached',Labels::requestStatus($historyOper
 // Reuse the held operation to exercise the real account mode lookup used by staff History.
 DB::table('domains_accounts')->where('server_id',$historyOperation->server_id)->update(['environment'=>'live']);
 app('request')->attributes->remove('domains.account.environment.'.$historyOperation->server_id);
-same('Not sent: Enom test send limit reached',Labels::requestStatus($historyOperation)['reason'],'Live History keeps ownership of our safety cap');
+same('Not sent: our daily call cap reached',Labels::requestStatus($historyOperation)['reason'],'Live History names our daily safety cap');
 DB::table('domains_accounts')->where('server_id',$historyOperation->server_id)->update(['environment'=>'test']);
 app('request')->attributes->remove('domains.account.environment.'.$historyOperation->server_id);
 foreach(['write_rate_limited','renewal_rate_limited'] as $code){

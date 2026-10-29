@@ -47,6 +47,11 @@ final class Labels
         if ($reason===self::FEATURE_OFF) {
             return 'Not sent: '.(['renew'=>'Renewals','transfer'=>'Transfers','register'=>'Registrations'][$op->action]??'Changes').' off for this account';
         }
+        if($op->registrar_key==='enom'&&$reason===self::reason('enom_test_call_cap')){
+            $cache=app('request')->attributes;$key='domains.account.environment.'.$op->server_id;
+            if(!$cache->has($key)){$cache->set($key,\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->value('environment'));}
+            if($cache->get($key)==='live'){return 'Not sent: our daily call cap reached';}
+        }
         return $reason;
     }
     private const FEATURE_OFF='Not sent: feature off for this account';
