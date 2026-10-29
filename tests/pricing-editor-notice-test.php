@@ -68,8 +68,8 @@ $ask='Ask a staff member who can edit domain pricing to open this TLD in TLDs &a
 $askTld='If one isn’t, ask a staff member who can edit domain pricing to open it in TLDs &amp; pricing, open Edit prices and save.';
 $direct='To fix it, open this TLD in TLDs &amp; pricing, open Edit prices and save.';
 $directTld='If one isn’t, open it in TLDs &amp; pricing, open Edit prices and save.';
-$sync='If its costs are out of date, use Sync TLD prices on the registrar account first.';
-$askSync='If its costs are out of date, ask a staff member who can sync TLD prices to use Sync TLD prices on the registrar account first.';
+$sync='If it has no costs, use Sync prices on the TLD list first.';
+$askSync='If it has no costs, ask a staff member who can sync TLD prices to use Sync prices on the TLD list first.';
 foreach([
     [[],true,true],
     [[Staff::POLICY],false,false],

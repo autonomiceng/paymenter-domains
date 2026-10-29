@@ -112,13 +112,13 @@ foreach ($lockQueries as $table => $query) {
 same([2, 1], array_map(static fn ($price): int => $price->serverId, $batch), 'Batch returns input order after ordered locks');
 $reject(static fn () => DB::transaction(static fn () => $sellers->admit([], $now)));
 $reject(static fn () => $sellers->change('net', 2, 1, true, false, $now)); // no matching TLD
-$staleNet = new SaleSelection('net', 2, $netCart->registrar, $netCart->fingerprint, $netCart->policyRevision,
-    'register', 1, 'USD', $netCart->priceId, $netCart->priceRevision - 1);
-$reject(static fn () => DB::transaction(static function () use ($sellers, $oldCart, $staleNet, $now): void {
+$futureNet = new SaleSelection('net', 2, $netCart->registrar, $netCart->fingerprint, $netCart->policyRevision,
+    'register', 1, 'USD', $netCart->priceId, $netCart->priceRevision + 1);
+$reject(static fn () => DB::transaction(static function () use ($sellers, $oldCart, $futureNet, $now): void {
     App\Models\User::create(['email' => 'stale-cart@example.invalid', 'password' => bcrypt('synthetic')]);
-    $sellers->admit([$oldCart, $staleNet], $now);
+    $sellers->admit([$oldCart, $futureNet], $now);
 }));
-same(0, App\Models\User::count(), 'One stale line rolls back whole native cart');
+same(0, App\Models\User::count(), 'One future price revision rolls back whole native cart');
 $acquire = static function ($price) use ($accounts): Domain {
     expect(DB::transactionLevel() > 0, 'Order writes remain inside admission transaction');
     return DomainReservations::reserve([...$accounts[$price->serverId], 'service_id' => 11, 'user_id' => 21, 'domain' => 'example.com', 'status' => 'uncertain'], ['com']);
@@ -144,7 +144,13 @@ $reject(static fn () => $admit($oldCart, $acquire));
 same(4, $p->revision, 'Switch-back does not revive old tokens');
 $current = $sellers->selection('com', 'register', 1, $now);
 $publish([$rate('register', 1, '6.00')]);
-$reject(static fn () => $admit($current, static fn () => null));
+$updated = $admit($current);
+same($current->priceId, $updated->id, 'Sync preserves the selected price row');
+expect($updated->revision > $current->priceRevision, 'Admission takes the newer synced revision');
+same('7.80', $updated->retail, 'Admission uses the newly published retail');
+$wrongRow = new SaleSelection('com', 1, $current->registrar, $current->fingerprint, $current->policyRevision,
+    'register', 1, 'USD', $current->priceId + 1000, $current->priceRevision);
+$reject(static fn () => $admit($wrongRow));
 $reject(static fn () => $sellers->change('com', 3, 2, true, true, $now));
 $liveCart = $sellers->selection('com', 'register', 1, $now);
 Server::findOrFail(1)->update(['enabled' => false]);
@@ -208,28 +214,29 @@ $publish([new CatalogueRate('register', 3, '4.00', 'synthetic', $now, $now->modi
 $eligible = $sellers->selection('com', 'register', 3, $now);
 $future = $now->modify('+2 days');
 $prices->current(1, $accounts[1]['account_fingerprint'], 'com', 'register', 3, 'USD', $future);
-$reject(static fn () => DB::transaction(static fn () => $sellers->admit([$eligible], $future)));
+$later = DB::transaction(static fn () => $sellers->admit([$eligible], $future))[0];
+same([$eligible->priceId, $eligible->priceRevision, '21.00'], [$later->id, $later->revision, $later->retail], 'Older saved renewal cost keeps the same eligible term and retail');
 $reject(static fn () => $p->update(['revision' => 6]));
 $reject(static fn () => $p->delete());
-// Expired required costs retain safe context and leave the seller and revision untouched.
+// Saved costs remain usable; missing required costs still leave the seller and revision untouched.
 Tld::where('server_id', 2)->where('tld', 'com')->firstOrFail()->update(['renew_enabled' => true]);
 foreach (['register', 'renew'] as $action) {
     $row = Price::where(['server_id' => 2, 'tld' => 'com', 'action' => $action, 'term' => 1])->sole();
-    $expiry = $now;
-    DB::table('domains_prices')->where('id', $row->id)->update(['fresh_until' => $expiry->format('Y-m-d H:i:s')]);
-    $prior = SalesPolicy::where('tld', 'com')->sole()->getAttributes(); $caught = null;
-    try { $sellers->change('com', $prior['revision'], 2, true, false, $now); }
-    catch (\Paymenter\Extensions\Servers\Domains\Services\ExpiredCostEvidence $error) { $caught = $error; }
-    expect($caught !== null, 'Expired '.$action.' cost refused with typed context');
-    same([2, 'com', $action, 1, $now->getTimestamp()], [$caught->serverId, $caught->tld, $caught->action, $caught->term, $caught->freshUntil->getTimestamp()], 'Exact saved cost context');
-    same($prior, SalesPolicy::where('tld', 'com')->sole()->getAttributes(), 'Expired cost leaves seller and revision unchanged');
-    DB::table('domains_prices')->where('id', $row->id)->update(['fresh_until' => $row->getRawOriginal('fresh_until')]);
+    DB::table('domains_prices')->where('id', $row->id)->update(['fresh_until' => $now]);
+    $priorRevision = SalesPolicy::where('tld', 'com')->sole()->revision;
+    $selected = $sellers->change('com', $priorRevision, 2, true, false, $now);
+    same([$priorRevision + 1, 2], [$selected->revision, $selected->server_id], 'Saved '.$action.' cost permits seller selection');
+    $prior = SalesPolicy::where('tld', 'com')->sole()->getAttributes();
+    DB::table('domains_prices')->where('id', $row->id)->update(['wholesale' => null]);
+    $reject(static fn () => $sellers->change('com', $prior['revision'], 2, true, false, $now));
+    same($prior, SalesPolicy::where('tld', 'com')->sole()->getAttributes(), 'Missing '.$action.' cost leaves seller and revision unchanged');
+    DB::table('domains_prices')->where('id', $row->id)->update($row->only(['wholesale', 'fresh_until']));
 }
 $publish([$rate('register', 1, '5.00'), $rate('register', 3, '4.00'), $rate('renew', 1, '6.00')]);
 DB::table('domains_prices')->where(['server_id' => 1, 'tld' => 'com', 'action' => 'register', 'term' => 1])->update(['fresh_until' => $now]);
 $priorRevision = SalesPolicy::where('tld', 'com')->sole()->revision;
 $p = $sellers->change('com', $priorRevision, 1, true, false, $now);
-same($priorRevision + 1, $p->revision, 'Another fresh eligible registration term still permits seller selection');
+same($priorRevision + 1, $p->revision, 'Saved eligible registration terms still permit seller selection');
 $before = DB::table('domains_sales_policies')->get()->toJson();
 $migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000002_create_domains_sales_policies.php';
 $migration->down(); $migration->up(); SalesPolicySchema::verify();

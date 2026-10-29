@@ -160,14 +160,16 @@ $response = $controller->order($req(['domain' => 'guest-placeholder.com', 'actio
 same(route('cart'), $response->getTargetUrl(), 'Guest reaches native cart before authentication');
 $guestCart = App\Models\Cart::whereNull('user_id')->latest('id')->firstOrFail();
 expect(isset($guestCart->items()->sole()->checkout_config['domains_check']), 'Guest native cart retains admission receipt');
-$store->endings(); $clock->instant = Price::where('action', 'renew')->firstOrFail()->fresh_until->toDateTimeImmutable();
-same([], $store->endings(), 'Expired evidence is excluded after the display TTL'); $clock->instant = $now;
+$savedEndings = $store->endings(); $before = $reads->calls;
+$clock->instant = Price::where('action', 'renew')->firstOrFail()->fresh_until->toDateTimeImmutable();
+same($savedEndings, $store->endings(), 'Saved costs keep the same public retail past the former expiry and display TTL');
+same($before, $reads->calls, 'Older display prices do not trigger provider reads'); $clock->instant = $now;
 Price::where('action', 'register')->update(['hold_reason' => 'below_cost']);
 Price::where('action', 'transfer')->update(['hold_reason' => 'below_cost']);
 same('held', $store->check('held-placeholder.com')['status'], 'Engine held terms have no offer');
 Illuminate\Support\Facades\Cache::flush();
 same([], $store->endings(), 'Fresh display renders no held retail');
-$clock->instant = $now->modify('+2 days'); same([], $store->endings(), 'Stale prices never published'); $clock->instant = $now;
+$clock->instant = $now->modify('+2 days'); same([], $store->endings(), 'Age never revives held prices'); $clock->instant = $now;
 // Explicit boundary protection, middleware and limiter short circuit.
 try { $controller->check($req(['domain' => 'example.com'])); expect(false, 'Missing form key refused'); }
 catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(419, $e->getStatusCode(), 'Session key required'); }

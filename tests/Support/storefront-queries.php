@@ -63,11 +63,11 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
     SalesPolicy::whereIn('tld', ['qorg', 'qxyz'])->update(['register_enabled' => true, 'transfer_enabled' => true]);
     echo 'Cold catalogue ending reads: one additional '.$singleQueries.', three additional '.$tenQueries.".\n";
     expect($tenQueries <= $singleQueries + 120, 'Incremental ending reads stay bounded');
-    // Retained native prices must not substitute for missing, stale or unsupported current term evidence.
+    // Retained native prices must not substitute for missing, future or unsupported current term evidence.
     $termPrice = DB::table('domains_prices')->where('server_id', $server->id)->where('tld', 'qnet')->where('action', 'register')->where('term', 1)->sole();
     $proof = json_decode($termPrice->eligibility, true); $badProof = $proof; $badProof['accepted_terms'] = [2, 3];
     foreach (['unknown_cost' => ['wholesale' => null], 'unknown_retail' => ['retail' => null], 'held' => ['hold_reason' => 'below_cost'],
-        'unit' => ['unit' => 'annual'], 'future' => ['observed_at' => $now->modify('+1 second')], 'expiry' => ['fresh_until' => $now],
+        'unit' => ['unit' => 'annual'], 'future' => ['observed_at' => $now->modify('+1 second')], 'unsynced' => ['fresh_until' => null],
         'term_proof' => ['eligibility' => json_encode($badProof)]] as $reason => $change) {
         DB::table('domains_prices')->where('id', $termPrice->id)->update($change); $before = $reads->calls;
         $rows = array_column(storefrontFreshEndings($store), null, 'tld');
