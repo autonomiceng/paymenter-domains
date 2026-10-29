@@ -202,7 +202,7 @@ config(['domains.enom_test_daily_call_cap'=>0]);same('50 of 0',$capFacts::calls(
 $beforeCap=[DB::table('domains_operations')->count(),(array)DB::table(EnomTestCallSchema::TABLE)->sole()];
 foreach(['many',-1] as $invalidCap){
     config(['domains.enom_test_daily_call_cap'=>$invalidCap]);
-    same('The Enom test call limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.',$capFacts::calls($capAccount)['sub'],'Invalid cap explains refusal');
+    same('Our Enom test safety call cap in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.',$capFacts::calls($capAccount)['sub'],'Invalid cap explains refusal');
 }
 same($beforeCap,[DB::table('domains_operations')->count(),(array)DB::table(EnomTestCallSchema::TABLE)->sole()],'Reading bad cap facts changes no requests or counters');
 config(['domains.enom_test_daily_call_cap'=>50]);
@@ -212,7 +212,7 @@ Illuminate\Support\Facades\Schema::rename('domains_test_calls_saved',EnomTestCal
 $liveCap=clone $capAccount;$liveCap->environment='live';same(null,$capFacts::calls($liveCap),'Live account omits the TEST cap');
 
 config(['domains.enom_test_daily_call_cap'=>'many']);
-Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Missing')->assertSee('The Enom test call limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.');
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Missing')->assertSee('Our Enom test safety call cap in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.');
 config(['domains.enom_test_daily_call_cap'=>50]);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('NameSilo test account')->assertSee('Missing')->assertSee('Not checked yet')
     ->assertSee('Add funds')->assertSeeHtml('https://ote.namesilo.com/cart/add-funds')->assertDontSee('API calls today');
