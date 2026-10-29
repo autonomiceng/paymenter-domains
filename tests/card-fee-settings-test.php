@@ -52,9 +52,12 @@ same(['published'=>1,'failed'=>[]],$writer->run($review('card_fee',null),['fee_p
 $followerAfter=$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now);
 expect($followerAfter->revision>$followerBefore->revision,'Default follower has a new published revision');same('10.99',$followerAfter->retail,'Default follower uses new fee');
 same($ordinaryBefore,$ownRows(),'Ordinary own-rule prices and revisions stay unchanged');
-$before=$rows();$expired=$now->modify('+2 days');
-same(['published'=>0,'failed'=>['.com']],$writer->run($review('card_fee',null),['fee_percent'=>'21','fee_fixed'=>'2'],$expired),'Expired follower reports its name');
-same(['percent'=>'21.00','fixed'=>'2.00'],CardFee::read($t->server_id),'Fee still commits when publication costs expired');same($before,$rows(),'Failed publication retains every old revision');
+// Saved costs do not expire by age: two days later the follower still republishes with the new fee.
+$later=$now->modify('+2 days');$followerBefore=$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$later);
+same(['published'=>1,'failed'=>[]],$writer->run($review('card_fee',null),['fee_percent'=>'21','fee_fixed'=>'2'],$later),'Two-day-old cost still republishes the follower');
+same(['percent'=>'21.00','fixed'=>'2.00'],CardFee::read($t->server_id),'Fee commits with the later publication');
+$followerAfter=$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$later);
+expect($followerAfter->revision>$followerBefore->revision,'Later follower has a new published revision');same('10.99',$followerAfter->retail,'Later follower uses the 21% + $2 fee');
 // Register a real postcommit race on the matching fee save, after the completed audit and before fanout.
 $server=App\Models\Server::findOrFail($t->server_id);$default=$server->settings()->where('key','domains_pricing_default_rule')->sole()->value;
 $pending=true;$raced=false;

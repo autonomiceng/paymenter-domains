@@ -13,6 +13,7 @@ use Livewire\Livewire;
 use Filament\Actions\Testing\TestAction;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList as PslPage;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\{ActivationStatus,RegistrarAccount,RegistrarBalances as BalancesPage,RegistrarSetup};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
@@ -52,8 +53,8 @@ $off=App\Models\Server::create(['name'=>'Old account','extension'=>'Domains','ty
 $demoId=(int)App\Models\Server::max('id')+1;fixtureAccount($demoId,'namesilo','demo-namesilo');$demo=Account::where('server_id',$demoId)->sole();
 App\Models\Server::whereKey($demo->server_id)->update(['name'=>'Demo NameSilo']);
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
-staffPanel();$panel=Filament::getCurrentPanel();$pages=[RegistrarSetup::class,RegistrarAccount::class,BalancesPage::class,ActivationStatus::class,PslPage::class];$panel->pages($pages);
-Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$pages){foreach($pages as $page){$page::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
+staffPanel();$panel=Filament::getCurrentPanel();$pages=[RegistrarSetup::class,RegistrarAccount::class,BalancesPage::class,ActivationStatus::class,PslPage::class];$panel->pages($pages);$panel->resources([TldResource::class]);
+Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$pages){foreach($pages as $page){$page::registerRoutes($panel);}TldResource::registerRoutes($panel);});app('router')->getRoutes()->refreshNameLookups();
 $staff=staffUser([Staff::VIEW]);Auth::setUser($staff);
 // Navigation: one Registrars entry; Balances and Activation leave the menu and Balances redirects.
 same('Registrars',RegistrarSetup::getNavigationLabel(),'Registrars navigation label');
@@ -102,13 +103,15 @@ $beforeInvalidReason=(array)DB::table('domains_reminder_schedules')->where('serv
 $page->callAction($reminderAction,['reason'=>"Reviewed\u{2029}reminders"])->assertHasActionErrors(['reason'=>'regex']);
 same($beforeInvalidReason,(array)DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->sole(),'Reminder reason field error changes no schedule');
 $page->unmountAction();
-foreach(['Setup checklist','API connection','Connected','Test connection','Supported TLDs','.com','TLD prices','Sync TLD prices','Registrations','Transfers','Renewals','DNS, nameservers and contacts',
+foreach(['Setup checklist','API connection','Connected','Test connection','Supported TLDs','.com','TLD prices','Open TLDs','Registrations','Transfers','Renewals','DNS, nameservers and contacts',
     'Renewal invoices','Turn on','Renewal invoices and reminders','Invoice issued','21 days before expiry','Invoice due','7 days before expiry','Reminder emails',
     '60, 30, 7 and 1 days before, 3 days after','Customer can renew early','Edit invoices','Edit reminders','Pause orders','More','Edit API credentials','View price history',
     'System checks','Background worker','Not running','Payment events'] as $needle){$page->assertSee($needle);}
 $html=$page->html();
+// Prices sync from the TLD list: the account page links there instead of syncing itself.
+expect(str_contains($html,'href="'.TldResource::getUrl('index').'"'),'TLD prices row links to the TLD list');
 foreach(['Catalogue acceptance','Account binding','Worker cadence','Native server settings','Registrar setup','(defaults)','Read capacity','Runtime account','Notification safety',
-    'Verify identity','Read balance','Enable processing','Pause processing','Missing Paymenter records','Transfer watch relinks','Start after payment','Change recorded','Confirm'] as $needle){
+    'Verify identity','Read balance','Enable processing','Pause processing','Missing Paymenter records','Transfer watch relinks','Start after payment','Change recorded','Confirm','Sync TLD prices'] as $needle){
     expect(!str_contains($html,$needle),'Account page never shows: '.$needle);}
 // Enom-only controls explain their scope for both NameSilo modes.
 foreach(['test','live'] as $mode){
