@@ -5,7 +5,7 @@ use App\Models\{Currency,Server};
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price,Tld};
@@ -43,10 +43,15 @@ $accept=['ending'=>'com','accept'=>true,'terms'=>[1],'registry'=>true,'verified'
 $write('acceptance',$accept);
 $write('acceptance',[...$accept,'ending'=>'net']);
 $before=count($GLOBALS['catalogueCalls']);tldRefusal(fn()=>$write('import',['ending'=>'org']),'Catalogue ending is not accepted.');same($before,count($GLOBALS['catalogueCalls']),'Unaccepted ending stops before reads');
+// Daily sync is intentional; a day our cap cannot cover is skipped, even if we later raise our cap.
+$skips=[];\Illuminate\Support\Facades\Log::listen(static function($event)use(&$skips):void{if($event->message==='Domains daily price sync skipped.'){$skips[]=$event->context;}});
+$used=Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::usage()['used'];config(['domains.enom_test_daily_call_cap'=>$used+8]);
 $before=count($GLOBALS['catalogueCalls']);DB::table('domains_runtime_turns')->where('server_id',$server->id)->update(['due_at'=>0]);app(Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class)->tick();
+same([['server_id'=>(int)$server->id,'reason'=>'call_cap','needed'=>9,'left'=>8]],$skips,'Daily sync skips and logs a day our cap cannot cover');
+config(['domains.enom_test_daily_call_cap'=>500]);
 app(Paymenter\Extensions\Servers\Domains\Services\ObservationWork::class)->tick();same(null,DB::table('domains_observation_queues')->where('server_id',$server->id)->value('catalogue_hold'),'Manual TEST catalogue does not claim or fail scheduled refresh');
 same(0,(int)DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->value('daily_due_at'),'TEST runtime leaves daily balance cadence unclaimed');
-same($before,count($GLOBALS['catalogueCalls']),'Runtime makes no unattended TEST reads');same(0,Tld::where('server_id',$server->id)->count(),'Runtime cannot import without staff review');
+same($before,count($GLOBALS['catalogueCalls']),'A skipped daily sync makes no reads');same(0,Tld::where('server_id',$server->id)->count(),'A skipped daily sync imports nothing');
 // Expired state and revoked rights refuse before any I/O; in-flight changes refuse before persistence.
 $stale=$review('import');$write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 $before=count($GLOBALS['catalogueCalls']);$refuse(fn()=>$settings->run($stale,['ending'=>'com']),'Settings changed. Reload this page.');same($before,count($GLOBALS['catalogueCalls']),'Stale import makes no call');
@@ -71,15 +76,16 @@ try{$write('import',['ending'=>'com']);expect(false,'Malformed staff import must
 }$GLOBALS['catalogueBadPrice']=false;
 $write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 $before=count($GLOBALS['catalogueCalls']);
-Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction($action('import'))->setActionData(['ending'=>'com','reason'=>'Import accepted annual TEST baseline'])
-    ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
-same(['GetTLDList','GetTLDDetails','GetExtAttributes','PE_GetProductPrice','PE_GetProductPrice'],array_column(array_slice($GLOBALS['catalogueCalls'],$before),'Command'),'Annual import is exactly five reviewed bounded reads');
-$tld=Tld::where('server_id',$server->id)->sole();same(false,$tld->enabled,'Import leaves ending unpublished');
+Livewire::actingAs($staff)->test(ListTlds::class)->mountAction('sync_prices_'.$server->id)
+    ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Prices synced');
+$per=['GetTLDDetails','GetExtAttributes','PE_GetProductPrice','PE_GetProductPrice'];
+same(['GetTLDList',...$per,...$per],array_column(array_slice($GLOBALS['catalogueCalls'],$before),'Command'),'Account sync reads the list once, then both accepted TLDs');
+$tld=Tld::where('server_id',$server->id)->where('tld','com')->sole();same(false,$tld->enabled,'Import leaves ending unpublished');
 $before=count($GLOBALS['catalogueCalls']);DB::table('domains_runtime_turns')->where('server_id',$server->id)->update(['due_at'=>0]);app(Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class)->tick();
 app(Paymenter\Extensions\Servers\Domains\Services\ObservationWork::class)->tick();same(null,DB::table('domains_observation_queues')->where('server_id',$server->id)->value('catalogue_hold'),'Imported TEST catalogue leaves scheduler hold clear');
-same($before,count($GLOBALS['catalogueCalls']),'Imported preview still has no unattended reads');
+same($before,count($GLOBALS['catalogueCalls']),'A skipped day is not retried after raising our cap');same(1,count($skips),'A skipped daily sync is logged once');
 same(0,App\Models\Product::where('server_id',$server->id)->count(),'Runtime leaves TEST native publication to staff');
-same(2,Price::where('server_id',$server->id)->count(),'Only annual registration and renewal imported');same([],$front->endings(),'No seller after import');
+same(4,Price::where('server_id',$server->id)->count(),'Annual registration and renewal imported for both TLDs');same([],$front->endings(),'No seller after import');
 $availability=['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true];
 $write('tld_settings',$availability,$tld->id);
 // Saving Edit prices publishes; this TLD keeps the account default.
@@ -139,8 +145,12 @@ $write('tld_settings',[...$availability,'enabled'=>false],$tld->id);same(0,$cart
 $write('tld_settings',$availability,$tld->id);$write('publish',[],$tld->id);
 $write('tld_settings',[...$availability,'renew'=>false],$tld->id);$write('import',['ending'=>'com']);same(false,$tld->fresh()->renew_enabled,'Re-import preserves staff withdrawal of renewal support');same([],$front->endings(),'Re-import cannot reopen sales paused through renewal support');
 $write('tld_settings',$availability,$tld->id);$write('publish',[],$tld->id);
-$futureClock=new class implements Paymenter\Extensions\Servers\Domains\Contracts\Clock {public function now():DateTimeImmutable{return (new DateTimeImmutable)->modify('+3601 seconds');}};
-$future=new Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueRead(app(SellerPolicies::class),app(NativeCatalogue::class),$futureClock);$before=count($GLOBALS['catalogueCalls']);$refuse(fn()=>$future->offer('com','register',1),'No current eligible price.');same($before,count($GLOBALS['catalogueCalls']),'Expired TEST price fails locally without automatic reads');
+$futureClock=new class implements Paymenter\Extensions\Servers\Domains\Contracts\Clock {public function now():DateTimeImmutable{return (new DateTimeImmutable)->modify('+2 days');}};
+$future=new Storefront(app(SellerPolicies::class),app(Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue::class),app(NativeCatalogue::class),$bindings,app(Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility::class),$futureClock);
+$before=count($GLOBALS['catalogueCalls']);$currentOffer=$front->offer('com','register',1);$oldOffer=$future->offer('com','register',1);
+same([$currentOffer['price'],$currentOffer['renew']],[$oldOffer['price'],$oldOffer['renew']],'Age alone leaves customer checkout registration and renewal retail unchanged');
+same([$currentOffer['selection']->priceId,$currentOffer['selection']->priceRevision],[$oldOffer['selection']->priceId,$oldOffer['selection']->priceRevision],'Age alone keeps the selected price and revision');
+same($before,count($GLOBALS['catalogueCalls']),'Old saved prices sell without provider reads');
 $before=DB::table('domains_prices')->where('server_id',$server->id)->get()->toJson();$GLOBALS['catalogueBadPrice']=true;
 $refuse(fn()=>$write('import',['ending'=>'com']),'Catalogue import unavailable.');same($before,DB::table('domains_prices')->where('server_id',$server->id)->get()->toJson(),'Malformed import retains all price bytes');$GLOBALS['catalogueBadPrice']=false;
 $wrong=$review('probe');$wrong->local(static fn()=>null);
