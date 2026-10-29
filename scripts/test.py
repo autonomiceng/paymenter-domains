@@ -200,7 +200,7 @@ def history(path):
             seconds = float(row['seconds'])
             if not math.isfinite(seconds) or seconds < 0:
                 raise ValueError('Invalid command duration in timing receipt.')
-            result[(row['kind'], row['argv'][-1])] = (row['exit'] != 0, seconds)
+            result[(row['kind'], row['argv'][-1])] = (row['exit'] != 0 or not row['runtime_unchanged'], seconds)
     return result
 
 

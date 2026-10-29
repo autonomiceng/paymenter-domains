@@ -147,18 +147,20 @@ class SchedulingTests(unittest.TestCase):
     def test_short_categories_precede_native_and_profile_orders_within_category(self):
         commands = [('native', ['slow.php']), ('runner', ['guard.py']),
                     ('provider', ['provider.php']), ('native', ['fast.php']),
-                    ('native', ['failed.php']), ('package', ['package.py'])]
+                    ('native', ['failed.php']), ('native', ['changed.php']), ('package', ['package.py'])]
         with tempfile.TemporaryDirectory() as temporary:
             receipt = Path(temporary)/'receipt.json'
-            rows = [{'kind': 'native', 'argv': ['php', path], 'exit': status, 'seconds': seconds}
+            rows = [{'kind': 'native', 'argv': ['php', path], 'exit': status, 'seconds': seconds,
+                     'runtime_unchanged': True}
                     for path, status, seconds in [('slow.php', 0, 20), ('fast.php', 0, 1), ('failed.php', 7, 30)]]
+            rows.append(dict(rows[0], argv=['php', 'changed.php'], seconds=40, runtime_unchanged=False))
             rows.append(dict(rows[0], exit=-9, seconds=.01, cancelled=True))
             receipt.write_text(json.dumps({'results': rows}))
             previous = runner.history(receipt)
         self.assertEqual(previous[('native', 'slow.php')], (False, 20))
         ordered = runner.order_commands(commands, previous)
         self.assertEqual([argv[-1] for _, argv in ordered],
-                         ['provider.php', 'guard.py', 'package.py', 'failed.php', 'fast.php', 'slow.php'])
+                         ['provider.php', 'guard.py', 'package.py', 'failed.php', 'changed.php', 'fast.php', 'slow.php'])
         self.assertCountEqual(ordered, commands)
 
     def test_memory_budget_limits_workers_and_refuses_insufficient_memory(self):
