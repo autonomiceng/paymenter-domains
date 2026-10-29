@@ -109,6 +109,7 @@
     "tests/transfer-inputs-test.php",
     "tests/transfer-precheck-test.php",
     "tests/transfer-dispatch-test.php",
+    "tests/transfer-evidence-test.php",
     "tests/transfer-completion-test.php",
     "tests/transfer-completion-namesilo-test.php",
     "tests/transfer-safety-namesilo-test.php",

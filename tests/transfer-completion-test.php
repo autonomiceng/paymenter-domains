@@ -1,49 +1,17 @@
 <?php
 // Enom 444f31c/f7175ff transfer reconciliation, stricter unique charge; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+// Native checkout is needed for funding rechecks, DNS persistence, refunds and renewal billing.
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require_once __DIR__.'/bootstrap.php';
 $transferEnvironment=Paymenter\Extensions\Servers\Domains\Data\Environment::Live; // All transports remain synthetic.
 require __DIR__.'/Support/transfer-fixture.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Data\{Environment, HistoryAcceptance};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
+use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RegistrarRegistry, HistoryAcceptances, OperationReconciliation, RenewalAuthority};
-$observe=(object)['name'=>'','fault'=>'','calls'=>[],'during'=>null];
-$wire=new class($observe) implements Transport {
-    public function __construct(private $s){}
-    public function send(Environment $e, ReadCommand $command, array $p, string $uid, string $token, int $timeoutMs): string {
-        same(0,DB::transactionLevel(),'Observation outside locks'); expect($timeoutMs>0 && $timeoutMs<=25000,'Bounded observation'); $s=$this->s; $s->calls[]=$command->value;
-        if ($s->during) { $hook=$s->during; $s->during=null; $hook(); }
-        if ($command === ReadCommand::Nameservers && $s->fault === 'dns-cap') { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit; }
-        if ($command === ReadCommand::Nameservers && $s->fault === 'dns-transport') { throw new RuntimeException('Synthetic transport failure'); }
-        if ($command === ReadCommand::Nameservers && in_array($s->fault, ['dns-refused', 'dns-refused-strict'], true)) {
-            return '<interface-response><Command>GetDNS</Command><ErrCount>1</ErrCount><Done>true</Done><errors><Err1>DNS read refused</Err1></errors></interface-response>';
-        }
-        $expiry=$s->fault==='short'?'2027-01-01':'2028-01-01'; $owner=in_array($s->fault,['owner','reject','reject_charge'],true)?'other-account':'account-enom';
-        $item='<Description>'.$s->name.'</Description><ProductType>Transfer</ProductType><Quantity>1</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>8.95</AmountPaid><ExpiryDateTime>'.$expiry.'</ExpiryDateTime>';
-        [$label,$tld]=explode('.',$s->name,2); $header=str_starts_with($s->fault,'reject')?'2':($s->fault==='pending'?'5':'3'); $detail=str_starts_with($s->fault,'reject')?'32':($s->fault==='pending'?'100':'5');
-        $data=match($command){
-            ReadCommand::Info=>'<GetDomainInfo><DomainName DomainNameID="456">'.$s->name.'</DomainName><Status><Belongs-To>'.$owner.'</Belongs-To><Expiration>'.$expiry.'</Expiration></Status></GetDomainInfo>',
-            ReadCommand::Nameservers=>match ($s->fault) {
-                'dns-malformed' => '<dns>invalid hostname</dns>',
-                'dns-duplicate' => '<dns>ns1.provider.example</dns><dns>ns1.provider.example</dns>',
-                'dns-shape' => '<dns><host>ns1.provider.example</host></dns>',
-                default => '<dns>ns1.provider.example</dns><dns>ns2.provider.example</dns>',
-            },
-            ReadCommand::Expiry=>$s->fault==='expiry'?'':'<ExpirationDate>'.$expiry.'</ExpirationDate>',
-            ReadCommand::Renewal=>'<RenewName>0</RenewName>', ReadCommand::Lock=>'<Reg-Lock>1</Reg-Lock>',
-            ReadCommand::Privacy=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
-            ReadCommand::Transfer=>$s->fault==='status'?'':'<TransferOrder><TransferOrderID>7001</TransferOrderID><StatusID>'.$header.'</StatusID><TransferOrderDetail><SLD>'.$label.'</SLD><TLD>'.$tld.'</TLD><StatusID>'.$detail.'</StatusID></TransferOrderDetail></TransferOrder>',
-            ReadCommand::Orders=>'<OrderCount>1</OrderCount><OrderList><Order><OrderID>9001</OrderID></Order></OrderList>',
-            // A clean rejection has complete history whose only order is for another domain.
-            ReadCommand::Order=>$s->fault==='reject'?'<Order><OrderID>9001</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>10/18/2026 5:00:01 AM</BillDate><OrderDetail>'.str_replace($s->name,'unrelated-'.$s->name,$item).'</OrderDetail></Order>'
-                :(in_array($s->fault,['charge','reject_owned'],true)?'':'<Order><OrderID>9001</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>10/18/2026 '.($s->fault==='late'?'5:10:00':'5:00:01').' AM</BillDate><OrderDetail>'.$item.'</OrderDetail>'.($s->fault==='duplicate'?'<OrderDetail>'.$item.'</OrderDetail>':'').'</Order>'),
-            default=>throw new LogicException('Unexpected observation command'),
-        };
-        return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$data.'</interface-response>';
-    }
-};
+require __DIR__.'/Support/transfer-enom-observation.php';
+$observe->beforeRead=static fn()=>same(0,DB::transactionLevel(),'Observation outside locks');
 $registry=new RegistrarRegistry; $registry->register('enom',['token'],$verifier,fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Client($b,'account-enom',$c['token'],$wire),['com']));
 $readBindings=new AccountBindings($registry); $reconcile=new OperationReconciliation($claims,$readBindings,$clock);
 $prepare=static function($name)use($newTransfer,$makeTransfer,&$engine,&$binding,$clock,$now,$state,$observe){
@@ -82,7 +50,7 @@ foreach ([new Error('DNS admission error'), new TypeError('DNS admission type er
     same([$proofCommands, 10, 9, $money, $writes], [$observe->calls, $limiter->calls, $limiter->released, $nativeMoney(), $state->calls],
         'Transfer reaches optional admission only after proof, without a DNS wire or purchase');
 }
-$op = $prepare(placeholderComFixtureName('dns-refusal-transfer-placeholder.com'));
+// Reuse the sealed attempt for read-only DNS variations. No completion is persisted here.
 $attempt = \Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence::attempt($op, $op->domain, $binding);
 foreach (['refused', 'refused-strict', 'transport', 'malformed', 'duplicate', 'shape'] as $fault) {
     $observe->fault = 'dns-'.$fault; $observe->calls = [];
@@ -165,8 +133,7 @@ foreach (['cap', 'deferred', 'observed'] as $fault) {
         }
     }
 }
-$op = $prepare(placeholderComFixtureName('dns-unproven-transfer-placeholder.com'));
-$observe->fault = 'charge';
+$observe->fault = 'charge'; $observe->calls = [];
 $attempt = \Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence::attempt($op, $op->domain, $binding);
 $context = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding, \Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,
     $clock->now()->modify('+250 seconds'), new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(25), $clock);
@@ -174,7 +141,7 @@ $facts = $readBindings->reader($binding->serverId)->reconcile($attempt, $context
 same(null, \Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence::completion($attempt, $facts, $clock->now()), 'Missing charge cannot prove completion');
 same(null, $facts->domain->nameservers, 'Unproven completion never enriches DNS');
 expect(!in_array('GetDNS', $observe->calls, true), 'Missing financial proof never reads DNS');
-$op = $prepare(placeholderComFixtureName('dns-preproof-transfer-placeholder.com'));
+$observe->fault = ''; $observe->calls = [];
 $attempt = \Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence::attempt($op, $op->domain, $binding); $limiter = new WireLimit(8);
 $context = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,
     \Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background, $clock->now()->modify('+250 seconds'),
@@ -192,14 +159,13 @@ same('observed',$r->domain->fresh()->observation['nameservers']['state']??null,'
 same(null,App\Models\Service::find($r->service_id)->expires_at,'Native expiry disabled'); expect(RenewalAuthority::completed($r,$r->domain,$binding),'Transfer anchor accepted by renewal consumers');
 $completed=$r; $calls=$observe->calls; $reconcile->run($r->id); same($calls,$observe->calls,'Completion refresh sends nothing');
 $copy=clone $r; $copy->attempt=[...$copy->attempt,'reconciliation'=>[...$copy->attempt['reconciliation'],'transfer_status'=>'pending']]; expect(!RenewalAuthority::completed($copy,$copy->domain,$binding),'Succeeded label lacks status proof');
-foreach (['pending','status','charge','duplicate','short','owner','expiry','late','nohistory','reversed','race','reject_owned','reject_charge'] as $fault) {
+foreach (['charge','reversed','race','reject_owned','reject_charge'] as $fault) {
     $op=$prepare(placeholderComFixtureName('unresolved-transfer-'.str_replace('_','-',$fault).'-placeholder.com')); $observe->fault=$fault;
-    if ($fault==='nohistory') { App\Models\Server::find($op->server_id)->settings()->where('key',HistoryAcceptances::KEY.'_transfer')->delete(); }
     if ($fault==='reversed') { App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'-0.01','fee'=>'0.00','status'=>'succeeded']); }
     if ($fault==='race') { $observe->during=fn()=>App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'-0.01','fee'=>'0.00','status'=>'succeeded']); }
     $r=$reconcile->run($op->id); same('uncertain',$r->state,'Missing/contradictory evidence stays unresolved'); same(null,$r->domain->provider_expires_at,'No inferred expiry'); same(null,$r->cost['actual']??null,'No inferred charge');
     same(null,$r->domain->fresh()->observation['nameservers']??null,'Unproven Enom transfers do not save nameserver facts');
-    if (in_array($fault,['pending','status','owner','reject','reject_charge','reject_owned'],true)) { expect(!in_array('GetDNS',$observe->calls,true),'Nameservers are read only after completed transfer ownership'); }
+    if (in_array($fault,['reject_charge','reject_owned'],true)) { expect(!in_array('GetDNS',$observe->calls,true),'Nameservers are read only after completed transfer ownership'); }
     same(null,$r->attempt['transfer_terminal']??null,'Contradictory facts never become terminal');
     if (str_starts_with($fault,'reject')) { same('transfer_rejection_contradiction',$r->policy['reconciliation']['reason'],'Rejection contradiction retained'); }
 }
@@ -212,10 +178,8 @@ $op=$prepare(placeholderComFixtureName('unreconciled-rejected-transfer-placehold
 App\Models\Server::find($op->server_id)->settings()->where('key',HistoryAcceptances::KEY.'_transfer')->delete(); $r=$reconcile->run($op->id);
 same('uncertain',$r->state,'Unreconciled rejection is not terminal'); same(null,$r->attempt['transfer_terminal']??null,'No terminal evidence without charge history');
 same('transfer_rejection_unreconciled',$r->policy['reconciliation']['reason'],'Staff see why it stays open'); expect($r->domain->status!=='transfer_rejected','Domain not marked rejected yet');
-// Unknown baseline is advisory for sending, never a made-up full-term anchor.
-$clock->instant=$now; $op=$newTransfer(placeholderComFixtureName('missing-transfer-baseline-placeholder.com')); $makeTransfer(); $state->rdapUnknown=true; $r=$engine->execute($op->id);
-$observe->name=$op->domain->domain; $observe->fault=''; $clock->instant=$now->modify('+6 minutes');
-same('uncertain',$reconcile->run($op->id)->state,'Missing original expiry cannot establish added year');
+// Missing RDAP baseline dispatch is covered by transfer-dispatch-test.php; the completion
+// decision is covered without checkout in transfer-evidence-test.php.
 // Slice25 renewal authority accepts the exact completed transfer anchor.
 $renewalFacts=(new RenewalAuthority($bindings,$clock))->capture(new Paymenter\Extensions\Servers\Domains\Data\RenewalRequest($completed->domain_id,$completed->authority_generation,$completed->domain->confirmed_revision,'2028-01-01','456'));
 same($completed->domain->domain,$renewalFacts[1],'Transfer anchor admitted by execution consumer');
