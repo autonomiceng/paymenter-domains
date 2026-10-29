@@ -29,7 +29,8 @@ $copy=EnomTestSendLimit::facts('synthetic-uid');
 if(!str_contains($copy,"Couldn't read the Enom test send count")||!str_contains($copy,'refused')){$problems[]='An unreadable count must say sends are refused';}
 // One label covers every unsent TEST limit refusal: a bad setting, an unreadable count or a reached limit.
 foreach(['enom_test_call_cap','enom_test_transfer_call_cap','enom_test_management_call_cap','enom_test_renewal_call_cap'] as $code){
-    if(str_contains((string)Labels::reason($code),'reached')){$problems[]='An unsent Enom test refusal must not claim the limit was reached';}
+    $label=(string)Labels::reason($code);
+    if(!str_starts_with($label,'Not sent: ')||str_contains($label,'reached')){$problems[]='An unsent Enom test refusal must say it was not sent without claiming the limit was reached';}
 }
 // Background reads share the send limit: it is per login, over a rolling 24 hours and per minute.
 $copy=SettingsActions::description('test_management');
