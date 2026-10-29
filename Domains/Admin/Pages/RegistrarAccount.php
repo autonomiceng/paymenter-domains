@@ -63,7 +63,7 @@ class RegistrarAccount extends Page
         Staff::requireView();$code=app(Balances::class)->refresh($this->account);$live=$this->record()?->environment==='live';
         $toast=Notification::make()->title(match($code){'refreshed'=>'Balance updated','rate_limited'=>'Wait a minute before checking again.',default=>"Couldn't check balance"})
             ->body(match($code){'configuration_unavailable'=>'Check the account settings in the Setup checklist.',
-                'test_call_refused'=>$live?'Our daily call cap reached. Check our safety limits on the account page.':EnomTestSendLimit::facts(($record=$this->record())?EnomTestSendLimit::login($record):null),default=>null});
+                'test_call_refused'=>$live?'Our live Enom safety check stopped this request. Check our daily safety limits on this page.':EnomTestSendLimit::facts(($record=$this->record())?EnomTestSendLimit::login($record):null),default=>null});
         match($code){'refreshed'=>$toast->success(),'rate_limited'=>$toast->warning(),default=>$toast->danger()};
         $toast->send();
     }

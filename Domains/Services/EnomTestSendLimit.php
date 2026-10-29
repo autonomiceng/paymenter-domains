@@ -63,10 +63,10 @@ final class EnomTestSendLimit
     public static function facts(?string $uid): string
     {
         $u=self::usage((string)$uid);
-        if($u['day_limit']===null||$u['minute_limit']===null){return 'The Enom test send limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.';}
-        if($u['day_limit']===0||$u['minute_limit']===0){return 'The Enom test send limit is 0, so no Enom test requests are sent.';}
-        if($uid===null||$uid===''){return 'Enom test requests are limited per login to '.$u['day_limit'].' in any 24 hours and '.$u['minute_limit'].' per minute.';}
-        if($u['day']===null){return "Couldn't read the Enom test send count, so Enom test requests are refused. Try again.";}
+        if($u['day_limit']===null||$u['minute_limit']===null){return 'Our TEST send limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.';}
+        if($u['day_limit']===0||$u['minute_limit']===0){return 'Our TEST send limit is 0, so no Enom test requests are sent.';}
+        if($uid===null||$uid===''){return 'Our TEST send limit allows '.$u['day_limit'].' Enom test requests per login in any 24 hours and '.$u['minute_limit'].' per minute.';}
+        if($u['day']===null){return "Couldn't read our TEST send count, so no Enom test requests are sent. Try again.";}
         $summary=$u['day'].' of '.$u['day_limit'].' sends in the last 24 hours and '.$u['minute'].' of '.$u['minute_limit'].' in the last minute for this login. Failed sends count too.';
         return $u['day']>=$u['day_limit']||$u['minute']>=$u['minute_limit']?$summary.' Limit reached. Try again later.':$summary;
     }
