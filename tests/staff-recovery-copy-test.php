@@ -3,7 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/FakeRegistrar.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Labels,SettingsActions};
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueImportFailure,EnomTestCallLimit,EnomTestSendLimit,EnomTestSendLimitSchema,ReadFailure};
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-24T12:00:00Z')));
@@ -27,5 +27,9 @@ expect(str_ends_with(EnomTestSendLimit::facts('synthetic-uid'),'Limit reached. T
 DB::statement('DROP TABLE '.EnomTestSendLimitSchema::SENDS);
 $copy=EnomTestSendLimit::facts('synthetic-uid');
 if(!str_contains($copy,"Couldn't read the Enom test send count")||!str_contains($copy,'refused')){$problems[]='An unreadable count must say sends are refused';}
+// One label covers every unsent TEST limit refusal: a bad setting, an unreadable count or a reached limit.
+foreach(['enom_test_call_cap','enom_test_transfer_call_cap','enom_test_management_call_cap','enom_test_renewal_call_cap'] as $code){
+    if(str_contains((string)Labels::reason($code),'reached')){$problems[]='An unsent Enom test refusal must not claim the limit was reached';}
+}
 expect($problems===[],implode('; ',array_unique($problems)));
 echo "Staff import and send count recovery copy passed.\n";$nativeSuccessful=true;

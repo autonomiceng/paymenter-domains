@@ -108,7 +108,7 @@ $notice=DomainFacts::notice($held);
 same(['Transfer not sent: old registrar needs approval.','Open request #'.$held->operations()->sole()->id],[$notice['title'],$notice['action']['label']],'Held request notice');
 $heldOperation=$held->operations()->sole();$noticeOriginal=$heldOperation->getRawOriginal();
 foreach(['register'=>'Registration','transfer'=>'Transfer'] as $action=>$label){
-    foreach(['enom_test_call_cap'=>'Enom test send limit reached','transfer_needs_action'=>'old registrar needs approval'] as $code=>$cause){
+    foreach(['enom_test_call_cap'=>'Enom test request refused','transfer_needs_action'=>'old registrar needs approval'] as $code=>$cause){
         DB::table('domains_operations')->where('id',$heldOperation->id)->update(['action'=>$action,'safe_code'=>$code]);
         same($label.' not sent: '.$cause.'.',DomainFacts::notice($held->fresh())['title'],'Held notice preserves brand and ordinary sentence case');
         Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee($label.' not sent: '.$cause.'.');

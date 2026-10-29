@@ -59,7 +59,7 @@ same(['purchase',$clock->now()->format(DATE_ATOM),['amount'=>'99.00','currency'=
     [$refusal['phase'],$refusal['refused_at'],$refusal['authorized_cost']],'Persisted refusal retains the purchase time and authorized USD cost');
 expect(is_string($refusal['dispatch_attempted_at'])&&$refusal['dispatch_attempted_at']!=='','Persisted refusal retains the prior seal time');
 expect(is_array($historyOperation->policy['checkout'])&&$historyOperation->policy['checkout']!==[],'Persisted hidden policy retains checkout evidence');
-same('Not sent: Enom test send limit reached',Labels::requestStatus($historyOperation)['reason'],'Staff History shows the safe refusal reason');
+same('Not sent: Enom test request refused',Labels::requestStatus($historyOperation)['reason'],'Staff History shows the safe refusal reason');
 // getAttribute decrypts hidden attempt/policy fields that toArray would omit.
 $attributes=[];
 foreach(array_keys($historyOperation->getAttributes()) as $attribute){$attributes[$attribute]=$historyOperation->getAttribute($attribute);}
