@@ -58,7 +58,7 @@ final class CartHandoffFailure
         ],
         RuntimeIneligible::class => ['Registrar processing is disabled.' => 'processing_disabled'],
         ReadDeferred::class => ['Account read budget unavailable.' => 'account_read_budget_unavailable'],
-        EnomTestCallLimit::class => ['Enom TEST daily call limit, counter, or UTC day change refused the send.' => 'test_call_limit'],
+        EnomTestCallLimit::class => ['Our safety guard stopped this Enom request: our daily call cap, counter, or UTC day check failed.' => 'test_call_limit'],
         IdentityRefused::class => [
             'identity_credentials_refused' => 'identity_credentials_refused',
             'identity_unavailable' => 'identity_unavailable',

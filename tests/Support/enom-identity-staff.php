@@ -26,7 +26,7 @@ $configure=static function(#[SensitiveParameter] array $input, bool $success=tru
             :($success?'Saved':"Couldn't save"))->assertSet('mountedActions',[]);
 };
 Log::spy();config(['domains.enom_test_daily_call_cap'=>0]);$calls=count($GLOBALS['identityCalls']);
-$configure([],false,'Enom TEST request refused before sending. '.Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::facts());
+$configure([],false,'Our own safety guard stopped this Enom TEST request before sending. '.Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::facts());
 same($calls,count($GLOBALS['identityCalls']),'Staff sees identity cap refusal without a provider send');expect(Account::where('server_id',$server->id)->doesntExist(),'Cap refusal saves no unverified account for this server');
 config(['domains.enom_test_daily_call_cap'=>50]);$calls=count($GLOBALS['identityCalls']);$configure([]);same($calls+1,count($GLOBALS['identityCalls']),'Staff verification exactly one read');
 $a=Account::where('server_id',$server->id)->sole();same('secret-uid',$a->stable_identity,'Encrypted verified UID');same(false,$a->processing_enabled,'Processing stays off');

@@ -59,7 +59,17 @@ same(['purchase',$clock->now()->format(DATE_ATOM),['amount'=>'99.00','currency'=
     [$refusal['phase'],$refusal['refused_at'],$refusal['authorized_cost']],'Persisted refusal retains the purchase time and authorized USD cost');
 expect(is_string($refusal['dispatch_attempted_at'])&&$refusal['dispatch_attempted_at']!=='','Persisted refusal retains the prior seal time');
 expect(is_array($historyOperation->policy['checkout'])&&$historyOperation->policy['checkout']!==[],'Persisted hidden policy retains checkout evidence');
-same('Not sent: Enom test daily limit reached',Labels::requestStatus($historyOperation)['reason'],'Staff History shows the safe refusal reason');
+same('Not sent: our daily call cap reached',Labels::requestStatus($historyOperation)['reason'],'Staff History shows the safe refusal reason');
+// Reuse the held operation to exercise the real account mode lookup used by staff History.
+DB::table('domains_accounts')->where('server_id',$historyOperation->server_id)->update(['environment'=>'live']);
+app('request')->attributes->remove('domains.account.environment.'.$historyOperation->server_id);
+same('Not sent: our daily call cap reached',Labels::requestStatus($historyOperation)['reason'],'Live History keeps ownership of our safety cap');
+DB::table('domains_accounts')->where('server_id',$historyOperation->server_id)->update(['environment'=>'test']);
+app('request')->attributes->remove('domains.account.environment.'.$historyOperation->server_id);
+foreach(['write_rate_limited','renewal_rate_limited'] as $code){
+    $limited=clone $historyOperation;$limited->safe_code=$code;
+    same('Not sent: our request safety limit reached',Labels::requestStatus($limited)['reason'],'Local request guards keep ownership of their limit');
+}
 // getAttribute decrypts hidden attempt/policy fields that toArray would omit.
 $attributes=[];
 foreach(array_keys($historyOperation->getAttributes()) as $attribute){$attributes[$attribute]=$historyOperation->getAttribute($attribute);}

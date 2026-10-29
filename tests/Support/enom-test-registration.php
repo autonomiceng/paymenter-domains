@@ -34,7 +34,7 @@ $write('import',['ending'=>'com']);$tld=Tld::where('server_id',$server->id)->sol
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);
 $write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id);
 same(7,count($GLOBALS['enomWire']['forms']),'Identity, probe and annual import total seven reads');same(7,(int)DB::table(EnomTestCallSchema::TABLE)->value('used'),'Every setup call counted');same(50,EnomTestCalls::limit(),'Default cap fifty');
-same('7 / 50 used today (UTC), shared by all Enom TEST accounts. Every reserved request counts, including ones that failed, timed out or were stopped before sending.',EnomTestCalls::facts(),'Staff sees current shared TEST call usage');
+same('7 / 50 of our daily call cap used today (UTC), shared by all Enom TEST accounts. This is a safety limit we set. Every reserved request counts, including ones that failed, timed out or were stopped before sending.',EnomTestCalls::facts(),'Staff sees current shared TEST call usage');
 same(EnomTestCalls::facts().' Calls remain today, but a counter error or UTC day change refused the request. Ask the deployment administrator to repair the counter if the refusal continues after the UTC day changes.',EnomTestCalls::refusedFacts(),'Refusal facts explain a refusal while calls remain');
  $catalogueUsed=(int)DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');config(['domains.enom_test_daily_call_cap'=>$catalogueUsed+1]);$beforeImport=count($GLOBALS['enomWire']['forms']);
 try{$write('import',['ending'=>'com']);throw new LogicException('A mid-import TEST cap refusal must reach staff.');}catch(EnomTestCallLimit){}
@@ -42,7 +42,7 @@ same($catalogueUsed+1,(int)DB::table(EnomTestCallSchema::TABLE)->where('day',Eno
 same($beforeImport+1,count($GLOBALS['enomWire']['forms']),'Mid-import cap stops before the next catalogue request');config(['domains.enom_test_daily_call_cap'=>50]);
 expect(EnomTestCalls::callsRemain(),'Counter reports available calls below the configured limit');config(['domains.enom_test_daily_call_cap'=>7]);
 expect(!EnomTestCalls::callsRemain(),'Counter reports no calls at the configured limit');config(['domains.enom_test_daily_call_cap'=>50]);
-same('Enom TEST daily call limit, counter, or UTC day change refused the send.',(new EnomTestCallLimit)->getMessage(),'Internal refusal names the daily cap and rollover');
+same('Our safety guard stopped this Enom request: our daily call cap, counter, or UTC day check failed.',(new EnomTestCallLimit)->getMessage(),'Internal refusal names the daily cap and rollover');
 EnomTestCalls::reserve(Environment::Live);same($catalogueUsed+1,(int)DB::table(EnomTestCallSchema::TABLE)->value('used'),'Live requests do not use the TEST counter');
 $reader=$bindings->reader($server->id,true);$generalReader=$bindings->reader($server->id);
 $readContext=new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Interactive,
@@ -237,8 +237,8 @@ $before=count($GLOBALS['enomWire']['forms']);$worker->operation($capOp->id);same
 same(1,count($capOp->fresh()->attempt['test_call_refusals']??[]),'Refused claim retained as retryable cap evidence');expect(!isset($capOp->fresh()->attempt['claim_key'],$capOp->fresh()->attempt['seal']),'No uncertain or sealed attempt remains');
 try{$capOp->fresh()->update(['attempt'=>[]]);throw new LogicException('Refusal history cannot be erased.');}catch(DomainException){}
 same(1,count($capOp->fresh()->attempt['test_call_refusals']??[]),'Cap refusal history remains append-only');
-same('Not sent: Enom test daily limit reached',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('enom_test_call_cap'),'Staff wording directs safe cap recovery and states the USD evidence requirement');
-expect(str_contains(EnomTestCalls::facts(),'Limit reached; Enom TEST requests are refused until 00:00 UTC'),'Staff sees the exhausted positive limit and reset time');
+same('Not sent: our daily call cap reached',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('enom_test_call_cap'),'Staff wording directs safe cap recovery and states the USD evidence requirement');
+expect(str_contains(EnomTestCalls::facts(),'Our daily call cap reached; Enom TEST requests are refused until 00:00 UTC'),'Staff sees the exhausted positive limit and reset time');
 $capViewer=Auth::user();Auth::setUser($staff);
 expect(OperationActions::relevant('release',$capOp->fresh()),'Retained registration cap proof offers release');
 same('release',RequestFacts::notice($capOp->fresh())['action']??null,'Retained registration cap notice offers release');
@@ -274,7 +274,7 @@ config(['domains.enom_test_daily_call_cap'=>500]);$refundOp=$new(placeholderComF
 $worker->operation($refundOp->id);same(['held','enom_test_call_cap'],[$refundOp->fresh()->state,$refundOp->fresh()->safe_code],'Refund case starts from a proven-unsent cap hold');
 same(['amount'=>$refundOp->amount,'currency'=>'USD'],app(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class)->refundHeld($staff,$refundOp->id,'enom_test_call_cap'),'Cap-held operation can be refunded exactly once');
 expect(isset($refundOp->fresh()->funding['refund']),'Cap refusal history remains valid through account credit');
-config(['domains.enom_test_daily_call_cap'=>0]);expect(str_contains(EnomTestCalls::facts(),'Daily limit is 0; all Enom TEST requests are refused.'),'Zero limit wording is accurate');expect(!EnomTestCalls::callsRemain(),'Zero limit has no retry path');$beforeCalls=count($GLOBALS['enomWire']['forms']);$beforeUsed=(int)DB::table(EnomTestCallSchema::TABLE)->value('used');
+config(['domains.enom_test_daily_call_cap'=>0]);expect(str_contains(EnomTestCalls::facts(),'Our daily call cap is 0; all Enom TEST requests are refused.'),'Zero limit wording is accurate');expect(!EnomTestCalls::callsRemain(),'Zero limit has no retry path');$beforeCalls=count($GLOBALS['enomWire']['forms']);$beforeUsed=(int)DB::table(EnomTestCallSchema::TABLE)->value('used');
 $balanceBeforeRefusal=DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->first();
 $capRead=static fn()=>new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),
     new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(1),$clock,Runtime::limiter());
@@ -284,7 +284,7 @@ same($beforeUsed,(int)DB::table(EnomTestCallSchema::TABLE)->value('used'),'Zero 
 $clock->at=$clock->at->modify('+61 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();
 $beforeCalls=count($GLOBALS['enomWire']['forms']);$evidenceBefore=array_intersect_key((array)$balanceBeforeRefusal,array_flip(['amount','currency','source','attempted_at','read_at','last_error_code']));
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
-    ->callAction('check_balance')->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't check balance")->body('Enom test daily limit reached. Try again after 00:00 UTC.'));
+    ->callAction('check_balance')->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't check balance")->body('Our daily call cap reached. Try again after 00:00 UTC.'));
 same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Staff Refresh now honors the exhausted cap before transport');
 $evidenceAfter=DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->first();
 same($evidenceBefore,array_intersect_key((array)$evidenceAfter,array_flip(['amount','currency','source','attempted_at','read_at','last_error_code'])),'Staff cap refusal preserves the prior successful USD evidence');

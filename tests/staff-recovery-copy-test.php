@@ -21,7 +21,7 @@ $copy=EnomTestCalls::refusedFacts();
 if(str_contains($copy,'you can retry')||!str_contains($copy,'repair')||!str_contains($copy,'UTC day')){$problems[]='Readable remaining calls must explain repair or UTC day rollover without promising a retry';}
 $fault=false;same(2,(int)DB::table(EnomTestCallSchema::TABLE)->value('used'),'Refused write rolls back the counter');
 DB::table(EnomTestCallSchema::TABLE)->update(['used'=>10]);
-expect(str_contains(EnomTestCalls::refusedFacts(),'Limit reached'),'Exhaustion retains its daily limit recovery');
+expect(str_contains(EnomTestCalls::refusedFacts(),'Our daily call cap reached'),'Exhaustion retains its daily limit recovery');
 DB::statement('DROP TABLE '.EnomTestCallSchema::TABLE);
 $copy=EnomTestCalls::refusedFacts();
 if(!str_contains($copy,'repair')||!str_contains($copy,'read and updated')){$problems[]='Unreadable counter requires repair of both reads and writes';}

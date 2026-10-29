@@ -63,7 +63,7 @@ class RegistrarAccount extends Page
         Staff::requireView();$code=app(Balances::class)->refresh($this->account);$live=$this->record()?->environment==='live';
         $toast=Notification::make()->title(match($code){'refreshed'=>'Balance updated','rate_limited'=>'Wait a minute before checking again.',default=>"Couldn't check balance"})
             ->body(match($code){'configuration_unavailable'=>'Check the account settings in the Setup checklist.',
-                'test_call_refused'=>$live?'Enom API limit reached. Try again later.':self::testRefusal(),default=>null});
+                'test_call_refused'=>$live?'Our daily call cap reached. Check our safety limits on the account page.':self::testRefusal(),default=>null});
         match($code){'refreshed'=>$toast->success(),'rate_limited'=>$toast->warning(),default=>$toast->danger()};
         $toast->send();
     }
@@ -71,8 +71,8 @@ class RegistrarAccount extends Page
     {
         try {
             if(\Paymenter\Extensions\Servers\Domains\Services\EnomTestRunBudget::enabled()){return EnomTestCalls::refusedFacts();}
-            if (EnomTestCalls::usage()['limit']===null) { return 'The Enom test call limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.'; }
-            return EnomTestCalls::callsRemain()?"Couldn't count Enom test calls. Try again.":'Enom test daily limit reached. Try again after 00:00 UTC.';
+            if (EnomTestCalls::usage()['limit']===null) { return 'Our daily call cap in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.'; }
+            return EnomTestCalls::callsRemain()?"Couldn't count Enom test calls. Try again.":'Our daily call cap reached. Try again after 00:00 UTC.';
         } catch (\Throwable) {
             return 'Enom TEST run budget unavailable; requests are refused.';
         }

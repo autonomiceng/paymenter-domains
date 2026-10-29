@@ -115,9 +115,9 @@ final class EnomTestCalls
         if(!is_int($limit)||$limit<0){return 'Deployment setting domains.enom_test_daily_call_cap is invalid; all Enom TEST requests are refused. Contact the deployment administrator.';}
         try {
             $used=(int)(DB::table(EnomTestCallSchema::TABLE)->where('day',self::day())->value('used')??0);
-            if($limit===0){return 'Daily limit is 0; all Enom TEST requests are refused. '.$used.' used today (UTC).';}
-            $summary=$used.' / '.$limit.' used today (UTC), shared by all Enom TEST accounts. Every reserved request counts, including ones that failed, timed out or were stopped before sending.';
-            return $used>=$limit?$summary.' Limit reached; Enom TEST requests are refused until 00:00 UTC or until the deployment raises the limit.':$summary;
+            if($limit===0){return 'Our daily call cap is 0; all Enom TEST requests are refused. '.$used.' used today (UTC).';}
+            $summary=$used.' / '.$limit.' of our daily call cap used today (UTC), shared by all Enom TEST accounts. This is a safety limit we set. Every reserved request counts, including ones that failed, timed out or were stopped before sending.';
+            return $used>=$limit?$summary.' Our daily call cap reached; Enom TEST requests are refused until 00:00 UTC or until the deployment raises our cap.':$summary;
         } catch (\Throwable) { return 'Enom TEST call counter unavailable; all Enom TEST requests are refused until the counter can be read and updated. Ask the deployment administrator to repair it.'; }
     }
     /** Staff refusal facts; explains a refusal while calls remain (counter error or UTC day change). */
