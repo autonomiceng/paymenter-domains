@@ -31,5 +31,8 @@ if(!str_contains($copy,"Couldn't read the Enom test send count")||!str_contains(
 foreach(['enom_test_call_cap','enom_test_transfer_call_cap','enom_test_management_call_cap','enom_test_renewal_call_cap'] as $code){
     if(str_contains((string)Labels::reason($code),'reached')){$problems[]='An unsent Enom test refusal must not claim the limit was reached';}
 }
+// Background reads share the send limit: it is per login, over a rolling 24 hours and per minute.
+$copy=SettingsActions::description('test_management');
+if(str_contains($copy,'daily')||!str_contains($copy,'login')||!str_contains($copy,'24 hours')||!str_contains($copy,'per minute')){$problems[]='TEST management acceptance must describe the per-login 24-hour and per-minute send limit';}
 expect($problems===[],implode('; ',array_unique($problems)));
 echo "Staff import and send count recovery copy passed.\n";$nativeSuccessful=true;
