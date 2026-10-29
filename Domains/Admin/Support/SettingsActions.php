@@ -247,7 +247,7 @@ final class SettingsActions
             $accepted=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);$today=\Paymenter\Extensions\Servers\Domains\Services\PriceSync::callsToday($binding);
             if($accepted->endings===[]||$today===null||$today['limit']<1){return $text;}
             $calls=\Paymenter\Extensions\Servers\Domains\Services\PriceSync::batchedCalls($accepted,array_keys($accepted->endings));
-            return $text.' Uses about '.$calls.' of today\'s '.$today['limit'].' registrar calls (a safety limit you set).';
+            return $text.' Uses about '.$calls.' of '.$today['limit'].' registrar calls allowed '.($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Test?'in any 24 hours':'today').' (a safety limit you set).';
         }catch(\Throwable){return $text;}
     }
     public static function syncAll(int $server,bool $named=false): Action
