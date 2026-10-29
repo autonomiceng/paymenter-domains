@@ -133,6 +133,34 @@ class InstalledPhaseTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_keep_going_reports_all_failures_but_stops_for_runtime_changes(self):
+        for jobs in [1, 2]:
+            for mutate in [False, True]:
+                with self.subTest(jobs=jobs, mutate=mutate), tempfile.TemporaryDirectory() as temp:
+                    root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
+                    runtime = root/'Domains/Probe.php'; runtime.write_text('<?php // original')
+                    commands = []
+                    for index, code in enumerate([1, 0, 2, 0]):
+                        # Exercise the installed-test barrier without building an application fixture.
+                        path = root/('test_installed_probe.py' if index == 0 else f'probe{index}.py')
+                        path.write_text(("from pathlib import Path; Path('Domains/Probe.php').write_text('<?php // changed'); "
+                                         if mutate and index == 0 else '') + f'raise SystemExit({code})\n')
+                        commands.append(('provider', [sys.executable, str(path)]))
+                    with mock.patch.object(runner, 'ROOT', root), \
+                         contextlib.redirect_stdout(io.StringIO()) as stdout:
+                        self.assertEqual(runner.run(commands, dict(os.environ), output, ['provider'], {},
+                                                    jobs=jobs, keep_going=True), 1)
+                    receipt = json.loads((output/'receipt.json').read_text())
+                    expected = commands[:1] if mutate else commands
+                    self.assertEqual([row['argv'] for row in receipt['results']], [argv for _, argv in expected])
+                    self.assertFalse(receipt['complete'])
+                    summary = json.loads(stdout.getvalue().splitlines()[-1])
+                    self.assertEqual([row['argv'] for row in summary['failed_commands']],
+                                     [argv for index, (_, argv) in enumerate(expected) if index in [0, 2]])
+                    self.assertEqual(summary['commands_run'], len(expected))
+                    self.assertEqual(summary['commands_planned'], len(commands))
+                    self.assertEqual(summary['failed_commands'][0]['runtime_unchanged'], not mutate)
+
     def test_ote_output_resolves_symlinked_tmpdir(self):
         spec = importlib.util.spec_from_file_location('ote_contract', ROOT/'scripts/ote-contract.py')
         ote = importlib.util.module_from_spec(spec); spec.loader.exec_module(ote)
@@ -648,7 +676,7 @@ class RunnerTests(unittest.TestCase):
             with self.subTest(requested=requested), tempfile.TemporaryDirectory() as temp, \
                  mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine'}), \
                  mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
-                 mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', '--only', *requested]), \
+                 mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', '--keep-going', '--only', *requested]), \
                  mock.patch.object(runner.native, 'prepare', return_value={'source': 'digest'}) as native_prepare, \
                  mock.patch.object(runner, 'prepare', return_value=(Path(temp)/'runtime', Path(temp)/'runtime/php', Path(temp)/'runtime/curl.so')) as php_prepare, \
                  mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stdout(io.StringIO()):
@@ -663,6 +691,7 @@ class RunnerTests(unittest.TestCase):
                     php_prepare.assert_called_once_with(native='native' in selected)
                 self.assertEqual(native_prepare.call_count, int('native' in selected))
                 self.assertEqual(run.call_args.kwargs['only'], requested)
+                self.assertTrue(run.call_args.kwargs['keep_going'])
                 if 'native' in selected:
                     self.assertEqual(run.call_args.args[1]['PAYMENTER_TEST_FIXTURE'], str(Path(temp)/'paymenter'))
                     self.assertEqual(run.call_args.args[5], ('pristine', {'source': 'digest'}))

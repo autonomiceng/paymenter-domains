@@ -48,7 +48,10 @@ Clean environment and PHP settings disable URL streams, cURL execution, sockets,
 and mail. Exception arguments are hidden by default; redaction cases explicitly enable them.
 Synthetic namespaced cURL functions inspect configuration without sockets. These are runtime
 guards, not an OS sandbox. SQLite is the only loaded PDO driver in native runs; no database sockets.
-Failure, timeout (60 seconds), or changed runtime bytes stops the run. Timeout termination
+Failure, timeout (60 seconds), or changed runtime bytes stops the run by default.
+Use `scripts/test.py --keep-going --only <test paths>` to run every selected file after test
+failures or timeouts. The final JSON summary lists all failed commands and the run exits nonzero.
+Runtime integrity failures still stop scheduling new files. Timeout termination
 kills the command process group, including nested children, before cleaning up the fixture. Private
 `/tmp/domains-tests-*/receipt.json` records command exits, partial outputs, hashes, omitted and
 unimplemented categories. Setup failures also leave a receipt; final dependency guard failures preserve command results. Laravel suites must explicitly
