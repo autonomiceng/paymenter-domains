@@ -105,7 +105,13 @@ final class EnomTestRunBudget
                     if(!hash_equals($legacy->proof_hash,hash('sha256',$legacy->proof))){throw new EnomTestCallLimit;}
                     $retained=[];
                     foreach(DB::table(EnomTestCallSchema::TABLE)->orderBy('day')->get() as $row){$retained[]=['day'=>$row->day,'used'=>(int)$row->used];}
-                    if($retained!==json_decode($legacy->proof,true,32,JSON_THROW_ON_ERROR)['native']){throw new EnomTestCallLimit;}
+                    $history=json_decode($legacy->proof,true,32,JSON_THROW_ON_ERROR);
+                    if($retained!==$history['native']){throw new EnomTestCallLimit;}
+                    $expected=array_values(array_filter($history['attempts'],static fn($time)=>$time>$now-86400000000));
+                    $actual=DB::table(EnomTestRunBudgetSchema::PERMITS)->where('action','legacy')
+                        ->where('attempt_time','>',$now-86400000000)->pluck('attempt_time')->map(static fn($time)=>(int)$time)->all();
+                    sort($expected,SORT_NUMERIC);sort($actual,SORT_NUMERIC);
+                    if($actual!==$expected){throw new EnomTestCallLimit;}
                     if(!$readOnly && (int)$lock->version===self::CONTRACT){DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['version'=>self::MIGRATED]);$lock->version=self::MIGRATED;}
                 }
                 return $work($lock,$now);

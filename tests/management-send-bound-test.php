@@ -170,7 +170,13 @@ for($i=1;$i<=20;$i++){
 }
 same($failedHistory,count($op->fresh()->attempt['management_reads']??[]),'Failed legacy reads add no completed history');
 same($before+40,count($state->calls),'Twenty failed recovery observations are bounded');
-$management->reconcile($op->id,$driver);$staffRun($op);
+$management->reconcile($op->id,$driver);
+$exhausted=null;
+try{$staffRun($op);}catch(DomainException $error){$exhausted=$error;}
+$audit=$op->fresh()->policy['staff_actions'];
+same('read_failed',end($audit)['phase'],'Exhausted legacy status check must be audited as failed');
+expect($exhausted instanceof DomainException,'Exhausted status check must reach the staff error handler');
+same(20,$op->fresh()->attempt['management_legacy_observation_attempts'],'Exhaustion retains the recovery counter');
 same($before+40,count($state->calls),'Owner/background and exhausted staff entries cannot add sends');
 commerceReject(fn()=>$op->fresh()->update(['attempt'=>[...$op->fresh()->attempt,'management_legacy_observation_attempts'=>1]]));
 commerceReject(fn()=>$op->fresh()->update(['attempt'=>array_diff_key($op->fresh()->attempt,['management_legacy_observation_attempts'=>true])]));

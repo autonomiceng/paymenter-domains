@@ -13,7 +13,7 @@ Account::withVerifiedBindingWrite(static fn()=>Account::create(['server_id'=>1,'
 $fp=(new AccountBinding('enom',1,Environment::Test,'synthetic'))->fingerprint;
 $policy=runPolicy('retained',12,12,$fp);
 DB::table(EnomTestCallSchema::TABLE)->insert(['day'=>'2026-10-27','used'=>3]);
-$history=['native'=>[['day'=>'2026-10-27','used'=>3]],'attempts'=>[1793145599000000,1793145598000000],
+$history=['native'=>[['day'=>'2026-10-27','used'=>3]],'attempts'=>[1793145599000000,1793145599000000],
     'undated_debt'=>2,'source_hash'=>str_repeat('a',64)];
 // Inventory arithmetic must stay exact at the integer boundary.
 foreach([[PHP_INT_MAX,0],[PHP_INT_MAX-3,1]] as [$debt,$credits]){
@@ -31,6 +31,8 @@ runRefuses(fn()=>Budget::prepare($policy,4),'ordinary prepare still cannot silen
 runRefuses(fn()=>Budget::migrateLegacy($policy,$history,8),'Native cap exhaustion leaves no partial import');
 runRefuses(fn()=>Budget::migrateLegacy(runPolicy('retained',12,12,str_repeat('0',64)),$history,4),'Account proof mismatch');
 runRefuses(fn()=>Budget::migrateLegacy($policy,array_replace($history,['native'=>[]]),4),'Native snapshot mismatch');
+// Isolate the rolling cap from the independent lifetime cap.
+$policy=runPolicy('retained',16,12,$fp);
 $s=Budget::migrateLegacy($policy,$history,4);
 same([5,4,5],[$s['used'],$s['remaining'],$s['rolling_used']],'Two attempts plus three conservative debt units');
 same(3,$s['legacy_debt'],'Dated native residual plus undated old-log debt retained');
@@ -39,6 +41,12 @@ same($s,Budget::migrateLegacy($policy,$history,4),'Replay does not issue credits
 runRefuses(fn()=>Budget::migrateLegacy($policy, array_replace($history,['undated_debt'=>1]),4),'Proof cannot change');
 runRefuses(fn()=>Budget::migrateLegacy(runPolicy('other',12,12,$fp),$history,4),'Cannot reimport into a second run');
 Budget::activate($policy);config(['domains.enom_test_run_policy'=>$policy]);
+// Receipt duplicates are two physical attempts, even at the same timestamp.
+$missingLegacy=(array)DB::table(Tables::PERMITS)->where('action','legacy')->first();
+DB::table(Tables::PERMITS)->where('permit_id',$missingLegacy['permit_id'])->delete();
+try{
+    runRefuses(fn()=>Budget::allocate($policy,4,'missing-legacy-attempt'),'A missing imported duplicate cannot free rolling capacity');
+}finally{DB::table(Tables::PERMITS)->insert($missingLegacy);}
 $before=DB::table(Tables::LOCK)->get()->toJson();Budget::status($policy,true);same($history['source_hash'],Budget::legacySourceHash($policy),'Read-only source authentication');same($before,DB::table(Tables::LOCK)->get()->toJson(),'Status/source reads preserve native clock revision');
 // Upgrading old receipts must never normalize an invalid deployment marker.
 $marker=DB::table(Tables::LOCK)->where('id',1)->value('version');

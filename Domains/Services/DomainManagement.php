@@ -236,6 +236,7 @@ final class DomainManagement
                 if(!$reviewed){return null;}
                 $field='management_legacy_observation_attempts';
                 $count=array_key_exists($field,$op->attempt)?$op->attempt[$field]:0;
+                if($count===20){throw new StaffReviewRefused('Status check limit reached.');}
                 if(!is_int($count) || $count<0 || $count>=20){return null;}
             }else{
                 $count=$op->attempt[$field];
