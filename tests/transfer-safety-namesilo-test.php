@@ -1,9 +1,12 @@
 <?php
 // Synthetic NameSilo transfer evidence; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+// Native checkout is needed for payment reversals, contradictory status, refunds and replay.
 require __DIR__.'/Support/transfer-completion-namesilo-fixture.php';
-$unresolved(['retention','baseline','sealedprivacy','reversed','race','expiration','badexpiry','nullexpiry','pending','unknown','rejectowned','rejectcharge','needsowned','needscharge']);
-foreach (['Missing Authorization Code','Incorrect Authorization Code','Domain is Locked','Wait Authorization Code','Domain is Private','Transfer Rejected'] as $i=>$status) {
+$unresolved(['reversed','race','rejectowned','rejectcharge','needsowned','needscharge']);
+// The complete provider vocabulary is covered by transfer-status-test.php.
+// Exercise persistence once for needs-action and once for sent rejection.
+foreach ([2=>'Domain is Locked',5=>'Transfer Rejected'] as $i=>$status) {
     $op=$prepare('held-'.$i); $observe->status=$status; $observe->fault='reject'; $r=$reconcile->run($op->id);
     same($i===5?'rejected':'held',$r->state,'Needs-action is distinct from sent terminal rejection');
     same($i===5?'transfer_provider_rejected':'transfer_needs_action',$r->safe_code,'Safe staff outcome retained'); expect($r->policy['reconciliation']['staff_alert'],'Staff alert retained');
