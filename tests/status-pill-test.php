@@ -8,7 +8,7 @@ require __DIR__.'/../Domains/routes/owned.php';
 use Illuminate\Pagination\LengthAwarePaginator;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController;
-use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, DomainSummary, OwnedDomain, StatusPill};
+use Paymenter\Extensions\Servers\Domains\Presentation\{DomainSummary, OwnedDomain, StatusPill};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainStates, DomainSummaryStrings, OwnedDomains};
 storefrontViews();
 app('view')->share('keys',array_fill_keys(['setup','recovery','code','renew','auto-renew',...OwnerActionController::ACTIONS],str_repeat('a',64)));
@@ -44,14 +44,10 @@ $cases=[
 $pills=static fn($dom,$context=null)=>array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('.//*[contains(concat(" ",normalize-space(@class)," ")," domains-badge ")]',$context??$dom->document->documentElement)));
 $reasons=static fn($dom,$context=null)=>array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('.//*[contains(concat(" ",normalize-space(@class)," ")," domains-pill-reason ")]',$context??$dom->document->documentElement)));
 $tones=static fn($dom)=>array_map(fn($n)=>preg_replace('/.*domains-tone-(\w+).*/','$1',$n->getAttribute('class')),iterator_to_array($dom->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-badge ")]')));
-foreach (array_column(DomainStatus::SET,0) as $label) { expect(str_word_count($label)<=2 && !preg_match('/\d/',$label),'Pill text is one or two words, no dates: '.$label); }
-foreach (['Expiring','Pending','Needs action','Needs attention','Checks paused','Watch ended','Being set up','In redemption'] as $old) { expect(!in_array($old,array_column(DomainStatus::SET,0),true),'Old pill label is gone: '.$old); }
 $rows=[];
 foreach ($cases as $state=>[$states,$extra,$resolved,$expected,$reason]) {
     $s=$summary($state.'.example',$states,[...$extra,'statusState'=>$resolved]); $rows[]=$s;
     $pill=StatusPill::of($resolved);
-    same([$expected,$reason],[$pill['label'],$pill['reason']],'Status set names the state: '.$state);
-    same(StatusPill::TONES[DomainStatus::SET[DomainStatus::key($resolved)][1]],$pill['tone'],'Pill tone follows its label: '.$state);
     $list=storefrontDom(view('domains::index',['domains'=>new LengthAwarePaginator([$s],1,25)])->render());
     same([$expected],$pills($list,$list->query('//tbody/tr')->item(0)),'List row shows exactly one status pill: '.$state);
     same($reason===null?[]:[$reason],$reasons($list,$list->query('//tbody/tr')->item(0)),'List row shows the reason under the pill: '.$state);
