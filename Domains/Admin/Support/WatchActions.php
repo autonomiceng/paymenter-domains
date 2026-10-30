@@ -18,15 +18,25 @@ final class WatchActions
 {
     /** Audit reasons for writes that ask no question; the history shows the event once. */
     private const REASONS=['pause'=>'Monitoring paused','resume'=>'Monitoring resumed','read'=>'Check requested','profile'=>'DNS template changed'];
-    private const DONE=['pause'=>'Monitoring paused','resume'=>'Monitoring resumed','read'=>'Check queued'];
+    private const DONE=['pause'=>'Monitoring paused','resume'=>'Monitoring resumed'];
     public static function action(string $kind,int $id,int $revision,string $action,string $label,array $fields=[]): Action
     {
         $a=Action::make($action)->label($label)->visible(fn()=>Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
         if($fields){$a->schema($fields);}
+        if($action==='read'){$a->tooltip('Monitoring uses 0 registrar reads per domain per day.');}
         return $a->action(function(array $data,$livewire)use($kind,$id,$revision,$action):void {
                 $reason=match($action){'note'=>(string)($data['note']??''),'retire'=>(string)($data['reason']??''),'save'=>$kind==='mapping'?'Hosting product saved':'DNS template saved','enable'=>$kind==='mapping'?'Monitoring turned on':'DNS template turned on',default=>self::REASONS[$action]};
                 try{(new Writes())->run(Auth::user(),$kind,$id,$action,Writes::ticket((int)Auth::id(),$kind,$id,$revision,$action),$reason,$data);}
-                catch(\DomainException|\InvalidArgumentException|\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException $e){Notification::make()->warning()->title(self::error($kind,$e))->send();return;}
+                catch(\DomainException|\InvalidArgumentException|\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException $e){
+                    if($action==='read' && $e instanceof \DomainException && $e->getMessage()==='A check was recently requested. Try again later.'){$livewire->waitForCheck();}
+                    Notification::make()->warning()->title(self::error($kind,$e))->send();return;
+                }
+                if($action==='read'){
+                    $livewire->waitForCheck();
+                    Notification::make()->success()->title('Check requested')
+                        ->body('This takes up to about six minutes. This page updates by itself.')->persistent()->send();
+                    return;
+                }
                 Notification::make()->success()->title(self::DONE[$action]??'Saved')->send();
                 $livewire->redirect(match($kind){'watch'=>WatchResource::getUrl('view',['record'=>$id]),'profile'=>$id?RoutingProfileResource::getUrl('view',['record'=>$id]):RoutingProfileResource::getUrl(),default=>$id?ProductMappingResource::getUrl('view',['record'=>$id]):ProductMappingResource::getUrl()});
             });
@@ -43,8 +53,9 @@ final class WatchActions
             'Choose an enabled routing profile.','Choose an enabled routing profile first.'=>'Choose a DNS template that is on.',
             'Enter one DNS target per line.'=>'Enter one value per line.',
             'This watch cannot be changed.'=>"This domain can't be changed.",
-            'Public checks are disabled or the asynchronous queue is unavailable.'=>"Monitoring checks are off on this site, or the background worker isn't running.",
-            'This watch has no scheduled checks yet.'=>'This domain has no checks scheduled yet.',
+            'Public checks are disabled or the asynchronous queue is unavailable.'=>'Monitoring is off or its queue is not set up. Ask your site admin.',
+            'This watch has no scheduled checks yet.'=>'This domain has no checks scheduled yet. Ask your site admin.',
+            'A check was recently requested. Try again later.'=>'Check already requested',
             default=>$e->getMessage()};
     }
     private static function templates(): array{return WatchProfile::where('enabled',true)->orderBy('name')->pluck('name','id')->all();}
@@ -69,7 +80,7 @@ final class WatchActions
     {
         $mapping=$kind==='mapping';
         return self::action($kind,(int)$row->id,$revision,'enable',$mapping?'Turn on monitoring':'Turn on')->requiresConfirmation()->modalSubmitActionLabel($mapping?'Turn on monitoring':'Turn on')
-            ->disabled(!$mapping&&$row->readProfile()===null)
+            ->disabled(!$mapping&&$row->readProfile()===null)->tooltip(!$mapping&&$row->readProfile()===null?WatchFacts::TEMPLATE_UNAVAILABLE:null)
             ->modalDescription($mapping?'Turn on monitoring for '.($row->product?->name??'Product #'.$row->product_id).'? Matched domains start being checked.':'Turn on '.$row->name.'? Monitoring checks start using it.')
             ->visible(fn()=>!$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
     }
@@ -92,7 +103,7 @@ final class WatchActions
     /** Add (no row) or Edit. Saving turns the row off until staff turn it on again. */
     public static function configuration(string $kind,WatchProfile|WatchProductMap|null $row,int $revision=0): Action
     {
-        if($kind==='profile'&&$row&&$row->readProfile()===null){return self::action($kind,(int)$row->id,$revision,'save','Edit')->color('gray')->disabled();}
+        if($kind==='profile'&&$row&&$row->readProfile()===null){return self::action($kind,(int)$row->id,$revision,'save','Edit')->color('gray')->disabled()->tooltip(WatchFacts::TEMPLATE_UNAVAILABLE);}
         $fields=[];$lines=fn(string $name,string $label,array $value)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->helperText('One per line.')->maxLength(8192)->rows(2);
         if($kind==='mapping'){
             if(!$row){$fields[]=Select::make('product_id')->label('Hosting product')->options(fn()=>\App\Models\Product::whereHas('server',fn($q)=>$q->where('extension','<>','Domains'))->pluck('name','id')->all())->required()->live()->afterStateUpdated(fn(Set $set)=>$set('property_key',null));}
@@ -113,6 +124,6 @@ final class WatchActions
             $note='Saving turns this template off until you turn it on again.'.($row && WatchProductMap::where('expected_ns_profile_id',$row->id)->where('enabled',true)->exists()?' Turn off monitoring on its hosting products before editing.':'');
         }
         $action=self::action($kind,(int)($row?->id??0),$row?$revision:0,'save',$row?'Edit':($kind==='mapping'?'Add hosting product':'Add DNS template'),$fields)->modalSubmitActionLabel('Save');
-        return $row?$action->color('gray')->modalDescription($note):$action;
+        return $row?$action->color('gray')->modalDescription($note)->modalSubmitActionLabel($kind==='mapping'&&$row->enabled?'Save and turn monitoring off':'Save'):$action;
     }
 }

@@ -366,7 +366,8 @@
 .domains .domains-row-link::after { content:""; position:absolute; inset:0; }
 .domains .domains-row-link:focus-visible { outline:none; }
 .domains .domains-linkrow:is(:hover, :focus-within) td { background: color-mix(in srgb, var(--e-accent) 10%, transparent); }
-.domains .domains-linkrow .domains-missing__fix { position:relative; z-index:1; }
+.domains .domains-linkrow .domains-missing__fix, .domains .domains-linkrow .domains-missing__pay { position:relative; z-index:1; }
+.domains .domains-list .domains-missing__pay { display:flex; width:fit-content; margin-top:.375rem; }
 .domains .domains-list .domains-domain { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight:500; text-decoration:none; }
 .domains .domains-list .domains-domain:hover { text-decoration:underline; }
 .domains .domains-list td { vertical-align:top; }
@@ -378,6 +379,7 @@
 .domains .domains-tone-text-bad { color: var(--e-bad); }
 .domains .domains-badge { white-space:normal; }
 .domains .domains-missing { display:inline-flex; align-items:center; gap:.375rem; color: var(--e-bad); font-weight:600; }
+.domains .domains-missing--calm { color:var(--e-muted); font-weight:500; }
 .domains .domains-missing__cause { margin-inline-start:.5rem; color:var(--e-muted); }
 .domains .domains-missing__fix { margin-inline-start:.5rem; white-space:nowrap; }
 /* Demo tag: the only orange on the page. Wraps as one unit after the name. The Test variant has the same shape. */
@@ -425,7 +427,7 @@
 .domains .domains-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .domains .domains-ph { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-bottom: 1.5rem; }
 .domains .domains-ph__sub { flex-basis: 100%; margin: -.5rem 0 0; color: var(--e-muted); font-size: .875rem; }
-.domains h1.domains-mono { font-size: 1.75rem; line-height: 1.2; font-weight: 600; overflow-wrap: anywhere; }
+.domains h1.domains-mono { font-size: clamp(1.25rem, 5.5vw, 1.75rem); line-height: 1.2; font-weight: 600; overflow-wrap: anywhere; }
 .domains .domains-ph ~ .domains-notice { align-items: center; margin-bottom: 1.5rem; }
 .domains .domains-notice__tx { flex: 1; }
 .domains .domains-cols { display: grid; grid-template-columns: minmax(0, 760px) 320px; gap: 1.5rem; align-items: start; }

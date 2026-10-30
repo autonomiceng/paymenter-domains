@@ -5,25 +5,22 @@ require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions;
 
 $cases = [
-    'Review the live Enom Purchase route and request interval.' => 'Check the box confirming the live Enom Purchase route and request interval, then try again. Nothing was saved.',
-    'Live Enom Purchase route acceptance is unavailable.' => 'Live Enom Purchase acceptance is unavailable on this deployment; contact the deployment administrator. Nothing was saved.',
-    'Independent Live renewal review required.' => 'Check the box confirming the live Extend route, request interval and USD balance. Nothing was saved.',
-    'Live renewal deployment is unavailable.' => 'Live renewal is unavailable for this account or deployment. Reload the account page and check the Renewals row. Nothing was saved.',
-    'Independent Live management review required.' => 'Check the box confirming the supported live management actions, endpoint and request interval. Nothing was saved.',
-    'Live management deployment is unavailable.' => 'Live management is unavailable for this account or deployment. Reload the account page and check the DNS, nameservers and contacts row. Nothing was saved.',
-    'Review the Enom TEST Purchase / TP_CreateOrder route and request interval before accepting acquisition terms.' => 'Check the box confirming the Enom TEST Purchase / TP_CreateOrder route and request interval, then try again. Nothing was saved.',
-    'Enom TEST acquisition route acceptance is unavailable.' => 'Enom TEST acquisition acceptance is unavailable on this deployment; contact the deployment administrator. Nothing was saved.',
-    'Independent TEST renewal review required.' => 'Check the box confirming the TEST Extend route, request interval and USD balance. Nothing was saved.',
-    'TEST renewal deployment is unavailable.' => 'TEST renewal is unavailable for this account or deployment. Reload the account page and check the Renewals row. Nothing was saved.',
-    'Independent TEST management review required.' => 'Check the box confirming the supported TEST management actions, endpoint and request interval. Nothing was saved.',
-    'TEST management deployment is unavailable.' => 'TEST management is unavailable for this account or deployment. Reload the account page and check the DNS, nameservers and contacts row. Nothing was saved.',
-    'Review the Enom TEST Purchase route and request interval before accepting registration terms.' => 'Check the box confirming the Enom TEST Purchase route and request interval, then try again. Nothing was saved.',
-    'Enom TEST Purchase route acceptance is unavailable.' => 'Enom TEST Purchase acceptance is unavailable on this deployment; contact the deployment administrator. Nothing was saved.',
+    'Live Enom Purchase route acceptance is unavailable.' => 'This account can’t take orders on this site yet. Ask your site admin. Nothing was saved.',
+    'Independent Live renewal review required.' => 'Tick the box to show you checked this on the live account. Nothing was saved.',
+    'Live renewal deployment is unavailable.' => 'Live renewals are off for this account or site. Check the Renewals row on the account page. Nothing was saved.',
+    'Independent Live management review required.' => 'Tick the box to show you checked this on the live account. Nothing was saved.',
+    'Live management deployment is unavailable.' => 'Live changes are off for this account or site. Check the DNS, nameservers and contacts row on the account page. Nothing was saved.',
+    'Enom TEST acquisition route acceptance is unavailable.' => 'This account can’t take orders on this site yet. Ask your site admin. Nothing was saved.',
+    'Independent TEST renewal review required.' => 'Tick the box to show you checked this on the test account. Nothing was saved.',
+    'TEST renewal deployment is unavailable.' => 'Test renewals are off for this account or site. Check the Renewals row on the account page. Nothing was saved.',
+    'Independent TEST management review required.' => 'Tick the box to show you checked this on the test account. Nothing was saved.',
+    'TEST management deployment is unavailable.' => 'Test changes are off for this account or site. Check the DNS, nameservers and contacts row on the account page. Nothing was saved.',
+    'Enom TEST Purchase route acceptance is unavailable.' => 'This account can’t take orders on this site yet. Ask your site admin. Nothing was saved.',
 ];
 foreach ($cases as $message => $guidance) {
     same($guidance, SettingsActions::refusal(new DomainException($message), 'acceptance'), 'Known refusal gives safe administrator guidance: '.$message);
 }
-same('Reload and check current permissions, saved facts and acceptance.', SettingsActions::refusal(new DomainException('Unrecognized private synthetic detail'), 'acceptance'), 'Unknown refusal deliberately uses generic guidance');
+same('Check this page, then try again. If it fails again, open System checks on the registrar account.', SettingsActions::refusal(new DomainException('Unrecognized private synthetic detail'), 'acceptance'), 'Unknown refusal deliberately uses generic guidance');
 // Confirmation, stale-record and audit refusals deliberately share safe reload guidance.
 foreach ([
     'Explicit notification check confirmation required.',
@@ -48,11 +45,13 @@ foreach ([
     'TLD account changed.',
     'Verified in-flight review required.',
     'Audit unavailable. Changes held.',
-    'Audit entry too large. Changes held.',
     'Audit archive too large. Changes held.',
 ] as $message) {
-    same('Reload and check current permissions, saved facts and acceptance.', SettingsActions::refusal(new DomainException($message), 'acceptance'), 'Deliberate generic refusal: '.$message);
+    same('Check this page, then try again. If it fails again, open System checks on the registrar account.', SettingsActions::refusal(new DomainException($message), 'acceptance'), 'Deliberate generic refusal: '.$message);
 }
+same('Check this page, then try again. If it fails again, open System checks on the registrar account.', SettingsActions::refusal(new DomainException('Audit entry too large. Changes held.'), 'seller'), 'Audit size stays generic elsewhere');
+same('This was already submitted. Check this page, then try again if you need to.', SettingsActions::refusal(new DomainException('Review key used.'), 'tld_settings'), 'A used confirmation says so');
+same('That is too many changes for one save. Save fewer at a time. Nothing was saved.', SettingsActions::refusal(new DomainException('Audit entry too large. Changes held.'), 'acceptance'), 'What you sell says how to fix a large save');
 echo "Live and TEST refusal guidance and unknown fallback passed.\n";
 
 foreach(['card_fee','default_rule','override'] as $action){
@@ -61,4 +60,4 @@ foreach(['card_fee','default_rule','override'] as $action){
 }
 
 same('Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.',SettingsActions::refusal(new InvalidArgumentException('Enter a card fee below 100% and a fixed amount from 0 to 100000.'),'card_fee'),'Card fee input refusal gives exact range and decimal guidance');
-same('Reload and check current permissions, saved facts and acceptance.',SettingsActions::refusal(new InvalidArgumentException('Enter a card fee below 100% and a fixed amount from 0 to 100000.'),'default_rule'),'Card fee input refusal keeps the generic default pricing fallback');
+same('Check this page, then try again. If it fails again, open System checks on the registrar account.',SettingsActions::refusal(new InvalidArgumentException('Enter a card fee below 100% and a fixed amount from 0 to 100000.'),'default_rule'),'Card fee input refusal keeps the generic default pricing fallback');

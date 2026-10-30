@@ -27,12 +27,11 @@ $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($na
 $fixed=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'20','fixed_renew'=>'21','fixed_transfer'=>'22'];
 // "Use the account default" is a choice in Edit prices; it saves as remove_override.
 $inputs=['card_fee'=>['fee_percent'=>'3.10','fee_fixed'=>'0.40'],'default_rule'=>$fixed,'override'=>['pricing'=>'custom',...$fixed],'remove_override'=>['pricing'=>'default'],
-    'tld_settings'=>['min_years'=>1,'max_years'=>3,'enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true],
+    'tld_settings'=>['min_years'=>1,'max_years'=>2,'enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true],
     'seller'=>['seller'=>$t->server_id,'register'=>true,'transfer'=>true],
-    'acceptance'=>['ending'=>'com','accept'=>true,'verified'=>true,'terms'=>[1,3],'registry'=>true,'transfer'=>true],
     'history'=>['history_action'=>'register','accept'=>true,'verified'=>true,'timezone'=>'America/Los_Angeles','lag'=>60,'retention'=>86400],
     'configure'=>['registrar'=>'enom','environment'=>'test','uid'=>'synthetic-user','token'=>'account-enom'],'probe'=>[]];
-$accountSide=['card_fee','default_rule','acceptance','history','configure','probe'];
+$accountSide=['card_fee','default_rule','history','configure','probe'];
 $mount=static function(string $action)use($u,$t,$accountSide){
     $setup=in_array($action,$accountSide,true);
     $name=$setup?setupAction($action,$t->server_id):($action==='remove_override'?'override':$action);
@@ -53,9 +52,9 @@ foreach($inputs as $action=>$input){
         ->assertNotified($action==='card_fee'?\Filament\Notifications\Notification::make()->success()->title('Saved')->body('Card fee saved. No TLDs count the card fee in their prices, so no prices changed.'):($setup?($action==='probe'?'Balance updated':'Saved'):(in_array($action,['override','remove_override'],true)?'Prices published':'Change recorded')))->assertSet('mountedActions',[]);
     if($action==='remove_override'){expect($t->fresh()->use_default_rule,'Account default chosen in Edit prices');}
     $review=new Review($u->id,$t->server_id,$ending,$action,$key,'Replay must refuse this native action');
-    tldRefusal(fn()=>$writer->run($review,$input,$now),in_array($action,['tld_settings','probe'],true)?'Review key used.':'Settings changed. Reload this page.');
+    tldRefusal(fn()=>$writer->run($review,$input,$now),$action==='probe'?'Review key used.':'Settings changed. Reload this page.');
     $page=$mount($action);SalesPolicy::where('tld','com')->increment('revision');
-    $page->setActionData([...$input,'reason'=>'Refuse stale native action after change'])->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title($setup?"Couldn't save":'Change refused')->body('Settings changed. Reload this page.'))->assertSet('mountedActions',[]);
+    $page->setActionData([...$input,'reason'=>'Refuse stale native action after change'])->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title($setup?"Couldn't save":'Change refused')->body('Someone else changed this. Nothing was saved. Try again.'))->assertSet('mountedActions',[]);
     $key=Review::ticket($u->id,$t->server_id,$ending,$action,Review::stamp($t->server_id,$ending));
     $u->role->update(['permissions'=>array_values(array_diff($permissions,[Review::permission($action)]))]);
     commerceReject(fn()=>$writer->run(new Review($u->id,$t->server_id,$ending,$action,$key,'Permission revoked before submission'),$input,$now));
@@ -88,7 +87,7 @@ app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sell
 // Setup buttons that can't run are hidden (layout.md section 6); the nested Test connection button leaves the schema.
 Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertActionHidden(setupAction('configure',$t->server_id))->assertActionDoesNotExist(setupAction('probe',$t->server_id));
 same('9.99',Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('server_id',$t->server_id)->value('amount'),'Existing account probe records its balance');
-// Submit the real seller action with each expired required cost; no provider read or policy write.
+// Older saved costs allow selection; missing required costs refuse without provider reads or a policy write.
 $providerReads=$reads->calls;
 // Restore the original synthetic reader binding after the configure-action credential rotation.
 $fixtureBindings->configure($t->server_id,'enom',\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,['token'=>'account-enom']);
@@ -109,17 +108,18 @@ foreach([[$tlds[1],true,false],[$tlds[0],true,false],[$tlds[0],false,false],[$tl
  foreach(['register'=>'registration','renew'=>'renewal'] as $action=>$label){
     $costs=\Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$target->server_id,'tld'=>'com','action'=>$action])->orderBy('term')->get();
     foreach($costs as $cost){Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$cost->id)->update(['fresh_until'=>$now]);}
+    $priorRevision=SalesPolicy::where('tld','com')->sole()->revision;
+    $mount('seller')->setActionData(['seller'=>$target->server_id,'register'=>true,'transfer'=>false,'reason'=>'Review older saved seller cost evidence'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded');
+    $selected=SalesPolicy::where('tld','com')->sole();
+    same([$priorRevision+1,$target->server_id],[$selected->revision,$selected->server_id],'Saved cost selection advances the exact seller revision');
+    foreach($costs as $cost){Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$cost->id)->update(['wholesale'=>null]);}
     $prior=SalesPolicy::where('tld','com')->sole()->getAttributes();
-    $remedy=$target->registrar_key==='enom'&&$enabled?"On the account page for account #{$target->server_id}, use Sync TLD prices to refresh com costs, then try again."
-        :($target->registrar_key==='enom'?'Sync TLD prices is unavailable for this account; ask the installation administrator to restore TEST catalogue import and refresh costs before trying again.':"Check Cost refresh on .com for account #{$target->server_id}; wait for fresh costs from its scheduled catalogue read, or ask the installation administrator to restore reads if refresh failed or was interrupted.");
-    $registrar=$target->registrar_key==='enom'?'Enom':'NameSilo';
-    $body="Cannot select {$registrar} account #{$target->server_id} for .com: its {$label} cost for 1 year expired at 2026-10-18 12:00 UTC. ".$remedy;
-    $mount('seller')->setActionData(['seller'=>$target->server_id,'register'=>true,'transfer'=>false,'reason'=>'Review expired seller cost evidence'])->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('Change refused')->body($body));
-    same($prior,SalesPolicy::where('tld','com')->sole()->getAttributes(),'Expired seller toast leaves prior seller and revision unchanged');
+    $mount('seller')->setActionData(['seller'=>$target->server_id,'register'=>true,'transfer'=>false,'reason'=>'Review missing seller cost evidence'])->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('Change refused')->body('Check this page, then try again. If it fails again, open System checks on the registrar account.'));
+    same($prior,SalesPolicy::where('tld','com')->sole()->getAttributes(),'Missing seller cost leaves prior seller and revision unchanged');
     same($held?'read_unavailable':null,Illuminate\Support\Facades\DB::table('domains_observation_queues')->where('server_id',$target->server_id)->value('catalogue_hold'),'Refusal preserves selected account refresh hold');
-    foreach($costs as $cost){Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$cost->id)->update(['fresh_until'=>$cost->getRawOriginal('fresh_until')]);}
+    foreach($costs as $cost){Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$cost->id)->update($cost->only(['wholesale','fresh_until']));}
  }
 }
 config(['domains.enom_catalogue.enabled'=>$catalogueConfig,'domains.enom_identity.environment'=>$identityConfig]);
 same($providerReads,$reads->calls,'Seller refusal makes no provider read');
-echo "Ten native action submissions, stale refusals, replay, fresh denial and retained audit passed.\n";$nativeSuccessful=true;
+echo "Ten native action submissions, missing-cost refusals, replay, permission denial and retained audit passed.\n";$nativeSuccessful=true;

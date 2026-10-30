@@ -60,4 +60,14 @@ $closed=$solo->domain->service->fresh();$closed->update(['status'=>'pending']);$
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('unpaid-immediate-shared-placeholder.com'));$cart->items()->create(['product_id'=>$hosting->id,'plan_id'=>$hosting->plans()->sole()->id,'quantity'=>1,'config_options'=>[],'checkout_config'=>[]]);commerceCheckout($user,$cart);
 $immediate=Domain::where('domain','unpaid-immediate-shared-placeholder.com')->sole()->operations()->sole();$immediateCancellation=ServiceCancellation::create(['service_id'=>$immediate->service_id,'type'=>'end_of_period','reason'=>'Unpaid shared immediate cancellation']);same('immediate',$immediateCancellation->fresh()->type,'Shared unpaid end-of-period normalizes');
 (new App\Listeners\CancellationCreatedListener)->handle(new App\Events\ServiceCancellation\Created($immediateCancellation));same('cancelled',$immediate->domain->service->fresh()->status,'Native immediate listener closes service');same('cancelled',App\Models\Invoice::find($immediate->invoice_id)->status,'Native immediate listener bulk-cancels whole shared invoice');$retirement->inspect($immediate->domain_id);same(null,$immediate->domain->fresh()->reservation_name,'Sweep after native immediate bulk update releases name');
+// A cancelled service with its invoice still open stays pending for staff. Paying can't start it, so no page asks for the money.
+require dirname(__DIR__).'/Domains/routes/owned.php';require dirname(__DIR__).'/Domains/routes/web.php';app('router')->getRoutes()->refreshNameLookups();
+$open=$new(placeholderComFixtureName('unpaid-open-invoice-placeholder.com'),paid:false);
+$owned=new Paymenter\Extensions\Servers\Domains\Services\OwnedDomains($clock,new Paymenter\Extensions\Servers\Domains\Services\OwnerPorts);
+$orderWords=static function()use($open,$owned):array {$page=$owned->present($open->domain->fresh());return [$page->order['state']??null,$page->status,$page->statusReason];};
+same(['unpaid','Action required','Invoice not paid'],$orderWords(),'An open order on a live service offers payment');
+DB::table('services')->where('id',$open->service_id)->update(['status'=>'cancelled']);
+same(['cancelled','Under review','Order cancelled'],$orderWords(),'A cancelled service with an open invoice offers no payment');
+DB::table('services')->where('id',$open->service_id)->update(['status'=>'pending']);DB::table('domains_native_intents')->insert(['service_id'=>$open->service_id,'kind'=>'cancellation','created_at'=>now()]);
+same(['cancelled','Under review','Order cancelled'],$orderWords(),'A retained cancellation intent counts as cancelled');
 echo "Unpaid retirement, native cron, wake-up and cancellation passed.\n";$nativeSuccessful=true;

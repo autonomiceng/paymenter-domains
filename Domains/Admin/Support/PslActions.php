@@ -11,12 +11,12 @@ use Illuminate\Support\Facades\{DB,Route};
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList as Page;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{PublicSuffixList as Lists,PslFailure,PslRebaseline,PslTransport};
-/** The System checks row "Public suffix list": Download now, Use new list? and Change source, plus a link to the full list page. */
+/** The System checks row "Public suffix list": Download now, Review new list and Change source, plus a link to the full list page. */
 final class PslActions
 {
     public const VIEW=Page::VIEW;
     public const MANAGE=Page::MANAGE;
-    public const HELP="Mozilla's list of domain endings (publicsuffix.org). Used to find the registrable domain in a hostname. Downloads weekly, at most once a day.";
+    public const HELP="Mozilla's list of TLDs and public suffixes (publicsuffix.org). Used to find the registrable domain in a hostname. Downloads weekly, at most once a day.";
     /** Fixed audit reason: using a reviewed list is not a money or destructive action, so staff type none. */
     public const REASON='Used the new list from System checks.';
     private static function manage(): bool { return Staff::can(self::VIEW)&&Staff::can(self::MANAGE); }
@@ -35,7 +35,7 @@ final class PslActions
         elseif (!$list->discoveryAllowed()) { $value='Out of date';$tone='danger'; }
         else {
             $value='Updated '.self::date((int)$s->validated_at);
-            if ($list->staleWarning()) { $tone='warning';$subs[]='Out of date after '.self::date((int)$s->validated_at+90*86400); }
+            $subs[]='Out of date after '.self::date($list->expiresAt());
         }
         if ((int)$status->consecutive_failures>0&&$status->last_attempt_at!==null&&$review===null) { $tone??='warning';$subs[]='Last download failed '.self::date((int)$status->last_attempt_at); }
         if ($review===null&&($at=self::limitedUntil($list))!==null) { $subs[]='Next download allowed '.self::date($at); }
@@ -54,15 +54,15 @@ final class PslActions
                 $toast->send();
             });
     }
-    /** "Download now" while a download that removed many rules waits for review. */
+    /** Replaces "Download now" while a download that removed many rules waits for review. */
     public static function accept(callable $refresh): Action
     {
-        return Action::make('psl_accept')->label('Download now')->color('primary')->size('sm')
+        return Action::make('psl_accept')->label('Review new list')->color('primary')->size('sm')
             ->visible(fn()=>self::manage()&&app(PslRebaseline::class)->preview()!==null)
             ->modalHeading('Use new list?')->modalSubmitActionLabel('Use new list')
             ->modalDescription(function(): string {
                 $p=app(PslRebaseline::class)->preview();
-                return $p===null?'The download changed. Reload the page.':'The new list removes '.array_sum(array_column($p['removed'],'count')).' rules. Use it anyway?';
+                return $p===null?'The download changed. Try again.':'The new list removes '.array_sum(array_column($p['removed'],'count')).' rules. Use it anyway?';
             })
             ->schema(function(): array {
                 self::requireManage();$p=app(PslRebaseline::class)->preview();if($p===null){return [];}
@@ -105,7 +105,7 @@ final class PslActions
         return match($code){
             'rebaselined','updated'=>'List updated',
             'identical','not_modified'=>'List is already up to date',
-            'candidate_changed','rebaseline_not_required','confirmation_invalid'=>'The download changed. Reload the page.',
+            'candidate_changed','rebaseline_not_required','confirmation_invalid'=>'The download changed. Try again.',
             'stored_rules_rejected','stored_copy_invalid'=>"Can't read the saved list. Download it again.",
             null=>'Not downloaded','checking'=>'Downloading. Check back in a minute.',
             'superseded'=>'The source changed. Try again tomorrow.',
@@ -118,8 +118,8 @@ final class PslActions
             'sentinel_missing'=>"Couldn't download: the list is missing rules.",
             'rules_lost_icann','rules_lost_private'=>'Many rules were removed. Review them before using this list.',
             'unexpected_304'=>"Couldn't download. Try again tomorrow.",
-            'internal_error'=>"Couldn't download. Check the server logs.",
-            'parser_unavailable'=>"Couldn't download: the PHP intl extension is missing.",
+            'internal_error'=>"Couldn't download. Ask your site admin.",
+            'parser_unavailable'=>"Couldn't download. Ask your site admin to add the PHP intl extension.",
             default=>"Couldn't download. Try again later.",
         };
     }

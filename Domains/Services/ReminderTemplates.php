@@ -8,8 +8,12 @@ use Illuminate\Support\Facades\{DB,Schema};
 final class ReminderTemplates
 {
     // Wording that changed with the glossary: current terms, and the defaults shipped before them.
-    private const TERMS=['code'=>'auth code','Code'=>'Auth code','paid'=>'Transfer needs an auth code','also'=>'auth code (also called EPP code)','off'=>'Auto-renew is off.'];
-    private const V2=['code'=>'transfer code','Code'=>'Transfer code','paid'=>'Paid transfer needs a code','also'=>'transfer code (also called an auth code)','off'=>'Renewal is turned off.'];
+    private const SUPPORT_ONLY=['keep'=>'To keep this domain, contact support before it expires.','keepBody'=>'To keep this domain, contact support before **{{ $expires }}**.'];
+    private const TERMS=['code'=>'auth code','Code'=>'Auth code','paid'=>'Transfer needs an auth code','also'=>'auth code (also called EPP code)','off'=>'Auto-renew is off.',
+        'keep'=>'To keep this domain,@if($can_turn_on) turn it on or renew it on the domain page.@else contact support before it expires.@endif',
+        'keepBody'=>'To keep this domain,@if($can_turn_on) turn it on or renew it on the domain page.@else contact support before **{{ $expires }}**.@endif'];
+    private const V2=['code'=>'transfer code','Code'=>'Transfer code','paid'=>'Paid transfer needs a code','also'=>'transfer code (also called an auth code)','off'=>'Renewal is turned off.']+self::SUPPORT_ONLY;
+    private const V3=self::SUPPORT_ONLY+self::TERMS;
     private const CHANGED=['domains_domain_expiring'=>['in_app_body','body'],'domains_transfer_code_paid'=>['name','subject','in_app_title','edit_preference_message','body'],
         'domains_transfer_code_reminder'=>['name','subject','in_app_title','edit_preference_message','body']];
     public static function ensure():void
@@ -36,14 +40,20 @@ final class ReminderTemplates
                 'in_app_body'=>'@if($invoice)@if($overdue)Your renewal invoice is overdue. Contact support to check renewal options.@else Pay the renewal invoice by {{ $due }}.@endif@elseif($invoice_on)Your renewal invoice is scheduled for {{ $invoice_on }}.@elseif($complimentary)Complimentary pricing. Contact support to confirm its renewal.@else Renewal is off. Contact support if you want to keep this domain.@endif',
                 'body'=>"# {{ \$domain }} expires on {{ \$expires }}\n\n@if(\$invoice)\n@if(\$overdue)\nYour renewal invoice for **{{ \$years }} {{ \$years === 1 ? 'year' : 'years' }}** ({{ \$amount }}) was due on **{{ \$due }}**. Contact support to check whether this domain can still be renewed.\n\n".$button('invoice_url','View invoice')."\n@else\nYour renewal invoice is ready for **{{ \$years }} {{ \$years === 1 ? 'year' : 'years' }}** ({{ \$amount }}). Pay it by **{{ \$due }}** and we'll renew the domain for you.\n\n"
                     .$button('invoice_url','Pay invoice')."\n@endif\n@elseif(\$invoice_on)\nYour renewal invoice is scheduled for **{{ \$invoice_on }}**. Pay it by the due date and we'll renew the domain for you.\n@elseif(\$complimentary)\nThis domain has complimentary pricing. Contact support to confirm its renewal.\n\n".$button('domain_url','View domain')."\n@else\nRenewal is turned off, so the domain will expire unless you renew it. Websites and email that use it will stop working. Contact support if you want to keep this domain.\n\n".$button('domain_url','View domain')."\n@endif"];
-        $v2=self::templates(self::V2);
+        $v2=self::templates(self::V2);$v3=self::templates(self::V3);
         $out=['domains_domain_expiring'=>array_map(fn($v)=>[$v],$v1)];
         foreach(self::CHANGED as $key=>$fields){ foreach($fields as $field){ $out[$key][$field][]=$v2[$key][$field]; } }
+        foreach(['in_app_body','body'] as $field){ $out['domains_domain_expiring'][$field][]=$v3['domains_domain_expiring'][$field]; }
         return $out;
     }
     public static function definitions():array
     {
         return self::templates(self::TERMS);
+    }
+    /** @return array<string,string> Template key => the name staff see on Notification templates. */
+    public static function names():array
+    {
+        return array_map(fn(array $template)=>$template['name'],self::definitions());
     }
     private static function templates(array $w):array
     {
@@ -58,9 +68,9 @@ final class ReminderTemplates
         return [
             'domains_domain_expiring'=>$common+['name'=>'Domain expiring soon','subject'=>'{{ $domain }} expires on {{ $expires }}',
                 'in_app_title'=>'{{ $domain }} expires in {{ $days }} {{ $days === 1 ? \'day\' : \'days\' }}',
-                'in_app_body'=>'@if($invoice)@if($overdue)Your renewal invoice is overdue. Contact support to check renewal options.@else Pay the renewal invoice by {{ $due }}.@endif@elseif($invoice_on)Your renewal invoice is scheduled for {{ $invoice_on }}.@elseif($complimentary)Complimentary pricing. Contact support to confirm its renewal.@else '.$w['off'].' To keep this domain, contact support before it expires.@endif',
+                'in_app_body'=>'@if($invoice)@if($overdue)Your renewal invoice is overdue. Contact support to check renewal options.@else Pay the renewal invoice by {{ $due }}.@endif@elseif($invoice_on)Your renewal invoice is scheduled for {{ $invoice_on }}.@elseif($complimentary)Complimentary pricing. Contact support to confirm its renewal.@else '.$w['off'].' '.$w['keep'].'@endif',
                 'body'=>"# {{ \$domain }} expires on {{ \$expires }}\n\n@if(\$invoice)\n@if(\$overdue)\nYour renewal invoice for **{{ \$years }} {{ \$years === 1 ? 'year' : 'years' }}** ({{ \$amount }}) was due on **{{ \$due }}**. Contact support to check whether this domain can still be renewed.\n\n".$button('invoice_url','View invoice')."\n@else\nYour renewal invoice is ready for **{{ \$years }} {{ \$years === 1 ? 'year' : 'years' }}** ({{ \$amount }}). Pay it by **{{ \$due }}** and we'll renew the domain for you.\n\n"
-                    .$button('invoice_url','Pay invoice')."\n@endif\n@elseif(\$invoice_on)\nYour renewal invoice is scheduled for **{{ \$invoice_on }}**. Pay it by the due date and we'll renew the domain for you.\n@elseif(\$complimentary)\nThis domain has complimentary pricing. Contact support to confirm its renewal.\n\n".$button('domain_url','View domain')."\n@else\n".$w['off']." To keep this domain, contact support before **{{ \$expires }}**. After it expires, websites and email that use it may stop working.\n\n".$button('domain_url','View domain')."\n@endif"],
+                    .$button('invoice_url','Pay invoice')."\n@endif\n@elseif(\$invoice_on)\nYour renewal invoice is scheduled for **{{ \$invoice_on }}**. Pay it by the due date and we'll renew the domain for you.\n@elseif(\$complimentary)\nThis domain has complimentary pricing. Contact support to confirm its renewal.\n\n".$button('domain_url','View domain')."\n@else\n".$w['off'].' '.$w['keepBody']." After it expires, websites and email that use it may stop working.\n\n".$button('domain_url','View domain')."\n@endif"],
             'domains_domain_expired'=>$common+['name'=>'Domain expired','subject'=>'{{ $domain }} has expired',
                 'in_app_title'=>'{{ $domain }} has expired','in_app_body'=>'Contact support to check whether this domain can still be renewed.',
                 'body'=>"# {{ \$domain }} expired on {{ \$expires }}\n\nWebsites and email that use this domain may stop working. Contact support to check whether it can still be renewed.\n\n".$button('domain_url','View domain')],

@@ -12,6 +12,13 @@ final readonly class RenewalCycles
 {
     public function __construct(private AccountBindings $bindings, private Clock $clock) {}
     public static function key(Domain $d): string { return 'renew:'.$d->id.':g'.$d->authority_generation.':'.$d->provider_expires_at->format('Y-m-d'); }
+    /** Current-cycle presentation evidence, oldest first. Does not grant renewal authority. */
+    public static function current(Domain $d, \Illuminate\Support\Collection $operations): \Illuminate\Support\Collection
+    {
+        return $operations->filter(fn($op)=>$op->action==='renew'&&$op->authority_generation===$d->authority_generation
+            &&$op->account_fingerprint===$d->account_fingerprint&&$d->provider_expires_at!==null
+            &&$op->base_expires_at?->format('Y-m-d')===$d->provider_expires_at->format('Y-m-d'))->sortBy('id');
+    }
     public static function next(array $l): string
     {
         $key = self::key($l['domain']); $cycle = $l['operations']->filter(fn ($op) => $op->action === 'renew'

@@ -16,12 +16,26 @@ final class OwnerFormValidation extends \DomainException
                 'ds.digest'=>'Enter the digest your DNS provider gives you: 64 characters for SHA-256 or 40 for SHA-1.',
                 'glue.host'=>'Enter a hostname under '.$domain.', such as ns1.'.$domain.'.',
                 'glue.ip'=>'Enter a public IPv4 or IPv6 address.',
-                default=>self::fieldMessage($field,$registrar)??(preg_match('/^(dns|srv)\.records\.count$/D',$field)?'Keep between 1 and 50 records.':
+                default=>self::recordAddressMessage($field,$input)??self::fieldMessage($field,$registrar)??(preg_match('/^(dns|srv)\.records\.count$/D',$field)?'Keep between 1 and 50 records.':
                     (preg_match('/^(dns|srv)\.records(?:\.preimage)?$/D',$field)?'We couldn’t save this change. Reload the page and try again.':
                     (preg_match('/^(dns|srv)\.records\.(\d+)$/D',$field,$m)?'Check record '.((int)$m[2]+1).'. These values don’t work together.':'Check this field.'))),
             };
         }
         return $out;
+    }
+    /** The chosen type comes from the fixed list and only picks the words. */
+    private static function recordAddressMessage(string $field,#[\SensitiveParameter] array $input): ?string
+    {
+        if (!preg_match('/^dns\.records\.(\d+)\.address$/D',$field,$m)) { return null; }
+        $type=$input['records'][(int)$m[1]]['type']??null;
+        return match(is_string($type)?strtoupper(trim($type)):null) {
+            'A','MXE'=>'Enter an IPv4 address, such as 192.0.2.1.',
+            'AAAA'=>'Enter an IPv6 address, such as 2001:db8::1.',
+            'CNAME','MX'=>'Enter a hostname ending in a dot, such as mail.example.com.',
+            'URL','FRAME'=>'Enter a web address, such as https://example.com.',
+            'TXT'=>'Enter the text for this record.',
+            default=>null,
+        };
     }
     private static function fieldMessage(string $field,string $registrar): ?string
     {
@@ -30,7 +44,7 @@ final class OwnerFormValidation extends \DomainException
             return match($key) {
                 'country'=>'Choose a country from the list.',
                 'email_address'=>'Enter a valid email address.',
-                'phone'=>'Enter a phone number with its country code, such as +1.2025550123.',
+                'phone'=>'Enter a phone number with its country code, such as +1 206 555 0100.',
                 'state_province'=>$registrar==='namesilo'?'For the US or Canada, enter the 2-letter state or province code. For other countries, enter its name.':'Enter your state or province for the US, Canada or Australia.',
                 default=>'Enter '.match($key) {'first_name'=>'your first name','last_name'=>'your last name','address1'=>'your street address','address2'=>'the second address line','city'=>'your city','postal_code'=>'your postal code','organization_name'=>'your organization',default=>'this contact detail'}.'. Use '.$limit.' or fewer characters. Accented and non-Latin letters count as 2 or more.',
             };

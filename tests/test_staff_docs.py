@@ -14,7 +14,7 @@ class StaffDocs(unittest.TestCase):
     def test_suffix_download_and_pending_review_are_distinct(self):
         text = (ROOT/'README.md').read_text()
         self.assertIn('**Download now** downloads and checks a new list.', text)
-        self.assertIn('If a rejected download is waiting for review, **Download now** opens **Use new list?** instead.', text)
+        self.assertIn('If a rejected download is waiting for review, **Review new list** opens **Use new list?** instead.', text)
 
 if __name__ == '__main__':
     unittest.main()

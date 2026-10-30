@@ -82,7 +82,7 @@ $rules->saveDefaultRule(1, $fixed, $catalogue->republish(...));
 same('1.00', $holder->renewal($domain, 'USD', $now)->retail, 'Below-cost holder renewals still priced');
 same('below_cost', $holder->renewal($domain, 'USD', $now)->staffAlert, 'Below-cost renewal staff alert');
 $reject(static fn () => $catalogue->current(1, $a['account_fingerprint'], 'com', 'register', 1, 'USD', $now));
-same(true, $holder->renewal($domain, 'USD', $now->modify('+2 days'))->retained, 'Stale cost retains billing retail');
+same(false, $holder->renewal($domain, 'USD', $now->modify('+2 days'))->retained, 'A saved cost stays current until the next sync');
 same('1.00', $holder->renewal($domain, 'USD', $now->modify('+2 days'))->retail, 'Outage never stops existing retail billing');
 $reject(static fn () => $holder->renewal($domain, 'EUR', $now));
 $reject(static fn () => $rate('transfer', 2, '1.0000'));

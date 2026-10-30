@@ -81,7 +81,7 @@ final class BalanceForecast
     {
         if($years<1||$years>10){return null;}
         $p=$rates->first(fn($p)=>$p->tld===$tld&&(int)$p->term===$years);
-        if(!$p||$p->wholesale===null||$p->unit!=='term_total'||!$p->observed_at||$p->observed_at>$now||!$p->fresh_until||$p->fresh_until<=$now){return null;}
+        if(!$p||$p->wholesale===null||$p->unit!=='term_total'||!$p->observed_at||$p->observed_at>$now||!$p->fresh_until){return null;}
         try{$amount=PriceCatalogue::cost($p->wholesale);}catch(\Throwable){return null;}
         return $amount;
     }

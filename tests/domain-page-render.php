@@ -20,7 +20,7 @@ $m['glue']+=['records'=>[],'recordCheckHeld'=>false];$m['glue']['actions']=['glu
 $m['ds']+=['records'=>[],'recordCheckHeld'=>false];$m['ds']['actions']=['ds_add'=>'/domains/1/manage/ds_add'];
 $m['lock']['state']=true;
 $m['privacy']+=['free'=>true,'price'=>null,'state'=>true];$m['privacy']['actions']=['privacy_enable'=>'/domains/1/manage/privacy_enable','privacy_disable'=>'/domains/1/manage/privacy_disable'];
-$m['contacts']+=['staged'=>false,'limits'=>ContactDetails::limits('enom')];
+$m['contacts']+=['staged'=>false,'limits'=>ContactDetails::limits('enom'),'saved'=>[],'approved'=>null];
 $m['auth_code_email']['recipient']='owner';
 $history=[['number'=>'INV-1042','status'=>'Paid','url'=>'/invoices/1042','date'=>'2027-01-04']];
 $progress=[['label'=>'Nameservers','state'=>'Done','date'=>'2026-10-20'],['label'=>'Registration','state'=>'Done','date'=>'2026-03-01']];

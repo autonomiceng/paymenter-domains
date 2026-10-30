@@ -45,6 +45,10 @@ function validatedHistory(int $serverId,?int $tldId,int $actorId): array
     expect(count($rows)<=Review::HISTORY_LIMIT,'Validated history projection has a bounded row count');
     return $rows;
 }
+// Staff who can see users read a name, like the monitoring history. Others keep the number.
+$names=staffUser([Staff::VIEW,'admin.users.view']);$u->update(['first_name'=>'Tess','last_name'=>'Tld']);Auth::setUser($names);
+same('Tess Tld',TldFacts::history($server->id,$t->id)[0]['by'],'History names the staff member');
+Auth::setUser($u);
 seedArchives($prototype,1,10);
 $writeTen=historyCost(fn()=>$review()->local(static fn()=>null),$retrieved);
 $readTen=historyCost(fn()=>validatedHistory($server->id,$t->id,$u->id),$retrieved);

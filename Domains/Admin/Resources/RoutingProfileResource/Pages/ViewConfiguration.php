@@ -8,6 +8,7 @@ use Filament\Infolists\Components\TextEntry;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{WatchActions,WatchFacts};
+use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 class ViewConfiguration extends ViewRecord
 {
     protected static string $resource=RoutingProfileResource::class;
@@ -30,7 +31,7 @@ class ViewConfiguration extends ViewRecord
         $r=$this->getRecord();$profile=$r->readProfile();$used=WatchFacts::usedBy((int)$r->id);
         $entry=fn(string $label,mixed $value)=>TextEntry::make('fact_'.md5($label))->label($label)->state($value)->inlineLabel()->listWithLineBreaks()->extraAttributes(['style'=>'overflow-wrap:anywhere']);
         return $schema->components([Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()->schema([
-            Section::make('Records')->columnSpan(1)->schema([$entry('Status',$r->enabled?'On':'Off'),$entry('Nameservers',$profile?->nameservers??'Unavailable')->fontFamily(\Filament\Support\Enums\FontFamily::Mono),$entry('Website records',$profile?self::records($profile->website):'Unavailable'),$entry('Email records',$profile?self::records($profile->email):'Unavailable')]),
+            Section::make('Records')->columnSpan(1)->schema([$entry('Status',$r->enabled?'On':'Off'),$entry('Nameservers',$profile?->nameservers??Missing::LABEL)->fontFamily(\Filament\Support\Enums\FontFamily::Mono),$entry('Website records',$profile?self::records($profile->website):Missing::LABEL),$entry('Email records',$profile?self::records($profile->email):Missing::LABEL)]),
             Section::make('Used by')->columnSpan(1)->schema([$entry('Monitored domains',(string)$used['domains']),$entry('Hosting products',(string)$used['products'])])])]);
     }
 }

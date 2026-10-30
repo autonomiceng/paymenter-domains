@@ -6,15 +6,15 @@ require_once __DIR__.'/commerce.php';
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Route;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup,WhatYouSell};
 function tldPanel(): void
 {
     \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();\Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
     // The Registrars list reads balances; bind the clock as Services/Runtime.php does when nothing else did.
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->singleton(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,\Paymenter\Extensions\Servers\Domains\Data\SystemClock::class);}
-    staffPanel();$panel=Filament::getCurrentPanel();$panel->resources([TldResource::class])->pages([RegistrarSetup::class,RegistrarAccount::class]);
+    staffPanel();$panel=Filament::getCurrentPanel();$panel->resources([TldResource::class])->pages([RegistrarSetup::class,RegistrarAccount::class,WhatYouSell::class]);
     Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(function()use($panel){
-        Route::middleware($panel->getAuthMiddleware())->group(function()use($panel){TldResource::registerRoutes($panel);RegistrarSetup::registerRoutes($panel);RegistrarAccount::registerRoutes($panel);});
+        Route::middleware($panel->getAuthMiddleware())->group(function()use($panel){TldResource::registerRoutes($panel);RegistrarSetup::registerRoutes($panel);RegistrarAccount::registerRoutes($panel);WhatYouSell::registerRoutes($panel);});
     });
     app('router')->getRoutes()->refreshNameLookups();app('router')->getRoutes()->refreshActionLookups();
 }
@@ -28,14 +28,14 @@ function tldRefusal(callable $call,string $message): void
 /** Account actions shared by write assertions and rendered fixtures. */
 function staffSetupActions(): array
 {
-    return ['configure','probe','acceptance','import','history','processing','delivery_review','alert_review','enroll_sandbox',
+    return ['configure','probe','import','history','processing','delivery_review','alert_review','enroll_sandbox',
         'test_renewal','test_management','live_renewal','live_management','renewal_billing','default_rule','card_fee'];
 }
 
 /** Actions with no button of their own: saving prices publishes, and "Use the account default" is a choice in Edit prices. */
 function staffNoButtonActions(): array
 {
-    return ['publish','remove_override'];
+    return ['publish','remove_override','acceptance'];
 }
 
 /** Pin the engine clock, as staff actions read it for cost freshness. */

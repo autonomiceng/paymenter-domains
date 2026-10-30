@@ -50,8 +50,7 @@ same(0,App\Models\Service::count(),'Held checkout creates no service');same(0,Ap
 $staff=staffUser(array_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()));
 $review=static fn($action,$tldId)=>new Review($staff->id,$server->id,$tldId,$action,Review::ticket($staff->id,$server->id,$tldId,$action,Review::stamp($server->id,$tldId)),'Review synthetic held account');
 $settings=new StaffSettingsWrites($native,$sellers,$bindings);
-commerceReject(fn()=>$settings->run($review('acceptance',null),['ending'=>$ending,'accept'=>true,'verified'=>false,'terms'=>[1],'registry'=>true]));
-$settings->run($review('acceptance',null),['ending'=>$ending,'accept'=>true,'verified'=>true,'terms'=>[1],'registry'=>true]);
+$settings->run($review('acceptance',null),['changes'=>[$ending=>['terms'=>[1],'transfer'=>false]]]);
 expect(count(Review::historyRows($server->fresh()))>0,'Explicit acceptance recorded in staff audit');
 $accepted=CatalogueAcceptances::load($binding);
 same([$ending],array_keys($accepted->endings),'Review saves the accepted ending');

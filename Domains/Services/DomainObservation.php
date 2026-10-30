@@ -82,6 +82,7 @@ final class DomainObservation
     /** Observation must yield before it can invalidate a live management/financial grant. */
     private function available(array $locked): void
     {
+        if (!ObservationEligibility::allows($locked['domain'],$locked['operations'])) { throw new ReadDeferred('Acquisition not submitted.'); }
         foreach ($locked['operations'] as $op) {
             if (($op->state==='running'&&$op->lease_expires_at!==null&&$op->lease_expires_at->toDateTimeImmutable()>$this->clock->now())
                 || ($op->state==='queued'&&isset($op->attempt['management_claim']))) { throw new ReadDeferred('Holding authority busy.'); }

@@ -9,9 +9,9 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainQueries, Labels, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainQueries, Labels, RequestFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation, WatchAudit};
-use Paymenter\Extensions\Servers\Domains\Presentation\{Missing, RequestStatus};
+use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 /** History: registrar requests, staff renewal changes and customer auto-renew changes, newest first. */
 class RequestsRelationManager extends RelationManager
 {
@@ -27,7 +27,8 @@ class RequestsRelationManager extends RelationManager
         $row=fn(Model|array $r): array=>$r instanceof Operation?self::request($r):$r;
         return $table->records(fn(int|string $page,int|string $recordsPerPage)=>self::rows($domain,(int)$page,(int)$recordsPerPage))->columns([
             TextColumn::make('time')->label('Time')->state(fn($record)=>self::utc($row($record)['time']))->default(Missing::LABEL)
-                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null),
+                ->color(fn($state)=>$state===Missing::LABEL?Missing::color(RequestFacts::NO_TIME):null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon(RequestFacts::NO_TIME):null)
+                ->description(fn($state)=>$state===Missing::LABEL?RequestFacts::NO_TIME:null),
             TextColumn::make('event')->label('Event')->state(fn($record)=>$row($record)['event'])->description(fn($record)=>$row($record)['sub'])->wrap()
                 ->extraAttributes(['style'=>'min-width:14rem;max-width:32rem;overflow-wrap:anywhere']),
             TextColumn::make('status')->label('Status')->badge()->state(fn($record)=>$row($record)['status']['label']??null)->color(fn($record)=>$row($record)['status']['tone']??'gray'),
@@ -63,7 +64,7 @@ class RequestsRelationManager extends RelationManager
     {
         return ['time'=>$op->created_at,'event'=>'Request #'.$op->id.' '.Labels::action($op->action),
             'sub'=>Labels::requestStatus($op)['reason'],
-            'status'=>RequestStatus::for($op->state),'by'=>'System'];
+            'status'=>Labels::requestStatus($op),'by'=>'System'];
     }
     private static function utc(?\DateTimeInterface $time): ?string
     { return $time?\DateTimeImmutable::createFromInterface($time)->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC':null; }

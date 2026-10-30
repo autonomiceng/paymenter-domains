@@ -21,6 +21,11 @@ final class UnpaidAcquisitionProof
             ||$l['transactions']->contains('invoice_id',$invoice->id)||($op->funding??[])!==[]){
             throw new \DomainException('This order has a payment or payment attempt, so it cannot be retired. The name stays reserved.');
         }
+        // Retained billing can tie other invoices to this service, and closing it would strand their money.
+        $billed=$l['items']->where('reference_type',$s->getMorphClass())->where('reference_id',$s->id)->pluck('invoice_id');
+        if($l['invoices']->whereIn('id',$billed)->contains('status','paid')||$l['transactions']->whereIn('invoice_id',$billed)->isNotEmpty()){
+            throw new \DomainException('This order has a payment or payment attempt, so it cannot be retired. The name stays reserved.');
+        }
         InvoiceBinding::requireIdentity($op,$d,$s,$invoice,$item,$l['product']);
         if($op->started_at!==null||$op->request_fingerprint!==null||$op->lease_expires_at!==null
             ||$op->provider_order_id!==null||$op->confirmed_expires_at!==null
@@ -31,7 +36,8 @@ final class UnpaidAcquisitionProof
         if($terminal){
             if(!self::terminal($op,$d)){throw new \DomainException('Unpaid terminal proof is unavailable.');}
         }else{
-            if(!in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true)||($op->attempt??[])!==[]){
+            // 'cancelled' is an old cleanup state that left the order open; nothing was sent, which the rest of this proof checks.
+            if(!in_array($op->state,['awaiting_payment','awaiting_code','queued','held','cancelled'],true)||($op->attempt??[])!==[]){
                 throw new \DomainException('A registrar request may have started. Review its outcome; the name stays reserved.');
             }
             RefundProof::requireUnsent($op,$d);

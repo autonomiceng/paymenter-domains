@@ -10,7 +10,7 @@ use Filament\Resources\Pages\Page;
 use Filament\Schemas\{Schema,Components\Callout,Components\Section};
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{MissingEntry,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,MissingEntry,Staff};
 use Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\DnsResolverSettings;
@@ -31,9 +31,9 @@ class MonitoringSettings extends Page
         return Action::make($name)->label('Edit resolver')->modalHeading('Edit resolver')->modalSubmitActionLabel('Save')
             ->schema([
                 TextInput::make('url')->label('Resolver URL (DNS over HTTPS)')->required()->maxLength(2048)->default(fn()=>$saved()?->url??DohEndpoint::URL)
-                    ->helperText('Default: '.DohEndpoint::URL)->hintIcon('heroicon-m-question-mark-circle','Checked domain names are sent to this resolver.')
+                    ->helperText('Default: '.DohEndpoint::URL)->hintAction(HelpHint::make('Checked domain names are sent to this resolver.'))
                     ->rules([fn()=>function($attribute,$value,$fail): void{try{new DohEndpoint($value,DohEndpoint::IP);}catch(\Throwable){$fail('Use an HTTPS URL with a public hostname.');}}]),
-                TextInput::make('ip')->label('Bootstrap IP')->required()->maxLength(45)->default(fn()=>$saved()?->ip??DohEndpoint::IP)
+                TextInput::make('ip')->label('Resolver IP address')->required()->maxLength(45)->default(fn()=>$saved()?->ip??DohEndpoint::IP)
                     ->helperText('Default: '.DohEndpoint::IP.". The resolver's public IP.")
                     ->rules([fn()=>function($attribute,$value,$fail): void{try{if(!is_string($value)){throw new \InvalidArgumentException;}new DohEndpoint(DohEndpoint::URL,$value);}catch(\InvalidArgumentException){$fail('Use a public IPv4 or IPv6 address.');}}]),
             ])->action(function(array $data): void{
@@ -58,11 +58,11 @@ class MonitoringSettings extends Page
         [$endpoint,$reason,$forced]=app(DnsResolverSettings::class)->configuration();
         $fix=Staff::can(PublicSuffixList::MANAGE)?$this->edit('edit')->link():null;
         $resolver=TextEntry::make('resolver')->label('Resolver')->inlineLabel()->state($endpoint?->host??($forced?'Server default':Missing::LABEL))
-            ->hintIcon('heroicon-m-question-mark-circle',"If the resolver fails, checks retry once with the server's resolver.");
+            ->hintAction(HelpHint::make("If the resolver fails, checks retry once with the server's resolver."));
         return $schema->components([
             ...($forced?[Callout::make($reason)->status('danger')->columnSpanFull()]:[]),
             Section::make('DNS resolver')->schema([MissingEntry::apply($resolver,$fix,$forced?null:$reason),
-                TextEntry::make('bootstrap')->label('Bootstrap IP')->inlineLabel()->state($endpoint?->ip)->visible($endpoint!==null)]),
+                TextEntry::make('bootstrap')->label('Resolver IP address')->inlineLabel()->state($endpoint?->ip)->visible($endpoint!==null)]),
         ]);
     }
 }

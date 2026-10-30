@@ -7,6 +7,18 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, Tld};
 
 final class PublicationEligibility
 {
+    /** First term inside saved bounds that passes the caller's publication/price checks. */
+    public static function firstEligibleTerm(Tld $tld, string $action, \Closure $require): int
+    {
+        $terms = $action === 'register' ? array_filter(range(1, 10), static fn (int $term): bool => $term >= $tld->min_years && $term <= $tld->max_years) : [1];
+        $failure = null;
+        foreach ($terms as $term) {
+            try { $require($term); return $term; }
+            catch (\DomainException $error) { $failure = $error; }
+        }
+        throw $failure ?? new \DomainException('Seller has no eligible action price.');
+    }
+
     /** Called under the seller's server/account/policy/TLD prefix for admission; no provider reads. */
     public static function require(Tld $tld, string $action, int $term, bool $lock = false): void
     {

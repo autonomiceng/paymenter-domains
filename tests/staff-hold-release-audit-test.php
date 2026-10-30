@@ -16,6 +16,8 @@ foreach(['Customer asked to wait','Customer confirmed the next attempt'] as $cyc
     $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);
     $page->assertActionVisible('release')->mountAction('release')->assertActionNotMounted('release')
         ->assertHasNoActionErrors()->assertNotified('Hold released')->assertDontSee('Reason');
+    $page->assertDontSee('Put on hold by staff.')->assertDontSee('On hold')
+        ->assertSee('In progress')->assertSee('Hold released')->assertActionHidden('release')->assertActionVisible('hold');
     same('queued',$op->fresh()->state,'Release runs immediately without a reason modal');
     $audit=$op->fresh()->policy['staff_actions'];
     same(2*($cycle+1),count($audit),'Exactly one completed audit entry for each action');
@@ -27,6 +29,14 @@ $audit=$op->fresh()->policy['staff_actions'];
 same(['Customer asked to wait','Release hold','Customer confirmed the next attempt','Release hold'],array_column($audit,'reason'),'Exact completed reasons across two cycles');
 same(['Put on hold','Hold released','Put on hold','Hold released'],array_column(StaffReviewHistory::rows($op->fresh()),'event'),'Exact visible audit events');
 same(['Customer asked to wait',null,'Customer confirmed the next attempt',null],array_column(StaffReviewHistory::rows($op->fresh()),'sub'),'Only entered reasons appear below events');
+// Keep the same browser component through successive writes: no remount or refresh between actions.
+foreach([1,2] as $cycle){
+    $page->callAction('hold')->assertNotified('Request on hold')->assertSee('On hold')->assertSee('Put on hold by staff.')
+        ->assertActionVisible('release')->assertActionHidden('hold');
+    $page->callAction('release')->assertNotified('Hold released')->assertSee('In progress')->assertSee('Hold released')
+        ->assertDontSee('On hold')->assertDontSee('Put on hold by staff.')->assertActionVisible('hold')->assertActionHidden('release');
+    same(4+2*$cycle,count($op->fresh()->policy['staff_actions']),'Each same-page action gets a current one-use review ticket');
+}
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('History')
     ->assertSee('Customer asked to wait')->assertSee('Customer confirmed the next attempt')->assertSee('Hold released');
 $history=Livewire::actingAs($staff)->test(RequestsRelationManager::class,['ownerRecord'=>$op->domain->fresh(),'pageClass'=>ViewDomain::class]);

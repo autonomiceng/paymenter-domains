@@ -47,7 +47,7 @@ foreach([false,true] as $embedded){
     $stale=Livewire::actingAs($staff)->test($embedded?$accountPage:Page::class,$embedded?['account'=>1]:[])->mountAction($action)->assertActionMounted($action);
     $beforeSnapshot=(array)$list->current();$auditCount=DB::table('domains_watch_audit')->count();
     $body=pslFixture(10,10);$clock->at+=86400;same('rules_lost_icann',$list->update(),'Candidate replaced after review');
-    $stale->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('The download changed. Reload the page.'));
+    $stale->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('The download changed. Try again.'));
     same($beforeSnapshot,(array)$list->current(),'Stale reviewed bytes cannot change the snapshot');
     same($auditCount,DB::table('domains_watch_audit')->count(),'Stale reviewed bytes create no acceptance audit');
 }

@@ -12,7 +12,7 @@ final class StaffOperationReview
     /** Check status covers both a fresh read (recheck) and restarting reads after the read limit (resume_reads). */
     public const ACTIONS=['recheck'=>'Check status','resume_reads'=>'Check status','resume_observation'=>'Resume sync',
         'hold'=>'Put on hold','release'=>'Release hold','disposition'=>'Close request',
-        'refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'];
+        'refund'=>'Cancel and add credit','credit'=>'Retry credit','replacement'=>'Reissue renewal invoice'];
     public const CHANGED='This request changed. Reload the page and try again.';
     private array $before=[];
     private array $verifiedTicket=[];
@@ -64,6 +64,16 @@ final class StaffOperationReview
         $limit=in_array($action,['recheck','resume_reads','resume_observation'],true)?($action==='recheck'?88:89):99;
         if(!is_array($history)||!array_is_list($history)||count($history)>$limit){throw new StaffReviewRefused(self::CHANGED);}
         return $history;
+    }
+    /** A release that did not stick: every path back to held lands here, so History can say why. */
+    public static function noteReturn(Operation $op): void
+    {
+        if(!$op->isDirty('state')||$op->state!=='held'||$op->safe_code==='staff_review_required'){return;}
+        $history=$op->policy['staff_actions']??[];$last=is_array($history)&&$history!==[]?end($history):null;
+        if(!is_array($last)||($last['action']??null)!=='release'||count($history)>=100){return;}
+        $history[]=['action'=>'engine_hold','phase'=>'completed','reason'=>$op->safe_code,'at'=>now()->format(DATE_ATOM),
+            'operation_key'=>$op->operation_key,'generation'=>$op->authority_generation];
+        $op->policy=[...$op->policy,'staff_actions'=>$history];
     }
     public static function liveLease(Operation $op,Clock $clock): bool
     { return $op->state==='running' && $op->lease_expires_at!==null && $op->lease_expires_at>$clock->now(); }

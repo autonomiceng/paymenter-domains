@@ -73,5 +73,30 @@ app('request')->cookies->set('cart', $guest->ulid); Illuminate\Support\Facades\A
 (new App\Listeners\UserAuthListener)->handle(new App\Events\Auth\Login($user));
 same($user->id, $guest->fresh()->user_id, 'Native login adopts guest cart');
 commerceCheckout($user, $guest); same(3, Order::count(), 'Guest eligibility survives native login and checkout');
+// A retained cart must not silently accept a synced price, even with freshly loaded native relations.
+// Real checkout is needed to verify invoice amounts and rollback, rather than just price calculations.
+$cart = commerceCart($user); $line = commerceAdd($cart, $product, placeholderComFixtureName('synced-price-placeholder.com'));
+$history = [DB::table('invoices')->orderBy('id')->get()->toJson(),DB::table('invoice_items')->orderBy('id')->get()->toJson()];
+$services = DB::table('services')->orderBy('id')->get()->toJson();
+$binding = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+$accepted = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);
+foreach (['8.00','5.00'] as $cost) {
+    $rates = [];
+    foreach ([['register',1],['register',3],['renew',1],['transfer',1]] as [$action,$term]) {
+        $rates[] = new Paymenter\Extensions\Servers\Domains\Data\CatalogueRate($action,$term,$cost,'synthetic',$now,$now->modify('+1 day'));
+    }
+    $prices->import(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true),$accepted,static fn()=>null,$now,null,true);
+    commerceCheckout($user,$cart);
+    same(3,Order::count(),'A retained cart cannot charge an unseen synced price');
+    same($history,[DB::table('invoices')->orderBy('id')->get()->toJson(),DB::table('invoice_items')->orderBy('id')->get()->toJson()],'Sync and refused checkout preserve issued invoices');
+    same($services,DB::table('services')->orderBy('id')->get()->toJson(),'Sync leaves existing service prices to the renewal billing projection');
+    // Follow the existing refresh notice: remove and re-add at the current displayed offer.
+    $line->delete(); $line=commerceAdd($cart,$product,placeholderComFixtureName('synced-price-placeholder.com'));
+}
+// An unchanged-price sync advances revisions without requiring another customer check.
+$prices->import(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true),$accepted,static fn()=>null,$now,null,true);
+commerceCheckout($user,$cart);
+same(4,Order::count(),'A refreshed cart sells at the synced price');
+same('6.50',number_format((float)Invoice::latest('id')->first()->items()->sole()->price,2,'.',''),'Customer invoice equals the refreshed native offer after a falling cost');
 same(0, DB::transactionLevel(), 'Native checkout leaves no partial transaction');
 $nativeSuccessful = true; echo "Native cart batch admission, mixed invoices, stale selections and eligibility refusals passed.\n";

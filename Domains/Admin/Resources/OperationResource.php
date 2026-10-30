@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Resources\Resource;
 use Filament\Tables\{Columns\TextColumn, Filters\SelectFilter, Table};
 use Illuminate\Database\Eloquent\{Builder,Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Labels,OperationQueries,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,Labels,OperationQueries,Staff};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Missing,RequestStatus};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\{ListOperations,ViewOperation};
@@ -35,6 +35,7 @@ class OperationResource extends Resource
     {
         Staff::requireView();
         $statuses=array_map(fn($status)=>$status[0],RequestStatus::SET); $servers=\App\Models\Server::pluck('name','id')->all();
+        EmptyTable::apply($table,'No registrar requests','Requests show here when a customer orders a domain.','No requests match');
         return $table->columns([
             TextColumn::make('id')->label('Request')->formatStateUsing(fn($state)=>'Request #'.$state)->sortable()
                 ->suffix(fn(Operation $record)=>self::demo($record)?DemoData::tag(inline:true):null),
@@ -47,17 +48,16 @@ class OperationResource extends Resource
                 ->description(fn($record)=>Labels::requestStatus($record)['reason']),
             TextColumn::make('created_at')->label('Created')->dateTime('M j, Y H:i \\U\\T\\C','UTC')->sortable()->visibleFrom('lg'),
             TextColumn::make('server_id')->label('Registrar account')->visibleFrom('xl')->formatStateUsing(fn($state)=>$servers[$state]??Missing::LABEL)
-                ->color(fn($state)=>isset($servers[$state])?null:Missing::COLOR)->description(fn($record)=>isset($servers[$record->server_id])?null:'Registrar account not found'),
+                ->color(fn($state)=>isset($servers[$state])?null:Missing::COLOR)->description(fn($record)=>isset($servers[$record->server_id])?null:'Registrar account not found. Check Registrars.'),
         ])->filters([
             SelectFilter::make('status')->label('Status')->multiple()->options($statuses)
-                ->query(fn(Builder $query,array $data)=>$data['values']??[] ? $query->whereIn('state',array_keys(array_filter(RequestStatus::STATES,fn($state)=>in_array($state[0],$data['values'],true)))) : $query),
+                ->query(fn(Builder $query,array $data)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status($query,$data['values']??[])),
             SelectFilter::make('action')->label('Type')->multiple()
                 ->options(fn()=>collect(Operation::query()->distinct()->pluck('action'))->mapWithKeys(fn($action)=>[$action=>Labels::action($action)])->sort()->all()),
             SelectFilter::make('server_id')->label('Registrar account')->multiple()
                 ->options(fn()=>\App\Models\Server::whereIn('id',Operation::query()->distinct()->pluck('server_id'))->pluck('name','id')->all()),
         ])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->defaultSort('id','desc')
-            ->paginated([25,50,100])->defaultPaginationPageOption(25)
-            ->emptyStateHeading('No registrar requests')->emptyStateDescription(null);
+            ->paginated([25,50,100])->defaultPaginationPageOption(25);
     }
     /** Demo requests keep the Demo tag; a row whose saved data can't be read still lists. */
     public static function demo(Operation $op): bool { try { return DemoData::is($op); } catch (\Throwable) { return false; } }

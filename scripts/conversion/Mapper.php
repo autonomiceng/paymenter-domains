@@ -75,7 +75,7 @@ final class Mapper
             $equivalent=NotificationTemplate::where('key',$key)->first();
             foreach(['subject','body','in_app_title','in_app_body','in_app_url']as$field){$text=(string)$t->$field;preg_match_all('/\$([A-Za-z_][A-Za-z0-9_]*)/',$text,$vars);
                 $invoiceSafe=preg_replace('/@(if|elseif|unless)\s*\(\s*!?\s*\$invoice\s*(?:(?:===|!==|==|!=)\s*null\s*)?\)|@isset\s*\(\s*\$invoice\s*\)/','',$text);
-                if(preg_match('/\$invoice\b/',$invoiceSafe)||array_diff($vars[1],['domain','expires','days','invoice','due','invoice_on','overdue','complimentary','years','amount','invoice_url','domain_url','deadline','action','renews_automatically','currency'])||str_contains($text,'->')||preg_match('/\$[A-Za-z_][A-Za-z0-9_]*\s*[)\s]*\[/',$text)||preg_match('/enom[.\\\\]/i',$text)){throw new \DomainException('Retained template requires unsupported data or legacy route.');}}
+                if(preg_match('/\$invoice\b/',$invoiceSafe)||array_diff($vars[1],['domain','expires','days','invoice','due','invoice_on','overdue','complimentary','years','amount','invoice_url','domain_url','deadline','action','renews_automatically','currency','can_turn_on'])||str_contains($text,'->')||preg_match('/\$[A-Za-z_][A-Za-z0-9_]*\s*[)\s]*\[/',$text)||preg_match('/enom[.\\\\]/i',$text)){throw new \DomainException('Retained template requires unsupported data or legacy route.');}}
             if($equivalent){
                 $p->changes['notification_templates'][$t->id]=['enabled'=>false];
                 $p->changes['notification_template_collisions'][$t->id]=['legacy_key'=>$t->key,'equivalent_id'=>(int)$equivalent->id,'equivalent_key'=>$key];

@@ -11,9 +11,8 @@ fresh review and a reason:
 
 1. **Verify identity** saves encrypted UID/token after one authenticated GetBalance.
 2. **Read balance** makes one independent GetBalance.
-3. **Accept catalogue** records independently verified `com`, registration term 1,
-   supported registry requirements and safe annual holder renewal; no reads.
-   Leave transfer unaccepted for this baseline.
+3. **What you sell** lists the account's TLDs (one GetTLDList). Saving `com`, term 1, reads that TLD's
+   terms and prices and records safe annual holder renewal. Leave Transfers off for this baseline.
 4. Set the account default pricing on the registrar account page, then **Import accepted ending** for `com`: GetTLDList,
    GetTLDDetails, GetExtAttributes and two PE_GetProductPrice reads (register/renew).
    It imports costs and initializes an unselected seller policy. A new TLD stays

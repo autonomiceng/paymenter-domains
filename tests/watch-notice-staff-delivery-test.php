@@ -8,6 +8,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Mail\WatchNotice as NoticeMail;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchNoticeReviewController;
+use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
+use Paymenter\Extensions\Servers\Domains\Models\WatchNotice;
+use Paymenter\Extensions\Servers\Domains\Services\WatchNoticeReview;
 require dirname(__DIR__).'/Domains/routes/owned.php';
 $f=noticeFixture();extract($f);storefrontViews();
 $owner->update(['email'=>'watch-staff@example.test']);
@@ -36,11 +39,24 @@ same(['mail','accepted',(int)$native->id],[$record->channel,$record->state,(int)
 $request=Request::create('/domains/check-notices/deliveries/'.$claim);$request->setUserResolver(fn()=>$owner);$request->setLaravelSession(app('request')->session());
 $page=(new WatchNoticeReviewController)->show($request,$claim)->render();$dom=storefrontDom($page);
 $one=static function(string $xpath)use($dom):string{$nodes=$dom->query($xpath);same(1,$nodes->length,'One exact staff delivery field: '.$xpath);return trim($nodes->item(0)->textContent);};
-same('Public notice delivery review',$one('//h1'),'Staff delivery heading');
-same('mail',$one('//dt[normalize-space(.)="Channel"]/following-sibling::dd[1]'),'Staff page names mail');
-same('Queued',$one('//dt[normalize-space(.)="State"]/following-sibling::dd[1]'),'Staff page names queue acceptance');
-same((string)$native->id,$one('//dt[normalize-space(.)="Native email_log ID"]/following-sibling::dd[1]'),'Exact native email ID appears in its own field');
+same('Check a monitoring alert',$one('//h1'),'Staff delivery heading');
+same('Email',$one('//dt[normalize-space(.)="Sent by"]/following-sibling::dd[1]'),'Staff page names mail');
+same('Queued',$one('//dt[normalize-space(.)="Status"]/following-sibling::dd[1]'),'Staff page names queue acceptance');
+same((string)$native->id,$one('//dt[normalize-space(.)="Email log ID"]/following-sibling::dd[1]'),'Exact native email ID appears in its own field');
 expect(!$delivery->handoff($claim,$now+4),'Repeat handoff never queues another mail');
 same(1,Mail::queued(NoticeMail::class)->count(),'Still exactly one mail');
+// Send again says what really happened, and points at a check that exists.
+$sendAgain=static function()use($owner,$claim,$native,$delivery):?string{
+    $post=Request::create('/domains/check-notices/deliveries/'.$claim,'POST',['native_id'=>$native->id,'reason'=>'Customer says it never came']);$post->setUserResolver(fn()=>$owner);$post->setLaravelSession(app('request')->session());
+    $post->request->set('_request_key',FormKeys::issue($post,'watch-resend:'.$claim));
+    return (new WatchNoticeReviewController)->resend($post,$claim,$delivery)->getSession()->get('watch_review');
+};
+$notSent='Not sent again. The alert may be closed or turned off.';
+same($notSent,$sendAgain(),'A copy that could not be handed off is not called queued');
+WatchNotice::whereKey($ids[0])->update(['state'=>'resolved','resolved_at'=>$now+5]);
+same($notSent,$sendAgain(),'A closed alert makes no copy and is not called queued');
+same(1,Mail::queued(NoticeMail::class)->count(),'Declined sends queue nothing');
+same('We can’t tell if this copy went out. Check Email Logs before you send it again.',WatchNoticeReview::resendResult('mail','uncertain'),'An uncertain send is not called queued');
+same('Queued to send again. Email Logs shows if it sent.',WatchNoticeReview::resendResult('mail','accepted'),'Queued mail is not called arrived');
 echo "Staff owner watch notice: exact recipient, subject, HTML/text body, native evidence and delivery review passed.\n";
 $nativeSuccessful=true;

@@ -20,10 +20,14 @@
         </div>
     </div>
     @include('domains::partials.notices', ['fieldKeys' => ['domain'], 'summary' => false])
+    @if ($replace ?? null)
+        <div class="domains-notice" role="status" data-domains-replacing><p>Replacing {{ $replace['name'] }}.</p> <a class="domains-a" href="{{ route('cart') }}">Cancel</a></div>
+    @endif
     @if (!$endings)
         <div class="domains-notice domains-notice--warn" role="status"><x-ri-information-fill aria-hidden="true" /><div>Domain registration isn’t available right now. Please check back later.</div></div>
     @else
         <form method="GET" action="{{ route('domains.domains.search') }}" role="search">
+            @if ($replace ?? null)<input type="hidden" name="replace" value="{{ $replace['id'] }}">@endif
             <div class="domains-searchbar">
                 <label for="domains-name" class="domains-sr">Domain name</label>
                 <input id="domains-name" name="name" type="text" value="{{ $nameValue }}" placeholder="yourbusiness" autocomplete="off" autocapitalize="none"
@@ -52,7 +56,7 @@
         @if ($results)
             <section aria-labelledby="domains-results-heading">
                 <h2 id="domains-results-heading" class="domains-sr">Results for {{ $sld }}</h2>
-                <ul class="domains-results" data-domains-results="{{ route('domains.domains.check') }}" data-request-key="{{ $checkKey }}" @if ($years) data-years="{{ $years }}" @endif>
+                <ul class="domains-results" data-domains-results="{{ route('domains.domains.check') }}" data-request-key="{{ $checkKey }}" @if ($replace ?? null) data-replace="{{ $replace['id'] }}" @endif @if ($years) data-years="{{ $years }}" @endif>
                     @foreach ($results as $index => $result)
                         @include('domains::partials.result', ['first' => $index === 0])
                     @endforeach

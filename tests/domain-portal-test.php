@@ -24,12 +24,12 @@ $dom=storefrontDom($html);$text=static fn(DOMNode $node)=>trim($node->textConten
 $nameservers='//li[@id="nameservers"]/span[@class="domains-row__v"]';
 same(1,$dom->query('//li[@id="nameservers"]')->length,'One initial Nameservers row');
 same(1,$dom->query($nameservers)->length,'One Nameservers value');
-same(['Missing'],array_map($text,iterator_to_array($dom->query($nameservers.'/span[@class="domains-missing"]'))),'Initial Nameservers value is Missing');
-same(['Shows after the first check'],array_map($text,iterator_to_array($dom->query($nameservers.'/span[@class="domains-sub"]'))),'Initial Nameservers names the pending first check');
+same(['Missing'],array_map($text,iterator_to_array($dom->query($nameservers.'/span[contains(concat(@class," "),"domains-missing ")]'))),'Initial Nameservers value is Missing');
+same(['Fills in by itself after the first check'],array_map($text,iterator_to_array($dom->query($nameservers.'/span[@class="domains-sub"]'))),'Initial Nameservers names the pending first check');
 $expires='//section[@id="renewal"]//dl[@class="domains-card"]/div[dt[starts-with(normalize-space(.),"Expires")]]';
 same(1,$dom->query($expires)->length,'One initial Renewal Expires row');
 same(1,$dom->query($expires.'/dd')->length,'One Expires value');
-same(['Missing'],array_map($text,iterator_to_array($dom->query($expires.'/dd/span[@class="domains-missing"]'))),'Initial expiry value is Missing');
+same(['Missing'],array_map($text,iterator_to_array($dom->query($expires.'/dd/span[contains(concat(@class," "),"domains-missing ")]'))),'Initial expiry value is Missing');
 same(['Check at your registrar'],array_map($text,iterator_to_array($dom->query($expires.'/dd/span[@class="domains-sub"]'))),'Initial expiry names its registrar cause');
 $beforeState=DB::table('domains_watch_work')->get()->toJson();$list->index($request($owner))->render();$controller->show($request($owner),'watch',$id)->render();same($beforeState,DB::table('domains_watch_work')->get()->toJson(),'GET never enrolls or queues public work');
 app('view')->getFinder()->addLocation($fixture.'/themes/default/views');HostingDomainRow::boot();Auth::setUser($owner);$v=view('services.show',['service'=>$service,'fields'=>[]]);app('view')->callComposer($v);$fields=$v->getData()['fields'];same(1,count($fields),'One compact hosting Domain row');assertDomainNameWraps((string)$fields[0]['text'],$watch->canonical_name,'Hosting Domain row','link');expect(str_contains((string)$fields[0]['text'],url('/domains/checks/watch/'.$id)),'Hosting row links owned watch detail');

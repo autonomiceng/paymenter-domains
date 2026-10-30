@@ -141,7 +141,7 @@ $retainedCancellation=$c->getRawOriginal();$retainedAdoption=$a->getRawOriginal(
 foreach(['type'=>'immediate','service_id'=>$service->id+999,'reason'=>'Changed original renewal stop']as$field=>$value){
     $candidate=$c->fresh();$refused=false;
     try{$candidate->update([$field=>$value]);}catch(Illuminate\Validation\ValidationException $e){
-        same('This cancellation records the original adoption renewal stop and must be retained. Review the domain adoption history.',$e->errors()['reason'][0]??null,'Retained cancellation update has its exact refusal');$refused=true;
+        same('This cancellation stopped renewal when the domain was imported, so it has to stay.',$e->errors()['reason'][0]??null,'Retained cancellation update has its exact refusal');$refused=true;
     }
     expect($refused,'Original cancellation '.$field.' update is guarded');
     same($retainedCancellation,$c->fresh()->getRawOriginal(),'Update refusal retains cancellation bytes');

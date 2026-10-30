@@ -8,7 +8,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,DispatchSeal,Environment,ExecutionRecord,HistoryAcceptance,Query,RequestOrigin,SendState};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,EnomLive,EnomLiveCalls,EnomTestManagement,EnomTestCalls,EnomTestCallLimit,EnomTestCallSchema,EnomTestRegistration,Installation,NativeCatalogue,ObservationWork,Runtime,RuntimePorts,RuntimeWork,StaffSettingsReview as Review,StaffSettingsWrites,Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,EnomLive,EnomLiveCalls,EnomTestManagement,EnomTestCalls,EnomTestCallLimit,EnomTestRegistration,Installation,NativeCatalogue,ObservationWork,Runtime,RuntimePorts,RuntimeWork,StaffSettingsReview as Review,StaffSettingsWrites,Storefront};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 $clock=new class implements Clock {
     public DateTimeImmutable $at;
@@ -109,8 +109,7 @@ $deny(fn()=>Paymenter\Extensions\Servers\Domains\Services\EnomLiveCalls::reserve
 DB::table('domains_accounts')->where('server_id',$testServer->id)->delete();
 same($before,count($GLOBALS['enomWire']['forms']),'Binding refusals send nothing');
 $write('probe');
-$deny(fn()=>$write('acceptance',['ending'=>'com','accept'=>true,'terms'=>[1],'registry'=>true,'verified'=>true,'test_registration_accepted'=>true]));
-$write('acceptance',['ending'=>'com','accept'=>true,'terms'=>[1],'registry'=>true,'verified'=>true,'live_registration_accepted'=>true]);
+$write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]]);
 foreach(['renewal','management'] as $action){
     $class='Paymenter\\Extensions\\Servers\\Domains\\Services\\EnomTest'.ucfirst($action);
     $server->settings()->create(['key'=>$class::KEY,'encrypted'=>true,'type'=>'string','value'=>json_encode(['fingerprint'=>$binding->fingerprint,...$class::protocol($binding)])]);
@@ -132,7 +131,7 @@ $write('processing',['enabled'=>true,'confirmed'=>true]);
 $observations=app(ObservationWork::class);$observations->enroll($server->id);$before=count($GLOBALS['enomWire']['forms']);$observations->tick();same($before,count($GLOBALS['enomWire']['forms']),'Live catalogue keeps the TEST staff-only refresh policy');same(null,DB::table('domains_observation_queues')->where('server_id',$server->id)->value('catalogue_hold'),'No spurious automatic catalogue failure');
 config(['domains.enom_live.catalogue'=>false]);$observations->tick();same($before,count($GLOBALS['enomWire']['forms']),'Catalogue opt-out sends no scheduled refresh');same(null,DB::table('domains_observation_queues')->where('server_id',$server->id)->value('catalogue_hold'),'Catalogue opt-out creates no false failure');config(['domains.enom_live.catalogue'=>true]);
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
-    ->assertSeeInOrder(['Setup checklist','Renewals','On','DNS, nameservers and contacts','On','Renewal invoices'])->assertSee(['Live account fingerprint',$binding->fingerprint])->assertDontSee('LIVE-SECRET-TOKEN');
+    ->assertSeeInOrder(['Setup checklist','Renewals','On','DNS, nameservers and contacts','On','Renewal invoices'])->assertSee(['Live account ID',$binding->fingerprint])->assertDontSee('LIVE-SECRET-TOKEN');
 $user=commerceUser();$user->update(['email'=>'live-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
 $product=app(NativeCatalogue::class)->product($tld,'register');$worker=app(RuntimeWork::class);

@@ -81,6 +81,8 @@ Mail::assertQueued(DomainNotice::class,fn($mail)=>$mail->data['domain']===$owner
 [$x]=$make(placeholderComFixtureName('render-failure-placeholder.com'));$template->update(['body'=>'{{ $missing->property }}']);
 same(false,$reminders->remind((int)$x->id),'Bad staff template cannot be marked sent');
 expect(DB::table('domains_obligation_alerts')->where('domain_id',$x->id)->where('code','template_failed')->exists(),'Render problem visible');
+// These alerts also fire when only the in-app notice failed, so they must not blame email.
+foreach(['delivery_uncertain','template_failed'] as $code){expect(!preg_match('/mail/i',ObligationAlerts::LABELS[$code]),'Alert names no channel: '.$code);}
 $template->update(['body'=>ReminderTemplates::definitions()['domains_domain_expiring']['body']]);
 expect($reminders->remind((int)$x->id),'Corrected template retries before queue handoff');
 // Two-day catch-up, never three; closest window wins without backfilling older offsets.

@@ -6,7 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCatalogue,RuntimeWork};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 require __DIR__.'/enom-test-registration-fixture.php';
-$write('acceptance',['ending'=>'com','accept'=>true,'terms'=>[1],'registry'=>true,'verified'=>true,'test_registration_accepted'=>true]);
+$write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]]);
 $write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 $write('import',['ending'=>'com']);
 $tld=Tld::where('server_id',$server->id)->sole();

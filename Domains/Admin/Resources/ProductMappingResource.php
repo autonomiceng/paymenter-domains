@@ -14,7 +14,7 @@ class ProductMappingResource extends WatchReadResource
     protected static ?string $model=WatchProductMap::class;
     protected static ?string $navigationLabel='Hosting products';
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-cube';
-    protected static ?int $navigationSort=7;
+    protected static ?int $navigationSort=8;
     protected static ?string $modelLabel='hosting product';
     protected static ?string $pluralModelLabel='Hosting products';
     protected static ?string $breadcrumb='Hosting products';

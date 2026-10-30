@@ -116,8 +116,25 @@ final class NativeCatalogue
     public function publish(int $tldId, \DateTimeImmutable $now, ?StaffSettingsReview $review = null, ?\Closure $change = null): void
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Native publication owns its lock prefix.'); }
-        $seed = Tld::findOrFail($tldId);
-        DB::transaction(function () use ($seed, $now, $review, $change): void {
+        $this->publication(Tld::findOrFail($tldId), $now, $review, $change);
+    }
+
+    /** Import saved costs and refresh existing publication in the same native-first transaction.
+     * An ending without native products remains unpublished. All provider reads have already finished. */
+    public function refresh(Tld $seed, \DateTimeImmutable $now, \Closure $import, ?StaffSettingsReview $review = null): void
+    {
+        if (DB::transactionLevel() !== 0) { throw new \LogicException('Native publication owns its lock prefix.'); }
+        $existing = Tld::where(['server_id' => $seed->server_id, 'tld' => $seed->tld])->first();
+        if ($existing && ($existing->account_fingerprint !== $seed->account_fingerprint || $existing->registrar_key !== $seed->registrar_key)) {
+            throw new \DomainException('Catalogue account mismatch.');
+        }
+        $this->publication($existing ?? $seed, $now, $review, null, $import);
+    }
+
+    private function publication(Tld $seed, \DateTimeImmutable $now, ?StaffSettingsReview $review,
+        ?\Closure $change, ?\Closure $import = null): void
+    {
+        DB::transaction(function () use ($seed, $now, $review, $change, $import): void {
             $review?->lockActor();
             // Native category mutex serializes first publication: native slugs have no unique index.
             $category = Category::where('slug', 'domains')->lockForUpdate()->first();
@@ -133,19 +150,26 @@ final class NativeCatalogue
             $review?->lockAccounts();
             $server = Server::whereKey($seed->server_id)->lockForUpdate()->firstOrFail();
             $account = Account::where('server_id', $seed->server_id)->lockForUpdate()->firstOrFail();
-            $review?->check();
-            $tld = Tld::whereKey($seed->id)->lockForUpdate()->firstOrFail();
+            $review?->check($import !== null);
+            $tld = ($seed->exists ? Tld::whereKey($seed->id) : Tld::where(['server_id' => $seed->server_id, 'tld' => $seed->tld]))->lockForUpdate()->first();
+            if (!$tld && $import && !$seed->exists) { $tld = $seed; $tld->save(); $tld->refresh(); }
+            if (!$tld) { throw new \DomainException('Catalogue ending disappeared.'); }
             if (!$server->enabled || $server->extension !== 'Domains' || $tld->account_fingerprint !== $account->account_fingerprint
-                || $tld->registrar_key !== $account->registrar_key) { throw new \DomainException('Catalogue account unavailable.'); }
-            if ($review && (!in_array($review->action, ['publish', 'override', 'remove_override'], true)
-                || $review->tldId !== (int) $tld->id || $review->serverId !== (int) $server->id)) { throw new \DomainException('Publication review mismatch.'); }
+                || $tld->registrar_key !== $account->registrar_key || $seed->account_fingerprint !== $account->account_fingerprint
+                || $seed->registrar_key !== $account->registrar_key) { throw new \DomainException('Catalogue account unavailable.'); }
+            if ($review && ($review->serverId !== (int) $server->id || ($import
+                ? $review->action !== 'import' || $review->tldId !== null
+                : !in_array($review->action, ['publish', 'override', 'remove_override'], true) || $review->tldId !== (int) $tld->id))) {
+                throw new \DomainException('Publication review mismatch.');
+            }
+            if ($import) { $import($tld, $server, $account); }
             if ($change && $change($tld) === false) { return; }
-            if ($review || $change) { $this->prices->republishLocked($tld); }
+            if (!$import && ($review || $change)) { $this->prices->republishLocked($tld); }
             foreach ($products as $product) {
                 $mapping = $this->mapping($product);
                 if (!$mapping || $mapping['tld']->id !== $tld->id) { throw new \DomainException('Reserved domain slug collision.'); }
             }
-            foreach (['register', 'transfer'] as $action) {
+            foreach ($import && $products->isEmpty() ? [] : ['register', 'transfer'] as $action) {
                 $matches = $products->where('slug', self::slug($tld, $action));
                 if ($matches->count() > 1) { throw new \DomainException('Duplicate domain product.'); }
                 $product = $matches->first();
@@ -186,7 +210,7 @@ final class NativeCatalogue
                 }
                 $product->stock = null; $product->save();
             }
-            $review?->record();
+            $review?->record($import ? 'catalogue_imported' : 'completed');
             StorefrontCatalogueCache::invalidateAfterCommit();
         });
     }

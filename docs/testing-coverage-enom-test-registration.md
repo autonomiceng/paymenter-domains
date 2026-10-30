@@ -9,23 +9,24 @@ Laravel config shape for one isolated TEST deployment:
 domains.enom_identity.environment: test
 domains.enom_catalogue.enabled: true
 domains.enom_writes.registration: true
-domains.enom_test_daily_call_cap: 50
+domains.enom_test_sends_per_day: 1000
+domains.enom_test_sends_per_minute: 60
 ```
 
 `domains.enom_writes.registration` must be boolean `true`, and registration stays closed unless the identity
-environment is `test` and the TEST catalogue is enabled. Set the call cap as an integer (default `50`, `0` refuses
-every Enom TEST request); if a source setting is a string, cast it to an integer when creating Laravel config. An
-invalid value or unavailable counter refuses requests. One UTC-day counter is shared across every TEST account and
-counts failed or timed-out requests as well as successful ones. This configuration never enables live registration.
+environment is `test` and the TEST catalogue is enabled. Set the send limits as integers (defaults `1000` in any
+24 hours and `60` per minute; `0` refuses every Enom TEST request); if a source setting is a string, cast it to an
+integer when creating Laravel config. An invalid value or unreadable count refuses requests. Each TEST login has its
+own count, which includes failed or timed-out requests as well as successful ones. This configuration never enables live registration.
 
-The existing catalogue acceptance action on Registrars records staff acceptance of the exact TEST Purchase route
-and worker request interval alongside the TLD terms. A later protocol or interval change no longer matches that
+Saving What you sell records the fixed TEST route and worker request interval alongside the TLD terms; neither is a
+staff tick box. A later protocol or interval change no longer matches that
 record and holds registration. The USD requirement is checked against a recent, successful, fingerprint-bound manual
 or preflight balance read. These checks do not establish Enom account/provider acceptance; no provider request is
 made by these fixtures.
 
 After correcting a never-claimed local hold such as missing USD evidence or route acceptance, staff use Release unsent
-hold to admit a fresh worker attempt. A cap refusal after a worker claim can be released only when its retained
+hold to admit a fresh worker attempt. A send limit refusal after a worker claim can be released only when its retained
 definitely-unsent refusal evidence validates; uncertain or possibly sent Purchases stay closed to release.
 
 `tests/test_installed_package_enom_test.py` exercises the opt-in and call budget from a fresh

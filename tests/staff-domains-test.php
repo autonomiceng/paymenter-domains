@@ -65,7 +65,7 @@ try {
     }
     DB::table('domains_domains')->where('id',$active->id)->update(['provenance'=>'adoption_pending']);
     $pending=$active->fresh();expect($pending->adoptionPending(),'Pending provenance overrides stored active status');
-    // Held transfers are Under review too, never Pending transfer.
+    // Held transfers read Under review, never Pending transfer.
     staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['pending_transfer'])->assertCountTableRecords(0);
     foreach ([['active'],['under_review'],['active','under_review']] as $groups) {
         $included=in_array('active',$groups,true)?[$peers['active']]:[];
@@ -76,20 +76,20 @@ try {
         $expected=array_map(fn($d)=>$d->id,$included);sort($expected);
         same($expected,DomainQueries::status(Domain::query(),$groups)->orderBy('id')->pluck('id')->all(),'SQL status selection matches exact native filter membership');
     }
-    same(['Under review','Import not confirmed'],[DomainFacts::status($pending)['label'],DomainFacts::status($pending)['reason']],'Pending import is Under review');
+    same(['Under review','Import not confirmed · Check open invoices.'],[DomainFacts::status($pending)['label'],DomainFacts::statusLine(DomainFacts::status($pending))],'Pending import needs staff action');
 } finally {DB::rollBack();}
 DB::table('domains_domains')->where('id',$active->id)->update(['provenance'=>null]);
 $acquisition=$active->operations()->sole();$storedState=$acquisition->state;
 DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'needs_review']);
-foreach(['held'=>'Transfer on hold','uncertain'=>'Transfer not confirmed'] as $shown=>$reason){
+foreach(['held'=>'Transfer on hold · Not sent. Open request #'.$acquisition->id.'.','uncertain'=>'Transfer not confirmed · Registrar has not confirmed the result. Open request #'.$acquisition->id.'.'] as $shown=>$reason){
     DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>$shown]);
     staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$active]);
     staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active','pending_transfer'])->assertCanNotSeeTableRecords([$active]);
-    same(['Under review',$reason],[DomainFacts::status($active->fresh())['label'],DomainFacts::status($active->fresh())['reason']],'Latest acquisition names the review reason');
+    same(['Under review',$reason],[DomainFacts::status($active->fresh())['label'],DomainFacts::statusLine(DomainFacts::status($active->fresh()))],'Latest acquisition names the review reason');
 }
 DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>'succeeded']);
 staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$active]);
-same(['Under review',null],[DomainFacts::status($active->fresh())['label'],DomainFacts::status($active->fresh())['reason']],'Stored review status without a held acquisition');
+same(['Under review','Check the domain and its requests.'],[DomainFacts::status($active->fresh())['label'],DomainFacts::statusLine(DomainFacts::status($active->fresh()))],'Stored review status without a held acquisition');
 DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'active']);
 DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>$storedState]);
 
@@ -118,7 +118,7 @@ $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$held->se
     'domain_id'=>$held->id,'generation'=>$held->authority_generation,'due_at'=>0]);
 foreach (['read_unavailable','budget_exhausted','superseded']as$code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code]);
-    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Sync failed')->assertSee('0 attempts. Stopped until resumed.')->assertSee('Sync stopped after repeated failures.');
+    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Sync failed')->assertSee('0 attempts. Stopped until resumed.')->assertSee('Sync stopped after a failed check.');
     foreach(['generation'=>$held->authority_generation+1,'server_id'=>$held->server_id+100,'account_fingerprint'=>str_repeat('a',64),'phase'=>'foreign']as$field=>$value){
         $old=DB::table('domains_observation_work')->where('id',$work)->value($field);DB::table('domains_observation_work')->where('id',$work)->update([$field=>$value]);
         expect(!$recordService::stopped($held->fresh()),'Foreign scheduled work never stops this holding');DB::table('domains_observation_work')->where('id',$work)->update([$field=>$old]);
@@ -131,7 +131,7 @@ foreach ([['read_unavailable',1,'1 attempt. Stopped until resumed.'],['budget_ex
 }
 foreach ([null,'healthy_pending','refreshed','unresolved'] as $code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>2]);
-    same([null,'Not synced yet'],$sync(),'Running sync without a saved read shows Missing with its cause, not a failure');
+    same([null,'Fills in by itself within a day'],$sync(),'Running sync without a saved read shows Missing with its cause, not a failure');
 }
 DB::table('domains_domains')->where('id',$held->id)->update(['last_synced_at'=>'2026-10-20 15:05:00']);
 same(['Oct 20, 2026 15:05 UTC',null],$sync(),'Last sync shows the saved read time');
@@ -151,15 +151,17 @@ foreach ([['status',['under_review'],[$held,$long],[$active]],['server_id','2',[
 DB::table('domains_operations')->where('domain_id',$long->id)->update(['state'=>'uncertain']);
 staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$held,$long])->assertCanNotSeeTableRecords([$active]);
 same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::attention(Domain::query(),['uncertain'])->pluck('id')->all(),'Unconfirmed transfer query');
-same(['Under review','Old registrar needs approval'],[DomainFacts::status($long->fresh())['label'],DomainFacts::status($long->fresh())['reason']],'Unconfirmed transfer keeps its saved reason');
+same(['Under review','Transfer not confirmed · Old registrar needs approval. Open request #'.$long->operations()->sole()->id.'.'],[DomainFacts::status($long->fresh())['label'],DomainFacts::statusLine(DomainFacts::status($long->fresh()))],'Unconfirmed transfer keeps its saved reason');
 // Rejected paid obligations remain visible even when a credit retry failed.
 $review=$long->operations()->sole();
 DB::table('domains_operations')->where('id',$review->id)->update(['state'=>'rejected','funding_basis'=>'paid_invoice','safe_code'=>'transfer_code_timeout']);
 $review->refresh();
 expect(RefundCandidates::matches($review,$review->funding??[]),'Paid timeout is a review candidate, never eligibility proof');
-same(['Not refunded','credit'],[RequestFacts::for($review)['refund'],RequestFacts::for($review)['refund_fix']],'Failed credit retry candidate is visible with its fix');
+same(['No credit added','credit'],[RequestFacts::for($review)['refund'],RequestFacts::for($review)['refund_fix']],'Failed credit retry candidate is visible with its fix');
 same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::creditReview(Domain::query())->pluck('id')->all(),'Credit review query');
-staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['pending_transfer'])->assertCanSeeTableRecords([$long]);
+// A failed request reads Failed for customer and staff. The step points at the failed request.
+staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['failed'])->assertCanSeeTableRecords([$long]);
+same('Request failed. Open request #'.$review->id.'.',DomainFacts::status($long->fresh())['step'],'Failed request step on a pending transfer');
 $review->funding=['refund'=>null]; expect(!RefundCandidates::matches($review,$review->funding),'Even null credit marker excludes uncredited interpretation');
 $review->funding=[]; $review->safe_code='transfer_provider_rejected'; expect(!RefundCandidates::matches($review,[]),'Sent rejection is not an unsent credit candidate');
 DB::table('domains_operations')->where('id',$review->id)->update(['safe_code'=>'transfer_provider_rejected']);
@@ -167,7 +169,7 @@ same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueri
 same([],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::creditReview(Domain::query())->pluck('id')->all(),'Sent rejection leaves credit review');
 $review->safe_code='transfer_code_timeout'; $review->funding_basis='complimentary';
 $neverPaid=RequestFacts::for($review); expect(array_key_exists('refund',$neverPaid)&&!isset($neverPaid['refund_fix']),'Never-paid rejections do not imply customer credit');
-same([null,'No paid invoice recorded'],[$neverPaid['refund'],$neverPaid['refund_sub']],'Never-paid refund is Missing with its cause');
+same([null,'No paid invoice recorded. No action needed.'],[$neverPaid['refund'],$neverPaid['refund_sub']],'Never-paid refund is Missing with its cause');
 // A cross-bound operation must never appear just because its domain_id was forged through privileged SQL.
 $ordinaryActivity=Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active,'pageClass'=>ViewDomain::class]);
 $ordinaryActivity->assertCanSeeTableRecords([$active->operations()->sole()])->assertDontSee('Reason missing');
@@ -189,17 +191,17 @@ Livewire::actingAs($customer)->test(ViewDomain::class,['record'=>$held->id])->as
 Auth::setUser($customer);
 try { DomainFacts::for($held); expect(false,'Customer read denied'); } catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(403,$e->getStatusCode(),'Support default deny'); }
 Auth::setUser($viewer); $op=$held->operations()->first();
-$op->safe_code='PRIVATE-UNKNOWN'; same('Missing',RequestFacts::for($op)['reason'],'Unknown private strings never echo');
+$op->safe_code='PRIVATE-UNKNOWN'; same('Missing. Check the request history.',RequestFacts::for($op)['reason'],'Unknown private strings never echo');
 foreach(['provider exception: secret','<script>secret</script>',"read_failed\nsecret",str_repeat('a',65),'unsafe__code','_unsafe'] as $invalid){
-    same('Missing',Labels::reason($invalid),'Invalid reason strings remain hidden');
+    same('Missing. Check the request history.',Labels::reason($invalid),'Invalid reason strings remain hidden');
 }
-same('Missing ('.str_repeat('a',64).')',Labels::reason(str_repeat('a',64)),'Safe code length boundary remains visible');
+same('Missing ('.str_repeat('a',64).'). Check the request history.',Labels::reason(str_repeat('a',64)),'Safe code length boundary remains visible');
 $op->safe_code='transfer_provider_rejected'; $op->funding=['refund'=>['private'=>'PRIVATE-CREDIT']];
 same('NameSilo has not confirmed this transfer.',RequestFacts::notice($op)['title'],'Unknown outcome notice precedes the hold cause');
 expect(!isset(RequestFacts::for($op)['registrar_refund']),'Registrar refund shows only once the request failed or was cancelled');
 $op->state='rejected'; $facts=RequestFacts::for($op);
 same('Ask NameSilo support for a refund',$facts['registrar_refund'],'NameSilo manual refund indicator');
-same(['Refunded','Check the account credit'],[$facts['refund'],$facts['refund_sub']],'Customer credit is retained separately');
+same(['Credit added','Check the account credit'],[$facts['refund'],$facts['refund_sub']],'Customer credit is retained separately');
 expect(!str_contains($facts['registrar_refund'],'credit'),'Registrar refund does not duplicate customer-credit wording');
 $op->state='rejected'; $op->safe_code='transfer_code_timeout';
 expect(!isset(RequestFacts::for($op)['registrar_refund']),'Local unsent rejection does not imply a registrar charge');
@@ -286,6 +288,7 @@ $excluded=[
     'NativeServiceRefusal.php'=>['identity','price'], // Structured log fields.
     'ProviderSendGuard.php'=>['not_callable','clock_failed','guard_threw'], // Structured log fields.
     'CartHandoffFailure.php'=>['unclassified'], // Structured cart handoff log key, never a staff reason.
+    'PriceSync.php'=>['call_cap'], // Daily sync log context, covered by Support/enom-catalogue.php.
     'StaffSettingsReview.php'=>['unavailable'], // Configuration snapshot sentinel.
     'TransferInputs.php'=>['transfer_code'], // Request field name.
     'OwnerFormValidation.php'=>['mx_pref','priority','weight'], // Owner form field names in grouped match arms.
@@ -321,12 +324,20 @@ foreach($known[1] as $code){ $label=Labels::reason($code);
 same(['refreshed','renewal_admitted','management_deferred','readback_confirmed','registration_managed','ready'],$noLine,'Only internal codes show no reason line');
 same("Not sent: couldn't load the registrar account's settings",Labels::reason('configuration_unavailable'),'Held demo request reads as status-model.md 2.2');
 same('Registrar has not confirmed the result',Labels::reason('unverified'),'Uncertain demo request reads as status-model.md 2.2');
-same('Missing (future_reason_code)',Labels::reason('future_reason_code'),'Unknown reason code is Missing with the code');
-same('Missing',Labels::reason(null),'Absent reason is Missing');
+same('Missing (future_reason_code). Check the request history.',Labels::reason('future_reason_code'),'Unknown reason code is Missing with the code');
+same('Missing. Check the request history.',Labels::reason(null),'Absent reason is Missing');
 $op->attempt=['execution'=>null]; same(null,RequestFacts::for($op)['outcome'],'A Failed request is final even with a lost send response');
 $op->state='held'; same('NameSilo has not confirmed this transfer.',RequestFacts::for($op)['outcome'],'Null execution remains unknown');
 $ordinary=clone $op; $ordinary->state='succeeded'; $ordinary->safe_code=null; $ordinary->attempt=[]; $ordinary->policy=[]; $ordinary->funding=[];
 $plain=RequestFacts::for($ordinary); same(null,RequestFacts::notice($ordinary,$plain),'Ordinary rows have no notice');
+// A reason that already ends a sentence does not get a second period.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Data\SystemClock);
+$guarded=clone $ordinary; $guarded->state='held'; $guarded->safe_code='namesilo_account_guard';
+expect(!str_ends_with(RequestFacts::notice($guarded)['title'],'..'),'Hold notice has one period');
+$guardedRow=$held->operations()->first(); $guardedSaved=$guardedRow->only(['state','safe_code']);
+DB::table('domains_operations')->where('id',$guardedRow->id)->update(['state'=>'held','safe_code'=>'namesilo_account_guard']);
+expect(!str_ends_with(DomainFacts::notice($held->fresh())['title'],'..'),'Domain notice has one period');
+DB::table('domains_operations')->where('id',$guardedRow->id)->update($guardedSaved);
 expect(!array_key_exists('refund',$plain)&&$plain['outcome']===null&&!isset($plain['correction'])&&!isset($plain['audit']),'Ordinary rows omit refund, outcome, corrections and audit');
 same('USD 0.00',Labels::money('0'),'Known zero is distinct'); same('Unknown',Labels::money(null),'Unknown cost is not zero');
 same('USD 123456789012345678.1234',Labels::money('123456789012345678.12340000'),'Exact money without floats');
@@ -344,9 +355,25 @@ foreach(['running','pending','uncertain','held'] as $state){
     $renewal->state=$state;
     same([null,'Authorized USD 8.95'],$cost($renewal),'Retained authorization survives unresolved renewal states');
 }
-foreach([[],['amount'=>'8.95'],['amount'=>'8.95','currency'=>'EUR'],['amount'=>8.95,'currency'=>'USD'],['amount'=>'private','currency'=>'USD']] as $authorized){
+// Nothing sent: no charge yet, and the renewal cap reads as a spending limit, never as a cost.
+foreach(['awaiting_payment','held'] as $state){
+    $unsent=new Operation(['action'=>'renew','state'=>$state,'cost'=>null,'attempt'=>[],'funding'=>[],
+        'policy'=>['renewal'=>['cost_cap'=>['amount'=>'8.9500','currency'=>'USD']]]]);
+    same(['Not charged yet','Spending limit USD 8.95'],$cost($unsent),'Unsent renewal shows its spending limit: '.$state);
+    $unsent->action='register'; $unsent->cost=['estimated'=>'8.95','currency'=>'USD'];
+    same(['Not charged yet','Estimated USD 8.95'],$cost($unsent),'Unsent registration keeps its estimate: '.$state);
+}
+// An unpaid request that closed before sending never cost anything, so its Cost row is not Missing.
+foreach(['renewal_cancelled_unpaid'=>'renew','acquisition_cancelled_unpaid'=>'register'] as $code=>$action){
+    $unpaid=new Operation(['action'=>$action,'state'=>'rejected','safe_code'=>$code,'cost'=>null,'funding'=>[],
+        'attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent','disposition'=>'rejected','rejection_basis'=>'definitely_unsent'],
+        'policy'=>['renewal'=>['cost_cap'=>['amount'=>'8.9500','currency'=>'USD']]]]);
+    same(['Not charged',null],$cost($unpaid),'Closed unpaid request was not charged: '.$code);
+    $unpaid->attempt=['seal'=>'sealed','send_state'=>'unknown']; same(null,$cost($unpaid)[0],'A send attempt keeps the cost Missing: '.$code);
+}
+foreach([['amount'=>'8.95'],['amount'=>'8.95','currency'=>'EUR'],['amount'=>8.95,'currency'=>'USD'],['amount'=>'private','currency'=>'USD']] as $authorized){
     $renewal->attempt=$authorized===[]?[]:['authorized_cost'=>$authorized];
-    same([null,'No cost recorded'],$cost($renewal),'Missing or invalid authorization never falls back to estimate or cap');
+    same([null,'No cost recorded. Check at the registrar.'],$cost($renewal),'Missing or invalid authorization never falls back to estimate or cap');
 }
 $renewal->attempt=['authorized_cost'=>['amount'=>'0','currency'=>'USD']];
 same([null,'Authorized USD 0.00'],$cost($renewal),'Known zero authorization remains distinct from unknown');

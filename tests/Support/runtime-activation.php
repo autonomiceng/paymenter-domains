@@ -92,10 +92,10 @@ expect(in_array(RegistrarAccount::class,$panel->getPages(),true),'Native discove
 Livewire\Livewire::actingAs($staff)->test(ActivationStatus::class)->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl());
 $account=['account'=>$server->id];
 $test=Livewire\Livewire::actingAs($staff)->test(RegistrarAccount::class,$account)->assertSuccessful();
-expect(!str_contains($test->html(),'No TLDs chosen yet'),'Accepted catalogue is not falsely reported missing');
+expect(!str_contains($test->html(),'Choose the TLDs you sell.'),'Accepted catalogue is not falsely reported missing');
 DB::table('settings')->where('settingable_id',$server->id)->where('key',Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::KEY)->update(['value'=>'invalid-synthetic-acceptance']);
 $test=Livewire\Livewire::actingAs($staff)->test(RegistrarAccount::class,$account)->assertSuccessful();$html=$test->html();
-foreach(['Setup checklist','Supported TLDs','No TLDs chosen yet','Registrations','Transfers','Renewal invoices','Turn on','System checks','Registrar runtime'] as $word){expect(str_contains($html,$word),'Account page shows go-live fact '.$word);}
+foreach(['Setup checklist','What you sell','Choose the TLDs you sell.','Registrations','Transfers','Renewal invoices','Turn on','System checks','Registrar connection'] as $word){expect(str_contains($html,$word),'Account page shows go-live fact '.$word);}
 expect(Domain::where('domain','queued-held.test')->exists(),'The excluded queued-held.test fixture exists');
 foreach(['synthetic-held-account','synthetic-password','PRIVATE-','queued-held.test','held-package-operation','domains_credentials','account_fingerprint'] as $secret){expect(!str_contains($html,$secret),'Account page excludes secrets and ledger payloads');}
 $plain=staffUser([]);Livewire\Livewire::actingAs($plain)->test(RegistrarAccount::class,$account)->assertForbidden();

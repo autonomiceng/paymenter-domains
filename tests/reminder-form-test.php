@@ -20,8 +20,8 @@ foreach(['before','after'] as $field){
         $query->update([...$original,$field.'_days'=>$bad]);$before=(array)(clone $query)->sole();
         $page=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$server])->assertSuccessful()->mountAction($name)->assertSuccessful()->assertActionMounted($name);
         same(null,$page->get('mountedActions.0.data.'.$field),'Unreadable days have no invented default: '.$bad);
-        $page->assertSee('Unavailable')->assertSee('Saved reminder days cannot be read.');
-        same('Unavailable',$placeholder($page,$field),'Unreadable day control explains its state');
+        $page->assertSee('Missing')->assertSee("Saved reminder days can't be read.");
+        same('Missing',$placeholder($page,$field),'Unreadable day control explains its state');
         $page->setActionData(['enabled'=>true,'before'=>'7','after'=>'3','reason'=>'Refuse unreadable saved days'])->callMountedAction()->assertHasNoActionErrors()->assertNotified("Couldn't save reminders");
         same($before,(array)(clone $query)->sole(),'Malformed days and audit are never rewritten: '.$bad);
     }

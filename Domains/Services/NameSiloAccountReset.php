@@ -24,19 +24,19 @@ final readonly class NameSiloAccountReset
     private static function server(int $id,bool $lock=false): Server
     {
         $q=Server::whereKey($id)->where('extension','Domains')->where('enabled',true);if($lock){$q->lockForUpdate();}
-        $s=$q->first();if(!$s){throw new \DomainException('Enable this Domains server before reviewing the account.');}return $s;
+        $s=$q->first();if(!$s){throw new \DomainException('Turn on this registrar account before you review it.');}return $s;
     }
     private static function pinned(Server $server,bool $lock=false): array
     {
         $q=$server->settings()->where('key',NameSiloAccountGuard::PIN);if($lock){$q->lockForUpdate();}$s=$q->first();
-        if(!$s||!$s->encrypted){throw new \DomainException('No pinned NameSilo account to replace.');}
+        if(!$s||!$s->encrypted){throw new \DomainException('No saved NameSilo account to replace.');}
         try {
             $v=json_decode($s->value,true,8,JSON_THROW_ON_ERROR);
             if(!is_array($v)||!is_string($v['binding']??null)||!preg_match('/^[a-f0-9]{64}$/D',$v['binding'])
                 ||!is_string($v['contact_id']??null)||!preg_match('/^[1-9][0-9]{0,19}$/D',$v['contact_id'])
                 ||DefaultContact::email($v['email']??null)!==($v['email']??null)){throw new \DomainException;}
             return $v;
-        }catch(\Throwable){throw new \DomainException('The pinned NameSilo account cannot be read.');}
+        }catch(\Throwable){throw new \DomainException("Can't read the saved NameSilo account.");}
     }
     private static function expected(Server $server,bool $lock=false): string
     {

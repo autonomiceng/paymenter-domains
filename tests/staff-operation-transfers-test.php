@@ -27,7 +27,7 @@ foreach([['queued','register'],['rejected','transfer'],['succeeded','renew'],['h
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('release')->assertNotified('Hold released');
 same('queued',$op->fresh()->state,'Saved-code held transfer may queue only before cutoff');
 $run($op,'hold');$clock->instant=$now->modify('+30 days');commerceReject(fn()=>$run($op,'release'));
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>'Close proven unsent saved-code transfer'])->assertNotified('Cancelled and refunded');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>'Close proven unsent saved-code transfer'])->assertNotified('Cancelled, credit added');
 same('account_credit',$op->fresh()->funding['refund']['to'],'Exact saved-code credit');same('definitely_unsent',$op->fresh()->attempt['send_state'],'Only virgin evidence creates local negative proof');
 $clock->instant=$now;
 foreach(['transfer_not_registered','staff_review_required']as$reason){

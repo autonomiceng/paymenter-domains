@@ -67,7 +67,7 @@ $setRights([]);same(false,Page::canAccess(),'Default deny');Livewire::actingAs($
 $setRights([Staff::VIEW,Page::MANAGE]);same(false,Page::canAccess(),'Manage cannot view alone');
 $setRights([Staff::VIEW,Page::VIEW]);Livewire::actingAs($staff)->test(Page::class)->assertSee('Not downloaded yet')->assertActionHidden('psl_download')->assertActionHidden('psl_source');same(0,$count,'GET no fetch');
 $setRights($rights);
-$page=Livewire::actingAs($staff)->test(Page::class)->assertSee('MPL-2.0')->assertActionEnabled('psl_download');
+$page=Livewire::actingAs($staff)->test(Page::class)->assertSee('MPL-2.0')->assertSee('More help')->assertActionEnabled('psl_download');
 expect(!$page->instance()->getCachedHeaderActions()[0]->isConfirmationRequired(),'Download now has no dialog');same(0,$count,'Showing Download now does not fetch');
 $update=$page->instance()->getCachedHeaderActions()[0]->getActionFunction();
 $setRights([Staff::VIEW,Page::VIEW]);$page->assertActionHidden('psl_download');same(0,$count,'Fresh manage revoked');
@@ -81,6 +81,8 @@ Livewire::actingAs($staff)->test(Page::class)->mountAction('psl_source')->setAct
 Livewire::actingAs($staff)->test(Page::class)->mountAction('psl_source')->setActionData(['url'=>'https://mirror.example.com/list'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Source saved');same(0,$count,'Saving source no network');
 Livewire::actingAs($staff)->test(Page::class)->callAction('psl_download')->assertNotified('List updated')->assertActionHidden('psl_download')->assertSee('Next update allowed:');
 same(1,$count,'Native manual fetched once');same('Current',PslFacts::state($list),'Current state');
+// The page's expiry date must match the day new discovery actually stops.
+Livewire::actingAs($staff)->test(Page::class)->assertSee('Out of date after '.PslFacts::time((int)$list->current()->validated_at+90*86400).'.');
 $before=DB::table('domains_psl_snapshots')->where('state','current')->first();
 $source(['url'=>'https://after-complete.example.com/list']);
 same('updated',$list->status()->last_result,'Source change preserves a completed update result');
@@ -113,8 +115,8 @@ same(1,$job->tries,'Failed public-data jobs have no queue retry');
 $clock->at=$failedAt+7*86400-1;$job->handle($failedList);same(1,$failures,'Failed download preserves weekly admission');
 $clock->at++;$job->handle($failedList);same(2,$failures,'Failed download becomes eligible again after a week');
 
-$clock->at+=30*86400+1;Livewire::actingAs($staff)->test(Page::class)->assertSee('Out of date warning');
-$clock->at+=60*86400;Livewire::actingAs($staff)->test(Page::class)->assertSee('New discovery paused');
+$clock->at=(int)$list->current()->validated_at+90*86400;Livewire::actingAs($staff)->test(Page::class)->assertSee('The list is current.');
+$clock->at++;Livewire::actingAs($staff)->test(Page::class)->assertSee('Out of date')->assertSee('The list is over 90 days old.');
 DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'rules_lost_private']);Livewire::actingAs($staff)->test(Page::class)->assertSee('Many rules were removed. Review them before using this list.');
 DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'dns_failed']);
 same("Couldn't download: the source name didn't resolve.",PslFacts::rows($list)['Last attempt result'],'Page facts keep a DNS failure apart from an unsafe address');

@@ -19,7 +19,7 @@ $make=static function(bool $free=false,bool $setup=false,bool $held=false):Owned
     foreach(['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'Domain privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code']as$cap=>$label){
         $management[$cap]=['label'=>$label,'url'=>'/domains/1/manage/'.$cap,'actions'=>[]];
     }
-    $management['nameservers']['max']=$free?13:12; $management['nameservers']['defaults']=!$free; $management['contacts']['staged']=$free;$management['contacts']['limits']=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits($free?'namesilo':'enom');
+    $management['nameservers']['max']=$free?13:12; $management['nameservers']['defaults']=!$free; $management['contacts']+=['staged'=>$free,'saved'=>[],'approved'=>null];$management['contacts']['limits']=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits($free?'namesilo':'enom');
     $management['privacy']+=['free'=>$free,'price'=>$free?null:'$8.00'];
     $management['auth_code_email']['recipient']=$free?'domain’s administrative contact':'domain owner';
     foreach($free?['contact_profile','contacts']:['contacts']as$a){$management['contacts']['actions'][$a]='/domains/1/manage/'.$a;}
@@ -57,6 +57,7 @@ foreach (['saved'=>'editing','pending'=>'pending','review'=>'review','cutoff'=>'
     $pages['transfer-'.$name]=view('domains::code',['domain'=>$copy])->render();
 }
 $copy=new OwnedDomain(...[...get_object_vars($enom),'management'=>[],'changesUnavailable'=>true]);$pages['changes-unavailable']=view('domains::show',['domain'=>$copy])->render();
+expect(str_contains($pages['changes-unavailable'],'Changes to this domain are on hold right now. Try again later.'),'Hidden tools say why');
 app('view')->share('errors',(new Illuminate\Support\ViewErrorBag)->put('default',new Illuminate\Support\MessageBag(['nameservers'=>'Check the nameservers.','privacy'=>'WHOIS privacy isn’t available for this domain.'])));
 $pages['setup-errors']=view('domains::setup',['domain'=>$setup])->render();
 $copy=new OwnedDomain(...[...get_object_vars($setup),'testEnvironment'=>true]);$pages['test-mode']=view('domains::setup',['domain'=>$copy])->render();

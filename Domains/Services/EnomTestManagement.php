@@ -14,10 +14,10 @@ final class EnomTestManagement
         if(config('domains.enom_writes.management')!==true){return 'TEST management is off in deployment configuration.';}
         if(config('domains.enom_identity.environment')!=='test'){return 'TEST management refused: the deployment identity environment is not test. Live and unset environments cannot use TEST management.';}
         if(config('domains.enom_catalogue.enabled')!==true){return 'TEST management refused: the deployment TEST catalogue is off.';}
-        return 'Deployment allows TEST management. Review TEST management acceptance below and enable processing separately. Nameservers and registrar lock require current acceptance, processing, an active domain and service and resolved prior changes. DNS, SRV and DS also require a DNS tools server setting set by the deployment; DNS and SRV editors need a complete, current read of existing domain records. Other management actions remain unavailable.';
+        return 'Deployment allows TEST management. Review TEST management acceptance below and enable processing separately. Nameservers, registrar lock and contacts require current acceptance, processing, an active domain and service and resolved prior changes. DNS, SRV and DS also require a DNS tools server setting set by the deployment; DNS and SRV editors need a complete, current read of existing domain records. Other management actions remain unavailable.';
     }
     public static function protocol(?AccountBinding $b=null): array
-    { return ['route'=>$b?->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?EnomLive::route():'https://resellertest.enom.com/interface.asp','commands'=>array_map(static fn($c)=>$c->value,[\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Nameservers,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Lock,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Dns,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Srv,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::DsAdd,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::DsDelete]),'interval'=>\Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::REQUEST_SECONDS]; }
+    { return ['route'=>$b?->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?EnomLive::route():'https://resellertest.enom.com/interface.asp','commands'=>array_map(static fn($c)=>$c->value,[\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Nameservers,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Lock,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Contacts,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Dns,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Srv,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::DsAdd,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::DsDelete]),'interval'=>\Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::REQUEST_SECONDS]; }
     public static function accepted(AccountBinding $b): bool
     {
         if(!self::enabled($b)){return false;}
@@ -42,7 +42,7 @@ final class EnomTestManagement
     }
     public static function requireAction(AccountBinding $b,string $action): void
     {
-        if(!self::accepted($b)||!in_array($action,['nameservers','lock','dns','srv','ds_add','ds_delete'],true)){
+        if(!self::accepted($b)||!in_array($action,['nameservers','lock','contacts','dns','srv','ds_add','ds_delete'],true)){
             throw new \DomainException(($b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Live':'TEST').' management acceptance required.');
         }
     }

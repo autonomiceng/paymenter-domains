@@ -63,7 +63,7 @@ same('123.45',DB::table(BalanceSchema::TABLE)->where('account_fingerprint',$fore
 same('7.99',$row($a)->amount,'Same server account isolation');
 BalanceReads::record($binding,null,$clock->now(),'manual','PRIVATE-PROVIDER-REPLY');
 same('7.99',$row($a)->amount,'Failure retains last value');same('read_failed',$row($a)->last_error_code,'Failure category allowlist');
-$failedFacts=RegistrarBalances::facts($a,$clock->now());same('Missing',$failedFacts['status'],'A failed check is Missing');same('Last check failed',$failedFacts['cause'],'Missing balance names its cause');same(null,$failedFacts['balance'],'A failed check hides the old amount');
+$failedFacts=RegistrarBalances::facts($a,$clock->now());same('Missing',$failedFacts['status'],'A failed check is Missing');same('Last check failed. Use Check balance.',$failedFacts['cause'],'Missing balance names its cause');same(null,$failedFacts['balance'],'A failed check hides the old amount');
 $failed=new DriverResult($binding,Disposition::Unknown,SendState::PossiblySent,ResultReason::Unverified);
 $failedReader=new FakeRegistrar($binding,new Capabilities($binding,[]),$failed);
 $context=new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new RequestBudget(1),$clock);

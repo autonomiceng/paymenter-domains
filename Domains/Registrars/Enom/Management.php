@@ -117,14 +117,15 @@ final class Management extends ManagementProtocol
         if($a==='auth_code_email') { if($ack->status==='success'&&(Driver::flag($ack->value('infosynched'))===true||is_string($ack->value('eppemailmessage'))&&$ack->value('eppemailmessage')!=='')){$this->acknowledge($r,$c,['email_accepted'=>true]);} $this->owned($r,$c); return new ManagementResult(false,$ack->status==='success'&&(Driver::flag($ack->value('infosynched'))===true||is_string($ack->value('eppemailmessage'))&&$ack->value('eppemailmessage')!==''),[], $ack->status==='rejected'); }
         $facts=[]; if(in_array($a,['privacy_purchase','privacy_renew'],true)&&$ack->status==='success'&&is_string($id)&&preg_match('/^[1-9][0-9]{0,19}$/D',$id)){$facts['order_id']=$id;$this->acknowledge($r,$c,$facts);}
         $observed=isset($facts['order_id'])?new ManagementRequest($r->binding,$r->key,$r->name,$r->action,$p,$r->providerId,$facts['order_id']):$r;
-        try{$read=$this->observe($observed,$c);$ok=$read->confirmed;$facts+=$read->facts();}catch(\Throwable){$ok=false;}
+        $refused=$ack->status==='rejected';
+        try{$read=$this->observe($observed,$c);$ok=$read->confirmed;$refused=$refused||$read->refused;$facts+=$read->facts();}catch(\Throwable){$ok=false;}
         if(in_array($a,['privacy_purchase','privacy_renew'],true)){$ok=$ok&&isset($facts['order_id']);}
         if(str_starts_with($a,'glue_')){$top=$ack->value('nssuccess');$nested=$ack->value(strtolower($cmd->value).'.nssuccess');$ok=$ok&&$ack->status==='success'&&($top??$nested)==='1'&&($top===null||$nested===null||$top===$nested);}
-        return new ManagementResult($ok,false,$facts,$ack->status==='rejected');
+        return new ManagementResult($ok,false,$facts,$refused);
     }
     public function observe(ManagementRequest $r, RequestContext $c): ManagementResult
     {
-        $this->owned($r,$c);$p=$r->payload();$a=$r->action;$facts=[];$ok=false;
+        $this->owned($r,$c);$p=$r->payload();$a=$r->action;$facts=[];$ok=false;$refused=false;
         $cmd=match($a){'nameservers'=>R::Nameservers,'contacts'=>R::Contacts,'lock'=>R::Lock,'auto_renew_off'=>R::Renewal,'dns'=>R::Hosts,'srv'=>R::Srv,'ds_add','ds_delete'=>R::Ds,default=>str_starts_with($a,'privacy_')?R::Privacy:(str_starts_with($a,'glue_')?R::HostStatus:null)};
         if(!$cmd){return new ManagementResult($a==='auth_code_email');} $v=$this->get($r,$c,$cmd,$cmd===R::HostStatus?['CheckNSName'=>$p['host']]:null);
         if($cmd!==R::HostStatus&&$v->status!=='success'){return new ManagementResult(false);}
@@ -133,7 +134,9 @@ final class Management extends ManagementProtocol
         elseif($a==='auto_renew_off'){$one=Driver::flag($v->value('auto-renew',$v->value('renewname')));$two=$v->value('renewname');$ok=$one===false&&($two===null||Driver::flag($two)===false);$facts=['auto_renew'=>$one];}
         elseif($a==='contacts'){
             $state=Contacts::read($v);$ok=$state!==null;
-            foreach($p['role']==='all'?['registrant','admin','tech','auxbilling']:[$p['role']] as $role){if($p['role']==='all'&&$role!=='registrant'&&($state['collected'][$role]??null)===false){continue;}foreach($p['contact'] as $k=>$wanted){if(trim($state['contacts'][$role][$k]??'')!==$wanted){$ok=false;}}}
+            foreach($p['role']==='all'?['registrant','admin','tech','auxbilling']:[$p['role']] as $role){if($p['role']==='all'&&$role!=='registrant'&&($state['collected'][$role]??null)===false){continue;}foreach($p['contact'] as $k=>$wanted){$read=trim($state['contacts'][$role][$k]??'');if($k==='email_address'?strcasecmp($read,$wanted)!==0:$read!==$wanted){$ok=false;}}}
+            // Enom takes a role it does not keep, so nothing further can confirm the write: the request ends unconfirmed.
+            $refused=$p['role']!=='all'&&($state['collected'][$p['role']]??null)===false;
             $facts=$state??[];
         }elseif(str_starts_with($a,'privacy_')){
             $facts=ManagementRead::privacy($v);$ok=$facts['allowed']===true&&$facts['exists']===true;
@@ -145,6 +148,6 @@ final class Management extends ManagementProtocol
         else{$kind=str_starts_with($a,'ds_')?'ds':$a;$rows=ManagementRead::records($v,$kind);$facts=['records'=>$rows];$actual=ManagementInput::canonical($kind,$rows);
             if($kind==='ds'){$contains=in_array(ManagementInput::canonical('ds',[$p['ds']])[0],$actual,true);$ok=$contains===($a==='ds_add');}
             else{$ok=$actual===ManagementInput::canonical($kind,$p['records']);}}
-        return new ManagementResult($ok,false,$facts);
+        return new ManagementResult($ok,false,$facts,$refused);
     }
 }

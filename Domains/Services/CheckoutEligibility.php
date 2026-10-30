@@ -28,6 +28,9 @@ final class CheckoutEligibility
         if (!in_array($selection->action, ['register', 'transfer'], true)) { throw new \DomainException('Acquisition unavailable.'); }
         $driver = $this->bindings->reader($selection->serverId);
         if ($driver->binding()->fingerprint !== $selection->fingerprint) { throw new \DomainException('Eligibility account changed.'); }
+        $price = \Paymenter\Extensions\Servers\Domains\Models\Price::findOrFail($selection->priceId);
+        if ($price->revision !== $selection->priceRevision || $price->retail === null) { throw new \DomainException('Refresh the domain offer.'); }
+        $retail = PriceCatalogue::retail($price->retail);
         $started = $this->clock->now();
         $transfer = null;
         if ($selection->action === 'transfer') {
@@ -46,7 +49,7 @@ final class CheckoutEligibility
         }
         if ($this->comparisonName === $name) { ($this->comparisonGuard)();$this->comparisonSeen=true; }
         $token = bin2hex(random_bytes(32));
-        Cache::put('domains.checkout.'.$token, ['comparison' => $comparison, 'transfer' => $transfer, 'identity' => $identity, 'selection' => get_object_vars($selection),
+        Cache::put('domains.checkout.'.$token, ['retail' => $retail, 'comparison' => $comparison, 'transfer' => $transfer, 'identity' => $identity, 'selection' => get_object_vars($selection),
             'name' => $name, 'observed' => $started->getTimestamp(), 'expires' => $started->modify('+5 minutes')->getTimestamp()], 300);
         return $token;
     }
@@ -60,6 +63,14 @@ final class CheckoutEligibility
             || $receipt['observed'] > $now || $receipt['expires'] <= $now) { throw new \DomainException('Refresh the domain check.'); }
         if (($receipt['comparison'] ?? false) && !WatchTransferPolicy::eligible($receipt['transfer'] ?? [], $now)) { throw new \DomainException('Refresh the comparison.'); }
         $s = new SaleSelection(...$receipt['selection']);
+        if ($locked) {
+            // Admission already owns this price lock. Revisions may advance at unchanged retail;
+            // a changed amount requires a new customer check, even if native relations were reloaded.
+            $price = \Paymenter\Extensions\Servers\Domains\Models\Price::find($s->priceId);
+            if (!$price || $price->retail === null || ($receipt['retail'] ?? null) !== PriceCatalogue::retail($price->retail)) {
+                throw new \DomainException('Refresh the domain offer.');
+            }
+        }
         if ($s->action === 'transfer' && (($receipt['transfer']['rules'] ?? null) !== TransferPrecheck::rules($s, $locked))) { throw new \DomainException('Transfer rules changed.'); }
         return $s;
     }

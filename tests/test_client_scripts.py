@@ -109,6 +109,12 @@ def main():
                                  capture_output=True, text=True, timeout=10)
         assert checked.returncode == 0, checked.stdout + checked.stderr
         print(checked.stdout.strip())
+        scripts = InlineScripts()
+        scripts.feed((Path(temporary)/'search.html').read_text())
+        checked = subprocess.run([node, str(ROOT/'tests/Support/search-summary.js')],
+                                 input=json.dumps({'script': scripts.scripts[0]}), capture_output=True, text=True, timeout=10)
+        assert checked.returncode == 0, checked.stdout + checked.stderr
+        print(checked.stdout.strip())
         print(f'Syntax checked {count} inline scripts in {len(paths)} real Blade renders; company labels preserved.')
 
 

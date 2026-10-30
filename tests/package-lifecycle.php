@@ -32,6 +32,8 @@ function assertRetained(string $receipt): void
 {
     $before=json_decode(file_get_contents($receipt),true,512,JSON_THROW_ON_ERROR);$after=retained();
     foreach($before as $table=>$rows){
+        // The send limit migration drops the old TEST budget tables; their rows stay in the pre-upgrade snapshot.
+        if(in_array($table,Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimitSchema::RETIRED,true)){expect(!array_key_exists($table,$after),'Retired TEST budget table is dropped: '.$table);continue;}
         expect(array_key_exists($table,$after),'Retained table exists: '.$table);
         // Only template fields still holding an exact earlier shipped default may change, with the save timestamp.
         // Every other raw value, row identity and multiplicity must survive.
@@ -120,8 +122,8 @@ if($phase==='server-delete'){
         }
     }elseif($phase==='reinstall'){
         app(Installation::class)->verify();
-        same(1,DB::table('migrations')->where('migration',Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::MIGRATION)->count(),'Reinstall retains the TEST counter migration record');
-        assertRetained($receipt);echo "Native reinstall retained all recorded data and the TEST counter schema.\n";
+        same(1,DB::table('migrations')->where('migration',Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimitSchema::MIGRATION)->count(),'Reinstall retains the TEST send limit migration record');
+        assertRetained($receipt);echo "Native reinstall retained all recorded data and the TEST send limit schema.\n";
     }else{assertRetained($receipt);echo "Native upload retained all recorded data (".$phase.").\n";}
 }elseif($phase==='enom-live'){
     require __DIR__.'/Support/enom-live.php';
@@ -151,7 +153,7 @@ if($phase==='server-delete'){
 }elseif($phase==='enom-test-calls'){
     require __DIR__.'/Support/installed-test-counter.php';
 }elseif($phase==='enom-test-call-count'){
-    same(7,(int)DB::table(Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::TABLE)->where('day','2026-10-23')->value('used'),'TEST call units remain retained across process restart and reinstall');
+    same(7,DB::table(Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimitSchema::SENDS)->where('account',Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::account('counter-race-uid'))->count(),'TEST send attempts remain retained across process restart and reinstall');
 }elseif($phase==='held'){
     require __DIR__.'/Support/registration-held.php';
     require __DIR__.'/Support/runtime-activation.php';

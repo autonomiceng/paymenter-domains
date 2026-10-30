@@ -2,8 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 use Illuminate\Database\Migrations\Migration;
-use Paymenter\Extensions\Servers\Domains\Services\EnomTestRunBudgetSchema;
 return new class extends Migration {
-    public function up(): void { EnomTestRunBudgetSchema::install(); }
-    public function down(): void {} // Retain permits, attempts and policy evidence.
+    // Retired: 2026_10_28_000044_create_enom_test_send_limit drops this table and replaces it.
+    public function up(): void {}
+    public function down(): void {}
 };

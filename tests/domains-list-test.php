@@ -25,16 +25,16 @@ $support=route('tickets.create');
 
 // Registered domains, driven through the controller. case => [domain columns, acquisition columns, Expires, Renewal first line, Renewal sub line, Expires tone]
 $cases=[
-    'transfer'=>[[],['state'=>'queued'],'Missing Shows when the transfer completes','Auto-renew on',null,null],
-    'transfer-held'=>[[],['state'=>'held','safe_code'=>'transfer_setup_review_required'],'Missing Shows when the transfer completes','Auto-renew on',null,null],
-    'register-pending'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'queued'],'Not yet Shows when the registration completes','Auto-renew on',null,null],
-    'register-held'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'held','safe_code'=>null],'Not yet Shows when the registration completes','Auto-renew on',null,null],
+    'transfer'=>[[],['state'=>'queued'],'Missing Fills in by itself when the transfer finishes','Auto-renew on',null,null],
+    'transfer-held'=>[[],['state'=>'held','safe_code'=>'transfer_setup_review_required'],'Missing Fills in by itself when the transfer finishes','Auto-renew on',null,null],
+    'register-pending'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'queued'],'Missing Fills in by itself when the registration finishes','Auto-renew on',null,null],
+    'register-held'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'held','safe_code'=>null],'Missing Fills in by itself when the registration finishes','Auto-renew on',null,null],
     'active'=>[['status'=>'active','provider_expires_at'=>$day(200)],['state'=>'succeeded'],$calendar(200)->format('M j, Y'),'Auto-renew on',null,null],
-    'expiring'=>[['status'=>'active','provider_expires_at'=>$day(10)],['state'=>'succeeded'],$calendar(10)->format('M j, Y').' In 10 days','Auto-renew on','Next invoice: Missing','warn'],
+    'expiring'=>[['status'=>'active','provider_expires_at'=>$day(10)],['state'=>'succeeded'],$calendar(10)->format('M j, Y').' In 10 days','Auto-renew on','Next invoice: Missing Not issued yet Contact support','warn'],
     'renewal-off'=>[['status'=>'active','provider_expires_at'=>$day(200),'renewal_policy'=>$off],['state'=>'succeeded'],$calendar(200)->format('M j, Y'),'Auto-renew off','Cancels '.$calendar(200)->format('M j, Y'),null],
     'no-expiry'=>[['status'=>'active','provider_expires_at'=>null],['state'=>'succeeded'],'Missing Contact support','Auto-renew on',null,null],
     'past-expiry'=>[['status'=>'active','provider_expires_at'=>$day(-1)],['state'=>'succeeded'],$calendar(-1)->format('M j, Y'),'Auto-renew on',null,'bad'],
-    'adoption'=>[['status'=>'adoption_pending'],['state'=>'succeeded'],'Missing Shows when the import is confirmed','Auto-renew on',null,null],
+    'adoption'=>[['status'=>'adoption_pending'],['state'=>'succeeded'],'Missing Fills in by itself when the import is confirmed','Auto-renew on',null,null],
 ];
 $base=['status'=>'transfer_pending','provider_expires_at'=>null,'renewal_policy'=>null];
 foreach ($cases as $case=>[$domain,$acquisition,$expires,$renewal,$sub,$expiresTone]) {
@@ -45,8 +45,7 @@ foreach ($cases as $case=>[$domain,$acquisition,$expires,$renewal,$sub,$expiresT
     same($expires,$cell($list,$row,'Expires'),'Expires cell: '.$case);
     same($expiresTone,$tone($list,$row),'Expires tone: '.$case);
     if(str_starts_with($case,'register-')){
-        same(0,$list->query('td[@data-label="Expires"]//*[contains(@class,"domains-missing")]',$row)->length,'Pending registration is not a missing-value error');
-        same('Not yet',$norm($list->query('td[@data-label="Expires"]/span[contains(@class,"domains-muted")]',$row)->item(0)),'Pending registration expiry is muted');
+        same(1,$list->query('td[@data-label="Expires"]//*[contains(@class,"domains-missing--calm")]',$row)->length,'Pending registration needs nothing, so its Missing is calm');
     }
     same($renewal,$norm($list->query('td[@data-label="Renewal"]/*[contains(@class,"domains-cell-main")]',$row)->item(0)),'Renewal value: '.$case);
     if ($sub!==null) { same($sub,$norm($list->query('td[@data-label="Renewal"]/*[contains(@class,"domains-cell-sub")]',$row)->item(0)),'Renewal sub line: '.$case); }
@@ -65,8 +64,8 @@ $dto=static fn(string $name,string $kind,array $more)=>new DomainSummary($name,n
     'urls'=>['detail'=>'/domains/'.$name,'support'=>'/tickets/create'],...$more]);
 $rows=[
     'real.example'=>[$dto('real.example','managed',['expiry'=>'2027-03-01','daysLeft'=>129,'renewalPrice'=>'$14.99','statusState'=>'active']),'Mar 1, 2027','Auto-renew on $14.99/yr',null],
-    'demo-held.example'=>[$dto('demo-held.example','managed',['demo'=>true,'expiryWaits'=>'transfer','renewalPrice'=>'$15.99','statusState'=>'held','statusReason'=>'Transfer on hold']),'Missing Shows when the transfer completes','Auto-renew on $15.99/yr','Demo'],
-    'test-expiring.example'=>[$dto('test-expiring.example','managed',['testEnvironment'=>true,'expiry'=>'2026-11-02','daysLeft'=>1,'renewalInvoiceMissing'=>true,'statusState'=>'active']),'Nov 2, 2026 In 1 day','Auto-renew on Next invoice: Missing','Test'],
+    'demo-held.example'=>[$dto('demo-held.example','managed',['demo'=>true,'expiryWaits'=>'transfer','renewalPrice'=>'$15.99','statusState'=>'held','statusReason'=>'Transfer on hold']),'Missing Fills in by itself when the transfer finishes','Auto-renew on $15.99/yr','Demo'],
+    'test-expiring.example'=>[$dto('test-expiring.example','managed',['testEnvironment'=>true,'expiry'=>'2026-11-02','daysLeft'=>1,'renewalInvoiceMissing'=>true,'statusState'=>'active']),'Nov 2, 2026 In 1 day','Auto-renew on Next invoice: Missing Not issued yet Contact support','Test'],
     'watch-expired.example'=>[$dto('watch-expired.example','watch',['demo'=>true,'expiry'=>'2026-10-21','daysLeft'=>-2,'relatedServices'=>$hosting,'relatedOverflow'=>1,'statusState'=>'watch.expired','statusReason'=>'Renew at your registrar']),'Oct 21, 2026','At your registrar','Demo'],
     'watch-unknown.example'=>[$dto('watch-unknown.example','watch',['relatedServices'=>array_slice($hosting,0,1)]),'Missing Check at your registrar','At your registrar',null],
 ];
