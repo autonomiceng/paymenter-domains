@@ -125,6 +125,9 @@ DB::table('services')->where('id',$unpaidOp->service_id)->update(['status'=>'can
 $turn=DB::table('domains_runtime_turns')->where('server_id',$server->id)->first();
 if(!$turn){DB::table('domains_runtime_turns')->insert(['server_id'=>$server->id,'account_fingerprint'=>$binding->fingerprint,'operation_cursor'=>0,'domain_cursor'=>0,'tld_cursor'=>0,'turn'=>0,'due_at'=>0,'finished_at'=>0]);$turn=DB::table('domains_runtime_turns')->where('server_id',$server->id)->first();}
 DB::table('domains_runtime_turns')->where('id',$turn->id)->update(['operation_cursor'=>0,'domain_cursor'=>$unpaidDomain->id-1,'due_at'=>0]);
+// Daily price sync is covered separately; keep it not due while checking local retirement.
+app(ObservationWork::class)->enroll((int)$server->id);
+DB::table('domains_observation_queues')->where('server_id',$server->id)->update(['catalogue_due'=>$clock->now()->getTimestamp()+86400]);
 $before=count($GLOBALS['enomWire']['forms']);$usedBefore=enomTestSendCount();Cache::flush();Queue::fake();$worker->tick();
 same('cancelled',$unpaidDomain->fresh()->status,'Durable TEST domain cursor retires a cancelled unpaid reservation after missed callbacks');
 same(null,$unpaidDomain->fresh()->reservation_name,'TEST lifecycle recovery releases the abandoned local name');same(['rejected','acquisition_cancelled_unpaid'],[$unpaidOp->fresh()->state,$unpaidOp->fresh()->safe_code],'Missed callback recovery closes the unpaid operation');
