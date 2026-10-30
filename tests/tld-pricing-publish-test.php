@@ -55,14 +55,15 @@ expect($t->fresh()->use_default_rule,'TLD follows the account default');
 same('7.80',$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now)->retail,'Default price published at once');
 same('Switched to the account default',TldFacts::history($t->server_id,$t->id)[0]['change'],'History names the change');
 
-// Missing or stale costs: nothing is saved and nothing is published.
-$late=$now->modify('+2 days');$before=array_map(fn(Price $p)=>[$p->revision,$p->retail],$rows($t->fresh()));$columns=$t->fresh()->only(['use_default_rule','pricing_mode','markup','round_up']);
-tldRefusal(fn()=>$writer->run($review('override',$t->id),$fields($rule),$late),'Fresh costs required before publication.');
-same($before,array_map(fn(Price $p)=>[$p->revision,$p->retail],$rows($t->fresh())),'Stale costs leave prices alone');
-same($columns,$t->fresh()->only(['use_default_rule','pricing_mode','markup','round_up']),'Stale costs leave the rule alone');
-same('Costs are missing or out of date. Sync prices on the account page, then save again. Nothing was changed.',
-    SettingsActions::refusal(new DomainException('Fresh costs required before publication.'),'override'),'Plain refusal');
-expect(collect(PriceCatalogue::preview($t->fresh(),$rule,$late))->every(fn($r)=>!$r['fresh']),'Preview marks stale costs');
+// Older saved costs still publish exactly what the preview shows.
+$late=$now->modify('+2 days');$before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
+$preview=collect(PriceCatalogue::preview($t->fresh(),$rule,$late))->keyBy(fn($r)=>$r['action'].$r['term']);
+expect($preview->isNotEmpty()&&$preview->every(fn($r)=>$r['synced']),'Preview keeps older synced costs');
+$writer->run($review('override',$t->id),$fields($rule),$late);
+foreach($rows($t->fresh()) as $key=>$p){same($before[$key]+1,$p->revision,'Older cost publication advances revision');same($preview[$key]['new'],PriceCatalogue::retail($p->retail),'Older cost publication matches exact preview retail');}
+$writer->run($review('remove_override',$t->id),[],$late);
+same('Costs are missing. Use Sync prices on the TLD list, then save again. Nothing was changed.',
+    SettingsActions::refusal(new DomainException('Costs required before publication.'),'override'),'Plain missing-cost refusal');
 
 // Saving the account default publishes every TLD that follows it and names the ones it could not publish.
 $net=Tld::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,'tld'=>'net','enabled'=>true,'min_years'=>1,'max_years'=>1,'use_default_rule'=>true]);
@@ -98,8 +99,11 @@ same($default,(new PricingRules)->defaultRule($t->server_id),'Denied default sav
 Auth::setUser($u);
 // A sold term without a one-year renewal cost refuses the save.
 $renew=$rows($t->fresh())['renew1'];$cost=$renew->wholesale;Price::whereKey($renew->id)->update(['wholesale'=>null]);
-tldRefusal(fn()=>$writer->run($review('override',$t->id),$fields($low),$now),'Fresh costs required before publication.');
-same($before,array_map(fn(Price $p)=>$p->revision,$rows($t->fresh())),'Missing renewal cost publishes nothing');
+$beforeMissing=array_map(fn(Price $p)=>[$p->revision,$p->retail],$rows($t->fresh()));
+$columns=$t->fresh()->only(['use_default_rule','pricing_mode','markup','round_up']);
+tldRefusal(fn()=>$writer->run($review('override',$t->id),$fields($low),$now),'Costs required before publication.');
+same($beforeMissing,array_map(fn(Price $p)=>[$p->revision,$p->retail],$rows($t->fresh())),'Missing renewal cost preserves exact revisions and retail');
+same($columns,$t->fresh()->only(['use_default_rule','pricing_mode','markup','round_up']),'Missing renewal cost leaves the rule alone');
 Price::whereKey($renew->id)->update(['wholesale'=>$cost]);
 // Only TLDs on this account follow its default, and a TLD that switches to its own prices meanwhile is left alone.
 // A TLD left over from an earlier account binding.
@@ -143,4 +147,4 @@ Livewire\Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admi
         ->body("Published new prices for 1 TLD. Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved."));
 $failAudit=false;same(2,$auditWrites,'Staff warning exercises the failed outcome audit');
 same('35.00',(new PricingRules)->defaultRule($t->server_id)['markup'],'Staff warning leaves the new default committed');
-echo "Saving prices publishes them, matches the preview, keeps below-cost rules and refuses stale costs.\n";$nativeSuccessful=true;
+echo "Saving prices publishes them, matches the preview, keeps below-cost rules and refuses missing costs.\n";$nativeSuccessful=true;

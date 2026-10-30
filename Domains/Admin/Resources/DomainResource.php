@@ -5,18 +5,16 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Carbon\CarbonImmutable;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
-use App\Models\ServiceCancellation;
 use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Filters\{Filter, SelectFilter};
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\{Builder, Model};
-use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, DomainQueries, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, DomainQueries, Staff, StaffDomainInputs};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{AdoptDomain, AdoptionPreview, ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainName, DomainStatus, Missing};
-use Paymenter\Extensions\Servers\Domains\Services\{NativeCancellation, ObservationWork, RenewalStop};
+use Paymenter\Extensions\Servers\Domains\Services\ObservationWork;
 class DomainResource extends Resource
 {
     protected static ?string $model = Domain::class;
@@ -43,21 +41,19 @@ class DomainResource extends Resource
     }
     public static function table(Table $table): Table
     {
-        $late=DB::table('domains_obligation_alerts as late')->selectRaw('count(*)')->whereColumn('late.domain_id','domains_domains.id')
-            ->where('late.code','acquisition_late_money')->whereNull('late.resolved_at');
-        return $table->modifyQueryUsing(fn (Builder $query) => $query->select('domains_domains.*')->selectSub($late,'late_money')
-            ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition:domains_operations.id,domains_operations.domain_id,domains_operations.action,domains_operations.state,domains_operations.safe_code,domains_operations.service_id,domains_operations.server_id,domains_operations.registrar_key,domains_operations.authority_generation,domains_operations.account_fingerprint']))->columns([
+        return $table->modifyQueryUsing(fn (Builder $query) => $query
+            ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition:domains_operations.id,domains_operations.domain_id,domains_operations.action,domains_operations.state,domains_operations.safe_code,domains_operations.invoice_id,domains_operations.payload,domains_operations.policy,domains_operations.attempt,domains_operations.service_id,domains_operations.server_id,domains_operations.registrar_key,domains_operations.authority_generation,domains_operations.account_fingerprint']))->columns([
             DemoTag::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
                 ->description(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
                 ->extraAttributes(['style'=>DomainName::CELL])),
+            // One status and its next step. Every open alert is listed on the domain page. A step that names a request opens it.
             TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::status($record,$livewire)['label'])
-                ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone'])->description(fn(Domain $record,$livewire)=>self::status($record,$livewire)['reason']
+                ->url(fn(Domain $record,$livewire)=>DomainFacts::requestUrl(self::status($record,$livewire)))
+                ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone'])->description(fn(Domain $record,$livewire)=>DomainFacts::statusLine(self::status($record,$livewire))
                     ??match(self::row($record,$livewire)['sync']){'failed'=>'Sync failed','paused'=>'Sync paused',default=>null}),
-            TextColumn::make('alert')->label('Alert')->wrap()->color('warning')
-                ->state(fn(Domain $record,$livewire)=>self::row($record,$livewire)['alerts'][0]??null)
-                ->description(fn(Domain $record,$livewire)=>($count=count(self::row($record,$livewire)['alerts']))>1?'+'.($count-1).' more':null),
             TextColumn::make('provider_expires_at')->label('Expires')->state(fn(Domain $record)=>$record->provider_expires_at?->format('M j, Y')
-                ?? (self::registered($record)?Missing::LABEL:null))->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
+                ?? (self::registered($record)?Missing::LABEL:null))->color(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?Missing::color(DomainFacts::unread($record,self::row($record,$livewire)['sync'])):null)
+                ->icon(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?Missing::icon(DomainFacts::unread($record,self::row($record,$livewire)['sync'])):null)
                 ->description(fn(Domain $record,$state,$livewire)=>$state===Missing::LABEL?DomainFacts::unread($record,self::row($record,$livewire)['sync']):null)
                 ->sortable(query: fn(Builder $query,string $direction)=>$query->orderBy('provider_expires_at',$direction)),
             // Auto-renew applies in every state, so pending and under-review rows show it too.
@@ -67,7 +63,7 @@ class DomainResource extends Resource
                 ->description(fn($state)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:null),
             TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?$record->server->name.' · #'.$record->server_id:Missing::LABEL)
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
-                ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?'Registrar account not found':(self::REGISTRARS[$record->registrar_key]??null)),
+                ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?'Registrar account not found. Check Registrars.':(self::REGISTRARS[$record->registrar_key]??null)),
         ])->filters([
             SelectFilter::make('status')->label('Status')->multiple()->options(self::statusOptions())
                 ->query(fn(Builder $query,array $data)=>DomainQueries::status($query,$data['values']??[])),
@@ -89,14 +85,14 @@ class DomainResource extends Resource
             ->defaultSort('domain')->paginated([25,50,100])->defaultPaginationPageOption(25)
             ->emptyStateHeading('No domains yet')->emptyStateDescription(null);
     }
-    /** The nine domain statuses, in DomainStatus order. */
+    /** The domain statuses, in DomainStatus order. */
     public static function statusOptions(): array { return array_map(fn(array $s)=>$s[0],DomainStatus::SET); }
     private const REGISTRARS=['enom'=>'Enom','namesilo'=>'NameSilo'];
     /** Auto-renew stops and sync state per rendered page of records, keyed by domain id: one batch of reads per page. */
     private static ?\WeakMap $rows=null;
     private static function status(Domain $record, mixed $livewire): array
     {
-        return DomainFacts::status($record,(bool)self::row($record,$livewire)['off'],(int)($record->late_money??0)>0);
+        return DomainFacts::status($record,self::row($record,$livewire)['inputs']);
     }
     private static function registered(Domain $record): bool
     { return $record->adoptionPending()||in_array($record->status,['active','expired','grace','redemption'],true); }
@@ -109,21 +105,13 @@ class DomainResource extends Resource
         if (!array_key_exists($record->id,$cached)) {
             $page=collect(method_exists($records,'items')?$records->items():$records->all())->filter(fn($r)=>$r instanceof Domain);
             if (!$page->contains('id',$record->id)) { $page=collect([$record]); }
-            $services=$page->pluck('service_id')->filter()->unique()->values()->all();
-            $cancel=NativeCancellation::withIntents(ServiceCancellation::whereIn('service_id',$services)->get(),$services,true);
-            $ids=$page->pluck('adoption_id')->filter()->unique()->all();
-            $adoptions=$ids?Adoption::whereIn('id',$ids)->get()->keyBy('id'):collect();
             $accounts=Account::whereIn('server_id',$page->pluck('server_id')->unique()->values()->all())->get();
             $stopped=ObservationWork::stoppedIds($page);
-            $alerts=DB::table('domains_obligation_alerts')->whereIn('domain_id',$page->pluck('id')->all())->whereNull('resolved_at')
-                ->orderBy('id')->get(['domain_id','code'])->groupBy('domain_id');
+            $inputs=StaffDomainInputs::for($page);
             foreach ($page as $d) {
-                try { $off=RenewalStop::stopped(['domain'=>$d,'adoption'=>$adoptions[$d->adoption_id]??null,
-                    'cancel'=>$cancel->where('service_id',$d->service_id)->values()]); }
-                catch (\Throwable) { $off=null; }
                 $account=$accounts->first(fn(Account $a)=>(int)$a->server_id===(int)$d->server_id&&$a->registrar_key===$d->registrar_key
                     &&$a->account_fingerprint===$d->account_fingerprint);
-                $cached[$d->id]=['alerts'=>($alerts[$d->id]??collect())->pluck('code')->unique()->map(fn($code)=>DomainFacts::alertCause($code))->unique()->values()->all(),'off'=>$off,'sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true)];
+                $cached[$d->id]=['inputs'=>$inputs[$d->id],'off'=>$inputs[$d->id]['off'],'sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true)];
             }
             self::$rows[$records]=$cached;
         }

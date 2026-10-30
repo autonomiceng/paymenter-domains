@@ -7,9 +7,10 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\{Callout, Grid, Section};
 use Filament\Schemas\Schema;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainFacts, HoldingActions, MissingEntry, OperationActions, RegistrarFacts, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainFacts, HelpHint, HoldingActions, MissingEntry, OperationActions, RegistrarFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
@@ -26,7 +27,7 @@ class ViewDomain extends ViewRecord
             .(DemoData::is($this->getRecord())?DemoData::tag(inline:true)->toHtml():'')
             .view('filament::components.badge',['color'=>$status['tone'],'size'=>'lg','slot'=>new HtmlString(e($status['label']))])->render().'</span>'.self::FACTS_STYLE);
     }
-    public function getSubheading(): ?string { return DomainFacts::status($this->getRecord())['reason']; }
+    public function getSubheading(): string|Htmlable|null { return DomainFacts::stepHtml(DomainFacts::status($this->getRecord())); }
     public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains',$this->getTitle()]; }
     protected function getHeaderActions(): array
     {
@@ -71,7 +72,7 @@ class ViewDomain extends ViewRecord
             // A cause under a value in warning or danger takes the same tone, so an open alert stands out next to its row.
             ->belowContent($fact['value']!==null&&$fact['sub']!==null&&in_array($fact['tone'],['danger','warning'],true)?RegistrarFacts::tone($fact['sub'],$fact['tone']):$fact['sub']);
         if (is_array($fact['value'])) { $entry->listWithLineBreaks(); }
-        if ($fact['help']) { $entry->hintIcon('heroicon-m-question-mark-circle',$fact['help']); }
+        if ($fact['help']) { $entry->hintAction(HelpHint::make($fact['help'])); }
         if ($fact['demo']) { $entry->suffix(DemoData::tag(inline:true)); }
         return MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['tone']);
     }

@@ -30,7 +30,7 @@ final class WatchPage
     /** Expires: the date with its tone and one sub line, or Missing with its cause (when it shows, if the notice already says why). */
     public static function expires(DomainSummary $s, array $portal): array
     {
-        if ($s->expiry === null) { return ['missing' => true, 'cause' => in_array('expiry_unavailable', $portal, true) ? 'Shows after the next check' : 'Check at your registrar']; }
+        if ($s->expiry === null) { return ['missing' => true, 'cause' => in_array('expiry_unavailable', $portal, true) ? Missing::fills('after the next check') : 'Check at your registrar']; }
         $row = DomainListRow::expires($s); $check = $s->freshness['registry'] ?? null;
         $sub = $row['note'] ?? (($check['checkedAt'] ?? null) ? (($check['stale'] ?? false) ? 'Last checked ' : 'Checked ').self::day((int) $check['checkedAt']) : null);
         return ['missing' => false, 'tone' => $row['tone'], 'sub' => $sub];
@@ -42,7 +42,7 @@ final class WatchPage
         $label = $s->labels[array_values(array_intersect($s->dnsKeys, ['domain.dns.platform', 'domain.dns.external']))[0] ?? ''] ?? null;
         $values = $servers ?: (!($check['stale'] ?? true) && $label ? [$label] : []);
         if (!$values) {
-            return ['missing' => true, 'cause' => ($check['checkedAt'] ?? null) ? 'Shows after the next check' : 'Shows after the first check'];
+            return ['missing' => true, 'cause' => Missing::fills(($check['checkedAt'] ?? null) ? 'after the next check' : 'after the first check')];
         }
         $at = isset($s->nameservers['at']) ? CarbonImmutable::parse($s->nameservers['at'])->utc()->getTimestamp() : ($check['checkedAt'] ?? null);
         return ['missing' => false, 'values' => $values, 'mono' => (bool) $servers,

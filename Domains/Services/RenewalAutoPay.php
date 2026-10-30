@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Helpers\{ExtensionHelper, NotificationHelper};
-use App\Models\{BillingAgreement, Gateway, Invoice};
+use App\Models\{BillingAgreement, Gateway, Invoice, Service};
 use Illuminate\Support\Facades\{DB, Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -13,6 +13,13 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final readonly class RenewalAutoPay
 {
     public function __construct(private Clock $clock) {}
+
+    /** Whether a renewal invoice can be charged to the service's saved method today. The read-only form of the agreement checks in eligibility(). */
+    public static function ready(?Service $service): bool
+    {
+        $agreement = $service?->billingAgreement;
+        return $agreement && (int)$agreement->user_id === (int)$service->user_id && (bool)$agreement->gateway?->enabled;
+    }
 
     /** Caller holds HoldingLocks in the invoice-issuing transaction, after native credit settlement. */
     public function issued(Operation $op, Invoice $invoice, array $l, bool $scheduled): void

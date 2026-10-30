@@ -4,12 +4,16 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolicy,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,EnomTestRegistration,PriceCatalogue};
+use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,EnomTestRegistration,PriceCatalogue,PublicationEligibility};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Saved facts only. No reader factory, credentials or provider calls. */
 final class TldFacts
 {
     public const AUDIT = \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::KEY;
+    /** A sync read this term and the registrar has no cost for it, so it does not sell it. Nothing to do. */
+    public const NOT_OFFERED='Not offered';
+    /** Why a TLD is not for sale when no term has current prices. */
+    public const NEEDS_SYNC='Needs a price sync';
     public static function bound($query)
     {
         return $query->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_accounts as a')
@@ -17,7 +21,7 @@ final class TldFacts
             ->whereColumn('a.server_id','domains_tlds.server_id')->whereColumn('a.registrar_key','domains_tlds.registrar_key')
             ->whereColumn('a.account_fingerprint','domains_tlds.account_fingerprint'));
     }
-    public static function registrar(string $key): string { return ['enom'=>'Enom','namesilo'=>'NameSilo'][$key]??'Unavailable'; }
+    public static function registrar(string $key): string { return ['enom'=>'Enom','namesilo'=>'NameSilo'][$key]??\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL; }
     public static function holders(Tld $tld): int
     { return Domain::where(['server_id'=>$tld->server_id,'tld'=>$tld->tld,'account_fingerprint'=>$tld->account_fingerprint])->whereNotNull('reservation_name')->count(); }
     /** Server id of the account that takes new orders for this TLD, or null when none is selected. */
@@ -26,7 +30,7 @@ final class TldFacts
     public static function prices(Tld $tld, ?StaffGrants $grants = null): array
     {return self::snapshot($tld,$grants)['prices'];}
     /** One server-only snapshot per row/render; never retain across requests or use as write authority.
-     * Each row: action, term, retail (null when missing), flags (below_cost, cost_missing, price_missing, needs_sync, unpublished),
+     * Each row: action, term, retail (null when missing), flags (below_cost, cost_missing, not_offered, price_missing, needs_sync, unpublished),
      * fresh, observed and until; cost only with the costs permission. */
     public static function snapshot(Tld $tld, ?StaffGrants $grants = null): array
     {
@@ -75,11 +79,12 @@ final class TldFacts
             $flags=[];
             if(($p->hold_reason??($p->eligibility['staff_alert']??null))==='below_cost'){$flags[]='below_cost';}
             if($p->wholesale===null||($p->hold_reason??($p->eligibility['staff_alert']??null))==='unknown_price'){$flags[]='cost_missing';}
+            if($p->wholesale===null&&$p->observed_at<=now()&&$p->fresh_until!==null){$flags[]='not_offered';}
             if($unavailable){$flags[]='price_missing';}
             if($p->action!=='renew'&&($accepted===null||($p->eligibility['catalogue_revision']??null)!==$accepted->revision)){$flags[]='needs_sync';}
             if($ruleHash===null||($p->eligibility['rule_hash']??null)!==$ruleHash){$flags[]='unpublished';}
             $row=['action'=>$p->action,'term'=>(int)$p->term,'retail'=>$unavailable&&$p->action!=='renew'?null:self::money($p->retail),'flags'=>$flags,
-                'fresh'=>$p->observed_at<=now()&&$p->fresh_until&&$p->fresh_until>now(),'observed'=>$p->observed_at,'until'=>$p->fresh_until];
+                'synced'=>$p->observed_at<=now()&&$p->fresh_until!==null,'observed'=>$p->observed_at];
             if($grants->costs){$row['cost']=self::money($p->wholesale,4);}
             $out[]=$row;
         }
@@ -112,6 +117,8 @@ final class TldFacts
     private const DANGER='fi-color fi-color-danger fi-text-color-600 dark:fi-text-color-400';
     private static function missing(string $cause): string
     { return '<span class="'.self::DANGER.'" style="font-weight:500">'.e(\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL).'</span><div style="font-size:.75rem;opacity:.75">'.e($cause).'</div>'; }
+    private static function notOffered(): string
+    { return '<span style="opacity:.75">'.e(self::NOT_OFFERED).'</span>'; }
     private static function cell(string $html, bool $nowrap = true): string
     { return '<td style="padding:8px 12px;vertical-align:top'.($nowrap?';white-space:nowrap':'').'">'.$html.'</td>'; }
     /** Prices by registrar account: one row per account that sells this TLD. */
@@ -130,14 +137,21 @@ final class TldFacts
         foreach($rows as $row){
             $fact=$facts[$row->id];$prices=$fact['prices'];
             $first=static fn(string $action)=>collect($prices)->where('action',$action)->sortBy('term')->first();
-            $price=static fn(?array $p)=>$p===null?self::missing('Sync TLD prices needed'):($p['retail']===null?self::missing('Price missing'):e($p['retail']));
+            $price=static fn(?array $p)=>match(true){
+                $p===null||($p['retail']===null&&!$p['synced'])=>self::missing('Use Sync prices on the TLD list.'),
+                $p['retail']!==null=>e($p['retail']),
+                in_array('not_offered',$p['flags'],true)=>self::notOffered(),
+                default=>self::missing('Use Edit prices.'),
+            };
+            // Sync never fills a price for sales that are off.
+            $transfer=$first('transfer');$transfer=!$row->transfer_enabled&&($transfer['retail']??null)===null?'Transfers off':$price($transfer);
             $account=e((string)$row->server?->name).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
                 .($fact['seller']===(int)$row->server_id?' <span style="margin-inline-start:6px;padding:1px 6px;border-radius:4px;border:1px solid currentColor;font-size:11px;opacity:.8;white-space:nowrap">New orders</span>':'');
             $html.='<tr style="border-top:1px solid rgb(127 127 127 / .2)">'.self::cell($account,false).self::cell(e(self::pricing($row)))
-                .self::cell($price($first('register'))).self::cell($price(self::renewal($prices))).self::cell($price($first('transfer')));
+                .self::cell($price($first('register'))).self::cell($price(self::renewal($prices))).self::cell($transfer);
             if($grants->costs){
                 $renew=self::renewal($prices);$note=self::costNote($renew);
-                $html.=self::cell(($renew['cost']??null)===null?self::missing('No cost saved')
+                $html.=self::cell(($renew['cost']??null)===null?(in_array('not_offered',$renew['flags']??[],true)?self::notOffered():self::missing('Use Sync prices on the TLD list.'))
                     :($note?'<span class="'.self::DANGER.'">'.e($renew['cost']).'</span><div class="'.self::DANGER.'" style="font-size:.75rem">'.e($note).'</div>':e($renew['cost'])));
             }
             $html.=self::cell(e((string)$fact['holders'])).'</tr>';
@@ -159,17 +173,16 @@ final class TldFacts
     }
     public static function acceptance(Account $a): string
     {
-        try{$binding=CatalogueAcceptances::binding($a);$accepted=CatalogueAcceptances::load($binding);$count=count($accepted->endings);$text='Revision '.$accepted->revision.' · '.$count.' '.($count===1?'ending':'endings');
-            if($a->registrar_key==='enom'&&$a->environment==='test'){$protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
-                // The unaccepted warning is actionable only where the deployment offers TEST registration acceptance.
-                if($accepted->registrationRoute===$protocol['route']&&$accepted->registrationIntervalSeconds===$protocol['interval_seconds']){$text.=config('domains.enom_writes.transfer')===true?' · Enom TEST route and request interval accepted':' · Enom TEST Purchase route and interval accepted';}
-                elseif(EnomTestRegistration::deploymentEnabled()||\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::deploymentEnabled()){$text.=config('domains.enom_writes.transfer')===true?' · Enom TEST route and request interval not accepted':' · Enom TEST Purchase route and interval not accepted';}}
-            if($a->registrar_key==='enom'&&$a->environment==='live'){
-                $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
-                $text.=($accepted->registrationRoute===$protocol['route']&&$accepted->registrationIntervalSeconds===$protocol['interval_seconds'])?' · Enom live Purchase route and interval accepted':' · Enom live Purchase route and interval not accepted';
-            }
-            return $text;}
-        catch(\Throwable){return 'Unavailable · new sales held';}
+        try{$binding=CatalogueAcceptances::binding($a);$accepted=CatalogueAcceptances::load($binding);$count=count($accepted->endings);$text='Revision '.$accepted->revision.' · '.$count.' '.($count===1?'TLD':'TLDs');
+            return self::ordersNeedSave($a,$accepted)?$text.' · Save What you sell to take orders':$text;}
+        catch(\Throwable){return \Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL.' · new sales held. Open What you sell and save it.';}
+    }
+    /** Saving What you sell records how orders are sent. Older saves catch up with one save, only where orders are offered. */
+    public static function ordersNeedSave(Account $a,\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted): bool
+    {
+        if($a->registrar_key!=='enom'||!($a->environment==='live'||EnomTestRegistration::deploymentEnabled()||\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::deploymentEnabled())){return false;}
+        $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($accepted->binding);
+        return $accepted->registrationRoute!==$protocol['route']||$accepted->registrationIntervalSeconds!==$protocol['interval_seconds'];
     }
     /** For sale or Not for sale, with the reason it is not for sale. */
     public static function salesState(Tld $t, ?StaffGrants $grants = null): array
@@ -182,41 +195,51 @@ final class TldFacts
         if(!$t->enabled||(!$t->register_enabled&&!$t->transfer_enabled)){return $off('Stopped by staff');}
         if($seller()===null){return $off('No registrar selected');}
         if(!$t->renew_enabled){return $off('Renewals off for this registrar');}
-        $action=$t->register_enabled?'register':'transfer';$term=$action==='register'?$t->min_years:1;
+        $action=$t->register_enabled?'register':'transfer';$published=false;
         $price=static fn($kind,$years)=>$saved->first(fn($p)=>$p->action===$kind&&$p->term===$years&&$p->currency==='USD');
-        $renew=$price('renew',1);$sale=$price($action,$term);
+        $renew=$price('renew',1);
         try{if(!$accepted||$accepted->binding->serverId!==$t->server_id||$accepted->binding->registrarKey!==$t->registrar_key
                 ||$accepted->binding->fingerprint!==$t->account_fingerprint){throw new \DomainException;}
-            \Paymenter\Extensions\Servers\Domains\Services\PublicationEligibility::requireEvidence($t,$action,$term,$accepted,$renew,$sale);
-        }catch(\Throwable){return $off('Sync TLD prices needed');}
-        try{
             $now=now()->toDateTimeImmutable();
-            PriceCatalogue::currentEvidence($renew,$ruleHash,$now);PriceCatalogue::currentEvidence($sale,$ruleHash,$now);
+            PublicationEligibility::firstEligibleTerm($t,$action,static function(int $term)use($t,$action,$accepted,$renew,$price,$ruleHash,$now,&$published):void{
+                $sale=$price($action,$term);
+                PublicationEligibility::requireEvidence($t,$action,$term,$accepted,$renew,$sale);$published=true;
+                PriceCatalogue::currentEvidence($renew,$ruleHash,$now);PriceCatalogue::currentEvidence($sale,$ruleHash,$now);
+            });
             return ['label'=>'For sale','tone'=>'success','reason'=>null];
         }catch(\Throwable){
-            // Saving prices publishes them; a TLD still on an older rule missed a default change because its costs were out of date.
+            if(!$published){return $off(self::NEEDS_SYNC);}
+            // Saving prices publishes them; a TLD still on an older rule missed a default change because its costs were missing.
             if($flagged('unpublished')){return $off('Prices not published');}
-            if($flagged('cost_missing')){return $off('Cost missing');}
-            if(collect($rows)->contains(fn($r)=>!$r['fresh'])){return $off('Prices out of date');}
+            if($flagged('cost_missing')||collect($rows)->contains(fn($r)=>!$r['synced'])){return $off('Cost missing');}
             return $off($flagged('below_cost')?'Below cost':'Price missing');
         }
     }
     /** Stored history labels, which are the action names staff saw, mapped to what changed. */
     private const CHANGES=['Edit card fee'=>'Card fee changed','Edit default rule'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Switched to the account default',
-        'Select seller'=>'Registrar for new orders changed','Publish prices'=>'Prices published','Review TLD availability'=>'Terms changed',
-        'Review lifecycle facts'=>'Grace and redemption changed'];
+        'Select seller'=>'Registrar for new orders changed','Change registrar for new orders'=>'Registrar for new orders changed','Publish prices'=>'Prices published','Review TLD availability'=>'Terms changed',
+        'Review lifecycle facts'=>'Grace and redemption changed','Sync TLD prices'=>'Prices synced'];
     /** Newest first: time, change, reason and who made it. Null when the saved history can't be read. */
     public static function history(int $serverId,?int $tldId=null): ?array
     {
         try{
             $rows=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::historyRows(\App\Models\Server::findOrFail($serverId));
-            if($tldId){$rows=array_filter($rows,fn($r)=>!$r['tld_id']||$r['tld_id']===$tldId);}
-            return array_map(static function($r){
+            if($tldId){
+                // A price sync is saved for the account; show it only on the TLDs it synced.
+                $ending=Tld::whereKey($tldId)->value('tld');
+                $rows=array_filter($rows,fn($r)=>$r['tld_id']===$tldId||(!$r['tld_id']&&($r['action']!=='Sync TLD prices'
+                    ||(is_string($ending)&&(($r['input']['ending']??null)===$ending||in_array($ending,(array)($r['input']['endings']??[]),true))))));
+            }
+            // One row per sync, not one per TLD it wrote.
+            $rows=array_filter($rows,fn($r)=>$r['phase']!=='catalogue_imported');
+            $names=Staff::can('admin.users.view')?\App\Models\User::whereIn('id',array_column($rows,'actor_id'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
+            return array_map(static function($r)use($names){
                 $change=self::CHANGES[$r['action']]??$r['action'];
+                if($r['action']==='Sync TLD prices'&&is_string($r['input']['ending']??null)){$change.=' for .'.$r['input']['ending'];}
                 $phase=(string)$r['phase'];
                 if(str_ends_with($phase,'_requested')){$change.=': started';}elseif(str_ends_with($phase,'_refused')){$change.=': refused';}elseif($phase==='publication_completed'){$change.=': publishing finished';}
                 try{$at=\Carbon\CarbonImmutable::parse((string)$r['at'])->utc()->format('M j, Y H:i').' UTC';}catch(\Throwable){$at=(string)$r['at'];}
-                return ['time'=>$at,'change'=>$change,'reason'=>(string)$r['reason'],'by'=>'Staff #'.$r['actor_id']];
+                return ['time'=>$at,'change'=>$change,'reason'=>(string)$r['reason'],'by'=>$names[$r['actor_id']]??'Staff #'.$r['actor_id']];
             },array_reverse(array_values($rows)));
         }catch(\Throwable){return null;}
     }
@@ -226,16 +249,25 @@ final class TldFacts
         'read_no_evidence'=>'Registrar returned no prices','read_identity_changed'=>'Registrar account changed during the read',
         'account_unavailable'=>'Registrar account not found','binding_mismatch'=>'Registrar account changed',
         'configuration_unverified'=>"Couldn't verify the registrar account settings",
-        'encryption_unavailable'=>"Can't read saved credentials. Check the app encryption key",'storage_unavailable'=>'Database error',
+        'encryption_unavailable'=>"Can't read saved credentials. Ask your site admin",'storage_unavailable'=>'Database error',
         'catalogue_reader_unavailable'=>"Couldn't load the registrar account's settings",
-        'catalogue_acceptance_unavailable'=>'Supported TLDs not saved for this account','catalogue_acceptance_changed'=>'Supported TLDs changed during the sync',
+        'catalogue_acceptance_unavailable'=>'What you sell not saved for this account','catalogue_acceptance_changed'=>'What you sell changed during the sync',
         'catalogue_evidence_missing'=>'Registrar returned no prices for this TLD',
         'catalogue_evidence_invalid'=>'Registrar returned prices for terms this account does not support',
         'catalogue_import_failed'=>"Couldn't save the new prices",'catalogue_interrupted'=>'Sync stopped before it finished'];
+    public static function syncCause(?string $code): string { return self::CAUSES[$code]??self::CAUSES['read_exception']; }
     public static function refreshState(int $serverId): string
     {
         $failure=self::syncFailure($serverId);
         return $failure?'Sync failed: '.$failure['cause']:'Synced';
+    }
+    /** Synced prices older than this get a quiet warning; they still sell. */
+    public const SYNC_WARN_DAYS=7;
+    /** When this TLD's costs were last read, from its saved price rows. Null when none were. */
+    public static function lastSynced(array $prices): ?\Carbon\CarbonImmutable
+    {
+        $at=collect($prices)->where('synced',true)->pluck('observed')->filter()->max();
+        return $at===null?null:\Carbon\CarbonImmutable::parse($at)->utc();
     }
     /** Latest saved price time for an account, the time of its last good sync. */
     public static function lastPrices(int $serverId): ?\Carbon\CarbonImmutable
@@ -254,7 +286,7 @@ final class TldFacts
             $last=$lastPrices??self::lastPrices($serverId);
             if($at===null||($last!==null&&$last>=$at)){return null;}
         }
-        return ['cause'=>self::CAUSES[$facts['code']]??self::CAUSES['read_exception'],'at'=>$at===null?null:$at->format('M j, Y H:i').' UTC'];
+        return ['cause'=>self::syncCause($facts['code']),'at'=>$at===null?null:$at->format('M j, Y H:i').' UTC'];
     }
     private static function queue(int $serverId): ?object
     {

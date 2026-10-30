@@ -27,7 +27,7 @@ final class HoldingNativeLocks
         if($advisory&&$opIds->count()>100){throw new \DomainException('Advisory operation history requires staff review.');}
         $invoiceIds=$advisory?Operation::whereIn('id',$opIds)->whereNotNull('invoice_id')->limit(100)->pluck('invoice_id'):null;
         $itemIds=$advisory?Operation::whereIn('id',$opIds)->limit(100)->pluck('invoice_item_id'):null;
-        // Adoption must see even a foreign-owner invoice referencing this service. Discover keys before invoices.
+        // Adoption and unpaid retirement must see even a foreign-owner invoice referencing this service. Discover keys before invoices.
         $related = $adoption ? InvoiceItem::where('reference_type', (new Service)->getMorphClass())->where('reference_id', $serviceId)->pluck('invoice_id') : collect();
         $invoices = Invoice::where(fn ($q) => $q->where('user_id', $user->id)->when($adoption, fn ($q) => $q->orWhereIn('id', $related)))->when($advisory,fn($q)=>$q->whereIn('id',$invoiceIds->merge($related)))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get(); $ids = $invoices->pluck('id');
         $items = InvoiceItem::where(fn ($q) => $q->whereIn('invoice_id', $ids)->when($adoption, fn ($q) => $q->orWhere(fn ($q) => $q->where('reference_type', (new Service)->getMorphClass())->where('reference_id', $serviceId))))->when($advisory&&!$completeInvoices,fn($q)=>$q->where(fn ($q) => $q->whereIn('id', $itemIds)->when($adoption, fn ($q) => $q->orWhere(fn ($q) => $q->where('reference_type', (new Service)->getMorphClass())->where('reference_id', $serviceId)))))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();

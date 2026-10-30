@@ -4,18 +4,19 @@ declare(strict_types=1);
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomTestCallLimit,EnomTestCallSchema,EnomTestCalls,Installation,RegistrarRegistry,Rdap,RenewalAcceptance,Runtime,AccountReadBudget,RuntimePorts,TransferPrecheck,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomTestCallLimit,EnomTestSendLimit,EnomTestSendLimitSchema,Installation,RegistrarRegistry,Rdap,RenewalAcceptance,Runtime,AccountReadBudget,RuntimePorts,TransferPrecheck,WriteAcceptance,WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 require_once __DIR__.'/FakeRegistrar.php';
 ini_set('zend.exception_ignore_args','0');
 $binding=new AccountBinding('enom',1,Environment::Test,'synthetic-uid');$bindings=new AccountBindings(new RegistrarRegistry);
 $clock=new FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z'));$count=0;
-app()->instance(Clock::class,$clock);app()->instance(Installation::class,new Installation);EnomTestCallSchema::install();
-config(['domains.enom_test_daily_call_cap'=>1000]);
+app()->instance(Clock::class,$clock);app()->instance(Installation::class,new Installation);EnomTestSendLimitSchema::install();
+// The fake clock stands still, so every send lands in one minute.
+config(['domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
 expect(app()->bound(Installation::class),'Synthetic Enom fixture binds the retained installation authority');
-expect(\Illuminate\Support\Facades\Schema::hasTable(EnomTestCallSchema::TABLE),'Synthetic Enom fixture installs the retained TEST counter');
-same('2026-10-18',\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::reserve(Environment::Test),'Synthetic Enom TEST reservation uses the bound UTC clock');
+expect(\Illuminate\Support\Facades\Schema::hasTable(EnomTestSendLimitSchema::SENDS),'Synthetic Enom fixture installs the TEST send limit');
+$sends=static fn():int=>\Illuminate\Support\Facades\DB::table(EnomTestSendLimitSchema::SENDS)->where('account',EnomTestSendLimit::account('synthetic-uid'))->count();
 $credentials=static function()use(&$count){$count++;return ['uid'=>'synthetic-uid','token'=>'SYNTHETIC-TOKEN'];};
 $make=static fn($b,$get)=>RuntimeFactory::make($b,$bindings,$clock,new WriteFeatures,new WriteAcceptance($b),new RenewalAcceptance($b),new TransferPrecheck(new Rdap(static fn()=>null)),$get);
 app()->instance(Runtime::class,new Runtime);app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new AccountReadBudget($clock));
@@ -79,22 +80,21 @@ foreach(['registration'=>['Purchase','ModifyNS','GetDNS'],'transfer'=>['TP_Creat
     'management'=>array_merge(array_map(fn($c)=>$c->value,Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::cases()),['GetDomainInfo','GetDNS','GetContacts','GetRegLock','GetWPPSInfo','GetRenew','GetHosts','GetDomainSRVHosts','GetDnsSec','CheckNSStatus','GetBalance','GetOrderDetail'])] as $role=>$commands){
     foreach($commands as $command){resetWire();same('xml',$exchange($wire,$role)($origin,$command,[],1200),'Reviewed protocol command');same(1200,$GLOBALS['enomWire']['options'][CURLOPT_CONNECTTIMEOUT_MS],'Shortened connect timeout');}
 }
-$savedClock=$clock->now();$clock->instant=new DateTimeImmutable('2026-10-18T23:59:59Z');$oldDay=EnomTestCalls::day();
-$oldUsed=(int)(\Illuminate\Support\Facades\DB::table(EnomTestCallSchema::TABLE)->where('day',$oldDay)->value('used')??0);$crossed=false;
-\Illuminate\Support\Facades\DB::listen(static function($query)use(&$crossed,$clock):void {
-    if(!$crossed&&str_contains($query->sql,EnomTestCallSchema::TABLE)){$crossed=true;$clock->instant=$clock->instant->modify('+1 second');}
-});
-resetWire();try{$exchange($wire,'management')($origin,'GetBalance',[],25000);throw new LogicException('A TEST read cannot send on yesterday’s reservation');}catch(EnomTestCallLimit){}
-same([],$GLOBALS['enomWire']['forms'],'UTC rollover refusal stays before curl_exec');
-same($oldUsed+1,(int)\Illuminate\Support\Facades\DB::table(EnomTestCallSchema::TABLE)->where('day',$oldDay)->value('used'),'Rollover read unit remains charged to reservation day');
-same(0,(int)(\Illuminate\Support\Facades\DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used')??0),'Rollover refusal does not charge a second day');
-$clock->instant=$savedClock;$beforeUsed=(int)\Illuminate\Support\Facades\DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used');$slow=false;
+resetWire();$before=$sends();$exchange($wire,'management')($origin,'GetBalance',[],25000);
+same([$before+1,1],[$sends(),count($GLOBALS['enomWire']['forms'])],'One TEST exchange send records exactly one attempt');
+config(['domains.enom_test_sends_per_day'=>$before+1]);resetWire();
+try{$exchange($wire,'management')($origin,'GetBalance',[],25000);throw new LogicException('Expected send limit refusal');}catch(EnomTestCallLimit){}
+same([[],$before+1],[$GLOBALS['enomWire']['forms'],$sends()],'A limit refusal at the exchange never reaches curl_exec and records nothing');
+config(['domains.enom_test_sends_per_day'=>1000,'domains.provider_send_guard'=>static function():void{throw new RuntimeException('deployment refusal');}]);resetWire();
+try{$exchange($wire,'management')($origin,'GetBalance',[],25000);throw new LogicException('Expected send guard refusal');}catch(EnomTestCallLimit){}
+same([[],$before+1],[$GLOBALS['enomWire']['forms'],$sends()],'A send guard refusal at the exchange records no attempt');
+config(['domains.provider_send_guard'=>null]);$beforeUsed=$sends();$slow=false;
 \Illuminate\Support\Facades\DB::listen(static function($query)use(&$slow):void {
-    if(!$slow&&str_contains($query->sql,EnomTestCallSchema::TABLE)){$slow=true;$GLOBALS['enomWire']['nanoseconds']+=26000000000;}
+    if(!$slow&&str_contains($query->sql,EnomTestSendLimitSchema::SENDS)){$slow=true;$GLOBALS['enomWire']['nanoseconds']+=26000000000;}
 });
 resetWire();try{$exchange($wire,'management')($origin,'GetBalance',[],25000);throw new LogicException('Counter latency cannot extend the TEST deadline');}catch(EnomTestCallLimit){}
 same([],$GLOBALS['enomWire']['forms'],'Counter delay beyond deadline refuses before curl_exec');
-same($beforeUsed+1,(int)\Illuminate\Support\Facades\DB::table(EnomTestCallSchema::TABLE)->where('day',EnomTestCalls::day())->value('used'),'Timed-out reservation remains spent');
+same($beforeUsed+1,$sends(),'Deadline-expired attempt stays counted');
 foreach([['initFail'=>true],['configFail'=>true],['execFail'=>true],['status'=>302],['status'=>500],['timeout'=>true],['chunks'=>[str_repeat('x',1048576),'x']]] as $failure){
     resetWire($failure);
     try{$exchange($wire,'registration')($origin,'Purchase',['Contact'=>'CONTACT-SENTINEL','AuthInfo1'=>'EPP-SENTINEL'],1200);throw new LogicException('Expected wire failure');}

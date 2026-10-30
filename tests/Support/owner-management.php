@@ -53,18 +53,28 @@ same(['name'=>trim($registrant['first_name'].' '.$registrant['last_name']),'emai
 $changed=Operation::create(['domain_id'=>$d->id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,'authorized_by'=>(int)$user->id,
     'operation_key'=>hash('sha256','owner-contact-change'),'action'=>'contacts','term'=>1,'currency'=>'USD','amount'=>'0.00','funding_basis'=>'non_billable_management','state'=>'succeeded','payload'=>['role'=>'registrant','contact'=>[...$registrant,'first_name'=>'Jane','last_name'=>'Doe','email_address'=>'jane@example.com']],'policy'=>[]]);
 same(['name'=>'Jane Doe','email'=>'jane@example.com'],$owners->present($d->fresh())->owner,'A confirmed contact change replaces the stored registrant');
+$saved=OwnedDomains::contacts($d->fresh());same(['Jane',$registrant['first_name']],[$saved['registrant']['first_name'],$saved['admin']['first_name']],'A one-role change leaves the other roles');
 Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$changed->id)->delete();
 $html=(new OwnedDomainController($owners))->show($r,$d->id)->render();$dom=storefrontDom($html);
-$forms=$dom->query('//form[@method="POST"]');expect($forms->length>=7,'Supported management forms offered');
+$forms=$dom->query('//form[@method="POST"]');expect($forms->length>=($free?6:7),'Supported management forms offered');
 same($forms->length,$dom->query('//form/input[@name="_token"]')->length,'Every form has native CSRF');
 same($forms->length,$dom->query('//form/input[@name="_request_key"]')->length,'Every form has single-use intent');
 same(0,$dom->query('//input[@type="checkbox"]')->length,'Owner management forms have no checkboxes');
 same(1,$dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__v")][contains(.,"'.$registrant['email_address'].'")]')->length,'Owner row shows the registrant email');
-if(isset($dto->management['auth_code_email'])){same($free?'Emailed to the admin contact':'Emailed to the owner',trim(preg_replace('/\s+/',' ',$dom->query('//li[@id="auth_code_email"]/span[contains(@class,"domains-row__v")]')->item(0)->textContent)),'Auth code row names who receives the code');}
+if(isset($dto->management['auth_code_email'])){same($free?'We email it to the admin contact':'We email it to the owner',trim(preg_replace('/\s+/',' ',$dom->query('//li[@id="auth_code_email"]/span[contains(@class,"domains-row__v")]')->item(0)->textContent)),'Auth code row names who receives the code');}
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a ticked or hidden confirmation');
 foreach(['nameservers','lock','auth_code_email']as$risky){if(isset($dto->management[$risky])&&!($risky==='lock'&&($dto->management['lock']['state']??null)===false)){same(1,$dom->query('//li[@id="'.$risky.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][not(@open)]//button[@name="confirmed"]')->length,'Risky action has a closed confirm dialog: '.$risky);}}
 foreach(['contacts','privacy']as$plain){if(isset($dto->management[$plain])){same(1,$dom->query('//li[@id="'.$plain.'"]')->length,'Plain action row rendered: '.$plain);same(0,$dom->query('//li[@id="'.$plain.'"]//dialog[@data-confirm-dialog]|//li[@id="'.$plain.'"]//form[@data-confirm]')->length,'Plain action has no confirm step: '.$plain);}}
 foreach($free?['dns','srv','ds','glue','auth_code_display']:['dns','srv','ds','auth_code_display']as$a){expect(!isset($dto->management[$a]),'Unsupported or disabled advanced/display forms are absent');}
+if($free){ // Stopped reads never restart by themselves, so an unknown row names the step instead of a time.
+    $d->update(['observation'=>null]);$lockRow=static fn():string=>trim(preg_replace('/\s+/',' ',storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render())->query('//li[@id="lock"]/span[@class="domains-row__v"]')->item(0)->textContent));
+    same('Missing Fills in by itself within a day',$lockRow(),'Scheduled reads fill an unknown row in');
+    Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
+    $stoppedRead=Illuminate\Support\Facades\DB::table('domains_observation_work')->insertGetId(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_unavailable']);
+    expect(!isset($owners->present($d->fresh())->management['dns']),'This registrar has no record sections');
+    same('Missing Our team needs to check this domain. No action needed.',$lockRow(),'A stopped read names the step, not a time');
+    Illuminate\Support\Facades\DB::table('domains_observation_work')->where('id',$stoppedRead)->delete();
+}
 if($free){expect(!str_contains($html,'privacy_purchase'),'Free privacy offers no paid action');commerceReject(fn()=>$driver->validate('nameservers',['use_default'=>true,'nameservers'=>[]],$d->domain));}
 else {
     commerceReject(fn()=>$driver->validate('nameservers',['nameservers'=>[]],$d->domain));
@@ -86,24 +96,24 @@ foreach([['lock',['locked'=>'0','confirmed'=>'0']],['lock',['locked'=>'0']],['na
 expect(str_contains($response->getContent(),'Email the auth code?'),'Confirm step names the concrete action');
 // Provider-specific contact errors come from real engine validation, before any request is created.
 $invalidContact=$registrant;$invalidContact['country']='US';$invalidContact['state_province']='';$invalidContact['first_name']=str_repeat('x',$free?33:256);
-$before=Operation::count();$r=$post('contacts',['role'=>'all','contact'=>$invalidContact]);$controller->manage($r,$d->id,'contacts');
+$editing=$free?'contact_profile':'contacts';$before=Operation::count();$r=$post($editing,['role'=>'all','contact'=>$invalidContact]);$controller->manage($r,$d->id,$editing);
 same($before,Operation::count(),'Invalid provider contact fields create no operation');
 $contactMessages=['state_province'=>$free?'For the US or Canada, enter the 2-letter state or province code. For other countries, enter its name.':'Enter your state or province for the US, Canada or Australia.','first_name'=>'Enter your first name. Use '.($free?32:255).' or fewer characters. Accented and non-Latin letters count as 2 or more.'];
 app('view')->share('errors',$session->get('errors'));$contactDom=storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render());
 foreach($contactMessages as$field=>$message){
     same($message,$session->get('errors')->first('contact.'.$field),'Exact registrar-specific contact error: '.$field);
-    $input=$contactDom->query('//form[contains(@action,"/manage/contacts")]//*[@name="contact['.$field.']"][@aria-invalid="true"]');same(1,$input->length,'Contact field has its own error');
+    $input=$contactDom->query('//form[contains(@action,"/manage/'.$editing.'")]//*[@name="contact['.$field.']"][@aria-invalid="true"]');same(1,$input->length,'Contact field has its own error');
     $descriptions=[];foreach(explode(' ',$input->item(0)->getAttribute('aria-describedby'))as$id){foreach($contactDom->query('//*[@id="'.$id.'"]')as$node){$descriptions[]=trim($node->textContent);}}
     expect(in_array($message,$descriptions,true),'Exact contact error describes '.$field);
 }
 // Plain edits need no acknowledgement: this contacts request reaches engine validation.
-$r=$post('contacts',['role'=>'all','contact'=>[]]);$r->request->remove('confirmed');$controller->manage($r,$d->id,'contacts');
+$r=$post($editing,['role'=>'all','contact'=>[]]);$r->request->remove('confirmed');$controller->manage($r,$d->id,$editing);
 expect($session->get('errors')->has('contact.phone'),'Engine contact paths map to submitted fields');
 app('view')->share('errors',$session->get('errors'));
 $html=(new OwnedDomainController($owners))->show($r,$d->id)->render();$dom=storefrontDom($html);
 expect($dom->query('//input[@name="contact[phone]"][@aria-invalid="true"]')->length>0,'Real Blade identifies the invalid contact field');
 expect($dom->query('//input[@name="contact[phone]"][@aria-invalid="true"]/ancestor::dialog[@open]')->length>0,'Invalid contact forms open without script');
-expect(str_contains($html,'Enter a phone number with its country code, such as +1.2025550123.'),'Contact error explains the expected format');
+expect(str_contains($html,'Enter a phone number with its country code, such as +1 206 555 0100.'),'Contact error explains the expected format');
 $r=$post('auth_code_email');$controller->manage($r,$d->id,'auth_code_email');
 $dto=$owners->present($d->fresh());expect(!isset($dto->management['auth_code_email']),'Email cooldown removes the unavailable action');
 $peer=$d->operations()->where('action','auth_code_email')->sole();Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$peer->id)->update(['state'=>'uncertain']);
@@ -117,4 +127,17 @@ app()->instance('env','production');$csrf=new Illuminate\Foundation\Http\Middlew
 foreach([[],['_token'=>'wrong']]as$data){$r=Request::create('/domains/'.$d->id.'/manage/lock','POST',$data);$r->setLaravelSession($session);
     try{$csrf->handle($r,fn()=>throw new RuntimeException('CSRF bypass'));expect(false,'CSRF refused');}catch(Illuminate\Session\TokenMismatchException){}}
 app()->instance('env','testing');
+// Exercise the real retirement and owner presenter together; raw operation state alone is rejected.
+if (!$free) {
+    [$cancelDomain,$cancelDriver]=$holding(placeholderComFixtureName('owner-cancel-privacy-placeholder.com'));
+    storefrontViews();
+    $state->privacy=false;$state->enabled=false;$state->cost='8.00';
+    $product->server->settings()->updateOrCreate(['key'=>'domains_privacy_price'],['value'=>'5.00','type'=>'string']);
+    $cancelled=$management->request($user,$cancelDomain->id,'privacy_purchase',[],hash('sha256','owner-cancel-privacy'),$cancelDriver);
+    $cancelled=$management->retire($user,$cancelled->id);
+    $history=$owners->present($cancelDomain->fresh(),false)->progress;
+    same('Cancelled',$history[0]['state'],'Customer history shows the retired privacy purchase as Cancelled');
+    same(null,$history[0]['note'],'Cancelled privacy has no failed-change message');
+    same($history[0]['state'],\Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::requestStatus($cancelled)['label'],'Customer and staff cancellation status match');
+}
 $nativeSuccessful=true;echo "Owner management native request/engine grant, replay, ownership, CSRF and real Blade checks passed.\n";

@@ -29,7 +29,7 @@ final class NameSiloAccountAction
                 Hidden::make('review')->required(),Hidden::make('error'),
                 TextEntry::make('read_error')->hiddenLabel()->color('danger')->state(fn(Get $get)=>$get('error'))->visible(fn(Get $get)=>(bool)$get('error')),
                 Grid::make(['default'=>1,'md'=>2])->visible(fn(Get $get)=>$details($get)!==[])->schema([
-                    Section::make('Pinned account')->schema([
+                    Section::make('Saved account')->schema([
                         TextEntry::make('pinned_id')->label('Contact ID')->state(fn(Get $get)=>$details($get)['pinned']['contact_id']??null),
                         TextEntry::make('pinned_email')->label('Email')->state(fn(Get $get)=>$details($get)['pinned']['email']??null),
                     ]),
@@ -39,7 +39,7 @@ final class NameSiloAccountAction
                     ]),
                 ]),
                 TextEntry::make('expected')->label('Expected default contact email')->state(fn(Get $get)=>$details($get)['expected']??null)->visible(fn(Get $get)=>$details($get)!==[]),
-                TextEntry::make('email_mismatch')->hiddenLabel()->state('Current email does not match Expected default contact email. Nothing can be accepted.')
+                TextEntry::make('email_mismatch')->hiddenLabel()->state(function(Get $get)use($details):?string {$r=$details($get);return $r===[]?null:'The NameSilo contact email is '.$r['live']['email'].'. We expected '.$r['expected'].'. Fix it at NameSilo or in Servers.';})
                     ->color('danger')->visible(function(Get $get)use($details):bool {$r=$details($get);return $r!==[]&&$r['live']['email']!==$r['expected'];}),
                 TextInput::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->regex(\Paymenter\Extensions\Servers\Domains\Services\StaffReason::SINGLE_LINE)->helperText('Why are you accepting this account change?'),
             ])

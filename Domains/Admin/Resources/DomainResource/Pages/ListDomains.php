@@ -9,5 +9,5 @@ class ListDomains extends ListRecords
     protected static string $resource = DomainResource::class;
     public function getTitle(): string { return 'Domains'; }
     public function getBreadcrumbs(): array { return []; }
-    protected function getHeaderActions(): array { return [\Filament\Actions\Action::make('adopt')->label('Import domain')->visible(fn () => \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::ADOPT_PREVIEW))->url(DomainResource::getUrl('adopt'))]; }
+    protected function getHeaderActions(): array { return [\Filament\Actions\Action::make('adopt')->label('Import domain')->visible(fn () => config('domains.adoption.enabled', false) === true && collect(\Paymenter\Extensions\Servers\Domains\Services\AdoptionCommit::PERMISSIONS)->every(fn ($permission) => \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can($permission)))->url(DomainResource::getUrl('adopt'))]; }
 }

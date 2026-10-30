@@ -12,17 +12,17 @@ final class PslFacts
         if ($list->revision() === null) { return 'Not downloaded yet'; }
         try { PublicSuffixList::body($list->current()); } catch (PslFailure) { return 'Saved list damaged'; }
         if (!$list->parserUsable()) { return 'Saved list needs review'; }
-        return !$list->discoveryAllowed() ? 'New discovery paused' : ($list->staleWarning() ? 'Out of date warning' : 'Current');
+        return !$list->discoveryAllowed() ? 'New discovery paused' : 'Current';
     }
     public static function rows(PublicSuffixList $list): array
     {
         $s = $list->current(); $status = $list->status();
         return ['Revision' => $s ? substr($s->revision, 0, 12) : 'None',
-            'Last validated download' => self::time($s?->fetched_at),
-            'Last successful source check' => self::time($status->checked_at), 'ICANN rules' => $s?->icann_count ?? 'None',
+            'Last good download' => self::time($s?->fetched_at),
+            'Last good check' => self::time($status->checked_at), 'ICANN rules' => $s?->icann_count ?? 'None',
             'Private rules' => $s?->private_count ?? 'None', 'Download size' => $s ? number_format($s->byte_size).' bytes' : 'None',
             'Update source' => $list->source(), 'Saved list downloaded from' => $s?->source_url ?? 'None',
             'Last attempt' => self::time($status->last_attempt_at), 'Last attempt result' => self::result($status->last_result),
-            'Consecutive unsuccessful attempts' => $status->consecutive_failures];
+            'Failed attempts in a row' => $status->consecutive_failures];
     }
 }

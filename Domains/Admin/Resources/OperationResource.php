@@ -47,10 +47,10 @@ class OperationResource extends Resource
                 ->description(fn($record)=>Labels::requestStatus($record)['reason']),
             TextColumn::make('created_at')->label('Created')->dateTime('M j, Y H:i \\U\\T\\C','UTC')->sortable()->visibleFrom('lg'),
             TextColumn::make('server_id')->label('Registrar account')->visibleFrom('xl')->formatStateUsing(fn($state)=>$servers[$state]??Missing::LABEL)
-                ->color(fn($state)=>isset($servers[$state])?null:Missing::COLOR)->description(fn($record)=>isset($servers[$record->server_id])?null:'Registrar account not found'),
+                ->color(fn($state)=>isset($servers[$state])?null:Missing::COLOR)->description(fn($record)=>isset($servers[$record->server_id])?null:'Registrar account not found. Check Registrars.'),
         ])->filters([
             SelectFilter::make('status')->label('Status')->multiple()->options($statuses)
-                ->query(fn(Builder $query,array $data)=>$data['values']??[] ? $query->whereIn('state',array_keys(array_filter(RequestStatus::STATES,fn($state)=>in_array($state[0],$data['values'],true)))) : $query),
+                ->query(fn(Builder $query,array $data)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status($query,$data['values']??[])),
             SelectFilter::make('action')->label('Type')->multiple()
                 ->options(fn()=>collect(Operation::query()->distinct()->pluck('action'))->mapWithKeys(fn($action)=>[$action=>Labels::action($action)])->sort()->all()),
             SelectFilter::make('server_id')->label('Registrar account')->multiple()

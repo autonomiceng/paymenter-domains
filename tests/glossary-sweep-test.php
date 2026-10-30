@@ -34,8 +34,8 @@ same(['Transfer needs an auth code','Enter the auth code for {{ $domain }}','Ent
 same(['Auth code deadline reminder','Reminder: auth code for {{ $domain }}'],[$r['domains_transfer_code_reminder']['name'],$r['domains_transfer_code_reminder']['subject']],'Deadline reminder terms');
 expect(str_contains($r['domains_transfer_code_paid']['body'],'enter its auth code (also called EPP code).')&&str_contains($r['domains_transfer_code_paid']['body'],'>Enter auth code</a>'),'Paid transfer body and button');
 expect(str_starts_with($r['domains_transfer_code_reminder']['body'],'We still need the auth code for {{ $domain }}.'),'Reminder body');
-expect(str_contains($r['domains_domain_expiring']['in_app_body'],'@else Auto-renew is off. To keep this domain, contact support before it expires.@endif'),'Expiring in-app: Auto-renew is off');
-expect(str_contains($r['domains_domain_expiring']['body'],"Auto-renew is off. To keep this domain, contact support before **{{ \$expires }}**."),'Expiring email: Auto-renew is off');
+expect(str_contains($r['domains_domain_expiring']['in_app_body'],'@else Auto-renew is off. To keep this domain,@if($can_turn_on) turn it on or renew it on the domain page.@else contact support before it expires.@endif@endif'),'Expiring in-app: Auto-renew is off');
+expect(str_contains($r['domains_domain_expiring']['body'],"Auto-renew is off. To keep this domain,@if(\$can_turn_on) turn it on or renew it on the domain page.@else contact support before **{{ \$expires }}**.@endif"),'Expiring email: Auto-renew is off');
 $none(json_encode($r,JSON_UNESCAPED_UNICODE),['transfer code','Transfer code','Renewal is turned off','could not','did not'],'Reminder templates');
 $w=WatchNoticeTemplates::definitions();
 same(['Monitoring alert: expires soon','Monitoring alert: expired','Monitoring alert: nameservers changed','Monitoring alert: nameservers restored'],array_column($w,'name'),'Monitoring alert names');
@@ -98,7 +98,7 @@ same(['TLD','Transfer (adds 1 year)'],array_map(fn($n)=>trim($n->textContent),it
 $none($plain($transfer),['ending','Ending','transfer code','auth or EPP','registrar lock','includes 1 year'],'Transfer page');
 $line=static fn(?string $price)=>$plain(view('domains::checkout-line',['domain'=>['name'=>'example.com','action'=>'Registration','years'=>1,'renewalPrice'=>$price,'editUrl'=>'/cart/1']])->render());
 expect(str_contains($line('$14.00'),'Renews at $14.00/yr'),'Cart line renewal price');
-expect(str_contains($line(null),'Renewal price: Missing Not set for this TLD yet'),'Cart line: Missing with its cause');
+expect(str_contains($line(null),'Renewal price: Missing Contact support before you buy'),'Cart line: Missing with its cause');
 expect(!str_contains($line(null),'unavailable'),'Cart line never says unavailable');
 $none(file_get_contents(dirname(__DIR__).'/Domains/resources/views/cart-edit.blade.php'),['ending'],'Cart edit');
 
@@ -110,14 +110,14 @@ same(['Finish setup'],array_map(fn($n)=>$n->textContent,iterator_to_array($dom->
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No confirm checkbox: the button confirms');
 expect(str_contains($plain($setup),'Turn on WHOIS privacy (free)'),'Setup privacy option');
 $held=$plain(view('domains::setup',['domain'=>$owned(['required'=>false],[])])->render());
-expect(str_contains($held,'Under review Your order is on hold. Contact support.'),'Held setup: pill and one line, no reason line');
+expect(str_contains($held,'Under review Your order is on hold. Contact support and we’ll sort it out.'),'Held setup: pill and one line, no reason line');
 $transferDto=['open'=>true,'received'=>true,'paid'=>true,'deadline'=>'Nov 17, 2026, 12:00 UTC','held'=>false,'unchecked'=>true,'phase'=>'pending'];
 $code=view('domains::code',['domain'=>$owned(['required'=>false],$transferDto)])->render();$dom=storefrontDom($code);$codeText=$plain($code);
 same(['Auth code'],array_map(fn($n)=>$n->textContent,iterator_to_array($dom->query('//h1'))),'Code page title');
 same(['Auth code'],array_map(fn($n)=>$n->textContent,iterator_to_array($dom->query('//label[@for="transfer-code-input"]'))),'Code field label');
 same(['Save'],array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//form//button[@type="submit"]'))),'Code button');
 same(1,substr_count($codeText,OwnerActionController::CODE_SAVED),'Saved line said once');
-expect(str_contains($codeText,'Expires Missing Shows when the transfer completes'),'Unchecked registry record: Expires Missing with its cause');
+expect(str_contains($codeText,'Expires Missing Fills in by itself when the transfer finishes'),'Unchecked registry record: Expires Missing with its cause');
 $none($codeText,['transfer code','Transfer code','public registration record','Code saved','auth code or EPP'],'Auth code page');
 $cutoff=$plain(view('domains::code',['domain'=>$owned(['required'=>false],[...$transferDto,'open'=>false,'phase'=>'cutoff','unchecked'=>false])])->render());
 expect(str_contains($cutoff,'The time to enter or change this auth code has passed.'),'Cutoff names the auth code');

@@ -46,14 +46,14 @@ final class PriceCatalogue
 
     /** Shared batch import; no native product locks/writes here. */
     public function import(\Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry $entry,
-        \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, \Closure $recheck, \DateTimeImmutable $now, ?StaffSettingsReview $review = null): void
+        \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, \Closure $recheck, \DateTimeImmutable $now, ?StaffSettingsReview $review = null, bool $keepStaffSettings = false): void
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Import owns its locks.'); }
         $accepted->binding->requireMatch($entry->binding);
         $tld = new Tld(['server_id' => $entry->binding->serverId, 'registrar_key' => $entry->binding->registrarKey,
             'account_fingerprint' => $entry->binding->fingerprint, 'tld' => $entry->tld]);
-        $this->locked($tld, function (Tld $locked, Server $server, Account $account) use ($entry, $accepted, $recheck, $now, $review): void {
-            $prior = $review && !$locked->wasRecentlyCreated ? [$locked->register_enabled, $locked->transfer_enabled, $locked->renew_enabled] : null;
+        $this->locked($tld, function (Tld $locked, Server $server, Account $account) use ($entry, $accepted, $recheck, $now, $review, $keepStaffSettings): void {
+            $prior = ($review || $keepStaffSettings) && !$locked->wasRecentlyCreated ? [$locked->register_enabled, $locked->transfer_enabled, $locked->renew_enabled] : null;
             $recheck($server, $account); $row = $accepted->endings[$entry->tld];
             $rates = array_filter($entry->rates, static fn (CatalogueRate $rate): bool => $rate->action !== 'register'
                 || ($rate->term >= $locked->min_years && $rate->term <= $locked->max_years));
@@ -68,7 +68,8 @@ final class PriceCatalogue
                 $rule ??= $this->rules->rule($locked, true); $hash ??= self::ruleHash($rule);
                 $this->write($locked, $rate, $rule, $hash, $proof);
             }
-            if ($terms) { $locked->min_years = min($terms); $locked->max_years = max($terms); }
+            // Initialize new TLDs only; acceptance/provider changes must not erase saved bounds.
+            if ($locked->wasRecentlyCreated && $terms) { $locked->min_years = min($terms); $locked->max_years = max($terms); }
             $locked->fill(['register_enabled' => false, 'transfer_enabled' => false, 'renew_enabled' => $renewal,
                 'registry_fields' => $entry->registryFields])->save();
             $eligible = function (string $action, int $term) use ($locked, $now): bool {
@@ -191,7 +192,8 @@ final class PriceCatalogue
         return self::currentEvidence($price, $hash, $now);
     }
 
-    /** Pure saved-price validation for render snapshots; callers qualify the row's binding and action. */
+    /** Pure saved-price validation for render snapshots; callers qualify the row's binding and action.
+     * A synced cost has no time limit: sales keep the last synced cost until the next sync. */
     public static function currentEvidence(?Price $price, ?string $ruleHash, \DateTimeImmutable $now): PriceSnapshot
     {
         if (!$price || $price->wholesale === null || $price->retail === null || $price->hold_reason !== null
@@ -199,7 +201,6 @@ final class PriceCatalogue
             throw new \DomainException('No current eligible price.');
         }
         if ($ruleHash === null || ($price->eligibility['rule_hash'] ?? null) !== $ruleHash) { throw new \DomainException('Price rule changed; republication required.'); }
-        if ($price->fresh_until <= $now) { throw new ExpiredCostEvidence($price->server_id, $price->tld, $price->action, $price->term, $price->fresh_until->toDateTimeImmutable()); }
         return new PriceSnapshot($price->id, $price->revision, $price->server_id, $price->registrar_key, $price->account_fingerprint, $price->tld, $price->action, $price->term,
             $price->currency, self::cost($price->wholesale), self::retail($price->retail), $price->source,
             $price->observed_at->toDateTimeImmutable(), $price->fresh_until->toDateTimeImmutable(), $price->eligibility['staff_alert'] ?? null);
@@ -281,18 +282,19 @@ final class PriceCatalogue
             [$retail, $margin] = self::quote($price->action, $price->term, $perYear, $rule, $current);
             return ['action' => $price->action, 'term' => $price->term, 'cost' => $cost, 'current' => $current,
                 'new' => $retail === null ? null : self::retail($retail), 'hold' => $margin->hold, 'alert' => $margin->staffAlert,
-                'fresh' => $price->fresh_until !== null && $price->fresh_until > $now && $price->observed_at <= $now];
+                'synced' => $price->fresh_until !== null && $price->observed_at <= $now];
         })->all();
     }
 
-    /** Staff saves publish at once, so every saved term needs a current read and the one-year renewal needs a cost.
-     * A current read without a cost means the registrar does not offer that term. */
-    public static function requireFreshCosts(Tld $tld, \DateTimeImmutable $now, ?\Illuminate\Support\Collection $preloaded = null): void
+    /** Staff saves publish at once, so every saved term needs a synced read and the one-year renewal needs a cost.
+     * A read without a cost means the registrar does not offer that term. Old reads still count. */
+    public static function requireCosts(Tld $tld, \DateTimeImmutable $now, ?\Illuminate\Support\Collection $preloaded = null): void
     {
         $rows = self::sold($tld, $preloaded);
         if (!$rows->contains(fn (Price $price): bool => $price->action === 'renew' && $price->term === 1 && $price->wholesale !== null)
-            || $rows->contains(fn (Price $price): bool => $price->fresh_until === null
-            || $price->fresh_until <= $now || $price->observed_at > $now)) { throw new \DomainException('Fresh costs required before publication.'); }
+            || $rows->contains(fn (Price $price): bool => $price->fresh_until === null || $price->observed_at > $now)) {
+            throw new \DomainException('Costs required before publication.');
+        }
     }
 
     private static function ruleHash(array $rule): string

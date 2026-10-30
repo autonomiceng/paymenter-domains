@@ -34,8 +34,8 @@ $cases=[
     'grace'=>[['status'=>'grace','provider_expires_at'=>$day(-5)],['state'=>'succeeded'],'Expired','In grace period'],
     'redemption'=>[['status'=>'redemption','provider_expires_at'=>$day(-40)],['state'=>'succeeded'],'Redemption',null],
     'review'=>[['status'=>'needs_review'],['state'=>'succeeded'],'Under review',null],
-    'registration-rejected'=>[['status'=>'registration_rejected'],['action'=>'register','state'=>'rejected'],'Failed','Registration rejected'],
-    'transfer-rejected'=>[['status'=>'transfer_rejected'],['state'=>'rejected'],'Failed','Transfer rejected'],
+    'registration-rejected'=>[['status'=>'registration_rejected'],['action'=>'register','state'=>'rejected'],'Failed','Registration did not finish'],
+    'transfer-rejected'=>[['status'=>'transfer_rejected'],['state'=>'rejected'],'Failed','Transfer did not finish'],
     'cancelled'=>[['status'=>'cancelled'],['state'=>'disposed'],'Cancelled',null],
     'adoption'=>[['status'=>'adoption_pending'],['state'=>'succeeded'],'Under review','Import not confirmed'],
 ];

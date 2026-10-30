@@ -47,13 +47,27 @@ resetCurl();
 $transport->send(Environment::Test, ReadCommand::Balance, [], 'uid', 'token', 25000);
 same(8000, $GLOBALS['enomCurl']['options'][CURLOPT_CONNECTTIMEOUT_MS], 'Long request caps connect timeout');
 same(25000, $GLOBALS['enomCurl']['options'][CURLOPT_TIMEOUT_MS], 'Long request preserves total timeout');
-$reservedBefore=(int)\Illuminate\Support\Facades\DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::TABLE)->value('used');$slow=false;
+$sends=static fn():int=>\Illuminate\Support\Facades\DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimitSchema::SENDS)->where('account',\Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::account('uid'))->count();
+resetCurl();$before=$sends();$transport->send(Environment::Test,ReadCommand::Balance,[],'uid','token',25000);
+same([$before+1,1],[$sends(),$GLOBALS['enomCurl']['calls']],'One TEST transport send records exactly one attempt');
+resetCurl();$before=$sends();$transport->send(Environment::Live,ReadCommand::Balance,[],'uid','token',25000);
+same($before,$sends(),'LIVE transport sends are not counted by the TEST limit');
+config(['domains.enom_test_sends_per_day'=>$before]);resetCurl();
+try{$transport->send(Environment::Test,ReadCommand::Balance,[],'uid','token',25000);throw new \LogicException('Expected send limit refusal');}
+catch(\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit){}
+same([0,$before],[$GLOBALS['enomCurl']['calls'],$sends()],'A limit refusal never reaches curl_exec and records nothing');
+config(['domains.enom_test_sends_per_day'=>1000,'domains.provider_send_guard'=>static function():void{throw new \RuntimeException('deployment refusal');}]);resetCurl();
+try{$transport->send(Environment::Test,ReadCommand::Balance,[],'uid','token',25000);throw new \LogicException('Expected send guard refusal');}
+catch(\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit){}
+same([0,$before],[$GLOBALS['enomCurl']['calls'],$sends()],'A send guard refusal records no attempt');
+config(['domains.provider_send_guard'=>null]);
+$slow=false;
 \Illuminate\Support\Facades\DB::listen(static function($query)use(&$slow):void {
-    if(!$slow&&str_contains($query->sql,\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::TABLE)){$slow=true;$GLOBALS['enomCurl']['nanoseconds']+=26000000000;}
+    if(!$slow&&str_contains($query->sql,\Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimitSchema::SENDS)){$slow=true;$GLOBALS['enomCurl']['nanoseconds']+=26000000000;}
 });
 resetCurl();try{$transport->send(Environment::Test,ReadCommand::Balance,[],'uid','token',25000);throw new \LogicException('Counter latency cannot extend a TEST read deadline');}catch(\RuntimeException){}
 same(0,$GLOBALS['enomCurl']['calls'],'Counter delay beyond deadline refuses before curl_exec');
-same($reservedBefore+1,(int)\Illuminate\Support\Facades\DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::TABLE)->value('used'),'Deadline-expired TEST reservation remains spent');
+same($before+1,$sends(),'Deadline-expired TEST attempt stays counted');
 foreach ([['status' => 302], ['status' => 500], ['configFail' => true], ['timeout' => true], ['chunks' => [str_repeat('x', 1048576), 'x']]] as $failure) {
     resetCurl($failure);
     try { $transport->send(Environment::Test, ReadCommand::Balance, [], 'private-uid', 'private-token', 25000); throw new \LogicException('Expected transport exception'); }

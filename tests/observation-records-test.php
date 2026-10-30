@@ -47,7 +47,7 @@ same("Sync stopped: couldn't read DNS records.",\Paymenter\Extensions\Servers\Do
 $r=$d->fresh()->observation['records'];same('complete',$r['families']['dns']['state'],'Independent completed family remains proven');
 same('unknown',$r['families']['srv']['state'],'Failed family unknown');same('unknown',$r['families']['ds']['state'],'Unattempted family unknown');
 expect(!in_array('GetDnsSec',array_column($state->calls,0),true),'No further wire after failure');
-$html=$page();same(['Missing','Shows when our team resumes record checks'],array_map(fn($n)=>trim($n->textContent),iterator_to_array(storefrontDom($html)->query('//li[@id="srv"]/span[@class="domains-row__v"]/span[@class="domains-missing" or @class="domains-sub"]'))),'Unknown SRV held shows Missing with its cause');
+$html=$page();same(['Missing','Our team needs to check this domain. No action needed.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array(storefrontDom($html)->query('//li[@id="srv"]/span[@class="domains-row__v"]//span[contains(concat(@class," "),"domains-missing ") or @class="domains-sub"]'))),'Unknown SRV held shows Missing with its cause');
 same(0,storefrontDom($html)->query('//form[contains(@action,"/manage/srv")]')->length,'Failed refresh cannot retain old edit form');
 expect(isset(OwnerRecords::forDomain($d->fresh())['dns']),'Healthy primary retains independently complete DNS under partial-record hold');
 // A later primary failure also invalidates the healthy family under an existing partial-record hold.

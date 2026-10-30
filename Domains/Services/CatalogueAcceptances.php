@@ -21,7 +21,7 @@ final class CatalogueAcceptances
             if (!$setting->encrypted || !is_string($setting->value)) { throw new \DomainException; }
             $data = json_decode($setting->value, true, 16, JSON_THROW_ON_ERROR);
             if (($data['fingerprint'] ?? null) !== $binding->fingerprint || ($data['currency'] ?? null) !== 'USD' || ($data['unit'] ?? null) !== 'exact_term_annual') { throw new \DomainException; }
-            return new CatalogueAcceptance($binding, $data['revision'], $data['endings'],
+            return new CatalogueAcceptance($binding, $data['revision'], EndingChoices::closeHidden($data['endings']),
                 $data['registration_route'] ?? null, $data['registration_interval_seconds'] ?? 0);
         } catch (\Throwable) { throw new \DomainException('Catalogue acceptance is unavailable.'); }
     }

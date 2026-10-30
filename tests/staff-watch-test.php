@@ -59,7 +59,7 @@ foreach(['nameservers','website_endpoints','email_endpoints'] as $field){
     if($field!=='nameservers'){foreach(['exact','suffix','ips'] as $part){foreach(['"bad.invalid.example"','[[]]','7'] as $value){$badValues[]='{'.json_encode($part).':'.$value.'}';}}}
     foreach($badValues as $bad){
         $profileQuery->update([...$profileOriginal,$field=>$bad]);$profileBefore=(array)(clone $profileQuery)->sole();$auditBefore=WatchAudit::count();
-        $broken=Livewire::actingAs($manager)->test(ViewProfile::class,['record'=>$profile->id])->assertSuccessful()->assertSee('Unavailable')->assertSee(WatchFacts::TEMPLATE_UNAVAILABLE)->assertActionDisabled('save')->assertActionDisabled('enable');
+        $broken=Livewire::actingAs($manager)->test(ViewProfile::class,['record'=>$profile->id])->assertSuccessful()->assertSee('Missing')->assertSee(WatchFacts::TEMPLATE_UNAVAILABLE)->assertActionDisabled('save')->assertActionDisabled('enable');
         $broken->mountAction('save')->assertActionNotMounted('save');
         dnsRefused(fn()=>$writes->run($manager,'profile',$profile->id,'save',Writes::ticket($manager->id,'profile',$profile->id,(int)$profileOriginal['revision'],'save'),'Refuse unreadable saved records',$validProfile),'Unreadable template cannot be replaced by submitted defaults',false);
         same($profileBefore,(array)(clone $profileQuery)->sole(),'Unreadable template is never rewritten: '.$field.' '.$bad);

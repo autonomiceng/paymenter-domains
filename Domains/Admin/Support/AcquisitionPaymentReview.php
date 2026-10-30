@@ -73,7 +73,7 @@ final class AcquisitionPaymentReview
                 ->state(new HtmlString($r->request_id?self::link(OperationResource::getUrl('view',['record'=>$r->request_id]),'Registrar request #'.$r->request_id):'Registrar request unavailable'));
         }
         $count=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','acquisition_late_money')->whereNull('resolved_at')->count();
-        return [Section::make('Paid after order closed')->icon('heroicon-o-exclamation-triangle')->iconColor('warning')
+        return [Section::make('Payment activity after the order closed')->icon('heroicon-o-exclamation-triangle')->iconColor('warning')
             ->description(self::DESCRIPTION.($count>10?' Showing the latest 10 of '.$count.' recorded activities.':''))->columnSpanFull()->schema([...$entries,...$activities])];
     }
     private static function link(string $url,string $label): string

@@ -6,7 +6,9 @@ require __DIR__.'/Support/enom-wire.php';
 require __DIR__.'/Support/enom-exchange.php';
 require __DIR__.'/Support/provider-send-namesilo-wire.php';
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{CurlTransport,ReadCommand,ManagementCommand};
-use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCalls,EnomTestCallLimit,EnomTestWriteReservation as Reservation};
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestSendLimitSchema,EnomTestWriteReservation as Reservation};
+$sends=static fn():int=>DB::table(EnomTestSendLimitSchema::SENDS)->count();
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{CurlTransport as NsTransport,Environment as NsEnvironment,RequestContext as NsContext,RegistrarRequest};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 same(1,\Paymenter\Extensions\Servers\Domains\Services\ProviderSendGuard::CONTRACT,'Deployment capability contract');
@@ -116,7 +118,7 @@ try{
     same([],$warnings,'Configuration lookup failure does not invent a reason warning');
 }finally{app()->instance('config',$config);}
 foreach(['renewal'=>'Extend','management'=>'SetRegLock'] as $role=>$command){
-    $used=EnomTestCalls::usage()['used'];$events=[];resetWire();
+    $used=$sends();$events=[];resetWire();
     config(['domains.provider_send_guard'=>static function($registrar,$environment,$named)use(&$events,$binding,$role):void {
         expect(Reservation::unconsumed($binding,$role,701),'Guard sees the prepared, unconsumed write reservation');
         $events[]=[$registrar,$environment,$named];throw new RuntimeException('PRIVATE-GUARD-SENTINEL');
@@ -128,21 +130,21 @@ foreach(['renewal'=>'Extend','management'=>'SetRegLock'] as $role=>$command){
     expect($caught instanceof EnomTestCallLimit,$role.' reserved guard refusal is definitely unsent');
     same([['enom','test',$command]],$events,$role.' reserved write reaches the guard exactly once');
     same([],$GLOBALS['enomWire']['forms'],$role.' reserved guard refusal sends nothing');
-    same($used+1,EnomTestCalls::usage()['used'],$role.' refused reservation remains charged');
+    same($used,$sends(),$role.' a guard refusal comes before the send limit and records no attempt');
     expect(!Reservation::active($binding,$role),$role.' failed operation closes its reservation scope');
-    // A later operation attempt must reserve a new unit; it cannot inherit the refused attempt's unit.
+    // A later operation attempt must arm a new scope; it cannot inherit the refused attempt's scope.
     config(['domains.provider_send_guard'=>null]);$caught=null;
     try{Reservation::run($binding,$role,701,static fn()=>$exchange($wire,$role)($origin,$command,[],1000));}
     catch(EnomTestCallLimit $error){$caught=$error;}
     expect($caught instanceof EnomTestCallLimit,$role.' retry cannot reuse the refused attempt reservation');
     same([],$GLOBALS['enomWire']['forms'],$role.' unreserved retry sends nothing');
-    same($used+1,EnomTestCalls::usage()['used'],$role.' unreserved retry does not alter the charged count');
+    same($used,$sends(),$role.' unreserved retry records no attempt');
     Reservation::run($binding,$role,701,static function()use($binding,$role,$command,$exchange,$wire,$origin):void {
         Reservation::reserve($binding,$role);$exchange($wire,$role)($origin,$command,[],1000);
         expect(!Reservation::unconsumed($binding,$role,701),'Successful send consumes its fresh reservation');
     });
     same(1,count($GLOBALS['enomWire']['forms']),$role.' freshly reserved retry sends exactly once');
-    same($used+2,EnomTestCalls::usage()['used'],$role.' retry charges a second unit without refunding the first');
+    same($used+1,$sends(),$role.' the freshly armed retry records exactly one attempt');
 }
 $warnings=[];
 foreach(['read'=>fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',1000),
@@ -163,11 +165,12 @@ foreach(['read'=>fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\D
     }
 }
 same([],$warnings,'Enom deadline failures outside the guard do not warn');
-config(['domains.provider_send_guard'=>null]);resetWire();
+config(['domains.provider_send_guard'=>null]);resetWire();$before=$sends();
 (new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',25000);
 $exchange($wire,'registration')($origin,'Purchase',[],25000);
 $GLOBALS['nsGuardSends']=0;(new NsTransport)->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY');
 same([2,1],[count($GLOBALS['enomWire']['forms']),$GLOBALS['nsGuardSends']],'Null guard preserves all three physical senders');
+same($before+2,$sends(),'Each Enom TEST send site records one attempt; NameSilo records none');
 same([],$warnings,'Null guard does not warn');
 $GLOBALS['nsGuardNanoseconds']=0;$GLOBALS['nsGuardSends']=0;
 config(['domains.provider_send_guard'=>static function():void { $GLOBALS['nsGuardNanoseconds']+=250000000; }]);
@@ -194,11 +197,12 @@ foreach([fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\D
         same([],$warnings,'Transport failures outside the guard do not warn');
     }finally{$GLOBALS['nsGuardExecFail']=false;}
 }
-config(['domains.enom_test_daily_call_cap'=>0]);resetWire();$caught=null;
+config(['domains.enom_test_sends_per_day'=>0]);resetWire();$caught=null;$before=$sends();
 try{(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',1000);}catch(EnomTestCallLimit $error){$caught=$error;}
-expect($caught instanceof EnomTestCallLimit,'Daily call budget fixture must refuse');
-same([],$GLOBALS['enomWire']['forms'],'Daily call budget refusal sends nothing');
-same([],$warnings,'Daily call budget refusal outside the guard does not warn');
-config(['domains.provider_send_guard'=>null,'domains.enom_test_daily_call_cap'=>1000]);
+expect($caught instanceof EnomTestCallLimit,'Send limit fixture must refuse');
+same([],$GLOBALS['enomWire']['forms'],'Send limit refusal sends nothing');
+same($before,$sends(),'Send limit refusal records no attempt');
+same([],$warnings,'Send limit refusal outside the guard does not warn');
+config(['domains.provider_send_guard'=>null,'domains.enom_test_sends_per_day'=>1000]);
 echo "Deployment guard covers every physical registrar transport and command, refusal and null default.\n";
 $nativeSuccessful=true;

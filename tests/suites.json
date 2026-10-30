@@ -40,13 +40,9 @@
     "tests/ote-collection-shapes-test.php"
   ],
   "native": [
-    "tests/test_enom_run_guards.py",
-    "tests/test_enom_run_concurrency.py",
-    "tests/enom-run-transports-test.php",
-    "tests/enom-run-management-test.php",
+    "tests/test_enom_send_limit_concurrency.py",
     "tests/management-send-bound-test.php",
     "tests/management-send-reservations-test.php",
-    "tests/enom-run-budget-test.php",
     "tests/walk-layout-test.php",
     "tests/transfer-entry-test.php",
     "tests/enom-curl-test.php",
@@ -149,6 +145,8 @@
     "tests/status-pill-test.php",
     "tests/status-pages-test.php",
     "tests/domains-list-test.php",
+    "tests/missing-next-step-test.php",
+    "tests/order-payment-test.php",
     "tests/domain-page-test.php",
     "tests/test_domain_page_artifact.py",
     "tests/mobile-overflow-test.php",
@@ -158,6 +156,7 @@
     "tests/owner-management-test.php",
     "tests/owner-management-namesilo-test.php",
     "tests/staff-domains-test.php",
+    "tests/staff-domain-status-test.php",
     "tests/staff-domain-page-test.php",
     "tests/staff-request-page-test.php",
     "tests/staff-operations-test.php",
@@ -173,7 +172,11 @@
     "tests/staff-settings-history-test.php",
     "tests/staff-tld-writes-test.php",
     "tests/staff-tld-actions-test.php",
+    "tests/tld-terms-guidance-test.php",
+    "tests/what-you-sell-test.php",
+    "tests/what-you-sell-save-test.php",
     "tests/tld-pricing-publish-test.php",
+    "tests/pricing-strategy-save-test.php",
     "tests/default-followers-preview-test.php",
     "tests/price-list-test.php",
     "tests/price-list-unreadable-test.php",
@@ -182,6 +185,7 @@
     "tests/reminder-transfer-test.php",
     "tests/reminder-safety-test.php",
     "tests/reminder-review-test.php",
+    "tests/renewal-invoice-status-test.php",
     "tests/reminder-form-test.php",
     "tests/runtime-install-test.php",
     "tests/staff-audit-upgrade-test.php",
@@ -344,6 +348,11 @@
     "tests/provider-send-guard-test.php",
     "tests/provider-send-guard-operation-test.php",
     "tests/staff-hold-release-audit-test.php",
+    "tests/staff-hold-unpaid-test.php",
+    "tests/staff-stale-click-test.php",
+    "tests/staff-completed-story-test.php",
+    "tests/staff-release-balance-test.php",
+    "tests/staff-cancelled-request-test.php",
     "tests/watch-notice-staff-delivery-test.php",
     "tests/staff-recovery-copy-test.php",
     "tests/acquisition-payment-review-test.php",
@@ -351,7 +360,12 @@
     "tests/storefront-transfer-offers-test.php",
     "tests/namesilo-fingerprint-reset-test.php",
     "tests/staff-alert-visibility-test.php",
-    "tests/storefront-cart-handoff-test.php"
+    "tests/storefront-cart-handoff-test.php",
+    "tests/storefront-cart-replace-test.php",
+    "tests/enom-test-send-limit-test.php",
+    "tests/enom-send-limit-upgrade-test.php",
+    "tests/enom-send-limit-unsent-writes-test.php",
+    "tests/enom-send-limit-unsent-purchase-test.php"
   ],
   "ui": [],
   "runner": [
@@ -362,7 +376,8 @@
     "tests/test_blade_verbatim.py",
     "tests/test_native.py",
     "tests/test_conversion_inventory.py",
-    "tests/test_conversion_mariadb_guards.py"
+    "tests/test_conversion_mariadb_guards.py",
+    "tests/test_runner_speed.py"
   ],
   "package": [
     "tests/test_package.py"
@@ -370,6 +385,7 @@
   "mariadb": [
     "tests/test_conversion_mariadb.py",
     "tests/test_schema_mariadb.py",
-    "tests/test_user_deletion_mariadb.py"
+    "tests/test_user_deletion_mariadb.py",
+    "tests/test_enom_send_limit_mariadb.py"
   ]
 }

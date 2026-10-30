@@ -31,9 +31,9 @@ foreach ([0,1] as $i) {
     $d->update(['status'=>'active']); $d->service->update(['status'=>'active']); $active=$owners->present($d->fresh());
     same([],$active->management,'An unresolved acquisition offers no management form'); expect($active->changesUnavailable,'Unavailable changes get a neutral notice');
     $d->update(['status'=>'transfer_pending']);
-    $d->update(['observation'=>['corrections'=>[['section'=>'contacts','state'=>'readback_confirmed_awaiting_review','profile_id'=>'PRIVATE'],['section'=>'nameservers','state'=>'closed']]]]);
+    $d->update(['observation'=>['corrections'=>[['section'=>'contacts','state'=>'readback_confirmed_awaiting_review','profile_id'=>'PRIVATE','operation_key'=>$op->operation_key],['section'=>'nameservers','state'=>'closed']]]]);
     $html=$controller->show($request($user),$d->id)->render();
-    same([['label'=>'Contacts','state'=>'Under review'],['label'=>'Nameservers','state'=>'Under review']],$owners->present($d->fresh())->progress,'Correction readback never closes original');expect(str_contains($html,'Under review')&&!str_contains($html,'Completed'),'Correction rows render open');expect(!str_contains($html,'PRIVATE'),'No correction evidence leakage');
+    same([['label'=>'Contacts','state'=>'Under review','date'=>$op->fresh()->updated_at->format('Y-m-d')],['label'=>'Nameservers','state'=>'Under review','date'=>null]],$owners->present($d->fresh())->progress,'Correction readback never closes original');expect(str_contains($html,'Under review')&&!str_contains($html,'Completed'),'Correction rows render open');expect(!str_contains($html,'PRIVATE'),'No correction evidence leakage');
     $op->update(['state'=>'held','safe_code'=>'contact_details_required']);
     expect(str_contains($controller->setup($request($user),$d->id)->render(),'Use updated account details'),'Held contact recovery affordance');
     expect(str_contains($controller->setup($request($user),$d->id)->render(),'Edit account details</a>'),'Account edit link differs from the recovery heading');
@@ -77,7 +77,7 @@ $unchecked=$newTransfer(placeholderComFixtureName('owner-unchecked-placeholder.c
 same(true,$sealed->attempt['transfer_admission']['rdap_unchecked'],'Real sealed attempt retains unchecked provenance');
 $dto=$owners->present($sealed->domain);expect($dto->transfer['unchecked']&&!$dto->transfer['open'],'Sealed provenance survives the closed editor');
 storefrontViews();$calls=$state->calls;$html=$controller->code($request($user),$sealed->domain_id)->render();
-expect(str_contains($html,'<dt>Expires</dt>')&&str_contains($html,'Missing</span> <span class="domains-missing__cause">Shows when the transfer completes</span>'),'Real presenter-to-Blade preserves unchecked provenance: Expires Missing with its cause');
+expect(str_contains($html,'<dt>Expires</dt>')&&str_contains($html,'Missing</span> <span class="domains-missing__cause">Fills in by itself when the transfer finishes</span>'),'Real presenter-to-Blade preserves unchecked provenance: Expires Missing with its cause');
 same(0,storefrontDom($html)->query('//input[@name="transfer_code"]')->length,'Provenance grants no code editor');same($calls,$state->calls,'Rendering provenance performs no I/O');
 require __DIR__.'/Support/late-contact-pages.php';
 foreach(['show','setup','code','index','transfer']as$route){$r=Illuminate\Support\Facades\Route::getRoutes()->getByName('domains.domains.'.$route);expect(in_array('auth',$r->gatherMiddleware(),true)&&in_array('web',$r->gatherMiddleware(),true),'Dormant routes have native auth/session boundary');}

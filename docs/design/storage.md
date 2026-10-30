@@ -324,8 +324,9 @@ New TLD rows start disabled; import does not select sellers. Accepted capability
 facts qualify publication, which also needs current annual renewal and an eligible exact acquisition
 term. Seller change, selection and batch admission recheck current acceptance, stored revision and the
 latest annual renewal row’s live term proof, so widening configured bounds cannot revive old terms.
-Configured bounds are reread under locks; live narrowing never automatically broadens them again.
-Staff may deliberately widen them within accepted live terms in 37. Out-of-range retained prices
+Import initializes bounds for new TLDs; later imports preserve the saved bounds. Accepted/provider
+terms still restrict publication, so accepting years again requires a new import before they return.
+Staff may deliberately change bounds within accepted live terms in 37. Out-of-range retained prices
 are skipped during rule republication, preserving their bytes; omission/failure never withdraws prices.
 
 The default local cadence is 1,800 seconds plus a 1,800-second failure margin (one-hour freshness),

@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueFreshness, RequestBudget, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 /** No installed schedule or writer. One turn/account, bounded discovery and one read job/turn. */
 final class ObservationWork
 {
@@ -14,17 +14,20 @@ final class ObservationWork
     public static function stopped(Domain $d): bool
     {
         if (!Schema::hasTable('domains_observation_work')) { return false; }
-        return self::current($d)->whereIn('safe_code',self::STOPPED)->exists();
+        return self::current($d)->whereIn('safe_code',self::STOPPED)->exists() && ObservationEligibility::allows($d);
     }
-    /** stopped() for a page of domains in one read: the ids, as keys, of those whose current work stopped. */
+    /** Batched stopped() for a page of domains: the ids, as keys, of those whose current work stopped. */
     public static function stoppedIds(\Illuminate\Support\Collection $domains): array
     {
         if ($domains->isEmpty()||!Schema::hasTable('domains_observation_work')) { return []; }
         $rows=DB::table('domains_observation_work')->whereIn('domain_id',$domains->pluck('id'))->whereIn('safe_code',self::STOPPED)
             ->get(['domain_id','server_id','account_fingerprint','generation','phase']);
-        return $domains->filter(fn(Domain $d)=>$rows->contains(fn($r)=>(int)$r->domain_id===(int)$d->id&&(int)$r->server_id===(int)$d->server_id
+        $stopped=$domains->filter(fn(Domain $d)=>$rows->contains(fn($r)=>(int)$r->domain_id===(int)$d->id&&(int)$r->server_id===(int)$d->server_id
             &&$r->account_fingerprint===$d->account_fingerprint&&(int)$r->generation===(int)$d->authority_generation&&$r->phase===self::phase($d)))
-            ->pluck('id')->flip()->all();
+            ->values();
+        $pending=$stopped->whereIn('status',['registration_pending','transfer_pending']);
+        $operations=$pending->isEmpty()?collect():Operation::whereIn('domain_id',$pending->pluck('id'))->whereIn('action',['register','transfer'])->get()->groupBy('domain_id');
+        return $stopped->filter(fn(Domain $d)=>ObservationEligibility::allows($d,$operations->get($d->id,collect())))->pluck('id')->flip()->all();
     }
     /** Advisory selection only; resume revalidates the locked holding and job. */
     public static function currentId(Domain $d): ?int
@@ -37,6 +40,13 @@ final class ObservationWork
         return DB::table('domains_observation_work')->where('domain_id',$d->id)->where('server_id',$d->server_id)
             ->where('account_fingerprint',$d->account_fingerprint)->where('generation',$d->authority_generation)
             ->where('phase',self::phase($d));
+    }
+    /** Under the account lock, retire obsolete idle work before unsent proof can be lost. Returns true if unsent. */
+    public static function discardUnsent(Domain $d, \DateTimeImmutable $now, ?\Illuminate\Support\Collection $operations=null): bool
+    {
+        if (ObservationEligibility::allows($d,$operations)) { return false; }
+        if (Schema::hasTable('domains_observation_work')) { self::current($d)->where('lease_until','<=',$now->getTimestamp())->delete(); }
+        return true;
     }
     public function __construct(private readonly DomainObservation $observer, private readonly Clock $clock,
         private readonly ReadLimiter $budget, private readonly ?CatalogueSync $catalogue=null) {}
@@ -96,6 +106,7 @@ final class ObservationWork
             $rows=Domain::where('server_id',$a->server_id)->where('id','>',$current->cursor)->orderBy('id')->limit(25)->get();
             foreach ($rows as $d) {
                 if ($d->adoptionPending() || !in_array($d->status,['active','registration_pending','transfer_pending'],true)||$d->account_fingerprint!==$a->account_fingerprint) { continue; }
+                if (self::discardUnsent($d,$this->clock->now())) { continue; }
                 DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
                     'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$this->clock->now()->getTimestamp()]);
             }

@@ -13,7 +13,7 @@ use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 // Exercise the TEST Purchase scope used by the deployment composition. The
 // direct fixture below supplies its own audited writer and acceptance.
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,
-    'domains.enom_writes.registration'=>true,'domains.enom_test_daily_call_cap'=>1000]);
+    'domains.enom_writes.registration'=>true,'domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
 $account=Account::where('server_id',$tlds[0]->server_id)->sole();$binding=CatalogueAcceptances::binding($account);
 $identityBytes=$account->getRawOriginal('stable_identity');$changed=clone $account;$changed->stable_identity='other-account';$otherIdentityBytes=$changed->getAttributes()['stable_identity'];
 $state=(object)['query'=>null,'reads'=>0];
@@ -100,7 +100,7 @@ foreach(['register','transfer','register'] as $i=>$action){
     $monetaryForms = array_filter($GLOBALS['enomWire']['forms'], static fn($form) => in_array($form['Command'] ?? null, ['Purchase', 'TP_CreateOrder', 'Extend'], true));
     same(1,count($monetaryForms),'One authenticated monetary send: '.json_encode([
         'state'=>$op->fresh()->state,'safe_code'=>$op->fresh()->safe_code,'attempt'=>$op->fresh()->attempt,
-        'used'=>DB::table(Paymenter\Extensions\Servers\Domains\Services\EnomTestCallSchema::TABLE)->where('day',Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::day())->value('used'),
+        'used'=>DB::table(Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimitSchema::SENDS)->count(),
         'commands'=>array_column($GLOBALS['enomWire']['forms'],'Command'),
         'config'=>[config('domains.enom_identity.environment'),config('domains.enom_catalogue.enabled'),config('domains.enom_writes.registration')],
     ]));

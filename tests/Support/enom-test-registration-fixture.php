@@ -8,14 +8,15 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,DispatchSeal,Environment,ExecutionRecord,HistoryAcceptance,Query,RequestOrigin,SendState};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,EnomTestCalls,EnomTestCallLimit,EnomTestCallSchema,EnomTestRegistration,Installation,NativeCatalogue,ObservationWork,Runtime,RuntimePorts,RuntimeWork,StaffSettingsReview as Review,StaffSettingsWrites,Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,EnomTestCalls,EnomTestCallLimit,EnomTestRegistration,EnomTestSendLimit,EnomTestSendLimitSchema,Installation,NativeCatalogue,ObservationWork,Runtime,RuntimePorts,RuntimeWork,StaffSettingsReview as Review,StaffSettingsWrites,Storefront};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
+if(!function_exists('enomTestSendCount')){function enomTestSendCount(?string $command=null):int {$q=DB::table(EnomTestSendLimitSchema::SENDS);return $command===null?$q->count():$q->where('command',$command)->count();}}
 $clock=new class implements Clock {
     public DateTimeImmutable $at;
     public function __construct(){$this->at=new DateTimeImmutable('2026-10-21T12:00:00Z');}
     public function now():DateTimeImmutable{return $this->at;}
 };
-app()->instance(Clock::class,$clock);Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+app()->instance(Clock::class,$clock);config(['domains.enom_test_sends_per_minute'=>100000]);Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 $session=app('session')->driver();$session->start();app('request')->setLaravelSession($session);app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $hot=storage_path('framework/domains-assets-hot');file_put_contents($hot,'http://assets.example.test');app(Illuminate\Foundation\Vite::class)->useHotFile($hot);
 require_once app_path('Classes/helpers.php');tldPanel();

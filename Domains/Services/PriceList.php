@@ -9,6 +9,8 @@ final class PriceList
 {
     public const FILTERS=['all'=>'All TLDs','below_cost'=>'Below cost','loses_money'=>'Loses money after card fee','default'=>'Default pricing','own'=>'Custom pricing'];
     public const ACTIONS=['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'];
+    /** Sync never fills a price for sales that are off, so this is not Missing. */
+    public const TRANSFERS_OFF='Transfers off';
     public static function authorize(): void {abort_unless(Staff::can(Staff::COSTS),403);}
     public function read(int $years=1,string $filter='all',?int $serverId=null): array
     {
@@ -51,7 +53,7 @@ final class PriceList
                 $under=$price!==null&&$cost!==null&&!PricingRule::covers($price,$cost);
                 $loses=$profit!==null&&str_starts_with($profit,'-');$below=$below||$under;$loss=$loss||$loses;
                 $row['prices'][$action]=['price'=>$price,'cost'=>$cost,'profit'=>$profit,'revision'=>$published?$p->revision:null,
-                    'below_cost'=>$under,'loses_money'=>$loses,'status'=>$price===null?'Missing':($cost===null?'Cost missing':($under?'Below cost':($loses?'Loses money after card fee':'')))];
+                    'below_cost'=>$under,'loses_money'=>$loses,'status'=>$price===null?($action==='transfer'&&!$tld->transfer_enabled?self::TRANSFERS_OFF:'Missing'):($cost===null?'Cost missing':($under?'Below cost':($loses?'Loses money after card fee':'')))];
             }
             if(match($filter){'below_cost'=>!$below,'loses_money'=>!$loss,'default'=>!$tld->use_default_rule,'own'=>$tld->use_default_rule,default=>false}){continue;}
             $rows[]=$row;
@@ -90,7 +92,8 @@ final class PriceList
             foreach(self::ACTIONS as $label){$out=[...$out,'Left out','Left out','Left out',$status];}
             return [...$out,'Left out','Left out'];
         }
-        foreach(self::ACTIONS as $action=>$label){$p=$row['prices'][$action];$out=[...$out,self::money($p['cost']),$p['price']??'Missing',self::money($p['profit'],true),$p['status']==='Missing'?'':$p['status']];}
+        foreach(self::ACTIONS as $action=>$label){$p=$row['prices'][$action];$none=$p['status']===self::TRANSFERS_OFF?'Off':'Missing';
+            $out=[...$out,$p['cost']===null?$none:self::money($p['cost']),$p['price']??$none,$p['profit']===null?$none:self::money($p['profit'],true),$p['status']==='Missing'?'':$p['status']];}
         return [...$out,$row['formula'],CardFee::describe($row['fee'])];
     }
     /** Display cents only; round estimated profit down, including a loss, without changing saved values. */

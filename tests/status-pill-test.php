@@ -35,7 +35,7 @@ $cases=[
     'setup'=>[['domain.processing'],[],'setup_required','Action required','Finish setup'],
     'payment'=>[['domain.awaiting_payment'],[],'awaiting_payment','Action required','Invoice not paid'],
     'review'=>[['domain.review','watch.stale'],[],'needs_review','Under review',null],
-    'failed'=>[['domain.review'],[],'registration_rejected','Failed','Registration rejected'],
+    'failed'=>[['domain.review'],[],'registration_rejected','Failed','Registration did not finish'],
     // A managed domain's nameserver change is a notice on its page, not its status.
     'moved'=>[['domain.active','watch.ns_changed'],['noticeDates'=>['dns'=>time()]],'active','Active',null],
     'expired-and-moved'=>[['domain.expired','watch.ns_changed'],[],'expired','Expired',null],

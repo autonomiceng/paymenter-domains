@@ -88,7 +88,7 @@ $setting->delete(); $clock->at += 86400; $response = ['status'=>200,'body'=>pslF
 same('identical', $psl->update(), 'Recovers'); same(0, $psl->status()->consecutive_failures, 'Success resets failures');
 $validated = $psl->current()->validated_at;
 foreach ([30*86400-1,30*86400,30*86400+1,90*86400-1,90*86400,90*86400+1] as $age) {
-    $clock->at = $validated+$age; same($age > 30*86400, $psl->staleWarning(), '30 day boundary'); same($age <= 90*86400, $psl->discoveryAllowed(), '90 day boundary');
+    $clock->at = $validated+$age; same($age > 90*86400, $psl->staleWarning(), 'Freshness and discovery share the 90 day boundary'); same($age <= 90*86400, $psl->discoveryAllowed(), '90 day boundary');
 }
 $clock->at = $validated + 7*86400 - 1; $before = count($calls); $psl->tick(); same($before,count($calls),'Weekly minus second');
 $clock->at++; $psl->tick(); same($before+1,count($calls),'Weekly exact'); same('rate_limited',$psl->update(),'Scheduled admission caps manual');
@@ -115,7 +115,7 @@ try { (new PslValidator(128,41,1))->parse($body); expect(false,'Rule count floor
 try { (new PslValidator(128,5,41))->parse($body); expect(false,'Private rule count floor'); } catch(PslFailure $e) { same('too_few_rules',$e->safeCode,'Private count floor'); }
 // Old conditional validators must not prevent a fresh download after the warning threshold.
 DB::table('domains_psl_snapshots')->where('state','current')->update(['etag'=>'"stale"','last_modified'=>'Wed, 01 Oct 2025 00:00:00 GMT']);
-$clock->at=$psl->current()->validated_at+31*86400;same(true,$psl->staleWarning(),'Saved copy is actually stale');$response=['status'=>200,'body'=>pslFixture(42,42)];
+$clock->at=$psl->current()->validated_at+91*86400;same(true,$psl->staleWarning(),'Saved copy is actually stale');$response=['status'=>200,'body'=>pslFixture(42,42)];
 same('identical',$psl->update(),'Aged unchanged copy revalidated');same([],$calls[array_key_last($calls)][1],'Aged request is unconditional');same(false,$psl->staleWarning(),'Fresh 200 clears warning');
 // A release may raise floors without invalidating a previously accepted loss baseline.
 $clock->at+=86400;$response=['status'=>200,'body'=>pslFixture(43,43)];

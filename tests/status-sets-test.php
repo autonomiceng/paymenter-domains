@@ -34,8 +34,8 @@ foreach ([
     'watch.expired'=>$pill('Expired','danger','Renew at your registrar'),
     'redemption'=>$pill('Redemption','danger'),
     'watch.redemption'=>$pill('Redemption','danger'),
-    'registration_rejected'=>$pill('Failed','danger','Registration rejected'),
-    'transfer_rejected'=>$pill('Failed','danger','Transfer rejected'),
+    'registration_rejected'=>$pill('Failed','danger','Registration did not finish'),
+    'transfer_rejected'=>$pill('Failed','danger','Transfer did not finish'),
     'cancelled'=>$pill('Cancelled','gray'),
     'something_new'=>$pill('Under review','warning','Status missing'),
 ] as $state=>$expected) { same($expected,DomainStatus::for($state),'Domain state '.$state); }
@@ -44,20 +44,21 @@ same($pill('Under review','warning','Transfer on hold'),DomainStatus::for('held'
 same($pill('Action required','warning','Not using Example nameservers'),DomainStatus::for('watch.ns_changed','Not using Example nameservers'),'The caller can name the company');
 
 // 2.2 Registrar request.
-same(['Action required','In progress','Under review','Completed','Failed','Cancelled'],array_column(RequestStatus::SET,0),'Request labels');
-same(['warning','info','warning','success','danger','gray'],array_column(RequestStatus::SET,1),'Request tones');
+// Only the customer can pay, so staff see a wait, not an action.
+same(['Awaiting payment','Action required','In progress','On hold','Under review','Completed','Failed','Cancelled'],array_column(RequestStatus::SET,0),'Request labels');
+same(['info','warning','info','warning','warning','success','danger','gray'],array_column(RequestStatus::SET,1),'Request tones');
 foreach ([
-    'awaiting_payment'=>$pill('Action required','warning','Invoice not paid'),
+    'awaiting_payment'=>$pill('Awaiting payment','info','Customer has not paid the invoice. Not sent yet.'),
     'awaiting_code'=>$pill('Action required','warning','Auth code needed'),
     'queued'=>$pill('In progress','info'), 'running'=>$pill('In progress','info'), 'pending'=>$pill('In progress','info'),
-    'held'=>$pill('Under review','warning','Not sent'),
+    'held'=>$pill('On hold','warning','Not sent'),
     'uncertain'=>$pill('Under review','warning','Registrar has not confirmed the result'),
     'succeeded'=>$pill('Completed','success'),
     'rejected'=>$pill('Failed','danger'),
     'disposed'=>$pill('Cancelled','gray'),
     'something_new'=>$pill('Under review','warning','Status missing'),
 ] as $state=>$expected) { same($expected,RequestStatus::for($state),'Request state '.$state); }
-same($pill('Under review','warning',"Not sent: couldn't load the registrar account's settings"),
+same($pill('On hold','warning',"Not sent: couldn't load the registrar account's settings"),
     RequestStatus::for('held',"couldn't load the registrar account's settings"),'Held reason keeps the real cause');
 same($pill('Failed','danger','Registrar rejected the transfer'),RequestStatus::for('rejected','Registrar rejected the transfer'),'Rejected shows the registrar reason');
 same($pill('Under review','warning','Status missing'),RequestStatus::for(null),'No request state is Under review with the cause');
@@ -69,7 +70,7 @@ foreach ([
     'matched'=>$pill('Active','success'),
     'not_configured'=>$pill('Not connected','gray'),
     'server_disabled'=>$pill('Not connected','gray','Off in Paymenter'),
-    'server_unavailable'=>$pill('Connection failed','danger','Server missing in Paymenter'),
+    'server_unavailable'=>$pill('Connection failed','danger','Registrar account not found'),
     'site_invalid'=>$pill('Connection failed','danger','Site address must use HTTPS'),
     'site_unbound'=>$pill('Connection failed','danger','Site address not approved for live mode'),
     'site_mismatch'=>$pill('Connection failed','danger','Site address changed'),

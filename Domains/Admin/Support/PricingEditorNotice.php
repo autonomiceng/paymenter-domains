@@ -22,7 +22,7 @@ final class PricingEditorNotice
             $scopes[]=$scope;
         }
         if($scopes===[]||!HookRegistration::claim(FilamentView::getFacadeRoot(),self::class)){return;}
-        FilamentView::registerRenderHook(PanelsRenderHook::PAGE_START,static function():string {
+        FilamentView::registerRenderHook(PanelsRenderHook::PAGE_HEADER_WIDGETS_BEFORE,static function():string {
             $page=\Livewire\Livewire::current();
             if($page instanceof RegistrarAccount){return self::render(null);}
             if($page instanceof ViewTld||$page instanceof \App\Admin\Resources\ProductResource\Pages\EditProduct){return self::render($page->getRecord());}
@@ -49,7 +49,7 @@ final class PricingEditorNotice
         foreach([\Filament\Support\View\ViewManager::class=>'registerRenderHook',\Livewire\LivewireManager::class=>'current']as$class=>$method){
             if(!class_exists($class)||!method_exists($class,$method)){return $class.'::'.$method;}
         }
-        return defined(PanelsRenderHook::class.'::PAGE_START')?null:PanelsRenderHook::class.'::PAGE_START';
+        return defined(PanelsRenderHook::class.'::PAGE_HEADER_WIDGETS_BEFORE')?null:PanelsRenderHook::class.'::PAGE_HEADER_WIDGETS_BEFORE';
     }
     public static function render(mixed $record): string
     {

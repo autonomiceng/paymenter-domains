@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages;
 use Filament\Resources\Pages\ListRecords;
-use Filament\Schemas\Components\{Callout,EmbeddedTable,RenderHook};
+use Filament\Schemas\Components\{Callout,EmbeddedTable,RenderHook,View};
 use Filament\Schemas\Schema;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
@@ -36,6 +36,7 @@ class ListWatches extends ListRecords
         $url=$notice['action']==='settings'&&MonitoringSettings::canAccess()&&Staff::can(StaffWatchWrites::MANAGE)&&!app(DnsResolverSettings::class)->configuration()[2]?WatchResource::getUrl('settings'):null;
         $button=$url?view('filament::components.button.index',['tag'=>'a','href'=>$url,'color'=>'gray','size'=>'sm','slot'=>'Open Settings'])->render():null;
         return $schema->components([Callout::make($notice['text'])->status($notice['tone'])->footer($button?new HtmlString($button):null)->columnSpanFull(),
+            ...($notice['action']==='setup'&&Staff::can(StaffWatchWrites::MANAGE)?[View::make('domains::admin.watch-setup')]:[]),
             $this->getTabsContentComponent(),RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_BEFORE),
             EmbeddedTable::make(),RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_AFTER)]);
     }

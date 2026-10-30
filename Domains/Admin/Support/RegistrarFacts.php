@@ -8,7 +8,7 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\AccountStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountSpendingHolds,EnomTestCalls,NameSiloSandbox,RegistrarBalances};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountSpendingHolds,EnomTestSendLimit,NameSiloSandbox,RegistrarBalances};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Facts shared by the Registrars list and the registrar account page. Values are null when Missing; 'cause' says why. */
 final class RegistrarFacts
@@ -61,23 +61,16 @@ final class RegistrarFacts
         return ['value'=>$f['balance'],'checked'=>$f['checked'],'low'=>$f['low'],'cause'=>$f['cause'],'due'=>$f['total'],'without_cost'=>$f['unknown'],
             'funds'=>RegistrarBalances::fundsUrl($account->registrar_key,$account->environment)];
     }
-    /** Enom test accounts share one daily call limit. @return ?array{value:?string,tone:?string,sub:?string,help:?string} */
+    /** Each Enom test login has its own rolling send limit. @return ?array{value:?string,tone:?string,sub:?string,help:?string} */
     public static function calls(Account $account): ?array
     {
         if ($account->registrar_key!=='enom'||$account->environment!=='test') { return null; }
-        $usage=EnomTestCalls::usage();
-        ['used'=>$used,'limit'=>$limit]=$usage;
-        if(\Paymenter\Extensions\Servers\Domains\Services\EnomTestRunBudget::enabled()){
-            $available=EnomTestCalls::callsRemain();
-            return ['label'=>'API calls this run','value'=>$used===null||$limit===null?null:$used.' of '.$limit,
-                'tone'=>$available?null:'danger','sub'=>EnomTestCalls::facts(),
-                'help'=>'This deployment limits Enom TEST requests by run and over the last 24 hours.'];
-        }
-        if ($limit===null) { return ['value'=>null,'tone'=>null,'sub'=>'The Enom test call limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.','help'=>null]; }
-        if ($used===null) { return ['value'=>null,'tone'=>null,'sub'=>"Couldn't read today's call count",'help'=>null]; }
-        $full=$used>=$limit;
-        return ['value'=>$used.' of '.$limit,'tone'=>$full?'danger':null,'sub'=>$full?'Resets 00:00 UTC':null,
-            'help'=>'Enom limits test accounts to '.$limit.' calls per day (UTC), shared by all test accounts.'];
+        $uid=EnomTestSendLimit::login($account);$u=EnomTestSendLimit::usage((string)$uid);
+        if ($uid===null||$u['day_limit']===null||$u['minute_limit']===null||$u['day']===null) { return ['value'=>null,'tone'=>null,'sub'=>EnomTestSendLimit::facts($uid),'help'=>null]; }
+        $full=$u['day']>=$u['day_limit']||$u['minute']>=$u['minute_limit'];
+        $off=$u['day_limit']===0||$u['minute_limit']===0;
+        return ['value'=>$u['day'].' of '.$u['day_limit'],'tone'=>$full?'danger':null,'sub'=>$off?EnomTestSendLimit::facts($uid):($full?'Limit reached. Try again later.':null),
+            'help'=>'Our test send limit allows '.$u['day_limit'].' requests per login in any 24 hours and '.$u['minute_limit'].' per minute. Failed requests count too.'];
     }
     public static function lastSync(Server $server): ?string
     {

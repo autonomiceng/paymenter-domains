@@ -16,13 +16,13 @@ enum RefusalCode: string
     public function message(): string
     {
         return match ($this) {
-            self::Disabled => 'Adoption is not enabled yet.',
-            self::VerificationChanged => 'Verification details changed or expired. Verify again.',
-            self::RequestChanged => 'Adoption request changed. Verify again.',
-            self::Permission => 'You do not have permission to adopt registrations.',
-            self::ResultReview => 'Adoption result needs staff review.',
-            self::IdentityReview => 'Registration identity needs staff review.',
-            self::HoldingReview => 'Adoption holding requires review.',
+            self::Disabled => 'Import is off on this site.',
+            self::VerificationChanged => 'Details changed or expired. Check the domain again.',
+            self::RequestChanged => 'Import request changed. Check the domain again.',
+            self::Permission => "You don't have permission to import domains.",
+            self::ResultReview => 'Import result needs a check.',
+            self::IdentityReview => 'Domain records need a check.',
+            self::HoldingReview => 'Domain records need a check.',
         };
     }
 }

@@ -50,7 +50,7 @@ $settings=app(DnsResolverSettings::class);
 $tab=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSuccessful();same([['Domains',false],['Settings',true]],$tabs($tab),'Settings tabs');
 // No saved resolver: Missing with its cause and the fix beside it, said once; nothing to test yet, no bootstrap IP.
 $once=fn($test,string $copy)=>same(1,substr_count(html_entity_decode(strip_tags($test->html()),ENT_QUOTES),$copy),'Said once: '.$copy);
-$tab->assertSee('DNS resolver')->assertSee('Resolver')->assertSee('Missing')->assertSee("No resolver set. Checks use the server's resolver.")->assertDontSee('Server default')->assertDontSee('Bootstrap IP')->assertSee("If the resolver fails, checks retry once with the server's resolver.")
+$tab->assertSee('DNS resolver')->assertSee('Resolver')->assertSee('Missing')->assertSee("No resolver set. Checks use the server's resolver.")->assertDontSee('Server default')->assertDontSee('Resolver IP address')->assertSee('If the resolver fails, checks retry once with the server')
     ->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Test resolver')
     ->assertDontSee('Resolver check')->assertDontSee('Last check this visit')->assertDontSee('DNS-over-HTTPS configured')->assertDontSee('Public domain checks');
 $once($tab,'Edit resolver');
@@ -60,10 +60,10 @@ $modal=fn($test)=>html_entity_decode($test->html().implode('',$test->effects['pa
 $invalid=Livewire::actingAs($manager)->test(MonitoringSettings::class)->mountAction($edit)->setActionData(['url'=>'http://resolver.example.org','ip'=>'127.0.0.1'])->callMountedAction()->assertHasActionErrors(['url','ip']);
 foreach(['Use an HTTPS URL with a public hostname.','Use a public IPv4 or IPv6 address.'] as $text){expect(str_contains($modal($invalid),$text),'Field error: '.$text);}
 $form=Livewire::actingAs($manager)->test(MonitoringSettings::class)->mountAction($edit);
-foreach(['Edit resolver','Resolver URL (DNS over HTTPS)','Default: '.DohEndpoint::URL,'Checked domain names are sent to this resolver.','Bootstrap IP','Default: '.DohEndpoint::IP.". The resolver's public IP."] as $text){expect(str_contains($modal($form),$text),'Form copy: '.$text);}
+foreach(['Edit resolver','Resolver URL (DNS over HTTPS)','Default: '.DohEndpoint::URL,'Checked domain names are sent to this resolver.','Resolver IP address','Default: '.DohEndpoint::IP.". The resolver's public IP."] as $text){expect(str_contains($modal($form),$text),'Form copy: '.$text);}
 $form->setActionData(['url'=>DohEndpoint::URL,'ip'=>DohEndpoint::IP])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Resolver saved');
 // Saved: the header holds Edit and Test; no Missing.
-$saved=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('cloudflare-dns.com')->assertSee('Bootstrap IP')->assertSee(DohEndpoint::IP)->assertDontSee('Server default')->assertDontSee('Missing')
+$saved=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('cloudflare-dns.com')->assertSee('Resolver IP address')->assertSee(DohEndpoint::IP)->assertDontSee('Server default')->assertDontSee('Missing')
     ->assertActionVisible('configure')->assertActionVisible('check');
 $once($saved,'Edit resolver');
 // Unreadable saved settings: Missing with its cause and the fix next to it.
@@ -80,12 +80,12 @@ $GLOBALS['domainsTestCurlMissing']=false;
 $since=1800000000;$at='Jan 15, 2027 08:00 UTC';
 same(null,WatchMaintenance::notice(['outage'=>false,'reason'=>'waiting','since'=>null]),'Waiting has no notice');
 same(null,WatchMaintenance::notice(['outage'=>false,'reason'=>'current','since'=>$since]),'Current has no notice');
-same(['text'=>'Domain monitoring is not set up on this server. Ask your administrator to turn it on.','tone'=>'warning','action'=>null],WatchMaintenance::notice(['outage'=>false,'reason'=>'disabled','since'=>null]),'Disabled');
-same(['text'=>'Monitoring checks have not run since '.$at.'. Ask your administrator to check the scheduled task and background worker.','tone'=>'danger','action'=>null],WatchMaintenance::notice(['outage'=>true,'reason'=>'dispatch_overdue','since'=>$since]),'Overdue');
-same(['text'=>'Expiry checks have failed since '.$at.'.','tone'=>'danger','action'=>null],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'registry','families'=>['registry'],'since'=>$since]),'Expiry checks');
-same(['text'=>'DNS checks have failed since '.$at.'.','tone'=>'danger','action'=>'settings'],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'watch_dns','families'=>['watch_dns','managed_dns'],'since'=>$since]),'DNS checks named once');
-same(['text'=>'Expiry checks and DNS checks have failed since '.$at.'.','tone'=>'danger','action'=>'settings'],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'registry','families'=>['registry','watch_dns'],'since'=>$since]),'Two families');
-same(['text'=>'Domain discovery has failed since '.$at.'. Ask your administrator to check the server logs.','tone'=>'danger','action'=>null],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'local','families'=>['local'],'since'=>$since]),'Discovery');
+same(['text'=>'Monitoring is not set up on this site.','tone'=>'warning','action'=>'setup'],WatchMaintenance::notice(['outage'=>false,'reason'=>'disabled','since'=>null]),'Disabled');
+same(['text'=>'Monitoring checks have not run since '.$at.'. Ask your site admin to restart them.','tone'=>'danger','action'=>null],WatchMaintenance::notice(['outage'=>true,'reason'=>'dispatch_overdue','since'=>$since]),'Overdue');
+same(['text'=>'Expiry checks have failed since '.$at.'. Ask your site admin to check the registry connection.','tone'=>'danger','action'=>null],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'registry','families'=>['registry'],'since'=>$since]),'Expiry checks');
+same(['text'=>'DNS checks have failed since '.$at.'. Ask your site admin to check the DNS resolver.','tone'=>'danger','action'=>'settings'],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'watch_dns','families'=>['watch_dns','managed_dns'],'since'=>$since]),'DNS checks named once');
+same(['text'=>'Expiry checks and DNS checks have failed since '.$at.'. Ask your site admin to check the DNS resolver.','tone'=>'danger','action'=>'settings'],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'registry','families'=>['registry','watch_dns'],'since'=>$since]),'Two families');
+same(['text'=>'Domain discovery has failed since '.$at.'. Ask your site admin to fix domain discovery.','tone'=>'danger','action'=>null],WatchMaintenance::notice(['outage'=>true,'reason'=>'checks_unsuccessful','family'=>'local','families'=>['local'],'since'=>$since]),'Discovery');
 same(null,WatchMaintenance::notice(['reason'=>'checks_unsuccessful','families'=>['watch_dns','local'],'since'=>$since])['action'],'Local discovery failures cannot be repaired in resolver settings');
 // The queue timeout shows once, under Registrars > account > System checks, not on the monitoring list.
 same(null,WatchMaintenance::notice(['outage'=>true,'reason'=>'queue_configuration','since'=>null]),'Queue configuration has no monitoring notice');
@@ -96,7 +96,7 @@ DB::table('domains_watch_schedule')->where('scope','dispatch')->delete();DB::tab
 // A stopped dispatcher needs server maintenance, even when staff can open Failed jobs.
 Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertDontSee('Open Failed jobs');
 $manager->role->update(['permissions'=>[...$manager->role->permissions,'admin.failed_jobs.viewAny']]);
-$overdue=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertDontSee('Open Failed jobs')->assertDontSee('Open Settings')->assertSee('Ask your administrator to check the scheduled task and background worker.')->assertCanSeeTableRecords([$watch]);
+$overdue=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertDontSee('Open Failed jobs')->assertDontSee('Open Settings')->assertSee('Ask your site admin to restart them.')->assertCanSeeTableRecords([$watch]);
 $text=html_entity_decode(strip_tags($overdue->html()));expect(!str_contains($text,'—'),'No em dash');foreach(['unavailable','Public domain checks'] as $word){expect(stripos($text,$word)===false,'No "'.$word.'" on the list');}
 // Resolver advice reaches the page's edit/test controls only for staff who can use them.
 DB::beginTransaction();
@@ -113,8 +113,13 @@ app()->instance(WatchWork::class,new WatchWork(new \Paymenter\Extensions\Servers
 foreach([false,true] as $empty){
     if($empty){DB::beginTransaction();DB::table('domains_watch_names')->delete();}
     foreach([$viewer,$manager] as $actor){
-        $off=Livewire::actingAs($actor)->test(ListWatches::class)->assertSuccessful()->assertSee('Domain monitoring is not set up on this server. Ask your administrator to turn it on.')->assertDontSee('Open Settings');
-        $once($off,'Domain monitoring is not set up on this server. Ask your administrator to turn it on.');
+        $off=Livewire::actingAs($actor)->test(ListWatches::class)->assertSuccessful()->assertSee('Monitoring is not set up on this site.')->assertDontSee('Open Settings');
+        $once($off,'Monitoring is not set up on this site.');
+        if($actor->id===$manager->id){
+            foreach(['Set up domain monitoring','Ask your site admin','Public suffix list','Hosting products','five minutes','does not turn monitoring on']as$step){$off->assertSee($step);}$off->assertDontSee('WatchDiscoveryWork')->assertDontSee('retry_after');
+            $off->assertSee(PublicSuffixList::getUrl(),false)->assertSee(ProductMappingResource::getUrl(),false);
+        }else{$off->assertDontSee('Set up domain monitoring')->assertDontSee('WatchDiscoveryWork')->assertDontSee('enabled: true');}
+        $off->assertDontSee('Ask your administrator to turn it on.');
         $doc=new DOMDocument();@$doc->loadHTML($off->html());$dom=new DOMXPath($doc);same(0,$dom->query('//a[@href="'.WatchResource::getUrl('settings').'"][contains(.,"Open Settings")]')->length,'Off notice has no misleading Settings action');
     }
     if($empty){DB::rollBack();}

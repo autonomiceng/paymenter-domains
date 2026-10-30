@@ -16,7 +16,7 @@ final class AccountStatus
     /** AccountBindings::configurationStatus() => [status key, default reason line] */
     public const STATES = [
         'matched' => ['active', null], 'not_configured' => ['not_connected', null], 'server_disabled' => ['not_connected', 'Off in Paymenter'],
-        'server_unavailable' => ['connection_failed', 'Server missing in Paymenter'], 'site_invalid' => ['connection_failed', 'Site address must use HTTPS'],
+        'server_unavailable' => ['connection_failed', 'Registrar account not found'], 'site_invalid' => ['connection_failed', 'Site address must use HTTPS'],
         'site_unbound' => ['connection_failed', 'Site address not approved for live mode'], 'site_mismatch' => ['connection_failed', 'Site address changed'],
         'configuration_unavailable' => ['connection_failed', 'Could not load account settings'],
     ];

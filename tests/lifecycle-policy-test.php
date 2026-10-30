@@ -63,18 +63,18 @@ same($valid['grace_verified_at'],$page->get('mountedActions.0.data.grace_verifie
 
 // Real invalid submissions show field guidance and preserve saved facts and audit.
 $guidance=[
-    'Complete lifecycle facts required.'=>'Complete all lifecycle fields. Nothing was saved.',
-    'Independent lifecycle verification required.'=>'Verify the lifecycle facts and check the confirmation box. Nothing was saved.',
-    'Lifecycle verification cannot be in the future.'=>'Enter verification times at or before now. Nothing was saved.',
-    'Invalid lifecycle input.'=>'Reload the lifecycle form and check its fields. Nothing was saved.',
-    'Invalid lifecycle support.'=>'Check the grace, restore, auto-renew and conflicting-source flags. Nothing was saved.',
+    'Complete lifecycle facts required.'=>'Fill in every field. Nothing was saved.',
+    'Independent lifecycle verification required.'=>'Check these with the registrar, then tick the box. Nothing was saved.',
+    'Lifecycle verification cannot be in the future.'=>'Enter dates at or before now. Nothing was saved.',
+    'Invalid lifecycle input.'=>'Check the fields and try again. Nothing was saved.',
+    'Invalid lifecycle support.'=>'Check the grace, restore, auto-renew and sources boxes. Nothing was saved.',
     'Lifecycle days must be between 0 and 365.'=>'Enter whole numbers from 0 to 365 for grace and restore days. Nothing was saved.',
     'Invalid lifecycle charge.'=>'Enter valid non-negative grace and restore charges with at most four decimal places. Nothing was saved.',
     'Invalid lifecycle currency.'=>'Enter three uppercase letters for grace and restore currencies, for example USD. Nothing was saved.',
-    'Lifecycle verification requires a date and time with UTC offset.'=>'Include a date, time and UTC offset in policy, grace and restore verification times. Nothing was saved.',
-    'Invalid lifecycle verification time.'=>'Enter valid policy, grace and restore verification dates and times. Nothing was saved.',
+    'Lifecycle verification requires a date and time with UTC offset.'=>'Include a date, time and UTC offset in each date checked. Nothing was saved.',
+    'Invalid lifecycle verification time.'=>'Enter a valid date and time in each date checked. Nothing was saved.',
     'Enter a one-line lifecycle source between 5 and 500 characters.'=>'Enter one-line policy, grace and restore sources from 5 to 500 characters. Nothing was saved.',
-    'Conflicting lifecycle settings require repair.'=>'Ask an administrator to repair duplicate lifecycle settings before retrying. Nothing was saved.',
+    'Conflicting lifecycle settings require repair.'=>'Ask your site admin to fix the duplicate grace and restore settings. Nothing was saved.',
 ];
 $unchanged=serialize(DB::table('settings')->get());
 foreach([['grace_currency'=>'usd'],['verified_at'=>'2026-10-18T12:00:00']] as $change){
@@ -107,7 +107,7 @@ foreach($changes as $change){
 }
 $incomplete=$valid;unset($incomplete['grace_days']);$assertRefusal(fn()=>$writer->run($review(),[...$incomplete,'verified'=>true],$now),'Complete lifecycle facts required.');
 same($unchanged,serialize(DB::table('settings')->get()),'Every refused field leaves facts and audit unchanged');
-same('Reload and check current permissions, saved facts and acceptance.',SettingsActions::refusal(new RuntimeException('Unexpected synthetic detail'),'lifecycle'),'Unknown failure keeps the generic fallback');
+same('Check this page, then try again. If it fails again, open System checks on the registrar account.',SettingsActions::refusal(new RuntimeException('Unexpected synthetic detail'),'lifecycle'),'Unknown failure keeps the generic fallback');
 // Binding drift must not break the modal or permit unseen policy defaults to be saved.
 $account=Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole();
 DB::table('domains_accounts')->where('server_id',$t->server_id)->update(['stable_identity'=>encrypt('changed-placeholder-account',false)]);

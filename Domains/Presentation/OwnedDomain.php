@@ -16,6 +16,8 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
  * testEnvironment: registered through a registrar account in test mode. demo: seeded demo data (DemoData::is); views show Demo over Test.
  * plannedRenewalDue: projected future due date for an adopted domain, separate from renewalDue.
  * owner: the registrant's name and email as last stored (a confirmed contact change, else the registration request); null when none is on file or for list rows.
+ * order: a pending order's payment (OwnedDomains::order): state unpaid, paid or cancelled, kind registration or transfer, invoice url when unpaid; empty otherwise.
+ * autoPay: this service's saved payment method can be charged, so a scheduled renewal invoice is charged to it.
  * renewNow: eligible owner renewal request: url, terms and last request date
  * (order_by, Y-m-d), or only invoice for this cycle's issued pending invoice, or only status
  * (cancelled, paid or review) when this cycle can be neither requested nor paid, independent of new-request switches; otherwise empty.
@@ -25,5 +27,5 @@ final readonly class OwnedDomain
     public function __construct(public string $name, public string $status, public string $tone,
         public ?string $expiry, public string $renewal, public ?string $renewalPrice,
         public array $actions, public array $progress, public array $setup, public array $transfer,
-        public array $management, public bool $testEnvironment, public bool $changesUnavailable = false, public ?string $renewalDue = null, public bool $setupPending = false, public bool $adopted = false, public ?string $plannedRenewalDue = null, public array $history = [], public array $renewalInvoice = [], public bool $originalDoNotRenew = false, public array $renewNow = [], public ?string $renewalOff = null, public array $autoRenew = [], public ?string $statusReason = null, public bool $demo = false, public bool $syncPaused = false, public ?int $daysLeft = null, public ?array $owner = null) {}
+        public array $management, public bool $testEnvironment, public bool $changesUnavailable = false, public ?string $renewalDue = null, public bool $setupPending = false, public bool $adopted = false, public ?string $plannedRenewalDue = null, public array $history = [], public array $renewalInvoice = [], public bool $originalDoNotRenew = false, public array $renewNow = [], public ?string $renewalOff = null, public array $autoRenew = [], public ?string $statusReason = null, public bool $demo = false, public bool $syncPaused = false, public ?int $daysLeft = null, public ?array $owner = null, public array $order = [], public bool $autoPay = false) {}
 }

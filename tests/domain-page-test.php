@@ -25,7 +25,7 @@ $management=static function(array $more=[]):array {
     $m['ds']+=['records'=>[],'recordCheckHeld'=>false];$m['ds']['actions']=['ds_add'=>'/domains/1/manage/ds_add','ds_delete'=>'/domains/1/manage/ds_delete'];
     $m['lock']['state']=true;
     $m['privacy']+=['free'=>false,'price'=>'$8.00','state'=>false];$m['privacy']['actions']=['privacy_enable'=>'/domains/1/manage/privacy_enable','privacy_disable'=>'/domains/1/manage/privacy_disable','privacy_purchase'=>'/domains/1/manage/privacy_purchase'];
-    $m['contacts']+=['staged'=>false,'limits'=>\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits('enom')];
+    $m['contacts']+=['staged'=>false,'limits'=>\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits('enom'),'saved'=>['first_name'=>'Jane','country'=>'US'],'role'=>'registrant','approved'=>null];
     $m['auth_code_email']['recipient']='owner';
     return array_replace_recursive($m,$more);
 };
@@ -67,7 +67,8 @@ same(['Off',['Add DS record']],[$text('ds'),$action('ds')],'DNSSEC row');
 same(['On',['Turn off']],[$text('lock'),$action('lock')],'Transfer lock row');
 same(['Off',['Add · $8.00/yr']],[$text('privacy'),$action('privacy')],'WHOIS privacy row, paid');
 same(['Jane Doe jane@example.com',['Edit contacts']],[$text('contacts'),$action('contacts')],'Owner row: registrant name and email');
-same('Owner',$norm($dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__l")]/text()')->item(0)),'Owner row label');
+same('Contacts',$norm($dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__l")]/text()')->item(0)),'Contacts row label');
+same('Contacts',$norm($dom->query('//dialog[@id="edit-contacts"]//h3')->item(0)),'Contacts dialog title');
 same(0,$dom->query('//*[contains(@class,"domains-row__a")]//*[self::a or self::button][not(contains(@class,"domains-a"))]')->length,'Every row action uses the one link style');
 expect(str_contains($html,'.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: underline;'),'Inline links are underlined');
 expect(str_contains($html,'.domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-linkbtn { text-decoration: none; }'),'Standalone row actions keep their link style');
@@ -75,7 +76,7 @@ expect(str_contains($html,'.domains .domains-row__a .domains-a:hover, .domains .
 $inlineHover=strpos($html,'.domains .domains-a:hover { text-decoration: underline; }');
 $actionHover=strpos($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }');
 expect($inlineHover!==false&&$actionHover!==false&&$actionHover>$inlineHover,'Action hover exceptions follow the inline rule so equal-specificity link buttons keep no underline');
-same(['Emailed to the owner',['Email auth code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
+same(['We email it to the owner',['Email auth code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
 same(0,$dom->query('//li[@id="auto_renew_off"]')->length,'Registrar auto-renew row is staff only');
 foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records','ds'=>'dnssec','lock'=>'transfer-lock','privacy'=>'privacy','auth_code_email'=>'transfer-code']as$id=>$anchor){
     same(1,$dom->query('//li[@id="'.$id.'"]//a[@href="'.route('domains.help').'#'.$anchor.'"]')->length,'Help popover links to help: '.$id);
@@ -88,7 +89,16 @@ foreach(['Turn off transfer lock?','Anyone with the auth code can then move '.$n
 same(1,$dom->query('//li[@id="lock"]//form[@data-confirm]//dialog[not(@open)]//button[@name="confirmed"][normalize-space(.)="Turn off"]')->length,'Lock off confirms in a dialog');
 foreach(['Email the auth code?','We’ll email it to the owner.']as$t){expect(str_contains($html,$t),'Auth code dialog: '.$t);}
 same(1,$dom->query('//li[@id="auth_code_email"]//dialog//button[@name="confirmed"][normalize-space(.)="Email auth code"]')->length,'Auth code dialog button');
-same(['All contacts','Owner','Admin','Tech','Billing'],array_map($norm,iterator_to_array($dom->query('//li[@id="contacts"]//select[@name="role"]/option'))),'Contact roles');
+same(0,$dom->query('//li[@id="contacts"]//select[@name="role"]')->length,'One contact form, no role to pick');
+same(['Jane','US'],[$dom->query('//li[@id="contacts"]//input[@name="contact[first_name]"]')->item(0)->getAttribute('value'),$dom->query('//li[@id="contacts"]//select[@name="contact[country]"]/option[@selected]')->item(0)->getAttribute('value')],'Dialog opens on the owner details');
+$forms=static fn(DOMXPath $x)=>array_map(static fn($f)=>[$f->getAttribute('action'),$norm($x->query('.//button[@type="submit"]',$f)->item(0))],iterator_to_array($x->query('//li[@id="contacts"]//form')));
+$staged=['staged'=>true,'actions'=>['contact_profile'=>'/domains/1/manage/contact_profile','contacts'=>'/domains/1/manage/contacts']];
+$d=$domain(['management'=>$management(['contacts'=>$staged])]);$dom=storefrontDom($render($d,$summary($d)));
+same([['/domains/1/manage/contact_profile','Send for approval']],$forms($dom),'Staged registrar, step 1: one form');
+$d=$domain(['management'=>$management(['contacts'=>$staged+['approved'=>['role'=>'tech','contact'=>['first_name'=>'Ann','last_name'=>'Lee','email_address'=>'ann@example.com']]]])]);$dom=storefrontDom($render($d,$summary($d)));
+same([['/domains/1/manage/contacts','Use the approved details']],$forms($dom),'Staged registrar, step 2: one form');
+same(['tech','Ann','hidden'],[$dom->query('//li[@id="contacts"]//input[@name="role"]')->item(0)->getAttribute('value'),$dom->query('//li[@id="contacts"]//input[@name="contact[first_name]"]')->item(0)->getAttribute('value'),$dom->query('//li[@id="contacts"]//input[@name="contact[first_name]"]')->item(0)->getAttribute('type')],'Step 2 sends the approved details unchanged');
+same(1,$dom->query('//li[@id="contacts"]//a[contains(@href,"edit=contacts&new=1")]')->length,'Step 2 can start over');
 // One term for the owner: no visible text on the page says registrant.
 $visible=implode(' ',array_map(static fn($n)=>$n->nodeValue,iterator_to_array($dom->query('//body//text()[not(ancestor::style) and not(ancestor::script)]'))));
 expect(stripos($visible,'registrant')===false,'Page text says owner, never registrant');
@@ -152,7 +162,7 @@ foreach (['dns' => [
 
 // Renewal card: active, auto-renew on.
 same('Mar 1, 2027',$card($dom,'Expires'),'Expires date');
-same('On Turn off',$card($dom,'Auto-renew'),'Auto-renew on');
+expect(str_starts_with($card($dom,'Auto-renew'),'On Turn off'),'Auto-renew on');
 same(['On',['Turn off']],$split($dom,'Auto-renew'),'Auto-renew action sits on its own line');
 same('$14.99/yr',$card($dom,'Renewal price'),'Renewal price');
 same(1,$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"]')->length,'Renew now button');
@@ -164,8 +174,13 @@ same('No changes yet.',$norm($dom->query('//section[@id="history"]//p')->item(0)
 $d=$domain(['expiry'=>'2026-11-02']);$dom=storefrontDom($render($d,$summary($d,['daysLeft'=>10,'renewalInvoiceMissing'=>true,'renewalIssueAt'=>'2026-10-03'])));
 same('Nov 2, 2026 In 10 days',$card($dom,'Expires'),'Expires soon');
 same(1,$dom->query('//section[@id="renewal"]//dd//*[contains(@class,"domains-tone-text-warn")]')->length,'Warn colour within 30 days');
-same('Missing Not issued yet. Expected Oct 3, 2026.',$card($dom,'Next invoice'),'Missing names the expected date');
+same('Missing Contact support Not issued yet. Expected Oct 3, 2026.',$card($dom,'Next invoice'),'Missing names the expected date');
 // Planned, due, paid and cancelled invoices.
+// Auto-renew On says what Auto Pay does to the renewal invoice, in the words the service page uses.
+$on=$domain(['renewal'=>'On','actions'=>['show'=>'/domains/1','autoPay'=>'/services/1#auto-pay']]);
+expect(str_contains($card(storefrontDom($render($on,$summary($on))),'Auto-renew'),'Auto Pay is off: we send you an invoice and you pay it to renew. Manage Auto Pay'),'Auto Pay off explains the invoice');
+$on=$domain(['renewal'=>'On','autoPay'=>true]);
+expect(str_contains($card(storefrontDom($render($on,$summary($on))),'Auto-renew'),'Auto Pay is on: we charge your saved payment method for each renewal invoice.'),'Auto Pay on says the card is charged');
 $d=$domain();same('Feb 1, 2027',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice date');
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9']]);$dom=storefrontDom($render($d,$summary($d)));
 same('Due Feb 1, 2027 Pay invoice',$card($dom,'Next invoice'),'Due invoice');
@@ -187,27 +202,29 @@ same(['Off',['Contact support']],$split($dom,'Auto-renew'),'Contact support sits
 
 // Missing expiry; pending transfer; setup; cutoff; import; demo sync paused; test mode.
 $d=$domain(['expiry'=>null]);$dom=storefrontDom($render($d,$summary($d)));
-same('Missing Contact support Shows after the next sync',$card($dom,'Expires'),'Missing expiry: one fix, then its cause');
-same('Missing Contact support Not issued yet',$card($dom,'Next invoice'),'Missing next invoice: one fix, then its cause');
-same(2,$dom->query('//section[@id="renewal"]//dd/span[contains(@class,"domains-missing__line")][span[contains(@class,"domains-missing")]/following-sibling::*[1][self::a[contains(@class,"domains-missing__fix")]]]/following-sibling::*[1][contains(@class,"domains-sub")]')->length,'Fix sits on the Missing line, cause below');
+same('Missing Fills in by itself after the next sync',$card($dom,'Expires'),'Missing expiry: one fix, then its cause');
+same('Missing Fills in by itself after the next sync',$card($dom,'Next invoice'),'Missing next invoice: one fix, then its cause');
+$d=$domain(['expiry'=>null,'order'=>['state'=>'failed','kind'=>'transfer']]);$dom=storefrontDom($render($d,$summary($d)));
+same('Missing Contact support Transfer did not finish',$card($dom,'Expires'),'A failed order: the fix, then the cause');
+same(1,$dom->query('//section[@id="renewal"]//dd/span[contains(@class,"domains-missing__line")][span[contains(@class,"domains-missing")]/following-sibling::*[1][self::a[contains(@class,"domains-missing__fix")]]]/following-sibling::*[1][contains(@class,"domains-sub")]')->length,'Fix sits on the Missing line, cause below');
 $d=$domain(['owner'=>null]);$dom=storefrontDom($render($d,$summary($d)));
-same(['Missing No contact details on file',['Edit contacts']],$row($dom,'contacts'),'Owner without stored contact');
+same(['Missing Add them with Edit contacts',['Edit contacts']],$row($dom,'contacts'),'Contacts not on file say what to do next');
 $d=$domain(['management'=>$management(['lock'=>['state'=>null]])]);$dom=storefrontDom($render($d,$summary($d)));
-same(['Missing Shows after the next sync',['Change']],$row($dom,'lock'),'Unknown lock names its cause');
+same(['Missing Fills in by itself within a day',['Change']],$row($dom,'lock'),'Unknown lock names its cause');
 $pending=$domain(['status'=>'Pending transfer','tone'=>'info','renewal'=>'','expiry'=>null,'management'=>[],'renewNow'=>[],'autoRenew'=>[],'actions'=>['show'=>'/domains/1','code'=>'/domains/1/transfer-code'],
     'transfer'=>['open'=>true,'received'=>false,'phase'=>'editing']]);
 $dom=storefrontDom($render($pending,$summary($pending,['expiryWaits'=>'transfer'])));
 same('Enter the auth code from your current registrar. Enter auth code',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Pending transfer notice');
-same('Missing Shows when the transfer completes',$card($dom,'Expires'),'Pending expiry waits');
+same('Missing Fills in by itself when the transfer finishes',$card($dom,'Expires'),'Pending expiry waits');
 same([null,null],[$card($dom,'Auto-renew'),$card($dom,'Next invoice')],'No renewal timing for an inactive domain');
 $saved=new OwnedDomain(...[...get_object_vars($pending),'transfer'=>['open'=>true,'received'=>true,'phase'=>'editing']]);
-$dom=storefrontDom($render($saved));same('Saved View transfer',$card($dom,'Auth code'),'Saved auth code');same(['Saved',['View transfer']],$split($dom,'Auth code'),'View transfer sits on its own line');same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'No notice once saved');
+$dom=storefrontDom($render($saved));same('Saved Change auth code',$card($dom,'Auth code'),'Saved auth code');same(['Saved',['Change auth code']],$split($dom,'Auth code'),'Change auth code sits on its own line');same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'No notice once saved');
 $setup=static fn(array $s,array $t=[])=>$domain(['status'=>'Action required','tone'=>'warn','renewal'=>'','management'=>[],'actions'=>['show'=>'/domains/1','setup'=>'/domains/1/setup'],'setup'=>$s,'transfer'=>$t]);
 same('Choose nameservers before registration starts, or we use Example Hosting nameservers. Choose nameservers',$norm(storefrontDom($render($setup(['defaults'=>true,'contacts'=>false])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameservers setup notice');
 same('Finish setup to start registration. Finish setup',$norm(storefrontDom($render($setup(['defaults'=>false,'contacts'=>true])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Setup notice');
 same('The auth code deadline passed. Update your details so we can finish the transfer. Update details',$norm(storefrontDom($render($setup(['defaults'=>false,'contacts'=>true],['phase'=>'cutoff','open'=>false,'received'=>false])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Cutoff notice');
 $import=$domain(['status'=>'Under review','tone'=>'info','renewal'=>'','management'=>[],'renewNow'=>[],'autoRenew'=>[],'setupPending'=>true]);
-same('We’re confirming this domain. Changes and renewals start after that. Contact support if it expires soon.',$norm(storefrontDom($render($import))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Import notice');
+same('We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know. Contact support',$norm(storefrontDom($render($import))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Import notice');
 $moved=$domain();$dom=storefrontDom($render($moved,$summary($moved,['stateKeys'=>['domain.active','watch.ns_changed'],'noticeDates'=>['dns'=>1792540800]])));
 same($name.' stopped using Example Hosting nameservers on Oct 21, 2026. Change nameservers',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameserver change notice');
 same('/domains/1?edit=nameservers#edit-nameservers',$dom->query('//div[contains(@class,"domains-notice")]/a')->item(0)?->getAttribute('href'),'Nameserver change opens the editor');
@@ -216,10 +233,10 @@ same($name.' stopped using Example Hosting nameservers. Contact support',$norm($
 $demo=$domain(['management'=>[],'demo'=>true,'syncPaused'=>true]);$html=$render($demo,$summary($demo,['demo'=>true]));$dom=storefrontDom($html);
 same(1,$dom->query('//div[contains(@class,"domains-notice")]')->length,'One notice');
 same('Sync paused: the demo registrar is off. Nameservers show when it resumes. Contact support',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Demo sync paused notice');
-same('Missing',$norm($dom->query('//li[@id="nameservers"]/span[contains(@class,"domains-row__v")]')->item(0)),'Paused nameservers are Missing, cause in the notice');
+same('Missing Fills in by itself when sync resumes',$norm($dom->query('//li[@id="nameservers"]/span[contains(@class,"domains-row__v")]')->item(0)),'Paused nameservers are Missing and say when they fill in');
 $paused=$domain(['demo'=>true,'syncPaused'=>true,'management'=>$management(['dns'=>['records'=>null],'ds'=>['records'=>null],'lock'=>['state'=>null],'privacy'=>['state'=>null]])]);$html=$render($paused,$summary($paused,['demo'=>true]));$dom=storefrontDom($html);
-foreach(['nameservers','dns','glue','ds','lock','privacy']as$id){same(['Missing',[]],$row($dom,$id),'Paused '.$id.' is Missing with no action');}
-same(0,substr_count(strip_tags($html),'Shows after the next sync'),'Paused rows leave the cause to the notice');
+foreach(['nameservers','dns','glue','ds','lock','privacy']as$id){same(['Missing Fills in by itself when sync resumes',[]],$row($dom,$id),'Paused '.$id.' is Missing with no action');}
+same(0,substr_count(strip_tags($html),'Fills in by itself within a day'),'Paused rows wait for the sync to resume');
 same(1,$dom->query('//h1//span[contains(@class,"domains-demo-tag")][not(contains(@class,"domains-demo-tag--test"))]')->length,'Demo tag');
 $test=$domain(['testEnvironment'=>true]);$dom=storefrontDom($render($test));
 same(1,$dom->query('//h1//span[contains(@class,"domains-demo-tag--test")]')->length,'Test tag');

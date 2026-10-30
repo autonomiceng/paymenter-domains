@@ -36,8 +36,8 @@ final class EnomLiveCalls
             $config=EnomLive::account($b);$uid=Account::where('server_id',$b->serverId)->sole()->stable_identity;
             $row=DB::table(EnomLiveCallSchema::TABLE)->where(['account'=>hash('sha256',$uid),'day'=>EnomTestCalls::day()])->first();
             $micros=(int)($row->spend_micros??0);$amount=intdiv($micros,1000000).'.'.str_pad((string)($micros%1000000),6,'0',STR_PAD_LEFT);
-            return ($row->used??0).' / '.($config['daily_call_cap']??0).' calls; '.$amount.' / '.($config['daily_spend_limit_usd']??'0.00').' USD reserved today (UTC). Failed and unsent reservations remain counted.';
-        }catch(\Throwable){return 'Live account limits unavailable; sends are refused.';}
+            return ($row->used??0).' / '.($config['daily_call_cap']??0).' calls under our daily call cap; '.$amount.' / '.($config['daily_spend_limit_usd']??'0.00').' USD reserved today (UTC). Failed and unsent reservations remain counted.';
+        }catch(\Throwable){return 'Our live account safety limits could not be read; sends are refused.';}
     }
     public static function read(string $uid): string
     {

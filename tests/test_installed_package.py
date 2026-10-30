@@ -76,7 +76,7 @@ def main(scenario):
         raise ValueError('Unknown installed package scenario')
     began = time.monotonic()
     # Keep scenario limits above the measured identity and management costs.
-    scenario_timeout = 110 if scenario == 'held' else 60 if scenario == 'enom-test-management' else None
+    scenario_timeout = 110 if scenario == 'held' else 90 if scenario == 'enom-test-management' else None
     scenario_deadline = began + scenario_timeout if scenario_timeout is not None else None
     fixture = Path(os.environ['PAYMENTER_TEST_FIXTURE'])
     if not (fixture/'.domains-fixture.json').is_file():

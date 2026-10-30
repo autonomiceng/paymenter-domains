@@ -82,8 +82,8 @@ final readonly class RegistrarBalances
         $low=!$unknown&&BalanceForecast::compare($row->amount,$forecast['total'])<0;
         $code=$available?$row?->last_error_code:'configuration_unavailable';
         // Missing always carries its cause; a failed check hides the retained amount.
-        $cause=match(true){$code==='configuration_unavailable'=>"Couldn't load the account's settings",$code==='rate_limited'=>'Check delayed. Try again in a minute.',
-            $code!==null=>'Last check failed',!$row?->read_at||$row->amount===null=>'Not checked yet',$unknown=>'Balance is not in USD',default=>null};
+        $cause=match(true){$code==='configuration_unavailable'=>"Couldn't load the account's settings. Use Edit API credentials.",$code==='rate_limited'=>'Check delayed. Try again in a minute.',
+            $code!==null=>'Last check failed. Use Check balance.',!$row?->read_at||$row->amount===null=>'Not checked yet. Use Check balance.',$unknown=>'Balance is not in USD. Ask the registrar to switch this account to USD.',default=>null};
         return ['status'=>$unknown?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:($low?'Low balance':'OK'),'low'=>$low,
             'balance'=>$unknown?null:self::money($row->amount,$row->currency),'checked'=>$unknown?null:gmdate('M j, Y H:i \\U\\T\\C',(int)$row->read_at),
             'cause'=>$cause,'total'=>self::money($forecast['total'],$forecast['currency']),'unknown'=>$forecast['unknown']];

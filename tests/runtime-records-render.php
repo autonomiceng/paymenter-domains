@@ -42,7 +42,7 @@ $emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
                 same($prefix.($i+1),$input->item(0)->getAttribute('value'),'Customer '.$kind.' record order is numeric');
             }
         } else {
-            $expected=$stateName==='unknown'?'Shows after the next sync':'Shows when our team resumes record checks';
+            $expected=$stateName==='unknown'?'Fills in by itself within a day':'Our team needs to check this domain. No action needed.';
             expect(str_contains($rows->item(0)->textContent,$expected),'Record note explains recovery for '.$kind.' '.$stateName);
         }
         preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;
@@ -56,7 +56,7 @@ $staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 Filament::getCurrentPanel()->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $staffPage=static function(string $name)use($staff,$out,$css,&$d):void {
-$test=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSee($name==='staff-scheduled-stop'?'Sync stopped after repeated failures.':"Sync stopped: couldn't read DNS records.");
+$test=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSee($name==='staff-scheduled-stop'?'Sync stopped after a failed check.':"Sync stopped: couldn't read DNS records.");
 if ($name==='staff-scheduled-stop') { $test->assertSee('Sync failed')->assertSee('1 attempt. Stopped until resumed.'); }
 $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$test->instance(),'body'=>$test->html()]);
 $html=preg_replace('~<script\b[^>]*>.*?</script>~si','',$html);$html=preg_replace('~<link\b[^>]*>~si','',$html);

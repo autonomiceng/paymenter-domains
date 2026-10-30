@@ -37,8 +37,8 @@ same('Domain monitoring',$list->instance()->getTitle(),'List title');same(null,$
 foreach(['canonical_name'=>'Domain','status'=>'Status','registration'=>'Registrar','delegation.dns'=>'Nameservers','last_check'=>'Last check','expiry'=>'Expires'] as $name=>$label){same($label,$column($list,$name)->getLabel(),'Column '.$name);}
 foreach(['findings','user_id','state','work_due'] as $gone){same(null,$column($list,$gone),'Old column '.$gone.' removed');}
 same('Monitoring',$column($list,'status')->record($watch)->getState(),'Unchecked domain is Monitoring');
-same('Missing',$column($list,'last_check')->record($watch)->getState(),'Last check Missing');same('Not checked yet',$column($list,'last_check')->record($watch)->getDescriptionBelow(),'Missing says its cause');
-same('Missing',$column($list,'registration')->record($watch)->getState(),'Registrar Missing');same('Not recorded yet',$column($list,'registration')->record($watch)->getDescriptionBelow(),'Registrar Missing says its cause');
+same('Missing',$column($list,'last_check')->record($watch)->getState(),'Last check Missing');same('Fills in by itself after the next check',$column($list,'last_check')->record($watch)->getDescriptionBelow(),'Missing says its cause');
+same('Missing',$column($list,'registration')->record($watch)->getState(),'Registrar Missing');same('Fills in by itself after the next check',$column($list,'registration')->record($watch)->getDescriptionBelow(),'Registrar Missing says its cause');
 same('Customer #'.$uid,$column($list,'canonical_name')->record($watch)->getDescriptionBelow(),'Customer is the domain secondary line');
 foreach(['status'=>'Status','customer'=>'Customer','registration'=>'Registrar','expected_dns'=>'Expected nameservers','observed'=>'Nameservers','product'=>'Hosting product','expiry'=>'Expires within'] as $name=>$label){same($label,$filter($list,$name)->getLabel(),'Filter '.$name);}
 same(null,$filter($list,'attention'),'Attention filter merged into Status');same(null,$filter($list,'drift'),'Drift filter merged into Status');same(null,$filter($list,'state'),'State filter merged into Status');
@@ -75,13 +75,90 @@ $facts=WatchFacts::for($record);same(['Domain','Checks'],array_keys($facts),'Two
 
 // Pause and resume run without a dialog; Check now queues; stale pages refuse.
 $stale=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);DB::table('domains_watch_names')->where('id',$id)->increment('revision');
-$stale->callAction('pause')->assertNotified('This domain changed. Reload the page and try again.');same('active',WatchName::find($id)->state,'Stale page changes nothing');
+$stale->call('refreshFacts')->callAction('pause')->assertNotified('This domain changed. Reload the page and try again.');same('active',WatchName::find($id)->state,'Stale page changes nothing');
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->callAction('pause')->assertNotified('Monitoring paused');same('paused',WatchName::find($id)->state,'Pause saves');
 $paused=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertActionHidden('pause')->assertActionHidden('read')->assertSee('Paused')->assertDontSee('Next check');
 same('Resume monitoring',$paused->instance()->getAction('resume')->getLabel(),'Resume label');$paused->callAction('resume')->assertNotified('Monitoring resumed');same('active',WatchName::find($id)->state,'Resume saves');
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->callAction('note',['note'=>'Synthetic staff note'])->assertNotified('Saved');
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertSeeInOrder(['History','Note','Synthetic staff note','Monitoring resumed','Monitoring paused'])->assertDontSee('No history yet');
 $rows=WatchFacts::history(WatchName::find($id));same(['Note','Monitoring resumed','Monitoring paused'],array_column($rows,'event'),'History events newest first');
+// A queued check keeps feedback on the current page rather than losing the toast to a redirect.
+config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>900]);
+// Distinct DOM identity disconnects the prior Livewire timer when switching cadence.
+$pollKey=static function($page):string{
+    $doc=new DOMDocument;@$doc->loadHTML($page->html());
+    $nodes=(new DOMXPath($doc))->query('//*[@*[starts-with(name(),"wire:poll")]]');
+    same(1,$nodes->length,'Exactly one polling element');$key=$nodes->item(0)->getAttribute('wire:key');
+    expect($key!=='','Polling element has a stable key');return $key;
+};
+$secondTab=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false);
+$passiveKey=$pollKey($secondTab);
+$check=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false)->callAction('read')->assertSee('wire:poll.5s="pollCheck"',false)
+    ->assertNotified(\Filament\Notifications\Notification::make()->success()->title('Check requested')
+        ->body('This takes up to about six minutes. This page updates by itself.')->persistent())
+    ->assertNoRedirect();
+$pendingKey=$pollKey($check);expect($pendingKey!==$passiveKey,'Changing polling mode replaces the timer element');
+same('Monitoring uses 0 registrar reads per domain per day.',$check->instance()->getAction('read')->getTooltip(),'Check cost is visible before requesting it');
+same(1,\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::where('subject_id',$id)->where('event','staff_read_requested')->count(),'Check request recorded once');
+$originalWait=$check->get('pendingCheck');
+$requestAt=\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::where('subject_id',$id)->where('event','staff_read_requested')->first()->created_at->getTimestamp();
+same($requestAt+360,$originalWait[0],'Deadline starts at the stored accepted request time');
+\Carbon\Carbon::setTestNow(now()->addSeconds(120));
+$waitingPages=['second tab'=>$secondTab,'reload'=>Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])];
+foreach($waitingPages as $label=>$waitingPage){
+    if($label==='reload'){$waitingPage->assertSee('wire:poll.5s="pollCheck"',false);same($originalWait,$waitingPage->get('pendingCheck'),'Reload restores the original wait');}
+    $waitingPage->callAction('read')->assertSee('wire:poll.5s="pollCheck"',false)->assertNotified('Check already requested')->assertNoRedirect();
+    same($originalWait,$waitingPage->get('pendingCheck'),$label.' joins the same wait without extending it');
+}
+$check->callAction('read')->assertNotified('Check already requested');
+same($originalWait,$check->get('pendingCheck'),'Retry preserves the original deadline');
+same(1,\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::where('subject_id',$id)->where('event','staff_read_requested')->count(),'Throttled tabs do not add a request');
+\Carbon\Carbon::setTestNow();
+$check->call('pollCheck')->assertSee('wire:poll.5s="pollCheck"',false)->assertNotNotified('Check finished');
+same(WatchFacts::date($at),$check->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Last check'))->getState(),'Pending page keeps its saved Last check');
+// A read already in flight can start before the request and save a newer Last check afterwards.
+$completedAt=$requestAt-1;DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','delegation')->update(['due_at'=>$completedAt,'backoff_until'=>null]);
+$t=$dns->begin($id,$uid,'delegation',$completedAt);expect($t!==null,'In-flight DNS ticket');
+expect($dns->finish($t,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','external'),$requestAt+1),'In-flight DNS result saved after the request');
+$check->call('pollCheck')->assertSee(WatchFacts::date($completedAt))->assertNotified('Check finished')->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false)->assertNoRedirect();
+same($passiveKey,$pollKey($check),'Completion restores the stable passive element');
+same(WatchFacts::date($completedAt),$check->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Last check'))->getState(),'Poll updates the Last check entry itself');
+$check->call('pollCheck')->assertNotNotified('Check finished');
+foreach($waitingPages as $label=>$waitingPage){
+    $waitingPage->call('pollCheck')->assertNotified('Check finished')->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false);
+    same(WatchFacts::date($completedAt),$waitingPage->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Last check'))->getState(),$label.' receives the new Last check');
+}
+Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false)->assertNotNotified('Check finished');
+// Autonomous work after Check finished must refresh this same open page, including Next check.
+$autonomousAt=$requestAt+120;
+DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','points')->update(['due_at'=>$autonomousAt,'backoff_until'=>null]);
+$t=$dns->begin($id,$uid,'points',$autonomousAt);expect($t!==null,'Autonomous points ticket');
+$check->call('refreshFacts')->assertSee('Checking now')->assertNotNotified('Check finished');
+expect($dns->finish($t,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('points',website:true,email:true),$autonomousAt+1),'Autonomous points result');
+$audits=\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count();
+$check->call('refreshFacts')->assertSee(WatchFacts::date($autonomousAt))->assertDontSee('Checking now')->assertNotNotified('Check finished');
+same(WatchFacts::date($autonomousAt),$check->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Last check'))->getState(),'Passive refresh updates Last check on the open page');
+same(WatchFacts::for(WatchName::find($id))['Checks']['Next check']['value'],$check->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Next check'))->getState(),'Passive refresh replaces Next check after work finishes');
+same($audits,\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count(),'Passive refresh requests no checks or writes');
+// Age the synthetic request claim so a second real Check now action can be tested.
+DB::table('domains_watch_staff_claims')->where('subject_type','watch')->where('subject_id',$id)->where('action','read')->update(['created_at'=>time()-301]);
+// If no saved check moves, support advice appears only after the six-minute wait.
+$waitingAt=\Carbon\Carbon::createFromTimestampUTC($autonomousAt+2);\Carbon\Carbon::setTestNow($waitingAt);
+$check=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->callAction('read');
+same($pendingKey,$pollKey($check),'Another request reuses the pending key, not the passive node');
+\Carbon\Carbon::setTestNow($waitingAt->copy()->addSeconds(359));
+$check->call('pollCheck')->assertSee('wire:poll.5s="pollCheck"',false)->assertNotNotified('Check is taking longer');
+$reload=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertSee('wire:poll.5s="pollCheck"',false);
+same($check->get('pendingCheck'),$reload->get('pendingCheck'),'Reload at 359 seconds keeps the original deadline');
+\Carbon\Carbon::setTestNow($waitingAt->copy()->addSeconds(360));
+$check->call('pollCheck')->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false)->assertNotified(\Filament\Notifications\Notification::make()->warning()->title('Check is taking longer')
+    ->body('Last check has not changed. Ask your site admin.')->persistent())->assertNoRedirect();
+same($passiveKey,$pollKey($check),'Timeout also disconnects the pending timer');
+$check->call('pollCheck')->assertNotNotified('Check is taking longer');
+$reload->call('pollCheck')->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false)->assertNotified('Check is taking longer');
+Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false)->assertNotified('Check is taking longer');
+\Carbon\Carbon::setTestNow();
+
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->callAction('retire',['reason'=>'Customer asked to stop'])->assertNotified('Saved');same('retired',WatchName::find($id)->state,'Stop saves');
 same('Stopped',WatchFindings::status(WatchName::find($id),[])['label'],'Stopped status');
 
@@ -192,7 +269,7 @@ DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['expected
 same('Missing',$column(Livewire::actingAs($manager)->test(ListProducts::class),'template')->record(\Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::find($map->id))->getState(),'No template is Missing');
 // Expiry wording past and on the date; submit buttons name their action; a paused name shows no Missing DNS records.
 $day=strtotime('2026-01-03 12:00:00 UTC');foreach(['2026-01-01'=>'Expired 2 days ago','2026-01-02'=>'Expired 1 day ago','2026-01-03'=>'Expires today','2026-01-04'=>'Expires in 1 day','2026-01-05'=>'Expires in 2 days'] as $date=>$text){same($text,WatchFindings::expires($date,$day),'Expiry wording '.$date);}
-same('Save',$product->instance()->getAction('save')->getModalSubmitActionLabel(),'Edit submit');same('Turn on monitoring',$offProduct->instance()->getAction('enable')->getModalSubmitActionLabel(),'Turn on submit');
+same('Save and turn monitoring off',$product->instance()->getAction('save')->getModalSubmitActionLabel(),'Edit submit');same('Turn on monitoring',$offProduct->instance()->getAction('enable')->getModalSubmitActionLabel(),'Turn on submit');
 $acts=\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchActions::watch($watch,(int)$watch->revision);$more=[];foreach(end($acts)->getActions() as $a){$more[$a->getName()]=$a->getModalSubmitActionLabel();}
 same(['profile'=>'Save','note'=>'Add note','retire'=>'Stop monitoring'],$more,'More submit labels');
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'paused']);$paused=WatchFacts::for(WatchName::find($watch->id));expect(!array_key_exists('DNS records',$paused['Checks']),'Paused name with no record results hides DNS records, not Missing');

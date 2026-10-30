@@ -1,5 +1,5 @@
 <?php
-// Batched default follower freshness; MIT.
+// Batched default follower saved costs; MIT.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\DB;
@@ -43,21 +43,21 @@ $seed('foreign');DB::table('domains_prices')->where('server_id',$t->server_id)->
 $eur=$base->first()->replicate();$eur->currency='EUR';$eur->fresh_until=$now;$eur->save();
 DB::table('domains_prices')->where('server_id',$tlds[1]->server_id)->update(['fresh_until'=>$now]);
 $outside=$tlds[1]->replicate();$outside->tld='outside';$outside->use_default_rule=true;$outside->save();
-$expected='9 TLDs use the account default: .com, .excluded, .foreign, .fresh, .future, .missing, .nocost, .norenew, .stale. Saving publishes their new prices. Costs are out of date for .foreign, .future, .missing, .nocost, .norenew, .stale. Their prices stay the same until you sync prices and save again.';
+$expected='9 TLDs use the account default: .com, .excluded, .foreign, .fresh, .future, .missing, .nocost, .norenew, .stale. Saving publishes their new prices. Costs are missing for .foreign, .future, .missing, .nocost, .norenew. Their prices stay the same until you sync prices and save again.';
 $actual=$preview();echo 'Follower Price SELECTs (nine followers): '.count($selects)."\n";
 same(1,count($selects),'Nine followers still use one Price SELECT');
-same($expected,$actual,'Batched preview retains ordering, exclusions, renewal requirements and freshness');
+same($expected,$actual,'Batched preview retains ordering, exclusions, renewal requirements and saved costs');
 foreach(['growing','more','largest'] as $ending){$seed($ending);}
 $text=$preview();same(1,count($selects),'Twelve followers still use one Price SELECT');
 expect(str_starts_with($text,'12 TLDs use the account default:'),'Follower count grows');
-expect(str_ends_with($text,' Costs are out of date for .foreign, .future, .missing, .nocost, .norenew, .stale. Their prices stay the same until you sync prices and save again.'),'Growing the preview preserves the waiting list');
+expect(str_ends_with($text,' Costs are missing for .foreign, .future, .missing, .nocost, .norenew. Their prices stay the same until you sync prices and save again.'),'Growing the preview preserves the waiting list');
 // Null means query normally; an explicitly empty preload must stay empty and never fall back to SQL.
 $selects=[];$evaluating=true;
-try{tldRefusal(fn()=>PriceCatalogue::requireFreshCosts($t,$now,collect()),'Fresh costs required before publication.');}
+try{tldRefusal(fn()=>PriceCatalogue::requireCosts($t,$now,collect()),'Costs required before publication.');}
 finally{$evaluating=false;}
 same(0,count($selects),'Empty preload does not query Price again');
-PriceCatalogue::requireFreshCosts($t,$now);
+PriceCatalogue::requireCosts($t,$now);
 $missing=Tld::where('server_id',$t->server_id)->where('tld','missing')->sole();
-tldRefusal(fn()=>PriceCatalogue::requireFreshCosts($missing,$now),'Fresh costs required before publication.');
-PriceCatalogue::requireFreshCosts($excluded,$now);
-echo "Default follower preview batches USD prices while retaining freshness and sale exclusions.\n";$nativeSuccessful=true;
+tldRefusal(fn()=>PriceCatalogue::requireCosts($missing,$now),'Costs required before publication.');
+PriceCatalogue::requireCosts($excluded,$now);
+echo "Default follower preview batches USD prices while retaining saved costs and sale exclusions.\n";$nativeSuccessful=true;

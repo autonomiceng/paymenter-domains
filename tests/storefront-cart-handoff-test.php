@@ -14,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmission, CartHandoffFailure, CheckoutEligibility, EnomTestCallSchema, RegistrarRegistry, Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmission, CartHandoffFailure, CheckoutEligibility, EnomTestSendLimitSchema, RegistrarRegistry, Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 require dirname(__DIR__).'/Domains/routes/web.php';
@@ -28,7 +28,7 @@ $eligibility = new CheckoutEligibility($bindings, $clock);
 $store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 $controller = new StorefrontController($store); storefrontViews();
 (new CartAdmission($native, $sellers, $eligibility, $clock))->boot();
-EnomTestCallSchema::install(); config(['domains.enom_test_daily_call_cap' => 200]);
+EnomTestSendLimitSchema::install(); config(['domains.enom_test_sends_per_day' => 200, 'domains.enom_test_sends_per_minute' => 100000]);
 $logger = new class extends Psr\Log\AbstractLogger {
     public array $warnings = [];
     public function log($level, string|Stringable $message, array $context = []): void {
@@ -95,11 +95,11 @@ same(route('cart'), $response->getTargetUrl(), 'Fresh user retry succeeds withou
 same(1, $cart->items()->count(), 'Retry adds exactly one native item');
 same(1, count($GLOBALS['enomWire']['forms']), 'Retry makes one independent fresh Check');
 $order($name); same('domain_already_in_cart', end($logger->warnings)[1]['exception_message_key'], 'Duplicate cart admission is distinct');
-config(['domains.enom_test_daily_call_cap' => 0]); resetWire(['reply' => $reply]);
+config(['domains.enom_test_sends_per_day' => 0]); resetWire(['reply' => $reply]);
 $order('budget-placeholder.com');
-same('test_call_limit', end($logger->warnings)[1]['exception_message_key'], 'Native TEST counter refusal has its own typed key');
-same([], $GLOBALS['enomWire']['forms'], 'Native cap refusal makes zero physical sends');
-config(['domains.enom_test_daily_call_cap' => 200]);
+same('test_call_limit', end($logger->warnings)[1]['exception_message_key'], 'Native TEST send limit refusal has its own typed key');
+same([], $GLOBALS['enomWire']['forms'], 'Native send limit refusal makes zero physical sends');
+config(['domains.enom_test_sends_per_day' => 200]);
 $secret = 'private-placeholder.com credential-placeholder provider-reference-placeholder';
 foreach ([new DomainException($secret), new DomainException('Domain already in cart. '.$secret),
     new RuntimeException('Domain already in cart.'), new class('Domain already in cart.') extends DomainException {},

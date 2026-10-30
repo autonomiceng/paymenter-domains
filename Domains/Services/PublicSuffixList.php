@@ -11,6 +11,7 @@ final class PublicSuffixList
     private array $parseCache = [];
     public const SOURCE = 'https://publicsuffix.org/list/public_suffix_list.dat';
     public const SETTING = 'domains_psl_source_url';
+    public const MAX_AGE_DAYS = 90;
     public function __construct(private Clock $clock, private PslTransport $transport, private PslValidator $validator) {}
     public function current(): ?object { return DB::table('domains_psl_snapshots')->where('state', 'current')->first(); }
     public function status(): object { return DB::table('domains_psl_status')->where('id', 1)->firstOrFail(); }
@@ -23,10 +24,12 @@ final class PublicSuffixList
         try { $this->validator->baseline(self::body($s)); $ok = true; } catch (PslFailure) { $ok = false; }
         $this->parseCache = [$key => $ok]; return $ok;
     }
+    public function expiresAt(): ?int
+    { $s = $this->current(); return $s === null ? null : (int) $s->validated_at + self::MAX_AGE_DAYS * 86400; }
     public function discoveryAllowed(): bool
-    { $s = $this->current(); return $s !== null && $this->parserUsable($s) && $this->clock->now()->getTimestamp() <= (int) $s->validated_at + 90 * 86400; }
+    { $at = $this->expiresAt(); return $at !== null && $this->clock->now()->getTimestamp() <= $at && $this->parserUsable(); }
     public function staleWarning(): bool
-    { $s = $this->current(); return $s !== null && $this->clock->now()->getTimestamp() > (int) $s->validated_at + 30 * 86400; }
+    { $at = $this->expiresAt(); return $at !== null && $this->clock->now()->getTimestamp() > $at; }
     public function nextAllowedAt(): ?int
     { $at = $this->status()->last_network_fetch_at; return $at === null ? null : (int) $at + 86400; }
     public function source(): string

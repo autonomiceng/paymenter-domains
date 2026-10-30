@@ -41,6 +41,6 @@ final class CanonicalName
             if (str_contains($sld, '.')) { throw new \InvalidArgumentException('One registrable label required.'); }
             return ['domain' => $name, 'sld' => $sld, 'tld' => $tld];
         }
-        throw new \InvalidArgumentException('This domain ending is unavailable.');
+        throw new \InvalidArgumentException('This TLD is unavailable.');
     }
 }

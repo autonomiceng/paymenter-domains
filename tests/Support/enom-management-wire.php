@@ -8,6 +8,7 @@ $manageReply=static function(array $p)use($s,$reply):string {
     if($c==='SetRegLock'){$s->locked=$p['UnlockRegistrar']==='0';}
     if($c==='SetHosts'){$s->dns=[];for($i=1;isset($p['HostName'.$i]);$i++){$s->dns[]=['name'=>$p['HostName'.$i],'type'=>$p['RecordType'.$i],'address'=>$p['Address'.$i],'mx_pref'=>$p['MXPref'.$i]??10];}}
     if($c==='SetDomainSRVHosts'){$s->srv=[];for($i=1;isset($p['Service'.$i]);$i++){$s->srv[]=['service'=>$p['Service'.$i],'protocol'=>strtolower($p['Protocol'.$i]),'target'=>$p['Target'.$i],'priority'=>$p['Priority'.$i],'weight'=>$p['Weight'.$i],'port'=>$p['Port'.$i]];}}
+    if($c==='Contacts'){foreach($p as $k=>$v){if(preg_match('/^(Registrant|Admin|Tech|AuxBilling)./',$k,$m)){$s->contacts[$m[1]][$k]=$v;}}}
     if($c==='AddDnsSec'){$s->ds[]=['algorithm'=>$p['Alg'],'digest'=>$p['Digest'],'digest_type'=>$p['DigestType'],'key_tag'=>$p['KeyTag']];}if($c==='DeleteDnsSec'){$s->ds=[];}
     $body=match($c){
         'GetDomainInfo'=>'<GetDomainInfo><DomainName DomainNameID="'.$s->id.'">paid-test-placeholder.com</DomainName><Status><Belongs-To>'.$s->owner.'</Belongs-To><Expiration>2027-10-21</Expiration></Status></GetDomainInfo>',
@@ -16,7 +17,8 @@ $manageReply=static function(array $p)use($s,$reply):string {
         'GetHosts'=>'<DomainServices><HostRecords>true</HostRecords></DomainServices>'.implode('',array_map(static fn($v)=>'<host><name>'.$v['name'].'</name><type>'.$v['type'].'</type><address>'.htmlspecialchars($v['address'],ENT_XML1).'</address><mxpref>'.$v['mx_pref'].'</mxpref></host>',$s->dns)),
         'GetDomainSRVHosts'=>'<srv-records>'.implode('',array_map(static fn($v)=>'<srv><hostname>_'.$v['service'].'</hostname><protocol>_'.$v['protocol'].'</protocol><priority>'.$v['priority'].'</priority><weight>'.$v['weight'].'</weight><port>'.$v['port'].'</port><address>'.$v['target'].'</address></srv>',$s->srv??[])).'</srv-records>',
         'GetDnsSec'=>'<success>true</success><DnsSecDataCount>'.count($s->ds??[]).'</DnsSecDataCount><DnsSecData><result><ResponseCode>200</ResponseCode></result>'.implode('',array_map(static fn($v)=>'<KeyData><algorithm>'.$v['algorithm'].'</algorithm><digest>'.$v['digest'].'</digest><digesttype>'.$v['digest_type'].'</digesttype><keytag>'.$v['key_tag'].'</keytag></KeyData>',$s->ds??[])).'</DnsSecData>',
-        'ModifyNS','SetRegLock','SetHosts','SetDomainSRVHosts','AddDnsSec','DeleteDnsSec'=>'',
+        'GetContacts'=>'<GetContacts>'.implode('',array_map(static fn($role,$fields)=>'<'.$role.'>'.implode('',array_map(static fn($k,$v)=>'<'.$k.'>'.htmlspecialchars($v,ENT_XML1).'</'.$k.'>',array_keys($fields),$fields)).'</'.$role.'>',array_keys($s->contacts??[]),$s->contacts??[])).'</GetContacts>',
+        'ModifyNS','SetRegLock','Contacts','SetHosts','SetDomainSRVHosts','AddDnsSec','DeleteDnsSec'=>'',
         default=>null,
     };
     return $body===null?$reply($p):'<interface-response><Command>'.$c.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';

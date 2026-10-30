@@ -58,6 +58,22 @@ final class ManagementEvidence
         }
         if (array_key_exists('management_observation_attempts', $old)
             && (!is_int($count) || $count < $old['management_observation_attempts'] || $count > $old['management_observation_attempts'] + 1)) { throw new \DomainException('Management observation count cannot reset.'); }
+        $legacy='management_legacy_observation_attempts';
+        if(array_key_exists($legacy,$new)){
+            $value=$new[$legacy];$prior=array_key_exists($legacy,$old)?$old[$legacy]:0;
+            if(!is_int($value) || !is_int($prior) || $value<1 || $value>20 || $value<$prior || $value>$prior+1
+                || ($old['seal']??null)!=='sealed' || array_key_exists('management_observation_attempts',$old)
+                || array_key_exists('management_observation_attempts',$new)){
+                throw new \DomainException('Invalid legacy management recovery count.');
+            }
+            if($value!==$prior){
+                $history=$op->policy['staff_actions']??[];$review=$history?end($history):[];
+                if(($review['action']??null)!=='recheck' || ($review['phase']??null)!=='read_requested'
+                    || ($review['operation_key']??null)!==$op->operation_key || ($review['generation']??null)!==$op->authority_generation){
+                    throw new \DomainException('Reviewed legacy management recovery required.');
+                }
+            }
+        }elseif(array_key_exists($legacy,$old)){throw new \DomainException('Legacy management recovery count cannot reset.');}
         $before=$old['management_reads']??[];$after=$new['management_reads']??[];
         if(!is_array($before)||!array_is_list($before)||!is_array($after)||!array_is_list($after)||count($after)>20||count($after)<count($before)||array_slice($after,0,count($before))!==$before){throw new \DomainException('Management reads are append-only.');}
         if(array_key_exists('management_terminal',$old)&&($new['management_terminal']??null)!==$old['management_terminal']){throw new \DomainException('Management retirement frozen.');}

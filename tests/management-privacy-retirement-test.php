@@ -77,6 +77,7 @@ foreach(['privacy_purchase','privacy_renew'] as $action){
         $item=InvoiceItem::findOrFail($op->invoice_item_id);commerceReject(fn()=>$item->update(['description'=>'Changed pending privacy line']));$item->refresh();$itemBytes=$item->getRawOriginal();$serviceBytes=$d->service->getRawOriginal();
         if($mode==='staff'){$op->update(['policy'=>[...$op->policy,'staff_actions'=>[['action'=>'hold','phase'=>'completed','actor_id'=>$staff->id,'reason'=>'[redacted]','at'=>$clock->now()->format(DATE_ATOM)]]]]);}
         $calls=count($state->calls);$op=$management->retire($user,$op->id);$attempt=$op->attempt;expect(PrivacyRetirement::safe($op,$d),'Exact new retirement is independently verified');
+        same('Cancelled by customer',\Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::requestStatus($op)['reason'],'Retired privacy names the customer who cancelled it');
         same('cancelled',Invoice::findOrFail($op->invoice_id)->status,'Retirement cancels untouched native invoice');
         $visible($op,$d);
         if($mode==='staff'){Auth::setUser($staff);same([['time'=>'Oct 18, 2026 12:00 UTC','event'=>'Put on hold','sub'=>'[redacted]','by'=>'Staff']],StaffReviewHistory::rows($op),'Privacy-charge retirement preserves an already-redacted reason without actor lookup');}

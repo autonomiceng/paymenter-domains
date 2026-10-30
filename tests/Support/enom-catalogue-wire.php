@@ -13,8 +13,8 @@ $GLOBALS['catalogueWire']=static function($handle,array $options,array $form): b
     $ending=$form['TLD']??'com';
     $payload=match($command){
         'GetBalance'=>'<AvailableBalance>100.00</AvailableBalance>',
-        'GetTLDList'=>($GLOBALS['catalogueMissing']??false)?'<TLDList><TLD>net</TLD></TLDList>':'<TLDList><TLD>com</TLD><TLD>net</TLD></TLDList>',
-        'GetTLDDetails'=>'<TLDs><TLD><TLD>'.$ending.'</TLD><Registration><Minimum>1</Minimum><Maximum>1</Maximum><Unit>year</Unit><DNSRequired>false</DNSRequired></Registration><ExtAttributes>false</ExtAttributes><Renewal><AutoRenewOnly>false</AutoRenewOnly></Renewal></TLD></TLDs>',
+        'GetTLDList'=>($GLOBALS['catalogueMissing']??false)?'<TLDList><TLD>net</TLD></TLDList>':'<TLDList>'.implode('',array_map(static fn(string $name)=>'<TLD>'.$name.'</TLD>',$GLOBALS['catalogueList']??['com','net'])).'</TLDList>',
+        'GetTLDDetails'=>'<TLDs><TLD><TLD>'.$ending.'</TLD><Registration><Minimum>1</Minimum><Maximum>'.($GLOBALS['catalogueMaximum'][$ending]??1).'</Maximum><Unit>year</Unit><DNSRequired>false</DNSRequired></Registration><ExtAttributes>false</ExtAttributes><Renewal><AutoRenewOnly>false</AutoRenewOnly></Renewal></TLD></TLDs>',
         'GetExtAttributes'=>'<ResponseCount>0</ResponseCount>',
         'PE_GetProductPrice'=>($GLOBALS['catalogueBadPrice']??false)?'<ProductPrice><Price>invalid</Price></ProductPrice>':'<ProductPrice><ProductEnabled>true</ProductEnabled><Price>10.0000</Price></ProductPrice>',
         'Check'=>'<Domains><Domain><Name>'.($form['SLD'].'.'.$ending).'</Name><RRPCode>210</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP></Domain></Domains>',

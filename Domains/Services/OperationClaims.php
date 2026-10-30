@@ -43,6 +43,8 @@ final class OperationClaims
                 return null; // Expiry is reconciliation work, even without a seal; never reclaim.
             }
             if (!in_array($op->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { return null; }
+            // Discovery may not have visited this order before dispatch starts.
+            ObservationWork::discardUnsent($domain,$this->clock->now(),$all);
             if ($op->action === 'transfer' && !TransferInputs::validCode($op->payload['epp'] ?? null)) { return null; }
             $capacityRetry=self::capacityRetry($op);$testCallRetry=self::testCallRetry($op);
             // A TEST history proves the prior send was refused. A staff readmission therefore starts a fresh

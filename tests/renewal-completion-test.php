@@ -20,6 +20,11 @@ $engine->run($op->id,$writer); $state->expiry='2028-10-18'; $state->charge='8.00
 $completed=$completion->run($op->id);
 same('succeeded',$completed->state,'Captured renewal uses the same provider-local window');
 expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($completed,$d->fresh(),$b),'Renewal local proof remains usable for the next cycle');
+// Hiding a TLD stops new sales only. Names already held keep renewing.
+config(['domains.hidden_endings'=>['com']]);
+same([],\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($b)->endings['com']['register'],'Hidden TLD takes no new registrations');
+same($d->domain,$authority->capture(new RenewalRequest($d->id,1,2,'2028-10-18','456'))[1],'Hidden TLD keeps renewing');
+config(['domains.hidden_endings'=>[]]);
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-transient-placeholder.com')); [$engine,$writer,$completion]=$compose($b);
 same('pending',$engine->run($op->id,$writer)->state,'Original transient cycle sent');
 $state->fail=ReadCommand::Info;

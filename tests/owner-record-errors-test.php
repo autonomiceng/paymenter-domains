@@ -36,7 +36,7 @@ foreach(['dns'=>['records'=>[['name'=>'bad host','type'=>'A','address'=>'secret-
     foreach($invalid as$field){expect($field->hasAttribute('aria-describedby'),'Field error is described');}
     if($action==='dns'){expect(str_contains($html,'value="secret-invalid-value"'),'Public DNS draft is retained only in direct escaped response');}
     $fieldMessages=match($action) {
-        'dns'=>['name'=>'Enter @, *, or a hostname such as www.','address'=>'Enter an address for this record type: an IP for A or AAAA, a hostname ending in a dot for CNAME or MX, a web address for URL or FRAME, or text for TXT.'],
+        'dns'=>['name'=>'Enter @, *, or a hostname such as www.','address'=>'Enter an IPv4 address, such as 192.0.2.1.'],
         'srv'=>['protocol'=>'Choose TCP or UDP.','priority'=>'Enter a number from 0 to 65535.','weight'=>'Enter a number from 0 to 65535.','port'=>'Enter a number from 0 to 65535.','target'=>'Enter a hostname ending in a dot, such as sip.example.com.'],
         default=>[],
     };

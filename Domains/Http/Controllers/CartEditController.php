@@ -27,7 +27,7 @@ final readonly class CartEditController
             $name=$r->input('domain');$term=$r->input('term');if(!is_string($name)||strlen($name)>253||!is_string($term)||!preg_match('/^(?:[1-9]|10)$/D',$term)){throw new \DomainException;}
             $plan=$line->product->plans()->where('billing_period',(int)$term)->sole();$this->catalogue->mapping($line->product,$plan);
             NativeCart::add($line->product,$plan,[],['domain'=>$name],1,$line->id);
-        }catch(\Throwable $e){\Illuminate\Support\Facades\Log::warning('Domains cart edit refused.',['exception_class'=>$e::class]);return redirect()->route('domains.cart.edit',['item'=>$item])->with('domains_notice','We couldn’t update this domain. Check the name and retry. If this offer or seller changed, remove this line from your cart and search again.');}
+        }catch(\Throwable $e){\Illuminate\Support\Facades\Log::warning('Domains cart edit refused.',['exception_class'=>$e::class]);return redirect()->route('domains.cart.edit',['item'=>$item])->with('domains_notice','We couldn’t update this domain. Check the name and retry. If the price changed, remove this line from your cart and search again.');}
         return redirect()->route('cart');
     }
 }

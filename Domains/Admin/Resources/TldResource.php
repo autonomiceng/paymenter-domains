@@ -57,18 +57,19 @@ class TldResource extends Resource
                     .($row($record,$livewire)['seller']===(int)$record->server_id?' · new orders':''))->wrap(),
             TextColumn::make('renewal')->label('Renewal price')->state(fn(Tld $record,$livewire)=>$renewal($record,$livewire)['retail']??Missing::LABEL)
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
-                ->description(fn($state)=>$state===Missing::LABEL?'Sync TLD prices needed':null)->extraAttributes(['style'=>'white-space:nowrap']),
+                ->description(fn($state)=>$state===Missing::LABEL?'Use Sync prices.':null)->extraAttributes(['style'=>'white-space:nowrap']),
             TextColumn::make('cost')->label('Cost')->visible($grants->costs)->state(fn(Tld $record,$livewire)=>$renewal($record,$livewire)['cost']??Missing::LABEL)
                 ->color(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL||TldFacts::costNote($renewal($record,$livewire))?Missing::COLOR:null)
                 ->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
-                ->description(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL?'No cost saved':TldFacts::costNote($renewal($record,$livewire)))->extraAttributes(['style'=>'white-space:nowrap']),
+                ->description(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL?'Use Sync prices.':TldFacts::costNote($renewal($record,$livewire)))->extraAttributes(['style'=>'white-space:nowrap']),
             TextColumn::make('holders')->label('Domains')->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['holders']),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['label'])
                 ->color(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['tone'])->description(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['reason']),
         ])->filters([SelectFilter::make('registrar_key')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo']),
             SelectFilter::make('server_id')->label('Registrar account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all())])
             ->recordUrl(fn($record)=>self::getUrl('view',['record'=>$record]))->defaultSort('tld')->paginated([25,50,100])
-            ->emptyStateHeading('No TLDs yet')->emptyStateDescription(null);
+            ->emptyStateHeading('No TLDs yet')->emptyStateDescription('Choose what you sell on a registrar account.')
+            ->emptyStateActions([\Filament\Actions\Action::make('choose_what_you_sell')->label('Choose what you sell')->url(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl())]);
     }
     /** Accounts whose last price sync failed, with the stored cause in words. */
     public static function syncFailures(): array

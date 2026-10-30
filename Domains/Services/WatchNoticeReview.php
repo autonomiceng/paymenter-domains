@@ -22,6 +22,16 @@ final class WatchNoticeReview
         return ['id'=>(int)$d->id,'channel'=>$d->channel,'state'=>$d->state,'native_id'=>$d->native_id,'accepted_at'=>$d->accepted_at,
             'evidence_type'=>$d->channel==='mail'?'email_log':'notification','resend_of'=>$d->resend_of];
     }
+    /** What staff read after Send again, from the new copy's state; null means no copy was made. Accepted mail is only queued, so Email Logs is the check. */
+    public static function resendResult(string $channel,?string $state): string
+    {
+        $mail=$channel==='mail';
+        return match($state){
+            'accepted'=>$mail?'Queued to send again. Email Logs shows if it sent.':'Sent again to the customer’s notifications.',
+            'uncertain'=>'We can’t tell if this copy went out. '.($mail?'Check Email Logs':'Ask the customer').' before you send it again.',
+            default=>'Not sent again. The alert may be closed or turned off.',
+        };
+    }
     public static function resend(User $actor,int $id,int $nativeId,string $reason,string $requestKey,int $now,WatchNoticeDelivery $delivery): ?int
     {
         if (DB::transactionLevel()!==0 || !StaffReason::valid(trim($reason),10,500) || !preg_match('/\A[a-f0-9]{64}\z/D',$requestKey)) { throw new \DomainException('Native evidence, reason and request key are required.'); }

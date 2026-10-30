@@ -24,7 +24,7 @@ class RegistrarSetup extends Page implements HasTable
     use InteractsWithTable;
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-cog-6-tooth';
     protected static string|\UnitEnum|null $navigationGroup='Domains';
-    protected static ?int $navigationSort=4;
+    protected static ?int $navigationSort=5;
     protected static ?string $title='Registrars';
     protected static ?string $slug='registrar-setup';
     /** Row facts per server for one render. */
@@ -52,7 +52,7 @@ class RegistrarSetup extends Page implements HasTable
         $row=fn(Server $s)=>$this->row($s);
         $missing=static fn(TextColumn $column)=>$column->color(fn($state,Server $record)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null);
         return $table->query(Server::query()->where('extension','Domains'))->defaultSort('id')->paginated(false)->heading('Accounts')
-            ->emptyStateHeading('No registrar accounts')->emptyStateDescription(null)
+            ->emptyStateHeading('No registrar accounts')->emptyStateDescription('Add one to start selling domains.')
             ->recordUrl(fn(Server $record)=>RegistrarAccount::getUrl(['account'=>$record->id]))
             ->columns([
                 TextColumn::make('name')->label('Account')->weight('medium')->wrap()->description(fn(Server $record)=>$row($record)['summary'])

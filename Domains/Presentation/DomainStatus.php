@@ -25,7 +25,7 @@ final class DomainStatus
         'held' => ['under_review', null], 'uncertain' => ['under_review', null], 'active_no_expiry' => ['under_review', 'Expiry missing'],
         'expired' => ['expired', null], 'grace' => ['expired', 'In grace period'], 'watch.expired' => ['expired', 'Renew at your registrar'],
         'redemption' => ['redemption', null], 'watch.redemption' => ['redemption', null],
-        'registration_rejected' => ['failed', 'Registration rejected'], 'transfer_rejected' => ['failed', 'Transfer rejected'],
+        'registration_rejected' => ['failed', 'Registration did not finish'], 'transfer_rejected' => ['failed', 'Transfer did not finish'],
         'cancelled' => ['cancelled', null],
     ];
     /** @return array{label:string,tone:string,reason:?string} */

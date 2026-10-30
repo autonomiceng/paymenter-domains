@@ -54,8 +54,8 @@
                             <tr>
                                 <th scope="row" class="domains-domain domains-cell-wide">.{{ $row['tld'] }}@if ($row['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</th>
                                 <td class="domains-end domains-num" data-label="Register">{{ $row['register'] ?? 'Not offered' }}</td>
-                                <td class="domains-end domains-num" data-label="Renew">{{ $row['renew'] ?: 'Not offered' }}</td>
-                                <td class="domains-end domains-num" data-label="Transfer">{{ $row['transfer'] ?? 'Not offered' }}</td>
+                                <td class="domains-end domains-num" data-label="Renew">@if ($row['renew']){{ $row['renew'] }}@else @include('domains::partials.missing', ['cause' => \Paymenter\Extensions\Servers\Domains\Presentation\Missing::ASK_FIRST, 'stack' => true])@endif</td>
+                                <td class="domains-end domains-num" data-label="Transfer">@if ($row['transfer'] !== null){{ $row['transfer'] }}@elseif ($row['transfersOn'] ?? false)@include('domains::partials.missing', ['cause' => \Paymenter\Extensions\Servers\Domains\Presentation\Missing::ASK_FIRST, 'stack' => true])@else Transfers off @endif</td>
                                 @if ($showTerms)<td class="domains-end" data-label="Register for">{{ $termRange($row['terms']) }}</td>@endif
                             </tr>
                         @endforeach

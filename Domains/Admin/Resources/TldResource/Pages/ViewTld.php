@@ -9,7 +9,7 @@ use Filament\Infolists\Components\TextEntry;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{MissingEntry,Staff,TldFacts,SettingsActions};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,MissingEntry,Staff,TldFacts,SettingsActions};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\LifecyclePolicies;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
@@ -17,11 +17,19 @@ class ViewTld extends ViewRecord
 {
     protected static string $resource=TldResource::class;
     public string $reviewStamp='';
-    /** Page names for the shared settings actions. Edit prices is in More and on the prices section; Edit sits on the grace rows.
+    /** Page names for the shared settings actions. Edit prices is the main button and is on the prices section; Edit sits on the grace rows.
      * Default pricing is edited on the registrar account page, and saving prices publishes them. */
     private const LABELS=['seller'=>'Change registrar','override'=>'Edit prices','tld_settings'=>'Edit terms','lifecycle'=>'Edit grace and redemption'];
     public function mount(int|string $record): void
     {parent::mount($record);$this->reviewStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp((int)$this->getRecord()->server_id,(int)$this->getRecord()->id);}
+    protected function afterActionCalled(Action $action): void
+    {
+        parent::afterActionCalled($action);
+        // Writers load their own models. Rebuild the page so the next change needs no reload.
+        $t=$this->getRecord()->refresh();$this->reviewStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp((int)$t->server_id,(int)$t->id);
+        unset($this->cachedSchemas['infolist']);$this->cachedActions=[];$this->cachedHeaderActions=[];
+        $this->cacheInteractsWithHeaderActions();$this->forceRender();
+    }
     /** @return array<string,Action> */
     private function settings(): array
     {
@@ -35,7 +43,7 @@ class ViewTld extends ViewRecord
     protected function getHeaderActions(): array
     {
         $actions=$this->settings();
-        return [$actions['seller']->color('primary'),ActionGroup::make([$actions['override'],$actions['tld_settings']])->label('More')->button()->color('gray')];
+        return [$actions['override']->color('primary'),ActionGroup::make([$actions['seller'],$actions['tld_settings']])->label('More')->button()->color('gray')];
     }
     public function overrideAction(): Action {return $this->settings()['override'];}
     public function lifecycleAction(): Action {return $this->settings()['lifecycle'];}
@@ -63,27 +71,27 @@ class ViewTld extends ViewRecord
     {
         $grants=Staff::requireView();$t=$this->getRecord();$snapshot=TldFacts::snapshot($t,$grants);
         $sellerId=TldFacts::sellerId($t->tld);$seller=$sellerId===null?null:Account::where('server_id',$sellerId)->first();
-        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):null,$seller?'Existing domains stay with their registrar':'No registrar selected')
+        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):null,$seller?'Existing domains stay with their registrar':'No registrar selected. Use Change registrar.')
                 ->suffix($seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
             self::entry('Terms',TldFacts::terms($t))];
         $edit=$this->button($this->getAction('lifecycle',false),'Edit');
         foreach(LifecyclePolicies::facts($t,now()->toDateTimeImmutable(),$grants->costs) as $label=>$fact){
             $entry=self::entry($label,$fact['value'],$fact['sub']);
-            if($fact['help']){$entry->hintIcon('heroicon-m-question-mark-circle',$fact['help']);}
+            if($fact['help']){$entry->hintAction(HelpHint::make($fact['help']));}
             if($fact['edit']&&$edit){$entry->hint($edit);}
             $sales[]=$entry;
         }
-        $last=TldFacts::lastPrices((int)$t->server_id);$failure=TldFacts::syncFailure((int)$t->server_id,$last);
-        $until=collect($snapshot['prices'])->pluck('until')->filter()->min();
-        $valid=$until?'Valid until '.\Carbon\CarbonImmutable::parse($until)->utc()->format('M j, Y H:i').' UTC':null;
-        $stamp=static fn($at)=>$at->format('M j, Y H:i').' UTC';
+        // Sales keep the last synced cost; old prices get a quiet warning, never a stop.
+        $synced=TldFacts::lastSynced($snapshot['prices']);$failure=TldFacts::syncFailure((int)$t->server_id);
+        $old=$synced!==null&&$synced->lt(now()->subDays(TldFacts::SYNC_WARN_DAYS));
+        $rule='Sales use the last synced cost. They stop only if there is no cost or the price is below cost.';
+        $sync=[];
         if($failure){
             $cause=e($failure['cause'].($failure['at']?' · '.$failure['at']:''));$link=self::link();
-            $sync=[self::entry('Last sync','Sync failed',new HtmlString($cause.($link?'<div>'.$link->toHtml().'</div>':'')),'danger')];
-            if($last){$sync[]=self::entry('Last good prices',$stamp($last),$valid);}
-        }else{
-            $sync=[self::entry('Last sync',$last?$stamp($last):null,$last?$valid:'Not synced yet')->hint($last?null:self::link())];
+            $sync[]=self::entry('Last price sync','Sync failed',new HtmlString($cause.($link?'<div>'.$link->toHtml().'</div>':'')),'danger');
         }
+        $sync[]=self::entry('Prices last synced',$synced?->format('M j, Y'),$synced===null?'Not synced yet. Use Sync prices on the TLD list.':new HtmlString(
+            ($old?'<div style="color:rgb(217 119 6)">More than '.TldFacts::SYNC_WARN_DAYS.' days ago. Sync prices to get current costs.</div>':'').'<div>'.e($rule).'</div>'),$old?'warning':null);
         $override=$this->getAction('override',false);
         return $schema->components([
             Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()->schema([

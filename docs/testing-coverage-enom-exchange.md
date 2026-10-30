@@ -14,6 +14,16 @@ the management read set, including registration nameserver readback, also requir
 current processing. Paused management reconciliation may perform reads.
 Credential-loading time reduces the received remaining timeout.
 
+Enom TEST sends pass one per-login send limit (`EnomTestSendLimit`) at the two physical
+send sites, after the deployment send guard and before the last deadline check. It counts
+every attempt in any 24 hours and per minute, refuses inside an outer transaction and
+refuses on any database error. `enom-test-send-limit-test.php`,
+`enom-send-limit-upgrade-test.php`, `test_enom_send_limit_concurrency.py` (SQLite) and
+`test_enom_send_limit_mariadb.py` cover it. One stated exception: the development-only
+conversion collector (`scripts/conversion/EvidenceClient.php`) is not counted. It runs with
+the app stopped and a read-only database, so it cannot record attempts; it sends one
+GetDomainInfo per selected holding, at most one per second per login, with no retry.
+
 Each role has a closed command set. Fixed TEST/live HTTPS origins, credentialed
 POST, verified TLS, disabled proxies/redirects/debugging, refusal when
 `SSLKEYLOGFILE` is set, bounded body streaming and total/connect timeouts apply to
