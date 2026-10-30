@@ -34,7 +34,7 @@ namespace {
                 $notice::boot();
                 same($missing,$notice::missing(),'Missing page APIs remain visible to staff diagnostics');
                 $warning=collect(\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'])->firstWhere('label','Pricing change warning');
-                expect($warning!==null&&str_contains($warning['cause'],$missing),'System checks identify the exact missing pricing notice API');
+                expect($warning!==null&&str_contains($warning['help'],$missing),'System checks identify the exact missing pricing notice API');
                 foreach($all as$scope){
                     same(in_array($scope,$available,true),\Filament\Support\Facades\FilamentView::hasRenderHook(\Filament\View\PanelsRenderHook::PAGE_HEADER_WIDGETS_BEFORE,$scope),'Only available pricing notice scopes register: '.$missing);
                     if(!in_array($scope,$available,true)){
