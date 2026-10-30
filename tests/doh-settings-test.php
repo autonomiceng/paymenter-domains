@@ -60,7 +60,9 @@ $setRights([Staff::VIEW, PublicSuffixList::VIEW]);
 Livewire::actingAs($staff)->test(Page::class)->assertSee('cloudflare-dns.com')->assertSee(DohEndpoint::IP)->assertDontSee('Missing')->assertActionHidden('configure')->assertActionHidden('check');
 same(0, $calls, 'Rendering no query'); $setRights($rights);
 // The ? text must match FallbackDnsReader: a failed resolver query retries once with the server's resolver.
-Livewire::actingAs($staff)->test(Page::class)->assertSee("If the resolver fails, checks retry once with the server's resolver.")->assertDontSee('Connection and response failures use');
+// Filament serializes tooltip content for Alpine, including the apostrophe as \u0027.
+$hint = json_encode("If the resolver fails, checks retry once with the server's resolver.", JSON_HEX_APOS);
+Livewire::actingAs($staff)->test(Page::class)->assertSee(substr($hint, 1, -1), false)->assertDontSee('Connection and response failures use');
 $page = Livewire::actingAs($staff)->test(Page::class); $cachedCheck = $page->instance()->getCachedHeaderActions()[1]->getActionFunction();
 $cachedSave = $page->instance()->getCachedHeaderActions()[0]->getActionFunction();
 $setRights([Staff::VIEW, PublicSuffixList::VIEW]);
