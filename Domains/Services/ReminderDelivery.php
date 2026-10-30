@@ -13,7 +13,7 @@ final class ReminderDelivery
 {
     public static function reserve(int $domainId,string $identity,string $key,array $data,User $user,int $now):?array
     {
-        $data+=['renews_automatically'=>false,'currency'=>'USD'];if(($data['invoice']??null)===false){$data['invoice']=null;} // Retained templates must never promise automatic renewal.
+        $data+=['renews_automatically'=>false,'currency'=>'USD','can_turn_on'=>false];if(($data['invoice']??null)===false){$data['invoice']=null;} // Retained templates must never promise automatic renewal.
         $digest=hash('sha256',$domainId.':'.$identity);
         if(DB::table('domains_reminder_deliveries')->where('delivery_key',$digest)->exists()){return null;}
         $template=NotificationTemplate::where('key',$key)->lockForUpdate()->first();

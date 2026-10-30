@@ -25,7 +25,7 @@ $page=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->serve
 same([false,false,21,7],[$defaults['scheduled'],$defaults['manual'],(int)$defaults['issue_days'],(int)$defaults['due_days']],'Modal prefills effective defaults');
 
 // Owner requests stay open until the confirmed expiry date (DomainBilling::requireRequest), not the due day.
-$copy=Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::description('renewal_billing');
+$copy=Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::details('renewal_billing');
 expect(str_contains($copy,'Owner requests let a customer ask for a renewal invoice for an active domain at any time before the confirmed expiry date.'),'Owner request copy states the expiry cutoff');
 expect(!str_contains($copy,'before the due day'),'Owner request copy drops the old due-day cutoff');
 
@@ -69,7 +69,7 @@ $saved=$rows();$history=count(Review::historyRows($server->fresh()));
 Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($name)->setActionData(['scheduled'=>true,'manual'=>true,'issue_days'=>'7','due_days'=>'7','confirmed'=>true,'reason'=>'Refuse an equal issue and due day'])
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified(Notification::make()->danger()->title("Couldn't save")->body('Issue days must be more than due days. Issue days can be at most 365 and due days at least 1. Nothing was saved.'));
 $stale=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($name);$writer->run($review(),[...$valid,'manual'=>false,'issue_days'=>2,'due_days'=>1]);$saved=$rows();$history=count(Review::historyRows($server->fresh()));
-$stale->setActionData([...$valid,'issue_days'=>'40','reason'=>'Stale page must refuse'])->callMountedAction()->assertNotified(Notification::make()->danger()->title("Couldn't save")->body('Settings changed. Reload this page.'));
+$stale->setActionData([...$valid,'issue_days'=>'40','reason'=>'Stale page must refuse'])->callMountedAction()->assertNotified(Notification::make()->danger()->title("Couldn't save")->body('Someone else changed this. Nothing was saved. Try again.'));
 same([$saved,$history],[$rows(),count(Review::historyRows($server->fresh()))],'Refused native submissions write nothing');
 
 // An invalid saved calendar is reported, never silently repaired.

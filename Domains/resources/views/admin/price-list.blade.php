@@ -65,7 +65,7 @@
             </ul>
         </x-filament::section>
     @endif
-    <p class="domains-price-muted" style="font-size:.875rem">Missing means no price is saved for this many years. It is never worked out from the 1-year price.</p>
+    <p class="domains-price-muted" style="font-size:.875rem">Missing means no price is saved for this many years. It is never worked out from the 1-year price. To add one, open the TLD page and use Edit prices.</p>
     <div class="domains-prices" style="overflow-x:auto">
         <table data-price-list style="width:100%;min-width:58rem;font-size:.875rem">
             <caption style="text-align:left;padding:.75rem">Saved prices in <span data-price-currency>USD</span> for <span data-price-years>{{ $matrix['years'] }}</span> {{ $matrix['years'] === 1 ? 'year' : 'years' }}</caption>
@@ -85,7 +85,7 @@
                         @php($offset=5 + $loop->index*4)
                         @foreach(['cost'=>'Cost','price'=>'Price','profit'=>'Est. profit'] as $key => $label)
                             <td class="money {{ $key !== 'cost' && ($cell['below_cost'] || $cell['loses_money']) ? 'loss' : '' }}">
-                                <span data-price-value="{{ $offset+$loop->index }}" @if($cell[$key] === null) class="missing" @endif>{{ $values[$offset+$loop->index] }}</span>
+                                <span data-price-value="{{ $offset+$loop->index }}" @if($cell[$key] === null && $cell['status'] !== \Paymenter\Extensions\Servers\Domains\Services\PriceList::TRANSFERS_OFF) class="missing" @endif>{{ $values[$offset+$loop->index] }}</span>
                                 @if($key === 'profit')<div data-price-value="{{ $offset+3 }}" style="white-space:normal;font-size:.75rem">{{ $values[$offset+3] }}</div>@endif
                             </td>
                         @endforeach

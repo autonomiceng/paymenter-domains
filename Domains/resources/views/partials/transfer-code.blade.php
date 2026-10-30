@@ -12,13 +12,13 @@
 @else
 @if ($domain->transfer['phase'] === 'pending')<p>Your current registrar may email the domain owner to approve the transfer. Approving it there can speed things up. Most transfers finish within 5 to 7 days.</p>
 @elseif ($domain->transfer['phase'] === 'review')<p>We’re checking your transfer and will update this page. You don’t need to do anything.</p>
-@elseif ($domain->transfer['phase'] === 'setup_review')<p>Your updated details are awaiting review by our team. Contact support to discuss the next step.</p>
+@elseif ($domain->transfer['phase'] === 'setup_review')<p>Your updated details are awaiting review by our team. We’ll update this page. Questions? @include('domains::partials.contact-support').</p>
 @elseif ($domain->transfer['phase'] === 'cutoff' && $domain->setup['contacts'])<p>Your saved auth code stays in place. The deadline to enter it has passed, so this transfer remains on hold. Our team will review any updated details.</p>
-@elseif ($domain->transfer['phase'] === 'cutoff')<p>The time to enter or change this auth code has passed. Contact support and we’ll sort it out.</p>
-@elseif ($domain->transfer['phase'] === 'payment')<p>We couldn’t confirm the payment date for this transfer. Contact support and we’ll sort it out.</p>
-@else<p>Your transfer is on hold. Contact support and we’ll sort it out.</p>@endif
+@elseif ($domain->transfer['phase'] === 'cutoff')<p>The time to enter or change this auth code has passed. @include('domains::partials.contact-support') and we’ll sort it out.</p>
+@elseif ($domain->transfer['phase'] === 'payment')<p>We couldn’t confirm the payment date for this transfer. @include('domains::partials.contact-support') and we’ll sort it out.</p>
+@else<p>Your transfer is on hold. @include('domains::partials.contact-support') and we’ll sort it out.</p>@endif
 @endif
-@if ($domain->transfer['unchecked'])<dl class="domains-facts"><div><dt>Expires</dt><dd>@include('domains::partials.missing', ['cause' => 'Shows when the transfer completes'])</dd></div></dl>@endif
+@if ($domain->transfer['unchecked'])<dl class="domains-facts"><div><dt>Expires</dt><dd>@include('domains::partials.missing', ['cause' => \Paymenter\Extensions\Servers\Domains\Presentation\Missing::fills('when the transfer finishes')])</dd></div></dl>@endif
 
 @if ($domain->setup['contacts'])
 <section class="domains-section">@include('domains::partials.registration-setup')</section>

@@ -19,7 +19,8 @@ $hidden=[];
 foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
     DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>$status,'provider_expires_at'=>null,'last_synced_at'=>null]);
     $html=html_entity_decode(strip_tags(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSuccessful()->html()),ENT_QUOTES);
-    foreach(DomainFacts::ALERTS as $code=>[$row,$cause]){
+    foreach(DomainFacts::ALERTS as $code=>[$row]){
+        $cause=DomainFacts::alertCause($code);
         if(!str_contains($html,$cause)){$hidden[]=$code.'/'.$status;}
     }
 }
@@ -38,12 +39,12 @@ same(1,substr_count($text,'Renewal invoice missing'),'Fallback cause appears onc
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)
     ->filterTable('server_id',(string)$domain->server_id)->filterTable('alerts',true);
 $page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters')
-    ->assertCanSeeTableRecords([$domain])->assertTableColumnExists('alert')->assertSee('Expiry missing')->assertSee('+1 more');
-// Repeated records for the same cause count once; resolved causes leave the summary.
+    ->assertCanSeeTableRecords([$domain])->assertSee('Expiry missing.')->assertDontSee('Renewal invoice missing')->assertDontSee('+1 more');
+// The row names one step, the first danger alert; the domain page lists the rest. Resolved causes leave the row.
 ObligationAlerts::record($domain,'unknown_expiry',time(),identity:'second-expiry-check');
-Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee('+1 more')->assertDontSee('+2 more');
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee('Expiry missing.')->assertDontSee('+1 more')->assertDontSee('+2 more');
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->where('code','unknown_expiry')->update(['resolved_at'=>time()]);
-Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee('Renewal invoice missing')->assertDontSee('Expiry missing')->assertDontSee('+1 more');
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee('Renewal invoice missing.')->assertDontSee('Expiry missing');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertDontSee('Expiry missing')->assertSee('Renewal invoice missing');
 // Every allowlisted kind, including late payments, has a cause in the actual list cell.
 foreach([...array_keys(DomainFacts::ALERTS),'acquisition_late_money'] as $code){
@@ -56,7 +57,7 @@ DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update([
 foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($domain,$code,time());}
 DB::table('domains_domains')->where('id',$domain->id)->update(['renewal_policy'=>'unreadable']);
 $unreadable=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSee('Open alerts');
-foreach(DomainFacts::ALERTS as [$row,$cause]){$unreadable->assertSee($cause);}
+foreach(array_keys(DomainFacts::ALERTS) as $code){$unreadable->assertSee(DomainFacts::alertCause($code));}
 // Unknown kinds still surface safely, without printing stored codes.
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->where('code','unknown_expiry')->limit(1)->update(['resolved_at'=>null,'code'=>'PRIVATE-UNKNOWN-CODE']);

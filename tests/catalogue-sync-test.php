@@ -138,6 +138,32 @@ same(true, Tld::where('server_id', 1)->firstOrFail()->register_enabled, 'Final r
 foreach (Tld::all() as $tld) { same(false, $tld->enabled, 'Import never selects or enables a seller'); $tld->update(['enabled' => true]); }
 $sellers = new SellerPolicies($prices, $bindings); $sellers->initialize('com');
 $sellers->change('com', 1, 1, true, true, $clock->now()); $old = $sellers->selection('com', 'register', 3, $clock->now());
+// Imports initialize new rows, but cannot narrow bounds that staff may reuse later.
+$tld = Tld::where('server_id', 1)->firstOrFail();
+same([1, 3], [$tld->min_years, $tld->max_years], 'First import initializes supported bounds');
+$tld->update(['min_years' => 1, 'max_years' => 10]); $enom->max = 10;
+$acceptTerms = static function (array $terms) use ($bound, $row): void {
+    $accepted = CatalogueAcceptances::load($bound[1]);
+    CatalogueAcceptances::save($bound[1], $accepted->revision, ['com' => [...$row, 'register' => $terms]]);
+};
+$acceptTerms(range(1, 10));
+same(1, $sync->refresh(1, $context(1))['synced'], 'Import all configured years');
+$ten = $sellers->selection('com', 'register', 10, $clock->now());
+foreach ([[1, 2], [2], []] as $terms) {
+    $acceptTerms($terms);
+    same(1, $sync->refresh(1, $context(1))['synced'], 'Import narrowed acceptance');
+    same([1, 10], [$tld->fresh()->min_years, $tld->fresh()->max_years], 'Import preserves saved term bounds');
+    if ($terms) { same(2, $sellers->selection('com', 'register', 2, $clock->now())->term, 'Accepted year remains sold'); }
+    $reject(fn () => $sellers->selection('com', 'register', 10, $clock->now()), $terms ? 'Acquisition acceptance unavailable.' : 'Seller action or term is unavailable.');
+    $reject(fn () => DB::transaction(fn () => $sellers->admit([$ten], $clock->now())), $terms ? 'Acquisition acceptance unavailable.' : 'Seller action or term is unavailable.');
+}
+$acceptTerms(range(1, 10));
+$reject(fn () => $sellers->selection('com', 'register', 10, $clock->now()), 'Seller action or term is unavailable.');
+same(1, $sync->refresh(1, $context(1))['synced'], 'Widened acceptance imports every year again');
+same(10, $sellers->selection('com', 'register', 10, $clock->now())->term, 'Later years return without editing bounds');
+same('89.5500', $prices->current(1, $bound[1]->fingerprint, 'com', 'register', 10, 'USD', $clock->now())->wholesale, 'Restored year has its exact term cost');
+$tld->update(['min_years' => 1, 'max_years' => 3]); $enom->max = 3; $acceptTerms([1, 3]);
+same(1, $sync->refresh(1, $context(1))['synced'], 'Resume original configured terms');
 $sellers->change('com', 2, 2, true, true, $clock->now());
 $reject(fn () => DB::transaction(fn () => $sellers->admit([$old], $clock->now())), 'Seller selection changed; refresh checkout.');
 // Legacy cost refreshes cannot inherit publication proof or extend its cadence.
@@ -160,6 +186,7 @@ same(['synced' => 1, 'failed' => ['.co.uk'], 'failure_codes' => ['.co.uk' => 'ca
 same($compound, DB::table('domains_prices')->where('tld', 'co.uk')->get()->toJson(), 'Omission retains old evidence');
 $ns->omit = false; $enom->max = 1;
 same(1, $sync->refresh(1, $context(1))['synced'], 'Changed live bounds accepted without extrapolation');
+same([1, 3], [Tld::where('server_id', 1)->firstOrFail()->min_years, Tld::where('server_id', 1)->firstOrFail()->max_years], 'Provider narrowing preserves saved bounds');
 $sellers->change('com', 3, 1, true, true, $clock->now());
 // Reopening configured bounds cannot restore a live-unsupported retained term.
 Tld::where('server_id', 1)->update(['max_years' => 3]);
@@ -248,7 +275,10 @@ $next = $sync->refresh(1, $context(1, 5)); same(1, $next['synced'], 'Next cadenc
 expect($first['failed'] !== $next['failed'], 'Tail ending is not permanently starved');
 same(1, $sync->refresh(1, $context(1, 5), new CatalogueFreshness, ['net'])['synced'], 'Explicit bounded subset reaches tail holder');
 $reject(fn () => $sync->refresh(1, $context(1), new CatalogueFreshness, ['invalid']), 'Unaccepted refresh subset.');
+$saved = $prices->renewal(2, $bound[2]->fingerprint, 'com', 'USD', $clock->now());
 $clock->at = $clock->at->modify('+2 hours');
-same(true, $prices->renewal(2, $bound[2]->fingerprint, 'com', 'USD', $clock->now())->retained, 'Failure margin expiry retains holder retail');
+$later = $prices->renewal(2, $bound[2]->fingerprint, 'com', 'USD', $clock->now());
+same(false, $later->retained, 'Saved cost stays current past the former failure margin');
+same([$saved->id, $saved->revision, $saved->retail], [$later->id, $later->revision, $later->retail], 'Age never changes the holder price or its identity');
 $nativeSuccessful = true;
 echo "Shared dual-driver catalogue, acceptance revisions, publication and retained-holder checks passed.\n";

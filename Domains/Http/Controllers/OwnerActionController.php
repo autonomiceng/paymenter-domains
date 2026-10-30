@@ -99,7 +99,7 @@ final readonly class OwnerActionController
             if (in_array($action,['dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'],true)) {
                 $view=(new OwnedDomainController($this->owners))->show($request,$domain);
                 $dto=\Paymenter\Extensions\Servers\Domains\Services\OwnerRecordDraft::apply($view->getData()['domain'],$action,$request->request->all());
-                $messages=in_array($action,['ds_delete','glue_delete'],true)?['owner_action'=>'We couldn’t save this change. Reload the page and try again.']:$error->messages($dto->name);
+                $messages=in_array($action,['ds_delete','glue_delete'],true)?['owner_action'=>'We couldn’t save this change. Reload the page and try again.']:$error->messages($dto->name,$request->request->all());
                 $errors=(new \Illuminate\Support\ViewErrorBag)->put('default',new \Illuminate\Support\MessageBag($messages));
                 return response($view->with(['domain'=>$dto,'errors'=>$errors]),422)->header('Cache-Control','no-store, private');
             }

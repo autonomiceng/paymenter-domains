@@ -8,17 +8,17 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainQueries,Labels};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,BalanceReads,BalanceSchema,CatalogueAcceptances,EnomTestCallSchema,EnomTestRegistration,OperationClaims,Rdap,RenewalAcceptance,Runtime,TransferPrecheck,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,BalanceReads,BalanceSchema,CatalogueAcceptances,EnomTestSendLimitSchema,EnomTestRegistration,OperationClaims,Rdap,RenewalAcceptance,Runtime,TransferPrecheck,WriteAcceptance,WriteFeatures};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 app()->instance(Clock::class,$clock);app()->instance(Runtime::class,new Runtime);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new AccountReadBudget($clock));
-EnomTestCallSchema::install();BalanceSchema::install();\Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
+EnomTestSendLimitSchema::install();BalanceSchema::install();\Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $binding=$bindingFor(0);
 $op=$new(placeholderComFixtureName('guard-held-placeholder.com'));
 $catalogue=CatalogueAcceptances::load($binding);
 DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new CatalogueAcceptance($binding,$catalogue->revision,$catalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
 BalanceReads::record($binding,new \Paymenter\Extensions\Servers\Domains\Data\Money('100.00','USD'),$clock->now(),'manual');
-config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_test_daily_call_cap'=>1000]);
+config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
 expect(EnomTestRegistration::enabled($binding),'Real TEST policy enabled for the operation');
 $factory=RuntimeFactory::make($binding,$freshBindings,$clock,new WriteFeatures(registration:true),new WriteAcceptance($binding,true,true,25),new RenewalAcceptance($binding),
     new TransferPrecheck(new Rdap(static fn()=>null)),static fn()=>['uid'=>'account-enom','token'=>'SYNTHETIC-TOKEN']);
@@ -59,7 +59,17 @@ same(['purchase',$clock->now()->format(DATE_ATOM),['amount'=>'99.00','currency'=
     [$refusal['phase'],$refusal['refused_at'],$refusal['authorized_cost']],'Persisted refusal retains the purchase time and authorized USD cost');
 expect(is_string($refusal['dispatch_attempted_at'])&&$refusal['dispatch_attempted_at']!=='','Persisted refusal retains the prior seal time');
 expect(is_array($historyOperation->policy['checkout'])&&$historyOperation->policy['checkout']!==[],'Persisted hidden policy retains checkout evidence');
-same('Not sent: Enom test daily limit reached',Labels::requestStatus($historyOperation)['reason'],'Staff History shows the safe refusal reason');
+same('Not sent: stopped by our test send check',Labels::requestStatus($historyOperation)['reason'],'Staff History shows the safe refusal reason');
+// Reuse the held operation to exercise the real account mode lookup used by staff History.
+DB::table('domains_accounts')->where('server_id',$historyOperation->server_id)->update(['environment'=>'live']);
+app('request')->attributes->remove('domains.account.environment.'.$historyOperation->server_id);
+same('Not sent: our daily call cap reached',Labels::requestStatus($historyOperation)['reason'],'Live History names our daily safety cap');
+DB::table('domains_accounts')->where('server_id',$historyOperation->server_id)->update(['environment'=>'test']);
+app('request')->attributes->remove('domains.account.environment.'.$historyOperation->server_id);
+foreach(['write_rate_limited','renewal_rate_limited'] as $code){
+    $limited=clone $historyOperation;$limited->safe_code=$code;
+    same('Not sent: our request limit reached. Try later.',Labels::requestStatus($limited)['reason'],'Local request guards keep ownership of their limit');
+}
 // getAttribute decrypts hidden attempt/policy fields that toArray would omit.
 $attributes=[];
 foreach(array_keys($historyOperation->getAttributes()) as $attribute){$attributes[$attribute]=$historyOperation->getAttribute($attribute);}

@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Pages\Page;
 use Filament\Schemas\{Schema, Components\Section};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff, PslActions, PslFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint, Staff, PslActions, PslFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\PublicSuffixList as Lists;
 /** Public suffix list status. Its actions are shared with the System checks row on registrar account pages. */
@@ -31,22 +31,18 @@ class PublicSuffixList extends Page
         foreach (PslFacts::rows($list) as $label => $value) {
             $entries[] = TextEntry::make('psl_'.count($entries))->label($label)->state((string) $value)->extraAttributes(['class' => 'break-all']);
         }
-        $at = $list->nextAllowedAt(); $now = app(Clock::class)->now()->getTimestamp();
+        $at = $list->nextAllowedAt(); $now = app(Clock::class)->now()->getTimestamp(); $state = PslFacts::state($list);
         return $schema->components([
-            Section::make(PslFacts::state($list))->description(match (PslFacts::state($list)) {
-                'Saved list damaged' => 'The saved bytes cannot be verified. New discovery is paused. See the README to restore a verified backup.',
-                'Saved list needs review' => 'The saved list cannot be parsed with the current parser. New discovery is paused. Download a valid replacement and review it.',
-                'Not downloaded yet' => 'New discovery is paused until a validated list is downloaded.',
-                'New discovery paused' => 'The list is more than 90 days old. Download a validated list before new discovery can resume.',
-                'Out of date warning' => 'The saved list is more than 30 days old. New discovery pauses after '.PslFacts::time((int) $list->current()->validated_at + 90 * 86400).' unless a validated list is downloaded.',
-                default => 'A validated list is available for future discovery. Out of date after '.PslFacts::time((int) $list->current()->validated_at + 30 * 86400).'.',
-            })->icon(match (PslFacts::state($list)) { 'Current' => 'heroicon-o-check-circle', 'Not downloaded yet' => 'heroicon-o-arrow-down-tray', default => 'heroicon-o-exclamation-triangle' })->iconColor(match (PslFacts::state($list)) { 'New discovery paused' => 'danger', 'Out of date warning' => 'warning', default => 'gray' })->schema($entries)->columns(2),
+            Section::make(match ($state) { 'New discovery paused' => 'Out of date', default => $state })->description(match ($state) {
+                'Saved list damaged' => 'The saved list is damaged. Monitoring won’t find new domains until you download a fresh copy.',
+                'Saved list needs review' => 'The saved list can’t be read. Monitoring won’t find new domains until you download a fresh copy and review it.',
+                'Not downloaded yet' => 'Monitoring won’t find new domains until the list is downloaded.',
+                'New discovery paused' => 'The list is over '.Lists::MAX_AGE_DAYS.' days old. Monitoring won’t find new domains until you download a fresh copy.',
+                default => 'The list is current. Out of date after '.PslFacts::time($list->expiresAt()).'.',
+            })->icon(match ($state) { 'Current' => 'heroicon-o-check-circle', 'Not downloaded yet' => 'heroicon-o-arrow-down-tray', default => 'heroicon-o-exclamation-triangle' })->iconColor(match ($state) { 'New discovery paused' => 'danger', default => 'gray' })->schema($entries)->columns(2),
             Section::make('Updates and source')->description($at !== null && $now < $at ? 'Next update allowed: '.PslFacts::time($at).'.' : 'You can update now.')
-                ->schema([TextEntry::make('help')->hiddenLabel()->markdown()->state(
-                    "Updates run weekly. At most one download is attempted in any 24 hours, including Download now.\n\n".
-                    "If a download is refused, the saved list is kept.\n\n".
-                    "If the source reports no change, only the check time is updated. After 30 days the full list is downloaded again so its age can reset.\n\n".
-                    'The Public Suffix List is MPL-2.0 licensed data from publicsuffix.org. This page does not discover hostnames.')])
+                ->schema([TextEntry::make('help')->label('How updates work')->state('Updates run weekly, at most once a day. If a download is refused, the saved list stays. List data from publicsuffix.org, MPL-2.0.')
+                    ->hintAction(HelpHint::make('Download now counts toward the once a day. If the source reports no change, only the check time updates. After '.Lists::MAX_AGE_DAYS.' days the full list downloads again so its age resets. This page does not find hostnames.'))])
         ]);
     }
 }

@@ -39,6 +39,7 @@ class Operation extends Model
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\TransferInputs::guard($operation));
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\OwnerSetup::guard($operation));
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\ManagementEvidence::guard($operation));
+        static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::noteReturn($operation));
         static::updating(static function (self $operation): void {
             $before = $operation->getOriginal('policy') ?? []; $after = $operation->policy ?? [];
             if (array_key_exists('contact_disposition', $before)

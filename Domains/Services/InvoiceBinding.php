@@ -105,7 +105,7 @@ final class InvoiceBinding
             || (int) $service->user_id !== $line['admitted_user_id'] || (int) $invoice->user_id !== (int) $service->user_id || (int) $service->product_id !== (int) $line['product_id']
             || (int) $service->plan_id !== (int) $line['plan_id'] || (string) $service->quantity !== '1'
             || (string) $item->quantity !== '1' || RetailLine::decimal($item->price) !== $line['retail']['total']
-            || $service->properties()->where('key', 'domain')->sole()->value !== $line['name'] || $s->freshUntil <= $this->clock->now()) {
+            || $service->properties()->where('key', 'domain')->sole()->value !== $line['name']) {
             throw new \DomainException('Native domain invoice changed after admission.');
         }
         $checkout = [...$line['retail'], 'name' => $line['name'], 'user_id' => (int) $service->user_id, 'order_id' => (int) $service->order_id,

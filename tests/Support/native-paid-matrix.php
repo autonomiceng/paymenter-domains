@@ -147,7 +147,7 @@ $notice='Required Service listeners are missing in this process: Service saving 
 same($notice,NativePaidHooks::notices()['Paymenter payment events'],'Payment events notice describes current process');
 Illuminate\Support\Facades\Auth::login($staff);
 expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events']),'Process notice lives with registrar setup, not on each domain');
-$setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertSeeInOrder(['System checks','Payment events','Missing',$check='Service listeners are missing. Restart the queue worker.']);
+$setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertSeeInOrder(['System checks','Payment events','Missing',$check='Service listeners are missing. Ask your site admin to restart the queue worker.']);
 same(1,substr_count(html_entity_decode($setup->html(),ENT_QUOTES),$check),'Registrar account System checks show the fact once');
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$missing->domain_id])->assertDontSee($notice);
 foreach($saving as$listener){Event::listen($savingEvent,$listener);}
@@ -159,11 +159,13 @@ Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\A
 $manual($missing);$work->operation($missing->id);
 same($before+1,$writer->calls,'Actual saving guards allow one recovered send: '.$missing->fresh()->state.' / '.$missing->fresh()->safe_code);
 // Actual staff queue and detail surfaces, including invoice permission narrowing.
-$late=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class)->filterTable('status',['under_review']);
-$late->set('tableDeferredFilters',$late->get('tableFilters'))->call('applyTableFilters')->assertCanSeeTableRecords([$failed->domain,$retired->domain])->assertCanNotSeeTableRecords([$mixed->domain]);
-same(['Under review','Paid after order closed'],array_values(array_intersect_key(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($failed->domain->fresh()),['label'=>1,'reason'=>1])),'Late payment is Under review with its reason');
+$late=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class)->filterTable('status',['failed','cancelled']);
+$late->set('tableDeferredFilters',$late->get('tableFilters'))->call('applyTableFilters')->assertCanSeeTableRecords([$failed->domain,$retired->domain]);
+// The mixed order keeps its own step (registrar result not confirmed), not the late money one.
+same('Registrar has not confirmed the result. Open request #'.$mixed->id.'.',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($mixed->domain->fresh())['step'],'Mixed order keeps its own next step');
+same('Payment activity after the order closed. Check the invoice.',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($failed->domain->fresh())['step'],'Late payment shows its next step');
 $invoiceUrl=App\Admin\Resources\InvoiceResource::getUrl('edit',['record'=>$failed->invoice_id]);
-Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('Paid after order closed')->assertSee('Paid after the order closed.')->assertSee('Open invoice')->assertSeeHtml('href="'.e($invoiceUrl).'"');
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('Payment activity after the order closed. Check the invoice.')->assertSee('Payment activity after the order closed.')->assertSee('Open invoice')->assertSeeHtml('href="'.e($invoiceUrl).'"');
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$failed->domain,'pageClass'=>Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class])->assertSee('Request #'.$failed->id);
-$viewOnly=staffUser(['admin.domains.view']);Livewire\Livewire::actingAs($viewOnly)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('Paid after the order closed.')->assertDontSee('Open invoice')->assertDontSeeHtml('href="'.e($invoiceUrl).'"');
+$viewOnly=staffUser(['admin.domains.view']);Livewire\Livewire::actingAs($viewOnly)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('Payment activity after the order closed.')->assertDontSee('Open invoice')->assertDontSeeHtml('href="'.e($invoiceUrl).'"');
 echo "Native paid matrix: mixed/Credit, early sync, duplicates, contacts, transfer, refund, late money, reactivation, recovery and staff review passed.\n";$nativeSuccessful=true;

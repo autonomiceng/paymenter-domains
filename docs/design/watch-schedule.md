@@ -62,11 +62,21 @@ Activation is deployment composition: bind `WatchDiscoveryWork` with an accepted
 `(int $serviceId, int $productId): void`, then bind `WatchWork` with that discovery worker,
 the configured `DnsReader`, and `enabled: true`. Runtime's default singletons supply neither
 activation gate. There is no monitoring enable setting or environment variable; the
-Monitoring Settings tab only edits/tests the DNS resolver. The disabled notice therefore
-asks staff to contact their administrator and has no Settings action. The existing
-minute `domains-runtime` schedule must be allowed to dispatch and its queue worker must
+Monitoring Settings tab only edits/tests the DNS resolver. The disabled notice has no
+Settings action. Staff with monitoring management permission see short setup steps
+beneath it, with links to the public suffix list, DNS templates and Hosting products even
+while activation is off. View-only staff see only the status. The existing minute `domains-runtime` schedule must be allowed to dispatch and its queue worker must
 run; public checks coalesce to five-minute turns. The combined runtime also performs
 financial work, so deployment scheduling changes must account for those feature gates.
+
+The setup steps tell staff to ask the site admin to connect monitoring. For the site admin:
+make both bindings in the `register()` method of a deployment service provider (for example
+`app/Providers/AppServiceProvider.php`), before the Domains runtime registers its defaults.
+The classes are in `Paymenter\Extensions\Servers\Domains\Services`, and the `DnsReader`
+comes from `DnsResolverSettings::reader()`. The callback reads the mapped domain field,
+checks the current owner and product, creates the watch source or managed link, and retires
+removed sources. An empty callback monitors nothing. After deploying, clear Laravel's config
+cache and restart the long-running queue worker so it loads the bindings.
 
 A stopped dispatcher asks the administrator to check the scheduled task and worker.
 Discovery failures are caught and logged inside the scheduler, so their notice asks for

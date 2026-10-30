@@ -64,9 +64,9 @@ same(null,$billing->invoice($d->id),'Scheduled cancellation also skips an issued
 same($issuedBefore,serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('invoice_transactions')->get(),$op->fresh()->getRawOriginal()]),'Cancellation never rewrites retained debt');
 DB::table('service_cancellations')->where('id',$issuedCancel->id)->delete();
 
-same('31.20', $op->amount, 'Retained expired retail bills exact fixed three-year total without current cost');
-same(true, $op->policy['price']['retained'], 'Stale costs retain published holder retail');
-same('stale', $d->fresh()->observation['renewal_price_alert']['code'], 'Stale margin is a staff alert');
+same('31.20', $op->amount, 'Saved retail bills the same exact three-year total after a year');
+same(false, $op->policy['price']['retained'], 'Saved costs remain current until the next sync');
+same(null, $d->fresh()->observation['renewal_price_alert'] ?? null, 'Age alone does not create a renewal margin alert');
 same(3, (int) $op->term, 'Obligation fixes requested term independently of annual plan');
 same('2030-10-18', $op->expected_expires_at->format('Y-m-d'), 'Exact expected term expiry recorded');
 same('Domain renewal: billing-held-placeholder.com (3 years, Oct 18, 2027 to Oct 18, 2030)', $renewal->items->sole()->description, 'Renewal dates use frozen registrar expiry and requested years');
@@ -79,7 +79,7 @@ same(null, $renewal->items->sole()->reference_type, 'Renewal has no native servi
 same(null, $renewal->items->sole()->reference_id, 'Renewal has no native service identifier');
 same(1, (int) $s->fresh()->plan->billing_period, 'Native service remains annual');
 same(null, $s->fresh()->expires_at, 'Billing never changes native expiry');
-// Current costs are fresh at this fixture clock; publish below-cost renewal retail deliberately.
+// Publish below-cost renewal retail deliberately; issued debt remains unchanged.
 $tld = $tlds[0]->fresh(); $tld->update(['use_default_rule' => false, 'pricing_mode' => 'fixed', 'fixed_renew' => '1.00', 'fixed_register' => '20.00', 'fixed_transfer' => '20.00']);
 $prices->republish($tld);
 $frozen = DB::table('invoice_items')->where('invoice_id', $renewal->id)->first();

@@ -2,11 +2,13 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\ProductMappingResource\Pages;
+use Filament\Actions\Action;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\{Schema,Components\Callout,Components\Grid,Components\Section};
 use Filament\Infolists\Components\TextEntry;
 use Filament\Support\Enums\FontFamily;
 use Livewire\Attributes\Locked;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{ProductMappingResource,RoutingProfileResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{MissingEntry,WatchActions,WatchFacts};
 use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
@@ -26,7 +28,7 @@ class ViewConfiguration extends ViewRecord
         $entry=fn(string $label,mixed $value)=>TextEntry::make('fact_'.md5($label))->label($label)->state($value)->inlineLabel()->extraAttributes(['style'=>'overflow-wrap:anywhere']);
         $settings=[$entry('Product',$this->getTitle()),$entry('Domain field',$r->property_key)->fontFamily(FontFamily::Mono),$entry('Monitoring',$r->enabled?'On':'Off'),
             MissingEntry::apply($entry('DNS template',$profile?->name)->url($profile?RoutingProfileResource::getUrl('view',['record'=>$profile->id]):null),cause:$profile?null:'Choose one in Edit')];
-        $matched=match(true){$preview===null=>[Callout::make('Download the public suffix list to match domains.')->status('warning')],
+        $matched=match(true){$preview===null=>[Callout::make('Download the public suffix list to match domains.')->status('warning')->footer([Action::make('open_psl')->label('Public suffix list')->link()->url(fn()=>PublicSuffixList::getUrl())->visible(fn()=>\Illuminate\Support\Facades\Route::has(PublicSuffixList::getRouteName()))])],
             $preview===[]=>[TextEntry::make('matched')->hiddenLabel()->state('No services use this product')->color('gray')],
             default=>array_map(fn(array $row,int $i)=>TextEntry::make('matched_'.$i)->label($row['service'])->inlineLabel()->state($row['result'])->belowContent($row['domain'])->url($row['url'])->extraAttributes(['style'=>'overflow-wrap:anywhere']),$preview,array_keys($preview))};
         return $schema->components([Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()->schema([Section::make('Settings')->columnSpan(1)->schema($settings),Section::make('Matched services')->columnSpan(1)->schema($matched)])]);

@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price};
-use Paymenter\Extensions\Servers\Domains\Services\{CheckoutEligibility,ObservationSchema,PricingRule,PublicationEligibility,Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,CheckoutEligibility,ObservationSchema,PricingRule,PublicationEligibility,Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $f=commerceFixture();extract($f);tldPanel();ObservationSchema::install();Carbon\Carbon::setTestNow($now);
 $t=$tlds[0];$server=App\Models\Server::findOrFail($t->server_id);
@@ -22,7 +22,7 @@ foreach([[],[Staff::COSTS],[Staff::VIEW],[Staff::VIEW,Staff::COSTS]] as $permiss
     $u=staffUser($permissions);Auth::setUser($u);$can=in_array(Staff::VIEW,$permissions,true);$cost=$can&&in_array(Staff::COSTS,$permissions,true);
     $list=Livewire::actingAs($u)->test(ListTlds::class);$setup=Livewire::actingAs($u)->test(RegistrarSetup::class);$account=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]);
     if(!$can){$list->assertForbidden();$setup->assertForbidden();$account->assertForbidden();continue;}
-    $list->assertCanSeeTableRecords($tlds);$setup->assertSuccessful()->assertSee('Enom')->assertSee('NameSilo')->assertSee('Status');$account->assertSuccessful()->assertSee('Setup checklist')->assertSee('Supported TLDs')->assertDontSee('Catalogue acceptance');
+    $list->assertCanSeeTableRecords($tlds);$setup->assertSuccessful()->assertSee('Enom')->assertSee('NameSilo')->assertSee('Status');$account->assertSuccessful()->assertSee('Setup checklist')->assertSee('What you sell')->assertDontSee('Catalogue acceptance');
     $detail=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSuccessful()->assertSet('data',[])
         ->assertSee('History')->assertSee('Sync failed')->assertSee('Registrar read failed')->assertSee('Existing domains stay with their registrar');
     $body=$detail->html().$setup->html().$account->html().json_encode($detail->snapshot).json_encode($setup->snapshot).json_encode($account->snapshot);
@@ -43,7 +43,7 @@ $healthy=['label'=>'For sale','tone'=>'success','reason'=>null];
 same($healthy,TldFacts::salesState($t->fresh()),'Accepted renewal-enabled ending is price eligible');
 $wrong=clone $t;$wrong->account_fingerprint=str_repeat('f',64);
 DB::table('domains_prices')->where('server_id',$t->server_id)->update(['account_fingerprint'=>$wrong->account_fingerprint]);
-same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Sync TLD prices needed'],TldFacts::salesState($wrong),'Matching TLD/price corruption cannot borrow the current account acceptance');
+same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Needs a price sync'],TldFacts::salesState($wrong),'Matching TLD/price corruption cannot borrow the current account acceptance');
 DB::table('domains_prices')->where('server_id',$t->server_id)->update(['account_fingerprint'=>$t->account_fingerprint]);
 same(['com'],array_column($store->endings(),'tld'),'Healthy selected ending is on sale');
 foreach(['register','transfer'] as $action){
@@ -68,6 +68,22 @@ $t->update(['register_enabled'=>true,'transfer_enabled'=>true,'renew_enabled'=>t
 same($healthy,TldFacts::salesState($t->fresh()),'Restored renewal-enabled contrast is price eligible');
 same(['com'],array_column($store->endings(),'tld'),'Renewal-enabled contrast restores public sales');
 same($retained,$savedPrices(),'Switch changes preserve all saved prices');
+// The saved minimum is not necessarily the first eligible registration price.
+$binding=CatalogueAcceptances::binding(Account::where('server_id',$t->server_id)->sole());$calls=$reads->calls;
+$t->update(['min_years'=>1,'max_years'=>10]);
+foreach([[2],[1,2]] as $terms){
+    $accepted=CatalogueAcceptances::save($binding,CatalogueAcceptances::load($binding)->revision,['com'=>['register'=>$terms,'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
+    $rates=[];foreach([['renew',1,'8.00'],['transfer',1,'7.00'],...array_map(static fn($n)=>['register',$n,$n===1?null:'6.00'],$terms)] as [$action,$term,$cost]){$rates[]=new \Paymenter\Extensions\Servers\Domains\Data\CatalogueRate($action,$term,$cost,'synthetic',$now,$now->modify('+1 day'));}
+    $prices->import(new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,$terms,true,true),$accepted,static fn()=>null,$now);
+    same(2,$sellers->selection('com','register',2,$now)->term,'A later registration year is sellable');
+    same($healthy,TldFacts::salesState($t->fresh()),'Sale status finds the first eligible year inside saved bounds');
+    same($healthy,TldFacts::page(collect([$t->fresh()]))[$t->id]['sales'],'Batched sale status finds the same eligible year');
+}
+same($calls,$reads->calls,'Later-year sale status makes no provider reads');
+$accepted=CatalogueAcceptances::save($binding,CatalogueAcceptances::load($binding)->revision,['com'=>['register'=>[1,3],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
+$t->update(['max_years'=>3]);$rates=[];
+foreach([['register',1,'6.00'],['register',3,'6.00'],['renew',1,'8.00'],['transfer',1,'7.00']] as [$action,$term,$cost]){$rates[]=new \Paymenter\Extensions\Servers\Domains\Data\CatalogueRate($action,$term,$cost,'synthetic',$now,$now->modify('+1 day'));}
+$prices->import(new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true),$accepted,static fn()=>null,$now);
 $calls=$reads->calls;staffTldFilterLookalikes($u,$tlds);same($calls,$reads->calls,'TLD selectors use saved facts only');
 foreach (['12.0000'=>'USD 12.00','12.3000'=>'USD 12.30','12.3450'=>'USD 12.345','12.3456'=>'USD 12.3456','0.0000'=>'USD 0.00'] as $amount=>$label) { same($label,TldFacts::money($amount,4),'Wholesale precision stays exact while redundant zeros are trimmed'); }
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;

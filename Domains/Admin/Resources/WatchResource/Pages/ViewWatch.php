@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages;
 use Filament\Actions\Action;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\{Schema,Components\Callout,Components\Grid,Components\Section};
 use Filament\Infolists\Components\TextEntry;
@@ -10,6 +11,7 @@ use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{MissingEntry,WatchActions,WatchFacts,WatchFindings};
+use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit,WatchDnsObservation,WatchRegistryObservation};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewWatch extends ViewRecord
@@ -17,10 +19,35 @@ class ViewWatch extends ViewRecord
     protected static string $resource=WatchResource::class;
     /** The revision this page shows; writes from a stale page are refused. */
     #[Locked] public int $revision=0;
+    #[Locked] public array $pendingCheck=[];
     private const FACTS_STYLE='<style>@media (min-width:40rem){.domains-facts .fi-in-entry.fi-in-entry-has-inline-label{grid-template-columns:minmax(0,40%) minmax(0,1fr) minmax(0,1fr)}}</style>';
     protected ?array $resolved=null;
-    public function mount(int|string $record): void{parent::mount($record);$this->revision=(int)$this->getRecord()->revision;}
+    public function mount(int|string $record): void{parent::mount($record);$this->revision=(int)$this->getRecord()->revision;$this->waitForCheck();}
     protected function fillForm(): void{$this->data=[];}
+    public function waitForCheck(): void
+    {
+        $w=$this->getRecord();$at=WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->where('event','staff_read_requested')->orderByDesc('id')->first(['created_at'])?->created_at?->getTimestamp();
+        $this->pendingCheck=[];if($w->state!=='active' || !$at){return;}
+        $before=max((int)WatchDnsObservation::where('watch_id',$w->id)->where('completed_at','<',$at)->max('started_at'),
+            (int)WatchRegistryObservation::where('watch_id',$w->id)->where('completed_at','<',$at)->max('started_at'));
+        if($this->checkTime()<=$before){$this->pendingCheck=[$at+360,$before];}
+        if($this->pendingCheck && now()->timestamp>=$this->pendingCheck[0]){$this->pollCheck();}
+    }
+    private function checkTime(): int{$w=$this->getRecord();return max((int)$w->delegation?->started_at,(int)$w->points?->started_at,(int)$w->registry?->started_at);}
+    /** Refresh saved facts only. Keep the mounted revision so stale actions still refuse. */
+    public function refreshFacts(): void
+    {
+        $this->getRecord()->refresh();$this->resolved=null;
+    }
+    public function pollCheck(): void
+    {
+        if(!$this->pendingCheck){return;}
+        $this->refreshFacts();[$until,$before]=$this->pendingCheck;
+        if($this->checkTime()>$before){Notification::make()->success()->title('Check finished')->send();}
+        elseif(now()->timestamp>=$until){Notification::make()->warning()->title('Check is taking longer')->body('Last check has not changed. Ask your site admin.')->persistent()->send();}
+        else{return;}
+        $this->pendingCheck=[];
+    }
     /** Facts and status, read once per request. */
     private function facts(): array
     {

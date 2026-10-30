@@ -156,7 +156,7 @@ final class DomainManagement
             $this->grant = [$r, $ctx, $driver, $stamp, $seed, $id];
             try { $result = $driver->perform($r, $ctx, $this); }
             finally { $this->grant = null; $this->receiptGrant = null; }
-            return $this->finish($seed, $id, $driver, $result, null, true);
+            return $this->finish($seed, $id, $driver, $result);
         } catch (\Throwable $error) {
             return DB::transaction(function () use ($seed, $id, $claimed, $claim, $error, $refusals): Operation {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
@@ -210,31 +210,49 @@ final class DomainManagement
     {
         return EntryDeadline::run($this->clock, fn ($deadline) => $this->reconcileEntered($id, $driver, $deadline), EntryDeadline::INTERACTIVE_SECONDS);
     }
-    private function reconcileEntered(int $id, ManagementProtocol $driver, \DateTimeImmutable $deadline): Operation
+    /** Legacy reads require a current, one-use staff review; earlier usage remains unknown. */
+    public function reconcileReviewed(int $id, ManagementProtocol|\Closure $driver, StaffOperationReview $review): Operation
+    {
+        $op=Operation::findOrFail($id);
+        if($review->operationId!==$id || $review->domainId!==$op->domain_id || $review->action!=='recheck'){
+            throw new \DomainException('Management review does not match.');
+        }
+        return EntryDeadline::run($this->clock, fn($deadline)=>$review->read(
+            fn()=>$this->reconcileEntered($id,$driver instanceof \Closure ? $driver() : $driver,$deadline,true)),EntryDeadline::INTERACTIVE_SECONDS);
+    }
+    private function reconcileEntered(int $id, ManagementProtocol $driver, \DateTimeImmutable $deadline, bool $reviewed=false): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        $read = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver): ?array {
+        $read = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver,$reviewed): ?array {
             if(count($op->attempt['management_reads']??[])>=20){return null;}
             if ($op->state === 'running' && $op->lease_expires_at > $this->clock->now()) { return null; }
             if (!in_array($op->state, ['uncertain', 'running'], true) || ($op->attempt['seal'] ?? null) !== 'sealed') { return null; }
             $b=CatalogueAcceptances::binding($l['account']); if(!$driver->bindsTo($b)){throw new \DomainException('Read binding changed.');}
             $this->bindings->requireReadableLocked($l['server'],$l['account']);
             // Reserve before I/O, including reads that throw or lose their result.
-            // Older sealed attempts have unknown read usage and cannot be resumed.
-            $count = $op->attempt['management_observation_attempts'] ?? null;
-            if (!is_int($count) || $count < 1 || $count >= 20) { return null; }
-            $op->update(['attempt' => [...$op->attempt, 'management_observation_attempts' => $count + 1]]);
+            // Legacy recovery counts only new reviewed reads, never unknown earlier usage.
+            $field='management_observation_attempts';
+            if(!array_key_exists($field,$op->attempt)){
+                if(!$reviewed){return null;}
+                $field='management_legacy_observation_attempts';
+                $count=array_key_exists($field,$op->attempt)?$op->attempt[$field]:0;
+                if(!is_int($count) || $count<0 || $count>=20){return null;}
+            }else{
+                $count=$op->attempt[$field];
+                if(!is_int($count) || $count<1 || $count>=20){return null;}
+            }
+            $op->update(['attempt' => [...$op->attempt, $field => $count + 1]]);
             return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int) $op->authorized_by)['stamp']];
         }, false, false);
         if ($read === null) { return Operation::findOrFail($id); }
         [$r, $stamp] = $read;
         $ctx = new RequestContext($r->binding, RequestOrigin::Background, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter());
         try { $result = $driver->observe($r, $ctx); return $this->finish($seed, $id, $driver, $result, $stamp); }
-        catch (\Throwable) { return Operation::findOrFail($id); }
+        catch (\Throwable $error) { if($reviewed){throw $error;} return Operation::findOrFail($id); }
     }
-    private function finish(Domain $seed, int $id, ManagementProtocol $driver, ManagementResult $result, ?string $stamp = null, bool $writeResult = false): Operation
+    private function finish(Domain $seed, int $id, ManagementProtocol $driver, ManagementResult $result, ?string $stamp = null): Operation
     {
-        return $this->locked($seed, $id, $driver, function ($l, $op) use ($result, $stamp, $writeResult): Operation {
+        return $this->locked($seed, $id, $driver, function ($l, $op) use ($result, $stamp): Operation {
             if(!in_array($op->state,['running','uncertain'],true)||($op->attempt['seal']??null)!=='sealed'){throw new \DomainException('Management readback no longer applicable.');}
             if ($stamp !== null && $l['stamp'] !== $stamp) { throw new \DomainException('Management changed during readback.'); }
             $facts = $result->facts(); $ack = $op->attempt['management_ack'] ?? [];
@@ -243,7 +261,7 @@ final class DomainManagement
             $projection=$l['domain']->observation??[]; $sequence=($projection['management_sequence']??0)+1;
             $entry = ['sequence'=>$sequence,'operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'action' => $op->action,
                 'at' => $this->clock->now()->format(DATE_ATOM), 'correction_link' => $op->policy['management']['correction_link'] ?? null, 'confirmed' => $confirmed, 'email_accepted' => $email, 'facts' => $result->facts()];
-            $refused=$writeResult&&$result->refused&&!$confirmed&&!$email;$terminal=$refused&&$op->funding_basis==='non_billable_management';
+            $refused=$result->refused&&!$confirmed&&!$email;$terminal=$refused&&$op->funding_basis==='non_billable_management';
             $history = $op->attempt['management_reads'] ?? [];
             if (count($history) >= 20) { throw new \DomainException('Management read budget exhausted.'); }
             $op->update(['state' => $ok ? 'succeeded' : ($terminal?'rejected':'uncertain'), 'safe_code' => $email ? 'auth_email_accepted' : ($ok ? 'readback_confirmed' : ($refused?'management_provider_refused':'management_unconfirmed')),

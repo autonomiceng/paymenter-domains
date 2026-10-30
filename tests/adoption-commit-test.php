@@ -33,7 +33,7 @@ $hostService = Service::create(['user_id' => $owner->id, 'order_id' => $hostOrde
     'plan_id' => $hosting->plans()->sole()->id, 'quantity' => 1, 'price' => '5.00', 'currency_code' => 'USD', 'status' => 'active']);
 $hostInvoice = Invoice::create(['user_id' => $owner->id, 'currency_code' => 'USD', 'status' => 'paid']);
 InvoiceItem::create(['invoice_id' => $hostInvoice->id, 'reference_type' => $hostService->getMorphClass(), 'reference_id' => $hostService->id, 'description' => 'Unrelated hosting', 'quantity' => 1, 'price' => '5.00']);
-$a = $preview(); $refuse(fn () => $confirm($a), 'Activation defaults OFF', 'Adoption is not enabled yet.');
+$a = $preview(); $refuse(fn () => $confirm($a), 'Activation defaults OFF', 'Import is off on this site.');
 config(['domains.adoption.enabled' => true]);
 // A valid preview cannot acquire a first holding for an owner with deletion requested.
 $intentTable=\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::TABLE;
@@ -42,16 +42,16 @@ try{$confirm($a);}catch(DomainException $e){same(\Paymenter\Extensions\Servers\D
 finally{DB::table($intentTable)->where('user_id',$owner->id)->delete();}
 expect($blocked,'Marked owner cannot confirm valid adoption');same(0,Domain::count(),'Marked adoption creates no holding');same($before,scenarioMoney(),'Marked adoption preserves native money');
 
-$refuse(fn () => $confirm($a, $other), 'Another actor cannot use request key', 'Adoption request changed. Verify again.');
-$refuse(fn () => $confirm($a, digest: str_repeat('f', 64)), 'Digest change refused', 'Adoption request changed. Verify again.');
+$refuse(fn () => $confirm($a, $other), 'Another actor cannot use request key', 'Import request changed. Check the domain again.');
+$refuse(fn () => $confirm($a, digest: str_repeat('f', 64)), 'Digest change refused', 'Import request changed. Check the domain again.');
 $clock->time = $a->observed_at->toDateTimeImmutable()->modify('+120 seconds');
-$refuse(fn () => $confirm($a), 'Evidence expires at 120 seconds', 'Verification details changed or expired. Verify again.');
+$refuse(fn () => $confirm($a), 'Evidence expires at 120 seconds', 'Details changed or expired. Check the domain again.');
 $clock->time = $a->observed_at->toDateTimeImmutable()->modify('-1 second');
-$refuse(fn () => $confirm($a), 'Future evidence refused', 'Verification details changed or expired. Verify again.');
+$refuse(fn () => $confirm($a), 'Future evidence refused', 'Details changed or expired. Check the domain again.');
 $clock->time = new DateTimeImmutable('2026-10-19T00:00:00Z');
 foreach ($permissions as $permission) {
     DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode(array_values(array_diff($permissions, [$permission])))]);
-    $refuse(fn () => $confirm($a), 'Revoked '.$permission.' refused', 'You do not have permission to adopt registrations.');
+    $refuse(fn () => $confirm($a), 'Revoked '.$permission.' refused', "You don't have permission to import domains.");
     DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode($permissions)]);
 }
 foreach ([['orders', $order->id, 'user_id', $other->id], ['services', $service->id, 'user_id', $other->id],
@@ -59,7 +59,7 @@ foreach ([['orders', $order->id, 'user_id', $other->id], ['services', $service->
     ['services', $service->id, 'status', 'suspended'], ['services', $service->id, 'quantity', 2], ['services', $service->id, 'expires_at', '2027-10-20'],
     ['domains_prices', Price::where('server_id', $tld->server_id)->where('action', 'renew')->sole()->id, 'revision', 999]] as [$table, $id, $field, $value]) {
     $old = DB::table($table)->where('id', $id)->value($field); DB::table($table)->where('id', $id)->update([$field => $value]);
-    $refuse(fn () => $confirm($a), 'Changed '.$table.'.'.$field.' refused', $table === 'domains_prices' ? 'Verification details changed or expired. Verify again.' : ($field === 'status' ? 'mapping_unconfirmed' : 'Holding native authority changed.'));
+    $refuse(fn () => $confirm($a), 'Changed '.$table.'.'.$field.' refused', $table === 'domains_prices' ? 'Details changed or expired. Check the domain again.' : ($field === 'status' ? 'mapping_unconfirmed' : 'Holding native authority changed.'));
     DB::table($table)->where('id', $id)->update([$field => $old]);
 }
 $settings = $service->product->server->settings()->where('key', 'domains_credentials')->sole();
@@ -82,12 +82,12 @@ $refuse(fn () => $confirm($a), 'Related invoice coverage changing after invoice 
 same(false, $injectDebt, 'Serialized debt interleaving was exercised');
 DB::table('invoices')->where('id', $lateInvoice->id)->delete();
 $collision = adoptionPendingFixture($hostService, $binding, ['domain' => 'other-placeholder.com', 'sld' => 'other-placeholder', 'reservation_name' => 'other-placeholder.com', 'provider_domain_id' => '123']);
-$refuse(fn () => $confirm($a), 'Provider identity collision added after preview refused', 'Registration identity needs staff review.');
+$refuse(fn () => $confirm($a), 'Provider identity collision added after preview refused', 'Domain records need a check.');
 DB::table('domains_domains')->where('id', $collision->id)->delete();
 $payloads = $wire->payloads;
 foreach ($payloads as $key => $value) { $wire->payloads[$key] = str_replace(['10/19/2027', '11:14:00 PM'], ['10/18/2026', '5:00:30 PM'], $value); }
 $expiring = $preview(); $clock->time = $clock->time->modify('+60 seconds');
-$refuse(fn () => $confirm($expiring), 'Registrar expiry crossing inside preview lifetime refused', 'Verification details changed or expired. Verify again.');
+$refuse(fn () => $confirm($expiring), 'Registrar expiry crossing inside preview lifetime refused', 'Details changed or expired. Check the domain again.');
 $clock->time = new DateTimeImmutable('2026-10-19T00:00:00Z'); $wire->payloads = $payloads;
 $before = scenarioMoney(); $calls = count($wire->calls); $ops = Operation::count(); $nativeIds = [$order->id, $service->id, $owner->id, $product->id, $plan->id];
 $queries = []; DB::listen(function ($q) use (&$queries): void { $queries[] = strtolower($q->sql); });

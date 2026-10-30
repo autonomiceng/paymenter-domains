@@ -5,7 +5,7 @@ use App\Models\Server;
 use Illuminate\Support\Facades\{Auth,DB,Log};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
@@ -43,7 +43,7 @@ $refuse=static function(#[SensitiveParameter] callable $work,string $message,?st
 };
 same(true,$writes->connectionAvailable('namesilo'),'NameSilo OTE reader is available');same(false,$writes->connectionAvailable('enom'),'NameSilo-only opt-in does not enable Enom reads');
 $unsupported=$nativeServer();same('not_configured',$bindings->configurationStatus((int)$unsupported->id),'Fresh server account binding is not configured');expect(!Account::where('server_id',$unsupported->id)->exists(),'Fresh server has no account or Enrollment row');
-$emptySetup=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$unsupported->id])->assertSee('Not connected')->assertSee('Account not set up yet')->assertDontSee('OTE only · immutable')->assertDontSee('Unavailable · not a current OTE enrollment.');unset($emptySetup);gc_collect_cycles();
+$emptySetup=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$unsupported->id])->assertSee('Not connected')->assertSee('Account not set up yet. Use Connect account.')->assertDontSee('OTE only · immutable')->assertDontSee('Unavailable · not a current OTE enrollment.');unset($emptySetup);gc_collect_cycles();
 $unsupportedReview=$review($unsupported,'configure');
 $refuse(fn()=>$writes->run($unsupportedReview,['registrar'=>'enom','environment'=>'test','uid'=>'synthetic-uid','token'=>'synthetic-token','reason'=>'Check unsupported Enom','review_key'=>'unused']),'Enom is unavailable in a NameSilo-only deployment','Connection checks are unavailable.');
 expect(!DB::table(Review::KEYS)->where('server_id',$unsupported->id)->exists(),'Unavailable Enom composition refuses before consuming review');
@@ -63,15 +63,15 @@ unset($nativeEdit);gc_collect_cycles();
 
 $action=static fn(string $name,Server $server)=>setupAction($name,$server->id);
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($action('enroll_sandbox',$s))->assertActionMounted($action('enroll_sandbox',$s));
-$page->assertSchemaComponentExists('label',checkComponentUsing:fn($field)=>str_contains((string)$field->toHtml(),'sandbox-west')&&str_contains((string)$field->toHtml(),'Do not enter personal data')&&!str_contains((string)$field->toHtml(),'login email'));
+$page->assertSchemaComponentExists('label',checkComponentUsing:fn($field)=>str_contains((string)$field->toHtml(),'test-west')&&str_contains((string)$field->toHtml(),'Do not enter personal data')&&!str_contains((string)$field->toHtml(),'login email'));
 expect(empty($page->get('mountedActions.0.data.api_key')),'No saved secret prefill');$n=$GLOBALS['enrollmentCalls'];
 $page->setActionData([...$input,'api_key'=>'synthetic-ote-key','reason'=>'Enroll a sandbox account']);
-expect(str_contains($page->instance()->getMountedAction()->getModalDescription(),'The balance is not saved.'),'Enrollment copy says the key-check balance is discarded');
-expect(str_contains($page->instance()->getMountedAction()->getModalDescription(),'next worker tick may send one scheduled daily read through /apibatch/getAccountBalance')
-    &&str_contains($page->instance()->getMountedAction()->getModalDescription(),'Check balance can make one separate OTE balance request'),'Enrollment copy explains scheduled and interactive balance reads');
+expect(str_contains(SettingsActions::details('enroll_sandbox'),'The balance is not saved.'),'Enrollment copy says the key-check balance is discarded');
+expect(str_contains(SettingsActions::details('enroll_sandbox'),'next background run may send one scheduled balance read')
+    &&str_contains(SettingsActions::details('enroll_sandbox'),'Test connection can send one more balance request'),'Enrollment copy explains scheduled and interactive balance reads');
 $GLOBALS['enrollmentExpectedContext']='api';$GLOBALS['enrollmentExpectedTimeout']=10000;
 $page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Account connected')->assertSet('mountedActions',[]);
-$page->assertActionDisabled($action('enroll_sandbox',$s));unset($page);gc_collect_cycles();
+$page->assertActionDoesNotExist($action('enroll_sandbox',$s));unset($page);gc_collect_cycles();
 same($n+1,$GLOBALS['enrollmentCalls'],'Staff enrollment exactly one OTE read');$a=Account::where('server_id',$s->id)->sole();$binding=CatalogueAcceptances::binding($a);
 expect(NameSiloSandbox::enrolled($a),'Distinct local enrollment identity');
 foreach(['sandbox@example.test','synthetic-ote-key','123','456','789','999','9876.54'] as $substitute){expect($a->stable_identity!==$substitute,'No identity substitute');}
@@ -135,7 +135,7 @@ $offline=$fresh(false);$n=$GLOBALS['enrollmentCalls'];$offlinePage=Livewire::act
     ->setActionData([...$input,'api_key'=>'offline-server-key','reason'=>'Exercise unavailable server copy'])
     ->callMountedAction()->assertHasNoActionErrors()->assertSet('mountedActions',[]);
 $sent=session()->get('filament.claimed_notifications',[]);$notice=$sent?end($sent):null;
-same("Couldn't save",$notice['title']??null,'Unavailable server refusal title');expect(str_contains($notice['body']??'','No OTE key check was sent and nothing was saved.'),'Unavailable server maps its preflight refusal');
+same("Couldn't save",$notice['title']??null,'Unavailable server refusal title');expect(str_contains($notice['body']??'','No key check was sent and nothing was saved.'),'Unavailable server maps its preflight refusal');
 same($n,$GLOBALS['enrollmentCalls'],'Unavailable server sends no OTE request');unset($offlinePage);gc_collect_cycles();
 $preflight=$fresh();$n=$GLOBALS['enrollmentCalls'];$writesMock=Mockery::mock($writes)->makePartial();
 $writesMock->shouldReceive('run')->once()->andThrow(new RuntimeException('unclassified enrollment failure'));
@@ -144,8 +144,8 @@ $preflightPage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['accoun
     ->setActionData([...$input,'api_key'=>'preflight-key','reason'=>'Exercise uncertain preflight copy'])
     ->callMountedAction()->assertHasNoActionErrors()->assertSet('mountedActions',[]);
 $sent=session()->get('filament.claimed_notifications',[]);$notice=$sent?end($sent):null;
-same("Couldn't confirm the connection",$notice['title']??null,'Preflight outcome title');expect(str_contains($notice['body']??'','An OTE key check may or may not have been sent.'),'Preflight fallback does not claim a request was sent');
-same('Enrollment did not finish normally, and its outcome could not be confirmed. An OTE key check may or may not have been sent. If it was sent, NameSilo may or may not have accepted the key. Reload the account page. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. If no Enrollment row appears and Account binding reads “Not configured”, nothing was enrolled. If Enrollment reads “Unavailable”, an account record exists, but its current OTE enrollment cannot be confirmed. Do not make another enrollment attempt on this server. If it is off, re-enable it in Servers; ask the installation administrator to check that OTE enrollment is enabled on this site, then reload. If it remains unavailable and this account was enrolled, ask them to restore the original saved enrollment settings. If it was never enrolled, use a fresh Domains server for a new key. For “Not configured”, confirm the server is enabled and fresh, OTE enrollment is enabled, your permissions are current, and the key is not already enrolled on this site before submitting another review. Submitting another review may send another OTE key check.',$notice['body']??null,'Generic uncertainty copy distinguishes each reload state');
+same("Couldn't confirm the connection",$notice['title']??null,'Preflight outcome title');expect(str_contains($notice['body']??'','We can’t tell if a key check was sent'),'Preflight fallback does not claim a request was sent');
+same('We can’t tell if a key check was sent or if the account saved. Open the account page before you try again. Orders paused: it saved, so check the label is yours. Not connected and not set up yet: nothing saved. Off in Paymenter: turn it on in Servers first. Anything else: don’t try again here. Ask your site admin. Trying again may send another key check.',$notice['body']??null,'Generic uncertainty copy distinguishes each reload state');
 same($n,$GLOBALS['enrollmentCalls'],'Preflight failure sends no OTE request');same(0,Account::where('server_id',$preflight->id)->count(),'Preflight failure saves no enrollment');unset($preflightPage);gc_collect_cycles();app()->instance(StaffSettingsWrites::class,$writes);
 $usedReviewServer=$fresh();$usedTicket=Review::ticket($staff->id,$usedReviewServer->id,null,'enroll_sandbox',Review::stamp($usedReviewServer->id,null));
 (new Review($staff->id,$usedReviewServer->id,null,'enroll_sandbox',$usedTicket,'Consume review for recovery copy'))->local(fn()=>null);
@@ -153,16 +153,11 @@ $n=$GLOBALS['enrollmentCalls'];$usedReviewPage=Livewire::actingAs($staff)->test(
     ->setActionData([...$input,'api_key'=>'used-review-key','reason'=>'Exercise used review copy','review_key'=>$usedTicket])
     ->callMountedAction()->assertHasNoActionErrors()->assertSet('mountedActions',[]);
 $sent=session()->get('filament.claimed_notifications',[]);$notice=$sent?end($sent):null;
-same("Couldn't save",$notice['title']??null,'Used review refusal title');expect(str_contains($notice['body']??'','An earlier submission may still be finishing. Wait for it to finish, then reload the account page.'),'Used review copy delays a second request');
-expect(str_contains($notice['body']??'','If no Enrollment row appears and Account binding reads “Not configured” after the earlier submission finishes, nothing was enrolled.'),'Used review gates no-enrollment status on the earlier submission finishing');
-expect(str_contains($notice['body']??'','This page cannot show whether that submission is still running.'),'Used review does not overstate in-flight state');
-expect(str_contains($notice['body']??'','check its label before treating it as yours.'),'Used review distinguishes an earlier enrollment label');
-expect(str_contains($notice['body']??'','after the earlier submission finishes, nothing was enrolled.'),'Used review gates empty-state meaning on the earlier submission finishing');
+same("Couldn't save",$notice['title']??null,'Used review refusal title');expect(str_contains($notice['body']??'','An earlier try may still be running, and this page can’t show that. Wait for it to finish.'),'Used review copy delays a second request');
+expect(str_contains($notice['body']??'','check the label is yours.'),'Used review distinguishes an earlier enrollment label');
+expect(str_contains($notice['body']??'','Not connected and not set up yet: nothing saved.'),'Used review says what an empty account means');
 same($n,$GLOBALS['enrollmentCalls'],'Used review sends no additional OTE request');same(0,Account::where('server_id',$usedReviewServer->id)->count(),'Used review creates no binding');unset($usedReviewPage);gc_collect_cycles();
-$notEnrolled='If no Enrollment row appears and Account binding reads “Not configured”, nothing was enrolled.';
-$unavailableRecovery='If Enrollment reads “Unavailable”, an account record exists, but its current OTE enrollment cannot be confirmed. Do not make another enrollment attempt on this server. If it is off, re-enable it in Servers; ask the installation administrator to check that OTE enrollment is enabled on this site, then reload. If it remains unavailable and this account was enrolled, ask them to restore the original saved enrollment settings. If it was never enrolled, use a fresh Domains server for a new key.';
-$retryGuidance='For “Not configured”, confirm the server is enabled and fresh, OTE enrollment is enabled, your permissions are current, and the key is not already enrolled on this site before submitting another review. Submitting another review may send another OTE key check.';
-$unknownBody='One OTE key check was sent and NameSilo accepted the key; its balance was not saved. Enrollment may have been saved, but its outcome could not be confirmed. Reload the account page. If Enrollment reads “OTE only · immutable”, an enrollment was saved; check its label before treating it as yours. '.$notEnrolled.' '.$unavailableRecovery.' '.$retryGuidance;
+$unknownBody='NameSilo accepted the key, but we can’t tell if the account saved. Open the account page before you try again. Orders paused: it saved, so check the label is yours. Not connected and not set up yet: nothing saved. Off in Paymenter: turn it on in Servers first. Anything else: don’t try again here. Ask your site admin. Trying again may send another key check.';
 $n=$GLOBALS['enrollmentCalls'];$uncertainPage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$uncertain->id])->mountAction($action('enroll_sandbox',$uncertain))
     ->setActionData([...$input,'api_key'=>'uncertain-save-key','reason'=>'Exercise uncertain save copy'])
     ->callMountedAction()->assertHasNoActionErrors()->assertSet('mountedActions',[]);

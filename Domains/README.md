@@ -27,6 +27,13 @@ restoration questions resolved. Availability premium=null means unknown, not ord
 Run the [offline tests](../docs/testing.md). Provider/sandbox acceptance and Paymenter 1.5.9
 compatibility remain unverified. The distributable license is [MIT](LICENSE).
 
+## What you sell
+
+Domains → What you sell lists the TLDs the Enom account offers, with one GetTLDList call. Terms and prices are read
+only for TLDs staff turn on. To hide TLDs we never want, list them in config `domains.hidden_endings`
+(for example `['xxx','zip']`). A hidden TLD stops selling, including one already on sale. It stays on the list as
+Renewals only, so names already held keep renewing.
+
 ## Public suffix list
 
 Domains → Public suffix list shows saved local status. Viewing requires domain-view and
@@ -46,12 +53,12 @@ bounds accommodate the approximately 230 KB / 10,000-rule source while refusing 
 responses. More than 5% of either section’s previous rules disappearing rejects the update,
 even if added rules hide the net loss. Only the current and one previous compressed copy remain.
 No-change 304 responses update checked time only; successful 200 downloads (including identical
-bytes) revalidate freshness. Warning starts strictly after 30 days; new discovery is held
-before the first validated download and strictly after 90 days. The resolver derives names only; discovery is not enabled. The native intl extension is required to parse IDNs.
+bytes) revalidate freshness. The freshness limit is defined once in `Services/PublicSuffixList::MAX_AGE_DAYS`.
+New discovery is held before the first validated download and strictly after that limit. The resolver derives names only; discovery is not enabled. The native intl extension is required to parse IDNs.
 The HTTP connect/transfer limits are 10/30 seconds. Native DNS resolution is checked before the
 HTTP exchange and deducted from its remaining budget; the system resolver itself has no PHP timeout.
 
-Once the list is more than 30 days old, requests omit conditional validators so an unchanged
+Once the list passes the freshness limit, requests omit conditional validators so an unchanged
 200 download can revalidate freshness. Stored baselines ignore current acceptance floors;
 a damaged or no-longer-parseable baseline is reported separately as a saved-copy failure.
 A damaged stored copy still requires restoring a verified compatible backup; do not remove

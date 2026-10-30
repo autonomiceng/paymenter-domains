@@ -52,7 +52,8 @@ final class Storefront
     private function catalogueRows(): array
     {
         $rows = []; $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock);
-        foreach (SalesPolicy::orderBy('tld')->pluck('tld') as $ending) {
+        foreach (SalesPolicy::orderBy('tld')->get(['tld', 'server_id', 'transfer_enabled']) as $policy) {
+            $ending = $policy->tld;
             $register = $transfer = $chosen = null; $terms = [];
             foreach (range(1, 10) as $term) {
                 try { $offer = $read->offer($ending, 'register', $term); $chosen ??= $offer; $terms[] = $term; if ($term === 1) { $register = $offer['price']; } }
@@ -61,7 +62,7 @@ final class Storefront
             try { $offer = $read->offer($ending, 'transfer', 1); $chosen ??= $offer; $transfer = $offer['price']; } catch (\Throwable) {}
             if (!$terms && !$transfer) { continue; }
             $renew = $chosen['renew'];
-            $rows[] = ['tld' => $ending, 'price' => $register, 'register' => $register, 'transfer' => $transfer,
+            $rows[] = ['tld' => $ending, 'price' => $register, 'register' => $register, 'transfer' => $transfer, 'transfersOn' => $transfer !== null || ($policy->transfer_enabled && Tld::where('server_id', $policy->server_id)->where('tld', $ending)->where('transfer_enabled', true)->exists()),
                 'renew' => $renew, 'terms' => $terms];
         }
         return $rows;

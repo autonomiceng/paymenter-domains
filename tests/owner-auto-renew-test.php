@@ -35,6 +35,16 @@ $save=static function($domain,bool $enabled)use($controller,$req,$session):void 
 $page=static function($domain)use($owners,$req):string {storefrontViews();return (new OwnedDomainController($owners))->show($req($domain,[]),$domain->id)->render();};
 $audit=static fn()=>WatchAudit::where('subject_type','domain')->where('subject_id',$d->id)->where('event','owner_auto_renew')->count();
 $dto=$owners->present($d->fresh());same(['On',null,true],[$dto->renewal,$dto->renewalOff,$dto->autoRenew['enabled']??null],'Legacy absence means On');
+// The Auto Pay line follows what renewal collection can do, not the saved id on the service.
+$gateway=App\Models\Gateway::create(['name'=>'Saved method','extension'=>'AutoPayLine','type'=>'gateway','enabled'=>true]);
+$card=App\Models\BillingAgreement::create(['user_id'=>$user->id,'gateway_id'=>$gateway->id,'name'=>'Saved card','external_reference'=>'synthetic-only']);
+same(false,$owners->present($d->fresh())->autoPay,'No saved card, no Auto Pay');
+$d->service->update(['billing_agreement_id'=>$card->id]);
+same(true,$owners->present($d->fresh())->autoPay,'A saved card on a live gateway is charged');
+App\Models\Gateway::whereKey($gateway->id)->update(['enabled'=>false]);same(false,$owners->present($d->fresh())->autoPay,'A disabled gateway cannot charge');App\Models\Gateway::whereKey($gateway->id)->update(['enabled'=>true]);
+$card->update(['user_id'=>$other->id]);same(false,$owners->present($d->fresh())->autoPay,'Another user\'s card is never charged');$card->update(['user_id'=>$user->id]);
+$card->delete();same(false,$owners->present($d->fresh())->autoPay,'A removed card is not charged, though the service keeps its id');
+$d->service->update(['billing_agreement_id'=>null]);$card->forceDelete();App\Models\Gateway::whereKey($gateway->id)->delete();
 same([],$owners->present($d->fresh(),false)->autoRenew,'Read-only presentation hides switch');
 $save($d,true);same(0,$audit(),'Legacy On is idempotent without a write');
 $html=$page($d);foreach(['form="form-auto-renew" class="domains-a domains-linkbtn">Turn off</button>','Turn off auto-renew?','>Turn off auto-renew<',$d->domain.' expires on Oct 18, 2027 unless you renew it.','name="confirmed"','name="_token"'] as $text){expect(str_contains($html,$text),'Switch renders '.$text);}
@@ -125,7 +135,7 @@ foreach(['2027-09-26','2027-09-27','2027-10-10','2027-10-11','2027-10-17','2027-
     elseif($day>='2027-10-11'){same(range(1,9),$owners->present($calendar->fresh())->renewNow['terms']??null,'After due the same multi-year terms are offered');}
 }
 staffPanel();Auth::login(staffUser([Staff::VIEW]));$save($d,false);
-$facts=DomainFacts::for($d->fresh());same([['Off','Turned off by customer'],['On',null]],[[$facts['Auto-renew']['value'],$facts['Auto-renew']['sub']],[$facts['Renewal invoices']['value'],$facts['Renewal invoices']['sub']]],'Staff distinguishes owner Off; issued invoices stay payable');
+$facts=DomainFacts::for($d->fresh());same([['Off','Turned off by customer'],['On','Awaiting payment: invoice #'.$next->id]],[[$facts['Auto-renew']['value'],$facts['Auto-renew']['sub']],[$facts['Renewal invoices']['value'],$facts['Renewal invoices']['sub']]],'Staff distinguishes owner Off; issued invoices stay payable');
 Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class])
     ->assertSee('Auto-renew turned off')->assertSee(trim($user->first_name.' '.$user->last_name)?:'Customer');
 // Staff can add a hard stop while the owner's reversible switch is Off.

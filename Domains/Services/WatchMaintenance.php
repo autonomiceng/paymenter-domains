@@ -67,11 +67,12 @@ final class WatchMaintenance
             $names=array_values(array_unique(array_map(static fn($f)=>['registry'=>'Expiry checks','watch_dns'=>'DNS checks','managed_dns'=>'DNS checks'][$f]??'Domain discovery',$families)));
             $local=in_array('local',$families,true);
             $action=!$local&&array_intersect(['watch_dns','managed_dns'],$families)?'settings':null;
-            return ['text'=>implode(' and ',$names).(count($names)>1||$names[0]!=='Domain discovery'?' have':' has').' failed since '.$since.'.'.($local?' Ask your administrator to check the server logs.':''),'tone'=>'danger','action'=>$action];
+            $next=$local?'fix domain discovery':($action==='settings'?'check the DNS resolver':'check the registry connection');
+            return ['text'=>implode(' and ',$names).(count($names)>1||$names[0]!=='Domain discovery'?' have':' has').' failed since '.$since.'. Ask your site admin to '.$next.'.','tone'=>'danger','action'=>$action];
         }
         return match($health['reason']) {
-            'disabled'=>['text'=>'Domain monitoring is not set up on this server. Ask your administrator to turn it on.','tone'=>'warning','action'=>null],
-            'dispatch_overdue'=>['text'=>'Monitoring checks have not run since '.$since.'. Ask your administrator to check the scheduled task and background worker.','tone'=>'danger','action'=>null],
+            'disabled'=>['text'=>'Monitoring is not set up on this site.','tone'=>'warning','action'=>'setup'],
+            'dispatch_overdue'=>['text'=>'Monitoring checks have not run since '.$since.'. Ask your site admin to restart them.','tone'=>'danger','action'=>null],
             default=>null,
         };
     }

@@ -32,7 +32,10 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     $html = $render($rows, false); $dom = storefrontDom($html);
     same(5, $dom->query('//thead/tr/th')->length, 'D7 longer or absent registration terms retain column');
     same(3, $dom->query('//td[@data-label="Register for"]')->length, 'D7 conditional column retains every row cell');
-    same('Not offered', trim($dom->query('//td[@data-label="Renew"]')->item(1)->textContent), 'D7 missing renewal price says Not offered');
+    same('Missing Contact support before you buy', preg_replace('/\s+/', ' ', trim($dom->query('//td[@data-label="Renew"]')->item(1)->textContent)), 'D7 missing renewal price says what to do next');
+    $rows[1]['transfer'] = null; $rows[1]['transfersOn'] = true; $rows[2]['transfer'] = null; $rows[2]['transfersOn'] = false;
+    $cells = storefrontDom($render($rows, false))->query('//td[@data-label="Transfer"]');
+    same(['Missing Contact support before you buy', 'Transfers off'], array_map(fn($i) => preg_replace('/\s+/', ' ', trim($cells->item($i)->textContent)), [1, 2]), 'D7 a transfer with no price says what to do next; off stays off');
     expect(str_contains($html, 'Longer terms are priced per term; search for a name to see each total.'), 'D7 longer single term qualifies for footnote');
     $rows[0]['terms'] = [1];
     expect(!str_contains($render($rows, false), 'Longer terms are priced'), 'D7 absent registration terms do not invent longer terms');
@@ -89,12 +92,12 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     $detail = view('domains::partials.summary', ['summary' => $summaries[2]])->render();
     foreach (['domain.registration.unknown', 'domain.dns.unknown', 'domain.points.unknown', 'watch.not_checked'] as $key) { expect(!str_contains($detail, '>'.$strings[$key].'<'), 'Detail shows no chip that only says something is unknown: '.$key); }
     $nameservers = static fn (DOMXPath $dom) => preg_replace('/\s+/', ' ', trim($dom->query('//div[@class="domains-fact"][dt="Nameservers"]/dd')->item(0)?->textContent ?? ''));
-    same('Missing Shows after the first check', $nameservers(storefrontDom($detail)), 'Unchecked detail says Nameservers Missing with its cause');
+    same('Missing Fills in by itself after the first check', $nameservers(storefrontDom($detail)), 'Unchecked detail says Nameservers Missing with its cause');
     same(0, storefrontDom($detail)->query('//details')->length, 'Unchecked detail has no disclosure');
     $fresh = ['delegation' => ['checkedAt' => null, 'stale' => false, 'partial' => false, 'nextCheck' => 1767225600], 'points' => ['checkedAt' => 1767139200, 'stale' => true, 'partial' => true, 'nextCheck' => null]];
     $detailDom = storefrontDom(view('domains::partials.summary', ['summary' => new DomainSummary('held.example', null, 'managed', 'domain.registration.unknown', $unknown, null, null, ['domain.review', 'watch.not_checked'], $strings, null, null, null, $fresh, null, null, [], [], [])])->render());
     same(0, $detailDom->query('//details')->length, 'Detail has no check disclosure');
-    same('Missing Shows after the first check', $nameservers($detailDom), 'A pointer check never stands in for a nameserver check');
+    same('Missing Fills in by itself after the first check', $nameservers($detailDom), 'A pointer check never stands in for a nameserver check');
     foreach (['Out of date', 'Last checked', 'Next check', 'pointer'] as $old) { expect(!str_contains($detailDom->document->saveHTML(), $old), 'Detail drops check bookkeeping: '.$old); }
     // DNS evidence moved from chips into the check details as plain values.
     $checked = ['delegation' => ['checkedAt' => 1767139200, 'stale' => false, 'partial' => false, 'nextCheck' => null], 'points' => ['checkedAt' => 1767139200, 'stale' => false, 'partial' => false, 'nextCheck' => null], 'registry' => ['checkedAt' => 1767139200, 'stale' => false, 'partial' => false, 'nextCheck' => null]];

@@ -78,7 +78,7 @@ $expired=$page(['watch.expired'],$row('expired'),['registry_expiry_reached'],['e
 $soon=$page([],$row('expiring'),[],['expiry'=>'2026-11-01','daysLeft'=>9]);
 same([['Renew example.com at your registrar before Nov 1, 2026.'],'Nov 1, 2026 In 9 days'],[$notice($soon),$card($soon,'Expires')],'Expiring: one notice and the days left');
 $blind=$page([],[],['expiry_unavailable','dns_unavailable'],['expiry'=>null,'nameservers'=>null,'freshness'=>['delegation'=>['checkedAt'=>1790000000,'stale'=>true]]]);
-same([['We can’t read the public registry or DNS for example.com right now. We’ll keep checking.'],'Missing Shows after the next check',['Nameservers','Missing Shows after the next check',[]]],[$notice($blind),$card($blind,'Expires'),$li($blind,'nameservers')],'Can’t read: the notice says why, each Missing says when');
+same([['We can’t read the public registry or DNS for example.com right now. We’ll keep checking.'],'Missing Fills in by itself after the next check',['Nameservers','Missing Fills in by itself after the next check',[]]],[$notice($blind),$card($blind,'Expires'),$li($blind,'nameservers')],'Can’t read: the notice says why, each Missing says when');
 same('Missing Check at your registrar',$card($page([],[],[],['expiry'=>null]),'Expires'),'Unknown expiry carries its cause');
 same(['Nameservers','ns1.example.net ns2.example.net Checking again',[]],$li($page(['watch.ns_pending'],[],[],['nameservers'=>['nameservers'=>['ns1.example.net','ns2.example.net'],'at'=>'2027-01-10T08:00:00Z']]),'nameservers'),'Unconfirmed change says it is checking again');
 $moves=$page([],[...$row('ns_changed'),...$row('ns_restored','January 20, 2027')]);

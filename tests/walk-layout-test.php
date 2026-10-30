@@ -14,7 +14,7 @@ foreach(['annual'=>[1],'terms'=>[1,3]] as $case=>$terms){
     $pages['pricing-'.$case]=view('domains::pricing',['rows'=>$rows,'guest'=>true,'testEnvironment'=>false])->render();
     $dom=storefrontDom($pages['pricing-'.$case]);
     same('Register',$dom->query('//tbody/tr/td')->item(0)->getAttribute('data-label'),'Registration cell has its mobile label');
-    same('Not offered',trim($dom->query('//td[@data-label="Transfer"]')->item(0)->textContent),'Missing transfer offer remains explicit');
+    same('Transfers off',trim($dom->query('//td[@data-label="Transfer"]')->item(0)->textContent),'Missing transfer offer remains explicit');
 }
 $domain=new OwnedDomain('example.com','Active','ok','2027-03-01','On','$14.00',[],
     [['label'=>'Nameservers','state'=>'Completed','date'=>'2026-10-20']],[],[],[],false,

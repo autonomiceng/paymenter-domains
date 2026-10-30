@@ -44,10 +44,10 @@ foreach ([['status'=>'adoption_pending','provenance'=>null],['status'=>'active',
     same('superseded',DB::table('domains_observation_work')->where('domain_id',$d->id)->value('safe_code'),'Already scheduled pending work cannot be claimed');same($calls,count($observation->calls),'Pending scheduled work performs no provider reads');
     $dto=$owners->present($d);same(['Under review','Import not confirmed'],[$dto->status,$dto->statusReason],'Neutral pending label');same(null,$dto->expiry,'No confirmed expiry shown');same(null,$dto->renewalPrice,'No renewal quote');same([],$dto->management,'No management forms');expect($dto->setupPending,'Pending notice shown');
     storefrontViews();$html=view('domains::show',['domain'=>$dto,'keys'=>[]])->render();
-    expect(str_contains($html,'<span class="domains-notice__tx">We’re confirming this domain. Changes and renewals start after that. Contact support if it expires soon.</span>'),'Customer knows next step');
+    expect(str_contains($html,'<span class="domains-notice__tx">We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know.</span>'),'Customer knows next step');
     $visible=strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$html));
     foreach(['Enom','NameSilo','unmanaged'] as $text){expect(!str_contains($visible,$text),'Neutral held page: '.$text);}
-    Illuminate\Support\Facades\Auth::setUser($staff);same('Imported without purchase records. Check open invoices, then import.',DomainFacts::notice($d)['title'],'Staff see reason');
+    Illuminate\Support\Facades\Auth::setUser($staff);same('Imported without purchase records. Check open invoices.',DomainFacts::notice($d)['title'],'Staff see reason');
     same('Invoice #'.$invoice->id,DomainFacts::for($d)['Open invoice']['value'],'Staff sees retained payable renewal');
     $registration=$d->operations()->where('action','register')->sole();DB::table('invoices')->where('id',$registration->invoice_id)->update(['status'=>'pending']);
     DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
@@ -70,7 +70,7 @@ foreach ([['status'=>'adoption_pending','provenance'=>null],['status'=>'active',
     same($opBefore,$d->operations()->orderBy('id')->get()->map(fn($o)=>$o->getRawOriginal())->all(),'Pending reads do not resolve old operations');
 }
 $retained=$d->getRawOriginal();DB::table('domains_domains')->where('id',$d->id)->update(['provider_expires_at'=>null,'renewal_policy'=>'unreadable']);$d->refresh();
-Illuminate\Support\Facades\Auth::setUser($staff);$facts=DomainFacts::for($d);same(null,$facts['Expires']['value'],'Unreadable policy leaves staff expiry Missing');expect(isset($facts['Open invoice']),'Unreadable policy still shows the open invoice');same(['Under review','Import not confirmed'],[DomainFacts::status($d)['label'],DomainFacts::status($d)['reason']],'Unreadable policy keeps the pending import status');same(DomainFacts::UNREADABLE,DomainFacts::notice($d)['title'],'Unreadable policy names the cause');DB::table('domains_domains')->where('id',$d->id)->update($retained);
+Illuminate\Support\Facades\Auth::setUser($staff);$facts=DomainFacts::for($d);same(null,$facts['Expires']['value'],'Unreadable policy leaves staff expiry Missing');expect(isset($facts['Open invoice']),'Unreadable policy still shows the open invoice');same(['Under review','Import not confirmed · Check open invoices.'],[DomainFacts::status($d)['label'],DomainFacts::statusLine(DomainFacts::status($d))],'Unreadable policy keeps the pending import status');same(DomainFacts::UNREADABLE,DomainFacts::notice($d)['title'],'Unreadable policy names the cause');DB::table('domains_domains')->where('id',$d->id)->update($retained);
 same($nativeBefore,$nativeMoney(),'Native invoices/items/transactions/credits preserved');
 // A pending reservation continues to block checkout for the same canonical name.
 commerceReject(fn()=>$new($d->domain));

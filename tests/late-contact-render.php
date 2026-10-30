@@ -42,7 +42,7 @@ $staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 Filament::getCurrentPanel()->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $test=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$late->id])
-    ->assertSee('Auth code deadline passed.')->assertSee('Cancel and refund')
+    ->assertSee('Auth code deadline passed.')->assertSee('Cancel and add credit')
     ->assertDontSee('Not sent: registrar account not set up')
     ->assertActionVisible('refund')->assertActionHidden('release');
 $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$test->instance(),'body'=>$test->html()]);

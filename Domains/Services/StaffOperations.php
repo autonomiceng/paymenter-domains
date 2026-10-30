@@ -33,11 +33,14 @@ final readonly class StaffOperations
                 $id=ObservationWork::currentId(Domain::findOrFail($domain));
                 if(!$id){throw new \DomainException('No scheduled read work matches the current domain account, generation and phase.');}
                 app(ObservationWork::class)->resume((int)$id,'staff_review',$r);break;
-            case 'recheck': $r->read(function()use($operation){$op=\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($operation);
-                if($op->action==='renew'){app(RenewalCompletion::class)->run($operation);}
-                elseif(in_array($op->action,['register','transfer'],true)){app(OperationReconciliation::class)->run($operation);}
-                else {app(DomainManagement::class)->reconcile($operation,app(OwnerPorts::class)->forDomain($op->domain));}
-            });break;
+            case 'recheck':
+                $op=\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($operation);
+                if(!in_array($op->action,['register','transfer','renew'],true)){
+                    app(DomainManagement::class)->reconcileReviewed($operation,fn()=>app(OwnerPorts::class)->forDomain($op->domain),$r);
+                }else{$r->read(function()use($operation,$op){
+                    if($op->action==='renew'){app(RenewalCompletion::class)->run($operation);}
+                    else{app(OperationReconciliation::class)->run($operation);}
+                });}break;
             default: throw new \DomainException('Unknown staff action.');
         }
     }

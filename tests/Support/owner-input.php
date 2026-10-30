@@ -4,10 +4,10 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
+use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails, OwnedDomains};
 $contact=ContactDetails::collect($user)['registrant'];
 $contact['first_name']='Typed <contact> & name';$contact['phone']='bad phone';
-foreach($free?['contact_profile','contacts']:['contacts']as$intent){
+foreach([$free?'contact_profile':'contacts']as$intent){
     $session->forget(['_old_input','domains_failed_form']);
     $before=Operation::count();
     $r=$post($intent,['role'=>'tech','contact'=>[...$contact,'password'=>'PRIVATE-NESTED'],
@@ -29,15 +29,13 @@ foreach($free?['contact_profile','contacts']:['contacts']as$intent){
     }
     same(1,$retry->query('//dialog[contains(@class,"domains-edit")][@open]')->length,'Only the failed contact details open');
     same(1,$retry->query('//input[@name="contact[phone]"][@aria-invalid="true"]')->length,'Only the failed contact has its field error');
-    same('tech',$retry->query('//form[contains(@action,"/manage/'.$intent.'")]//select[@name="role"]/option[@selected]')->item(0)?->getAttribute('value'),'Contact role survives');
     expect(!str_contains($html,'<contact>')&&!str_contains($html,'PRIVATE-'),'Retained contact HTML is escaped and secrets are absent');
-    if($free){$otherIntent=$intent==='contacts'?'contact_profile':'contacts';
-        same('',$retry->query('//form[contains(@action,"/manage/'.$otherIntent.'")]//input[@name="contact[first_name]"]')->item(0)->getAttribute('value'),'Other contact step stays blank');}
+    same(1,$retry->query('//li[@id="contacts"]//form')->length,'One contact form at a time');
     // Simulate a different domain form during the same flash lifetime.
     $session->put('domains_failed_form',route('domains.domains.manage',[$d->id+100,$intent]));
     $otherPage=storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render());
     same(0,$otherPage->query('//dialog[contains(@class,"domains-edit")][@open]')->length,'Another domain marker cannot open this form');
-    same('',$otherPage->query('//input[@name="contact[first_name]"]')->item(0)->getAttribute('value'),'Another domain marker cannot replay contact data');
+    same(OwnedDomains::contacts($d->fresh())['registrant']['first_name'],$otherPage->query('//input[@name="contact[first_name]"]')->item(0)->getAttribute('value'),'Another domain marker cannot replay contact data: the form shows what is saved');
 }
 $session->forget(['_old_input','domains_failed_form']);app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $r=$post('nameservers',['nameservers'=>"ns1.example.com\ninvalid",'transfer_code'=>'PRIVATE-CODE','password'=>'PRIVATE-PASSWORD']);

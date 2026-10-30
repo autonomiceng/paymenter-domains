@@ -107,7 +107,6 @@ final class CartAdmission
                 throw new \DomainException('Native list price changed; refresh checkout.');
             }
             $this->eligibility->require((string) $item->checkout_config['domains_check'], $line['name'], $this->identity($item), true);
-            if ($snapshot->freshUntil <= $this->clock->now()) { throw new \DomainException('Price evidence expired during admission.'); }
             $line['snapshot'] = $snapshot;
         } unset($line);
         $this->order = $order; $this->lines = $lines;
@@ -124,7 +123,6 @@ final class CartAdmission
     {
         if (DB::transactionLevel() !== 1 || !$this->order?->exists) { throw new \DomainException('No current native checkout.'); }
         $this->eligibility->require($line['check'], $line['name'], $line['identity'], true);
-        if ($line['snapshot']->freshUntil <= $this->clock->now()) { throw new \DomainException('Admitted evidence expired.'); }
     }
 
     /** Binding can consume only this transaction's admitted batch; externally constructed DTOs have no authority. */

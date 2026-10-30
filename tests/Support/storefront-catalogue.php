@@ -55,20 +55,21 @@ function storefrontCorruptionChecks(array $fixture, Storefront $store): void
             foreach ($broken->settings()->get() as $setting) { $duplicateProduct->settings()->create($setting->only(['key', 'value', 'type', 'encrypted'])); }
         }
         Cache::flush(); $before = $reads->calls; $public = array_column($store->endings(), null, 'tld');
-        same(['com', 'net', 'test'], array_keys($public), 'Corrupt '.$corruption.' isolates broken, old, below-cost and unknown offers');
-        same(['tld' => 'net', 'price' => '$20.00', 'register' => '$20.00', 'transfer' => '$22.00', 'renew' => '$21.00', 'terms' => [1, 3], 'testEnvironment' => true],
+        same(['com', 'net', 'old', 'test'], array_keys($public), 'Corrupt '.$corruption.' isolates broken, below-cost and unknown offers while keeping saved costs');
+        same(['tld' => 'net', 'price' => '$20.00', 'register' => '$20.00', 'transfer' => '$22.00', 'transfersOn' => true, 'renew' => '$21.00', 'terms' => [1, 3], 'testEnvironment' => true],
             $public['net'], 'Corrupt '.$corruption.' preserves exact healthy row');
+        same([...$public['net'], 'tld' => 'old'], $public['old'], 'Older saved cost preserves the exact public retail and terms');
         same(null, $public['test']['transfer'], 'Corrupt transfer never leaks a price');
         same([1, 3], $public['test']['terms'], 'Registration-only ending retains exact terms');
         same($before, $reads->calls, 'Catalogue isolation performs no provider I/O');
-        foreach (['net', 'test'] as $ending) {
+        foreach (['net', 'test', 'old'] as $ending) {
             $result = $store->check('example.'.$ending);
             same('available', $result['status'], 'Corrupt '.$corruption.' preserves healthy check for '.$ending);
             same([1 => '$20.00', 3 => '$60.00'], $result['terms'], 'Healthy check retains exact prices');
             same('$21.00', $result['renew'], 'Healthy check retains annual renewal');
         }
         $before = $reads->calls;
-        foreach (['org', 'old', 'belowcost', 'unknown'] as $ending) {
+        foreach (['org', 'belowcost', 'unknown'] as $ending) {
             same('held', $store->check('example.'.$ending)['status'], 'Corrupt '.$corruption.' never revives '.$ending);
         }
         same($before, $reads->calls, 'Unorderable endings stop before availability');

@@ -23,7 +23,7 @@ foreach([[$damaged,'payload'],[$damaged->domain,'snapshot']] as [$record,$field]
         \Illuminate\Support\Facades\Auth::setUser($staff);
         $row=$damaged->fresh();$facts=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($row);
         expect($facts['unreadable']??false,'Unreadable contact '.$field.' remains a decode failure');
-        Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionHidden('release')->assertSee("Can't read saved data. Check the app encryption key.");
+        Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionHidden('release')->assertSee("Can't read saved data. Ask your site admin to check the encryption key.");
     }finally{$query->update([$field=>$saved]);}
 }
 
@@ -59,23 +59,34 @@ foreach(['register','transfer'] as $kind){
     }
     $key=$ticket($op,'release');
     $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);
-    if($kind==='transfer'){$page->assertSee('Use updated account details')->assertDontSee('Release hold');}
-    else{$page->assertSee('Release hold');}
-    $page->callAction('release')->assertNotified($kind==='transfer'?'Contact details updated':'Hold released');
+    // The notice says what the saved request lacks and what the button does.
+    $page->assertSee('Use updated account details')->assertDontSee('Release hold')
+        ->assertSee('This request is missing: phone, for all four contacts. The customer account is complete now.')
+        ->assertSee($kind==='transfer'
+            ? '"Use updated account details" copies the account details into this request. The transfer stays on hold for a separate release review. If the auth code deadline has passed, it cannot be released.'
+            : '"Use updated account details" copies the account details into this request and puts it back in the queue. It may then be sent to Enom.');
+    $page->callAction('release')->assertNotified('Contact details updated');
+    $page->assertSee('Contact details updated')->assertDontSee('Use updated account details')
+        ->assertDontSee('The customer account is complete now.');
+    if($kind==='register'){$page->assertSee('In progress')->assertDontSee('On hold')->assertActionHidden('release')->assertActionVisible('hold');}
+    else{$page->assertSee('On hold')->assertActionVisible('release');}
     $after=$op->fresh();same($kind==='transfer'?['held','transfer_setup_review_required']:['queued',null],[$after->state,$after->safe_code],'Design recovery state: '.$kind);
     same('+1.2025550100',$after->payload['contacts']['registrant']['phone'],'Recollect owner, never staff contacts');
     same(false,$after->payload['setup_required'],'Recollected contacts are ready');
-    same([$staff->id,$user->id,$kind==='transfer'?'Use updated account details':'Release hold','contact_details_required'],array_values(array_intersect_key($after->policy['contact_readmissions'][0],array_flip(['actor_id','owner_id','reason','previous_code']))),'Bound contact audit');
+    same([$staff->id,$user->id,'Use updated account details','contact_details_required'],array_values(array_intersect_key($after->policy['contact_readmissions'][0],array_flip(['actor_id','owner_id','reason','previous_code']))),'Bound contact audit');
     same(['release'],array_column($after->policy['staff_actions'],'action'),'Staff review audit records recovery');
     $history=StaffReviewHistory::rows($after);
-    same($kind==='transfer'?'Contact details updated':'Hold released',$history[0]['event'],'History names the actual recovery');
+    same('Contact details updated',$history[0]['event'],'History names the actual recovery');
     same(null,$history[0]['sub'],'History does not repeat the action label');
     same($deadline,TransferInputs::deadline($after,$clock->now())?->format(DATE_ATOM),'Original transfer deadline retained');
     foreach(['epp','registry','registry_schema','nameservers','privacy'] as $field){same($op->payload[$field]??null,$after->payload[$field]??null,'Independent frozen input retained: '.$field);}
     foreach(['attempt','funding','cost','started_at','request_fingerprint','completed_at'] as $field){same($op->$field,$after->$field,'Recovery preserves evidence: '.$field);}
     same($money,nativeFinancialSnapshot($op),'Recovery changes no money, service or reservation');
     commerceReject(fn()=>$run($after,'release',$key));
-    if($kind==='transfer'){$run($after,'release');same('queued',$op->fresh()->state,'Transfer needs a separate reviewed release');}
+    if($kind==='transfer'){
+        $page->callAction('release')->assertNotified('Hold released')->assertSee('In progress')->assertDontSee('On hold')->assertActionHidden('release');
+        same('queued',$op->fresh()->state,'Transfer needs a separate reviewed release');
+    }
     $run($op->fresh(),'hold');$run($op->fresh(),'release');same('queued',$op->fresh()->state,'A later ordinary hold can release');
 }
 
@@ -87,7 +98,9 @@ $policy=$late->policy;$code=$late->payload['epp'];$money=nativeFinancialSnapshot
 $user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);
 $clock->instant=$deadline->modify('+1 second');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$late->id])->assertActionVisible('release')
-    ->assertSee('Use updated account details')->assertDontSee('Release hold')->callAction('release')->assertNotified('Contact details updated');
+    ->assertSee('Use updated account details')->assertDontSee('Release hold')
+    ->assertSee('The transfer stays on hold for a separate release review. If the auth code deadline has passed, it cannot be released.')
+    ->callAction('release')->assertNotified('Contact details updated');
 same(['held','transfer_setup_review_required'],[$late->fresh()->state,$late->fresh()->safe_code],'Late correction cannot queue a transfer');
 same($deadline->format(DATE_ATOM),TransferInputs::deadline($late->fresh(),$clock->now())?->format(DATE_ATOM),'Late recovery never resets deadline');
 same([$policy['paid_at'],$policy['code_saved_at'],$code],[$late->fresh()->policy['paid_at'],$late->fresh()->policy['code_saved_at'],$late->fresh()->payload['epp']],'Original paid and code evidence retained');

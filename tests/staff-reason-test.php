@@ -20,7 +20,7 @@ $beforeInvalidReason=$op->fresh()->getRawOriginal();
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>"Reviewed\u{2028}refund"])->assertHasActionErrors(['reason'=>'regex']);
 same($beforeInvalidReason,$op->fresh()->getRawOriginal(),'Refund reason field error changes no operation');
 $reason=str_repeat('🦦',500);
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>$reason])->assertHasNoActionErrors()->assertNotified('Cancelled and refunded');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>$reason])->assertHasNoActionErrors()->assertNotified('Cancelled, credit added');
 same($reason,$op->fresh()->policy['staff_actions'][0]['reason'],'500 Unicode characters retained');
 // Release hold has no reason field and records its own name.
 $op=$held('staff-release-name-placeholder.com');

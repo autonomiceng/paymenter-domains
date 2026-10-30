@@ -19,6 +19,8 @@ $permissions=[Staff::VIEW,Staff::POLICY,Staff::COSTS];foreach(array_keys(Review:
 $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($native,$sellers,$bindings,true);app()->instance(StaffSettingsWrites::class,$writer);
 $review=static fn(string $action,?int $ending=null,?int $account=null,?string $stamp=null,?string $key=null,string $reason='Synthetic reviewed change')=>new Review($u->id,$account??$t->server_id,$ending,$action,
     $key??Review::ticket($u->id,$account??$t->server_id,$ending,$action,$stamp??Review::stamp($account??$t->server_id,$ending)),$reason);
+$syncConfig=['domains.enom_catalogue.enabled'=>config('domains.enom_catalogue.enabled'),'domains.enom_identity.environment'=>config('domains.enom_identity.environment')];
+config(['domains.enom_catalogue.enabled'=>true,'domains.enom_identity.environment'=>'test']);
 $fixed=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'1.00','fixed_renew'=>'1.00','fixed_transfer'=>'1.00'];
 foreach(array_diff(array_keys(Review::ACTIONS),staffNoButtonActions()) as $action){
     $page=Livewire::actingAs($u)->test(in_array($action,staffSetupActions(),true)?RegistrarAccount::class:ViewTld::class,
@@ -26,6 +28,13 @@ foreach(array_diff(array_keys(Review::ACTIONS),staffNoButtonActions()) as $actio
     $name=in_array($action,staffSetupActions(),true)?setupAction($action,$t->server_id):$action;
     if(in_array($action,['test_renewal','test_management','live_renewal','live_management'],true)){$page->assertActionDoesNotExist($name);continue;} // Deployment opt-in is off.
     if($action==='enroll_sandbox'){$page->assertActionDoesNotExist($name);continue;}
+    if($action==='import'){
+        $page->assertActionDoesNotExist($name);
+        $syncName='sync_prices_'.$t->server_id;
+        $sync=Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)->mountAction($syncName)->assertActionMounted($syncName);
+        same(['review_key'],array_keys($sync->get('mountedActions.0.data')),'Account-wide sync asks only for its review key');
+        continue;
+    }
     $page->mountAction($name)->assertActionMounted($name)->setActionData(['reason'=>'x'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);
 }
 // Every settings action is hidden without its own permission, even with view/manage access.
@@ -33,10 +42,14 @@ $u->role->update(['permissions'=>[Staff::VIEW,Staff::POLICY]]);
 foreach(array_keys(Review::ACTIONS) as $action){
     $setup=in_array($action,staffSetupActions(),true);
     $page=Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id]);
-    if(in_array($action,staffNoButtonActions(),true)){$page->assertActionDoesNotExist($action);}
+    if($action==='import'){
+        $page->assertActionDoesNotExist(setupAction($action,$t->server_id));
+        Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)->assertActionHidden('sync_prices_'.$t->server_id);
+    }
+    elseif(in_array($action,staffNoButtonActions(),true)){$page->assertActionDoesNotExist($action);}
     elseif(in_array($action,['configure','processing'],true)){$page->assertActionHidden(setupAction($action,$t->server_id));}elseif($setup){$page->assertActionDoesNotExist(setupAction($action,$t->server_id));}else{$page->assertActionHidden($action);}
 }
-$u->role->update(['permissions'=>$permissions]);
+$u->role->update(['permissions'=>$permissions]);config($syncConfig);
 $staleFirst=['processing','delivery_review','alert_review'];
 foreach([...$staleFirst,...array_values(array_diff(array_keys(Review::ACTIONS),$staleFirst))] as $action){
     if($action==='enroll_sandbox'){continue;} // Enrollment has its own fresh-server review regression.
@@ -54,19 +67,20 @@ tldRefusal(fn()=>$writer->run($r,$fixed,$now),'Settings changed. Reload this pag
 same($historyBeforeReplay,TldFacts::history($t->server_id),'Replay audit unchanged');
 same($auditBeforeReplay,Review::historyRows(App\Models\Server::findOrFail($t->server_id)),'Refused replay retains exact saved audit');
 expect(in_array('Default pricing changed',array_column(TldFacts::history($t->server_id,999),'change'),true),'Shared default appears in sibling history');
-// Costs out of date: the default is saved, but this TLD keeps its published prices and says so.
-same(['published'=>0,'failed'=>['.com']],$writer->run($review('default_rule',$t->id),[...$fixed,'fixed_renew'=>'2.00'],$now->modify('+2 days')),'Out of date TLD is named');
+// Missing renewal cost: the default is saved, but this TLD keeps its published prices and says so.
+$renewalCost=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew','term'=>1])->sole();
+Price::whereKey($renewalCost->id)->update(['wholesale'=>null]);
+same(['published'=>0,'failed'=>['.com']],$writer->run($review('default_rule',$t->id),[...$fixed,'fixed_renew'=>'2.00'],$now->modify('+2 days')),'Missing-cost TLD is named');
+Price::whereKey($renewalCost->id)->update(['wholesale'=>$renewalCost->wholesale]);
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Prices not published'],TldFacts::salesState($t->fresh()),'Unpublished rule blocks ready status');
 $rows=TldFacts::prices($t->fresh());expect($rows&&collect($rows)->every(fn($r)=>in_array('unpublished',$r['flags'],true)),'Unpublished rule has visible alert');
 $same=['min_years'=>1,'max_years'=>3,'enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true];
-$writer->run($review('tld_settings',$t->id),$same,$now); // Settle the synthetic updated_at first.
 $stamp=Review::stamp($t->server_id,$t->id);$key=Review::ticket($u->id,$t->server_id,$t->id,'tld_settings',$stamp);
-$writer->run($review('tld_settings',$t->id,key:$key),$same,$now);
+tldRefusal(fn()=>$writer->run($review('tld_settings',$t->id,key:$key),$same,$now),'Terms unchanged.');
 same($stamp,Review::stamp($t->server_id,$t->id),'No-op settings action leaves its reviewed stamp unchanged');
-tldRefusal(fn()=>$writer->run($review('tld_settings',$t->id,key:$key),$same,$now),'Review key used.');
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('tld_settings')
     ->setActionData([...$same,'review_key'=>$key,'reason'=>'Replay unchanged native confirmation'])->callMountedAction()->assertHasNoActionErrors()
-    ->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('Change refused')->body('This confirmation was already used. Reload this page.'))->assertSet('mountedActions',[]);
+    ->assertNotified('Nothing to save')->assertSet('mountedActions',[]);
 $r=$review('publish',$t->id);$before=Price::where('server_id',$t->server_id)->pluck('revision','id')->all();$writer->run($r,[],$now);
 foreach(Price::where('server_id',$t->server_id)->get() as $p){same($before[$p->id]+1,$p->revision,'Revision incremented');same($p->action==='renew'?null:'below_cost',$p->hold_reason,'Margin rule');same('below_cost',$p->eligibility['staff_alert'],'Staff alert');}
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($t->fresh()),'Below-cost sales never reported ready');
@@ -75,6 +89,7 @@ commerceReject(fn()=>$prices->current($t->server_id,$t->account_fingerprint,'com
 $nativePage=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('override')->assertActionMounted('override');
 $nativeKey=$nativePage->get('mountedActions.0.data.review_key');
 $nativePage->setActionData(['pricing'=>'custom',...$fixed,'reason'=>'Confirm native publication'])->callMountedAction()->assertNotified('Prices published')->assertSet('mountedActions',[]);
+$nativePage->mountAction('override')->setActionData(['pricing'=>'custom',...$fixed,'fixed_renew'=>'3.00','reason'=>'Publish again with no reload'])->callMountedAction()->assertHasNoActionErrors();same('3.00',$prices->renewal($t->server_id,$t->account_fingerprint,'com','USD',$now)->retail,'A second save on one page lands');
 tldRefusal(fn()=>$writer->run($review('override',$t->id,null,null,$nativeKey),$fixed,$now),'Settings changed. Reload this page.');
 $r=$review('override',$t->id);$writer->run($r,[...$fixed,'fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00'],$now);
 expect(!$t->fresh()->use_default_rule,'Override enabled');$writer->run($review('publish',$t->id),[],$now);
@@ -87,10 +102,10 @@ $holding=Domain::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registr
     'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);$generation=$holding->authority_generation;
 $writer->run($review('seller',$t->id),['seller'=>$tlds[1]->server_id,'register'=>true,'transfer'=>true],$now);
 same($tlds[1]->server_id,SalesPolicy::where('tld','com')->sole()->server_id,'New seller selected');same($t->server_id,$holding->fresh()->server_id,'Holder retains account');same($generation,$holding->fresh()->authority_generation,'Holder generation immutable');
-$writer->run($review('acceptance',null),['ending'=>'com','accept'=>false],$now);$a=Account::where('server_id',$t->server_id)->sole();$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding($a));
+$writer->run($review('acceptance',null),['changes'=>['com'=>null]],$now);$a=Account::where('server_id',$t->server_id)->sole();$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding($a));
 same([],$accepted->endings['com']['register'],'New sales revoked');same([1],$accepted->endings['com']['renew'],'Holder annual renewal retained');
-commerceReject(fn()=>$writer->run($review('acceptance',null,$tlds[1]->server_id),['ending'=>'com','accept'=>true,'terms'=>[1,3],'verified'=>true],$now));
-$writer->run($review('acceptance',null),['ending'=>'com','accept'=>true,'terms'=>[1,3],'verified'=>true,'registry'=>true],$now);
+commerceReject(fn()=>$writer->run($review('acceptance',null,$tlds[1]->server_id),['changes'=>['com'=>['terms'=>[1,3],'transfer'=>false]]],$now));
+$writer->run($review('acceptance',null),['changes'=>['com'=>['terms'=>[1,3],'transfer'=>false]]],$now);
 expect(!$t->fresh()->register_enabled,'Widening cannot restore disabled sales');
 $writer->run($review('history'),['history_action'=>'register','accept'=>true,'verified'=>true,'timezone'=>'America/Los_Angeles','lag'=>60,'retention'=>86400],$now);
 expect(\Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances::load(CatalogueAcceptances::binding($a))!==null,'History accepted');
@@ -136,14 +151,14 @@ $foreign=Review::ticket($u->id+100,$t->server_id,$t->id,'publish',Review::stamp(
 commerceReject(fn()=>$writer->run($review('publish',$t->id,null,null,$foreign),[],$now));
 $other=App\Models\Server::find($tlds[1]->server_id);$setting=$other->settings()->where('key',CatalogueAcceptances::KEY)->sole();$setting->value='invalid';$setting->save();
 $settings=['min_years'=>1,'max_years'=>1,'enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true];
-$writer->run($review('tld_settings',$tlds[1]->id,$other->id),$settings,$now);
-same(1,$tlds[1]->fresh()->max_years,'Corrupt acceptance permits narrowing');
-$writer->run($review('tld_settings',$tlds[1]->id,$other->id),[...$settings,'enabled'=>false],$now);
+$writer->run($review('tld_settings',$tlds[1]->id,$other->id),[...$settings,'transfer'=>false],$now);
+same(false,$tlds[1]->fresh()->transfer_enabled,'Corrupt acceptance permits narrowing');
+$writer->run($review('tld_settings',$tlds[1]->id,$other->id),[...$settings,'transfer'=>false,'enabled'=>false],$now);
 expect(!$tlds[1]->fresh()->enabled,'Corrupt acceptance permits pausing new sales');
 foreach([[...$settings,'max_years'=>3,'enabled'=>false,'verified'=>true],[...$settings,'verified'=>true]] as $attempt){
     tldRefusal(fn()=>$writer->run($review('tld_settings',$tlds[1]->id,$other->id),$attempt,$now),'Catalogue acceptance is unavailable.');
 }
-$writer->run($review('acceptance',null,$other->id),['ending'=>'com','accept'=>true,'verified'=>true,'terms'=>[1],'registry'=>true],$now);
+$writer->run($review('acceptance',null,$other->id),['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]],$now);
 same(2,CatalogueAcceptances::load(CatalogueAcceptances::binding(Account::where('server_id',$other->id)->sole()))->revision,'Repair advances beyond retained import proof');
 commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\PublicationEligibility::require($tlds[1]->fresh(),'register',1),'Repair cannot reuse earlier import proof');
 $audit->value='invalid';$audit->save();$before=Price::pluck('revision','id')->all();

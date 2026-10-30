@@ -66,11 +66,9 @@ WHOIS privacy hides the owner's name, address, phone and email from public WHOIS
 Each domain has an owner (registrant) and admin, tech and billing contacts. You can change one contact or all of them at once.
 
 - Use details you can be reached at. Registries can suspend domains with false contact details.
-- Changing the owner's name, organization or email may need email verification, and can block transfers to another registrar for 60 days.
-- Some registrars apply contact changes in two steps. Prepare the new details first, then apply them once History shows them as confirmed.
+- Changing the owner's name, organization or email may need email verification, and can block transfers for 60 days.
+- Some registrars apply contact changes in two steps. Send the new details first. Once they are approved, open Edit contacts again to use them.
 
 ## Auto-renew
 
-Auto-renew sends a renewal invoice before your domain expires, so it stays registered. If you turn it off, the domain expires on the date shown unless you renew it.
-
-Registrar auto-renew is a separate setting at the registrar. Turning it off means the registrar stops renewing the domain on its own. Your domain then renews only as set by Auto-renew, which doesn't change.
+Auto-renew sends a renewal invoice before your domain expires. The domain renews once that invoice is paid. With Auto Pay on, we charge your saved payment method for it. With Auto Pay off, or if the charge fails, you pay the invoice yourself. If you turn auto-renew off, the domain expires on the date shown unless you renew it.

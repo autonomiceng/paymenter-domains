@@ -48,6 +48,6 @@ final class EnomLive
     public static function facts(AccountBinding $b): array
     {
         $out=[];foreach(['catalogue','registration','renewal','management'] as $action){$out['Enom live '.$action]=self::enabled($b,$action)?'Deployment allows live '.$action.'. Independent live acceptance and processing are required.':'Off or account/site binding unavailable.';}
-        $out['Enom live daily limits']=EnomLiveCalls::facts($b);$out['Enom live inbound transfer']='Unavailable';return $out;
+        $out['Our daily safety limits for live Enom']=EnomLiveCalls::facts($b);$out['Enom live inbound transfer']='Unavailable';return $out;
     }
 }

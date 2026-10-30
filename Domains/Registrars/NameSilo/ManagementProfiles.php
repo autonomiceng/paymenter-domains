@@ -16,10 +16,20 @@ final class ManagementProfiles
         if ($existing && is_string($frozen = $existing->policy['management']['input']['profile_operation'] ?? null)) { return $frozen; }
         foreach ($ops as $op) {
             if ($op->action !== 'contact_profile' || ($op->policy['management']['input'] ?? null) !== $input) { continue; }
-            if ($ops->contains(fn ($peer) => $peer->operation_key !== $key && ($peer->policy['management']['input']['profile_operation'] ?? null) === $op->operation_key)) { continue; }
-            if (ManagementEvidence::resolved($op, $d) && $op->state === 'succeeded') { return $op->operation_key; }
+            if (self::open($op, $ops, $d, $key)) { return $op->operation_key; }
         }
         throw new \DomainException('Fresh contact profile staging required.');
+    }
+    /** The newest approved, unused stage's role and contact. The owner's second step must send exactly these. */
+    public static function approved(Domain $d): ?array
+    {
+        $ops = Operation::where('domain_id', $d->id)->orderByDesc('id')->get();
+        return $ops->first(fn ($op) => $op->action === 'contact_profile' && self::open($op, $ops, $d))?->policy['management']['input'];
+    }
+    private static function open(Operation $op, $ops, Domain $d, ?string $key = null): bool
+    {
+        return !$ops->contains(fn ($peer) => $peer->operation_key !== $key && ($peer->policy['management']['input']['profile_operation'] ?? null) === $op->operation_key)
+            && ManagementEvidence::resolved($op, $d) && $op->state === 'succeeded';
     }
     public static function resolve(ManagementRequest $r, \DateTimeImmutable $now): ContactProfile
     {

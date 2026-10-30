@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\PendingAdoptionResource
 class ListPending extends ListRecords
 {
     protected static string $resource=PendingAdoptionResource::class;
-    public function getTitle(): string{return 'Adoption pending';}
+    public function getTitle(): string{return 'Import pending';}
     public function getSubheading(): string{return 'Read-only setup queue. These registrations are not approved for renewal handling.';}
     protected function getHeaderActions(): array{return [];}
     public function mount(): void{parent::mount();$this->redirect(PendingAdoptionResource::redirectUrl());}

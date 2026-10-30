@@ -177,7 +177,7 @@ final class NativeCancellation
         $a = Adoption::where('state', 'committed')->whereIn('cancellation_id', array_filter([$c->getRawOriginal('id'), $c->id]))->first();
         if (!$a) { return; }
         logger()->warning('Original adoption cancellation change refused.', ['adoption_id' => $a->id, 'service_id' => $a->service_id]);
-        throw \Illuminate\Validation\ValidationException::withMessages(['reason' => 'This cancellation records the original adoption renewal stop and must be retained. Review the domain adoption history.']);
+        throw \Illuminate\Validation\ValidationException::withMessages(['reason' => 'This cancellation stopped renewal when the domain was imported, so it has to stay.']);
     }
     private static function values(array $attrs,string $column): array
     {

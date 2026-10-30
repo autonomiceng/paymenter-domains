@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CatalogueFreshness, Environment, RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 
 /** Built-in catalogue authority. Checkout retains its independent processing guard. */
 final class TestCatalogue
@@ -22,35 +22,17 @@ final class TestCatalogue
             && $binding->registrarKey === 'enom' && $binding->environment === Environment::Test;
     }
 
-    public static function import(StaffSettingsReview $review, array $data, AccountBindings $bindings, Clock $clock): void
+    /** Staff Sync prices: every accepted TLD in one run, or the one ending given, or the endings a What you sell save named. */
+    public static function import(StaffSettingsReview $review, array $data, AccountBindings $bindings, Clock $clock): array
     {
         $review->local(static fn() => null, 'catalogue_requested');
         $phase = 'catalogue_refused';
         try {
             $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $review->serverId)->sole();
-            $binding = CatalogueAcceptances::binding($account);
-            if (!self::enabled($binding)) { throw new \DomainException('TEST catalogue reads are unavailable.'); }
             $ending = strtolower(ltrim(trim((string)($data['ending'] ?? '')), '.'));
-            $accepted = CatalogueAcceptances::load($binding);
-            if (!isset($accepted->endings[$ending])) { throw new \DomainException('Catalogue ending is not accepted.'); }
-            $reader = $bindings->reader($review->serverId);
-            $context = new RequestContext($binding, RequestOrigin::Interactive, $clock->now()->modify('+25 seconds'),
-                new RequestBudget(15), $clock, Runtime::limiter(), stopOnReadFailure: true);
-            $listed=[];
-            if ($reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\CataloguePreview
-                || $reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomTestReconciliationReader) {
-                try { $listed=$reader->catalogue($context)->facts()['tlds']??[]; }
-                catch (ReadDeferred|EnomTestCallLimit $error) { throw $error; }
-                catch (\Throwable $error) { throw new CatalogueImportFailure(ReadFailure::code($error)); }
-            }
-            if (!in_array($ending, $listed, true)) {
-                throw new CatalogueImportFailure('catalogue_evidence_missing');
-            }
-            $result = app(CatalogueSync::class)->refresh($review->serverId, $context, new CatalogueFreshness, [$ending], $review);
-            if ($result !== ['synced' => 1, 'failed' => []]) { throw new CatalogueImportFailure($result['failure_codes']['.'.$ending]??'catalogue_import_failed'); }
-            app(SellerPolicies::class)->initialize($ending);
-            self::withdrawCarts($binding, $ending);
+            $result = app(PriceSync::class)->run($account, $clock, $review, $ending === '' ? null : $ending, isset($data['only']) ? array_values(array_map('strval', (array)$data['only'])) : null);
             $phase = 'catalogue_finished';
+            return $result;
         } finally { $review->finish($phase); }
     }
 

@@ -19,7 +19,7 @@ writeRenderArtifact($out.'/customer-pending.html',str_replace('@@SLOT@@',$body[1
 staffPanel();$staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 Filament::getCurrentPanel()->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
-$test=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSee('Imported without purchase records. Check open invoices, then import.')->assertSee('Under review');
+$test=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSee('Imported without purchase records. Check open invoices.')->assertSee('Under review');
 $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$test->instance(),'body'=>$test->html()]);
 $html=preg_replace('~<script\b[^>]*>.*?</script>~si','',$html);$html=preg_replace('~<link\b[^>]*>~si','',$html);
 $html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);

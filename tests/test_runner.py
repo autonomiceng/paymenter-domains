@@ -81,7 +81,7 @@ class InstalledPhaseTests(unittest.TestCase):
                 self.assertIn('exceeded 45 seconds', error)
 
     def test_remaining_budget_includes_setup_and_package_verification(self):
-        for scenario, target, budget in [('held', 'install', 110), ('enom-test-management', 'install-enom-test-management', 60)]:
+        for scenario, target, budget in [('held', 'install', 110), ('enom-test-management', 'install-enom-test-management', 90)]:
             for remaining in [10, 0.0005]:
                 with self.subTest(scenario=scenario, remaining=remaining):
                     calls, error, _ = self.phase_failure(scenario, target, setup=budget-remaining-1, verify=1)
@@ -90,7 +90,7 @@ class InstalledPhaseTests(unittest.TestCase):
                     self.assertIn(f'exhausted the {budget}-second scenario deadline', error)
 
     def test_expired_scenario_refuses_php_before_first_and_later_phases(self):
-        for scenario, first, later, budget in [('held', 'install', 'held', 110), ('enom-test-management', 'install-enom-test-management', 'enom-test-management-restart', 60)]:
+        for scenario, first, later, budget in [('held', 'install', 'held', 110), ('enom-test-management', 'install-enom-test-management', 'enom-test-management-restart', 90)]:
             for overdue in [0, 1]:
                 with self.subTest(scenario=scenario, overdue=overdue):
                     calls, error, _ = self.phase_failure(scenario, first, setup=budget+overdue)
@@ -101,7 +101,7 @@ class InstalledPhaseTests(unittest.TestCase):
                     self.assertIn(f'phase {later} exhausted', error)
 
     def test_timeout_label_uses_actual_expiry_and_preserves_cause(self):
-        for scenario, target, budget in [('held', 'install', 110), ('enom-test-management', 'install-enom-test-management', 60)]:
+        for scenario, target, budget in [('held', 'install', 110), ('enom-test-management', 'install-enom-test-management', 90)]:
             with self.subTest(scenario=scenario, expiry='future'):
                 calls, error, _ = self.phase_failure(scenario, target, expires=45)
                 self.assertEqual(calls, [(target, 45)])
@@ -133,6 +133,10 @@ class InstalledPhaseTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
+    def setUp(self):
+        memory = mock.patch.object(runner, 'available_memory_mib', return_value=8192)
+        memory.start(); self.addCleanup(memory.stop)
+
     def test_ote_output_resolves_symlinked_tmpdir(self):
         spec = importlib.util.spec_from_file_location('ote_contract', ROOT/'scripts/ote-contract.py')
         ote = importlib.util.module_from_spec(spec); spec.loader.exec_module(ote)
@@ -638,7 +642,7 @@ class RunnerTests(unittest.TestCase):
                 for key in ['argv', 'seconds', 'guard_seconds', 'exit', 'timed_out']:
                     self.assertEqual(logged[key], saved[key])
 
-    def test_only_paths_keep_manifest_order_and_native_fixture_requirements(self):
+    def test_only_paths_keep_manifest_cases_and_native_fixture_requirements(self):
         suites = runner.manifest()
         cases = [(['tests/test_package.py'], ['package']),
                  (['tests/test_schema_mariadb.py'], ['mariadb']),
@@ -655,6 +659,7 @@ class RunnerTests(unittest.TestCase):
                 (Path(temp)/'runtime').mkdir()
                 self.assertEqual(runner.main(), 0)
                 expected = [(kind, path) for kind, paths in suites.items() for path in paths if path in requested]
+                expected.sort(key=lambda item: runner.ORDER.index(item[0]))
                 self.assertEqual([(kind, argv[-1]) for kind, argv in run.call_args.args[0]], expected)
                 self.assertEqual(run.call_args.args[3], selected)
                 if selected == ['mariadb']:
@@ -713,6 +718,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(runner.main(), 0)
         commands = run.call_args.args[0]
         expected = [(kind, path) for kind, paths in suites.items() if kind != 'mariadb' for path in paths]
+        expected.sort(key=lambda item: runner.ORDER.index(item[0]))
         self.assertEqual([(kind, argv[-1]) for kind, argv in commands if kind != 'lint'], expected)
         lint = [[str(ROOT/'scripts/php-test'), '-l', str(path.relative_to(ROOT))]
                 for area in ['Domains', 'tests'] for path in sorted((ROOT/area).rglob('*.php'))]

@@ -25,10 +25,10 @@ $configure=static function(#[SensitiveParameter] array $input, bool $success=tru
             ?Filament\Notifications\Notification::make()->danger()->title("Couldn't save")->body($message)
             :($success?'Saved':"Couldn't save"))->assertSet('mountedActions',[]);
 };
-Log::spy();config(['domains.enom_test_daily_call_cap'=>0]);$calls=count($GLOBALS['identityCalls']);
-$configure([],false,'Enom TEST request refused before sending. '.Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::facts());
+Log::spy();config(['domains.enom_test_sends_per_day'=>0]);$calls=count($GLOBALS['identityCalls']);
+$configure([],false,'Our test send check stopped this Enom request before sending. '.Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::facts(null));
 same($calls,count($GLOBALS['identityCalls']),'Staff sees identity cap refusal without a provider send');expect(Account::where('server_id',$server->id)->doesntExist(),'Cap refusal saves no unverified account for this server');
-config(['domains.enom_test_daily_call_cap'=>50]);$calls=count($GLOBALS['identityCalls']);$configure([]);same($calls+1,count($GLOBALS['identityCalls']),'Staff verification exactly one read');
+config(['domains.enom_test_sends_per_day'=>1000]);$calls=count($GLOBALS['identityCalls']);$configure([]);same($calls+1,count($GLOBALS['identityCalls']),'Staff verification exactly one read');
 $a=Account::where('server_id',$server->id)->sole();same('secret-uid',$a->stable_identity,'Encrypted verified UID');same(false,$a->processing_enabled,'Processing stays off');
 expect(!str_contains($a->getRawOriginal('stable_identity'),'secret-uid'),'UID encrypted at rest');
 foreach($server->settings()->whereIn('key',['domains_credentials','domains_verified_credentials'])->get() as $s){expect($s->encrypted,'Secrets encrypted before first save');expect(!str_contains($s->getRawOriginal('value'),'secret-token'),'No plaintext token');}
@@ -39,18 +39,18 @@ $GLOBALS['identityMode']='html';$calls=count($GLOBALS['identityCalls']);
 $configure([],false,'Enom did not confirm this account. Nothing was saved. Try again later.');
 same($calls+1,count($GLOBALS['identityCalls']),'Unavailable identity makes one attempt');
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction($action('probe'))->setActionData(['reason'=>'Check unavailable balance response'])->callMountedAction()
-    ->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't save")->body('Enom did not confirm the balance. The last saved balance was kept.'));
+    ->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't save")->body('Enom did not confirm the balance. The last saved balance stays.'));
 same($calls+2,count($GLOBALS['identityCalls']),'Unavailable probe makes one attempt');
 same('9876.54',DB::table('domains_registrar_balances')->where('server_id',$server->id)->value('amount'),'Failed probe retains last amount');
 $GLOBALS['identityMode']='credentials';
 $calls=count($GLOBALS['identityCalls']);$configure(['token'=>'rotated-token']);same($a->account_fingerprint,$a->fresh()->account_fingerprint,'Verified token rotation preserves identity');
 $configure(['uid'=>'SECRET-UID','token'=>'rotated-token']);same('secret-uid',$a->fresh()->stable_identity,'Authenticated UID case canonicalized');
 $configure(['uid'=>'other-uid'],false,'These credentials belong to a different account. The saved account was kept.');same('secret-uid',$a->fresh()->stable_identity,'Different authenticated account refused');
-$configure(['uid'=>'wrong-uid'],false,'Enom refused the user ID or API token. Check both for the selected environment.');
-$configure(['token'=>'wrong-token'],false,'Enom refused the user ID or API token. Check both for the selected environment.');
-$calls=count($GLOBALS['identityCalls']);$configure(['environment'=>'live'],false,'This environment is not enabled for Enom account reads on this site. No provider call was made.');
+$configure(['uid'=>'wrong-uid'],false,'Enom refused the user ID or API token. Check both for this account type.');
+$configure(['token'=>'wrong-token'],false,'Enom refused the user ID or API token. Check both for this account type.');
+$calls=count($GLOBALS['identityCalls']);$configure(['environment'=>'live'],false,'Enom reads for this account type are off on this site. Nothing was sent to the registrar.');
 same($calls,count($GLOBALS['identityCalls']),'Staff environment refusal makes no call');
-$configure(['registrar'=>'namesilo','api_key'=>'synthetic-key'],false,'NameSilo identity verification is unavailable. This account cannot be connected.');
+$configure(['registrar'=>'namesilo','api_key'=>'synthetic-key'],false,'NameSilo accounts can’t be connected here.');
 same(false,$a->fresh()->processing_enabled,'All attempts leave processing off');expect(!app(RuntimePorts::class)->accepted($a->fresh()),'Identity installs no write ports');
 try{app(AccountBindings::class)->requireProcessing(Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a->fresh()));expect(false,'Processing guard required');}catch(DomainException){}
 try{app(AccountBindings::class)->reader($server->id);expect(false,'Catalogue acceptance still required');}catch(RuntimeException){}

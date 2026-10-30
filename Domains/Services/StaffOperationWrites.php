@@ -68,6 +68,8 @@ final class StaffOperationWrites
         else { RefundPayment::requireCurrent($op,$l);ContactSetup::validate($op);
             if($op->action==='transfer'&&(!TransferInputs::validCode($op->payload['epp']??null)||!($deadline=TransferInputs::deadline($op,$now))||$now>=$deadline)) {
                 throw new \DomainException('Verified transfer payment and saved code required.'); } }
+        // The worker would hold it straight back, so this release would do nothing.
+        if(EnomTestRegistration::releaseNeedsBalance($op,$account)){throw new \DomainException('A balance check under an hour old is required.');}
     }
     /** Selected pre-dispatch refusals; identity, spend-pause and prior-outcome codes remain excluded. */
     public static function renewalAdmissionHold(Operation $op): bool

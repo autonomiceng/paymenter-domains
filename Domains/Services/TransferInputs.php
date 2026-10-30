@@ -23,6 +23,12 @@ final class TransferInputs
         try { $at = new \DateTimeImmutable($v); } catch (\Throwable) { return null; }
         return $at->format(DATE_ATOM) === $v && $at <= $now && $at >= $op->created_at ? $at->modify('+30 days') : null;
     }
+    /** A staff hold freezes a saved code, but a missing one can still come in: release needs it. */
+    public static function holdTakesCode(Operation $op): bool
+    {
+        return in_array($op->safe_code, ['contact_details_required', 'transfer_setup_review_required'], true)
+            || $op->safe_code === 'staff_review_required' && !self::validCode($op->payload['epp'] ?? null);
+    }
     public static function requireEditable(Operation $op, \DateTimeImmutable $now): void
     {
         if (array_key_exists('paid_at', $op->policy ?? []) && (!($d = self::deadline($op, $now)) || $now >= $d)) {
@@ -108,7 +114,7 @@ final class TransferInputs
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
                 if ((int) $l['user']->id !== (int) $request->user()->id) { throw new \DomainException; }
                 self::open($op, $l); $this->payment($op, $l); self::requireEditable($op, $this->clock->now());
-                if ($op->state === 'held' && !in_array($op->safe_code, ['contact_details_required', 'transfer_setup_review_required'], true)) { throw new \DomainException; }
+                if ($op->state === 'held' && !self::holdTakesCode($op)) { throw new \DomainException; }
                 self::write(fn () => $op->update(['payload' => [...($op->payload ?? []), 'epp' => $code],
                     'policy' => [...($op->policy ?? []), 'code_saved_at' => $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)]]));
             });

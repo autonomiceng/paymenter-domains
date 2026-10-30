@@ -10,7 +10,7 @@ The repository follows the layout of [Paymenter Enom](https://github.com/autonom
 
 Fresh installation creates no registrar account or sale offer. Verified credentials alone leave account processing off. The runtime supplies no accepted provider executor; registration, transfer, renewal and management write features independently default off. No setting enables these write features; they change only through a reviewed deployment composition after the relevant provider/account path is independently proven.
 
-Enablement requires trusted deployment composition for the exact account binding and explicit staff review in **Domains → Registrars**. Catalogue acceptance records staff attestation of independently verified exact terms and annual renewal support in the staff audit. Registration and transfer offers for an ending stay withdrawn unless that acceptance also marks registry requirements supported. Processing requires a fresh confirmed review, accepted runtime composition and shared cache/session/queue workers. Neither catalogue review nor credential verification alone enables processing, publishes prices, selects a seller or enables sales. Registration also needs eligible current prices, explicit TLD/seller availability and the registration feature/acceptance in that reviewed composition.
+Enablement requires trusted deployment composition for the exact account binding and explicit staff review in **Domains → Registrars**. **Domains → What you sell** lists the TLDs the account offers. Staff tick TLDs and terms, and each save is recorded in the staff audit. Terms and prices are read only for the TLDs staff turn on. Processing requires a fresh confirmed review, accepted runtime composition and shared cache/session/queue workers. Neither catalogue review nor credential verification alone enables processing, publishes prices, selects a seller or enables sales. Registration also needs eligible current prices, explicit TLD/seller availability and the registration feature/acceptance in that reviewed composition.
 
 Transfers retain their separate default-off write feature, accepted ending/precheck evidence, funded native invoice and owner-supplied transfer code before its deadline. Renewals retain their separate default-off feature and accepted ordinary renewal policy (grace is an additional explicit opt-in); scheduled billing (`domains_billing_enabled`) and manual renewal requests (`domains_manual_renewals_enabled`) also default off. Redemption restores are always refused; this build has no restore path. These gates preserve existing obligations and uncertain history; pausing or disabling sales grants no retry, refund or registrar fallback.
 
@@ -44,7 +44,7 @@ A removal of more than 5% of either section keeps the saved list and retains the
 rejected download for staff review. Staff with watch view rights find the list status under
 **Domains → Registrars → an account → System checks → Public suffix list**; **View details** on that
 row opens the full list page. With watch manage rights, **Download now** downloads and checks a new list.
-If a rejected download is waiting for review, **Download now** opens **Use new list?** instead.
+If a rejected download is waiting for review, **Review new list** opens **Use new list?** instead.
 It shows the ICANN and private rule counts before and after, plus up to 20 removed rules.
 Changes to the pending bytes or saved baseline invalidate acceptance. All current size, parsing, marker and sentinel checks still apply.
 The same procedure can replace a hash-valid historical list whose rules a newer international
@@ -70,6 +70,13 @@ retained ZIP upgrade/reinstall, owner and revision races, provider adapters, sha
 locking, delivery acceptance and the supplied site shell. Keep each feature off until its
 own acceptance is complete; a green offline suite does not activate it. Internal moves
 between platform-held accounts remain a separate, unavailable feature.
+
+Staff see Import domain only when `domains.adoption.enabled` is on and their role has the
+import permission. Before turning it on: run an end-to-end check on the site, confirm the
+live registrar account and its standard renewal pricing, approve managed public DNS for
+imported names (it is recorded but stays inactive until then), and check simultaneous staff
+and customer edits against the site's database. Then let in-progress customer, order and
+service edits finish, and restart web and queue workers.
 
 After a proved LIVE transfer acquisition, local source relinking and external-notice
 suppression run independently of the comparison flag. TEST acquisitions never change

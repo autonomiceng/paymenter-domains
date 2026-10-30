@@ -34,9 +34,12 @@ foreach([array_diff_key($op->fresh()->policy,['staff_actions'=>true]),[...$op->f
 }
 echo "Release guard passed.\n";
 // Authorized native hold and refund confirmations invoke only the engine refund path.
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('hold')->assertNotified('Request on hold');
+$actions=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('hold')->assertNotified('Request on hold')
+    ->assertSee('On hold')->assertSee('Put on hold by staff.')->assertActionHidden('hold')->assertActionVisible('release');
 echo "Native hold passed.\n"; same('held',$op->fresh()->state,'Native hold action'); $before=$credit();
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled this unsent order'])->assertHasNoActionErrors()->assertNotified('Cancelled and refunded');
+$actions->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled this unsent order'])->assertHasNoActionErrors()->assertNotified('Cancelled, credit added')
+    ->assertSee('Cancelled')->assertSee('Credit added')->assertDontSee('On hold')->assertDontSee('Put on hold by staff.')
+    ->assertActionHidden('release')->assertActionHidden('refund')->assertActionVisible('disposition');
 echo "Native refund passed.\n";
 same('rejected',$op->fresh()->state,'Native refund uses engine disposition');expect($credit()>$before,'Exact engine account credit applied');
 same('account_credit',$op->fresh()->funding['refund']['to'],'Engine once marker');
@@ -45,17 +48,21 @@ same(null,$op->domain->fresh()->reservation_name,'Proven unsent registration rel
 // A failed native credit keeps the audited rejection; the separately permitted UI retry succeeds once.
 $retry=$held('staff-credit-retry-placeholder.com'); $before=$credit();
 DB::unprepared("CREATE TRIGGER staff_credit_fail BEFORE UPDATE ON credits BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END");
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled unsent order'])->assertHasNoActionErrors()->assertNotified(Notification::make()->danger()->title("Couldn't update request")->body('Reload the page and try again. Ref database_failure.'));
+$retryPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled unsent order'])->assertHasNoActionErrors()->assertNotified(Notification::make()->danger()->title("Couldn't update request")->body('Reload the page and try again. Ref database_failure.'))
+    ->assertSee('Cancelled')->assertSee('No credit added')->assertDontSee('Cancelled, credit added')->assertDontSee('On hold')->assertDontSee('Put on hold by staff.')
+    ->assertActionHidden('refund')->assertActionHidden('release')->assertActionVisible('credit');
 echo "Failed credit retained.\n";
 DB::unprepared('DROP TRIGGER staff_credit_fail'); same('rejected',$retry->fresh()->state,'Decision survives failed credit');same($before,$credit(),'Failed credit atomic');
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('credit')->callAction('credit',['reason'=>'Retry verified retained credit'])->assertHasNoActionErrors()->assertNotified('Refund retried');
+$retryPage->assertActionVisible('credit')->callAction('credit',['reason'=>'Retry verified retained credit'])->assertHasNoActionErrors()->assertNotified('Credit retried')
+    ->assertSee('Credit added')->assertSee('Credit retried')->assertDontSee('No credit added');
 echo "Native credit passed.\n";
 $after=$credit();commerceReject(fn()=>$run($retry->fresh(),'credit'));same($after,$credit(),'Repeat credit never duplicates');
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->callAction('disposition')->assertNotified('Request closed');
+$retryPage->callAction('disposition')->assertNotified('Request closed')->assertSee('Request closed');
 echo "Native disposition passed.\n";
 // Open page and old tickets cannot act after state changes, expiration, domain spoofing or role revocation.
 $stale=$held('staff-stale-placeholder.com');$open=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$stale->id]);$key=$ticket($stale,'release');
-$stale->update(['safe_code'=>'funding']);$open->callAction('release')->assertNotified(Notification::make()->danger()->title("Couldn't update request")->body('This request changed. Reload the page and try again.'));
+$stale->update(['safe_code'=>'funding']);$open->call('mountAction','release')->assertNotified(Notification::make()->warning()->title('This request changed')->body('Nothing new was done. This page is now up to date.'));
+$open->assertSee('Not sent: low registrar balance.')->assertDontSee('Put on hold by staff.');
 commerceReject(fn()=>$run($stale,'release',$key));
 $foreign=$held('staff-foreign-placeholder.com');$key=$ticket($stale->fresh(),'refund');
 commerceReject(fn()=>$service->run($staff,$foreign->domain_id,$foreign->id,'refund',$key,'Cross domain review refused'));

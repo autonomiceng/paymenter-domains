@@ -79,7 +79,7 @@ foreach (['clean', 'defaultdns', 'lost', 'mismatch', 'unknown', 'authority', 'fi
             if ($mode === 'clean') {
                 $page = $ownerPage($result);
                 expect(str_contains($page, '<dt>Nameservers</dt><dd><span class="domains-wrap">ns1.provider.example, ns2.provider.example</span>')
-                    && !str_contains($page, 'Shows after the first check'), 'Enom registration nameservers reach the owner detail page');
+                    && !str_contains($page, 'Fills in by itself after the first check'), 'Enom registration nameservers reach the owner detail page');
             }
         } elseif ($mode === 'lost') {
             same(['ns1.provider.example', 'ns2.provider.example'], $fact['nameservers'] ?? null, 'Submitted values are retained when GetDNS is unavailable');

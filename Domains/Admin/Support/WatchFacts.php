@@ -13,8 +13,8 @@ use Paymenter\Extensions\Servers\Domains\Data\{PslSnapshot,Registrable};
 final class WatchFacts
 {
     public const EVENTS=['staff_pause'=>'Monitoring paused','staff_resume'=>'Monitoring resumed','staff_profile'=>'DNS template changed','staff_retire'=>'Monitoring stopped','staff_read_requested'=>'Check requested','staff_note'=>'Note'];
-    public const DECRYPT="Can't read saved data. Check the app encryption key.";
-    public const TEMPLATE_UNAVAILABLE='Saved DNS records cannot be read. Ask an administrator to restore this template.';
+    public const DECRYPT="Can't read saved data. Ask your site admin.";
+    public const TEMPLATE_UNAVAILABLE='Saved DNS records cannot be read. Ask your site admin to restore this template.';
     private static function gate(): void{abort_unless(Staff::can(Writes::VIEW),403);}
     private static function fact(mixed $value,?string $sub=null,?string $tone=null,?string $url=null,?string $cause=null,bool $check=false): array{return compact('value','sub','tone','url','cause','check');}
     /** @return array{Domain:array<string,array>,Checks:array<string,array>} */
@@ -28,13 +28,13 @@ final class WatchFacts
         $domain=['Customer'=>self::fact($c['label'],$c['email'],null,$c['url']),
             'Expected nameservers'=>self::fact(WatchFindings::who($w->expected_dns),cause:'Choose it in Change DNS template'),
             'DNS template'=>self::fact($profile?->name,url:$profile?RoutingProfileResource::getUrl('view',['record'=>$profile->id]):null,cause:'Choose one in Change DNS template'),
-            'Registrar'=>self::fact(WatchFindings::who($w->registration),cause:'Not recorded yet')];
+            'Registrar'=>self::fact(WatchFindings::who($w->registration),cause:Missing::fills('after the next check'))];
         // Hidden when the registry does not publish an expiry date.
         if(!in_array('watch.no_coverage',$keys,true)){$domain['Expires']=self::expires($s,$keys,$active);}
         $sid=$w->sources()->where('user_id',$w->user_id)->where('state','watch')->orderBy('id')->value('service_id');$service=$sid?\App\Models\Service::with('product')->find($sid):null;
         if($service){$domain['Hosting service']=self::fact($service->product?->name??'Service #'.$service->id,'Service #'.$service->id,url:Staff::can('admin.services.update')?\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$service->id]):null);}
         $checks=['Nameservers'=>self::nameservers($w),'DNS records'=>self::records($s,$active)];
-        if(!in_array('watch.no_coverage',$keys,true)){$checks['Registry']=in_array('watch.not_registered',$keys,true)?self::fact('Not registered',tone:'warning'):self::fact(($s?->freshness['registry']['checkedAt']??null)?'Registered':null,cause:'Not checked yet');}
+        if(!in_array('watch.no_coverage',$keys,true)){$checks['Registry']=in_array('watch.not_registered',$keys,true)?self::fact('Not registered',tone:'warning'):self::fact(($s?->freshness['registry']['checkedAt']??null)?'Registered':null,cause:Missing::fills('after the next check'));}
         $last=self::lastCheck($w,$s);$last['check']=$active && $last['value']===null;$checks['Last check']=$last;
         if($active){$checks['Next check']=self::nextCheck($w);}
         $p=WatchNoticePreferences::read((int)$w->user_id,$w->canonical_name);$on=$p['account']['enabled']&&$p['target']['enabled'];
@@ -47,15 +47,15 @@ final class WatchFacts
     public static function lastCheck(WatchName $w,?DomainSummary $s): array
     {
         $fresh=$s?->freshness??[];$at=max([0,...array_map(fn($f)=>(int)$f['checkedAt'],$fresh)]);
-        if(!$s){$at=max((int)$w->delegation?->started_at,(int)$w->registry?->started_at);return self::fact($at?self::date($at):($w->state==='active'?null:''),cause:"Can't read saved data");}
-        if(!$at){return self::fact(null,cause:'Not checked yet');}
+        if(!$s){$at=max((int)$w->delegation?->started_at,(int)$w->registry?->started_at);return self::fact($at?self::date($at):($w->state==='active'?null:''),cause:self::DECRYPT);}
+        if(!$at){return self::fact(null,cause:Missing::fills('after the next check'));}
         $failed=$w->work->firstWhere('kind','expiry')?->safe_code;$failed=$failed!==null && !in_array($failed,['ready','rotation','no_coverage','not_registered','rate_limited','budget_exhausted','target_changed'],true);
         return self::fact(self::date($at),$failed?'Registry lookup failed':(array_filter($fresh,fn($f)=>$f['partial'] && !$f['stale'])?'Some checks failed':null),array_filter($fresh,fn($f)=>$f['stale'])||$failed?'danger':null);
     }
     public static function expires(?DomainSummary $s,array $keys,bool $active): array
     {
         if($s?->expiry){$soon=in_array('staff.expiring',$keys,true)||in_array('watch.expired',$keys,true);return self::fact(\Carbon\CarbonImmutable::parse($s->expiry)->format('M j, Y'),$soon?WatchFindings::expires($s->expiry):null,$soon?'warning':null);}
-        return self::fact($active?null:'',cause:'Shows after the next registry check',check:$active);
+        return self::fact($active?null:'',cause:Missing::fills('after the next check'),check:$active);
     }
     private static function nextCheck(WatchName $w): array
     {
@@ -65,7 +65,7 @@ final class WatchFacts
     /** The nameservers the last delegation check found, compared with the expected ones. */
     private static function nameservers(WatchName $w): array
     {
-        $o=$w->delegation;if(!$o?->dns){return self::fact(null,cause:'Not checked yet');}
+        $o=$w->delegation;if(!$o?->dns){return self::fact(null,cause:Missing::fills('after the next check'));}
         $found=[];foreach($o->facts['queries']??[] as $q){if(($q['name']??null)===$w->canonical_name && ($q['type']??null)==='NS' && ($q['state']??null)==='rrset'){$found=array_values(array_filter(array_column($q['records']??[],'value'),'is_string'));}}
         $same=!$w->expected_dns || $o->dns===$w->expected_dns;
         return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),$same?'Matches template':'Changed',$same?null:'warning');
@@ -73,7 +73,7 @@ final class WatchFacts
     private static function records(?DomainSummary $s,bool $active): array
     {
         // Paused and stopped names keep no current record results; the row is hidden until monitoring resumes.
-        if($s?->website===null && $s?->email===null){return self::fact($active?null:'',cause:'Not checked yet');}
+        if($s?->website===null && $s?->email===null){return self::fact($active?null:'',cause:Missing::fills('after the next check'));}
         $to='point to '.WatchFindings::company();if($s->website===true && $s->email===true){return self::fact('Website and email '.$to);}
         $lines=[];foreach(['Website'=>$s->website,'Email'=>$s->email] as $label=>$v){if($v!==null){$lines[]=$label.' '.($v?'points to '.WatchFindings::company():'points elsewhere');}}
         return self::fact($lines,tone:in_array(false,[$s->website,$s->email],true)?'warning':null);

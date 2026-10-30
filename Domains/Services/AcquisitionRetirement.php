@@ -16,7 +16,7 @@ final readonly class AcquisitionRetirement
     {
         OperationClaims::outside();$seed=Domain::findOrFail($id);
         DB::transaction(function()use($seed,$actor,$ticket,$reason):void {
-            $l=HoldingLocks::take($seed,$actor?(int)$actor->id:null);$d=$l['domain'];$s=$l['service'];
+            $l=HoldingLocks::take($seed,$actor?(int)$actor->id:null,foreignInvoices:true);$d=$l['domain'];$s=$l['service'];
             if($actor){$this->review($l,$actor,$ticket,$reason);}
             $op=UnpaidAcquisitionProof::require($l);$invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
             if(!$actor&&($s->status!=='cancelled'||$invoice->status!=='cancelled')){

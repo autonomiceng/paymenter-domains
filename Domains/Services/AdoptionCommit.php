@@ -14,6 +14,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, Operation, Tl
 /** Local adoption only. No checkout, funding, provider operation or network dependency. */
 final class AdoptionCommit
 {
+    /** Every import needs these; one with linked history also needs admin.invoices.view. */
+    public const PERMISSIONS = [Staff::VIEW, Staff::ADOPT_PREVIEW, Staff::ADOPT, 'admin.domains.manage', 'admin.services.update'];
     public function __construct(private readonly AdoptionMapping $mapping, private readonly AccountBindings $bindings,
         private readonly Clock $clock) {}
 
@@ -107,8 +109,7 @@ final class AdoptionCommit
     }
     private static function permissions(?User $staff, array $e): void
     {
-        foreach ([Staff::VIEW, Staff::ADOPT_PREVIEW, Staff::ADOPT, 'admin.domains.manage', 'admin.services.update',
-            ...($e['history_link_ids'] ? ['admin.invoices.view'] : [])] as $permission) {
+        foreach ([...self::PERMISSIONS, ...($e['history_link_ids'] ? ['admin.invoices.view'] : [])] as $permission) {
             if (!$staff?->hasPermission($permission)) { throw new AdoptionRefused(RefusalCode::Permission); }
         }
     }

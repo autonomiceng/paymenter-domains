@@ -14,7 +14,7 @@ final class EnomTestRenewal
         if(config('domains.enom_writes.renewal')!==true){return 'TEST renewal is off in deployment configuration.';}
         if(config('domains.enom_identity.environment')!=='test'){return 'TEST renewal refused: the deployment identity environment is not test. Live and unset environments cannot use TEST renewal.';}
         if(config('domains.enom_catalogue.enabled')!==true){return 'TEST renewal refused: the deployment TEST catalogue is off.';}
-        return 'Deployment allows TEST renewal. Review TEST renewal acceptance below, keep annual renewal accepted for each ending, and enable processing separately. Renewal billing and owner renewal requests are separate server settings set by the deployment. Grace and redemption renewals remain unavailable.';
+        return 'Deployment allows TEST renewal. Review TEST renewal acceptance below, keep annual renewal accepted for each TLD, and enable processing separately. Renewal billing and owner renewal requests are separate server settings set by the deployment. Grace and redemption renewals remain unavailable.';
     }
     public static function protocol(?AccountBinding $b=null): array
     { return ['route'=>$b?->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?EnomLive::route():'https://resellertest.enom.com/interface.asp','command'=>\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\RegistrationCommand::Renew->value,'interval'=>\Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::REQUEST_SECONDS]; }

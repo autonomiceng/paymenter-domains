@@ -24,7 +24,7 @@ final class HoldingActions
         'Enter a one-line reason between 5 and 500 characters.'=>'Enter a reason (5 to 500 characters).',
         'Invalid review key. Reload this page.'=>self::CHANGED,'Holding changed. Reload this page and review it again.'=>self::CHANGED,
         'Review key used.'=>self::CHANGED,'Holding native authority changed.'=>self::CHANGED,
-        'Holding audit full or unavailable.'=>'History for this domain is full. Contact support.',
+        'Holding audit full or unavailable.'=>'History for this domain is full. Ask your site admin.',
         'Review confirmed domain ownership and billing status before resuming or repricing this holding.'=>"The service isn't active, the registration isn't confirmed yet, or the service has an immediate cancellation. Check the service, then try again.",
     ];
     public static function make(Domain $d): array

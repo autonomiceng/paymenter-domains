@@ -104,7 +104,7 @@ foreach([$first,$second] as $server){
     serverSettingsReject(fn()=>$bindings->requireProcessing($binding));serverSettingsReject(fn()=>$bindings->reader($server->id));
     DB::transaction(function()use($bindings,$server,$a):void {serverSettingsReject(fn()=>$bindings->requireProcessingLocked(Server::whereKey($server->id)->lockForUpdate()->sole(),$a->fresh()));});
     same($readerCalls,$io->readers,'Changed credentials refuse before reader or spending transport composition');
-    $facts=RegistrarBalances::facts($a,$clock->now());same(null,$facts['balance'],'Wrong account never displays original account balance');same("Couldn't load the account's settings",$facts['cause'],'Changed credentials give safe balance status');
+    $facts=RegistrarBalances::facts($a,$clock->now());same(null,$facts['balance'],'Wrong account never displays original account balance');same("Couldn't load the account's settings. Use Edit API credentials.",$facts['cause'],'Changed credentials give safe balance status');
     same('42.17',DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->value('amount'),'Held display retains original balance history');
     $pause=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionEnabled($processingAction($server));
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);
@@ -183,7 +183,7 @@ foreach($saved as $key=>$value){$destination->settings()->where('key',$key)->sol
 config(['app.url'=>$savedUrl]);
 $systemLabels=fn()=>array_column(array_merge(...array_values(AccountChecklist::system())),'label');expect(!in_array('Native editors',$systemLabels(),true),'Server qualification checks need no remap fact');
 same(null,NativeServerGuard::deletionNoticeMissing(),'Native delete notice capabilities are available');
-expect(!in_array('Server delete warning',$systemLabels(),true),'Available native delete notice needs no warning row');
+expect(!in_array('Account delete warning',$systemLabels(),true),'Available native delete notice needs no warning row');
 Livewire::actingAs($nativeOnly)->test(RegistrarSetup::class)->assertForbidden();Livewire::actingAs($nativeOnly)->test(BalancesPage::class)->assertForbidden();Livewire::actingAs($nativeOnly)->test(RegistrarAccount::class,['account'=>$first->id])->assertForbidden();
 // Legacy processing exclusion and installation refusal are scoped model events, with no remaps.
 $legacy=Server::create(['type'=>'server','extension'=>'Enom','name'=>'Paused legacy','enabled'=>false]);

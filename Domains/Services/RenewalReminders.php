@@ -15,16 +15,15 @@ final class RenewalReminders
         if(!$d->provider_expires_at){$alert('unknown_expiry');return null;}
         $day=CarbonImmutable::instance($now)->utc()->startOfDay();$expiry=$d->provider_expires_at->utc()->startOfDay();
         $days=(int)$day->diffInDays($expiry,false);$expired=$days<0;
-        $ops=$l['operations']->filter(fn($op)=>$op->action==='renew'&&$op->authority_generation===$d->authority_generation
-            &&$op->account_fingerprint===$d->account_fingerprint&&$op->base_expires_at?->format('Y-m-d')===$expiry->format('Y-m-d')
-            &&$op->safe_code!=='renewal_cancelled_unpaid'&&!RenewalReplacements::reviewed($op,$d));
-        $retired=$l['operations']->contains(fn($o)=>$o->action==='renew'&&$o->authority_generation===$d->authority_generation&&$o->account_fingerprint===$d->account_fingerprint&&$o->base_expires_at?->format('Y-m-d')===$expiry->format('Y-m-d')&&$o->safe_code==='renewal_cancelled_unpaid');
+        $cycle=RenewalCycles::current($d,$l['operations']);
+        $ops=$cycle->filter(fn($op)=>$op->safe_code!=='renewal_cancelled_unpaid'&&!RenewalReplacements::reviewed($op,$d));
+        $retired=$cycle->last()?->safe_code==='renewal_cancelled_unpaid';
         if($retired){$alert('renewal_unpaid');}
         $op=$ops->last();$renewOn=!RenewalStop::stopped($l);
         $rate=$l['prices']->where('term',1)->where('currency','USD')->where('account_fingerprint',$d->account_fingerprint)->first();
         $unknown=false;$complimentary=$d->price_mode==='complimentary';
         if(!$rate||$rate->retail===null||PricingRule::minor(PriceCatalogue::retail($rate->retail))<=0){$alert('unknown_price');$unknown=true;}
-        if(!$rate||$rate->wholesale===null||!$rate->fresh_until||!$rate->observed_at||$rate->observed_at>$now||$rate->fresh_until<=$now){$alert('unknown_cost');}
+        if(!$rate||$rate->wholesale===null||!$rate->fresh_until||!$rate->observed_at||$rate->observed_at>$now){$alert('unknown_cost');}
         if($op&&in_array($op->state,['held','uncertain'],true)){$alert('held_obligation',(int)$op->id);if(!$expired){return null;}}
         if(!$expired&&$op&&in_array($op->state,['queued','running','pending','succeeded'],true)){return null;}
         $settings=$l['settings']->pluck('value','key');
@@ -35,7 +34,8 @@ final class RenewalReminders
         $due=array_filter($offsets,fn($offset)=>$offset>=$days&&$offset-$days<=2&&(($days<0)==($offset<0)));
         if(!$due){return null;}$offset=min($due);
         $data=['domain'=>$d->domain,'expires'=>$expiry->format('F j, Y'),'days'=>abs($days),'invoice'=>false,'due'=>null,
-            'invoice_on'=>null,'overdue'=>false,'complimentary'=>$complimentary&&$renewOn,'years'=>1,'amount'=>null,'invoice_url'=>null,'domain_url'=>url('/domains/'.$d->id)];
+            'invoice_on'=>null,'overdue'=>false,'complimentary'=>$complimentary&&$renewOn,'years'=>1,'amount'=>null,'invoice_url'=>null,'domain_url'=>url('/domains/'.$d->id),
+            'can_turn_on'=>RenewalStop::offReason($l)==='owner'&&OwnerAutoRenew::available($l)];
         if(!$expired&&$op){
             try{$bindings->requireProcessingLocked($l['server'],$l['account']);
                 if(RenewalStop::blocksRenewal($l)||($d->renewal_policy['automatic_spend_paused']??false)){throw new \DomainException('Renewal paused.');}

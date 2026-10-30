@@ -10,7 +10,7 @@ $page->mountAction('accept_namesilo_account')->assertActionMounted('accept_names
 $review=$page->get('mountedActions.0.data');
 expect(is_string($review['review']??null),'Fresh read succeeds: '.($review['error']??'no review'));
 $modal=$page->html().implode('',$page->effects['partials']??[]);
-foreach(['Pinned account','Current account','old@example.com','new@example.com','900','901'] as $see){expect(str_contains($modal,$see),'Fresh comparison shows '.$see);}
+foreach(['Saved account','Current account','old@example.com','new@example.com','900','901'] as $see){expect(str_contains($modal,$see),'Fresh comparison shows '.$see);}
 same(1,$wire->calls,'Comparison requires a fresh read through the runner transport');
 // A typed reason is required before another read or a local change.
 $reset=app(Paymenter\Extensions\Servers\Domains\Services\NameSiloAccountReset::class);
@@ -53,7 +53,7 @@ $wire->id='901';$checkGuard();
 $wire->email='other@example.com';$advance();
 $mismatch=Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction('accept_namesilo_account')->assertActionMounted('accept_namesilo_account');
 $modal=$mismatch->html().implode('',$mismatch->effects['partials']??[]);
-expect(str_contains($modal,'Current email does not match'),'Staff sees why acceptance is refused');
+expect(str_contains($modal,'The NameSilo contact email is'),'Staff sees why acceptance is refused');
 $reads=$wire->calls;$saved=$server->settings()->where('key',$guardKey)->sole()->getRawOriginal();
 $reject(fn()=>$accept($mismatch->get('mountedActions.0.data.review')),'Current email does not match Expected default contact email. Nothing was saved.');
 same($reads,$wire->calls,'Mismatch makes no submit read');same($saved,$server->settings()->where('key',$guardKey)->sole()->getRawOriginal(),'Mismatch retains encrypted pin');same(1,count($history()),'Mismatch adds no success audit');

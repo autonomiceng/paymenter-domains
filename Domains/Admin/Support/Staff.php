@@ -15,7 +15,7 @@ final class Staff
     public const POLICY = 'admin.domains.manage-policy';
     public static function permissions(): array
     {
-        $permissions = [\Paymenter\Extensions\Servers\Domains\Services\AcquisitionPaymentReviews::PERMISSION => 'Review late domain payments', self::ADOPT => 'Adopt domain registrations', \Paymenter\Extensions\Servers\Domains\Services\AcquisitionRetirement::PERMISSION => 'Retire unpaid domain orders', self::ADOPT_PREVIEW => 'Preview domain adoption', self::VIEW => 'View domains', self::COSTS => 'View domain costs',
+        $permissions = [\Paymenter\Extensions\Servers\Domains\Services\AcquisitionPaymentReviews::PERMISSION => 'Review late domain payments', self::ADOPT => 'Import domains', \Paymenter\Extensions\Servers\Domains\Services\AcquisitionRetirement::PERMISSION => 'Retire unpaid domain orders', self::ADOPT_PREVIEW => 'Preview domain import', self::VIEW => 'View domains', self::COSTS => 'View domain costs',
             self::METADATA => 'View domain secret metadata', self::POLICY => 'Manage domain policy',
             'admin.domains.watch.view' => 'View domain watch and public suffix list',
             'admin.domains.watch.manage' => 'Manage domain watch and public suffix list',

@@ -52,9 +52,15 @@ same(['published'=>1,'failed'=>[]],$writer->run($review('card_fee',null),['fee_p
 $followerAfter=$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now);
 expect($followerAfter->revision>$followerBefore->revision,'Default follower has a new published revision');same('10.99',$followerAfter->retail,'Default follower uses new fee');
 same($ordinaryBefore,$ownRows(),'Ordinary own-rule prices and revisions stay unchanged');
-$before=$rows();$expired=$now->modify('+2 days');
-same(['published'=>0,'failed'=>['.com']],$writer->run($review('card_fee',null),['fee_percent'=>'21','fee_fixed'=>'2'],$expired),'Expired follower reports its name');
-same(['percent'=>'21.00','fixed'=>'2.00'],CardFee::read($t->server_id),'Fee still commits when publication costs expired');same($before,$rows(),'Failed publication retains every old revision');
+// Synced costs stay usable until the next sync, even after their old freshness window.
+$later=$now->modify('+2 days');
+same(['published'=>1,'failed'=>[]],$writer->run($review('card_fee',null),['fee_percent'=>'21','fee_fixed'=>'2'],$later),'Old synced follower still republishes');
+expect($prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$later)->revision>$followerAfter->revision,'Old synced cost produces a new published revision');
+// Missing annual cost still blocks publication without undoing the saved fee.
+$renewal=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew'])->sole();$cost=$renewal->wholesale;$renewal->update(['wholesale'=>null,'revision'=>$renewal->revision+1]);$before=$rows();
+same(['published'=>0,'failed'=>['.com']],$writer->run($review('card_fee',null),['fee_percent'=>'22','fee_fixed'=>'2'],$later),'Follower missing annual cost reports its name');
+same(['percent'=>'22.00','fixed'=>'2.00'],CardFee::read($t->server_id),'Fee still commits when publication cost is missing');same($before,$rows(),'Failed publication retains every old revision');
+$renewal->update(['wholesale'=>$cost,'revision'=>$renewal->revision+1]);
 // Register a real postcommit race on the matching fee save, after the completed audit and before fanout.
 $server=App\Models\Server::findOrFail($t->server_id);$default=$server->settings()->where('key','domains_pricing_default_rule')->sole()->value;
 $pending=true;$raced=false;

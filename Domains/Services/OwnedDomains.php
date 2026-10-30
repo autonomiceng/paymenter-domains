@@ -5,8 +5,9 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Invoice, User};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{PrivacyMode, Support};
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, NativeIntent, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{OwnedDomain, RequestStatus, StatusPill};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ManagementProfiles;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 final readonly class OwnedDomains
 {
@@ -17,6 +18,8 @@ final readonly class OwnedDomains
         'privacy_enable'=>'WHOIS privacy','privacy_disable'=>'WHOIS privacy','privacy_purchase'=>'WHOIS privacy','privacy_renew'=>'WHOIS privacy',
         'auto_renew_off'=>'Auto-renew','auth_code_email'=>'Auth code','dns'=>'DNS records','srv'=>'DNS records',
         'ds_add'=>'DNSSEC','ds_delete'=>'DNSSEC','glue_add'=>'Glue records','glue_update'=>'Glue records','glue_delete'=>'Glue records'];
+    /** Holds only the owner can clear, so "nothing you need to do" would be false. */
+    private const OWNER_HOLDS = ['contact_details_required','nameservers_required','transfer_setup_review_required'];
     public function __construct(private Clock $clock, private OwnerPorts $ports, private ?DomainManagement $engine = null, private ?DomainBilling $billing = null) {}
     /** Always query current native AND ledger ownership; IDs are locators, never authority. */
     public function owned(User $user, int $id): Domain
@@ -30,6 +33,49 @@ final readonly class OwnedDomains
     }
     public static function acquisition($operations, Domain $d): ?Operation
     { return $operations->filter(fn($op)=>in_array($op->action,['register','transfer'],true)&&$op->authority_generation===$d->authority_generation&&$op->account_fingerprint===$d->account_fingerprint)->sortByDesc('id')->first(); }
+    /** Where a pending order stands for its owner: unpaid with the invoice link, paid, cancelled ('credit' once credit is approved), or failed. Empty otherwise. Paid says what's still the owner's in next: setup_required, awaiting_code, or null for nothing.
+     * $closed: the service is cancelled, so payment can no longer start an order that hasn't been sent (InvoiceFunding::requireInitialFacts). */
+    public static function order(Domain $d, ?Operation $op, ?Invoice $invoice, bool $closed=false): array
+    {
+        if (!$op) { return []; }
+        $kind=$op->action==='transfer'?'transfer':'registration';
+        // Applying the credit closes the domain row too. The order still reads Cancelled, as its request does.
+        if ($op->state==='rejected'&&$op->safe_code==='refund_approved'&&in_array($d->status,['registration_pending','transfer_pending',$kind.'_rejected'],true)) { return ['state'=>'cancelled','kind'=>$kind,'credit'=>true]; }
+        if (!in_array($d->status,['registration_pending','transfer_pending'],true)) { return []; }
+        if ($op->state==='rejected') { return RequestStatus::closed($op->state,$op->safe_code)?[]:['state'=>'failed','kind'=>$kind]; }
+        if ($closed && in_array($op->state,['awaiting_payment','awaiting_code','queued'],true)) { return ['state'=>'cancelled','kind'=>$kind]; }
+        if ($op->state==='awaiting_payment' && $invoice?->status==='pending') { return ['state'=>'unpaid','kind'=>$kind,'invoice'=>route('invoices.show',$invoice)]; }
+        if ($op->state==='awaiting_payment' && $invoice?->status==='cancelled') { return ['state'=>'cancelled','kind'=>$kind]; }
+        $next=match (true) {
+            $op->state==='held'&&in_array($op->safe_code,self::OWNER_HOLDS,true) => 'setup_required',
+            $op->action==='transfer'&&!TransferInputs::validCode($op->payload['epp']??null) => 'awaiting_code',
+            $d->registrar_key!=='enom'&&!isset($op->policy['owner_setup'])&&in_array($op->state,['awaiting_payment','queued'],true)&&($op->attempt??[])===[] => 'setup_required',
+            default => null,
+        };
+        return $invoice?->status==='paid'&&in_array($op->state,['awaiting_payment','awaiting_code','queued','running','pending','held','uncertain'],true)?['state'=>'paid','kind'=>$kind,'next'=>$next]:[];
+    }
+    /** The service is gone, or a cancellation or native intent stops it. */
+    public static function closed(?string $serviceStatus, bool $stopped): bool
+    { return !in_array($serviceStatus,['pending','active'],true)||$stopped; }
+    /** The status once the invoice is known: the request alone still says awaiting_payment until it is picked up. */
+    public static function orderStatus(array $state, Domain $d, array $order): array
+    {
+        return match (true) {
+            ($order['state']??null)==='cancelled' => [isset($order['credit'])?'cancelled':'needs_review','Order cancelled'],
+            ($order['state']??null)==='failed' => [$order['kind']==='transfer'?'transfer_rejected':'registration_rejected',null],
+            ($order['state']??null)==='paid'&&$state[0]==='awaiting_payment' => [$order['next']??$d->status,null],
+            default => $state,
+        };
+    }
+    /** Why a History change failed, in owner words. A test call cap stops the change before it is sent. */
+    private static function failure(Operation $entry): string
+    {
+        return match ($entry->safe_code) {
+            'enom_test_management_call_cap' => 'We didn’t send this change, so nothing changed.',
+            'management_provider_refused' => RequestStatus::REFUSED,
+            default => 'We couldn’t make this change.',
+        };
+    }
     public function present(Domain $d, bool $forms = true): OwnedDomain
     {
         if ($d->adoptionPending()) {
@@ -42,7 +88,10 @@ final readonly class OwnedDomains
         $renewalState=RenewalStop::read($d);
         $actions=['show'=>route('domains.domains.show',$d->id),'setupSave'=>route('domains.domains.setup-save',$d->id),'contactsSave'=>route('domains.domains.contacts-save',$d->id),'codeSave'=>route('domains.domains.code-save',$d->id)]; $management=[]; $caps=null;
         try { $caps=$this->ports->forDomain($d)->capabilities(); } catch (\Throwable) {}
-        $pill=StatusPill::of(...DomainStates::managed($d,$op,$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),RenewalStop::stopped($renewalState)));
+        $closed=self::closed($service?->status,$service&&($service->cancellation||NativeIntent::where('service_id',$service->id)->exists()));
+        $order=$op?self::order($d,$op,Invoice::whereKey($op->invoice_id)->where('user_id',$d->user_id)->first(),$closed):[];
+        $state=self::orderStatus(DomainStates::managed($d,$op,$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),RenewalStop::stopped($renewalState)),$d,$order);
+        $pill=StatusPill::of(...$state);
         $setup=['contacts'=>false,'required'=>false,'nameservers'=>false,'privacy'=>false,'defaults'=>$d->registrar_key==='enom'];
         if ($caps && $op && ($op->state!=='held'||in_array($op->safe_code,['contact_details_required','transfer_setup_review_required','nameservers_required'],true))
             && in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true) && ($op->attempt??[])===[]
@@ -66,7 +115,7 @@ final readonly class OwnedDomains
             $transfer['open']=in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true)
                 && ($op->attempt??[])===[] && $op->started_at===null && $op->request_fingerprint===null
                 && (!$transfer['paid']||$deadline!==null&&$this->clock->now()<$deadline)
-                && ($op->state!=='held'||in_array($op->safe_code,['contact_details_required','transfer_setup_review_required'],true));
+                && ($op->state!=='held'||TransferInputs::holdTakesCode($op));
             $transfer['held']=!$transfer['open'];
             $transfer['phase']=$transfer['open']?'editing':match(true) {
                 in_array($op->state,['running','pending'],true)=>'pending', $op->state==='uncertain'=>'review',
@@ -82,7 +131,8 @@ final readonly class OwnedDomains
             $actions['code']=route('domains.domains.code',$d->id);
         }
         $progress=$d->provenance === 'adopted' ? [['label' => 'Imported', 'state' => 'Completed']] : [];
-        foreach ($d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(100)->get() as $entry) {
+        $entries=$d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(100)->get();
+        foreach ($entries as $entry) {
             if (!isset($entry->policy['management']) || isset($entry->policy['management']['correction'])) { continue; }
             $label=self::CHANGES[$entry->action]??null;
             if (!$label) { continue; }
@@ -91,15 +141,16 @@ final readonly class OwnedDomains
             $state=match (true) {
                 in_array($entry->state,['succeeded','rejected'],true) && !$resolved => 'Under review',
                 $entry->state==='held' && $entry->safe_code==='enom_test_management_call_cap' && $resolved => 'Failed',
-                default => RequestStatus::for($entry->state)['label'],
+                default => RequestStatus::for(RequestStatus::closed($entry->state,$entry->safe_code)?'disposed':$entry->state)['label'],
             };
-            $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->format('Y-m-d')];
+            $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->format('Y-m-d'),'note'=>$state==='Failed'?self::failure($entry):null];
         }
         foreach (array_slice($obs['corrections']??[],0,100) as $row) {
             $label=['contacts'=>'Contacts','nameservers'=>'Nameservers','privacy'=>'WHOIS privacy','auto_renew'=>'Auto-renew'][$row['section']??'']??null;
-            if ($label) { $progress[]=['label'=>$label,'state'=>'Under review']; }
+            if ($label) { $progress[]=['label'=>$label,'state'=>'Under review','date'=>$entries->firstWhere('operation_key',$row['operation_key']??null)?->updated_at?->format('Y-m-d')]; }
         }
         if ($caps) { $setup['maxNameservers']=$d->registrar_key==='enom'?12:13; }
+        try { $contacts=$forms?self::contacts($d):[]; } catch (\Throwable) { $contacts=[]; }
         if ($forms) {
             $labels=['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Auth code'];
             if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Glue records']; }
@@ -114,15 +165,16 @@ final readonly class OwnedDomains
                     $management['nameservers']['defaultServers']=$d->registrar_key==='enom'?self::DEFAULT_NAMESERVERS:[];
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
                     $management['nameservers']['current']=self::storedNameservers($d); }
-                if (isset($management['contacts'])) { $management['contacts']['staged']=$d->registrar_key==='namesilo'; $management['contacts']['limits']=ContactDetails::limits($d->registrar_key); }
+                if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts); }
                 if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'admin contact':'owner'; }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
             }
             $records=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?OwnerRecords::forDomain($d):[];
-            $recordCheckHeld=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?ObservationRecords::stopped($d):false;
+            $recordCheckHeld=$forms&&$management&&ObservationRecords::stopped($d);
+            foreach ($management as &$section) { $section['recordCheckHeld']=$recordCheckHeld; } unset($section);
             foreach (['dns','srv','ds','glue'] as $kind) {
-                if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['recordCheckHeld']=$recordCheckHeld; }
+                if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; }
                 if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
             }
         }
@@ -175,22 +227,37 @@ final readonly class OwnedDomains
                     'date' => substr((string) ($i->status === 'paid' && $i->succeeded_at ? $i->succeeded_at : $i->created_at), 0, 10)])->all();
         }
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';
+        if ($service) { $actions['autoPay']=route('services.show',$service->id).'#auto-pay'; }
         return new OwnedDomain($d->domain,$pill['label'],$pill['tone'],$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
             $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
-            renewNow:$renewNow,
+            order:$order, autoPay:RenewalAutoPay::ready($service), renewNow:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
-            statusReason:$pill['reason'], demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:$forms?self::owner($d,$op):null,
+            statusReason:$pill['reason'], demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:self::owner($contacts),
             daysLeft:$d->provider_expires_at?(int)\Carbon\CarbonImmutable::parse($this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),'UTC')->diffInDays(\Carbon\CarbonImmutable::parse($d->provider_expires_at->format('Y-m-d'),'UTC'),false):null);
     }
-    /** The registrant as last stored: a confirmed contact change for the registrant (among the latest ten), else the registration request. */
-    private static function owner(Domain $d, ?Operation $op): ?array
+    /** Details by role as last stored: the registration request, then confirmed contact changes in order. Throws on unreadable data. Shared by the customer and staff domain pages. */
+    public static function contacts(Domain $d): array
     {
-        try {
-            $change = $d->operations()->where('action', 'contacts')->where('state', 'succeeded')->where('authority_generation', $d->authority_generation)->where('account_fingerprint', $d->account_fingerprint)
-                ->orderByDesc('id')->limit(10)->get()->first(fn ($o) => in_array($o->payload['role'] ?? null, ['all', 'registrant'], true));
-            $contact = $change?->payload['contact'] ?? $op?->payload['contacts']['registrant'] ?? null;
-        } catch (\Throwable) { return null; }
+        $ops = $d->operations()->whereIn('action', ['register', 'transfer', 'contacts'])->where('authority_generation', $d->authority_generation)->where('account_fingerprint', $d->account_fingerprint)->orderByDesc('id')->limit(100)->get();
+        $saved = array_intersect_key(self::acquisition($ops, $d)?->payload['contacts'] ?? [], array_flip(ContactDetails::ROLES));
+        foreach ($ops->where('action', 'contacts')->where('state', 'succeeded')->sortBy('id') as $change) {
+            $role = $change->payload['role'] ?? null;
+            foreach ($role === 'all' ? ContactDetails::ROLES : array_intersect([$role], ContactDetails::ROLES) as $target) { $saved[$target] = $change->payload['contact'] ?? null; }
+        }
+        return array_filter($saved, 'is_array');
+    }
+    /** The editor: one form for the whole domain, prefilled from the owner, the role every registrar reads back. */
+    private static function contactForm(Domain $d, array $saved): array
+    {
+        $staged = $d->registrar_key === 'namesilo';
+        try { $approved = $staged ? ManagementProfiles::approved($d) : null; } catch (\Throwable) { $approved = null; }
+        return ['staged' => $staged, 'limits' => ContactDetails::limits($d->registrar_key), 'saved' => $saved['registrant'] ?? [], 'approved' => $approved];
+    }
+    /** The owner's name and email from contacts(), or null. */
+    public static function owner(array $contacts): ?array
+    {
+        $contact = $contacts['registrant'] ?? null;
         if (!is_array($contact) || !filled($contact['email_address'] ?? null)) { return null; }
         $name = trim(($contact['first_name'] ?? '').' '.($contact['last_name'] ?? ''));
         return ['name' => $name !== '' ? $name : (string) ($contact['organization_name'] ?? ''), 'email' => (string) $contact['email_address']];

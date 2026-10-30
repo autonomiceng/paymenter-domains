@@ -70,9 +70,9 @@ foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
         same($financialFacts,array_intersect_key($facts,$financialKeys),'Held request preserves financial facts: '.$kind.':'.$fault);
         same(Labels::requestStatus($row)['reason'],$facts['reason'],'Hold keeps its saved reason');
         if(str_starts_with($fault,'contact-')&&$fault!=='contact-recovery'){
-            $cause=match($fault){'contact-peer'=>'Contact recovery unavailable.','contact-limit'=>'Contact recovery limit reached.','contact-cutoff'=>'Saved transfer inputs require review.',default=>'Holding native authority changed.'};
+            $cause=match($fault){'contact-peer'=>"The customer can't update details on this request. Contact them.",'contact-limit'=>'The customer tried too many times. Contact them.','contact-cutoff'=>'Saved transfer details need a check. Open Details below.',default=>'The order or product changed after purchase. Check the order.'};
             same($cause,$notice['body']??null,'Notice names contact recovery refusal: '.$fault);
-            Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionHidden('release')->assertSee($cause)->assertSee($financialFacts['invoice'])->assertDontSee('Check the app encryption key.');
+            Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionHidden('release')->assertSee($cause)->assertSee($financialFacts['invoice'])->assertDontSee('Ask your site admin to check the encryption key.');
         }
         if($visible){Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionVisible('release');}
         $accepted=true;try{$run($row,'release');}catch(DomainException){$accepted=false;}

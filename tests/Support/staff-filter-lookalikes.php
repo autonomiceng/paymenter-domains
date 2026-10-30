@@ -87,8 +87,8 @@ function staffDomainFilterLookalikes($viewer, Domain $seed): void
         // The Status filter selects exactly the rows whose page status is in that group, for each stored status.
         foreach (['active' => ['yesterday', 'today'], 'transfer_pending' => ['held', 'uncertain'], 'registration_pending' => ['contact_hold'], 'needs_review' => ['awaiting_payment']] as $status => $sample) {
             DB::table('domains_domains')->whereIn('id', array_map(fn ($r) => $r['domain']->id, $rows))->update(['status' => $status]);
-            $expected = array_fill_keys(array_keys(DomainStatus::SET), []); $groups = array_flip(array_map(fn ($s) => $s[0], DomainStatus::SET));
-            foreach ($rows as $key => $pair) { $expected[$groups[DomainFacts::status($pair['domain']->fresh())['label']]][] = $key; }
+            $expected = array_fill_keys(array_keys(DomainStatus::SET), []);
+            foreach ($rows as $key => $pair) { $expected[DomainFacts::status($pair['domain']->fresh())['key']][] = $key; }
             foreach ($expected as $group => $members) {
                 same($keys($members), $ids(DomainQueries::status(Domain::query(), [$group])), 'Status filter matches page status: '.$status.' as '.$group);
             }
@@ -110,13 +110,14 @@ function staffOperationFilterLookalikes($viewer, Domain $seed): void
             ->assertCanSeeTableRecords(array_column($rows, 'operation'))->assertCountTableRecords(count($rows));
         $failed = ['provider_rejected', 'timeout', 'registration_rejected', 'renewal_rejected', 'complimentary_timeout', 'contacts_rejected', 'reasonless', 'credited_timeout'];
         foreach ([
-            [['under_review'], ['held', 'contact_hold', 'uncertain']],
+            [['on_hold'], ['held', 'contact_hold']], [['under_review'], ['uncertain']],
             [['in_progress'], ['pending', 'running', 'queued']],
-            [['action_required'], ['awaiting_payment']],
+            [['waiting_payment'], ['awaiting_payment']],
+            [['action_required'], []],
             [['completed'], ['succeeded']],
             [['failed'], $failed],
             [['cancelled'], []],
-            [['under_review', 'completed'], ['held', 'contact_hold', 'uncertain', 'succeeded']],
+            [['on_hold', 'completed'], ['held', 'contact_hold', 'succeeded']],
         ] as [$value, $keys]) {
             staffAssertLookalikeFilter($viewer, ListOperations::class, 'status', $value, $rows, 'operation', $keys);
         }

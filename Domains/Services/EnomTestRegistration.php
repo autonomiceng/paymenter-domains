@@ -39,7 +39,7 @@ final class EnomTestRegistration
         return config('domains.enom_writes.registration')!==true?'TEST registration is off in deployment configuration.'
             :(config('domains.enom_identity.environment')!=='test'?'TEST registration refused: the deployment identity environment is not test. Live and unset environments cannot use TEST registration.'
                 :(config('domains.enom_catalogue.enabled')!==true?'TEST registration refused: the deployment TEST catalogue is off.'
-                    :'Deployment allows TEST registration. Catalogue acceptance must include the Enom TEST Purchase route and request interval; the account also needs accepted catalogue terms, processing on, and a successful USD balance read (Check balance) under an hour old when the worker runs.'));
+                    :'Deployment allows TEST registration. The account needs at least one TLD saved under What you sell, processing on, and a successful USD balance read (Check balance) under an hour old when the worker runs.'));
     }
     /** Local predicates are checked before the worker claim; provider availability still uses the normal preflight. */
     public static function localHoldReason(AccountBinding $binding, Operation $op): ?string
@@ -54,6 +54,20 @@ final class EnomTestRegistration
             if(!$row||!in_array((int)$op->term,$row[$op->action],true)||$row['renew']!==[1]||!$row['renewal_safe']||!$row['registry']){return 'write_acceptance_required';}
         } catch(\Throwable){return 'write_acceptance_required';}
         return self::balanceEvidence($binding,false)?null:($op->action==='transfer'?'enom_test_transfer_usd_balance_required':'usd_balance_required');
+    }
+    /** The worker would buy this name once released. Local facts only. */
+    public static function releaseSends(Operation $op,?\Paymenter\Extensions\Servers\Domains\Models\Account $account): bool
+    { $check=self::afterRelease($op,$account);return $check!==null&&$check['hold']===null&&$account->processing_enabled; }
+    /** The worker would hold this straight back: its balance read is over an hour old. */
+    public static function releaseNeedsBalance(Operation $op,?\Paymenter\Extensions\Servers\Domains\Models\Account $account): bool
+    { return in_array(self::afterRelease($op,$account)['hold']??null,['usd_balance_required','enom_test_transfer_usd_balance_required'],true); }
+    /** Null when the request skips the send check. */
+    private static function afterRelease(Operation $op,?\Paymenter\Extensions\Servers\Domains\Models\Account $account): ?array
+    {
+        if(!$account){return null;}
+        $queued=clone $op;$queued->state='queued';
+        if(!self::applies($queued)&&!EnomTestTransfer::applies($queued)){return null;}
+        try{return ['hold'=>self::localHoldReason(CatalogueAcceptances::binding($account),$op)];}catch(\Throwable){return null;}
     }
     /** Build account-bound ports without decrypting credentials or sending provider requests. */
     public static function factory(AccountBinding $binding): \Closure
