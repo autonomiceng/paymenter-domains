@@ -73,6 +73,18 @@ $before=Budget::status()['used'];resetWire();
 runRefuses(fn()=>$transport->send(Environment::Test,ReadCommand::Balance,[],'synthetic','token',1000),'Host guard refusal precedes consumption');
 same([],$GLOBALS['enomWire']['forms'],'Guard refusal makes zero physical sends');
 same($before,Budget::status()['used'],'Unsent permit is held without an attempt');
+$pending=Budget::pendingPermit();expect(is_string($pending),'Refused TEST send leaves an unconsumed permit');
+$permitRow=(array)DB::table(Tables::PERMITS)->where('permit_id',$pending)->sole();
+$remaining=Budget::status()['remaining'];
+foreach([['namesilo','test'],['namesilo','live'],['enom','live']] as [$registrar,$environment]){
+    Budget::assertPermit($pending);
+    config(['domains.provider_send_guard'=>static function()use($registrar,$environment):void{
+        same(null,Budget::pendingPermit(),'Unrelated '.$registrar.' '.$environment.' send exposes no stale TEST permit');
+    }]);
+    \Paymenter\Extensions\Servers\Domains\Services\ProviderSendGuard::beforeSend($registrar,$environment,'GetBalance');
+    same($permitRow,(array)DB::table(Tables::PERMITS)->where('permit_id',$pending)->sole(),'Clearing pending keeps retained permit unchanged');
+    same($remaining,Budget::status()['remaining'],'Clearing pending keeps held credit unchanged');
+}
 Budget::disable($policy);resetWire();
 runRefuses(fn()=>$transport->send(Environment::Test,ReadCommand::Balance,[],'synthetic','token',1000),'Disabled direct reader refuses');
 runRefuses(fn()=>$exchange('management')($origin,'GetBalance',[],1000),'Disabled runtime reader refuses');

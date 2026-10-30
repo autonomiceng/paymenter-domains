@@ -16,7 +16,8 @@
     "tests/dns-signals-test.php",
     "tests/public-registry-test.php",
     "tests/rdap-transport-test.php",
-    "tests/namesilo-default-contact-test.php"
+    "tests/namesilo-default-contact-test.php",
+    "tests/enom-budget-seed-test.php"
   ],
   "contracts": [
     "tests/ote-reconciliation-test.php",
@@ -351,7 +352,9 @@
     "tests/storefront-transfer-offers-test.php",
     "tests/namesilo-fingerprint-reset-test.php",
     "tests/staff-alert-visibility-test.php",
-    "tests/storefront-cart-handoff-test.php"
+    "tests/storefront-cart-handoff-test.php",
+    "tests/enom-budget-migration-test.php",
+    "tests/enom-run-failure-facts-test.php"
   ],
   "ui": [],
   "runner": [
@@ -370,6 +373,7 @@
   "mariadb": [
     "tests/test_conversion_mariadb.py",
     "tests/test_schema_mariadb.py",
-    "tests/test_user_deletion_mariadb.py"
+    "tests/test_user_deletion_mariadb.py",
+    "tests/test_enom_run_budget_mariadb.py"
   ]
 }

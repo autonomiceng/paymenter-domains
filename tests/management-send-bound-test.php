@@ -97,5 +97,88 @@ DB::table('domains_operations')->where('id', $op->id)->update(['attempt' => $op-
 $before = count($state->calls); $management->reconcile($op->id, $driver);
 same($before, count($state->calls), 'Unknown legacy usage refuses before I/O');
 commerceReject(fn () => $op->fresh()->update(['attempt' => [...$op->fresh()->attempt, 'management_observation_attempts' => 1]]));
+// A current one-use staff review can read old sealed operations without replaying their mutation.
+require __DIR__.'/Support/staff-panel.php';
+$staff=staffUser(['admin.domains.view','admin.domains.operations.recheck']);
+app()->instance(DomainManagement::class,$management);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(static fn()=>$driver));
+$staffRun=static function($op,?string $key=null)use($staff,$clock):string{
+    $review=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::class;
+    $key??=$review::ticket($staff->id,$op->domain_id,$op->id,'recheck',$review::stamp($op->fresh(),$op->domain->fresh()),$clock);
+    (new \Paymenter\Extensions\Servers\Domains\Services\StaffOperations($clock))->run($staff,$op->domain_id,$op->id,'recheck',$key,'Review retained management result');
+    return $key;
+};
+$original=$op->fresh()->attempt;$funding=$op->fresh()->funding;
+$state->locked=false;
+$key=$staffRun($op);
+same('succeeded',$op->fresh()->state,'Reviewed legacy readback can resolve the original operation');
+same(1,$op->fresh()->attempt['management_legacy_observation_attempts'],'Recovery reads have a separate durable budget');
+same(false,isset($op->fresh()->attempt['management_observation_attempts']),'Unknown earlier usage is never reconstructed');
+foreach($original as $field=>$value){
+    if($field!=='management_reads'){same($value,$op->fresh()->attempt[$field],'Original attempt evidence retained');}
+}
+same($funding,$op->fresh()->funding,'Read recovery never changes funding');
+same($before+2,count($state->calls),'Recovery performs only the ownership and lock reads');
+$history=$op->fresh()->policy['staff_actions'];same(['read_requested','read_finished'],array_column($history,'phase'),'Recovery audit brackets provider I/O');
+commerceReject(fn()=>$staffRun($op,$key));
+same(true,ManagementEvidence::resolved($op->fresh(),$d->fresh()),'Recovered prior operation no longer blocks management');
+same('queued',$submit($d,$driver,'lock',['locked'=>true])->state,'A new management request can follow the recovered operation');
+// An unreviewed increment below the limit must reach the review guard.
+[$unreviewedDomain,$unreviewedDriver,$unreviewed]=$uncertain('bound-unreviewed-legacy');
+$unreviewedAttempt=array_diff_key($unreviewed->fresh()->attempt,['management_observation_attempts'=>true]);
+DB::table('domains_operations')->where('id',$unreviewed->id)->update(['attempt'=>$unreviewed->fresh()->forceFill(['attempt'=>$unreviewedAttempt])->getAttributes()['attempt']]);
+try{
+    $unreviewed->fresh()->update(['attempt'=>[...$unreviewedAttempt,'management_legacy_observation_attempts'=>1]]);
+    expect(false,'Unreviewed legacy increment must refuse below the cap');
+}catch(DomainException $error){same('Reviewed legacy management recovery required.',$error->getMessage(),'Review gate rejects unreviewed increment');}
+same($unreviewedAttempt,$unreviewed->fresh()->attempt,'Unreviewed increment retains the sealed evidence');
+// Port resolution belongs to the same one-use audited read as provider observation.
+[$portDomain,$portDriver,$portOp]=$uncertain('bound-port-failure');
+$review=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::class;
+$portKey=$review::ticket($staff->id,$portOp->domain_id,$portOp->id,'recheck',$review::stamp($portOp->fresh(),$portOp->domain->fresh()),$clock);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(static function(){throw new DomainException('Offline owner port unavailable');}));
+$beforePort=count($state->calls);
+commerceReject(fn()=>$staffRun($portOp,$portKey));
+$portAudit=$portOp->fresh()->policy['staff_actions']??[];
+same(['read_requested','read_failed'],array_column($portAudit,'phase'),'Port resolution failure is audited in one read');
+same($beforePort,count($state->calls),'Port resolution failure sends nothing');
+commerceReject(fn()=>$staffRun($portOp,$portKey));
+same($portAudit,$portOp->fresh()->policy['staff_actions'],'Failed port ticket cannot be replayed');
+// Failed legacy reads spend slots durably; owner/background reconciliation cannot spend them.
+[$d,$driver,$op]=$uncertain('bound-legacy-failed');
+$attempt=array_diff_key($op->fresh()->attempt,['management_observation_attempts'=>true]);
+DB::table('domains_operations')->where('id',$op->id)->update(['attempt'=>$op->fresh()->forceFill(['attempt'=>$attempt])->getAttributes()['attempt']]);
+$driver=new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management(
+    $driver->capabilities()->binding,static function($origin,$command,$parameters,$timeout)use($exchange):string{
+        $reply=$exchange($origin,$command,$parameters,$timeout);
+        if($command==='GetRegLock'){throw new RuntimeException('Offline recovery read failure');}
+        return $reply;
+    });
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(static fn()=>$driver));
+$before=count($state->calls);
+$staff->role->update(['permissions'=>['admin.domains.view']]);
+commerceReject(fn()=>$staffRun($op));same($before,count($state->calls),'Permission refusal makes no recovery reads');
+$staff->role->update(['permissions'=>['admin.domains.view','admin.domains.operations.recheck']]);
+$failedHistory=count($op->fresh()->attempt['management_reads']??[]);
+for($i=1;$i<=20;$i++){
+    $failed=false;
+    try{$staffRun($op);}catch(RuntimeException $error){$failed=true;}
+    $audit=$op->fresh()->policy['staff_actions'];
+    same('read_failed',end($audit)['phase'],'Failed recovery read is not audited as completed');
+    same(true,$failed,'Failed recovery read reaches the staff action error handler');
+    same($i,$op->fresh()->attempt['management_legacy_observation_attempts'],'Failed legacy observation consumes recovery slot '.$i);
+}
+same($failedHistory,count($op->fresh()->attempt['management_reads']??[]),'Failed legacy reads add no completed history');
+same($before+40,count($state->calls),'Twenty failed recovery observations are bounded');
+$management->reconcile($op->id,$driver);
+$exhausted=null;
+try{$staffRun($op);}catch(DomainException $error){$exhausted=$error;}
+$audit=$op->fresh()->policy['staff_actions'];
+same('read_failed',end($audit)['phase'],'Exhausted legacy status check must be audited as failed');
+expect($exhausted instanceof DomainException,'Exhausted status check must reach the staff error handler');
+same(20,$op->fresh()->attempt['management_legacy_observation_attempts'],'Exhaustion retains the recovery counter');
+same($before+40,count($state->calls),'Owner/background and exhausted staff entries cannot add sends');
+commerceReject(fn()=>$op->fresh()->update(['attempt'=>[...$op->fresh()->attempt,'management_legacy_observation_attempts'=>1]]));
+commerceReject(fn()=>$op->fresh()->update(['attempt'=>array_diff_key($op->fresh()->attempt,['management_legacy_observation_attempts'=>true])]));
 $nativeSuccessful = true;
 echo "Management lifetime send bound: throwing read, deferrals, full history, concurrent observer, legacy refusal, 47-send maximum passed.\n";

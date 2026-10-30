@@ -69,9 +69,13 @@ class RegistrarAccount extends Page
     }
     private static function testRefusal(): string
     {
-        if(\Paymenter\Extensions\Servers\Domains\Services\EnomTestRunBudget::enabled()){return EnomTestCalls::refusedFacts();}
-        if (EnomTestCalls::usage()['limit']===null) { return 'The Enom test call limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.'; }
-        return EnomTestCalls::callsRemain()?"Couldn't count Enom test calls. Try again.":'Enom test daily limit reached. Try again after 00:00 UTC.';
+        try {
+            if(\Paymenter\Extensions\Servers\Domains\Services\EnomTestRunBudget::enabled()){return EnomTestCalls::refusedFacts();}
+            if (EnomTestCalls::usage()['limit']===null) { return 'The Enom test call limit in server config is invalid, so no Enom test requests are sent. Ask your server administrator to fix it.'; }
+            return EnomTestCalls::callsRemain()?"Couldn't count Enom test calls. Try again.":'Enom test daily limit reached. Try again after 00:00 UTC.';
+        } catch (\Throwable) {
+            return 'Enom TEST run budget unavailable; requests are refused.';
+        }
     }
     public function content(Schema $schema): Schema
     {

@@ -12,6 +12,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 final class EnomTestRunBudget
 {
     public const CONTRACT = 2;
+    // Lock version 3 retains the requirement for a migration receipt across later runs.
+    private const MIGRATED = 3;
     private static ?string $pending = null;
     private const FIELDS = ['version','run_id','generation','cap','rolling_cap','policy_hash',
         'ledger_dev','ledger_ino','ledger_uid','ledger_gid','account_fingerprint','configuration_intent'];
@@ -21,10 +23,15 @@ final class EnomTestRunBudget
     {
         if (config('domains.enom_test_run_policy') !== null) { return true; }
         try {
-            if(!Schema::hasTable(EnomTestRunBudgetSchema::LOCK)){return false;}
+            if(!Schema::hasTable(EnomTestRunBudgetSchema::LOCK)){
+                if(Schema::hasTable(EnomTestLegacyBudgetSchema::TABLE) && DB::table(EnomTestLegacyBudgetSchema::TABLE)->exists()){throw new EnomTestCallLimit;}
+                if(Schema::hasTable(EnomTestRunBudgetSchema::RUNS) && DB::table(EnomTestRunBudgetSchema::RUNS)->exists()){throw new EnomTestCallLimit;}
+                return false;
+            }
             $version=DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->value('version');
-            if($version===null || !in_array((int)$version,[0,self::CONTRACT],true)){throw new EnomTestCallLimit;}
-            return (int)$version===self::CONTRACT;
+            if($version===null || !in_array((int)$version,[0,self::CONTRACT,self::MIGRATED],true)){throw new EnomTestCallLimit;}
+            if((int)$version===0 && Schema::hasTable(EnomTestLegacyBudgetSchema::TABLE) && DB::table(EnomTestLegacyBudgetSchema::TABLE)->exists()){throw new EnomTestCallLimit;}
+            return in_array((int)$version,[self::CONTRACT,self::MIGRATED],true);
         } catch (\Throwable) { EnomTestCalls::refuse(); }
     }
 
@@ -52,6 +59,16 @@ final class EnomTestRunBudget
 
     private static function json(array $value): string
     { return json_encode($value,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES); }
+    /** Refuse before PHP promotes an overflowing integer sum to float. */
+    private static function add(int ...$values): int
+    {
+        $total=0;
+        foreach($values as $value){
+            if($value<0 || $total>PHP_INT_MAX-$value){throw new EnomTestCallLimit;}
+            $total+=$value;
+        }
+        return $total;
+    }
     private static function fingerprint(?string $fingerprint): void
     { if ($fingerprint!==null && !preg_match('/^[a-f0-9]{64}$/D',$fingerprint)) { throw new EnomTestCallLimit; } }
     private static function configured(): array
@@ -61,13 +78,13 @@ final class EnomTestRunBudget
         return self::policy($value);
     }
 
-    /** First UPDATE also takes SQLite's write lock; every path takes this lock before any run or permit. */
-    private static function serialized(\Closure $work): mixed
+    /** Writers take SQLite's write lock first; read-only observations never advance the durable clock. */
+    private static function serialized(\Closure $work,bool $readOnly=false): mixed
     {
         OperationClaims::outside();
         try {
-            return DB::transaction(static function () use ($work): mixed {
-                if (DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->increment('revision')!==1) { throw new EnomTestCallLimit; }
+            return DB::transaction(static function () use ($work,$readOnly): mixed {
+                if (!$readOnly && DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->increment('revision')!==1) { throw new EnomTestCallLimit; }
                 $lock=DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->lockForUpdate()->sole();
                 $clock=app(Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'));
                 $now=(int)$clock->format('U')*1000000+(int)$clock->format('u');
@@ -80,7 +97,23 @@ final class EnomTestRunBudget
                 if ($now<1 || $now<(int)$lock->last_time || $monotonic<1
                     || ($lock->clock_id!==null && ($clockId!==$lock->clock_id || $monotonic<(int)$lock->monotonic_time
                         || abs(($now-(int)$lock->last_time)-($monotonic-(int)$lock->monotonic_time))>5000000))) { throw new EnomTestCallLimit; }
-                DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['last_time'=>$now,'clock_id'=>$clockId,'monotonic_time'=>$monotonic]);
+                if(!$readOnly){DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['last_time'=>$now,'clock_id'=>$clockId,'monotonic_time'=>$monotonic]);}
+                $legacy=DB::table(EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->first();
+                // A receipt is only written together with a migrated marker, so each needs the other.
+                if($legacy ? !in_array((int)$lock->version,[self::CONTRACT,self::MIGRATED],true) : (int)$lock->version===self::MIGRATED){throw new EnomTestCallLimit;}
+                if($legacy){
+                    if(!hash_equals($legacy->proof_hash,hash('sha256',$legacy->proof))){throw new EnomTestCallLimit;}
+                    $retained=[];
+                    foreach(DB::table(EnomTestCallSchema::TABLE)->orderBy('day')->get() as $row){$retained[]=['day'=>$row->day,'used'=>(int)$row->used];}
+                    $history=json_decode($legacy->proof,true,32,JSON_THROW_ON_ERROR);
+                    if($retained!==$history['native']){throw new EnomTestCallLimit;}
+                    $expected=array_values(array_filter($history['attempts'],static fn($time)=>$time>$now-86400000000));
+                    $actual=DB::table(EnomTestRunBudgetSchema::PERMITS)->where('action','legacy')
+                        ->where('attempt_time','>',$now-86400000000)->pluck('attempt_time')->map(static fn($time)=>(int)$time)->all();
+                    sort($expected,SORT_NUMERIC);sort($actual,SORT_NUMERIC);
+                    if($actual!==$expected){throw new EnomTestCallLimit;}
+                    if(!$readOnly && (int)$lock->version===self::CONTRACT){DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['version'=>self::MIGRATED]);$lock->version=self::MIGRATED;}
+                }
                 return $work($lock,$now);
             });
         } catch (\Throwable) { EnomTestCalls::refuse(); }
@@ -95,11 +128,26 @@ final class EnomTestRunBudget
     private static function active(object $lock,array $policy): object
     {
         $row=self::run($policy);
-        if ((int)$lock->version!==self::CONTRACT || $lock->run_id!==$row->run_id || $row->phase!=='active') { throw new EnomTestCallLimit; }
+        if (!in_array((int)$lock->version,[self::CONTRACT,self::MIGRATED],true) || $lock->run_id!==$row->run_id || $row->phase!=='active') { throw new EnomTestCallLimit; }
         return $row;
     }
     private static function rolling(int $now): int
-    { return (int)DB::table(EnomTestRunBudgetSchema::PERMITS)->where('attempt_time','>',$now-86400000000)->count(); }
+    { return (int)DB::table(EnomTestRunBudgetSchema::PERMITS)->where('attempt_time','>',$now-86400000000)->count()
+        +self::legacyDebt($now); }
+    private static function legacyDebt(?int $now=null): int
+    {
+        $receipt=DB::table(EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->first();
+        if(!$receipt){return 0;}
+        $history=json_decode($receipt->proof,true,32,JSON_THROW_ON_ERROR);$dated=[];
+        foreach($history['attempts'] as $time){$day=gmdate('Y-m-d',intdiv($time,1000000));$dated[$day]=($dated[$day]??0)+1;}
+        $debt=$history['undated_debt'];
+        foreach($history['native'] as $row){
+            // A date is an interval, not a physical-send timestamp. Expire only after its upper bound +24h.
+            $exclusive=(new \DateTimeImmutable($row['day'].'T00:00:00Z'))->modify('+2 days')->getTimestamp()*1000000;
+            if($now===null || $now<$exclusive){$debt+=max(0,$row['used']-($dated[$row['day']]??0));}
+        }
+        return $debt;
+    }
     private static function held(object $row): int
     { return (int)DB::table(EnomTestRunBudgetSchema::PERMITS)->where('run_id',$row->run_id)->whereNull('attempt_time')->count(); }
     private static function conservation(object $row,array $policy,int $now,int $additional=0): void
@@ -116,7 +164,8 @@ final class EnomTestRunBudget
     {
         return ['version'=>self::CONTRACT,'run_id'=>$row->run_id,'generation'=>$row->generation,'phase'=>$row->phase,
             'used'=>(int)$row->used,'remaining'=>(int)$row->remaining,'rolling_used'=>self::rolling($now),
-            'cap'=>$policy['cap'],'rolling_cap'=>$policy['rolling_cap']];
+            'cap'=>$policy['cap'],'rolling_cap'=>$policy['rolling_cap'],
+            'legacy_debt'=>self::legacyDebt($now)];
     }
 
     public static function prepare(array $policy,int $credits): array
@@ -130,17 +179,115 @@ final class EnomTestRunBudget
                 if ((int)$row->initial_credits!==$credits) { throw new EnomTestCallLimit; }
                 return self::facts($row,$policy,$now);
             }
+            if(DB::table(EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->where('run_id',$policy['run_id'])->exists()){throw new EnomTestCallLimit;}
             if (DB::table(EnomTestRunBudgetSchema::RUNS)->whereIn('phase',['preparing','active','disabled'])->exists()
-                || DB::table(EnomTestCallSchema::TABLE)->where('used','>',0)->exists()) { throw new EnomTestCallLimit; }
+                || (DB::table(EnomTestCallSchema::TABLE)->where('used','>',0)->exists()
+                    && !DB::table(EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->exists())) { throw new EnomTestCallLimit; }
             // Date-only legacy reservations have no provable 24-hour exclusion boundary.
             $row=(object)['run_id'=>$policy['run_id'],'used'=>0,'remaining'=>0];
             self::conservation($row,$policy,$now,$credits);
             DB::table(EnomTestRunBudgetSchema::RUNS)->insert(['run_id'=>$policy['run_id'],'generation'=>$policy['generation'],
                 'policy'=>self::json($policy),'phase'=>'preparing','account_fingerprint'=>$policy['account_fingerprint'],
                 'used'=>0,'remaining'=>$credits,'initial_credits'=>$credits]);
-            DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['version'=>self::CONTRACT,'run_id'=>$policy['run_id']]);
+            DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['version'=>(int)$lock->version===self::MIGRATED?self::MIGRATED:self::CONTRACT,'run_id'=>$policy['run_id']]);
             return self::facts(self::run($policy),$policy,$now);
         });
+    }
+
+    /** Trusted quiesced coordinator only. Daily source rows remain byte-for-byte retained.
+     * Exact timestamps and UTC-date residuals age conservatively; undated debt never expires.
+     * A source hash binds the full host ledger/journals/deployment proof, never an operator count.
+     */
+    public static function migrateLegacy(array $policy,array $history,int $credits): array
+    {
+        return self::serialized(static function(object $lock,int $now)use($policy,$history,$credits):array {
+            $policy=self::policy($policy);
+            $inventory=self::legacyInventory($policy,$history,$credits,$now);
+            $used=$inventory['native_used'];$rolling=$inventory['rolling_used'];
+            $proof=self::json($history);$hash=hash('sha256',$proof);
+            $receipt=DB::table(EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->first();
+            if($receipt){
+                if($receipt->run_id!==$policy['run_id'] || $receipt->proof_hash!==$hash
+                    || $receipt->proof!==$proof || (int)$receipt->credits!==$credits){throw new EnomTestCallLimit;}
+                return self::facts(self::run($policy),$policy,$now);
+            }
+            if((int)$lock->version!==0 || DB::table(EnomTestRunBudgetSchema::RUNS)->exists()
+                || DB::table(EnomTestRunBudgetSchema::PERMITS)->exists()) {throw new EnomTestCallLimit;}
+            if($credits>$policy['cap'] || $used>$policy['cap']-$credits
+                || $credits>$policy['rolling_cap'] || $rolling>$policy['rolling_cap']-$credits){throw new EnomTestCallLimit;}
+            DB::table(EnomTestLegacyBudgetSchema::TABLE)->insert(['id'=>1,'run_id'=>$policy['run_id'],
+                'proof_hash'=>$hash,'proof'=>$proof,'debt'=>$history['undated_debt'],'credits'=>$credits]);
+            DB::table(EnomTestRunBudgetSchema::RUNS)->insert(['run_id'=>$policy['run_id'],'generation'=>$policy['generation'],
+                'policy'=>self::json($policy),'phase'=>'preparing','account_fingerprint'=>$policy['account_fingerprint'],
+                'used'=>$used,'remaining'=>$credits,'initial_credits'=>$credits]);
+            foreach($history['attempts'] as $index=>$time){
+                DB::table(EnomTestRunBudgetSchema::PERMITS)->insert(['permit_id'=>hash('sha256',$hash.':'.$index),
+                    'run_id'=>$policy['run_id'],'account_fingerprint'=>$policy['account_fingerprint'],
+                    'action'=>'legacy','operation_id'=>null,'attempt_time'=>$time]);
+            }
+            DB::table(EnomTestRunBudgetSchema::LOCK)->where('id',1)->update(['version'=>self::MIGRATED,'run_id'=>$policy['run_id']]);
+            return self::facts(self::run($policy),$policy,$now);
+        });
+    }
+
+    /** Read-only preflight under the native deployment lock; never creates permits or credits. */
+    public static function previewLegacy(array $policy,array $history,int $credits): array
+    {
+        return self::serialized(static function(object $lock,int $now)use($policy,$history,$credits):array {
+            $policy=self::policy($policy);
+            if((int)$lock->version!==0 || DB::table(EnomTestRunBudgetSchema::RUNS)->exists()
+                || DB::table(EnomTestRunBudgetSchema::PERMITS)->exists()
+                || DB::table(EnomTestLegacyBudgetSchema::TABLE)->exists()){throw new EnomTestCallLimit;}
+            return self::legacyInventory($policy,$history,$credits,$now);
+        },true);
+    }
+
+    private static function legacyInventory(array $policy,array $history,int $credits,int $now): array
+    {
+        $keys=array_keys($history);sort($keys);
+        if($keys!==['attempts','native','source_hash','undated_debt'] || $credits<0
+            || !is_array($history['native']) || !array_is_list($history['native'])
+            || !is_array($history['attempts']) || !array_is_list($history['attempts'])
+            || !is_int($history['undated_debt']) || $history['undated_debt']<0
+            || !is_string($history['source_hash']) || !preg_match('/^[a-f0-9]{64}$/D',$history['source_hash'])
+            || $policy['account_fingerprint']===null) {throw new EnomTestCallLimit;}
+        $accounts=Account::where('registrar_key','enom')->where('environment','test')->get();
+        if($accounts->count()!==1 || $accounts->sole()->account_fingerprint!==$policy['account_fingerprint']){throw new EnomTestCallLimit;}
+        $native=[];
+        foreach(DB::table(EnomTestCallSchema::TABLE)->orderBy('day')->get() as $row){
+            if(!preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/D',$row->day)
+                || (new \DateTimeImmutable($row->day.'T00:00:00Z'))->format('Y-m-d')!==$row->day
+                || $row->day>gmdate('Y-m-d',intdiv($now,1000000)) || (int)$row->used<0){throw new EnomTestCallLimit;}
+            $native[]=['day'=>$row->day,'used'=>(int)$row->used];
+        }
+        if($history['native']!==$native){throw new EnomTestCallLimit;}
+        foreach($history['attempts'] as $time){if(!is_int($time)||$time<1||$time>$now){throw new EnomTestCallLimit;}}
+        $count=count($history['attempts']);$dated=[];
+        foreach($history['attempts'] as $time){$day=gmdate('Y-m-d',intdiv($time,1000000));$dated[$day]=($dated[$day]??0)+1;}
+        $debt=$history['undated_debt'];$rollingDebt=$debt;
+        foreach($native as $row){
+            $residual=max(0,$row['used']-($dated[$row['day']]??0));$debt=self::add($debt,$residual);
+            $exclusive=(new \DateTimeImmutable($row['day'].'T00:00:00Z'))->modify('+2 days')->getTimestamp()*1000000;
+            if($now<$exclusive){$rollingDebt=self::add($rollingDebt,$residual);}
+        }
+        $used=self::add($count,$debt);
+        $rolling=self::add(count(array_filter($history['attempts'],static fn($t)=>$t>$now-86400000000)),$rollingDebt);
+        $outstanding=(int)DB::table(EnomTestRunBudgetSchema::RUNS)->sum('remaining');
+        $nativeRequired=self::add($used,$credits);$rollingRequired=self::add($rolling,$outstanding,$credits);
+        return ['native_used'=>$used,'rolling_used'=>$rolling,'legacy_debt'=>$debt,
+            'physical_used'=>$count,'outstanding_credits'=>$outstanding,'required_credits'=>$credits,
+            'native_required'=>$nativeRequired,'rolling_required'=>$rollingRequired,
+            'native_short'=>max(0,$nativeRequired-$policy['cap']),
+            'rolling_short'=>max(0,$rollingRequired-$policy['rolling_cap'])];
+    }
+
+    public static function legacySourceHash(array $policy): ?string
+    {
+        return self::serialized(static function(object $lock,int $now)use($policy):?string {
+            $policy=self::policy($policy);self::run($policy);
+            $row=DB::table(EnomTestLegacyBudgetSchema::TABLE)->where('id',1)->first();
+            return $row ? json_decode($row->proof,true,32,JSON_THROW_ON_ERROR)['source_hash'] : null;
+        },true);
     }
 
     public static function allocate(array $policy,int $credits,string $allocationId): void
@@ -195,7 +342,7 @@ final class EnomTestRunBudget
             DB::table(EnomTestRunBudgetSchema::RUNS)->where('run_id',$row->run_id)->update(['account_fingerprint'=>$fingerprint]);
         });
     }
-    public static function status(?array $policy=null): array
+    public static function status(?array $policy=null,bool $readOnly=false): array
     {
         return self::serialized(static function (object $lock,int $now) use ($policy): array {
             if ($policy!==null) { $policy=self::policy($policy); $row=self::run($policy); }
@@ -205,7 +352,7 @@ final class EnomTestRunBudget
                 $policy=self::policy(json_decode($row->policy,true,32,JSON_THROW_ON_ERROR));
             }
             return self::facts($row,$policy,$now);
-        });
+        },$readOnly);
     }
     public static function assertCapacity(int $required): void
     {
@@ -278,4 +425,5 @@ final class EnomTestRunBudget
         if (self::$pending===$permit) { self::$pending=null; }
     }
     public static function pendingPermit(): ?string { return self::$pending; }
+    public static function clearPending(): void { self::$pending=null; }
 }

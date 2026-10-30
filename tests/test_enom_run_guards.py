@@ -51,7 +51,7 @@ MUTATIONS = [
       ("where('permit_id',$permit)->whereNull('attempt_time')->update", "where('permit_id',$permit)->update")],
      'Expected run budget refusal: No duplicate consumption'),
     ('missing_config', BUDGET, CORE,
-     [("return (int)$version===self::CONTRACT;", 'return false;')],
+     [("return in_array((int)$version,[self::CONTRACT,self::MIGRATED],true);", 'return false;')],
      'Expected run budget refusal: No legacy fallback after v2 prepared'),
     ('backward_clock', BUDGET, CORE,
      [("$now<(int)$lock->last_time", 'false')],
