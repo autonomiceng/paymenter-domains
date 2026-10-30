@@ -41,14 +41,14 @@ $refuseSave = static function (array $changes, string $message) use ($d, $save, 
 $priceRefusal = 'Managed pricing authority requires a dedicated audited transition.';
 $refuseSave(['price' => $calculated], $priceRefusal); // Dirty acquisition price differs from holder retail.
 $refuseSave(['plan_id' => null], 'Managed service binding is permanent.');
-// Even a price matching retail requires owned authority, with fresh or expired quotes.
+// Even a price matching retail requires owned authority, with recent or old synced costs.
 DB::table('services')->where('id', $service->id)->update(['price' => '9.99']);
 $freshPrice = (new HolderPricing($prices))->renewal($d, 'USD', $clock->now());
 same('10.40', $freshPrice->retail, 'Native matching-price scenario uses current holder retail');
 expect(!$freshPrice->retained, 'Matching-price scenario starts with a fresh quote');
 $refuseSave(['price' => '10.40'], $priceRefusal);
 $priorInstant = $clock->instant; $clock->instant = $clock->now()->modify('+2 days');
-expect((new HolderPricing($prices))->renewal($d, 'USD', $clock->now())->retained, 'Quote is stale in the locked price-save scenario');
+expect(!(new HolderPricing($prices))->renewal($d, 'USD', $clock->now())->retained, 'Old synced cost remains usable in the locked price-save scenario');
 $refuseSave(['price' => '10.40'], $priceRefusal);
 $clock->instant = $priorInstant;
 DB::table('services')->where('id', $service->id)->update(['price' => '10.40']);
