@@ -163,7 +163,7 @@ expect(!in_array('acceptance',staffSetupActions(),true),'The dialog is no longer
 
 // Holders keep renewals when an ending is turned off.
 $tld=Tld::where(['server_id'=>$server->id,'tld'=>'org'])->sole();
-Domain::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$account->account_fingerprint,'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.org','reservation_name'=>'holder-placeholder.org','sld'=>'holder-placeholder','tld'=>'org','status'=>'active']);
+Domain::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$account->account_fingerprint,'user_id'=>900,'service_id'=>900,'domain'=>'example.org','reservation_name'=>'example.org','sld'=>'example','tld'=>'org','status'=>'active']);
 $page=Livewire::actingAs($staff)->test(WhatYouSell::class)->call('loadList')->call('toggleEnding','org')->call('save')->assertNotified('Saved');
 same(['register'=>[],'renew'=>[1],'transfer'=>[],'registry'=>false,'renewal_safe'=>true],CatalogueAcceptances::load($binding)->endings['org'],'Holders keep renewals');
 $page->assertSee('Renewals only');
