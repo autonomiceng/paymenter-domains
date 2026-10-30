@@ -40,33 +40,107 @@ def manifest():
     return suites
 
 
-def execute(argv, *, cwd, env, timeout=60, graceful=0):
-    with subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          start_new_session=True) as process:
+class CommandProcesses:
+    """Stop owned process groups before removing their writable fixtures."""
+
+    def __init__(self):
+        self.signal = None
+        self.processes = {}
+        self.terminating = set()
+        self.lock = threading.RLock()
+
+    def stop(self, number, _frame=None):
+        # Defer unwinding until setup or active commands return. This also covers
+        # a signal received while Popen is still creating a child.
+        self.signal = self.signal or number
+        with self.lock:
+            for process in self.processes:
+                self.terminate(process)
+
+    def terminate(self, process):
+        with self.lock:
+            # A second signal during resource cleanup must not interrupt it.
+            if process not in self.terminating:
+                self.terminating.add(process)
+                self.kill(process, signal.SIGTERM if self.processes[process] else signal.SIGKILL)
+
+    @staticmethod
+    def kill(process, number=signal.SIGKILL):
         try:
-            stdout, stderr = process.communicate(timeout=timeout)
-            return stdout, stderr, process.returncode, False
-        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, number)
+        except ProcessLookupError:
+            pass
+
+    @contextmanager
+    def process(self, argv, *, cwd, env, graceful):
+        with self.lock:
+            if self.signal:
+                yield None
+                return
+            process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, start_new_session=True)
+            self.processes[process] = graceful
+            if self.signal:
+                self.terminate(process)
+        with process:
+            try:
+                yield process
+            finally:
+                self.kill(process)
+                with self.lock:
+                    self.processes.pop(process)
+                    self.terminating.discard(process)
+
+
+@contextmanager
+def stop_signals(commands):
+    previous = {number: signal.getsignal(number) for number in [signal.SIGINT, signal.SIGTERM]}
+    try:
+        for number in previous:
+            signal.signal(number, commands.stop)
+        yield
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
+
+
+def execute(argv, *, cwd, env, timeout=60, graceful=0, control=None):
+    control = control or CommandProcesses()
+    with control.process(argv, cwd=cwd, env=env, graceful=graceful) as process:
+        if process is None:
+            return b'', b'', 128 + control.signal, False
+        def communicate(seconds, *, stopping=False):
+            deadline = time.monotonic() + seconds
+            while True:
+                if control.signal and not stopping:
+                    raise InterruptedError('Test command stopped.')
+                try:
+                    return process.communicate(timeout=min(.25, max(0, deadline - time.monotonic())))
+                except subprocess.TimeoutExpired:
+                    if time.monotonic() >= deadline:
+                        raise
+        try:
+            stdout, stderr = communicate(timeout)
+            return stdout, stderr, 128 + control.signal if control.signal else process.returncode, False
+        except (subprocess.TimeoutExpired, InterruptedError) as error:
+            timed_out = isinstance(error, subprocess.TimeoutExpired)
             if graceful:
                 # Let opt-in resource owners run their finally cleanup before escalation.
-                os.killpg(process.pid, signal.SIGTERM)
+                control.terminate(process)
                 try:
-                    stdout, stderr = process.communicate(timeout=graceful)
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                    return stdout, stderr, 124, True
-                except subprocess.TimeoutExpired:
+                    stdout, stderr = communicate(graceful, stopping=True)
+                    control.kill(process)
+                    return stdout, stderr, 128 + control.signal if control.signal else 124, timed_out
+                except (subprocess.TimeoutExpired, InterruptedError):
                     pass
             # Descendants share the group: stop all of them before fixture cleanup.
-            os.killpg(process.pid, signal.SIGKILL)
+            control.kill(process)
             try:
                 stdout, stderr = process.communicate(timeout=1)
             except subprocess.TimeoutExpired as drain:
                 # An escaped session may still own the pipes. Keep cumulative output.
                 stdout, stderr = drain.output or b'', drain.stderr or b''
-            return stdout, stderr, 124, True
+            return stdout, stderr, 128 + control.signal if control.signal else 124, timed_out
 
 
 @contextmanager
@@ -79,7 +153,7 @@ def timing(name, timings):
         print(json.dumps({'timing': 'stage', 'stage': name, 'seconds': timings[name]}), flush=True)
 
 
-def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None):
+def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None, control=None):
     started_run = time.monotonic()
     timings = {} if timings is None else timings
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
@@ -95,7 +169,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         installed_package = Path(argv[-1]).name.startswith('test_installed_')
         timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and installed_package
                    else 120 if kind == 'native' else 60)
-        stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=workers[worker] if workers else env, timeout=timeout, graceful=60 if kind == 'mariadb' else 0)
+        options = {'control': control} if control is not None else {}
+        stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=workers[worker] if workers else env, timeout=timeout, graceful=60 if kind == 'mariadb' else 0, **options)
         seconds = time.monotonic() - started
         if code:
             with scheduling:
@@ -128,6 +203,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
     with timing('commands', timings):
         if jobs == 1:
             for index in range(len(commands)):
+                if control and control.signal:
+                    break
                 record(index, command(index, 0))
                 if stopped.is_set():
                     break
@@ -143,7 +220,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                         if exclusive_running or (exclusive and pending):
                             break
                         with scheduling:
-                            if stopped.is_set():
+                            if stopped.is_set() or (control and control.signal):
                                 break
                             worker = available.pop()
                             pending[pool.submit(command, index, worker)] = (index, worker)
@@ -173,12 +250,13 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         except (ValueError, RuntimeError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
             dependency_unchanged = False
             dependency_error = type(error).__name__
-    complete = len(results) == len(commands) and all(r['exit'] == 0 and r['runtime_unchanged'] for r in results) and dependency_unchanged
+    interrupted = control.signal if control else None
+    complete = not interrupted and len(results) == len(commands) and all(r['exit'] == 0 and r['runtime_unchanged'] for r in results) and dependency_unchanged
     timings['run'] = time.monotonic() - started_run
     planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
     receipt = {'timings': timings, 'only_tests': sorted(set(only or [])),
                'omitted_tests': [path for paths in suites.values() for path in paths if path not in planned],
-               'complete': complete, 'jobs': jobs, 'php_version': '8.4.27', 'results': results, 'runtime_sha256': before,
+               'complete': complete, 'interrupted_signal': interrupted, 'jobs': jobs, 'php_version': '8.4.27', 'results': results, 'runtime_sha256': before,
                'selected_suites': selected, 'omitted_suites': [s for s in CATEGORIES if s not in selected],
                'unimplemented_suites': [s for s, paths in suites.items() if not paths],
                'dependency': {'commit': native.COMMIT, 'lock_sha256': native.LOCK_SHA256, 'source_sha256': dependency[1]} if dependency else None,
@@ -186,6 +264,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
     (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
     print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands), 'only_tests': sorted(set(only or [])), 'receipt': str(output/'receipt.json')}))
+    if interrupted:
+        return 128 + interrupted
     if (len(results) == len(commands) and any(r['skipped'] for r in results) and dependency_unchanged
             and all(r['exit'] in [0, 77] and r['runtime_unchanged'] for r in results)):
         return 77
@@ -228,6 +308,13 @@ def default_suites():
 
 
 def main():
+    control = CommandProcesses()
+    with stop_signals(control):
+        code = main_with_control(control)
+        return code
+
+
+def main_with_control(control):
     parser = argparse.ArgumentParser(description=__doc__)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--suite', choices=CATEGORIES, action='append')
@@ -268,13 +355,19 @@ def main():
         if selected != ['mariadb']:
             with timing('php_runtime', timings):
                 runtime, binary, extension = prepare(native='native' in selected)
+        temporary = output/'tmp'
+        temporary.mkdir()
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
-               'PHPRC': '', 'PHP_INI_SCAN_DIR': ''}
+               'PHPRC': '', 'PHP_INI_SCAN_DIR': '', 'TMPDIR': str(temporary),
+               'TMP': str(temporary), 'TEMP': str(temporary), 'PYTHONDONTWRITEBYTECODE': '1'}
         if 'DOMAINS_UPGRADE_FROM' in os.environ:
             env['DOMAINS_UPGRADE_FROM'] = os.environ['DOMAINS_UPGRADE_FROM']
         if binary:
             env.update(PAYMENTER_TEST_PHP=str(binary), PAYMENTER_TEST_CURL_EXTENSION=str(extension))
         if 'mariadb' in selected:
+            # These opt-in harnesses retain receipts and dumps after cleanup.
+            for name in ['TMPDIR', 'TMP', 'TEMP']:
+                env.pop(name, None)
             for name in ['TMPDIR', 'CONVERSION_MARIADB_PHP', 'PAYMENTER_TEST_APP', 'CONVERSION_ENOM_CHECKOUT', 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'HOME', 'XDG_RUNTIME_DIR']:
                 if name in os.environ:
                     env[name] = os.environ[name]
@@ -292,22 +385,29 @@ def main():
                                 for p in paths if not requested or p in requested)
         if not commands:
             raise ValueError('No runnable suites selected.')
+        if control.signal:
+            raise InterruptedError('Test run stopped during setup.')
         jobs = 1 if 'mariadb' in selected else args.jobs
         worker_check = None
         if jobs > 1:
             with timing('worker_environments', timings):
                 workers, fixture_snapshot, runtime_snapshot = test_workers.environments(env, output, jobs, runtime)
             worker_check = lambda: test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
+        if control.signal:
+            raise InterruptedError('Test run stopped during worker setup.')
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
-                   timings=timings, only=args.only)
+                   timings=timings, only=args.only, control=control)
     except BaseException as error:
         if not (output/'receipt.json').exists():
             (output/'receipt.json').write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,
-                                                          'only_tests': args.only or [], 'timings': timings})+'\n')
+                                                          'only_tests': args.only or [], 'timings': timings, 'interrupted_signal': control.signal})+'\n')
             print('Setup failed; receipt: '+str(output/'receipt.json'), file=sys.stderr)
+        if isinstance(error, InterruptedError) and control.signal:
+            return 128 + control.signal
         raise
     finally:
         shutil.rmtree(output/'workers', ignore_errors=True)
+        shutil.rmtree(output/'tmp', ignore_errors=True)
         if runtime:
             shutil.rmtree(runtime)
         if fixture:

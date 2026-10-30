@@ -1,5 +1,6 @@
 # Adapted from Enom tests/test_runner.py; MIT, Copyright (c) 2026 Autonomic Engineering.
 import contextlib
+import errno
 import importlib.util
 import io
 import json
@@ -20,119 +21,74 @@ spec = importlib.util.spec_from_file_location('domains_runner', ROOT/'scripts/te
 runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
 
 
-class InstalledPhaseTests(unittest.TestCase):
-    def phase_failure(self, scenario, target, *, setup=0, earlier=0, expires=None, verify=0):
-        spec = importlib.util.spec_from_file_location('installed_phase_limits', ROOT/'tests/test_installed_package.py')
-        installed = importlib.util.module_from_spec(spec); spec.loader.exec_module(installed)
-        clock, calls, errors = [1000.0], [], []
-        def advance(seconds):
-            clock[0] += seconds
-        with tempfile.TemporaryDirectory() as temp:
-            fixture = Path(temp)/'fixture'; (fixture/'bootstrap/cache').mkdir(parents=True)
-            (fixture/'.domains-fixture.json').write_text('{}')
-            def build_package(source, output):
-                output.mkdir(); (output/'fixture.zip').write_bytes(b'offline archive boundary')
-                advance(setup)
-                return {'archive': 'fixture.zip', 'archive_sha256': 'synthetic'}
-            def verify_package(*args):
-                nonlocal verify
-                advance(verify); verify = 0
-            def child(argv, **options):
-                name = options['env']['PACKAGE_PHASE']
-                self.assertEqual(argv[-1], str(ROOT/'tests/package-lifecycle.php'))
-                calls.append((name, options['timeout']))
-                if name == target:
-                    advance(options['timeout'] if expires is None else expires)
-                    error = subprocess.TimeoutExpired(argv, options['timeout'])
-                    errors.append(error)
-                    raise error
-                advance(earlier)
-                return subprocess.CompletedProcess(argv, 0)
-            read_text = Path.read_text
-            def read(path, *args, **kwargs):
-                return 'MemAvailable: 2000000 kB\n' if str(path) == '/proc/meminfo' else read_text(path, *args, **kwargs)
-            # Replace this module's clock reference, leaving the runner and process clock real.
-            with mock.patch.dict(os.environ, {'PAYMENTER_TEST_FIXTURE': str(fixture)}), \
-                 mock.patch.object(installed, 'time', mock.Mock(monotonic=lambda: clock[0], sleep=advance)), \
-                 mock.patch.object(installed.build, 'build', side_effect=build_package), \
-                 mock.patch.object(installed.build, 'verify', side_effect=verify_package), \
-                 mock.patch.object(installed, 'refuse_unsafe_archives'), \
-                 mock.patch.object(installed.subprocess, 'run', side_effect=child), \
-                 mock.patch.object(Path, 'read_text', read), contextlib.redirect_stdout(io.StringIO()) as output:
-                with self.assertRaises(TimeoutError) as caught:
-                    installed.main(scenario)
-            timings = [json.loads(line) for line in output.getvalue().splitlines() if line.startswith('{')]
-            self.assertTrue(any(row.get('timing') == 'phase_finish' and row['phase'] == target for row in timings))
-            if errors:
-                self.assertTrue(any(caught.exception.__cause__ is error for error in errors))
-            else:
-                self.assertIsNone(caught.exception.__cause__)
-            return calls, str(caught.exception), timings
-
-    def test_scenario_budget_caps_each_existing_phase_limit(self):
-        for scenario, target, setup, earlier, expected in [
-            ('held', 'install', 0, 0, [('install', 45)]),
-            ('held', 'held', 0, 45, [('install', 45), ('held', 45)]),
-            ('enom-test-management', 'install-enom-test-management', 0, 0, [('install-enom-test-management', 45)]),
-        ]:
-            with self.subTest(scenario=scenario, target=target):
-                calls, error, _ = self.phase_failure(scenario, target, setup=setup, earlier=earlier)
-                self.assertEqual(calls, expected)
-                self.assertIn('exceeded 45 seconds', error)
-
-    def test_remaining_budget_includes_setup_and_package_verification(self):
-        for scenario, target, budget in [('held', 'install', 110), ('enom-test-management', 'install-enom-test-management', 60)]:
-            for remaining in [10, 0.0005]:
-                with self.subTest(scenario=scenario, remaining=remaining):
-                    calls, error, _ = self.phase_failure(scenario, target, setup=budget-remaining-1, verify=1)
-                    self.assertEqual([name for name, _ in calls], [target])
-                    self.assertAlmostEqual(calls[0][1], remaining, places=10)
-                    self.assertIn(f'exhausted the {budget}-second scenario deadline', error)
-
-    def test_expired_scenario_refuses_php_before_first_and_later_phases(self):
-        for scenario, first, later, budget in [('held', 'install', 'held', 110), ('enom-test-management', 'install-enom-test-management', 'enom-test-management-restart', 60)]:
-            for overdue in [0, 1]:
-                with self.subTest(scenario=scenario, overdue=overdue):
-                    calls, error, _ = self.phase_failure(scenario, first, setup=budget+overdue)
-                    self.assertEqual(calls, [], 'Expired first phase must not launch PHP')
-                    self.assertIn(f'exhausted the {budget}-second scenario deadline', error)
-                    calls, error, _ = self.phase_failure(scenario, later, setup=budget-45+overdue, earlier=45)
-                    self.assertEqual(calls, [(first, 45-overdue)], 'Completed phases survive, expired next phase never launches')
-                    self.assertIn(f'phase {later} exhausted', error)
-
-    def test_timeout_label_uses_actual_expiry_and_preserves_cause(self):
-        for scenario, target, budget in [('held', 'install', 110), ('enom-test-management', 'install-enom-test-management', 60)]:
-            with self.subTest(scenario=scenario, expiry='future'):
-                calls, error, _ = self.phase_failure(scenario, target, expires=45)
-                self.assertEqual(calls, [(target, 45)])
-                self.assertIn('exceeded 45 seconds', error)
-                self.assertNotIn('scenario deadline', error)
-            for elapsed in [10, 11]:
-                with self.subTest(scenario=scenario, elapsed=elapsed):
-                    calls, error, _ = self.phase_failure(scenario, target, setup=budget-10, expires=elapsed)
-                    self.assertEqual(calls, [(target, 10)])
-                    self.assertIn(f'exhausted the {budget}-second scenario deadline', error)
-
-    def test_no_deadline_keeps_ordinary_limit_and_exact_special_phase_names(self):
-        for scenario, target, expected in [
-            ('fresh', 'install', [('install', 45)]),
-            ('enom-test-renewal', 'enom-test-renewal', [('install', 45), ('enom-test-renewal', 120)]),
-            ('enom-live', 'enom-live', [('install', 45), ('enom-live', 120)]),
-            ('enom-test-renewal', 'enom-test-renewal-restart', [('install', 45), ('enom-test-renewal', 120), ('enom-test-renewal-restart', 45)]),
-        ]:
-            with self.subTest(scenario=scenario, target=target):
-                calls, error, _ = self.phase_failure(scenario, target)
-                self.assertEqual(calls, expected)
-                self.assertIn(f'exceeded {expected[-1][1]} seconds', error)
-                self.assertNotIn('scenario deadline', error)
-        calls, error, _ = self.phase_failure('enom-test-renewal', 'enom-test-renewal-race-issue')
-        self.assertEqual(calls[:3], [('install', 45), ('enom-test-renewal', 120), ('enom-test-renewal-restart', 45)])
-        self.assertTrue(calls[3:])
-        self.assertTrue(all(name == 'enom-test-renewal-race-issue' and timeout == 45 for name, timeout in calls[3:]))
-        self.assertIn('exceeded 45 seconds', error)
+spec = importlib.util.spec_from_file_location('runner_installed', ROOT/'tests/Support/runner-installed.py')
+installed = importlib.util.module_from_spec(spec); spec.loader.exec_module(installed)
+InstalledPhaseTests = installed.InstalledPhaseTests
 
 
 class RunnerTests(unittest.TestCase):
+    def test_signal_after_receipt_does_not_change_decided_exit_status(self):
+        for number in [signal.SIGINT, signal.SIGTERM]:
+            for exit_code in [0, 1, 77]:
+                with self.subTest(signal=number, command_exit=exit_code), tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary).resolve()
+                    (root/'Domains').mkdir()
+                    output = root/'output'
+                    output.mkdir()
+                    # MariaDB category supplies skip=77 semantics, but all execution
+                    # is mocked; no PHP, database, subprocess or container starts.
+                    kind = 'mariadb' if exit_code == 77 else 'provider'
+                    remove = runner.shutil.rmtree
+                    delivered = []
+                    def cleanup(path, *args, **kwargs):
+                        if not delivered:
+                            receipt = json.loads((output/'receipt.json').read_text())
+                            self.assertEqual(receipt['interrupted_signal'], None)
+                            self.assertEqual(receipt['complete'], exit_code == 0)
+                            delivered.append(number)
+                            signal.raise_signal(number)
+                        return remove(path, *args, **kwargs)
+                    with mock.patch.object(runner, 'ROOT', root), \
+                         mock.patch.object(runner.tempfile, 'mkdtemp', return_value=str(output)), \
+                         mock.patch.object(runner, 'manifest', return_value={kind: ['tests/probe.py']}), \
+                         mock.patch.object(runner, 'prepare', return_value=(None, None, None)), \
+                         mock.patch.object(runner, 'execute', return_value=(b'', b'', exit_code, False)), \
+                         mock.patch.object(runner.shutil, 'rmtree', side_effect=cleanup), \
+                         mock.patch.object(sys, 'argv', ['test.py', '--jobs', '1', '--suite', kind]), \
+                         contextlib.redirect_stdout(io.StringIO()):
+                        status = runner.main()
+                    self.assertEqual(status, exit_code)
+                    self.assertEqual(delivered, [number])
+
+    def test_vendor_link_failure_falls_back_to_private_verified_copy(self):
+        for error in [errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK, errno.EPERM]:
+            with self.subTest(errno=error), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                fixture = root/'fixture'
+                (fixture/'vendor').mkdir(parents=True)
+                (fixture/'vendor/autoload.php').write_text('synthetic')
+                (fixture/'app.php').write_text('private source')
+                output = root/'output'
+                output.mkdir()
+                env = {'PAYMENTER_TEST_FIXTURE': str(fixture)}
+                with mock.patch.object(runner.test_workers.os, 'link', side_effect=OSError(error, 'synthetic link refusal')) as link:
+                    workers, snapshot, runtime = runner.test_workers.environments(env, output, 2)
+                self.assertEqual(link.call_count, 2)
+                runner.test_workers.verify(workers, snapshot, runtime)
+                original = fixture/'vendor/autoload.php'
+                vendor_paths = [Path(worker['PAYMENTER_TEST_FIXTURE'])/'vendor/autoload.php' for worker in workers]
+                for path in vendor_paths:
+                    self.assertEqual(path.read_bytes(), original.read_bytes())
+                    self.assertEqual(path.stat().st_mode & 0o222, 0)
+                    self.assertNotEqual(path.stat().st_ino, original.stat().st_ino)
+                self.assertNotEqual(vendor_paths[0].stat().st_ino, vendor_paths[1].stat().st_ino)
+                vendor_paths[0].unlink()
+                vendor_paths[0].write_text('tampered')
+                with self.assertRaises(ValueError):
+                    runner.test_workers.verify(workers, snapshot, runtime)
+                self.assertEqual(original.read_text(), 'synthetic')
+                self.assertEqual(vendor_paths[1].read_text(), 'synthetic')
+
     def test_ote_output_resolves_symlinked_tmpdir(self):
         spec = importlib.util.spec_from_file_location('ote_contract', ROOT/'scripts/ote-contract.py')
         ote = importlib.util.module_from_spec(spec); spec.loader.exec_module(ote)
@@ -327,16 +283,28 @@ class RunnerTests(unittest.TestCase):
             env = {'PATH': os.environ['PATH'], 'PAYMENTER_TEST_FIXTURE': str(fixture),
                    'PAYMENTER_TEST_PHP': str(runtime/'usr/bin/php8.4')}
             workers, fixture_snapshot, runtime_snapshot = runner.test_workers.environments(env, output, 2, runtime)
+            vendor = fixture/'vendor/autoload.php'
+            for worker in workers:
+                linked = Path(worker['PAYMENTER_TEST_FIXTURE'])/'vendor/autoload.php'
+                self.assertEqual(linked.stat().st_ino, vendor.stat().st_ino)
+                self.assertEqual(linked.stat().st_mode & 0o222, 0)
+                private = Path(worker['PAYMENTER_TEST_FIXTURE'])/'pristine'
+                self.assertNotEqual(private.stat().st_ino, (fixture/'pristine').stat().st_ino)
             self.assertTrue(all(worker['PYTHONDONTWRITEBYTECODE'] == '1' for worker in workers))
             rendezvous = root/'ready'; rendezvous.mkdir()
-            script = ("import os,time; from pathlib import Path; "
+            script = ("import os,sqlite3,time; from pathlib import Path; "
                       "fixture=Path(os.environ['PAYMENTER_TEST_FIXTURE']); token=str(os.getpid()); "
                       "(fixture/'state').write_text(token); "
+                      "database=sqlite3.connect(fixture/'state.sqlite'); "
+                      "database.execute('create table state (token text)'); "
+                      "database.execute('insert into state values (?)',(token,)); database.commit(); "
                       "Path(os.environ['TMPDIR'],'state').write_text(token); "
                       f"ready=Path({str(rendezvous)!r}); (ready/token).touch(); deadline=time.monotonic()+5; "
                       "\nwhile len(list(ready.iterdir()))<2 and time.monotonic()<deadline: time.sleep(.01)"
                       "\nassert len(list(ready.iterdir()))==2"
                       "\nassert (fixture/'state').read_text()==token"
+                      "\nassert database.execute('select token from state').fetchall()==[(token,)]"
+                      "\ndatabase.close()"
                       "\nassert Path(os.environ['TMPDIR'],'state').read_text()==token"
                       "\nprint(fixture)")
             with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
@@ -344,6 +312,7 @@ class RunnerTests(unittest.TestCase):
                                             ['runner'], {}, jobs=2, workers=workers), 0)
             self.assertNotEqual((output/'000.stdout.txt').read_bytes(), (output/'001.stdout.txt').read_bytes())
             self.assertFalse((fixture/'state').exists())
+            self.assertFalse((fixture/'state.sqlite').exists())
             for key in ['PAYMENTER_TEST_FIXTURE', 'PAYMENTER_TEST_PHP', 'TMPDIR']:
                 self.assertNotEqual(workers[0][key], workers[1][key])
             runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
@@ -351,8 +320,12 @@ class RunnerTests(unittest.TestCase):
             Path(workers[1]['PAYMENTER_TEST_PHP']).write_text('changed')
             with self.assertRaises(RuntimeError): runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
             Path(workers[1]['PAYMENTER_TEST_PHP']).write_text('binary')
-            Path(workers[1]['PAYMENTER_TEST_FIXTURE'], 'vendor/autoload.php').write_text('changed')
+            # Replace the directory entry rather than writing the shared read-only file.
+            altered = Path(workers[1]['PAYMENTER_TEST_FIXTURE'], 'vendor/autoload.php')
+            altered.unlink(); altered.write_text('changed')
             with self.assertRaises(ValueError): runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
+            self.assertEqual(vendor.read_text(), '<?php')
+            self.assertEqual(Path(workers[0]['PAYMENTER_TEST_FIXTURE'], 'vendor/autoload.php').read_text(), '<?php')
 
     def test_worker_copies_use_canonical_paths_under_a_linked_output_parent(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -411,23 +384,43 @@ class RunnerTests(unittest.TestCase):
                 runner.main()
             self.assertEqual(error.exception.code, 2)
 
+    def test_stopped_or_timed_out_run_removes_owned_copies_and_processes(self):
+        spec = importlib.util.spec_from_file_location('runner_process_cases', ROOT/'tests/Support/runner-process.py')
+        cases = importlib.util.module_from_spec(spec); spec.loader.exec_module(cases)
+        cases.stopped_runs(self, ROOT)
+
     def test_graceful_timeout_allows_resource_cleanup(self):
-        code = "import signal,time; signal.signal(signal.SIGTERM,lambda *args:(print('cleaned',flush=True),exit(0))); time.sleep(30)"
-        stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT, env=os.environ, timeout=2, graceful=3)
-        self.assertEqual((status, timed_out, stdout, stderr), (124, True, b'cleaned\n', b''))
+        for mode in ['timeout', 'stop', 'stop-int', 'during-grace']:
+            with self.subTest(mode=mode):
+                code = ("import os,signal,time\ndef cleanup(*args):\n"
+                        + (" os.kill(os.getppid(),signal.SIGTERM)\n" if mode == 'during-grace' else '')
+                        + " print('cleaned',flush=True)\n exit(0)\nsignal.signal(signal.SIGTERM,cleanup)\n"
+                        + ("os.kill(os.getppid(),signal.SIGINT)\n" if mode == 'stop-int' else
+                           "os.kill(os.getppid(),signal.SIGTERM)\n" if mode == 'stop' else '') + "time.sleep(30)")
+                control = runner.CommandProcesses()
+                with runner.stop_signals(control):
+                    result = runner.execute([sys.executable, '-c', code], cwd=ROOT, env=os.environ,
+                                            timeout=2, graceful=3, control=control)
+                self.assertEqual(result, (b'cleaned\n', b'', 124 if mode == 'timeout' else
+                                         130 if mode == 'stop-int' else 143, not mode.startswith('stop')))
 
     def test_graceful_timeout_escalates_when_sigterm_is_ignored(self):
-        code = "import os,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print(os.getpid(),flush=True); time.sleep(30)"
-        started = time.monotonic()
-        stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT,
-                                                         env=os.environ, timeout=2, graceful=1)
-        elapsed = time.monotonic() - started
-        self.assertEqual((status, timed_out, stderr), (124, True, b''))
-        self.assertGreaterEqual(elapsed, 3)
-        self.assertLess(elapsed, 8)
-        pid = int(stdout.strip())
-        with self.assertRaises(ProcessLookupError):
-            os.kill(pid, 0)
+        for stopped in [False, True]:
+            with self.subTest(stopped=stopped):
+                code = ("import os,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print(os.getpid(),flush=True); "
+                        + ("os.kill(os.getppid(),signal.SIGTERM); " if stopped else '') + "time.sleep(30)")
+                control = runner.CommandProcesses()
+                started = time.monotonic()
+                with runner.stop_signals(control):
+                    stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT,
+                                                                     env=os.environ, timeout=2, graceful=1, control=control)
+                elapsed = time.monotonic() - started
+                self.assertEqual((status, timed_out, stderr), (143 if stopped else 124, not stopped, b''))
+                self.assertGreaterEqual(elapsed, 1 if stopped else 3)
+                self.assertLess(elapsed, 8)
+                pid = int(stdout.strip())
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(pid, 0)
 
     def test_mariadb_non_skip_failure_is_receipted_as_failure(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -640,18 +633,22 @@ class RunnerTests(unittest.TestCase):
 
     def test_only_paths_keep_manifest_order_and_native_fixture_requirements(self):
         suites = runner.manifest()
+        def capture(*args, **kwargs):
+            if args[3] == ['mariadb']:
+                Path(args[1]['TMPDIR'], 'retained-evidence.json').write_text('evidence')
+            return 0
         cases = [(['tests/test_package.py'], ['package']),
                  (['tests/test_schema_mariadb.py'], ['mariadb']),
                  (['tests/test_package.py', 'tests/test_installed_package_previous.py', 'tests/test_package.py'],
                   ['native', 'package'])]
         for requested, selected in cases:
             with self.subTest(requested=requested), tempfile.TemporaryDirectory() as temp, \
-                 mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine'}), \
+                 mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine', 'TMPDIR': temp}), \
                  mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
                  mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', '--only', *requested]), \
                  mock.patch.object(runner.native, 'prepare', return_value={'source': 'digest'}) as native_prepare, \
                  mock.patch.object(runner, 'prepare', return_value=(Path(temp)/'runtime', Path(temp)/'runtime/php', Path(temp)/'runtime/curl.so')) as php_prepare, \
-                 mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stdout(io.StringIO()):
+                 mock.patch.object(runner, 'run', side_effect=capture) as run, contextlib.redirect_stdout(io.StringIO()):
                 (Path(temp)/'runtime').mkdir()
                 self.assertEqual(runner.main(), 0)
                 expected = [(kind, path) for kind, paths in suites.items() for path in paths if path in requested]
@@ -659,8 +656,13 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(run.call_args.args[3], selected)
                 if selected == ['mariadb']:
                     php_prepare.assert_not_called()
+                    self.assertEqual(run.call_args.args[1]['TMPDIR'], temp)
+                    self.assertNotIn('TMP', run.call_args.args[1])
+                    self.assertNotIn('TEMP', run.call_args.args[1])
+                    self.assertEqual((Path(temp)/'retained-evidence.json').read_text(), 'evidence')
                 else:
                     php_prepare.assert_called_once_with(native='native' in selected)
+                    self.assertFalse(Path(run.call_args.args[1]['TMPDIR']).exists())
                 self.assertEqual(native_prepare.call_count, int('native' in selected))
                 self.assertEqual(run.call_args.kwargs['only'], requested)
                 if 'native' in selected:
