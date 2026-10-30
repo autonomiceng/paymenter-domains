@@ -29,7 +29,10 @@ def environment(index, *, env, output, runtime, fixture, fixture_snapshot, runti
             # App files can be changed by upgrade checks. Only vendor bytes are
             # immutable; directory entries and all generated state stay private.
             if Path(source).is_relative_to(fixture/'vendor'):
-                return os.link(source, destination)
+                try:
+                    return os.link(source, destination)
+                except OSError:
+                    pass
             return shutil.copy2(source, destination)
         shutil.copytree(fixture, copy, copy_function=copy_file)
         native.verify(copy, fixture_snapshot=fixture_snapshot)

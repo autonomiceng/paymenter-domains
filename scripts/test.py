@@ -311,7 +311,7 @@ def main():
     control = CommandProcesses()
     with stop_signals(control):
         code = main_with_control(control)
-        return 128 + control.signal if control.signal else code
+        return code
 
 
 def main_with_control(control):

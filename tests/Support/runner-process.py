@@ -109,4 +109,3 @@ with mock.patch.object(runner, 'ROOT', root), \\
                         for pid in [marker.name, marker.read_text()]:
                             try: os.kill(int(pid), signal.SIGKILL)
                             except ProcessLookupError: pass
-
