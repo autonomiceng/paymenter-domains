@@ -71,7 +71,7 @@ expect(str_contains(SettingsActions::details('enroll_sandbox'),'next background 
     &&str_contains(SettingsActions::details('enroll_sandbox'),'Test connection can send one more balance request'),'Enrollment copy explains scheduled and interactive balance reads');
 $GLOBALS['enrollmentExpectedContext']='api';$GLOBALS['enrollmentExpectedTimeout']=10000;
 $page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Account connected')->assertSet('mountedActions',[]);
-$page->assertActionDisabled($action('enroll_sandbox',$s));unset($page);gc_collect_cycles();
+$page->assertActionDoesNotExist($action('enroll_sandbox',$s));unset($page);gc_collect_cycles();
 same($n+1,$GLOBALS['enrollmentCalls'],'Staff enrollment exactly one OTE read');$a=Account::where('server_id',$s->id)->sole();$binding=CatalogueAcceptances::binding($a);
 expect(NameSiloSandbox::enrolled($a),'Distinct local enrollment identity');
 foreach(['sandbox@example.test','synthetic-ote-key','123','456','789','999','9876.54'] as $substitute){expect($a->stable_identity!==$substitute,'No identity substitute');}
