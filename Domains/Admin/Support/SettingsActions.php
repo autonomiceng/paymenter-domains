@@ -332,7 +332,7 @@ final class SettingsActions
         if($error instanceof EnomTestCallLimit&&Account::where('server_id',$server)->value('environment')==='live'){return 'Our live Enom safety check stopped this request before sending. Earlier reads may have been sent. Check the live site, account binding and our daily safety limits on the account page.';}
         return $error instanceof EnomTestCallLimit
                 ?'Our TEST send check stopped this Enom request before sending. '.($name==='import'?'Earlier reads in this import may have been sent and counted. ':'')
-                    .EnomTestSendLimit::facts(($account=Account::where('server_id',$server)->first())?EnomTestSendLimit::login($account):null)
+                    .EnomTestSendLimit::facts(($account=Account::where('server_id',$server)->first())?EnomTestSendLimit::login($account):($data['uid']??null))
                 :match($error->getMessage()){'The calculated price is too large.'=>'This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.','Processing state unchanged.'=>'Processing state is unchanged. Reload this page.',
                 'Settings changed. Reload this page.'=>$name==='enroll_sandbox'?'This review expired, or this server changed after you opened it. No OTE key check was sent and nothing was saved. Reload this page and review the server before trying again.':'Settings changed. Reload this page.',
                 'Current staff permissions required.'=>$name==='enroll_sandbox'?'Your staff permission changed. No OTE key check was sent and nothing was saved. Reload this page before trying again.':'Your permission changed. Reload this page.',

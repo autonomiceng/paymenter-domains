@@ -3,7 +3,9 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require_once __DIR__.'/Support/FakeRegistrar.php';
+require_once __DIR__.'/Support/accounts.php';
 use Illuminate\Support\Facades\{DB,Schema};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestCalls,EnomTestSendLimit as Limit,EnomTestSendLimitSchema as Tables,Installation};
@@ -27,6 +29,13 @@ $clock->instant=$t0->modify('+61 seconds');
 same([true,true,false],[admits($uid),admits($uid),admits($uid)],'UTC midnight frees nothing; the rolling ceiling holds');
 same(['day'=>5,'day_limit'=>5,'minute'=>2,'minute_limit'=>3],Limit::usage($uid),'Usage reports both windows');
 expect(str_contains(Limit::facts($uid),'5 of 5'),'Facts show the rolling count');
+// The existing native fixture covers real saved bindings and shared counters; a pure unit cannot.
+fixtureAccount(1,'enom',$uid);
+foreach([0=>$uid,1=>'other-uid'] as $server=>$submittedUid){
+    $notice=SettingsActions::refusal(new EnomTestCallLimit,'configure',['uid'=>$submittedUid],$server);
+    expect(str_contains($notice,'5 of 5')&&str_contains($notice,'2 of 3')&&str_contains($notice,'Limit reached'),
+        'Connect refusal shows submitted login usage for a new account and keeps the saved login for an existing account');
+}
 same(['day'=>0,'day_limit'=>5,'minute'=>0,'minute_limit'=>3],Limit::usage('other-uid'),'Accounts are counted apart');
 same([true,true],[admits('OTHER-UID'),admits('other-uid')],'Another login has its own limit');
 same(2,Limit::usage('Other-Uid')['day'],'UID case aliases share one limit');
