@@ -45,8 +45,8 @@ final class PriceFill
         DB::table(SellTableSchema::FILLS)->insertOrIgnore($key);
         $tried=self::last($binding)->tried_at;if($tried!==null&&(int)$tried>$due){return;}
         try{
-            $reader=$this->reader($binding);if($reader===null){return;}
             if(self::state($binding)->where(fn($q)=>$q->whereNull('tried_at')->orWhere('tried_at','<=',$due))->update(['tried_at'=>$now])!==1){return;}
+            $reader=$this->reader($binding);if($reader===null){return;}
             $this->fill($binding,$reader,RequestOrigin::Background);
         }catch(\Throwable $error){$this->failed($account,$binding,$error,$now);}
     }

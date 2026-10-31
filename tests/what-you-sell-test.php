@@ -92,6 +92,15 @@ $back=static fn(int $seconds)=>DB::table(SellTableSchema::FILLS)->where('server_
 $back(PriceFill::EVERY_SECONDS);$fill->daily($account);
 same(['PE_GetRetailPricing','PE_GetRetailPricing','PE_GetRetailPricing','PE_GetRetailPricing'],$commands($before),'One daily fill is 4 reads');
 
+// Reader construction can fail before any wire call; that failure must still claim the daily attempt.
+$verified=$server->settings()->where('key','domains_verified_credentials')->sole();$validDigest=$verified->value;
+$verified->value='SYNTHETIC-INVALID-DIGEST';$verified->save();$back(PriceFill::EVERY_SECONDS);$before=$calls();$attemptAt=app(Clock::class)->now()->getTimestamp();
+$fill->daily($account);
+expect((int)PriceFill::last($binding)->tried_at>=$attemptAt,'A reader construction failure consumes its daily attempt');
+same($before,$calls(),'Reader failure sends nothing');
+$verified->value=$validDigest;$verified->save();$fill->daily($account);
+same($before,$calls(),'The next tick keeps the daily claim after configuration is repaired');
+
 // A failed fill keeps the last good rows and tells nobody, until 3 days pass.
 $inbox=static fn()=>Inbox::where('title','Prices are out of date')->count();
 $good=$row('org')->getAttributes();$filled=(int)PriceFill::last($binding)->filled_at;
