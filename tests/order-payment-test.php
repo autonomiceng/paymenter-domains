@@ -91,5 +91,7 @@ $table=storefrontDom(view('domains::partials.activity',['domain'=>$domain])->ren
 $cells=$table->query('//td[@data-label="Status"]');
 expect(str_contains($norm($cells->item(0)->textContent),'The registrar refused this change. Try again. Still stuck? Contact support'),'Failed row shows reason and next step');
 same('Under review',trim($cells->item(1)->textContent),'Other rows stay short');
+$done=storefrontDom(view('domains::partials.activity',['domain'=>new OwnedDomain('order.example','Active','ok',null,'',null,['show'=>'/domains/1'],[['label'=>'Renewal','state'=>'Cancelled','date'=>'2026-10-27','note'=>'We added $1.00 to account credit.']],[],[],[],false)])->render());
+same('CancelledWe added $1.00 to account credit.',$norm($done->query('//td[@data-label="Status"]')->item(0)->textContent),'A settled note asks for nothing more');
 same(2,$table->query('//td[@data-label="Date"][string-length(normalize-space())>0]')->length,'Both rows show a date');
 $nativeSuccessful=true;echo "Order payment checks passed.\n";

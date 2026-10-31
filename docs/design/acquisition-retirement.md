@@ -49,7 +49,7 @@ their existing end-of-period behavior. Raw maintenance remains privileged. Nativ
 cron and Eloquent stock internals are pinned by the test-only upgrade tripwire, without a runtime
 version gate. The native paid activation/removal work remains in later Option E slices.
 
-`write_acceptance_required` joins the existing pre-seal interruption recovery allowlist. Recovery
+`write_acceptance_required` and `WriteHeld::UNSENT_REFUSALS` join the existing pre-seal interruption recovery allowlist. Recovery
 still requires the unchanged absent-seal/definitely-unsent claim proof; present-null execution
 or dispatch evidence refuses. The existing refund-once and terminal encoders retain their locks.
 

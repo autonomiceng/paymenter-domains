@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,DomainReservations,HoldingLocks,NativeCancellation,NativeIdentity,NativeIntentSchema,ReminderSchema,StaffHoldingReview,UnpaidAcquisitionProof};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionActions;
 // No event, raw cancelled fixtures model missed wake-ups and privileged bulk changes.
-foreach(['partial','processing','failed','reversed','sent','null_execution','claim','provider','sibling']as$case){
+foreach(['partial','processing','reversed','sent','null_execution','claim','provider','sibling']as$case){
     $op=$new(placeholderComFixtureName('unpaid-'.str_replace('_','-',$case).'-placeholder.com'),paid:false);
-    if(in_array($case,['partial','processing','failed','reversed'],true)){
-        App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$case==='reversed'?'-1.00':'1.00','fee'=>'0.00','status'=>$case==='processing'?'processing':($case==='failed'?'failed':'succeeded')]);
+    if(in_array($case,['partial','processing','reversed'],true)){
+        App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$case==='reversed'?'-1.00':'1.00','fee'=>'0.00','status'=>$case==='processing'?'processing':'succeeded']);
     }elseif($case==='sent'){$op->update(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']]);}
     elseif($case==='null_execution'){$op->update(['attempt'=>['execution'=>null]]);}
     elseif($case==='claim'){$op->update(['started_at'=>$clock->now(),'request_fingerprint'=>str_repeat('a',64),'attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent','claim_key'=>str_repeat('a',32)]]);}

@@ -20,11 +20,18 @@ final class CartAdmission
     public function boot(): void
     {
         if(!HookRegistration::claim(Event::getFacadeRoot(),self::class)){return;}
+        CartCheckoutRefresh::boot($this);
         foreach ([\App\Events\CartItem\Creating::class, \App\Events\CartItem\Updating::class] as $event) {
             Event::listen($event, fn ($e) => $this->prepare($e->cartItem));
         }
         Event::listen(\App\Events\Order\Creating::class,function($e):void {
-            try{$this->admit($e->order);}catch(\DomainException|\InvalidArgumentException $error){throw new \App\Exceptions\DisplayException($error->getMessage()===NativeUserDeletion::PENDING?NativeUserDeletion::PENDING:'Your domain offer changed or expired. Remove this line from your cart and search again for a current offer.');}
+            try { $this->admit($e->order); }
+            catch (\DomainException|\InvalidArgumentException $error) {
+                $message = $error instanceof CheckoutCheckExpired || $error->getMessage() === NativeUserDeletion::PENDING
+                    ? $error->getMessage()
+                    : 'Your domain offer changed or expired. Remove this line from your cart and search again for a current offer.';
+                throw new \App\Exceptions\DisplayException($message);
+            }
         });
         foreach ([\Illuminate\Database\Events\TransactionCommitted::class, \Illuminate\Database\Events\TransactionRolledBack::class] as $event) {
             Event::listen($event, function ($e): void {
@@ -60,6 +67,62 @@ final class CartAdmission
         $item->checkout_config = ['domain' => $name, 'domains_check' => $token];
     }
 
+    /** Before native mount/checkout only. Quiet CAS avoids update hooks and stale-tab overwrites. */
+    public function refresh(): void
+    {
+        if (DB::transactionLevel() !== 0) { throw new \LogicException('Refresh requires an unlocked cart.'); }
+        $cart = NativeCart::get();
+        if (!$cart->exists || ($cart->user_id !== null && (int) $cart->user_id !== (int) Auth::id())) { return; }
+        $batch = new CheckoutRefreshBudget;
+        foreach ($cart->items as $item) {
+            $batch->remainingMilliseconds();
+            $product = Product::findOrFail($item->product_id);
+            $mapping = $this->native->mapping($product, $item->plan);
+            if (!$mapping || $mapping['action'] !== 'register') { continue; }
+            $this->validate($item, $product); $name = $this->name($item, $mapping);
+            $selected = $this->sellers->selection($mapping['tld']->tld, 'register', $mapping['term'], $this->clock->now());
+            if ($selected->serverId !== (int) $product->server_id || $selected->fingerprint !== $mapping['tld']->account_fingerprint) {
+                throw new \DomainException('Registrar changed.');
+            }
+            $config = $item->checkout_config;
+            while (true) {
+                try { $token = $this->eligibility->refresh((string) ($config['domains_check'] ?? ''), $name, $selected, $this->identity($item), $batch); break; }
+                catch (ReadDeferred $e) {
+                    $delay = $e->retryAfterMicros;
+                    if ($delay === null) { throw $e; }
+                    // The failed reservation transaction and coalescing lock have both unwound.
+                    // Retry the full guarded read, never a physical call with the guard bypassed.
+                    $batch->wait($delay);
+                }
+            }
+            if ($token === ($config['domains_check'] ?? null)) { continue; }
+            $item->checkout_config = [...$config, 'domains_check' => $token];
+            $updated = CartItem::whereKey($item->id)->where('cart_id', $cart->id)->where('product_id', $item->product_id)
+                ->where('plan_id', $item->plan_id)->where('checkout_config->domain', $config['domain'])
+                ->where('checkout_config->domains_check', $config['domains_check'] ?? null)
+                ->update(['checkout_config' => json_encode($item->checkout_config, JSON_THROW_ON_ERROR)]);
+            if (!$updated) {
+                $current = $cart->items()->whereKey($item->id)->first();
+                if (!$current || (int) $current->product_id !== (int) $item->product_id || (int) $current->plan_id !== (int) $item->plan_id
+                    || $current->checkout_config !== $item->checkout_config) { throw new \DomainException('Cart changed. Try checkout again.'); }
+            }
+        }
+    }
+
+    /** Signed page memo contains only the domain lines and retail the customer could see. */
+    public function offers(): array
+    {
+        $offers = [];
+        foreach (NativeCart::items() as $item) {
+            $mapping = $this->native->mapping($item->product, $item->plan);
+            if ($mapping && $mapping['action'] === 'register') {
+                $offers[] = [$item->id, $this->identity($item), $this->name($item, $mapping),
+                    RetailLine::decimal($item->plan->prices->where('currency_code', 'USD')->sole()->price)];
+            }
+        }
+        return $offers;
+    }
+
     private function admit(Order $order): void
     {
         $cart = NativeCart::get(); $lines = $selections = $names = [];
@@ -69,7 +132,7 @@ final class CartAdmission
             if (!$this->native->mapping($product)) { continue; }
             $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $product->server_id)->firstOrFail();
             $binding = CatalogueAcceptances::binding($account);
-            if (EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::enabled($binding) && !(($this->native->mapping($product)['action']??null)==='transfer'&&EnomTestTransfer::enabled($binding))) {
+            if (EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::enabled($binding) && !(($this->native->mapping($product)['action']??null)==='transfer'&&EnomTestTransfer::accepted($binding))) {
                 throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Domains can’t be ordered right now. Remove them to check out.':'Test domains can’t be ordered. Remove them to check out.');
             }
             if (DB::transactionLevel() !== 1 || $this->order || (int) Auth::id() !== (int) $order->user_id
@@ -77,7 +140,7 @@ final class CartAdmission
                 throw new \DomainException('Domain checkout requires its native transaction and owner.');
             }
             $mapping = $this->validate($item, $product);
-            if ($mapping['action'] !== 'register' && EnomTestRegistration::enabled($binding) && !EnomTestTransfer::enabled($binding)) {
+            if ($mapping['action'] !== 'register' && EnomTestRegistration::enabled($binding) && !EnomTestTransfer::accepted($binding)) {
                 throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Transfers can’t be ordered yet. Remove them to check out.':'Test transfers can’t be ordered yet. Remove them to check out.');
             }
             $name = $this->name($item, $mapping);
@@ -122,7 +185,8 @@ final class CartAdmission
     public function recheck(array $line): void
     {
         if (DB::transactionLevel() !== 1 || !$this->order?->exists) { throw new \DomainException('No current native checkout.'); }
-        $this->eligibility->require($line['check'], $line['name'], $line['identity'], true);
+        try { $this->eligibility->require($line['check'], $line['name'], $line['identity'], true); }
+        catch (CheckoutCheckExpired $e) { throw new \App\Exceptions\DisplayException($e->getMessage()); }
     }
 
     /** Binding can consume only this transaction's admitted batch; externally constructed DTOs have no authority. */

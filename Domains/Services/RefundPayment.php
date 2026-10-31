@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Enums\InvoiceTransactionStatus;
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Exact issued line and complete signed native funding, under HoldingLocks. No lifecycle/price inference. */
 final class RefundPayment
@@ -41,7 +42,9 @@ final class RefundPayment
     {
         try {
             if (!RefundProof::retired($op, $l['domain'])) { return false; }
-            RefundProof::requireUnsent($op, $l['domain']); $current = self::requireCurrent($op, $l);
+            RefundProof::requireUnsent($op, $l['domain']);
+            if (RenewalCycles::closedEarly($op)) { return self::lateUncredited($op, $l) === [] && !$l['transactions']->where('invoice_id', $op->invoice_id)->contains('status', InvoiceTransactionStatus::Processing); }
+            $current = self::requireCurrent($op, $l);
             $refund = $op->funding['refund'] ?? [];
             if (($refund['to'] ?? null) !== 'account_credit' || ($refund['credit_id'] ?? null) !== $l['credit']?->id
                 || !$l['credit'] || $current['invoice_total_minor'] !== PricingRule::minor($op->amount)
@@ -50,6 +53,30 @@ final class RefundPayment
             foreach ($current as $key => $value) { if (!array_key_exists($key, $refund) || $refund[$key] !== $value) { return false; } }
             return true;
         } catch (\Throwable) { return false; }
+    }
+    /** A closed new order shares its invoice's payments with other orders, maybe on another account, so it reads what any of them credited.
+     * @return array<int,int> Payment id => minor amount already credited from a closed order. */
+    public static function lateCredited(Operation $op): array
+    {
+        $ops = $op->safe_code === UnpaidAcquisitionProof::CODE
+            ? Operation::where('invoice_id', $op->invoice_id)->orderBy('id')->when(DB::transactionLevel() > 0, fn ($q) => $q->lockForUpdate())->get() : [$op];
+        $done = [];
+        foreach ($ops as $row) {
+            $f = $row->funding ?? [];
+            foreach ([...(isset($f['refund']) ? [$f['refund']] : []), ...($f['late_credits'] ?? [])] as $credit) {
+                foreach ($credit['payments'] as $payment) { $done[$payment['id']] = $payment['amount_minor']; }
+            }
+        }
+        return $done;
+    }
+    /** Succeeded payments not credited yet. A failed row is not money; a processing row counts once it succeeds. */
+    public static function lateUncredited(Operation $op, array $l): array
+    {
+        $done = self::lateCredited($op); $new = [];
+        foreach ($l['transactions']->where('invoice_id', $op->invoice_id) as $row) {
+            if ($row->status === InvoiceTransactionStatus::Succeeded && !isset($done[$row->id])) { $new[] = ['id' => (int) $row->id, 'amount_minor' => PricingRule::minor($row->amount)]; }
+        }
+        return $new;
     }
     public static function requireCurrent(Operation $op, array $l): array
     {

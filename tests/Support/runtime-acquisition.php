@@ -110,7 +110,7 @@ same(['register'=>null,'transfer'=>null],$wrong->acquisitionGates($account),'Wro
 $old=new RuntimePorts;$legacy=$composition;$legacy['acquisition']=(new ReflectionProperty($registrationPort,'engine'))->getValue($registrationPort);
 $old->register($binding->fingerprint,fn()=>$legacy);expect(!$old->accepted($account),'Legacy single-engine acquisition is refused');
 app()->instance(RuntimePorts::class,$closed);$rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account,['label'=>'Active','reason'=>null]),null,'label');
-same(['Off',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::SERVER_CONFIG],[$rows['Registrations']['value'],$rows['Registrations']['cause']],'Setup checklist names a feature that is off in server config');
+same(['Off',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::siteConfig($account,'registration')],[$rows['Registrations']['value'],$rows['Registrations']['cause']],'Setup checklist names a feature that is off in server config');
 same('On',$rows['Transfers']['value'],'Setup checklist describes the exact per-action gates');
 app()->instance(RuntimePorts::class,$ports);
 $inputs=new TransferInputs($clock,new Refunds($clock));
