@@ -64,7 +64,7 @@ the configured `DnsReader`, and `enabled: true`. Runtime's default singletons su
 activation gate. There is no monitoring enable setting or environment variable; the
 Monitoring Settings tab only edits/tests the DNS resolver. The disabled notice has no
 Settings action. Staff with monitoring management permission see short setup steps
-beneath it, with links to the public suffix list, DNS templates and Hosting products even
+beneath it, with links to the public suffix list and DNS templates even
 while activation is off. View-only staff see only the status. The existing minute `domains-runtime` schedule must be allowed to dispatch and its queue worker must
 run; public checks coalesce to five-minute turns. The combined runtime also performs
 financial work, so deployment scheduling changes must account for those feature gates.
@@ -83,11 +83,23 @@ Discovery failures are caught and logged inside the scheduler, so their notice a
 server log review rather than linking to Failed jobs. DNS failures retain the resolver
 Settings action for staff who can edit it, except when the server prevents resolver changes
 or discovery also needs server review.
-Hosting products and DNS templates leave the menu until both activation gates are met;
-existing permission-protected routes and retained configuration remain available. Hosting
-products selects a real text checkout field, config option or saved service-property key from the chosen
-product, never a customer value. Alias keys remain ineligible. Saving still leaves the
-product disabled until staff explicitly turn its monitoring on.
+DNS templates leave the menu until both activation gates are met; existing
+permission-protected routes and retained configuration remain available.
+
+Each scheduler turn looks at up to 25 hosting products that have services and no row yet
+(`WatchProducts`, durable cursor in scope `products`). It reads only saved values, the same
+properties discovery reads, so no hosting API is called. Values come from the product's active
+services, or all of them if none are active. Past 1,000 rows nothing is picked, since a partial
+read can't prove a field fits or is the only one, and the product waits for staff. The field
+picker lists every key the product's services ever saved. A field named domain or hostname wins
+if its values all look like domain names; with no named field, the one field whose values all
+do. A named field holding anything else is a contradiction and nothing is picked. Alias keys stay ineligible. A found product is monitored from then on, with
+`edited_by` 0 marking the system. A row is only written once, so the turn never overrides staff
+and a product staff turned off stays off. Domain monitoring lists every hosting product as
+Monitored, Not monitored, No domain found or No services yet. Staff switch a product on or off,
+and pick a field on No domain found or Not monitored, because the system can't tell that a
+saved field is wrong. Without a DNS template a monitored domain gets expiry checks only; DNS
+checks need a template on the domain.
 
 The explicit two-jobs-per-owner/five-minute-turn ceiling permits at most 576 jobs/day per
 owner and 2,880 globally. Rough baseline capacity is 96 watched names/owner or 480 globally

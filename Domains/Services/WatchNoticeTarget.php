@@ -26,12 +26,7 @@ final class WatchNoticeTarget
             $d=$latest(WatchDnsObservation::where('watch_id',$id)->where('user_id',$owner)->where('check_kind','delegation'));
             $dt=$capture((int)($d?->source_cursor??0));$stamp=$dt['stamp']??null;
             $work=DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','delegation')->when($lock,fn($q)=>$q->lockForUpdate())->first();
-            // Registry capture permits profile disagreement; DNS delivery must enforce watch-wide agreement,
-            // including sources outside the observation's rotating cohort, with a current locking read.
-            $conflict=DB::table('domains_watch_sources as s')->join('domains_watch_product_maps as m','m.id','=','s.map_id')
-                ->where('s.watch_id',$id)->where('s.state','watch')->whereNotNull('m.expected_ns_profile_id')
-                ->where('m.expected_ns_profile_id','<>',$profile?->id??0)->when($lock,fn($q)=>$q->lockForUpdate())->first(['s.id']);
-            $ready=$dt && $profile?->enabled && (int)$dt['watch']->ns_profile_id===(int)$profile->id && !$conflict && $work && in_array($work->safe_code,[null,'budget_exhausted','rotation'],true);
+            $ready=$dt && $profile?->enabled && (int)$dt['watch']->ns_profile_id===(int)$profile->id && $work && in_array($work->safe_code,[null,'budget_exhausted','rotation'],true);
             $confirmed=$d?->facts['ns_confirmed']??false;$family='watch_dns';
         } elseif ($kind==='managed') {
             $d=ManagedPublicObservation::where('domain_id',$id)->where('user_id',$owner)->where('check_kind','delegation')->orderByDesc('id')->first();

@@ -6,6 +6,7 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\View\Compilers\BladeCompiler;
 final class WatchNotice extends \App\Mail\Mail
 {
+    use ClosesEmailLog;
     public function content(): Content
     {
         $html=(string)\Illuminate\Support\Str::markdown(BladeCompiler::render($this->data['body'],$this->data));
