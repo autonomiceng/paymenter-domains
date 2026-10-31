@@ -26,7 +26,7 @@ foreach(array_diff(array_keys(Review::ACTIONS),staffNoButtonActions()) as $actio
     $page=Livewire::actingAs($u)->test(in_array($action,staffSetupActions(),true)?RegistrarAccount::class:ViewTld::class,
         in_array($action,staffSetupActions(),true)?['account'=>$t->server_id]:['record'=>$t->id]);
     $name=in_array($action,staffSetupActions(),true)?setupAction($action,$t->server_id):$action;
-    if(in_array($action,['test_renewal','test_management','live_renewal','live_management'],true)){$page->assertActionDoesNotExist($name);continue;} // Deployment opt-in is off.
+    if(in_array($action,['test_renewal','test_transfer','test_management','live_renewal','live_management','live_transfer'],true)){$page->assertActionDoesNotExist($name);continue;} // Deployment opt-in is off.
     if($action==='enroll_sandbox'){$page->assertActionDoesNotExist($name);continue;}
     if($action==='import'){
         $page->assertActionDoesNotExist($name);
@@ -35,6 +35,7 @@ foreach(array_diff(array_keys(Review::ACTIONS),staffNoButtonActions()) as $actio
         same(['review_key'],array_keys($sync->get('mountedActions.0.data')),'Account-wide sync asks only for its review key');
         continue;
     }
+    if($action==='processing'){$page->assertActionExists($name);continue;} // A switch has no form.
     $page->mountAction($name)->assertActionMounted($name)->setActionData(['reason'=>'x'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);
 }
 // Every settings action is hidden without its own permission, even with view/manage access.
@@ -47,10 +48,10 @@ foreach(array_keys(Review::ACTIONS) as $action){
         Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)->assertActionHidden('sync_prices_'.$t->server_id);
     }
     elseif(in_array($action,staffNoButtonActions(),true)){$page->assertActionDoesNotExist($action);}
-    elseif(in_array($action,['configure','processing'],true)){$page->assertActionHidden(setupAction($action,$t->server_id));}elseif($setup){$page->assertActionDoesNotExist(setupAction($action,$t->server_id));}else{$page->assertActionHidden($action);}
+    elseif($action==='configure'){$page->assertActionHidden(setupAction($action,$t->server_id));}elseif($setup){$page->assertActionDoesNotExist(setupAction($action,$t->server_id));}else{$page->assertActionHidden($action);}
 }
 $u->role->update(['permissions'=>$permissions]);config($syncConfig);
-$staleFirst=['processing','delivery_review','alert_review'];
+$staleFirst=['processing'];
 foreach([...$staleFirst,...array_values(array_diff(array_keys(Review::ACTIONS),$staleFirst))] as $action){
     if($action==='enroll_sandbox'){continue;} // Enrollment has its own fresh-server review regression.
     $setup=in_array($action,staffSetupActions(),true);
@@ -73,6 +74,7 @@ Price::whereKey($renewalCost->id)->update(['wholesale'=>null]);
 same(['published'=>0,'failed'=>['.com']],$writer->run($review('default_rule',$t->id),[...$fixed,'fixed_renew'=>'2.00'],$now->modify('+2 days')),'Missing-cost TLD is named');
 Price::whereKey($renewalCost->id)->update(['wholesale'=>$renewalCost->wholesale]);
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Prices not published'],TldFacts::salesState($t->fresh()),'Unpublished rule blocks ready status');
+Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)->assertSee('Prices not published. Open Edit prices and save.');
 $rows=TldFacts::prices($t->fresh());expect($rows&&collect($rows)->every(fn($r)=>in_array('unpublished',$r['flags'],true)),'Unpublished rule has visible alert');
 $same=['min_years'=>1,'max_years'=>3,'enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true];
 $stamp=Review::stamp($t->server_id,$t->id);$key=Review::ticket($u->id,$t->server_id,$t->id,'tld_settings',$stamp);

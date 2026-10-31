@@ -29,9 +29,8 @@ $fixed=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'20',
 $inputs=['card_fee'=>['fee_percent'=>'3.10','fee_fixed'=>'0.40'],'default_rule'=>$fixed,'override'=>['pricing'=>'custom',...$fixed],'remove_override'=>['pricing'=>'default'],
     'tld_settings'=>['min_years'=>1,'max_years'=>2,'enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true],
     'seller'=>['seller'=>$t->server_id,'register'=>true,'transfer'=>true],
-    'history'=>['history_action'=>'register','accept'=>true,'verified'=>true,'timezone'=>'America/Los_Angeles','lag'=>60,'retention'=>86400],
     'configure'=>['registrar'=>'enom','environment'=>'test','uid'=>'synthetic-user','token'=>'account-enom'],'probe'=>[]];
-$accountSide=['card_fee','default_rule','history','configure','probe'];
+$accountSide=['card_fee','default_rule','configure','probe'];
 $mount=static function(string $action)use($u,$t,$accountSide){
     $setup=in_array($action,$accountSide,true);
     $name=$setup?setupAction($action,$t->server_id):($action==='remove_override'?'override':$action);
@@ -122,4 +121,15 @@ foreach([[$tlds[1],true,false],[$tlds[0],true,false],[$tlds[0],false,false],[$tl
 }
 config(['domains.enom_catalogue.enabled'=>$catalogueConfig,'domains.enom_identity.environment'=>$identityConfig]);
 same($providerReads,$reads->calls,'Seller refusal makes no provider read');
+// Field defaults share one lazy read per form.
+$fields=static function(string $name)use($t):array{
+    $action=$name==='default_rule'?\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::setup((int)$t->server_id,'unused',$name):\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::make((int)$t->server_id,(int)$t->id,'unused',false,[$name])[0];$out=[];
+    foreach($action->getSchema(\Filament\Schemas\Schema::make())->getComponents(withHidden:true) as $field){if($field instanceof \Filament\Forms\Components\Field){$out[$field->getName()]=$field;}}
+    return $out;
+};
+$reading=false;$queries=0;Illuminate\Support\Facades\DB::listen(static function($query)use(&$reading,&$queries):void{if($reading&&str_starts_with(strtolower($query->sql),'select')){$queries++;}});
+foreach(['default_rule'=>['mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'],'override'=>['mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'],'seller'=>['seller','register','transfer']] as $name=>$names){
+    $form=$fields($name);$queries=0;$reading=true;$form[$names[0]]->getDefaultState();$first=$queries;expect($first>0,$name.' uses real saved facts');
+    foreach($names as $field){$form[$field]->getDefaultState();}same($first,$queries,$name.' defaults share the first read');$reading=false;
+}
 echo "Ten native action submissions, missing-cost refusals, replay, permission denial and retained audit passed.\n";$nativeSuccessful=true;

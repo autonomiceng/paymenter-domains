@@ -8,17 +8,16 @@ use Filament\Schemas\{Schema,Components\Grid,Components\Section};
 use Filament\Infolists\Components\TextEntry;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,MissingEntry,RegistrarFacts,Staff,TldFacts,SettingsActions};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{MissingEntry,RegistrarFacts,Staff,TldFacts,SettingsActions};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\LifecyclePolicies;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewTld extends ViewRecord
 {
     protected static string $resource=TldResource::class;
     public string $reviewStamp='';
-    /** Page names for the shared settings actions. Edit prices is the main button and is on the prices section; Edit sits on the grace rows.
+    /** Page names for the shared settings actions. Edit prices is the main button and is on the prices section.
      * Default pricing is edited on the registrar account page, and saving prices publishes them. */
-    private const LABELS=['seller'=>'Change registrar','override'=>'Edit prices','tld_settings'=>'Edit terms','lifecycle'=>'Edit grace and redemption'];
+    private const LABELS=['seller'=>'Change registrar','override'=>'Edit prices','tld_settings'=>'Edit terms'];
     public function mount(int|string $record): void
     {parent::mount($record);$this->reviewStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp((int)$this->getRecord()->server_id,(int)$this->getRecord()->id);}
     protected function afterActionCalled(Action $action): void
@@ -45,7 +44,6 @@ class ViewTld extends ViewRecord
         return [$actions['override']->color('primary'),ActionGroup::make([$actions['seller'],$actions['tld_settings']])->label('More')->button()->color('gray')];
     }
     public function overrideAction(): Action {return $this->settings()['override'];}
-    public function lifecycleAction(): Action {return $this->settings()['lifecycle'];}
     public function syncPricesAction(): Action {return SettingsActions::syncAll((int)$this->getRecord()->server_id)->name('syncPrices');}
     protected function fillForm(): void {$this->data=[];}
     public function getTitle(): string {Staff::requireView();return '.'.$this->getRecord()->tld;}
@@ -72,13 +70,6 @@ class ViewTld extends ViewRecord
         $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):null,$seller?'Existing domains stay with their registrar':'No registrar selected. Use Change registrar.',color:'primary',url:RegistrarFacts::accountUrl($sellerId))
                 ->suffix($seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
             self::entry('Terms',TldFacts::terms($t))];
-        $edit=$this->button($this->getAction('lifecycle',false),'Edit');
-        foreach(LifecyclePolicies::facts($t,now()->toDateTimeImmutable(),$grants->costs) as $label=>$fact){
-            $entry=self::entry($label,$fact['value'],$fact['sub']);
-            if($fact['help']){$entry->hintAction(HelpHint::make($fact['help']));}
-            if($fact['edit']&&$edit){$entry->hint($edit);}
-            $sales[]=$entry;
-        }
         // Sales keep the last synced cost; old prices get a quiet warning, never a stop.
         $synced=TldFacts::lastSynced($snapshot['prices']);$failure=TldFacts::syncFailure((int)$t->server_id);
         $old=$synced!==null&&$synced->lt(now()->subDays(TldFacts::SYNC_WARN_DAYS));
