@@ -6,7 +6,7 @@ use App\Models\{Invoice,InvoiceTransaction,Service,ServiceCancellation,User};
 use App\Enums\InvoiceTransactionStatus as PaymentStatus;
 use Illuminate\Support\Facades\{Crypt,DB,Log,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** Owned acquisition closure. Every decision takes the native W/A0 prefix before domain/operations. */
 final readonly class AcquisitionRetirement
 {
@@ -25,18 +25,73 @@ final readonly class AcquisitionRetirement
             if($invoice->status==='pending'&&$l['items']->where('invoice_id',$invoice->id)->count()!==1){
                 throw new \DomainException('This unpaid invoice also contains other items. Cancel it through the native billing workflow before retiring this order.');
             }
-            $audit=['actor_id'=>$actor?(int)$l['staff']->id:null,'reason'=>$reason??'Native unpaid cancellation','at'=>$this->clock->now()->format(DATE_ATOM),
-                'before'=>['service'=>$s->status,'invoice'=>$invoice->status,'domain'=>$d->status,'operation'=>$op->state],
-                'after'=>['service'=>'cancelled','invoice'=>'cancelled','domain'=>'cancelled','operation'=>'rejected']];
-            // Intent fencing precedes the native SQL. Retain it after closure; no resend becomes possible.
-            if($s->status!=='cancelled'){$s->update(['status'=>'cancelled']);}
-            if($invoice->status!=='cancelled'){$invoice->update(['status'=>'cancelled']);}
-            $op->update(['state'=>'rejected','safe_code'=>UnpaidAcquisitionProof::CODE,'completed_at'=>$this->clock->now(),
-                'attempt'=>UnpaidAcquisitionProof::attempt($op),'policy'=>[...($op->policy??[]),'unpaid_retirement'=>$audit]]);
-            $d->update(['status'=>'cancelled']);
-            DomainReservations::releaseUnfunded($l);
-            DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','acquisition_retirement_review')->whereNull('resolved_at')->update(['resolved_at'=>$this->clock->now()->getTimestamp()]);
+            $this->close($l,$op,$actor?(int)$l['staff']->id:null,$reason??'Native unpaid cancellation');
         });
+    }
+    /** Closes every unsent order on one unpaid invoice. Issued lines cannot change, so any other items move to a new invoice.
+     * A refused order keeps its name and goes to staff: the proof found something only a person can judge. */
+    public function closeUnpaid(int $invoiceId,array $notice): array
+    {
+        OperationClaims::outside();$reissued=null;$names=[];
+        foreach(Operation::where('invoice_id',$invoiceId)->whereIn('action',['register','transfer'])->orderBy('id')->pluck('domain_id') as $id){
+            $seed=Domain::findOrFail($id);
+            try{
+                $moved=DB::transaction(function()use($seed,$notice,$reissued):?int {
+                    $l=HoldingLocks::take($seed,null,foreignInvoices:true);$op=UnpaidAcquisitionProof::require($l);
+                    $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
+                    $new=$invoice->status==='pending'?self::reissue($invoice,$l)?->id:$reissued;
+                    $this->close($l,$op,null,$notice['text'].' '.$notice['link'],['notice'=>$notice,'reissued_invoice'=>$new]);
+                    return $new;
+                });
+                $reissued=$moved;
+                $names[]=$seed->domain;
+            }catch(\DomainException){$this->askStaff($seed);}
+        }
+        return ['invoice'=>$reissued,'also'=>$names];
+    }
+    /** Frees names held by orders nobody paid for. The proof is the last guard: it refuses money, registrar evidence and other requests. */
+    public function expireUnpaid(Account $a): void
+    {
+        $cut=\DateTimeImmutable::createFromInterface($this->clock->now())->modify('-'.UnpaidHoldSetting::minutes((int)$a->server_id).' minutes')
+            ->setTimezone(new \DateTimeZone(date_default_timezone_get()));
+        $invoices=Operation::where('server_id',$a->server_id)->whereIn('action',['register','transfer'])->whereIn('state',PayCheck::OPEN)
+            ->where('created_at','<',$cut)
+            ->whereIn('invoice_id',Invoice::select('id')->where('status','pending')->whereDoesntHave('transactions',fn($t)=>$t->whereIn('status',[PaymentStatus::Succeeded,PaymentStatus::Processing])))
+            ->whereNotIn('domain_id',DB::table('domains_obligation_alerts')->select('domain_id')->where('code','acquisition_retirement_review')->whereNull('resolved_at'))
+            ->orderBy('id')->limit(25)->pluck('invoice_id')->unique();
+        foreach($invoices as $id){
+            $this->closeUnpaid((int)$id,PayCheck::notice('expired'));
+        }
+    }
+    /** The rest of a closed invoice stays payable. Lines bound to an order stay as history; the customer's old invoice keeps them. */
+    private static function reissue(Invoice $old,array $l): ?Invoice
+    {
+        $bound=Operation::where('invoice_id',$old->id)->pluck('invoice_item_id')->all();
+        $rest=$l['items']->where('invoice_id',$old->id)->whereNotIn('id',$bound);
+        if($rest->isEmpty()){return null;}
+        $new=new Invoice([...$old->only(['user_id','currency_code','due_at']),'status'=>'pending']);$new->send_create_email=false;$new->save();
+        foreach($rest as $line){$new->items()->create($line->only(['reference_id','reference_type','price','quantity','description']));}
+        return $new;
+    }
+    private function close(array $l,Operation $op,?int $actor,string $reason,array $facts=[]): void
+    {
+        $d=$l['domain'];$s=$l['service'];$invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
+        $audit=['actor_id'=>$actor,'reason'=>$reason,'at'=>$this->clock->now()->format(DATE_ATOM),
+            'before'=>['service'=>$s->status,'invoice'=>$invoice->status,'domain'=>$d->status,'operation'=>$op->state],
+            'after'=>['service'=>'cancelled','invoice'=>'cancelled','domain'=>'cancelled','operation'=>'rejected'],...$facts];
+        // Intent fencing precedes the native SQL. Retain it after closure; no resend becomes possible.
+        if($s->status!=='cancelled'){$s->update(['status'=>'cancelled']);}
+        if($invoice->status!=='cancelled'){$invoice->update(['status'=>'cancelled']);}
+        $op->update(['state'=>'rejected','safe_code'=>UnpaidAcquisitionProof::CODE,'completed_at'=>$this->clock->now(),
+            'attempt'=>UnpaidAcquisitionProof::attempt($op),'policy'=>[...($op->policy??[]),'unpaid_retirement'=>$audit]]);
+        $d->update(['status'=>'cancelled']);
+        DomainReservations::releaseUnfunded($l);
+        DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','acquisition_retirement_review')->whereNull('resolved_at')->update(['resolved_at'=>$this->clock->now()->getTimestamp()]);
+    }
+    private function askStaff(Domain $d): void
+    {
+        DB::transaction(function()use($d):void { $locked=Domain::whereKey($d->id)->lockForUpdate()->firstOrFail();
+            ObligationAlerts::record($locked,'acquisition_retirement_review',$this->clock->now()->getTimestamp()); });
     }
     private function review(array $l,User $actor,?string $ticket,?string $reason): void
     {
@@ -63,10 +118,7 @@ final readonly class AcquisitionRetirement
             $service=Service::find($d->service_id);
             if($d->reservation_name===null||!in_array($d->status,['registration_pending','transfer_pending'],true)||!$service
                 ||($service->status!=='cancelled'&&!($service->status==='pending'&&$service->created_at<$this->clock->now()->modify('-'.max(0,(int)config('settings.cronjob_order_cancel',7)).' days')))){return;}
-            try{$this->retire($id);}catch(\DomainException){
-                DB::transaction(function()use($d):void { $locked=Domain::whereKey($d->id)->lockForUpdate()->firstOrFail();
-                    ObligationAlerts::record($locked,'acquisition_retirement_review',$this->clock->now()->getTimestamp()); });
-            }
+            try{$this->retire($id);}catch(\DomainException){$this->askStaff($d);}
         }catch(\Throwable $e){Log::warning('Domains acquisition retirement deferred.',['domain_id'=>$id,'exception_class'=>$e::class]);}
     }
     private function lateMoney(Domain $seed): void
@@ -153,11 +205,16 @@ final readonly class AcquisitionRetirement
                 ->map(fn($t)=>['id'=>(int)$t->id,'amount_minor'=>PricingRule::minor($t->amount)])->values()->all();
             return $payments!==($refund['payments']??null)||$transactions->contains(fn($t)=>$t->status===PaymentStatus::Processing);
         }
-        return $transactions->isNotEmpty()||$invoice==='paid';
+        $credited=RefundPayment::lateCredited($op);
+        return $transactions->contains(fn($t)=>$t->status!==PaymentStatus::Failed&&!isset($credited[$t->id]))||$invoice==='paid';
     }
     public static function boot(): void
     {
         if(!HookRegistration::claim(Service::getEventDispatcher(),self::class)){return;}
+        // A stale pay form can pay a closed order. Marked Paid, core would start its services and mail a receipt; Refunds::creditRetired turns the money into credit instead.
+        Invoice::updating(static function(Invoice $invoice):void {
+            if($invoice->status==='paid'&&$invoice->getRawOriginal('status')==='cancelled'&&Operation::where('invoice_id',$invoice->id)->where('safe_code',UnpaidAcquisitionProof::CODE)->exists()){$invoice->status='cancelled';NativeServiceRefusal::notifyClosedInvoice($invoice);}
+        });
         Service::updated(static function(Service $s):void {
             if(!$s->wasChanged('status')){return;}$id=(int)$s->id;
             DB::afterCommit(static function()use($id):void {

@@ -8,16 +8,16 @@ final class RefundProof
 {
     public static function requireUnsent(Operation $op, Domain $d): void
     {
-        $a = $op->attempt ?? []; $f = $op->funding ?? []; $c = $op->cost ?? [];
+        $a = $op->attempt ?? []; $f = $op->funding ?? []; $c = $op->cost ?? []; $closed = $op->safe_code === UnpaidAcquisitionProof::CODE;
         if (!in_array($op->action, ['register', 'renew', 'transfer', 'privacy_purchase', 'privacy_renew'], true) || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
             || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key || $op->account_fingerprint !== $d->account_fingerprint
             || $op->authority_generation < 1 || $op->authority_generation !== $d->authority_generation
             || $op->provider_order_id !== null || $op->confirmed_expires_at !== null || $op->lease_expires_at !== null
             || array_diff(array_keys($c), ['estimated', 'currency', 'unit'])
-            || array_diff(array_keys($f), ['claim', 'seal', 'refund_authorization', 'refund', 'financial_adjustments', ...($op->action === 'renew' ? ['auto_pay', 'auto_pay_result'] : [])])
+            || array_diff(array_keys($f), ['claim', 'seal', 'refund_authorization', 'refund', 'financial_adjustments', ...($op->action === 'renew' ? ['auto_pay', 'auto_pay_result'] : []), ...($op->action === 'renew' || $closed ? ['late_credits'] : [])])
             || array_key_exists('dispatch_attempted_at', $op->policy ?? [])) { throw new \DomainException('Refund lacks definitely-unsent proof.'); }
         if (in_array($op->action, ['register', 'transfer'], true) && ($d->provider_domain_id !== null || $d->provider_order_id !== null || $d->provider_expires_at !== null
-            || !in_array($d->status, $op->action === 'transfer' ? ['transfer_pending', 'transfer_rejected'] : ['registration_pending', 'registration_rejected'], true))) { throw new OperationRefused(OperationFailure::ProviderEvidence); }
+            || !in_array($d->status, [...($op->action === 'transfer' ? ['transfer_pending', 'transfer_rejected'] : ['registration_pending', 'registration_rejected']), ...($closed ? ['cancelled'] : [])], true))) { throw new OperationRefused(OperationFailure::ProviderEvidence); }
         if (array_key_exists('financial_adjustments', $f) && (!is_array($f['financial_adjustments']) || !array_is_list($f['financial_adjustments']))) {
             throw new \DomainException('Unknown adjustment evidence.');
         }
@@ -60,7 +60,7 @@ final class RefundProof
             throw new \DomainException('Unsealed financial seal or unknown claim prevents refund.');
         }
         if (!$sealed && array_key_exists('claim_key', $a) && (!is_string($a['claim_key']) || !preg_match('/^[a-f0-9]{32}$/D', $a['claim_key'])
-            || !in_array($op->safe_code, ['namesilo_account_guard', 'pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required', 'write_rate_limited', 'refund_approved', 'usd_balance_required', 'enom_test_setup_required'], true))) {
+            || !in_array($op->safe_code, [...BalanceRetries::REVIEW_CODES,'namesilo_account_guard', 'pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required', 'write_rate_limited', 'refund_approved', 'usd_balance_required', 'enom_test_setup_required', ...WriteHeld::UNSENT_REFUSALS], true))) {
             throw new \DomainException('Unresolved local claim.');
         }
         if (array_key_exists('terminal', $a) && (($a['terminal']['operation_key'] ?? null) !== $op->operation_key

@@ -18,12 +18,12 @@ final class UnpaidAcquisitionProof
         }
         $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);$item=$l['items']->firstWhere('id',$op->invoice_item_id);
         if(!$invoice||!$item||!in_array($invoice->status,['pending','cancelled'],true)
-            ||$l['transactions']->contains('invoice_id',$invoice->id)||($op->funding??[])!==[]){
+            ||self::money($l,[$invoice->id])||($op->funding??[])!==[]){
             throw new \DomainException('This order has a payment or payment attempt, so it cannot be retired. The name stays reserved.');
         }
         // Retained billing can tie other invoices to this service, and closing it would strand their money.
         $billed=$l['items']->where('reference_type',$s->getMorphClass())->where('reference_id',$s->id)->pluck('invoice_id');
-        if($l['invoices']->whereIn('id',$billed)->contains('status','paid')||$l['transactions']->whereIn('invoice_id',$billed)->isNotEmpty()){
+        if($l['invoices']->whereIn('id',$billed)->contains('status','paid')||self::money($l,$billed)){
             throw new \DomainException('This order has a payment or payment attempt, so it cannot be retired. The name stays reserved.');
         }
         InvoiceBinding::requireIdentity($op,$d,$s,$invoice,$item,$l['product']);
@@ -44,11 +44,14 @@ final class UnpaidAcquisitionProof
         }
         return $op;
     }
+    /** A declined card is not money, so it never keeps a name. */
+    private static function money(array $l,iterable $invoices): bool
+    {return $l['transactions']->whereIn('invoice_id',$invoices)->contains(fn($t)=>$t->status!==\App\Enums\InvoiceTransactionStatus::Failed);}
     public static function terminal(Operation $op,\Paymenter\Extensions\Servers\Domains\Models\Domain $d): bool
     {
         return in_array($op->action,['register','transfer'],true)&&$op->funding_basis==='paid_invoice'
             &&$op->started_at===null&&$op->request_fingerprint===null&&$op->lease_expires_at===null
-            &&$op->provider_order_id===null&&$op->confirmed_expires_at===null&&($op->funding??[])===[]
+            &&$op->provider_order_id===null&&$op->confirmed_expires_at===null&&!array_diff(array_keys($op->funding??[]),['late_credits'])
             &&!array_diff(array_keys($op->cost??[]),['estimated','currency','unit'])&&!array_key_exists('dispatch_attempted_at',$op->policy??[])
             &&$d->status==='cancelled'&&$d->provider_expires_at===null&&$d->provider_domain_id===null&&$d->provider_order_id===null
             &&$op->safe_code===self::CODE&&$op->state==='rejected'&&$op->completed_at!==null

@@ -97,4 +97,12 @@ commerceReject(fn()=>$refunds->creditRejected($partial->id));
 same('uncertain',$engine->run($sent->id,$writer)->state,'Lost renewal reply remains uncertain');
 $sent->refresh()->update(['state'=>'held','safe_code'=>'renewal_definitely_unsent']);
 commerceReject(fn()=>$refunds->refundHeld($staff,$sent->id,'service_cancelled'));
+// The staff form creates the row, then saves its gateway in a second write. Rows that already exist stay fixed.
+$gateway=\App\Models\Gateway::firstOrCreate(['extension'=>'Manual'],['name'=>'Manual','type'=>'gateway']);
+foreach([null,$gateway] as $choice){
+    $manual=InvoiceTransaction::create(['invoice_id'=>$sent->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded']);
+    $choice?$manual->gateway()->associate($choice):$manual->gateway()->dissociate();$manual->save();
+    same($choice?->id,$manual->fresh()->gateway_id,'A new staff payment keeps the gateway picked in the form');
+}
+commerceReject(fn()=>InvoiceTransaction::findOrFail($manual->id)->update(['gateway_id'=>null]));
 echo "Unsuitable renewals, independent typed prewire proof and late retired payment credit passed\n"; $nativeSuccessful=true;

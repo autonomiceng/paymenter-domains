@@ -8,11 +8,15 @@
           "Domains/Services/InvoiceBinding.php",
           "Domains/Http/Controllers/StorefrontController.php",
           "Domains/Services/CheckoutEligibility.php",
+          "Domains/Services/CartCheckoutRefresh.php",
           "Domains/Services/WatchTransfer.php",
           "Domains/Http/Controllers/WatchTransferController.php"
         ],
-        "review": "Re-review outer transaction, ordered locks, event payloads, prices and atomic mixed-cart rollback. Verify Cart::add creates a new line and returns its id, synchronous admission events run the comparison guard, and failed handoff cleanup deletes only that new line. Verify Cart::getOnce reads the cookie cart uncached and carts.user_id remains the owner for WatchTransfer::cartAction.",
+        "review": "Re-review outer transaction, ordered locks, event payloads, prices and atomic mixed-cart rollback. Verify Cart::add creates a new line and returns its id, synchronous admission events run the comparison guard, and failed handoff cleanup deletes only that new line. Verify the exact Cart lifecycle refreshes before mount/checkout locks, signed memo comparison stops price changes, and early return prevents order creation. Verify Cart::getOnce reads the cookie cart uncached and carts.user_id remains the owner for WatchTransfer::cartAction.",
         "files": {
+          "vendor/livewire/livewire/src/Mechanisms/HandleComponents/HandleComponents.php": "1db85f3949a766bff3f62e51e3a7bc0363a337b3aae105baa7a75296fa2c52de",
+          "vendor/livewire/livewire/src/Mechanisms/HandleComponents/ComponentContext.php": "81e0a9b5a6c809ae318ef5c1106baac967de6002479d0f51a8e873fe6fd40110",
+          "vendor/livewire/livewire/src/Mechanisms/HandleComponents/Checksum.php": "2ed3d7714e8973a13d65b46439eb1abee2346b8215d44a212c0b5f2db4406727",
           "app/Classes/Cart.php": "b6ee7562fd6e8bd79c6521356e04af92204cd682fd9627a502205e6de10529d8",
           "app/Events/CartItem/Created.php": "8630b3b609a74bd7087a0c40f603894abeba944adfb4a312af94fa7ca151da06",
           "app/Events/CartItem/Creating.php": "a52e93b736798e5af56264cd4952b0b7df8ac7efa7340b3537282a6784ede772",
@@ -287,6 +291,8 @@
           "app/Helpers/ExtensionHelper.php": "ec1ce54906765e3a3d110ab80c06137bc0ef65fabe59b31be26a245ab5ce4a24",
           "vendor/owen-it/laravel-auditing/src/Listeners/RecordCustomAudit.php": "b4806ce1650afd43793872ccadd327cef05ad0a297707ee967c1f7fd97cc1f4b",
           "vendor/owen-it/laravel-auditing/src/Auditor.php": "90fa6b8730061c46acbe1382e67520678810590d11d18629c1118de42126bb73",
+          "app/Admin/Resources/InvoiceResource/Pages/EditInvoice.php": "5c87544f8432222e1a11f3a237aca4057111a341ec02f4a09143520821974047",
+          "app/Admin/Resources/InvoiceResource/RelationManagers/TransactionsRelationManager.php": "01203af31db175ac88ced2ed4088a6d6dc28a060827ea36996745afa34716dbd",
           "vendor/filament/support/src/Exceptions/Cancel.php": "679c2e6c269995c6b311ee697660018da36963a58c63dcd04109771f6a2d2872"
         }
       },
