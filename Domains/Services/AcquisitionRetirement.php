@@ -36,12 +36,14 @@ final readonly class AcquisitionRetirement
         foreach(Operation::where('invoice_id',$invoiceId)->whereIn('action',['register','transfer'])->orderBy('id')->pluck('domain_id') as $id){
             $seed=Domain::findOrFail($id);
             try{
-                DB::transaction(function()use($seed,$notice,&$reissued):void {
+                $moved=DB::transaction(function()use($seed,$notice,$reissued):?int {
                     $l=HoldingLocks::take($seed,null,foreignInvoices:true);$op=UnpaidAcquisitionProof::require($l);
                     $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
-                    if($invoice->status==='pending'){$reissued=self::reissue($invoice,$l)?->id;}
-                    $this->close($l,$op,null,$notice['text'].' '.$notice['link'],['notice'=>$notice,'reissued_invoice'=>$reissued]);
+                    $new=$invoice->status==='pending'?self::reissue($invoice,$l)?->id:$reissued;
+                    $this->close($l,$op,null,$notice['text'].' '.$notice['link'],['notice'=>$notice,'reissued_invoice'=>$new]);
+                    return $new;
                 });
+                $reissued=$moved;
                 $names[]=$seed->domain;
             }catch(\DomainException){$this->askStaff($seed);}
         }

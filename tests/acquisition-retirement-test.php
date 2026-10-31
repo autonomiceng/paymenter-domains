@@ -79,4 +79,19 @@ DB::table('services')->where('id',$open->service_id)->update(['status'=>'cancell
 same(['cancelled','Under review','Order cancelled'],$orderWords(),'A cancelled service with an open invoice offers no payment');
 DB::table('services')->where('id',$open->service_id)->update(['status'=>'pending']);DB::table('domains_native_intents')->insert(['service_id'=>$open->service_id,'kind'=>'cancellation','created_at'=>now()]);
 same(['cancelled','Under review','Order cancelled'],$orderWords(),'A retained cancellation intent counts as cancelled');
+// A refused close rolls back the replacement invoice too; never return a payment link to it.
+// Native rows and the retirement transaction are required to reproduce the rolled-back invoice ID.
+$cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('unpaid-reissue-rollback-placeholder.com'));
+$hosting=commerceHosting();$cart->items()->create(['product_id'=>$hosting->id,'plan_id'=>$hosting->plans()->sole()->id,'quantity'=>1,'config_options'=>[],'checkout_config'=>[]]);commerceCheckout($user,$cart);
+$refusedReissue=Domain::where('domain','unpaid-reissue-rollback-placeholder.com')->sole()->operations()->sole();
+$invoiceCount=App\Models\Invoice::count();$refusedOnce=false;
+Operation::updating(static function(Operation $op)use($refusedReissue,&$refusedOnce):void {
+    if((int)$op->id===(int)$refusedReissue->id&&$op->state==='rejected'){$refusedOnce=true;throw new DomainException('Synthetic retirement refusal after reissue');}
+});
+$closed=$retirement->closeUnpaid((int)$refusedReissue->invoice_id,Paymenter\Extensions\Servers\Domains\Services\PayCheck::notice('expired'));
+expect($refusedOnce,'The close refused after creating its replacement invoice');
+same(null,$closed['invoice'],'A rolled-back replacement invoice never becomes a payment link');
+same($invoiceCount,App\Models\Invoice::count(),'The refused close rolls back the replacement invoice');
+same(['pending','awaiting_payment',$refusedReissue->domain->domain],[App\Models\Invoice::findOrFail($refusedReissue->invoice_id)->status,$refusedReissue->fresh()->state,$refusedReissue->domain->fresh()->reservation_name],'A refused close retains the unpaid order and reserved name');
+
 echo "Unpaid retirement, native cron, wake-up and cancellation passed.\n";$nativeSuccessful=true;
