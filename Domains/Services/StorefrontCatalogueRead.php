@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use Paymenter\Extensions\Servers\Domains\Data\SaleSelection;
+use Paymenter\Extensions\Servers\Domains\Data\{Environment, SaleSelection};
 use Paymenter\Extensions\Servers\Domains\Models\Price;
 
 /** One public projection invocation only. Never retained on Storefront, cached or used as checkout authority. */
@@ -15,7 +15,7 @@ final class StorefrontCatalogueRead
     public function __construct(private readonly SellerPolicies $sellers, private readonly NativeCatalogue $native,
         private readonly \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock) {}
 
-    public function offer(string $ending, string $action, int $term): array
+    private function ending(string $ending): array
     {
         if (!array_key_exists($ending, $this->endings)) {
             // Cache failure too: one corrupt ending cannot amplify reads for every term.
@@ -27,11 +27,22 @@ final class StorefrontCatalogueRead
             $prices = Price::where(['server_id' => $policy->server_id, 'account_fingerprint' => $binding->fingerprint,
                 'tld' => $ending, 'currency' => 'USD'])->get()->keyBy(static fn (Price $p) => $p->action.':'.$p->term);
             $products = $this->native->display($tld);
-            $this->endings[$ending] = compact('policy', 'tld', 'accepted', 'prices', 'products', 'rule');
+            $transfersOn = $policy->transfer_enabled && $tld->transfer_enabled
+                && ($binding->registrarKey !== 'enom' || $binding->environment !== Environment::Live || EnomTestTransfer::accepted($binding));
+            $this->endings[$ending] = compact('policy', 'tld', 'accepted', 'prices', 'products', 'rule', 'transfersOn');
         }
         $read = $this->endings[$ending];
         if (!$read) { throw new \DomainException('Offer unavailable.'); }
-        extract($read);
+        return $read;
+    }
+
+    /** Keep the saved-price fallback behind the same Live acceptance as a priced transfer. */
+    public function transfersOn(string $ending): bool
+    { return $this->ending($ending)['transfersOn']; }
+
+    public function offer(string $ending, string $action, int $term): array
+    {
+        extract($this->ending($ending));
         $key = $policy->server_id.':'.$policy->account_fingerprint.':'.$ending.':'.$action;
         if (!array_key_exists($key, $this->actions)) {
             $this->actions[$key] = null;
@@ -41,7 +52,7 @@ final class StorefrontCatalogueRead
         }
         $product = $this->actions[$key];
         if (!$product || !in_array($action, ['register', 'transfer'], true) || !$policy->{$action.'_enabled'}
-            || $term < 1 || $term > 10 || ($action === 'transfer' && $term !== 1) || !$tld->enabled || !$tld->renew_enabled
+            || $term < 1 || $term > 10 || ($action === 'transfer' && ($term !== 1 || !$transfersOn)) || !$tld->enabled || !$tld->renew_enabled
             || !$tld->{$action.'_enabled'} || ($action === 'register' && ($term < $tld->min_years || $term > $tld->max_years))) {
             throw new \DomainException('Offer unavailable.');
         }

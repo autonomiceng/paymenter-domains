@@ -10,8 +10,8 @@ Enom requires registered 211 plus positive Transferable, with premium/platinum/E
 exclusions. Slice 27 structurally blocked NameSilo even with premium=0; slice 28 below supersedes
 that gate with explicit independent ordinary evidence and adds dormant dispatch/anchors.
 
-TransferPrecheck requires an explicit account `domains_transfer_endings` allowlist
-(default empty), annual term, ordinary ASCII identity and empty accepted registry
+TransferPrecheck uses the account `domains_transfer_endings` allowlist, or the TLDs
+with Transfers on in What you sell when none is saved. It also requires an annual term, ordinary ASCII identity and empty accepted registry
 schema. Source unsupported uk/ca/eu/ai/de endings remain off; RegistryInputs also
 blocks us and every missing/nonempty schema. Lock settings
 `domains_transfer_creation_lock_days` and `domains_transfer_previous_lock_days`

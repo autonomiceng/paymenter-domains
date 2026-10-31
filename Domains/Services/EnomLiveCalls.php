@@ -8,6 +8,13 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 /** Daily UTC reservations. Failed and unsent attempts retain both call and spend reservations. */
 final class EnomLiveCalls
 {
+    private static array $checkoutHeadroom=[];
+    /** Narrow the physical reservation for this login only; checkout keeps its full allowance. */
+    public static function withCheckoutHeadroom(string $uid,\Closure $read): mixed
+    {
+        $account=hash('sha256',$uid);$nested=isset(self::$checkoutHeadroom[$account]);self::$checkoutHeadroom[$account]=true;
+        try{return $read();}finally{if(!$nested){unset(self::$checkoutHeadroom[$account]);}}
+    }
     private static function micros(string $amount): int
     {
         if(!preg_match('/^(?:0|[1-9][0-9]{0,8})\.[0-9]{1,6}$/D',$amount)){throw new EnomTestCallLimit;}
@@ -24,6 +31,7 @@ final class EnomLiveCalls
             $day=EnomTestCalls::day();
             // The UID retains usage if a later deployment selects another server.
             $uid=Account::where('server_id',$b->serverId)->sole()->stable_identity;$key=hash('sha256',$uid);
+            if(isset(self::$checkoutHeadroom[$key])){$limit=intdiv($limit,2);}
             DB::table(EnomLiveCallSchema::TABLE)->insertOrIgnore(['account'=>$key,'day'=>$day,'used'=>0,'spend_micros'=>0]);
             if(DB::table(EnomLiveCallSchema::TABLE)->where(['account'=>$key,'day'=>$day])->where('used','<',$limit)
                 ->where('spend_micros','<=',$ceiling-$amount)->update(['used'=>DB::raw('used + 1'),'spend_micros'=>DB::raw('spend_micros + '.$amount)])!==1){throw new EnomTestCallLimit;}

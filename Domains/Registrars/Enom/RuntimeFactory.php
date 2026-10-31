@@ -51,7 +51,7 @@ final class RuntimeFactory
                 }
                 $named=$this->command($role,$command);
                 if($this->binding->environment===Environment::Live
-                    &&($role==='transfer'||!\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($this->binding,$named instanceof ReadCommand?'catalogue':$role))){throw new EnomTestCallLimit;}
+                    &&(!\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($this->binding,$named instanceof ReadCommand?'catalogue':$role)||$role==='transfer'&&!EnomTestTransfer::accepted($this->binding))){throw new EnomTestCallLimit;}
                 self::parameters($parameters);
                 // Called only after the protocol's live grant / physical limiter / deadline checks.
                 $credentials=($this->credentials->getValue())(!($named instanceof ReadCommand));
@@ -81,7 +81,7 @@ final class RuntimeFactory
                     },
                 ];
                 if(!curl_setopt_array($handle,$options)){throw new \RuntimeException('Enom exchange incomplete.');}
-                $purchase=$named===RegistrationCommand::Purchase||$this->testTransfer&&$named===RegistrationCommand::Transfer;
+                $purchase=$named===RegistrationCommand::Purchase||($this->testTransfer||$this->binding->environment===Environment::Live)&&$named===RegistrationCommand::Transfer;
                 $reserved=($role==='renewal'||$role==='management'&&$named instanceof ManagementCommand)?\Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::prepare($this->binding,$role):null;
                 if($this->binding->environment===Environment::Live&&($role==='renewal'||$named instanceof ManagementCommand)&&$reserved===null){throw new EnomTestCallLimit;}
                 $day=$reserved??\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::prepareSend($this->binding,$purchase);
@@ -100,8 +100,8 @@ final class RuntimeFactory
                     throw new \RuntimeException('Enom exchange incomplete.');
                 }
                 return $body;
-            } catch (EnomTestCallLimit) {
-                throw new EnomTestCallLimit;
+            } catch (EnomTestCallLimit $error) {
+                throw new EnomTestCallLimit($error->reason);
             } catch (\Throwable) {
                 // Discard cURL/raw-response/credential-bearing exceptions, including their causes.
                 throw new \RuntimeException('Enom exchange failed.');

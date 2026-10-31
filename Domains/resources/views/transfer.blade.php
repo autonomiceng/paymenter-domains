@@ -4,7 +4,7 @@
 @include('domains::partials.styles')
 @include('domains::partials.test-banner', ['test' => $testEnvironment])
 <a class="domains-back" href="{{ route('domains.domains.index') }}">Domains</a>
-<div class="domains-head"><div><h1 class="domains-title">Transfer a domain</h1><p class="domains-lede">Move a domain you own from another registrar. A transfer adds one year to its expiry date.</p></div>
+<div class="domains-head domains-head--search"><div><h1 class="domains-title">Transfer a domain</h1><p class="domains-lede">Move a domain you own from another registrar. A transfer adds one year to its expiry date.</p></div>
 <a class="domains-btn domains-btn--ghost" href="{{ route('domains.domains.search') }}">Register a new domain instead</a></div>
 @include('domains::partials.notices', ['fieldKeys' => ['domain'], 'summary' => false])
 @if (!$endings)

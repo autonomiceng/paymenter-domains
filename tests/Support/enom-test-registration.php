@@ -65,7 +65,8 @@ commerceCheckout($previewUser,$previewCart)->assertDispatched('notify',fn($event
 same($beforeOrders,App\Models\Order::count(),'Opt-out checkout creates no order');same($beforeInvoices,App\Models\Invoice::count(),'Opt-out checkout creates no invoice');same($beforeTransactions,App\Models\InvoiceTransaction::count(),'Opt-out checkout creates no payment');same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Opt-out checkout makes no Enom calls');
 config(['domains.enom_writes.registration'=>true,'domains.enom_identity.environment'=>'live']);
 $beforeOrders=App\Models\Order::count();$beforeInvoices=App\Models\Invoice::count();$beforeTransactions=App\Models\InvoiceTransaction::count();$beforeCalls=count($GLOBALS['enomWire']['forms']);
-commerceCheckout($previewUser,$previewCart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Test domains can’t be ordered. Remove them to check out.','type'=>'error']);
+// The pre-transaction refresh refuses the changed identity before order admission's TEST preview check.
+commerceCheckout($previewUser,$previewCart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'We couldn’t check this domain. Try checkout again, or edit or remove it from your cart.','type'=>'error']);
 same($beforeOrders,App\Models\Order::count(),'Changing identity mode to live cannot reopen accepted TEST checkout');same($beforeInvoices,App\Models\Invoice::count(),'Identity-mode mismatch creates no invoice');same($beforeTransactions,App\Models\InvoiceTransaction::count(),'Identity-mode mismatch creates no payment');same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Identity-mode mismatch makes no Enom calls');
 config(['domains.enom_identity.environment'=>'test']);
 config(['domains.enom_writes.registration'=>true]);
@@ -77,8 +78,8 @@ foreach([null,'live'] as $environment){config(['domains.enom_identity.environmen
 config(['domains.enom_writes.registration'=>true,'domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>false]);expect(!$ports->accepted($a),'Catalogue opt-in mandatory');
 same('TEST registration refused: the deployment TEST catalogue is off.',EnomTestRegistration::reason(),'Staff can identify a disabled TEST catalogue');config(['domains.enom_catalogue.enabled'=>true]);
 config(['domains.enom_identity.environment'=>null]);same('TEST registration refused: the deployment identity environment is not test. Live and unset environments cannot use TEST registration.',EnomTestRegistration::reason(),'Staff can identify a missing TEST identity environment');config(['domains.enom_identity.environment'=>'test']);
-same('Deployment allows TEST registration. The account needs at least one TLD saved under What you sell, processing on, and a successful USD balance read (Check balance) under an hour old when the worker runs.',EnomTestRegistration::reason(),'Staff copy describes deployment and evidence prerequisites');
-same('Not sent: orders paused',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('processing'),'Processing-off hold directs staff recovery');
+same('Deployment allows TEST registration. The account needs at least one TLD saved under What you sell, processing on, and enough registrar funds. The worker checks the balance before sending.',EnomTestRegistration::reason(),'Staff copy describes deployment and evidence prerequisites');
+same('Not sent: Orders off for this account',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('processing'),'Processing-off hold directs staff recovery');
 same('Not sent: registrar account not set up',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('enom_test_setup_required'),'Setup hold directs staff to actionable checks');
 expect(!EnomTestRegistration::enabled(new AccountBinding('enom',999,Environment::Live,'test-uid')),'LIVE fingerprint refuses');
 expect(!EnomTestRegistration::enabled(new AccountBinding('namesilo',999,Environment::Test,'test-uid')),'Other registrar refuses');
@@ -125,9 +126,10 @@ DB::table('services')->where('id',$unpaidOp->service_id)->update(['status'=>'can
 $turn=DB::table('domains_runtime_turns')->where('server_id',$server->id)->first();
 if(!$turn){DB::table('domains_runtime_turns')->insert(['server_id'=>$server->id,'account_fingerprint'=>$binding->fingerprint,'operation_cursor'=>0,'domain_cursor'=>0,'tld_cursor'=>0,'turn'=>0,'due_at'=>0,'finished_at'=>0]);$turn=DB::table('domains_runtime_turns')->where('server_id',$server->id)->first();}
 DB::table('domains_runtime_turns')->where('id',$turn->id)->update(['operation_cursor'=>0,'domain_cursor'=>$unpaidDomain->id-1,'due_at'=>0]);
-// Daily price sync is covered separately; keep it not due while checking local retirement.
+// Daily price sync and What you sell fills are covered separately; keep both not due during local retirement.
 app(ObservationWork::class)->enroll((int)$server->id);
 DB::table('domains_observation_queues')->where('server_id',$server->id)->update(['catalogue_due'=>$clock->now()->getTimestamp()+86400]);
+DB::table(Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::FILLS)->updateOrInsert(['server_id'=>$server->id,'account_fingerprint'=>$binding->fingerprint],['tried_at'=>$clock->now()->getTimestamp()]);
 $before=count($GLOBALS['enomWire']['forms']);$usedBefore=enomTestSendCount();Cache::flush();Queue::fake();$worker->tick();
 same('cancelled',$unpaidDomain->fresh()->status,'Durable TEST domain cursor retires a cancelled unpaid reservation after missed callbacks');
 same(null,$unpaidDomain->fresh()->reservation_name,'TEST lifecycle recovery releases the abandoned local name');same(['rejected','acquisition_cancelled_unpaid'],[$unpaidOp->fresh()->state,$unpaidOp->fresh()->safe_code],'Missed callback recovery closes the unpaid operation');
@@ -160,16 +162,6 @@ $routeDomain=$routeHold->domain->fresh();$releaseTicket=Paymenter\Extensions\Ser
     Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($routeHold->fresh(),$routeDomain),$clock);
 app(Paymenter\Extensions\Servers\Domains\Services\StaffOperations::class)->run($staff,(int)$routeDomain->id,(int)$routeHold->id,'release',$releaseTicket,'Staff reaccepted the current TEST Purchase route and interval');
 same('queued',$routeHold->fresh()->state,'A fresh staff route acceptance allows release of the unclaimed hold');
-$usdHold=$new(placeholderComFixtureName('usd-proof-required-placeholder.com'));DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->update(['source'=>'daily']);
-$before=count($GLOBALS['enomWire']['forms']);$worker->operation($usdHold->id);
-same(['held','usd_balance_required'],[$usdHold->fresh()->state,$usdHold->fresh()->safe_code],'TEST write requires the existing staff USD balance probe');
-same('Not sent: check the registrar balance first',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('usd_balance_required'),'Missing balance evidence directs staff to the balance page');
-same($before,count($GLOBALS['enomWire']['forms']),'Missing provider-backed USD evidence blocks before preflight');
-DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->update(['source'=>'manual']);
-$usdDomain=$usdHold->domain->fresh();$releaseTicket=Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket((int)$staff->id,(int)$usdDomain->id,(int)$usdHold->id,'release',
-    Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($usdHold->fresh(),$usdDomain),$clock);
-$before=count($GLOBALS['enomWire']['forms']);app(Paymenter\Extensions\Servers\Domains\Services\StaffOperations::class)->run($staff,(int)$usdDomain->id,(int)$usdHold->id,'release',$releaseTicket,'The latest balance is now a successful USD read');
-same('queued',$usdHold->fresh()->state,'Fresh USD evidence allows the unclaimed hold to be released');same($before,count($GLOBALS['enomWire']['forms']),'USD hold release itself makes no Enom request');
 $op=$new(placeholderComFixtureName('paid-test-placeholder.com'));$before=count($GLOBALS['enomWire']['forms']);$usedBeforePurchasePath=enomTestSendCount();$GLOBALS['advanceDuringPreflight']=true;$worker->operation($op->id);
 $purchaseCommands=array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command');
 same(['Check','PE_GetProductPrice','GetBalance','Purchase'],$purchaseCommands,'Three preflights then one sealed Purchase; no reconciliation read before completion proof: '.json_encode([$purchaseCommands,$op->fresh()->state,$op->fresh()->safe_code,DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->first()]));same('pending',$op->fresh()->state,'ACK remains Processing');
@@ -242,13 +234,13 @@ app(Paymenter\Extensions\Servers\Domains\Services\StaffOperations::class)->run($
 same('queued',$capOp->fresh()->state,'Staff release preserves the proven-unsent TEST retry');$used=enomTestSendCount();
 config(['domains.enom_test_sends_per_day'=>$used+8]);$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$GLOBALS['testNameUnavailable']=true;$before=count($GLOBALS['enomWire']['forms']);$worker->operation($capOp->id);unset($GLOBALS['testNameUnavailable']);
 same(['Check','PE_GetProductPrice','GetBalance'],array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command'),'Retried preflight may refuse a taken name');
-same(['held','write_acceptance_required'],[$capOp->fresh()->state,$capOp->fresh()->safe_code],'Ordinary preflight refusal remains a reviewed unsent hold');
+same(['held','name_unavailable'],[$capOp->fresh()->state,$capOp->fresh()->safe_code],'A taken name keeps its cause and stays a reviewed unsent hold');
 same(1,count($capOp->fresh()->attempt['test_call_refusals']??[]),'Retry retains original cap refusal history');
 expect(Paymenter\Extensions\Servers\Domains\Services\OperationClaims::testCallRefusalRetryable($capOp->fresh()),'Prior cap refusal preserves narrow retry and refund proof');
 $exhausted=clone $capOp->fresh();$attempt=$exhausted->attempt;$attempt['capacity_deferrals']=array_fill(0,6,$clock->now()->format(DATE_ATOM));$exhausted->setAttribute('attempt',$attempt);
 expect(!Paymenter\Extensions\Servers\Domains\Services\OperationClaims::testCallRefusalRetryable($exhausted),'Six capacity deferrals exhaust the TEST retry budget');
 Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($exhausted,$capDomain);
-try{Paymenter\Extensions\Servers\Domains\Services\StaffOperationWrites::release($exhausted,['account'=>$a,'domain'=>$capDomain],$clock->now());throw new LogicException('Exhausted TEST retries cannot be released.');}catch(DomainException $e){same('An original attempt cannot be readmitted.',$e->getMessage(),'Exhausted TEST retries refuse readmission with complete domain facts');}
+try{Paymenter\Extensions\Servers\Domains\Services\StaffOperationWrites::release($exhausted,['account'=>$a,'domain'=>$capDomain],$clock->now());throw new LogicException('Exhausted TEST retries cannot be released.');}catch(DomainException $e){same('This hold requires its original recovery or evidence path.',$e->getMessage(),'Exhausted TEST retries refuse readmission with complete domain facts');}
 same('held',$capOp->fresh()->state,'Exhausted TEST capacity proof remains held and refundable');
 $clock->at=$clock->at->modify('+300 seconds');
 $releaseTicket=Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket((int)$staff->id,(int)$capDomain->id,(int)$capOp->id,'release',

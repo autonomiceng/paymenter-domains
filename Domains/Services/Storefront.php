@@ -62,7 +62,8 @@ final class Storefront
             try { $offer = $read->offer($ending, 'transfer', 1); $chosen ??= $offer; $transfer = $offer['price']; } catch (\Throwable) {}
             if (!$terms && !$transfer) { continue; }
             $renew = $chosen['renew'];
-            $rows[] = ['tld' => $ending, 'price' => $register, 'register' => $register, 'transfer' => $transfer, 'transfersOn' => $transfer !== null || ($policy->transfer_enabled && Tld::where('server_id', $policy->server_id)->where('tld', $ending)->where('transfer_enabled', true)->exists()),
+            try { $transfersOn = $read->transfersOn($ending); } catch (\Throwable) { $transfersOn = false; }
+            $rows[] = ['tld' => $ending, 'price' => $register, 'register' => $register, 'transfer' => $transfer, 'transfersOn' => $transfersOn,
                 'renew' => $renew, 'terms' => $terms];
         }
         return $rows;
