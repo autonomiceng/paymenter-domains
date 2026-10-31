@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages;
+use Filament\Actions\Action;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\{Callout,EmbeddedTable,RenderHook,View};
 use Filament\Schemas\Schema;
@@ -9,7 +10,7 @@ use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
 use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFindings,WatchQueries};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchActions,WatchFindings,WatchQueries};
 use Paymenter\Extensions\Servers\Domains\Models\WatchName;
 use Paymenter\Extensions\Servers\Domains\Services\{DnsResolverSettings,StaffWatchWrites,WatchMaintenance,WatchWork};
 class ListWatches extends ListRecords
@@ -32,14 +33,19 @@ class ListWatches extends ListRecords
     public function content(Schema $schema): Schema
     {
         $notice=$this->notice();
-        if(!$notice){return parent::content($schema);}
-        $url=$notice['action']==='settings'&&MonitoringSettings::canAccess()&&Staff::can(StaffWatchWrites::MANAGE)&&!app(DnsResolverSettings::class)->configuration()[2]?WatchResource::getUrl('settings'):null;
+        $url=($notice['action']??null)==='settings'&&MonitoringSettings::canAccess()&&Staff::can(StaffWatchWrites::MANAGE)&&!app(DnsResolverSettings::class)->configuration()[2]?WatchResource::getUrl('settings'):null;
         $button=$url?view('filament::components.button.index',['tag'=>'a','href'=>$url,'color'=>'gray','size'=>'sm','slot'=>'Open Settings'])->render():null;
-        return $schema->components([Callout::make($notice['text'])->status($notice['tone'])->footer($button?new HtmlString($button):null)->columnSpanFull(),
-            ...($notice['action']==='setup'&&Staff::can(StaffWatchWrites::MANAGE)?[View::make('domains::admin.watch-setup')]:[]),
+        return $schema->components([...($notice?[Callout::make($notice['text'])->status($notice['tone'])->footer($button?new HtmlString($button):null)->columnSpanFull()]:[]),
+            ...(($notice['action']??null)==='setup'&&Staff::can(StaffWatchWrites::MANAGE)?[View::make('domains::admin.watch-setup')]:[]),
+            ...(app(WatchWork::class)->active()?[View::make('domains::admin.watch-products')]:[]),
             $this->getTabsContentComponent(),RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_BEFORE),
             EmbeddedTable::make(),RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_AFTER)]);
     }
+    /** Request-scoped, so a long product list reads permission once; every write checks it again. */
+    protected ?bool $canManage=null;
+    public function canManageProducts(): bool{return $this->canManage??=Staff::can(StaffWatchWrites::VIEW)&&Staff::can(StaffWatchWrites::MANAGE);}
+    public function productSwitchAction(): Action{return WatchActions::productSwitch();}
+    public function chooseFieldAction(): Action{return WatchActions::chooseField();}
     /** @return list<int> */
     public function statusIds(string $status): array{return $this->status[$status]??=WatchFindings::statusIds($status);}
     public function expiryQuery(Builder $query,int $days): Builder

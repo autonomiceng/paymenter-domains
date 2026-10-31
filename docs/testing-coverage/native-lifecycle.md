@@ -106,7 +106,7 @@ Watch notice delivery: independent native channels, queued versus uncertain stat
 missing-only template installation, native and public preferences, urgent priority, owner/role changes,
 retirement, managed proof/claim continuity, accepted-only restoration and stale predecessor interleaving.
 
-Watch notice overflow: a conflicting profile outside the observed source cohort refuses fresh DNS proof and reserved mail.
+Watch notice overflow: drift confirmed across more sources than one check reads still reserves mail.
 
 ## MySQL/MariaDB schema identifiers and native lifecycle
 

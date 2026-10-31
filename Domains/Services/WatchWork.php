@@ -35,6 +35,7 @@ final class WatchWork
         });
         if (!$run) { return 0; }
         $failures=$run['data']['local_failures']??[];$discovered=0;
+        $this->stage(fn()=>$this->products());
         $ok=$this->stage(function()use($now,&$discovered):void {$discovered=$this->discovery->tick($now);});
         if (!$ok || $this->discovery->failed) { $failures['discovery']??=$now; }
         elseif ($discovered>0) { unset($failures['discovery']); }
@@ -61,6 +62,14 @@ final class WatchWork
     {
         try { $run();return true; }
         catch (\Throwable) { \Illuminate\Support\Facades\Log::warning('Public domain scheduler stage failed.');return false; }
+    }
+    /** A few local reads a product, 25 a turn, so finding fields never eats the time public checks need. A product that fails stays No domain found, which already asks a person. */
+    private function products(): void
+    {
+        $row=DB::table('domains_watch_schedule')->where('scope','products')->first();
+        $products=WatchProducts::unmapped((int)($row->cursor??0),25);
+        foreach($products as$product) { $this->stage(fn()=>WatchProducts::adopt($product)); }
+        DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'products'],['cursor'=>$products->count()<25?0:$products->last()->id]);
     }
     private function enroll(int $now): int
     {

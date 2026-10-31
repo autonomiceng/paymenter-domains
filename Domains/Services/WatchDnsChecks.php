@@ -125,10 +125,6 @@ final class WatchDnsChecks
         [$current, $currentOverflow] = $this->sources($watchId, $sourceCursor, $lock);
         if ($watch === null || WatchManagedTarget::exists($userId,$watch->canonical_name) || $watch->state !== 'active' || $watch->managed_domain_id !== null || ($registry && $watch->registration === 'platform') || (!$registry && ($profile === null || !$profile->enabled ||
             (int) $watch->ns_profile_id !== (int) $profile->id)) || $currentOverflow !== $overflow || $current->pluck('id')->all() !== $sources->pluck('id')->all()) { return null; }
-        // Profile agreement is watch-wide even when hostname/native capture rotates a bounded cohort.
-        if (!$registry && DB::table('domains_watch_sources as s')->join('domains_watch_product_maps as m','m.id','=','s.map_id')
-            ->where('s.watch_id',$watchId)->where('s.state','watch')->whereNotNull('m.expected_ns_profile_id')
-            ->where('m.expected_ns_profile_id','<>',$profile->id)->exists()) { return null; }
         $hosts = [$watch->canonical_name]; $evidence = [];
         foreach ($current as $source) {
             $service = $services[$source->service_id] ?? null; $map = $maps[$source->map_id] ?? null; $order = $orders[$service?->order_id] ?? null; $product = $products[$service?->product_id] ?? null;
@@ -141,8 +137,7 @@ final class WatchDnsChecks
             try { if (DnsQuery::hostname($values[0]) !== $source->hostname) { return null; } } catch (\InvalidArgumentException) { return null; }
             $hosts[] = $source->hostname;
             $evidence[] = [$source->only(['id','user_id','service_id','map_id','map_revision','hostname','registrable_name','watch_id','managed_domain_id','state','source_digest','revision']), $order->id, $order->user_id, $service->id, $service->user_id, $service->product_id, $service->status,
-                $map->revision, $map->property_key, $map->expected_ns_profile_id, $values[0], $product->server_id];
-            if (!$registry && $map->expected_ns_profile_id !== null && (int) $map->expected_ns_profile_id !== (int) $profile->id) { return null; }
+                $map->revision, $map->property_key, $values[0], $product->server_id];
         }
         $hosts = array_values(array_diff(array_unique($hosts), [$watch->canonical_name])); sort($hosts, SORT_STRING);
         array_unshift($hosts, $watch->canonical_name);

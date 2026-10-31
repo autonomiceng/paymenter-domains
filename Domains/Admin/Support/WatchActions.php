@@ -2,18 +2,16 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
-use App\Helpers\ExtensionHelper;
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Forms\Components\{Select,Textarea,TextInput};
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Fieldset;
-use Filament\Schemas\Components\Utilities\{Get,Set};
-use Illuminate\Support\Facades\{Auth,DB};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\{ProductMappingResource,RoutingProfileResource,WatchResource};
+use Illuminate\Support\Facades\Auth;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProductMap,WatchProfile};
-use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
-/** Staff writes for monitored domains, DNS templates and hosting products. The ticket binds the revision the page loaded, so a stale page changes nothing. */
+use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites as Writes,WatchProducts};
+/** Staff writes for monitored domains, DNS templates and hosting product lines. The ticket binds the revision the page loaded, so a stale page changes nothing. */
 final class WatchActions
 {
     /** Audit reasons for writes that ask no question; the history shows the event once. */
@@ -24,9 +22,10 @@ final class WatchActions
         $a=Action::make($action)->label($label)->visible(fn()=>Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
         if($fields){$a->schema($fields);}
         if($action==='read'){$a->tooltip('Monitoring uses 0 registrar reads per domain per day.');}
-        return $a->action(function(array $data,$livewire)use($kind,$id,$revision,$action):void {
-                $reason=match($action){'note'=>(string)($data['note']??''),'retire'=>(string)($data['reason']??''),'save'=>$kind==='mapping'?'Hosting product saved':'DNS template saved','enable'=>$kind==='mapping'?'Monitoring turned on':'DNS template turned on',default=>self::REASONS[$action]};
-                try{(new Writes())->run(Auth::user(),$kind,$id,$action,Writes::ticket((int)Auth::id(),$kind,$id,$revision,$action),$reason,$data);}
+        return $a->action(function(array $data,array $arguments,$livewire)use($kind,$id,$revision,$action):void {
+                $id=(int)($arguments['map']??$id);$revision=(int)($arguments['revision']??$revision);
+                $reason=match($action){'note'=>(string)($data['note']??''),'retire'=>(string)($data['reason']??''),'save'=>$kind==='mapping'?'Domain field chosen':'DNS template saved','enable'=>'DNS template turned on',default=>self::REASONS[$action]};
+                try{(new Writes())->run(Auth::user(),$kind,$id,$action,Writes::ticket((int)Auth::id(),$kind,$id,$revision,$action),$reason,$data+$arguments);}
                 catch(\DomainException|\InvalidArgumentException|\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException $e){
                     if($action==='read' && $e instanceof \DomainException && $e->getMessage()==='A check was recently requested. Try again later.'){$livewire->waitForCheck();}
                     Notification::make()->warning()->title(self::error($kind,$e))->send();return;
@@ -38,7 +37,7 @@ final class WatchActions
                     return;
                 }
                 Notification::make()->success()->title(self::DONE[$action]??'Saved')->send();
-                $livewire->redirect(match($kind){'watch'=>WatchResource::getUrl('view',['record'=>$id]),'profile'=>$id?RoutingProfileResource::getUrl('view',['record'=>$id]):RoutingProfileResource::getUrl(),default=>$id?ProductMappingResource::getUrl('view',['record'=>$id]):ProductMappingResource::getUrl()});
+                $livewire->redirect(match($kind){'watch'=>WatchResource::getUrl('view',['record'=>$id]),'profile'=>$id?RoutingProfileResource::getUrl('view',['record'=>$id]):RoutingProfileResource::getUrl(),default=>WatchResource::getUrl()});
             });
     }
     /** Write errors in page words. */
@@ -48,9 +47,6 @@ final class WatchActions
         if(!$e instanceof \DomainException && !$e instanceof \InvalidArgumentException){return $changed;}
         return match($e->getMessage()){
             'The saved details changed. Reload and try again.','Reload and try again.','The watch state changed. Reload and try again.','Reload the disabled profile first.','Review the saved disabled mapping before enabling it.','The saved mapping changed.'=>$changed,
-            'A source mapping pins a different profile. Edit that mapping first.'=>'A hosting product uses another template. Edit that product first.',
-            'Disable the referencing mappings before editing this profile.'=>'Turn off monitoring on its hosting products first.',
-            'Choose an enabled routing profile.','Choose an enabled routing profile first.'=>'Choose a DNS template that is on.',
             'Enter one DNS target per line.'=>'Enter one value per line.',
             'This watch cannot be changed.'=>"This domain can't be changed.",
             'Public checks are disabled or the asynchronous queue is unavailable.'=>'Monitoring is off or its queue is not set up. Ask your site admin.',
@@ -76,54 +72,40 @@ final class WatchActions
     /** "Check now" for the page notice and Missing hints; hidden unless the domain is monitored. */
     public static function check(WatchName $w,int $revision): Action
     {return self::action('watch',(int)$w->id,$revision,'read','Check now')->name('check')->visible(fn()=>$w->state==='active' && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
-    public static function enable(string $kind,WatchProfile|WatchProductMap $row,int $revision): Action
+    public static function enable(WatchProfile $row,int $revision): Action
     {
-        $mapping=$kind==='mapping';
-        return self::action($kind,(int)$row->id,$revision,'enable',$mapping?'Turn on monitoring':'Turn on')->requiresConfirmation()->modalSubmitActionLabel($mapping?'Turn on monitoring':'Turn on')
-            ->disabled(!$mapping&&$row->readProfile()===null)->tooltip(!$mapping&&$row->readProfile()===null?WatchFacts::TEMPLATE_UNAVAILABLE:null)
-            ->modalDescription($mapping?'Turn on monitoring for '.($row->product?->name??'Product #'.$row->product_id).'? Matched domains start being checked.':'Turn on '.$row->name.'? Monitoring checks start using it.')
+        return self::action('profile',(int)$row->id,$revision,'enable','Turn on')->modalSubmitActionLabel('Turn on')
+            ->disabled($row->readProfile()===null)->tooltip($row->readProfile()===null?WatchFacts::TEMPLATE_UNAVAILABLE:null)
             ->visible(fn()=>!$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
     }
-    /** Product field metadata only: native text options become service properties at checkout. No values are read. */
-    private static function domainFields(int $productId): array
+    /** The one control on a hosting product line. The revision is the one the page loaded, so a stale page changes nothing. */
+    public static function productSwitch(): Action
     {
-        $product=\App\Models\Product::find($productId);if(!$product){return [];}$fields=[];
-        foreach(ExtensionHelper::getCheckoutConfig($product) as $field){
-            $key=$field['name']??null;if(($field['type']??null)==='text'&&WatchProductMap::validPropertyKey($key)){$fields[$key]=$field['label']??$key;}
-        }
-        foreach($product->configOptions()->whereNull('parent_id')->where('type','text')->get(['config_options.name','config_options.env_variable']) as $option){
-            $key=$option->env_variable?:$option->name;if(WatchProductMap::validPropertyKey($key)){$fields[$key]=$option->name;}
-        }
-        $properties=DB::table('properties')->where('model_type',(new \App\Models\Service())->getMorphClass())
-            ->whereIn('model_id',\App\Models\Service::where('product_id',$productId)->select('id'))
-            ->groupBy('key')->orderBy('key')->get(['key',DB::raw('MIN(name) as label')]);
-        foreach($properties as $property){if(WatchProductMap::validPropertyKey($property->key)){$fields[$property->key]??=$property->label?:$property->key;}}
-        ksort($fields);return $fields;
+        return Action::make('productSwitch')->view('domains::admin.watch-switch')->visible(fn($livewire)=>$livewire->canManageProducts())
+            ->action(function(array $arguments):void {
+                $id=(int)($arguments['map']??0);$on=WatchProductMap::whereKey($id)->value('enabled');$action=$on?'disable':'enable';
+                try{(new Writes())->run(Auth::user(),'mapping',$id,$action,Writes::ticket((int)Auth::id(),'mapping',$id,(int)($arguments['revision']??0),$action),$on?'Monitoring turned off':'Monitoring turned on');}
+                catch(\DomainException|\InvalidArgumentException|\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException $e){Notification::make()->warning()->title(self::error('mapping',$e))->send();}
+            });
     }
-    /** Add (no row) or Edit. Saving turns the row off until staff turn it on again. */
-    public static function configuration(string $kind,WatchProfile|WatchProductMap|null $row,int $revision=0): Action
+    /** For a line that isn't monitored. The system can't tell which field holds the domain, or that a field it or staff chose is wrong, so a person says which. */
+    public static function chooseField(): Action
     {
-        if($kind==='profile'&&$row&&$row->readProfile()===null){return self::action($kind,(int)$row->id,$revision,'save','Edit')->color('gray')->disabled()->tooltip(WatchFacts::TEMPLATE_UNAVAILABLE);}
-        $fields=[];$lines=fn(string $name,string $label,array $value)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->helperText('One per line.')->maxLength(8192)->rows(2);
-        if($kind==='mapping'){
-            if(!$row){$fields[]=Select::make('product_id')->label('Hosting product')->options(fn()=>\App\Models\Product::whereHas('server',fn($q)=>$q->where('extension','<>','Domains'))->pluck('name','id')->all())->required()->live()->afterStateUpdated(fn(Set $set)=>$set('property_key',null));}
-            $productId=fn(Get $get):int=>(int)($row?->product_id??$get('product_id'));
-            $choices=[];$options=function(Get $get)use($productId,&$choices):array{$id=$productId($get);return $choices[$id]??=self::domainFields($id);};
-            $fields[]=Select::make('property_key')->label('Domain field')->default($row?->property_key)
-                ->options($options)->required()
-                ->disabled(fn(Get $get)=>$options($get)===[])
-                ->helperText(fn(Get $get)=>$productId($get)<1?'Choose a hosting product first.':($options($get)===[]
-                    ?'No domain fields found. Add a text option to the product or check its saved service properties.':'Choose the field that stores the main domain for each service.'));
-            $fields[]=Select::make('expected_ns_profile_id')->label('DNS template')->options(fn()=>self::templates())->default($row?->expected_ns_profile_id);
-            $note='Saving turns monitoring off until you turn it on again.';
-        }else{
-            $fields[]=TextInput::make('name')->label('Name')->default($row?->name)->required()->maxLength(128);
-            $fields[]=$lines('nameservers','Nameservers',$row?->nameservers??[]);
-            foreach(['website_endpoints'=>'Website','email_endpoints'=>'Email'] as $key=>$label){$value=$row?->$key??[];
-                $fields[]=Fieldset::make($label.' records')->columns(1)->schema([$lines($key,$label.' hostnames',$value['exact']??[]),$lines($key.'_suffix',$label.' hostname suffixes',$value['suffix']??[]),$lines($key.'_ips',$label.' IP addresses',$value['ips']??[])]);}
-            $note='Saving turns this template off until you turn it on again.'.($row && WatchProductMap::where('expected_ns_profile_id',$row->id)->where('enabled',true)->exists()?' Turn off monitoring on its hosting products before editing.':'');
-        }
-        $action=self::action($kind,(int)($row?->id??0),$row?$revision:0,'save',$row?'Edit':($kind==='mapping'?'Add hosting product':'Add DNS template'),$fields)->modalSubmitActionLabel('Save');
-        return $row?$action->color('gray')->modalDescription($note)->modalSubmitActionLabel($kind==='mapping'&&$row->enabled?'Save and turn monitoring off':'Save'):$action;
+        return self::action('mapping',0,0,'save','Choose a field')->name('chooseField')->visible(fn($livewire)=>$livewire->canManageProducts())->link()->modalHeading('Choose the domain field')->modalDescription('Choose the field that holds the main domain. Monitoring starts when you save.')->modalSubmitActionLabel('Save')
+            ->schema(function(array $arguments):array {$fields=WatchProducts::fields(\App\Models\Product::findOrFail((int)($arguments['product_id']??0)));
+                return [Select::make('property_key')->label('Domain field')->options($fields)->required()
+                    ->helperText($fields===[]?'No service on this product has a text field yet. If it has a domain, add a text option for it.':null)];});
+    }
+    /** Add (no row) or Edit a DNS template. Saving turns the row off until staff turn it on again. */
+    public static function configuration(?WatchProfile $row,int $revision=0): Action
+    {
+        if($row&&$row->readProfile()===null){return self::action('profile',(int)$row->id,$revision,'save','Edit')->color('gray')->disabled()->tooltip(WatchFacts::TEMPLATE_UNAVAILABLE);}
+        $lines=fn(string $name,string $label,array $value)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->helperText('One per line.')->maxLength(8192)->rows(2);
+        $fields=[TextInput::make('name')->label('Name')->default($row?->name)->required()->maxLength(128),$lines('nameservers','Nameservers',$row?->nameservers??[])];
+        foreach(['website_endpoints'=>'Website','email_endpoints'=>'Email'] as $key=>$label){$value=$row?->$key??[];
+            $fields[]=Fieldset::make($label.' records')->columns(1)->schema([$lines($key,$label.' hostnames',$value['exact']??[]),$lines($key.'_suffix',$label.' hostname suffixes',$value['suffix']??[]),$lines($key.'_ips',$label.' IP addresses',$value['ips']??[])]);}
+        $note='Saving turns this template off until you turn it on again.';
+        $action=self::action('profile',(int)($row?->id??0),$row?$revision:0,'save',$row?'Edit':'Add DNS template',$fields)->modalSubmitActionLabel('Save');
+        return $row?$action->color('gray')->modalDescription($note):$action;
     }
 }

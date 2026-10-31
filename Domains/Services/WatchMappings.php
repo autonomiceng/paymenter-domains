@@ -18,24 +18,33 @@ final class WatchMappings
             $peek=WatchProductMap::findOrFail($id);Product::whereKey($peek->product_id)->lockForUpdate()->firstOrFail();
             $row=WatchProductMap::whereKey($id)->lockForUpdate()->firstOrFail();$this->authorize($actor);
             if($row->revision!==$revision || $row->enabled){throw new \DomainException('Review the saved disabled mapping before enabling it.');}
-            if($row->expected_ns_profile_id && !\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::whereKey($row->expected_ns_profile_id)->where('enabled',true)->lockForUpdate()->exists()){throw new \DomainException('Choose an enabled routing profile first.');}
             self::$enabling=true;try{$row->fill(['enabled'=>true,'revision'=>$revision+1,'edited_by'=>$actor->id,'reason'=>trim($reason)])->save();}finally{self::$enabling=false;}
             WatchAudit::create(['subject_type'=>'product_map','subject_id'=>$id,'actor_id'=>$actor->id,'event'=>'mapping_enabled','reason'=>trim($reason),'before_revision'=>(string)$revision,'after_revision'=>(string)$row->revision,'data'=>[],'created_at'=>now()]);return $row;
         });
     }
-    public function save(User $actor, int $productId, string $key, int $expectedRevision, string $reason, ?int $profileId = null): WatchProductMap
+    /** A product the system found a field on. Only products with no row: a saved choice is never reversed. edited_by 0 marks the system. */
+    public function adopt(int $productId,string $key): void
+    {
+        $reason='Domain field found';
+        DB::transaction(function()use($productId,$key,$reason):void {
+            Product::whereKey($productId)->lockForUpdate()->firstOrFail();
+            if(WatchProductMap::where('product_id',$productId)->lockForUpdate()->exists()){return;}
+            self::$enabling=true;try{$row=WatchProductMap::create(['product_id'=>$productId,'property_key'=>$key,'enabled'=>true,'edited_by'=>0,'reason'=>$reason]);}finally{self::$enabling=false;}
+            WatchAudit::create(['subject_type'=>'product_map','subject_id'=>$row->id,'event'=>'mapping_found','reason'=>$reason,'before_revision'=>'0','after_revision'=>(string)$row->revision,'data'=>['property_key'=>$key],'created_at'=>now()]);
+        });
+    }
+    public function save(User $actor, int $productId, string $key, int $expectedRevision, string $reason): WatchProductMap
     {
         $this->authorize($actor);StaffReason::require(trim($reason));
-        $withProfile=func_num_args()>=6;
-        return DB::transaction(function () use ($actor, $productId, $key, $expectedRevision, $reason, $profileId, $withProfile): WatchProductMap {
+        return DB::transaction(function () use ($actor, $productId, $key, $expectedRevision, $reason): WatchProductMap {
             Product::whereKey($productId)->lockForUpdate()->firstOrFail(); $this->authorize($actor);
             $map = WatchProductMap::where('product_id', $productId)->lockForUpdate()->first();
             if (($map?->revision ?? 0) !== $expectedRevision) { throw new \DomainException('The saved mapping changed.'); }
             $before = $map?->revision ?? 0;
             $map ??= new WatchProductMap(['product_id' => $productId]);
-            $map->fill(['property_key' => $key, 'expected_ns_profile_id' => $withProfile?$profileId:$map->expected_ns_profile_id, 'enabled' => false, 'revision' => $before + 1, 'edited_by' => $actor->id, 'reason' => trim($reason)])->save();
+            $map->fill(['property_key' => $key, 'enabled' => false, 'revision' => $before + 1, 'edited_by' => $actor->id, 'reason' => trim($reason)])->save();
             WatchAudit::create(['subject_type' => 'product_map', 'subject_id' => $map->id, 'actor_id' => $actor->id, 'event' => 'mapping_saved', 'reason' => trim($reason),
-                'before_revision' => (string) $before, 'after_revision' => (string) $map->revision, 'data' => ['property_key' => $key, 'expected_ns_profile_id' => $profileId, 'enabled' => false], 'created_at' => now()]);
+                'before_revision' => (string) $before, 'after_revision' => (string) $map->revision, 'data' => ['property_key' => $key, 'enabled' => false], 'created_at' => now()]);
             return $map;
         });
     }

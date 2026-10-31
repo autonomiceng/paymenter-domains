@@ -3,12 +3,10 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
-use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchAudit,WatchProductMap,WatchProfile};
+use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchAudit,WatchProfile};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainSummary,Missing};
-use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites as Writes,WatchNoticePreferences,PublicSuffixList,RegistrableNameResolver,PslValidator};
-use Paymenter\Extensions\Servers\Domains\Data\{PslSnapshot,Registrable};
+use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites as Writes,WatchNoticePreferences};
 /** Monitored domain, DNS template and hosting product facts for staff pages. A null value applies but is missing: the page shows Missing with the cause. */
 final class WatchFacts
 {
@@ -93,23 +91,6 @@ final class WatchFacts
         $names=Staff::can('admin.users.view')?User::whereIn('id',array_column($rows,'actor'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
         return array_map(fn($r)=>[...$r,'by'=>$names[$r['actor']]??'Staff #'.$r['actor']],$rows);
     }
-    /** Matched services for the first 25 services of the product; null until the public suffix list is usable. */
-    public static function preview(WatchProductMap $m): ?array
-    {
-        self::gate();$psl=app(PublicSuffixList::class);$current=$psl->current();if(!$current||!$psl->parserUsable($current)){return null;}
-        try{$snapshot=new PslSnapshot(PublicSuffixList::body($current),new PslValidator());}catch(\Throwable){return null;}
-        $services=\App\Models\Service::where('product_id',$m->product_id)->with('order')->orderBy('id')->limit(25)->get();
-        $props=DB::table('properties')->where('model_type',(new \App\Models\Service())->getMorphClass())->whereIn('model_id',$services->pluck('id'))->where('key',$m->property_key)->get()->groupBy('model_id');$out=[];
-        foreach($services as $s){$values=$props[$s->id]??collect();$row=['service'=>'Service #'.$s->id,'url'=>Staff::can('admin.services.update')?\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$s->id]):null,'domain'=>null];
-            if($s->status!=='active'||!$s->order||(int)$s->order->user_id!==(int)$s->user_id){$out[]=$row+['result'=>'Skipped: service not active'];continue;}
-            if($values->count()!==1){$out[]=$row+['result'=>'Skipped: domain field empty'];continue;}
-            try{$result=(new RegistrableNameResolver())->resolve(\Paymenter\Extensions\Servers\Domains\Dns\DnsQuery::hostname((string)$values->first()->value),$snapshot);}catch(\Throwable){$result=null;}
-            $out[]=$result instanceof Registrable?['domain'=>$result->name,'result'=>'Matched']+$row:$row+['result'=>'Skipped: not a valid domain'];
-        }
-        return $out;
-    }
-    /** @return array{domains:int,products:int} */
-    public static function usedBy(int $id): array{self::gate();return ['domains'=>WatchName::where('ns_profile_id',$id)->count(),'products'=>WatchProductMap::where('expected_ns_profile_id',$id)->count()];}
-    public static function products(int $n): string{return $n.' hosting '.($n===1?'product':'products');}
+    public static function usedBy(int $id): int{self::gate();return WatchName::where('ns_profile_id',$id)->count();}
     public static function date(?int $at): string{return $at?gmdate('M j, Y H:i',$at).' UTC':Missing::LABEL;}
 }

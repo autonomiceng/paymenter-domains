@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\User;
 use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchAudit,WatchProfile,WatchProductMap,WatchSource};
+use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchAudit,WatchProfile,WatchProductMap};
 /** Local staff edits only. A request advances ordinary work without overriding leases/backoff or feature gates. */
 final class StaffWatchWrites
 {
@@ -37,8 +37,6 @@ final class StaffWatchWrites
                 elseif($action==='retire' && in_array($row->state,['active','paused'],true)){$row->sources()->where('state','watch')->orderBy('id')->lockForUpdate()->get()->each(fn($s)=>$s->retire($reason));$row->state='retired';}
                 elseif($action==='profile' && in_array($row->state,['active','paused'],true)){
                     $profile=WatchProfile::whereKey((int)($input['profile']??0))->where('enabled',true)->lockForUpdate()->firstOrFail();
-                    $conflict=DB::table('domains_watch_sources as s')->join('domains_watch_product_maps as m','m.id','=','s.map_id')->where('s.watch_id',$id)->where('s.state','watch')->whereNotNull('m.expected_ns_profile_id')->where('m.expected_ns_profile_id','<>',$profile->id)->exists();
-                    if($conflict){throw new \DomainException('A source mapping pins a different profile. Edit that mapping first.');}
                     $row->ns_profile_id=$profile->id;$row->profile_revision=$profile->revision;
                     $row->expected_dns=in_array($input['expected_dns']??null,['platform','external'],true)?$input['expected_dns']:null;
                 }elseif($action==='read' && $row->state==='active'){
@@ -52,24 +50,23 @@ final class StaffWatchWrites
                 }elseif($action!=='note'){throw new \DomainException('The watch state changed. Reload and try again.');}
             }elseif($kind==='mapping' && $action==='enable'){
                 $row=(new WatchMappings())->enable($actor,$id,$before,$reason);
+            }elseif($kind==='mapping' && $action==='disable'){
+                $row=(new WatchMappings())->save($actor,(int)$row->product_id,$row->property_key,$before,$reason);
             }elseif($kind==='profile' && $action==='enable'){
                 if(!$row->exists || $row->enabled){throw new \DomainException('Reload the disabled profile first.');}$row->enabled=true;$row->edited_by=$actor->id;$row->reason=$reason;
             }elseif($action==='save'){
                 $row->edited_by=$actor->id;$row->reason=$reason;
                 if($kind==='profile'){
                     $row->name=(string)($input['name']??'');$row->enabled=false;
-                    if($row->exists && WatchProductMap::where('expected_ns_profile_id',$row->id)->where('enabled',true)->lockForUpdate()->get()->isNotEmpty()){throw new \DomainException('Disable the referencing mappings before editing this profile.');}
                     $row->nameservers=self::lines($input['nameservers']??'');
                     foreach(['website_endpoints','email_endpoints'] as $field){$row->$field=['exact'=>self::lines($input[$field]??''),'ips'=>self::lines($input[$field.'_ips']??''),'suffix'=>self::lines($input[$field.'_suffix']??'')];}
                 }else{
                     if(!$row->exists){$row->product_id=(int)($input['product_id']??0);}
                     $row->property_key=(string)($input['property_key']??'');$row->enabled=false;
-                    $pid=(int)($input['expected_ns_profile_id']??0);$row->expected_ns_profile_id=$pid?:null;
-                    if($pid && !WatchProfile::whereKey($pid)->where('enabled',true)->lockForUpdate()->exists()){throw new \DomainException('Choose an enabled routing profile.');}
                 }
             }else{throw new \DomainException('Reload and try again.');}
-            if($kind==='mapping' && $action==='save'){$row=(new WatchMappings())->save($actor,(int)$row->product_id,$row->property_key,$before,$reason,$row->expected_ns_profile_id);}
-            elseif(!($kind==='watch' && in_array($action,['read','note'],true)) && !($kind==='mapping' && $action==='enable')){$row->revision=$before+1;$row->save();}self::authorize($actor);
+            if($kind==='mapping' && $action==='save'){$saved=(new WatchMappings())->save($actor,(int)$row->product_id,$row->property_key,$before,$reason);$row=(new WatchMappings())->enable($actor,(int)$saved->id,(int)$saved->revision,$reason);}
+            elseif(!($kind==='watch' && in_array($action,['read','note'],true)) && !($kind==='mapping' && in_array($action,['enable','disable'],true))){$row->revision=$before+1;$row->save();}self::authorize($actor);
             if($kind==='watch'){WatchAudit::create(['subject_type'=>$kind,'subject_id'=>$row->id,'user_id'=>$kind==='watch'?$row->user_id:null,'actor_id'=>$actor->id,
                 'event'=>$action==='read'?'staff_read_requested':'staff_'.$action,'reason'=>$reason,'before_revision'=>(string)$before,'after_revision'=>(string)$row->revision,'data'=>$data,'created_at'=>now()]);}
 
