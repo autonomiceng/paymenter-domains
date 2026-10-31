@@ -61,16 +61,16 @@ same('refreshed',(new DomainObservation($readBindings,$clock,new AccountReadBudg
 same('0 records',DomainFacts::for($d->fresh())['DNS records']['value'],'Registration card counts DNS records');
 same('Turn on',DomainEditActions::for($d->fresh())['rows']['Transfer lock'][0]->getLabel(),'A known lock state offers its one next step');
 $view()->callAction(TestAction::make('edit_lock')->schemaComponent('fact_'.md5('Transfer lock'),'infolist'))->assertNotified(ManagementForms::REQUESTED);$op=$last('lock');same(true,$op->payload['locked'],'Turn on asks for the lock');$finish($op);
-$add=['name'=>'www','type'=>'A','address'=>'8.8.4.4','mx_pref'=>''];
+$add=['name'=>'www','type'=>'A','address'=>'8.8.8.8','mx_pref'=>''];
 $edit('DNS records','dns',['records'=>[['name'=>'www','type'=>'A','address'=>'not-an-ip','mx_pref'=>'']]])->assertNotified("Couldn't save this change");
 $edit('DNS records','dns',['records'=>[$add]])->assertNotified(ManagementForms::REQUESTED);
-$op=$last('dns');same(['www','A','8.8.4.4'],[$op->payload['records'][0]['name'],$op->payload['records'][0]['type'],$op->payload['records'][0]['address']],'Staff DNS row reaches the request');same((int)$actor->id,(int)$op->authorized_by,'DNS credited to staff');$finish($op);
+$op=$last('dns');same(['www','A','8.8.8.8'],[$op->payload['records'][0]['name'],$op->payload['records'][0]['type'],$op->payload['records'][0]['address']],'Staff DNS row reaches the request');same((int)$actor->id,(int)$op->authorized_by,'DNS credited to staff');$finish($op);
 $edit('DNS records','srv',['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'1','weight'=>'2','port'=>'5060','target'=>'sip.example.com.','_source'=>'']]])->assertNotified(ManagementForms::REQUESTED);
 $op=$last('srv');same('sip',$op->payload['records'][0]['service'],'Staff SRV row reaches the request');$finish($op);
 
 // A modal keeps what it opened on, though the action rebuilds from current state at save.
 $changed=Filament\Notifications\Notification::make()->danger()->title("Couldn't save this change")->body('This changed after you opened it. Reload the page and try again.');
-foreach(['dns'=>[[...$add,'address'=>'8.8.8.8'],['name'=>'mail','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10]],
+foreach(['dns'=>[[...$add,'name'=>'edited'],['name'=>'mail','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10]],
     'srv'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'1','weight'=>'3','port'=>'5060','target'=>'sip.example.com.','_source'=>''],['service'=>'xmpp','protocol'=>'tcp','target'=>'x.example.com.','priority'=>'5','weight'=>'1','port'=>'5222']]] as $kind=>[$edited,$found]){
     $page=$open('DNS records',$kind)->setActionData(['records'=>[$edited]]);$state->{$kind}[]=$found;Illuminate\Support\Facades\Cache::flush();
     same('refreshed',(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports))->run($d->id),'A new '.$kind.' record is observed');$before=Operation::count();
@@ -88,7 +88,7 @@ $page->callMountedAction()->assertNotified(ManagementForms::REQUESTED);$op=$last
 $replay->callMountedAction()->assertNotified(ManagementForms::REQUESTED);same([$before+1,$op->id],[Operation::count(),$last('nameservers')->id],'The same open form returns the same request');$finish($op);
 $edit('Nameservers','nameservers',$ns)->assertNotified(ManagementForms::REQUESTED);expect($last('nameservers')->id!==$op->id,'A new open after a finished edit is a new request');$finish($last('nameservers'));
 // Retrying a finished DNS form finds its request, though the list has moved on since.
-$page=$open('DNS records','dns')->setActionData(['records'=>[[...$add,'address'=>'8.8.4.8']]]);$replay=clone $page;$before=Operation::count();
+$page=$open('DNS records','dns')->setActionData(['records'=>[[...$add,'name'=>'replay']]]);$replay=clone $page;$before=Operation::count();
 $page->callMountedAction()->assertNotified(ManagementForms::REQUESTED);$op=$last('dns');$finish($op);$state->dns[]=['name'=>'late','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10];Illuminate\Support\Facades\Cache::flush();
 same('refreshed',(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports))->run($d->id),'The finished list is read back');
 $replay->callMountedAction()->assertNotified(ManagementForms::REQUESTED);same([$before+1,$op->id],[Operation::count(),$last('dns')->id],'The finished form returns its request');

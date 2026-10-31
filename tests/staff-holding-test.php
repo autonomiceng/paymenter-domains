@@ -141,4 +141,12 @@ foreach(['missing-anchor','unconfirmed-anchor','immediate-cancellation'] as $fau
 $viewOnly=staffUser(['admin.domains.view']);$readonly=Livewire\Livewire::actingAs($viewOnly)->test($pageClass,['record'=>$d->id]);$readonly->assertActionDoesNotExist('stop');
 Auth::login($staff);Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>$pageClass])
     ->assertSee('Renewal stopped')->assertSee('Stop through owned staff modal')->assertSee(trim($staff->first_name.' '.$staff->last_name)?:'Staff');
+// Native guards and the same Eloquent instance are required: wasRecentlyCreated survives its first gateway save.
+$gateway=\App\Models\Gateway::firstOrCreate(['extension'=>'Manual'],['name'=>'Manual','type'=>'gateway']);
+$payment=\App\Models\InvoiceTransaction::create(['invoice_id'=>$original->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded']);
+$payment->gateway()->associate($gateway);$payment->save();
+same($gateway->id,$payment->fresh()->gateway_id,'A new staff payment can save its first gateway');
+$refused=false;try{$payment->update(['gateway_id'=>null]);}catch(\DomainException){$refused=true;}
+expect($refused,'A retained payment keeps its gateway on the same model instance');
+same($gateway->id,$payment->fresh()->gateway_id,'Refused replacement leaves the original gateway in storage');
 echo "Owned holding review, snapshots, audit, debt preservation, paid execution and real modals passed.\n";$nativeSuccessful=true;
