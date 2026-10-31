@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEv
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DomainName, Outcome, RegistrarRequest as Request, RegistrarResult};
 
 /** Named reads only. Construction/quotes do not prove provider identity, sale eligibility or renewal safety. */
-final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader
+final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader, \Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller
 {
     public const ORDINARY_EXPIRY_MARGIN_DAYS = 2;
     private readonly array $annualActions;
@@ -31,6 +31,13 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $contact=$reply->value('default_contact');
         if($reply->outcome!==Outcome::Success||!is_array($contact)){throw new \DomainException('Could not read the current NameSilo default contact. Try again.');}
         return $contact;
+    }
+    /** One getPrices read: tld => {registration, renew, transfer}. */
+    public function prices(RequestContext $context): array
+    {
+        $reply=$this->read(Request::prices(),$context);
+        if($reply->outcome!==Outcome::Success){throw new \DomainException('Could not read NameSilo prices.');}
+        return $reply->catalogueRows();
     }
     public function catalogueBatch(\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted,
         \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness $freshness, RequestContext $context): array
@@ -193,12 +200,20 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             $reply->outcome === Outcome::Success ? SendState::Sent : $this->neutral($reply)->sendState, ResultReason::Unverified, $facts);
     }
     public function reconcile(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
+    { return $this->reconcileAttempt($attempt,$context,false); }
+    public function pollTransfer(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
+    { return $this->reconcileAttempt($attempt,$context,true); }
+    private function reconcileAttempt(AttemptEvidence $attempt,RequestContext $context,bool $pendingOnly): ReconciliationResult
     {
         $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);
         $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
         if ($attempt->query->action === Action::Transfer) {
             $status = $this->read(Request::transferStatus($attempt->query->name), $context);
             if ($status->outcome === Outcome::Success) { $transfer = TransferState::read($status->value('status')); }
+        }
+        if($pendingOnly&&$transfer===\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Pending){
+            return new ReconciliationResult($attempt,new DriverResult($this->binding(),Disposition::Unknown,SendState::PossiblySent,
+                ResultReason::Unresolved,new Evidence(transfer:$transfer)));
         }
         $history = (new Correlation($this->client))->inspect($attempt, $context);
         $domain = $this->readDomain($attempt->query->name, $context)->evidence()->domain;

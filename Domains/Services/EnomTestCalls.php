@@ -11,19 +11,21 @@ final class EnomTestCalls
 {
     private static ?object $purchase=null;
     private static int $refusalGeneration=0;
+    private static string $refusalReason='send_check';
     public static function day(): string
     { return app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'); }
     /** Lets the registry restore a typed refusal across the verifier's deliberate error redaction. */
     public static function refusalGeneration(): int { return self::$refusalGeneration; }
-    public static function refuse(): never {++self::$refusalGeneration;throw new EnomTestCallLimit;}
+    public static function refuse(string $reason='send_check'): never {++self::$refusalGeneration;self::$refusalReason=$reason;throw new EnomTestCallLimit($reason);}
+    public static function refusalReason(): string { return self::$refusalReason; }
     public static function refusedSince(int $generation): bool { return self::$refusalGeneration!==$generation; }
     /** A LIVE reservation is valid only on its UTC day. TEST scopes are armed with '' and have no day. */
     public static function assertReservedDay(string $day): void
     { if ($day!==''&&$day!==self::day()) { ++self::$refusalGeneration;throw new EnomTestCallLimit; } }
     /** Open a single-request Purchase scope; it is armed after preflight and before seal. */
-    public static function withPurchase(AccountBinding $binding, \Closure $work, ?int $operationId=null): mixed
+    public static function withPurchase(AccountBinding $binding, \Closure $work, ?int $operationId=null,string $action='registration'): mixed
     {
-        if ($binding->registrarKey!=='enom' || ($binding->environment!==Environment::Test&&!EnomLive::enabled($binding,'registration')) || ($operationId!==null&&$operationId<1)) { throw new EnomTestCallLimit; }
+        if ($binding->registrarKey!=='enom' || !in_array($action,['registration','transfer'],true) || ($binding->environment!==Environment::Test&&!($action==='transfer'?EnomTestTransfer::accepted($binding):EnomLive::enabled($binding,'registration'))) || ($operationId!==null&&$operationId<1)) { throw new EnomTestCallLimit; }
         if (self::$purchase!==null) { throw new EnomTestCallLimit; }
         self::$purchase=(object)['fingerprint'=>$binding->fingerprint,'operationId'=>$operationId,'reservedDay'=>null,'consumed'=>false];
         try { return $work(); } finally { self::$purchase=null; }

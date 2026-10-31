@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolRe
 use Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence;
 
 /** Named read adapter only; no admission, charging, persistence or account adoption. */
-final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader
+final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader, \Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller
 {
     private array $suffixes;
     public function __construct(private readonly Client $client, array $suffixes, private readonly int $priceMaxAgeSeconds = 300)
@@ -93,6 +93,16 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $names = Catalogue::names($this->read(ReadCommand::Tlds, [], $context));
         return $this->result($names === null ? null : ['tlds' => $names]);
     }
+    /** Observation only: bulk reseller fields are not accepted cost evidence yet. */
+    public function bulkPricing(bool $domainPricing, int $years, RequestContext $context): ReadResult
+    {
+        $started = hrtime(true);
+        $reply = $this->read($domainPricing ? ReadCommand::DomainPricing : ReadCommand::RetailPricing,
+            ($domainPricing ? ['UseQtyEngine' => 1] : ['TLDOnly' => 1]) + ['Years' => $years], $context);
+        $rows = BulkPricing::rows($reply);
+        return $this->result($rows === null ? null : ['rows' => $rows, 'response_bytes' => $reply->responseBytes,
+            'seconds' => (hrtime(true) - $started) / 1000000000, 'max_period' => $reply->value('maxperiod')]);
+    }
     public function tldCapabilities(string $tld, #[\SensitiveParameter] RequestContext $context): ReadResult
     {
         Catalogue::tld($tld);
@@ -154,7 +164,8 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         // Premium includes platinum/EAP; missing any exclusion flag remains unknown.
         $flags = array_map(self::flag(...), [$row['ispremium'] ?? null, $row['isplatinum'] ?? null, $row['iseap'] ?? null]);
         $premium = in_array(true, $flags, true) ? true : (in_array(null, $flags, true) ? null : false);
-        return $this->neutral($reply, new Evidence(available: $query->action === Action::Transfer ? ($row['rrpcode'] === '211' && self::flag($properties['transferable'] ?? null) === true) : $row['rrpcode'] === '210', premium: $premium));
+        // A missing or unreadable Transferable stays unknown: only a stated no is a negative.
+        return $this->neutral($reply, new Evidence(available: $query->action === Action::Transfer ? ($row['rrpcode'] === '211' ? self::flag($properties['transferable'] ?? null) : false) : $row['rrpcode'] === '210', premium: $premium));
     }
     /** @return array{Api\ProtocolResult, array, ?DomainSnapshot} Fresh account ownership proof before private reads. */
     private function identity(string $name, #[\SensitiveParameter] RequestContext $context): array
@@ -290,8 +301,24 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             new Evidence(charge: $candidate->charge, candidates: [$candidate]), $difference ? [Discrepancy::Charge] : []);
     }
     public function reconcile(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
+    { return $this->reconcileAttempt($attempt,$context,false); }
+    public function pollTransfer(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
+    { return $this->reconcileAttempt($attempt,$context,true); }
+    private function transferStatus(AttemptEvidence $attempt,RequestContext $context): \Paymenter\Extensions\Servers\Domains\Data\TransferStatus
+    {
+        if($attempt->query->action===Action::Transfer && is_string($attempt->transferReference) && preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->transferReference)){
+            return TransferState::read($attempt,$this->read(ReadCommand::Transfer,['TransferOrderID'=>$attempt->transferReference],$context));
+        }
+        return \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
+    }
+    private function reconcileAttempt(AttemptEvidence $attempt,RequestContext $context,bool $pendingOnly): ReconciliationResult
     {
         $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);
+        $transfer=$pendingOnly?$this->transferStatus($attempt,$context):null;
+        if($transfer===\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Pending){
+            return new ReconciliationResult($attempt,new DriverResult($this->binding(),Disposition::Unknown,SendState::PossiblySent,
+                ResultReason::Unresolved,new Evidence(transfer:$transfer,transferReference:$attempt->transferReference)));
+        }
         $domain = ($attempt->query->action === Action::Renew
             ? $this->readRenewalDomain($attempt->query->name, $context)
             : $this->readDomain($attempt->query->name, $context))->evidence()->domain;
@@ -302,17 +329,14 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
                 $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference,
                 active: $domain->active, nameservers: $domain->nameservers);
         }
-        $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
-        if ($attempt->query->action === Action::Transfer && is_string($attempt->transferReference) && preg_match('/^[1-9][0-9]{0,19}$/D', $attempt->transferReference)) {
-            $transfer = TransferState::read($attempt, $this->read(ReadCommand::Transfer, ['TransferOrderID' => $attempt->transferReference], $context));
-        }
+        $transfer ??= $this->transferStatus($attempt,$context);
         $candidates = [];
         if ($attempt->executionFacts && $attempt->providerReference) {
             $charge = $this->orderCharge($attempt, $attempt->executionFacts, $context);
             $candidates = $charge->evidence()->candidates;
         }
         $complete = false;
-        if ((!$attempt->executionFacts || $attempt->providerReference === null) && $attempt->historyAcceptance?->covers($attempt, $context->now())) {
+        if ($attempt->replyLost() && $attempt->historyAcceptance?->covers($attempt, $context->now())) {
             $history = new History($this->client);
             $facts = $history->inspect($attempt, $context); $candidates = $facts->candidates; $complete = $facts->historyComplete;
         }

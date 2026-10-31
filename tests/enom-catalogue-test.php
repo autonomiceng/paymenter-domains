@@ -102,5 +102,14 @@ foreach (['daily','staff'] as $syncEntry) {
         }
     }
 }
+// A list our cap cannot cover keeps the priced TLDs fresh. A new one waits for a day the cap covers.
+$binding=Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a->fresh());$accepted=Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);
+$priced=array_keys(array_filter($accepted->endings,static fn(array $row)=>$row['register']!==[]));$before=count($GLOBALS['catalogueCalls']);
+Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::save($binding,$accepted->revision,$accepted->endings+['info'=>['register'=>[1],'renew'=>[1],'transfer'=>[],'registry'=>true,'renewal_safe'=>true]]);
+config(['domains.enom_test_sends_per_day'=>EnomTestSendLimit::usage('catalogue-uid')['day']+PriceSync::batchedCalls($accepted,$priced)]);
+DB::table('domains_read_budgets')->where('server_id',$server->id)->update(['window_at'=>0]);DB::table('domains_observation_queues')->where('server_id',$server->id)->update(['catalogue_due'=>0,'catalogue_cursor'=>0]);
+app(PriceSync::class)->daily($a->fresh());config(['domains.enom_test_sends_per_day'=>500]);
+$read=array_values(array_unique(array_filter(array_column(array_slice($GLOBALS['catalogueCalls'],$before),'TLD'))));sort($read);sort($priced);
+same($priced,$read,'Only the priced TLDs are read when the cap cannot cover the list');
 echo "Price sync: daily and staff limits and provider guard refuse before the first physical send.\n";
 $nativeSuccessful=true;
