@@ -3,7 +3,6 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/renewal-execution.php';
-require __DIR__.'/Support/lifecycle-facts.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 foreach(['assessment','flags','renewal','extend','quote','expired','balance'] as $phase){
@@ -11,7 +10,7 @@ foreach(['assessment','flags','renewal','extend','quote','expired','balance'] as
     if($phase==='assessment'){ $state->fail=ReadCommand::Info; }
     elseif($phase==='flags'){ $state->duringCommand=ReadCommand::Check; $state->during=static fn()=>$state->fail=ReadCommand::Info; }
     else{ $state->fail=match($phase){ 'renewal'=>ReadCommand::Renewal,'extend'=>ReadCommand::RenewalInfo,'quote'=>ReadCommand::Check,'expired'=>ReadCommand::Expired,'balance'=>ReadCommand::Balance }; }
-    if($phase==='expired'){ $clock->instant=new DateTimeImmutable('2027-10-18T12:00:01Z');storeLifecycleFixture($b,lifecycleFixture($clock->now())); }
+    if($phase==='expired'){ $clock->instant=new DateTimeImmutable('2027-10-18T12:00:01Z'); }
     same('queued',$engine->run($op->id,$writer)->state,'Normalized '.$phase.' transport outage stays retryable');
     same($phase==='balance'?'registrar_balance_insufficient_or_unknown':'renewal_reads_unavailable',$op->fresh()->safe_code,'Typed transient read reason retained'); same($writes,$state->writes,'Outage sends nothing');
     $state->fail=null; $state->duringCommand=null; Cache::flush();

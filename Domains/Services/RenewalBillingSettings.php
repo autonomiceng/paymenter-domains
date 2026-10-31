@@ -45,6 +45,19 @@ final class RenewalBillingSettings
             }
         });
     }
+    /** Either flag lets renewal invoices go out, so the Renewals switch reads On. */
+    public static function anyOn(int $serverId): bool
+    {$billing=self::read($serverId);return $billing['scheduled']||$billing['manual'];}
+    /** The Enom Renewals switch writes this with its send permission, inside the caller's one transaction. Off clears every half. */
+    public static function setSwitch(int $serverId,bool $on): void
+    {
+        if($on&&self::read($serverId,true)['issue_days']===null){throw new \DomainException('Fix the invoice days first.');}
+        $s=Server::whereKey($serverId)->lockForUpdate()->firstOrFail();
+        foreach($on?[self::SCHEDULED]:[self::SCHEDULED,self::MANUAL] as $key){
+            $row=$s->settings()->where('key',$key)->lockForUpdate()->first()??$s->settings()->make(['key'=>$key]);
+            $row->value=$on?'1':'0';$row->type='boolean';$row->encrypted=false;$row->save();
+        }
+    }
     private static function on(mixed $value): bool
     {return filter_var($value,FILTER_VALIDATE_BOOLEAN,FILTER_NULL_ON_FAILURE)===true;}
 }

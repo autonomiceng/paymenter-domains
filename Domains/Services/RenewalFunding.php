@@ -32,7 +32,7 @@ final class RenewalFunding
             || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Renewal obligation authority changed.'); }
         foreach ($l['operations'] as $other) {
             if ($other->safe_code === 'renewal_cancelled_unpaid' && ($l['invoices']->firstWhere('id', $other->invoice_id)?->status !== 'cancelled'
-                || $l['transactions']->contains('invoice_id', $other->invoice_id)) && !RefundPayment::retiredSettled($other, $l)) { throw new \DomainException('Retired renewal received financial activity.'); }
+                || RenewalCycles::moneyMoved($l, $other->invoice_id)) && !RefundPayment::retiredSettled($other, $l)) { throw new \DomainException('Retired renewal received financial activity.'); }
         }
     }
     public static function requireCurrent(Operation $op, array $l, bool $sent = false): array
@@ -54,16 +54,16 @@ final class RenewalFunding
             || (int) $item->invoice_id !== (int) $invoice->id || $item->reference_type !== null || $item->reference_id !== null
             || (string) $item->quantity !== '1' || PricingRule::minor($op->amount) <= 0
             || PricingRule::minor($item->price) !== PricingRule::minor($op->amount)
-            || $invoice->due_at->format('Y-m-d') !== ($op->policy['calendar']['due'] ?? null)) { throw new \DomainException('Renewal invoice is not funded.'); }
+            || $invoice->due_at->format('Y-m-d') !== ($op->policy['calendar']['due'] ?? null)) { throw new RenewalHold('renewal_invoice_unpaid', 'Renewal invoice is not funded.'); }
         $total = $paid = 0; $ids = [];
         foreach ($l['items']->where('invoice_id', $invoice->id) as $row) {
-            if (!ctype_digit((string) $row->quantity) || (int) $row->quantity < 1) { throw new \DomainException('Invalid renewal invoice.'); }
+            if (!ctype_digit((string) $row->quantity) || (int) $row->quantity < 1) { throw new RenewalHold('renewal_invoice_unpaid', 'Invalid renewal invoice.'); }
             $total += PricingRule::minor($row->price) * (int) $row->quantity;
         }
         foreach ($l['transactions']->where('invoice_id', $invoice->id) as $row) {
             if ($row->status === InvoiceTransactionStatus::Succeeded) { $paid += PricingRule::minor($row->amount); $ids[] = $row->id; }
         }
-        if ($total <= 0 || $paid < $total) { throw new \DomainException('The full invoice must remain paid.'); }
+        if ($total <= 0 || $paid < $total) { throw new RenewalHold('renewal_invoice_unpaid', 'The full invoice must remain paid.'); }
         return ['basis' => 'paid_invoice', 'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id,
             'invoice_total_minor' => $total, 'succeeded_net_minor' => $paid, 'transaction_ids' => $ids, 'currency' => 'USD'];
     }

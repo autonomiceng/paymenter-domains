@@ -130,7 +130,19 @@ $clock->instant = new DateTimeImmutable('2027-09-26T12:00:00Z'); $setting('domai
 commerceReject(fn () => $billing->invoice($next->domain_id));
 $lowPrice = Price::where(['server_id' => $server->id, 'action' => 'renew'])->sole();
 $lowPrice->update(['revision' => $lowPrice->revision + 1, 'observed_at' => '2027-09-26 12:00:00', 'fresh_until' => '2027-09-28 12:00:00']);
-$clock->instant = new DateTimeImmutable('2027-09-27T00:00:00Z'); $bill = $billing->invoice($next->domain_id);
+$clock->instant = new DateTimeImmutable('2027-09-27T00:00:00Z');
+// The site's own TEST account: no new debt while it can't send, whether the site flag or the send permission is what's missing.
+$billingOff = static function (?App\Models\User $owner = null) use ($billing, $next): void {
+    try { $billing->invoice($next->domain_id, $owner); throw new LogicException('New invoice must refuse'); }
+    catch (Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e) { same(Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::BillingOff, $e->reason, 'Site account that cannot send gets no new invoice'); }
+};
+config(['domains.enom_identity.environment' => 'test', 'domains.enom_writes.renewal' => false, 'domains.enom_catalogue.enabled' => true]); $billingOff();
+config(['domains.enom_writes.renewal' => true]); $billingOff();
+// A TEST holding on a Live site never sends, so neither billing path may start a new invoice.
+config(['domains.enom_identity.environment' => 'live']); $setting('domains_manual_renewals_enabled', true); $billingOff(); $billingOff($user); $setting('domains_manual_renewals_enabled', false);
+config(['domains.enom_identity.environment' => null, 'domains.enom_writes.renewal' => false, 'domains.enom_catalogue.enabled' => false]);
+$bill = $billing->invoice($next->domain_id);
+config(['domains.enom_identity.environment' => 'test']); same($bill->id, $billing->invoice($next->domain_id)->id, 'An issued invoice stays payable with the site flag off'); config(['domains.enom_identity.environment' => null]);
 $low = Operation::where('invoice_id', $bill->id)->sole();
 same('Domain renewal: billing-below-placeholder.com (1 year, Oct 18, 2027 to Oct 18, 2028)', $bill->items->sole()->description, 'Annual renewal dates');
 same('1.00', $low->amount, 'Below-cost renewal invoices without floor, subsidy or hold');

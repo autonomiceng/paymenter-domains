@@ -62,8 +62,8 @@ are reported in Registrars; the underlying deletion guard remains in force.
 Native Edit Service also handles refused identity, price and Delete writes with a
 danger notification and Halt. These notices apply only to the current native service
 page/record and its matching Save/Delete context; other writers retain their original
-exception. Price guidance points confirmed active domains to Update renewal price
-on the Domains page. Fixed field names are listed for identity refusals; deletion
+exception. Price guidance says prices follow TLD prices and the next renewal
+invoice uses the price on its issue date. Fixed field names are listed for identity refusals; deletion
 guidance points to
 Stop renewal or Retire unpaid order there. The native Recalculate Price hint
 only edits a draft; its changed price is refused on Save. A refused service delete
