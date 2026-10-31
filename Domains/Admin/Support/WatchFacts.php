@@ -91,6 +91,6 @@ final class WatchFacts
         $names=Staff::can('admin.users.view')?User::whereIn('id',array_column($rows,'actor'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
         return array_map(fn($r)=>[...$r,'by'=>$names[$r['actor']]??'Staff #'.$r['actor']],$rows);
     }
-    public static function usedBy(int $id): int{self::gate();return WatchName::where('ns_profile_id',$id)->count();}
+    public static function usedBy(int $id): int{self::gate();return WatchName::where('ns_profile_id',$id)->whereIn('state',['active','paused'])->count();}
     public static function date(?int $at): string{return $at?gmdate('M j, Y H:i',$at).' UTC':Missing::LABEL;}
 }
