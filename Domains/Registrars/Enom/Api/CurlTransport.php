@@ -24,8 +24,8 @@ final class CurlTransport implements Transport
                     ? 'https://reseller.enom.com/interface.asp' : 'https://resellertest.enom.com/interface.asp',
                 CURLOPT_POST => true,
                 CURLOPT_POSTFIELDS => http_build_query(['Command' => $command->value, 'UID' => $uid,
-                    'PW' => $token, 'ResponseType' => 'XML'] + $parameters, '', '&', PHP_QUERY_RFC3986),
-                CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded', 'Accept: application/xml'],
+                    'PW' => $token, 'ResponseType' => $command->responseType()] + $parameters, '', '&', PHP_QUERY_RFC3986),
+                CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded', $command->bulkPricing() ? 'Accept: text/plain' : 'Accept: application/xml'],
                 CURLOPT_FOLLOWLOCATION => false, CURLOPT_MAXREDIRS => 0,
                 CURLOPT_PROXY => '', CURLOPT_NOPROXY => '*', CURLOPT_VERBOSE => false, CURLOPT_HEADER => false,
                 CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2,
@@ -53,7 +53,7 @@ final class CurlTransport implements Transport
                 throw new \RuntimeException('Registrar transport incomplete.');
             }
             return $body;
-        } catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit;
+        } catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $error) { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit($error->reason);
         } catch (\Throwable) {
             // Never retain credential-bearing cURL exceptions, callback arguments or their causes.
             throw new \RuntimeException('Registrar transport incomplete.');

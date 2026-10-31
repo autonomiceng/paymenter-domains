@@ -6,7 +6,7 @@ require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, Disposition, Environment, ExpiryPrecision, Query, RequestBudget, RequestContext, RequestOrigin, SendState, Support};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, ResponseParser, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, Expiry};
-use Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
+use Paymenter\Extensions\Servers\Domains\Services\{RegistrarRegistry, WriteHeld, WriteMoney};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 function body(string $command, string $payload = ''): string { return '<interface-response><Command>'.$command.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$payload.'</interface-response>'; }
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');
@@ -144,7 +144,7 @@ foreach (['<Properties/>', "<Properties> \n\t </Properties>"] as $empty) {
     $wire->payloads['Check'] = str_replace('210', '211', $wire->payloads['Check']);
     $result = $driver->availability(new Query('example.com', Action::Transfer, 1), $context());
     same(Disposition::Accepted, $result->disposition, 'Transfer uses the same empty Properties normalization');
-    same(false, $result->evidence()->available, 'Empty Properties never invents positive transfer eligibility');
+    same(null, $result->evidence()->available, 'Empty Properties never invents transfer eligibility or a refusal');
 }
 $wire->payloads['Check'] = str_replace('</Domain>', '<Properties><MinRegYear>1</MinRegYear><MaxRegYear>1</MaxRegYear></Properties></Domain>', $check);
 same(Disposition::Rejected, $driver->availability(new Query('example.com', Action::Register, 3), $context())->disposition, 'Name-specific term restriction closes multi-year checkout');
@@ -204,9 +204,13 @@ $wire->payloads['Contacts'] = str_replace('<RegistrantFirstName>private-name</Re
 same('unknown', $driver->contacts('example.com', $context())->status, 'Conflicting contact aliases unknown');
 $before = count($wire->calls); same(Disposition::Unknown, $driver->quote(new Query('example.com', Action::Register, 1), $context())->disposition, 'Missing quote price stays unknown');
 $before = count($wire->calls);
-foreach (['true' => true, 'false' => false, 'unknown' => false] as $flag => $eligible) {
-    $wire->payloads['Check'] = '<Domains><Domain><Name>example.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><MinRegYear>2</MinRegYear><Transferable>'.$flag.'</Transferable></Properties></Domain></Domains>';
-    same($eligible, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->evidence()->available, 'Transfer needs explicit positive property');
+foreach (['<Transferable>true</Transferable>' => [true, null], '<Transferable>false</Transferable>' => [false, 'name_unavailable'], '<Transferable>unknown</Transferable>' => [null, 'registrar_read_failed'], '' => [null, 'registrar_read_failed']] as $property => [$eligible, $refusal]) {
+    $wire->payloads['Check'] = '<Domains><Domain><Name>example.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><MinRegYear>2</MinRegYear>'.$property.'</Properties></Domain></Domains>';
+    $facts = $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->evidence();
+    same($eligible, $facts->available, 'Transfer needs explicit positive property');
+    // Only a stated no is a negative: unknown transferability must not end the order.
+    $held = null; try { WriteMoney::requireAvailable($facts); } catch (WriteHeld $e) { $held = $e->reason; }
+    same($refusal, $held, 'Transfer refusal matches what the registrar stated');
 }
 $wire->payloads['Check'] = '<Domains><Domain><Name>example.com</Name><RRPCode>210</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><Transferable>true</Transferable></Properties></Domain></Domains>';
 same(false, $driver->availability(new Query('example.com', Action::Transfer, 1), $context())->evidence()->available, 'Unregistered name is not transferable');

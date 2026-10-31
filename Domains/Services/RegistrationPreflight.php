@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\SealPreflight;
-use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, DispatchReadiness, Disposition, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, Capabilities, DispatchReadiness, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Fresh bound reads outside locks; the local acceptance is checked again under seal locks. */
 final readonly class RegistrationPreflight implements SealPreflight
@@ -20,9 +20,9 @@ final readonly class RegistrationPreflight implements SealPreflight
         OperationClaims::outside(); $query = OperationClaims::query($op, $domain);
         $this->features->requireEnabled($query->action); ContactSetup::requireReady($op);
         $privacy = $op->payload['privacy'] ?? false; $servers = $op->payload['nameservers'] ?? [];
-        if (!is_bool($privacy)) { throw new WriteHeld('write_acceptance_required'); }
+        if (!is_bool($privacy)) { throw new WriteHeld('order_not_supported'); }
         if ($context->binding->registrarKey === 'enom') {
-            if ($privacy) { throw new WriteHeld('write_acceptance_required'); }
+            if ($privacy) { throw new WriteHeld('order_not_supported'); }
             try { \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers($servers); }
             catch (\InvalidArgumentException) { throw new WriteHeld('nameservers_required'); }
         } else {
@@ -31,6 +31,12 @@ final readonly class RegistrationPreflight implements SealPreflight
             if ($nexus && $privacy) { throw new WriteHeld('registry_details_unsupported'); }
             try { \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::register($query->name, $query->years, $privacy, '1', $servers, $nexus); }
             catch (\InvalidArgumentException) { throw new WriteHeld('nameservers_required'); }
+        }
+        $retryBalance=null;
+        if(BalanceRetry::from($op)?->window){
+            $probe=$context->binding->registrarKey==='enom'&&EnomTestRegistration::enabled($context->binding)
+                ?$this->bindings->registrationPreflightReader($context->binding):$this->bindings->reader($context->binding->serverId);
+            $context->binding->requireMatch($probe->binding());$retryBalance=BalanceRetries::probe($op,$probe,$context);
         }
         if ($this->profiles && $context->binding->registrarKey === 'namesilo') {
             $this->accepted->requireCurrent($context->binding, $query, $op, profile: false);
@@ -42,16 +48,10 @@ final readonly class RegistrationPreflight implements SealPreflight
             :$this->bindings->reader($context->binding->serverId);
         $context->binding->requireMatch($reader->binding());
         $observed = $context->now();
-        $availability = $reader->availability($query, $context); $quote = $reader->quote($query, $context); $balance = BalanceReads::read($reader, $context, 'preflight');
-        foreach ([$availability, $quote, $balance] as $result) {
-            $context->binding->requireMatch($result->binding);
-            if ($result->disposition !== Disposition::Accepted) { throw new WriteHeld('write_acceptance_required'); }
-        }
-        $q = $quote->evidence()->quote; $funds = $balance->evidence()->balance; $facts = $availability->evidence();
-        if (!WriteMoney::cost($q, $query, $observed, $context->now())
-            || $facts->available !== true || $facts->premium !== false || !WriteMoney::sufficient($funds, $q->cost)) {
-            throw new WriteHeld('write_acceptance_required');
-        }
+        $availability = $reader->availability($query, $context); $quote = $reader->quote($query, $context); $balance = $retryBalance??BalanceReads::read($reader, $context, 'preflight');
+        WriteMoney::requireRead($context->binding, $availability, $quote, $balance);
+        WriteMoney::requireAvailable($availability->evidence());
+        $q = $quote->evidence()->quote; WriteMoney::requireFunds($q, $balance->evidence()->balance, $query, $observed, $context->now());
         return new DispatchReadiness($context->binding, $query,
             new Capabilities($context->binding, ['register' => $capability]),
             $q->cost, true, false, $observed, min($q->validUntil, $observed->modify('+120 seconds')), OperationClaims::payloadDigest($op));

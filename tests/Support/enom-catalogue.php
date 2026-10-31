@@ -46,6 +46,8 @@ $before=count($GLOBALS['catalogueCalls']);tldRefusal(fn()=>$write('import',['end
 // Daily sync is intentional; a day our cap cannot cover is skipped, even if we later raise our cap.
 $skips=[];\Illuminate\Support\Facades\Log::listen(static function($event)use(&$skips):void{if($event->message==='Domains daily price sync skipped.'){$skips[]=$event->context;}});
 $used=Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::usage((string)Account::where('server_id',$server->id)->sole()->stable_identity)['day'];config(['domains.enom_test_sends_per_day'=>$used+8]);
+// The price fill for What you sell has its own daily turn, so mark it done to watch only this sync.
+DB::table(Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::FILLS)->insert(['server_id'=>$server->id,'account_fingerprint'=>Account::where('server_id',$server->id)->sole()->account_fingerprint,'tried_at'=>app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()]);
 $before=count($GLOBALS['catalogueCalls']);DB::table('domains_runtime_turns')->where('server_id',$server->id)->update(['due_at'=>0]);app(Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class)->tick();
 same([['server_id'=>(int)$server->id,'reason'=>'call_cap','needed'=>9,'left'=>8]],$skips,'Daily sync skips and logs a day our cap cannot cover');
 config(['domains.enom_test_sends_per_day'=>500]);

@@ -3,6 +3,19 @@
 declare(strict_types=1);
 require_once __DIR__.'/enom-identity.php';
 $GLOBALS['catalogueCalls']=[];
+/** The documented Text reply. Each row: tld => [register, renew, transfer]; a null price comes back disabled at 0.00. */
+function catalogueBulkText(array $rows): string
+{
+    $lines=[];$i=0;
+    foreach($rows as $tld=>[$register,$renew,$transfer]){
+        ++$i;$lines[]='tld'.$i.': '.$tld;
+        // Retail fields carry a number we must never read as a cost.
+        foreach(['register'=>['reg',$register],'renew'=>['renew',$renew],'transfer'=>['tran',$transfer]] as $name=>[$short,$price]){
+            $lines[]=$name.'price'.$i.': 99.00';$lines[]='resellerprice'.$short.$i.': '.($price??'0.00');$lines[]=$name.'enabled'.$i.': '.($price===null?'false':'true');
+        }
+    }
+    return implode("\n",[...$lines,'Command: PE_GETRETAILPRICING','ErrCount: 0','MaxPeriod: 10','Done: true']);
+}
 $GLOBALS['catalogueWire']=static function($handle,array $options,array $form): bool {
     same('https://resellertest.enom.com/interface.asp',$options[CURLOPT_URL],'Catalogue uses exact TEST endpoint');
     same(false,$options[CURLOPT_FOLLOWLOCATION],'No redirect');same('',$options[CURLOPT_PROXY],'No proxy');
@@ -10,6 +23,11 @@ $GLOBALS['catalogueWire']=static function($handle,array $options,array $form): b
     $command=$form['Command'];$GLOBALS['catalogueCalls'][]=$form;
     if(isset($GLOBALS['catalogueDuring'])){$during=$GLOBALS['catalogueDuring'];unset($GLOBALS['catalogueDuring']);$during();}
     if($command==='GetTLDList'&&($GLOBALS['catalogueListFailed']??false)){return false;}
+    if($command==='PE_GetRetailPricing'){
+        if($GLOBALS['catalogueBulkFailed']??false){return false;}
+        $body=catalogueBulkText(($GLOBALS['catalogueBulk'])((int)$form['Years']));
+        return ($options[CURLOPT_WRITEFUNCTION])($handle,$body)===strlen($body);
+    }
     $ending=$form['TLD']??'com';
     $payload=match($command){
         'GetBalance'=>'<AvailableBalance>100.00</AvailableBalance>',

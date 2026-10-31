@@ -9,6 +9,8 @@ enum ReadCommand: string
     case Balance = 'GetBalance';
     case Tlds = 'GetTLDList';
     case ProductPrice = 'PE_GetProductPrice';
+    case RetailPricing = 'PE_GetRetailPricing';
+    case DomainPricing = 'PE_GetDomainPricing';
     case TldInfo = 'GetTLDDetails';
     case Attributes = 'GetExtAttributes';
     case Check = 'Check';
@@ -36,6 +38,8 @@ enum ReadCommand: string
             self::Transfer => ['TransferOrderID'],
             self::Orders => ['BeginDate', 'EndDate', 'Start'],
             self::ProductPrice => ['TLD', 'ProductType', 'Years'],
+            self::RetailPricing => ['TLDOnly', 'Years'],
+            self::DomainPricing => ['UseQtyEngine', 'Years'],
             self::TldInfo, self::Attributes => ['TLD'],
             self::Check => ['SLD', 'TLD', 'Version', 'IncludePrice', 'IncludeProperties', 'IncludeEAP'],
             default => ['SLD', 'TLD'],
@@ -54,10 +58,14 @@ enum ReadCommand: string
                 'ProductType' => in_array($value, [10, 16, 19], true),
                 'Years' => is_int($value) && $value >= 1 && $value <= 10,
                 'Version' => $value === 2,
+                'UseQtyEngine' => in_array($value, [0, 1], true),
                 default => $value === 1,
             };
             if (!$valid) { throw new \InvalidArgumentException('Invalid named read value.'); }
         }
     }
+    public function bulkPricing(): bool { return in_array($this, [self::RetailPricing, self::DomainPricing], true); }
+    // The documented retail XML example omits reseller costs that its Text example includes.
+    public function responseType(): string { return $this->bulkPricing() ? 'Text' : 'XML'; }
     public function bodyLimit(): int { return $this === self::Tlds ? 8388608 : 1048576; }
 }

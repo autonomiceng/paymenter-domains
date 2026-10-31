@@ -12,13 +12,17 @@ final class ResponseParser
         }
         $previous = libxml_use_internal_errors(true);
         try {
-            $document = new \DOMDocument;
-            if (!$document->loadXML($body, LIBXML_NONET)
-                || $document->doctype !== null || !$document->documentElement || strtolower($document->documentElement->tagName) !== 'interface-response') {
-                return new ProtocolResult('unknown', 'invalid_response');
+            if ($command instanceof ReadCommand && $command->bulkPricing() && !str_starts_with(ltrim($body), '<')) {
+                $data = $this->bulkText($body);
+            } else {
+                $document = new \DOMDocument;
+                if (!$document->loadXML($body, LIBXML_NONET)
+                    || $document->doctype !== null || !$document->documentElement || strtolower($document->documentElement->tagName) !== 'interface-response') {
+                    return new ProtocolResult('unknown', 'invalid_response');
+                }
+                $count = 0;
+                $data = $this->node($document->documentElement, 0, $count, $command === ReadCommand::Tlds ? 400000 : 20000);
             }
-            $count = 0;
-            $data = $this->node($document->documentElement, 0, $count, $command === ReadCommand::Tlds ? 400000 : 20000);
         } catch (\Throwable) {
             return new ProtocolResult('unknown', 'invalid_response');
         } finally {
@@ -57,7 +61,28 @@ final class ResponseParser
             $data['history_complete'] = !array_diff(array_keys($data), ['command', 'errcount', 'done', 'rrpcode', 'responsecode', 'errors', ...$payload]);
         }
         // Payload-specific validation belongs to each named read normalizer, never to acknowledgement alone.
-        return new ProtocolResult('success', $code, $data);
+        return new ProtocolResult('success', $code, $data, strlen($body));
+    }
+
+    /** Indexed Text rows use the same internal shape as the documented XML products. */
+    private function bulkText(string $body): array
+    {
+        $data = []; $rows = [];
+        foreach (preg_split('/\r\n|\n|\r/', $body) as $line) {
+            if (trim($line) === '' || str_starts_with(ltrim($line), ';')) { continue; }
+            if (!preg_match('/^([a-z][a-z0-9_-]*)\s*[:=]\s*(.*)$/iD', $line, $parts)) { throw new \RuntimeException('Invalid price response.'); }
+            $key = strtolower($parts[1]); $value = trim($parts[2]);
+            if (preg_match('/^(tld|tldid|minimumregistration|registerprice|resellerpricereg|registerenabled|renewprice|resellerpricerenew|renewenabled|transferprice|resellerpricetran|transferenabled|rgpprice|resellerpricergp|rgpenabled|idncategory)([1-9][0-9]{0,3})$/D', $key, $field)) {
+                $index = (int) $field[2];
+                if (isset($rows[$index][$field[1]])) { throw new \RuntimeException('Duplicate price field.'); }
+                $rows[$index][$field[1]] = $value;
+            } else {
+                if (array_key_exists($key, $data)) { throw new \RuntimeException('Duplicate response field.'); }
+                $data[$key] = $value;
+            }
+        }
+        ksort($rows); $data['pricestructure'] = ['product' => array_values($rows)];
+        return $data;
     }
 
     /** Frozen Enom documented refusals; never a definitely-unsent or refund proof. */
