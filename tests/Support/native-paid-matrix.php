@@ -127,6 +127,10 @@ $clock->instant=$now->modify('+4 days');$work->operation($transfer->id);$manual(
 same('Available',NativePaidHooks::notices()['Start after payment'],'Paid listener restored before direct dispatch');
 $queue=Queue::getFacadeRoot();Queue::fake();
 try{
+    // A replayed Paid event respects transfer pacing, and the wake lands once the next read is due.
+    event(new App\Events\Invoice\Paid(Invoice::find($transfer->invoice_id)));
+    Queue::assertNotPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class);
+    $clock->instant=(new DateTimeImmutable('@'.$transfer->fresh()->policy['reconciliation']['next_at']))->setTimezone($clock->now()->getTimezone());
     event(new App\Events\Invoice\Paid(Invoice::find($transfer->invoice_id)));
     Queue::assertPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,static fn($job)=>$job->operationId===(int)$transfer->id);
 }finally{Queue::swap($queue);}
@@ -147,7 +151,7 @@ $notice='Required Service listeners are missing in this process: Service saving 
 same($notice,NativePaidHooks::notices()['Paymenter payment events'],'Payment events notice describes current process');
 Illuminate\Support\Facades\Auth::login($staff);
 expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events']),'Process notice lives with registrar setup, not on each domain');
-$setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertSeeInOrder(['System checks','Payment events','Missing',$check='Service listeners are missing. Ask your site admin to restart the queue worker.']);
+$setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertSeeInOrder(['System checks','Payment events','Missing',$check='Service listeners are missing. Restart the queue worker.']);
 same(1,substr_count(html_entity_decode($setup->html(),ENT_QUOTES),$check),'Registrar account System checks show the fact once');
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$missing->domain_id])->assertDontSee($notice);
 foreach($saving as$listener){Event::listen($savingEvent,$listener);}

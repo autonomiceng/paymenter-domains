@@ -89,13 +89,13 @@ expect($mismatches===[],'Actual state offer/writer mismatch: '.implode(', ',$mis
 $method=new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::class,'reason');
 $lines=file($method->getFileName());
 $tokens=token_get_all("<?php\n".implode('',array_slice($lines,$method->getStartLine()-1,$method->getEndLine()-$method->getStartLine()+1)));
-$codes=['future_hold',null];
+$codes=['future_hold',null,'name_unavailable','premium_name','order_not_supported'];
 foreach($tokens as $i=>$token){
     if(!is_array($token)||$token[0]!==T_CONSTANT_ENCAPSED_STRING||!preg_match("/^'([a-z][a-z0-9_]+)'$/D",$token[1],$m)){continue;}
     $j=$i+1;while(isset($tokens[$j])&&is_array($tokens[$j])&&$tokens[$j][0]===T_WHITESPACE){$j++;}
     if(is_array($tokens[$j]??null)&&$tokens[$j][0]===T_DOUBLE_ARROW){$codes[]=$m[1];}
 }
-$testOnly=['enom_test_setup_required','enom_test_transfer_setup_required','usd_balance_required','enom_test_transfer_usd_balance_required','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required','write_rate_limited','registry_details_unsupported'];
+$testOnly=['enom_test_setup_required','enom_test_transfer_setup_required','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required','write_rate_limited','registry_details_unsupported'];
 $offered=[];
 foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
     $clock->instant=$now;config($deployment);
@@ -110,6 +110,7 @@ foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
             $restore();$row=$op->fresh();$row->update(['safe_code'=>$code]);$row=$row->fresh();
             $notice=RequestFacts::notice($row);$visible=OperationActions::relevant('release',$row);
             if(!$enabled&&in_array($code,$testOnly,true)){expect(!$visible,'Deployment-off hold has no release: '.$kind.':'.$code);}
+            if(in_array($code,['usd_balance_required','enom_test_transfer_usd_balance_required'],true)){expect(!$visible,'Stored balance checks use automatic recovery: '.$kind.':'.$code);}
             if($code==='enom_test_renewal_call_cap'){same($kind==='renew'&&$enabled,$visible,'Renewal cap recovery requires its own deployment: '.$kind);}
             if(in_array($code,['enom_test_call_cap','enom_test_transfer_call_cap'],true)){expect(!$visible,'Call cap without retained unsent refusal proof stays hidden: '.$kind);}
             same($visible,($notice['action']??null)==='release','Notice and page offer the same recovery: '.$kind.':'.($code??'null'));
@@ -122,7 +123,7 @@ foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
         }
     }
     $ordinary=['staff_review_required','configuration_unavailable','processing','balance','write_disabled','write_acceptance_required',
-        'funding','renewal_funding_or_authority','renewal_authority_invalid','transfer_setup_review_required'];
+        'funding','renewal_funding_or_authority','renewal_invoice_unpaid','renewal_spend_paused','renewal_authority_invalid','transfer_setup_review_required'];
     if($kind!=='renew'){$ordinary[]='contact_details_required';}
     else{$ordinary=[...$ordinary,...array_map(fn($c)=>$c->value,[RenewalCode::State,RenewalCode::Cost,RenewalCode::Owner,RenewalCode::AutoRenew,RenewalCode::Term])];}
     foreach($ordinary as $required){expect(in_array($required,$offered[$kind]['disabled']??[],true),'Ordinary recovery coverage: '.$kind.':'.$required);}

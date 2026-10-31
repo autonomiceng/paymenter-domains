@@ -10,18 +10,14 @@ $work=new ObservationWork($observer,$clock,$budget);$enom=$tlds[0]->server_id;$n
 for($i=0;$i<30;$i++){DB::table('domains_observation_work')->insert(['server_id'=>$enom,'account_fingerprint'=>Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$enom)->value('account_fingerprint'),
     'domain_id'=>900000+$i,'generation'=>1,'due_at'=>0]);}
 same([$enom=> 'account_unavailable'],$work->tick(1),'Broken account bounded to one turn');
-$turn=$work->tick(1);same([$ns=>'healthy_pending'],$turn,'Other account progresses despite backlog: '.json_encode($turn));
-$job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();$calls=count($observe->calls);
-(new ObservationWork($observer,$clock,$budget))->tick(2);same($calls,count($observe->calls),'Restart respects durable pending cadence');
-for($i=1;$i<28;$i++){$clock->instant=$clock->now()->modify('+6 hours');$work->tick(2);}
-$job=DB::table('domains_observation_work')->where('id',$job->id)->sole();same('budget_exhausted',$job->safe_code,'Healthy pending gets28 polls across seven days');same(28,$job->tries,'Durable multi-day cap');
-same($before,$original->fresh()->getAttributes(),'Pending observations never consume original reconciliation budget');same(null,$d->fresh()->provider_expires_at,'Pending status cannot anchor');
-$calls=count($observe->calls);$clock->instant=$clock->now()->modify('+1 day');$work->tick(2);same($calls,count($observe->calls),'Exhaustion has no automatic retry');
-// Explicit resume after the window is one bounded read, not a fresh seven-day window.
-$work->resume($job->id,'staff_pending_resume');$work->tick(2);same('budget_exhausted',DB::table('domains_observation_work')->where('id',$job->id)->value('safe_code'),'Resume retains original window');
-// A failed domain-info wire must not be hidden by a healthy pending status/history.
-$observe->fault='owner';$work->resume($job->id,'staff_partial_failure_probe');same('read_failed',$work->tick(2)[$ns],'Partial read failure holds rather than treating healthy status as success');
-$calls=count($observe->calls);$clock->instant=$clock->now()->modify('+1 day');$work->tick(2);same($calls,count($observe->calls),'Partial failure never automatically retries');$observe->fault='';
+$calls=count($observe->calls);
+same([$ns=>'idle'],$work->tick(1),'Transfer status is owned by financial reconciliation');
+same(0,DB::table('domains_observation_work')->where('domain_id',$d->id)->count(),'No duplicate transfer observation work');
+(new ObservationWork($observer,$clock,$budget))->tick(2);
+same($calls,count($observe->calls),'Restart does not add another transfer poller');
+same($before,$original->fresh()->getAttributes(),'Observation scheduler does not change the original transfer');
+// Optional manual observation still reads facts without completing the financial operation.
+$observer->run($d->id);same($before['state'],$original->fresh()->state,'Manual pending read never completes transfer');
 $observe->status='Transfer Completed';$clock->instant=$clock->now()->modify('+1 minute');$observer->run($d->id);
 same($before,$original->fresh()->getAttributes(),'Even terminal/owned facts cannot complete transfer financially');same(null,$d->fresh()->renewal_policy['billing_anchor']??null,'No financial anchor from observer');
 // Separate candidate cursors are fair, persist across calls and grant no financial mutation.

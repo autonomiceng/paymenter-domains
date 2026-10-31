@@ -9,22 +9,25 @@ final class OperationTerminalProof
     public static function encode(OperationClaims $claims, int $id): Operation
     {
         return $claims->locked($id, static function ($op, $domain, $all): Operation {
-            $a = $op->attempt ?? [];
-            if ($op->state !== 'held' || !in_array($op->safe_code, ['pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required', 'enom_test_call_cap', 'usd_balance_required', 'enom_test_setup_required'], true)
-                || !isset($a['claim_key']) || ($a['seal'] ?? null) !== 'absent' || ($a['send_state'] ?? null) !== 'definitely_unsent'
-                || array_diff(array_keys($a), ['claim_key', 'seal', 'send_state', 'capacity_deferrals', 'test_call_refusals']) || $op->lease_expires_at !== null
-                || $op->provider_order_id !== null || $op->confirmed_expires_at !== null || array_key_exists('actual', $op->cost ?? [])
-                || array_key_exists('execution', $op->cost ?? []) || array_key_exists('refund', $op->funding ?? [])
-                || array_key_exists('dispatch_attempted_at', $op->policy ?? []) || $domain->status !== ($op->action === 'transfer' ? 'transfer_pending' : 'registration_pending')
-                || $domain->provider_expires_at !== null || $domain->provider_domain_id !== null || $domain->provider_order_id !== null
-                || $all->contains(static fn ($other) => $other->id !== $op->id && !self::safe($other, $domain))) {
-                throw new \DomainException('No definitely-unsent terminal proof.');
-            }
+            if (!self::unsentClaim($op, $domain, $all)) { throw new \DomainException('No definitely-unsent terminal proof.'); }
             RefundProof::requireUnsent($op, $domain);
             $op->update(['state' => 'rejected', 'attempt' => self::rejectedAttempt($op,$domain)]);
             if (!self::safe($op, $domain)) { throw new \DomainException('Terminal identity mismatch.'); }
             $domain->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']); return $op;
         });
+    }
+    /** A held claim that stopped before its seal, with no sign of a send. transfer_not_registered stays out: it needs a fresh registry answer. */
+    public static function unsentClaim(Operation $op, Domain $domain, iterable $all): bool
+    {
+        $a = $op->attempt ?? [];
+        return !($op->state !== 'held' || !in_array($op->safe_code, [...BalanceRetries::REVIEW_CODES,'pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required', 'enom_test_call_cap', 'usd_balance_required', 'enom_test_setup_required', ...WriteHeld::UNSENT_REFUSALS], true)
+            || !isset($a['claim_key']) || ($a['seal'] ?? null) !== 'absent' || ($a['send_state'] ?? null) !== 'definitely_unsent'
+            || array_diff(array_keys($a), ['claim_key', 'seal', 'send_state', 'capacity_deferrals', 'test_call_refusals']) || $op->lease_expires_at !== null
+            || $op->provider_order_id !== null || $op->confirmed_expires_at !== null || array_key_exists('actual', $op->cost ?? [])
+            || array_key_exists('execution', $op->cost ?? []) || array_key_exists('refund', $op->funding ?? [])
+            || array_key_exists('dispatch_attempted_at', $op->policy ?? []) || $domain->status !== ($op->action === 'transfer' ? 'transfer_pending' : 'registration_pending')
+            || $domain->provider_expires_at !== null || $domain->provider_domain_id !== null || $domain->provider_order_id !== null
+            || collect($all)->contains(static fn ($other) => $other->id !== $op->id && !self::safe($other, $domain)));
     }
     /** Shared normalized envelope, only after the existing locked negative-proof checks. */
     public static function rejectedAttempt(Operation $op,Domain $domain): array
@@ -43,7 +46,7 @@ final class OperationTerminalProof
             && (
                 ($op->action === 'transfer' && ($a['terminal'] ?? null) === ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation]
                     && !array_diff(array_keys($a), ['claim_key', 'seal', 'send_state', 'terminal', 'disposition', 'rejection_basis','test_call_refusals','capacity_deferrals'])
-                    &&(!array_intersect(['test_call_refusals','capacity_deferrals'],array_keys($a))||OperationClaims::testCallRefusalUnsent($op))) || $op->action === 'register' || ($op->action === 'renew' && ($a['terminal']['operation_key'] ?? null) === $op->operation_key
+                    &&(array_key_exists('test_call_refusals',$a)?OperationClaims::testCallRefusalUnsent($op):OperationClaims::localDeferrals($a))) || $op->action === 'register' || ($op->action === 'renew' && ($a['terminal']['operation_key'] ?? null) === $op->operation_key
                 && ($a['terminal']['generation'] ?? null) === $op->authority_generation
                 && $op->safe_code === 'renewal_cancelled_unpaid' && ($a['terminal']['invoice_id'] ?? null) === $op->invoice_id))
             && ($a['disposition'] ?? null) === 'rejected' && ($a['rejection_basis'] ?? null) === 'definitely_unsent'

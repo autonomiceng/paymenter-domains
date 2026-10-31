@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\{DB,Schema};
+use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 /** Safe durable staff inbox; expiry/account/generation/obligation distinguish once-only alerts. */
 final class ObligationAlerts
@@ -31,6 +32,10 @@ final class ObligationAlerts
         'template_failed'=>'Reminder failed. Check its template and channels.',
         'reminder_failed'=>'Renewal reminder check failed. Check the registrar account.',
     ];
+    /** Transfers finish within 7 days, and a paid renewal this close to expiry can't wait. */
+    private const WAIT_DAYS=7;
+    /** Transfer polling backs off to twelve hours, so a full day with no read means reads have stopped. */
+    private const READ_STALE_SECONDS=86400;
     public static function key(Domain $d,string $code,?int $operationId=null,?string $identity=null):string
     {
         return hash('sha256',implode(':',[$d->id,$d->account_fingerprint,$d->authority_generation,$d->provider_expires_at?->format('Y-m-d')??'unknown',$operationId??0,$code,$identity??'']));
@@ -57,6 +62,7 @@ final class ObligationAlerts
                     $keys[]=self::record($d,$code==='below_cost'?'below_cost':'unknown_cost',$now,(int)$op->id);
                 }
             }
+            if(self::waiting($op,$d,$now)){continue;}
             if(in_array($op->state,['held','uncertain'],true)||($p['reconciliation']['staff_alert']??false)&&!self::corrected($op,$l['operations'],$d)||($p['renewal_execution']['staff_alert']??false)){
                 $keys[]=self::record($d,$op->action==='renew'&&$op->state==='held'?'held_obligation':'operation_review',$now,(int)$op->id);
             }
@@ -69,6 +75,25 @@ final class ObligationAlerts
                 ->whereIn('safe_code',['budget_exhausted','read_unavailable',...ReadFailure::CODES])->exists()){$keys[]=self::record($d,'observation_review',$now);}
         }
         return $keys;
+    }
+    /** Waits the system clears by itself, so no one has a step to take yet. The request keeps every fact, and when the wait
+     * runs out the next inspection raises the same alert. Anything unproven alerts: an uncertain transfer may not have been accepted.
+     * A transfer wait is quiet only while its reads work and will continue: a failed read, a stale one or stopped checks alert. */
+    private static function waiting(Operation $op,Domain $d,int $now):bool
+    {
+        $window=self::WAIT_DAYS*86400;
+        if($op->action==='renew'){
+            return $op->state==='queued'&&in_array($op->safe_code,[RenewalCode::Rate->value,RenewalCode::Reads->value],true)
+                &&$d->provider_expires_at?->getTimestamp()>$now+$window;
+        }
+        $review=$op->policy['reconciliation']??[];$read=$review['read_at']??TransferPolling::start($op);
+        $first=TransferPolling::applies($op)&&($review['polls']??0)===0&&!isset($review['transfer_status'])
+            &&in_array($review['reason']??null,['original_attempt_unresolved','transfer_read_deferred'],true)
+            &&in_array($op->attempt['execution']['disposition']??null,['accepted','pending'],true);
+        return $op->state==='uncertain'&&$op->safe_code==='reconciliation_required'
+            &&(TransferPolling::expected($op)||$first)&&$now<TransferPolling::deadline($op)
+            &&empty($review['read_failed'])&&$read>$now-self::READ_STALE_SECONDS
+            &&(($review['transfer_status']??null)==='pending'||$first);
     }
     /** An alert stays live unless its own cause is proven cleared. Only two causes can be: a registration correction with a
      * confirmed fix, and a hold staff released that nothing has raised since. The next inspection closes those; staff pages
@@ -105,7 +130,7 @@ final class ObligationAlerts
     /** Resolve only after a successful, complete inspection, retaining all historical rows. */
     public static function finish(Domain $d,array $active,int $now):void
     {
-        $q=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->whereNotIn('code',['template_failed','reminder_failed','acquisition_retirement_review','acquisition_late_money','transfer_watch_relink']);
+        $q=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->whereNotIn('code',['template_failed','acquisition_retirement_review','acquisition_late_money','transfer_watch_relink']);
         if($active){$q->whereNotIn('alert_key',$active);}$q->update(['resolved_at'=>$now]);
     }
 }

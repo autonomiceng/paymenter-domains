@@ -6,6 +6,8 @@ namespace Paymenter\Extensions\Servers\Domains\Data;
 /** Immutable reconciliation input; operation keys are never provider idempotency claims. */
 final readonly class AttemptEvidence
 {
+    /** The reply or its order reference never arrived, so only accepted history can place the order. */
+    public function replyLost(): bool { return !$this->executionFacts || $this->providerReference === null; }
     public function __construct(public AccountBinding $binding, public Query $query, public string $operationKey,
         public int $authorityGeneration, public ExecutionRecord $execution, public SendState $sendState,
         public \DateTimeImmutable $windowStart, public \DateTimeImmutable $windowEnd,

@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedO
 final class FakeRegistrar implements RegistrarDriver
 {
     public array $calls = [];
+    public ?\Closure $beforeRead = null;
     public array $reconciliationReferences = [];
     public static array $readClaims = [];
     public function __construct(private readonly AccountBinding $account, private readonly Capabilities $capabilities,
@@ -22,6 +23,7 @@ final class FakeRegistrar implements RegistrarDriver
     public function binding(): AccountBinding { return $this->account; }
     private function read(string $method, RequestContext $context): DriverResult
     {
+        if($this->beforeRead){($this->beforeRead)($method,$context);}
         $milliseconds = $context->claimRead($this->account);
         self::$readClaims[] = ['milliseconds' => $milliseconds, 'remaining' => $context->budget->remaining()];
         $this->calls[] = $method;

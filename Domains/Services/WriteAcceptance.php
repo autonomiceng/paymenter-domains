@@ -16,7 +16,7 @@ final readonly class WriteAcceptance
     public function __construct(private AccountBinding $binding, private bool $usdBalance = false,
         private bool $batchRoute = false, private int $intervalSeconds = 0,
         private RegistrationProfiles|\Closure|null $profileProofCheck = null,
-        private ?\Closure $localAcceptanceCheck = null, private ?\Closure $protocolAcceptanceCheck = null) {}
+        private ?\Closure $protocolAcceptanceCheck = null) {}
     public function usesProfiles(RegistrationProfiles $profiles): bool { return $this->profileProofCheck === $profiles; }
     public function requireCurrent(AccountBinding $binding, Query $query, Operation $op, bool $lock = false, bool $profile = true): Capability
     {
@@ -25,12 +25,11 @@ final readonly class WriteAcceptance
             throw new WriteHeld('write_acceptance_required');
         }
         if ($this->protocolAcceptanceCheck && ($this->protocolAcceptanceCheck)($binding,$lock,$query)!==true) { throw new WriteHeld('write_acceptance_required'); }
-        if ($this->localAcceptanceCheck && ($this->localAcceptanceCheck)($binding,$lock)!==true) { throw new WriteHeld($binding->registrarKey==='enom'&&$query->action===\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer?'enom_test_transfer_usd_balance_required':'usd_balance_required'); }
         $accepted = CatalogueAcceptances::load($binding, $lock);
         $parts = CanonicalName::parse($query->name, array_keys($accepted->endings));
         $row = $accepted->endings[$parts['tld']];
         if (!in_array($query->years, $row[$query->action->value], true) || $row['renew'] !== [1] || !$row['renewal_safe'] || !$row['registry']) {
-            throw new WriteHeld('write_acceptance_required');
+            throw new WriteHeld('order_not_supported');
         }
         if ($profile && $binding->registrarKey === 'namesilo' && !($this->profileProofCheck instanceof RegistrationProfiles
             ? $this->profileProofCheck->hasProof($op) : ($this->profileProofCheck && ($this->profileProofCheck)($op) === true))) {
@@ -44,7 +43,6 @@ final readonly class WriteAcceptance
         $this->binding->requireMatch($binding);
         if (!$this->usdBalance || !$this->batchRoute || $this->intervalSeconds < 25 || $this->intervalSeconds > 86400) { throw new WriteHeld('write_acceptance_required'); }
         if ($this->protocolAcceptanceCheck && ($this->protocolAcceptanceCheck)($binding,false)!==true) { throw new WriteHeld('write_acceptance_required'); }
-        if ($this->localAcceptanceCheck && ($this->localAcceptanceCheck)($binding,false)!==true) { throw new WriteHeld('usd_balance_required'); }
         if (!Cache::add('domains-write-slot:'.$binding->fingerprint, true, $this->intervalSeconds)) {
             throw new WriteHeld('write_rate_limited');
         }

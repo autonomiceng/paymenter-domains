@@ -116,6 +116,8 @@ $balanceService=new RegistrarBalances($bindings,$balanceClock,new AccountReadBud
 $GLOBALS['enrollmentExpectedContext']='apibatch';
 $GLOBALS['enrollmentExpectedTimeout']=25000;
 Log::shouldNotHaveReceived('warning');Log::shouldNotHaveReceived('error');
+// The price fill for What you sell has its own daily turn, so mark it done to watch only the balance read.
+DB::table(Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::FILLS)->insert(['server_id'=>$s->id,'account_fingerprint'=>$a->account_fingerprint,'tried_at'=>$balanceClock->now()->getTimestamp()]);
 $n=$GLOBALS['enrollmentCalls'];app(Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class)->tick();same($n+1,$GLOBALS['enrollmentCalls'],'First runtime tick sends one scheduled OTE balance read');
 same('/apibatch/getAccountBalance',$GLOBALS['enrollmentLastRead']['path']??null,'Scheduled runtime read uses the OTE batch balance route');
 $n=$GLOBALS['enrollmentCalls'];app(Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class)->tick();same($n,$GLOBALS['enrollmentCalls'],'Following runtime tick does not repeat the daily balance read');
@@ -145,7 +147,7 @@ $preflightPage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['accoun
     ->callMountedAction()->assertHasNoActionErrors()->assertSet('mountedActions',[]);
 $sent=session()->get('filament.claimed_notifications',[]);$notice=$sent?end($sent):null;
 same("Couldn't confirm the connection",$notice['title']??null,'Preflight outcome title');expect(str_contains($notice['body']??'','We can’t tell if a key check was sent'),'Preflight fallback does not claim a request was sent');
-same('We can’t tell if a key check was sent or if the account saved. Open the account page before you try again. Orders paused: it saved, so check the label is yours. Not connected and not set up yet: nothing saved. Off in Paymenter: turn it on in Servers first. Anything else: don’t try again here. Ask your site admin. Trying again may send another key check.',$notice['body']??null,'Generic uncertainty copy distinguishes each reload state');
+same('We can’t tell if a key check was sent or if the account saved. Open the account page before you try again. Orders paused: it saved, so check the label is yours. Not connected and not set up yet: nothing saved. Off in Paymenter: turn it on in Servers first. Anything else: don’t try again here. Check the site logs. Trying again may send another key check.',$notice['body']??null,'Generic uncertainty copy distinguishes each reload state');
 same($n,$GLOBALS['enrollmentCalls'],'Preflight failure sends no OTE request');same(0,Account::where('server_id',$preflight->id)->count(),'Preflight failure saves no enrollment');unset($preflightPage);gc_collect_cycles();app()->instance(StaffSettingsWrites::class,$writes);
 $usedReviewServer=$fresh();$usedTicket=Review::ticket($staff->id,$usedReviewServer->id,null,'enroll_sandbox',Review::stamp($usedReviewServer->id,null));
 (new Review($staff->id,$usedReviewServer->id,null,'enroll_sandbox',$usedTicket,'Consume review for recovery copy'))->local(fn()=>null);
@@ -157,7 +159,7 @@ same("Couldn't save",$notice['title']??null,'Used review refusal title');expect(
 expect(str_contains($notice['body']??'','check the label is yours.'),'Used review distinguishes an earlier enrollment label');
 expect(str_contains($notice['body']??'','Not connected and not set up yet: nothing saved.'),'Used review says what an empty account means');
 same($n,$GLOBALS['enrollmentCalls'],'Used review sends no additional OTE request');same(0,Account::where('server_id',$usedReviewServer->id)->count(),'Used review creates no binding');unset($usedReviewPage);gc_collect_cycles();
-$unknownBody='NameSilo accepted the key, but we can’t tell if the account saved. Open the account page before you try again. Orders paused: it saved, so check the label is yours. Not connected and not set up yet: nothing saved. Off in Paymenter: turn it on in Servers first. Anything else: don’t try again here. Ask your site admin. Trying again may send another key check.';
+$unknownBody='NameSilo accepted the key, but we can’t tell if the account saved. Open the account page before you try again. Orders paused: it saved, so check the label is yours. Not connected and not set up yet: nothing saved. Off in Paymenter: turn it on in Servers first. Anything else: don’t try again here. Check the site logs. Trying again may send another key check.';
 $n=$GLOBALS['enrollmentCalls'];$uncertainPage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$uncertain->id])->mountAction($action('enroll_sandbox',$uncertain))
     ->setActionData([...$input,'api_key'=>'uncertain-save-key','reason'=>'Exercise uncertain save copy'])
     ->callMountedAction()->assertHasNoActionErrors()->assertSet('mountedActions',[]);

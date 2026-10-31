@@ -12,7 +12,7 @@ explicit interactive/background routing. No billing, cart, UI, schema or jobs ar
 | TLD costs and retail pricing modes | getPrices, availability | partial | Fixed/markup rules are local. Exact-term quotes, promotions, currency and price cap unproved; disable sale until validated. |
 | Registration 1–10 years | registerDomain | yes | Offer allowed TLD/term pairs after contact/flag gates; retain 301/302 as purchases. |
 | Scheduled/manual renewal | renewDomain, getDomainInfo | partial | Disable dispatch pending renewal flag/restore gates; never infer grace eligibility from expiry alone. |
-| Grace and redemption | renewDomain | partial | Staff-only after explicit eligibility/charge evidence; ordinary renew must not restore. |
+| Grace and redemption | renewDomain | no | Off on every account. Customers contact support; ordinary renew must not restore. |
 | Incoming transfer/create/status | transferDomain, checkTransferStatus | yes | Offer after status vocabulary/completion acceptance. No arbitrary multi-year transfer claim. |
 | Transfer-code recovery and resubmit | transferUpdateChangeEPPCode, transferUpdateResendAdminEmail, transferUpdateResubmitToRegistry | partial | Staff-only initially; no blind replay or resubmit after unknown result. |
 | Outgoing EPP delivery | retrieveAuthCode | yes | Offer email request with cooldown; administrative recipient differs from Enom registrant email. No displayed EPP. |

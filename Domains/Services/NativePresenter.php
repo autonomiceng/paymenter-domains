@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{CartItem,Invoice,Service,User};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
+use Paymenter\Extensions\Servers\Domains\Presentation\{OwnedDomain,StatusPill};
 /** Read-only ownership-scoped adapter for themes. No provider I/O, locks or cached actor state. */
 final readonly class NativePresenter
 {
@@ -22,6 +22,14 @@ final readonly class NativePresenter
     /** Neutral watch/managed summaries for hosting rows; preserve the original domain-only adapter. */
     public function domainSummaries(User $owner,array $serviceIds): array
     { return (new DomainSummaries())->services($owner,$serviceIds); }
+    /** The owner's working domains, soonest expiry first, with the links a dashboard panel needs. */
+    public function activeDomains(User $owner,int $limit=5): array
+    {
+        $active=array_filter((new DomainSummaries())->listed($owner,now('UTC')->getTimestamp()),fn($row)=>in_array($row->statusState,['active','renewal_off_expiring'],true));
+        usort($active,fn($a,$b)=>[$a->expiry===null,$a->expiry,$a->name]<=>[$b->expiry===null,$b->expiry,$b->name]);
+        $rows=array_map(function($row){$status=StatusPill::summary($row);return ['name'=>$row->name,'url'=>$row->urls['detail'],'expiry'=>$row->expiry,'status'=>$status['label'],'tone'=>$status['tone']];},array_slice($active,0,$limit));
+        return ['rows'=>$rows,'total'=>count($active),'list'=>route('domains.domains.index'),'register'=>route('domains.domains.search')];
+    }
     /** Exact invoice-item binding; a current service alone cannot impersonate an issued domain line. */
     public function invoice(User $owner,int $invoiceId): array
     {

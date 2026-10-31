@@ -58,11 +58,11 @@ final class RuntimePorts
             if(in_array($op->state,['queued','awaiting_payment'],true)){$ports['renewal']->run((int)$op->id,$ports['renewal_writer']);}
             elseif(in_array($op->state,['pending','uncertain','running'],true)){$ports['renewal_completion']->run((int)$op->id);}
         }elseif(in_array($op->action,['register','transfer'],true)){
-            if(in_array($op->state,['queued','awaiting_payment','awaiting_code'],true)){
+            if(in_array($op->state,['queued','awaiting_payment','awaiting_code'],true)||BalanceRetries::candidate($op)){
                 if($missing=NativePaidHooks::serviceMissing()){HookDiagnostics::deferred((int)$op->id,$missing);return;}
                 $ports['acquisition']->execute((int)$op->id);
             }
-            elseif(in_array($op->state,['pending','uncertain','running'],true)){$ports['reconciliation']->run((int)$op->id);}
+            elseif(in_array($op->state,['pending','uncertain','running'],true)||TransferPolling::applies($op)){$ports['reconciliation']->run((int)$op->id);}
         }
     }
     /** The sole named attachment point for initial managed-record work; registration itself grants no account authority. */

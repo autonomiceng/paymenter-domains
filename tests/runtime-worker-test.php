@@ -119,8 +119,12 @@ for($n=0;$n<12;$n++){$token=$limiter->acquire($b,RequestOrigin::Interactive);$li
 try{$limiter->acquire($b,RequestOrigin::Interactive);expect(false,'Shared ceiling enforced');}catch(\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred){}
 // The existing domain cursor cancels both manual and scheduled debts, even when renewal is Off.
 foreach($expiryDebts as [$holding,$debt]){$holding->update(['renewal_policy'=>[...($holding->renewal_policy??[]),'owner_auto_renew'=>false]]);}
+// The same sweep closes an early renewal nobody paid. Its billing window here opens after this tick.
+[,$earlyDebt]=array_pop($expiryDebts);$earlyRenewal=Operation::where('invoice_id',$earlyDebt->id)->sole();
+DB::table('domains_operations')->where('id',$earlyRenewal->id)->update(['policy'=>encrypt(json_encode([...$earlyRenewal->policy,'calendar'=>[...$earlyRenewal->policy['calendar'],'issue'=>'2027-12-01']]),false)]);
 $clock->instant=new DateTimeImmutable('2027-10-17T23:58:00Z');app(RuntimeWork::class)->tick();
 foreach($expiryDebts as [$holding,$debt]){same('pending',$debt->fresh()->status,'Scheduled cleanup waits until expiry');}
+same(['cancelled','Early renewal not paid'],[$earlyDebt->fresh()->status,$earlyRenewal->fresh()->policy['unpaid_retirement']['reason']??null],'Scheduled work closes the early renewal');
 $clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');app(RuntimeWork::class)->tick();
 foreach($expiryDebts as [$holding,$debt]){
     same('cancelled',$debt->fresh()->status,'Existing scheduled work cancels expired renewal debt');

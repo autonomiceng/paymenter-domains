@@ -22,7 +22,7 @@ function managedFixture(bool $doNotRenew=false,bool $hosting=true,bool $skipA3=f
         $o=App\Models\Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
         $host=App\Models\Service::create(['user_id'=>$owner->id,'order_id'=>$o->id,'product_id'=>$hp->id,'plan_id'=>$plan->id,'status'=>'active','quantity'=>1,'price'=>'5.00','currency_code'=>'USD']);
         $host->properties()->create(['key'=>'domain','value'=>'www.example.com']);
-        $map=DB::transaction(fn()=>WatchProductMap::create(['product_id'=>$hp->id,'property_key'=>'domain','expected_ns_profile_id'=>$profile->id,'edited_by'=>$staff->id,'reason'=>'Synthetic map']));
+        $map=DB::transaction(fn()=>WatchProductMap::create(['product_id'=>$hp->id,'property_key'=>'domain','edited_by'=>$staff->id,'reason'=>'Synthetic map']));
         DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['enabled'=>true]);
         $watch=DB::transaction(fn()=>WatchName::create(['user_id'=>$owner->id,'canonical_name'=>'example.com','psl_revision'=>str_repeat('a',64),
             'state'=>'active','ns_profile_id'=>$profile->id,'profile_revision'=>2,'expected_dns'=>'platform','notice_preferences'=>['expiry'=>true,'dns'=>true]]));

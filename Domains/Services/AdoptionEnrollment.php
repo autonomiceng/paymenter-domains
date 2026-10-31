@@ -40,7 +40,7 @@ final readonly class AdoptionEnrollment
                 $props = $l['relatedProperties']->where('model_id', $s?->id)->where('key', $map?->property_key);
                 if (!$s || !$order || !$map || (int) $s->user_id !== (int) $d->user_id || (int) $order->user_id !== (int) $d->user_id
                     || $s->status !== 'active' || (int) $s->product_id !== (int) $map->product_id || !$map->enabled
-                    || (int) $map->revision !== (int) $source->map_revision || ($map->expected_ns_profile_id !== null && (int) $map->expected_ns_profile_id !== (int) $profile?->id) || $props->count() !== 1
+                    || (int) $map->revision !== (int) $source->map_revision || $props->count() !== 1
                     || \Paymenter\Extensions\Servers\Domains\Dns\DnsQuery::hostname($props->sole()->value) !== $source->hostname) {
                     throw new \DomainException('Adoption source mapping changed; staff review required.');
                 }

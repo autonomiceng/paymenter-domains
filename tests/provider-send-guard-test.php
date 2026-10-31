@@ -36,6 +36,8 @@ foreach([\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,\Paymenter
             ReadCommand::Orders=>['BeginDate'=>'10/01/2026','EndDate'=>'10/02/2026','Start'=>1],
             ReadCommand::HostStatus=>['CheckNSName'=>'ns1.example.com'],
             ReadCommand::ProductPrice=>['TLD'=>'com','ProductType'=>10,'Years'=>1],
+            ReadCommand::RetailPricing=>['TLDOnly'=>1,'Years'=>1],
+            ReadCommand::DomainPricing=>['UseQtyEngine'=>1,'Years'=>1],
             ReadCommand::TldInfo,ReadCommand::Attributes=>['TLD'=>'com'],
             ReadCommand::Check=>['SLD'=>'example','TLD'=>'com','Version'=>2,'IncludePrice'=>1,'IncludeProperties'=>1,'IncludeEAP'=>1],
             default=>['SLD'=>'example','TLD'=>'com'],
@@ -43,6 +45,12 @@ foreach([\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,\Paymenter
         resetWire();$events=[];(new CurlTransport)->send($env,$named,$parameters,'synthetic-uid','SYNTHETIC-TOKEN',25000);
         same([['enom',$env->value,$named->value]],$events,'Every named Enom read invokes guard once');
         same(1,count($GLOBALS['enomWire']['forms']),'Allowed Enom read sends once');
+        if($named->bulkPricing()){
+            same('Text',$GLOBALS['enomWire']['forms'][0]['ResponseType'],'Bulk requests use the documented cost-bearing format');
+            if($env===\Paymenter\Extensions\Servers\Domains\Data\Environment::Test){
+                same(1,DB::table(EnomTestSendLimitSchema::SENDS)->where('command',$named->value)->count(),'Each bulk read is recorded in the normal TEST ledger');
+            }
+        }
     }
 }
 foreach(['registration'=>['Purchase','ModifyNS','GetDNS'],'transfer'=>['TP_CreateOrder'],'renewal'=>['Extend','UpdateExpiredDomains'],

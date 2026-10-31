@@ -49,7 +49,7 @@ after its bounded attempt, even when long chains leave that hosting read incompl
 Both watch and managed observers reserve each query in the same persistent public
 pool: 60 queries per minute and two active jobs, independent of registrar gates and
 budgets. Local saturation defers 60 seconds without increasing failure counts. Each
-job retains the ten-query bound and existing classifier. Missing/conflicting profiles
+job retains the ten-query bound and existing classifier. Missing profiles
 produce unknown. Repeated NS samples confirm after 15 minutes or prior TTL, capped
 at six hours. An unconfirmed candidate can wait its TTL beyond badge freshness; an
 expired confirmed sample never carries forward. Only a new confirmation coalesces
