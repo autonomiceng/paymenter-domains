@@ -4,9 +4,9 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 use Illuminate\Support\Facades\{Cache,DB};
-use Paymenter\Extensions\Servers\Domains\Data\{HistoryAcceptance,SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Data\{HistoryAcceptance,RequestOrigin,SaleSelection};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomLive,EnomLiveCallSchema,EnomTestTransfer as Policy,HistoryAcceptances,Installation,RuntimeWork,TransferInputs,TransferPrecheck};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomLive,EnomLiveCalls,EnomLiveCallSchema,EnomTestTransfer as Policy,HistoryAcceptances,Installation,RuntimeWork,TransferInputs,TransferPrecheck,TransferReadBudget};
 config(['domains.enom_identity.environment'=>'live','app.url'=>'https://billing.example.com']);
 (new Installation)->install();
 $transferEnvironment='live';
@@ -101,4 +101,15 @@ app(RuntimeWork::class)->operation($lost->id);same('uncertain',$lost->fresh()->s
 same(null,$lost->fresh()->attempt['transfer_reference']??null,'Unknown acknowledgement cannot invent a reference');
 same(1,count(array_filter($GLOBALS['enomWire']['forms'],static fn(array $p)=>$p['Command']==='TP_CreateOrder')),'Unknown acknowledgement still represents one physical send');
 $reset();app(RuntimeWork::class)->operation($lost->id);same('uncertain',$lost->fresh()->state,'Unknown acknowledgement never completes by guess');expect(!in_array('TP_CreateOrder',array_column($GLOBALS['enomWire']['forms'],'Command'),true),'Unknown acknowledgement cannot charge twice');
+// Another worker can reserve after admission; only the atomic physical guard can preserve checkout headroom.
+EnomLiveCalls::reserve($binding);
+$ledger=DB::table(EnomLiveCallSchema::TABLE)->where(['account'=>hash('sha256','live-uid'),'day'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::day()]);
+$ledger->update(['used'=>499]);$budget=new TransferReadBudget($clock);$origin=RequestOrigin::Background;$token=$budget->acquire($binding,$origin);
+try {
+    EnomLiveCalls::reserve($binding);$refused=false;
+    try{$budget->run($binding,static fn()=>EnomLiveCalls::reserve($binding));}catch(\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit){$refused=true;}
+    expect($refused,'Live transfer physical reservation preserves checkout headroom after admission');
+    same(500,(int)$ledger->value('used'),'Refused background reservation spends no checkout headroom');
+}finally{$budget->release($binding,$origin,$token);}
+EnomLiveCalls::reserve($binding);same(501,(int)$ledger->value('used'),'Checkout retains its allowance after the background scope throws');
 echo "Live transfer gates, one guarded send and opt-out recovery passed without sockets.\n";$nativeSuccessful=true;

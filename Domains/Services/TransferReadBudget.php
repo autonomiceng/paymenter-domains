@@ -38,8 +38,9 @@ final class TransferReadBudget implements ReadLimiter
     /** The precheck avoids wasting minute admission; the physical guard repeats it atomically against concurrent sends. */
     public function run(AccountBinding $binding,\Closure $read): mixed
     {
-        if($binding->registrarKey!=='enom'||$binding->environment!==Environment::Test){return $read();}
-        return EnomTestSendLimit::withCheckoutHeadroom(Account::where('server_id',$binding->serverId)->sole()->stable_identity,$read);
+        if($binding->registrarKey!=='enom'||($binding->environment===Environment::Live&&!EnomLive::requested())){return $read();}
+        $uid=Account::where('server_id',$binding->serverId)->sole()->stable_identity;
+        return $binding->environment===Environment::Test?EnomTestSendLimit::withCheckoutHeadroom($uid,$read):EnomLiveCalls::withCheckoutHeadroom($uid,$read);
     }
     public function release(AccountBinding $binding,RequestOrigin $origin,string $token): void
     {
