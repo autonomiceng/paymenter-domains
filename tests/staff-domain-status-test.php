@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Auth, DB, Schema};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, OperationResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries, Labels, Staff};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementCorrections, ObligationAlerts};
@@ -59,9 +59,9 @@ $cases['stored review']=[$row('needs_review','transfer','succeeded'),'under_revi
 $cases['no expiry']=[$row('active','transfer','succeeded',null,120),'under_review','Under review','Expiry missing · Check the domain.'];
 DB::table('domains_domains')->where('id',$cases['no expiry'][0]->id)->update(['provider_expires_at'=>null]);
 $cases['active']=[$row('active','transfer','succeeded'),'active','Active',null];
-$cases['past expiry']=[$row('active','transfer','succeeded',null,-1),'expired','Expired',null];
-$cases['grace']=[$row('grace','transfer','succeeded',null,-5),'expired','Expired','In grace period'];
-$cases['redemption']=[$row('redemption','transfer','succeeded',null,-40),'redemption','Redemption',null];
+$cases['past expiry']=[$row('active','transfer','succeeded',null,-1),'expired','Expired',\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE];
+$cases['grace']=[$row('grace','transfer','succeeded',null,-5),'expired','Expired',\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE];
+$cases['redemption']=[$row('redemption','transfer','succeeded',null,-40),'redemption','Redemption',\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE];
 $cases['rejected']=[$row('registration_rejected','register','rejected','preflight_failed'),'failed','Failed','Registration did not finish'];
 $cases['credited order']=[$row('registration_rejected','register','rejected','refund_approved'),'cancelled','Cancelled','Order cancelled'];
 $cases['cancelled order']=[$row('cancelled','register','disposed','acquisition_cancelled_unpaid'),'cancelled','Cancelled',null];
@@ -181,6 +181,39 @@ $check('Request still on hold stays open',true,$open($stuck,'operation_review',$
 $planned=$row('active',null,null,null,730); $apart($planned); $plannedRequest=$request($planned,'renew','awaiting_payment',$sent($planned));
 $plannedKey=ObligationAlerts::record($planned,'held_obligation',time(),(int)$plannedRequest->id); $inspect($planned,[$plannedKey]);
 $check('Alert raised by this inspection stays open',true,$open($planned,'held_obligation',$plannedRequest->id));
+// Waits the system retries on its own raise nothing. Anything abnormal alerts at once.
+$read=static fn(?string $status,string $reason='original_attempt_unresolved')=>['reconciliation'=>['staff_alert'=>true,'reason'=>$reason,...($status?['transfer_status'=>$status,'read_at'=>time()]:[])]];
+$sentOk=['seal'=>'sealed','execution'=>['disposition'=>'pending']]; $retry=['renewal_execution'=>['staff_alert'=>true,'reason'=>'retry','refundable_later'=>false]];
+foreach ([
+    'pending transfer'=>[false,'transfer','uncertain','reconciliation_required',$read('pending'),120,1,$sentOk],
+    'pending transfer keeps polling past the old limit'=>[false,'transfer','uncertain','reconciliation_required',$read('pending','poll_limit_reached'),120,1,$sentOk],
+    'accepted transfer not read yet'=>[false,'transfer','uncertain','reconciliation_required',$read(null),120,0,$sentOk],
+    'transfer past its seven days'=>[true,'transfer','uncertain','reconciliation_required',$read('pending'),120,8,$sentOk],
+    'transfer send not confirmed'=>[true,'transfer','uncertain','reconciliation_required',$read(null),120,0,[]],
+    'transfer read conflicts'=>[true,'transfer','uncertain','reconciliation_required',$read('rejected'),120,1,$sentOk],
+    'transfer lost its worker'=>[true,'transfer','uncertain','stale_claim',$read('pending'),120,1,$sentOk],
+    'transfer needs old registrar'=>[true,'transfer','held','transfer_needs_action',$read('needs_action'),120,1,$sentOk],
+    'renewal rate limit retry'=>[false,'renew','queued','renewal_rate_limited',$retry,120,0,[]],
+    'renewal read retry'=>[false,'renew','queued','renewal_reads_unavailable',$retry,120,0,[]],
+    'urgent paid renewal retry'=>[true,'renew','queued','renewal_reads_unavailable',$retry,5,0,[]],
+    'renewal needs funds'=>[true,'renew','queued','registrar_balance_insufficient_or_unknown',$retry,120,0,[]],
+    'renewal needs setup'=>[true,'renew','queued','renewal_acceptance_required',$retry,120,0,[]],
+    'renewal fraud hold'=>[true,'renew','held','staff_review_required',$retry,120,0,[]],
+    'renewal charge overrun'=>[true,'renew','succeeded','actual_charge_changed',$retry,120,0,[]],
+] as $name=>[$want,$action,$state,$code,$policy,$days,$age,$attempt]) {
+    $d=$row('active',null,null,null,$days); $apart($d);
+    $op=$request($d,$action,$state,['safe_code'=>$code,'policy'=>$policy,'attempt'=>$attempt,'started_at'=>now()->subDays($age)]);
+    $inspect($d);
+    $check('Alert: '.$name,$want,$open($d,$action==='renew'&&$state==='held'?'held_obligation':'operation_review',$op->id));
+}
+// A dropped alert keeps its row, and the same alert comes back when the wait runs out.
+$quiet=$row('transfer_pending',null,null); $apart($quiet);
+$quietRequest=$request($quiet,'transfer','uncertain',['safe_code'=>'reconciliation_required','policy'=>$read('pending'),'attempt'=>$sentOk,'started_at'=>now()->subDay()]);
+$quietKey=ObligationAlerts::record($quiet,'operation_review',time()-60,(int)$quietRequest->id); $inspect($quiet);
+$check('Wait closes an older alert',false,$open($quiet,'operation_review',$quietRequest->id));
+$check('Closed alert keeps its record',1,DB::table('domains_obligation_alerts')->where('alert_key',$quietKey)->count());
+$quietRequest->forceFill(['started_at'=>now()->subDays(8)])->saveQuietly(); $inspect($quiet);
+$check('Same alert returns when the wait runs out',[true,1],[$open($quiet,'operation_review',$quietRequest->id),DB::table('domains_obligation_alerts')->where('alert_key',$quietKey)->count()]);
 if ($wrong) { fwrite(STDERR,implode("\n",$wrong)."\n"); }
 same([],$wrong,'Every row has one status and one next step');
 expect(!isset($columns['alert']),'No separate alert column: the next step is under the status');
@@ -198,6 +231,11 @@ expect($filtered->instance()->getTableRecords()->contains('id',$cases['order: un
 $oneView=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$one->id])->assertSee('Active')->assertDontSee('Registrar request needs a check');
 same('Customer has not paid the invoice. Not sent yet.',(string)$oneView->instance()->getSubheading(),'Domain 1 heading names the open request');
 same(['Awaiting payment','Customer has not paid the invoice. Not sent yet.'],array_values(array_intersect_key(RequestStatus::for($oneRenewal->state),['label'=>1,'reason'=>1])),'Request page says the same');
+// An early renewal says so: the same words on the heading and the request page, and only until the billing window opens.
+$calendar=static function(int $issue,int $due)use($oneRenewal):void {DB::table('domains_operations')->where('id',$oneRenewal->id)->update(['policy'=>encrypt(json_encode([...$oneRenewal->policy,'calendar'=>['issue'=>today()->addDays($issue)->format('Y-m-d'),'due'=>today()->addDays($due)->format('Y-m-d')]]),false)]);};
+$early='Early renewal not paid. Nothing is due until '.today()->addDays(113)->format('M j, Y').'.';$calendar(99,113);
+same([$early,$early],[(string)Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$one->id])->instance()->getSubheading(),Labels::requestStatus($oneRenewal->fresh())['reason']],'Early renewal, staff heading and request page');
+$calendar(0,14);same('Customer has not paid the invoice. Not sent yet.',Labels::requestStatus($oneRenewal->fresh())['reason'],'Inside the billing window it is a normal unpaid invoice');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$two->id])->assertSee('Pending registration')->assertDontSee('Registrar request needs a check');
 // Real staff work names the request and links to it, in the list and in the heading.
 $link=OperationResource::getUrl('view',['record'=>$unfixedOriginal->id]);

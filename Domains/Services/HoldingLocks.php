@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Oper
 /** Internal billing/save prefix, joining exactly one caller-owned transaction. Never performs I/O. */
 final class HoldingLocks
 {
-    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false, bool $foreignInvoices = false): array
+    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false, bool $foreignInvoices = false, bool $released = false): array
     {
         if (!$advisory && DB::transactionLevel() !== 1) { throw new \LogicException('Holding locks require the outer transaction.'); }
         ['user' => $user, 'staff' => $staff, 'credit' => $credit, 'invoices' => $invoices, 'items' => $items,
@@ -29,7 +29,7 @@ final class HoldingLocks
         $operations = Operation::where('domain_id', $seed->id)->when($advisory,fn($q)=>$q->whereIn('id',$opIds)->limit(100))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $adoption = $domain->adoption_id === null ? null : Adoption::whereKey($domain->adoption_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->first();
         if ($domain->service_id !== $seed->service_id || $domain->user_id !== $seed->user_id || $domain->server_id !== $seed->server_id || $domain->tld !== $seed->tld
-            || $domain->adoptionPending() || !$domain->billing_managed || $domain->reservation_name !== $domain->domain || $domain->authority_generation < 1
+            || $domain->adoptionPending() || !$domain->billing_managed || $domain->reservation_name !== ($released ? null : $domain->domain) || $domain->authority_generation < 1
             || $server->extension !== 'Domains' || $account->account_fingerprint !== $domain->account_fingerprint || $account->registrar_key !== $domain->registrar_key
             || $tld->account_fingerprint !== $domain->account_fingerprint || $tld->registrar_key !== $domain->registrar_key) {
             throw new \DomainException('Holding native authority changed.');

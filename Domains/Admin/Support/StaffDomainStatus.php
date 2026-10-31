@@ -39,6 +39,7 @@ final class StaffDomainStatus
     {
         if ($state === 'adoption_pending') { return ['Check open invoices.', true, null]; }
         if ($op && in_array($d->status, self::ACQUIRING, true)) {
+            if (($ready=RequestFacts::readyMessage($op))!==null) { return [$ready.self::open($op->id),true,$op->id]; }
             if (in_array($op->state, ['held', 'uncertain'], true)) { return [self::stopped($op), true, $op->id]; }
             if ($state === 'awaiting_payment') { return [self::UNPAID, false, null]; }
             if ($state === 'awaiting_code') { return ['Customer has not added the auth code. Not sent yet.', false, null]; }
@@ -74,13 +75,13 @@ final class StaffDomainStatus
     {
         return match (true) {
             in_array($op->state, ['held', 'uncertain'], true) => [self::stopped($op), $op->id],
-            $op->state === 'awaiting_payment' => [self::UNPAID, null],
+            $op->state === 'awaiting_payment' => [Labels::requestStatus($op)['reason'], null],
             default => ['Renewal in progress. Nothing to do yet.', null],
         };
     }
     private static function stopped(Operation $op): string
     {
-        $cause = $op->safe_code !== null ? Labels::reason($op->safe_code) : null;
+        $cause = Labels::requestStatus($op)['reason'];
         return self::sentence($cause ?? ($op->state === 'held' ? 'Not sent' : 'Registrar has not confirmed the result')).self::open($op->id);
     }
     private static function open(int $id): string { return ' Open request #'.$id.'.'; }

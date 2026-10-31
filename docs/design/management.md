@@ -10,6 +10,9 @@ key in a separate operation. Unsupported/unknown capabilities refuse. Holder pro
 native service/annual route/reservation/cancellation checks do not depend on today's seller.
 DNS/SRV/DS require `domains_dns_tools` (default false); management writes require the independent
 `WriteFeatures.management` and account acceptance (both default false).
+The staff domain page edits nameservers, lock, contacts and DNS/SRV through `ManagementForms`, the
+owner forms' path, so staff hit the same checks and `authorized_by` credits them: History names
+them and the customer sees Staff.
 
 One bounded preparation window runs outside locks. Current owner, staff permission, native
 funding, lifecycle, configuration and all original desired inputs are checked again before a

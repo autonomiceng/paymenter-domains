@@ -7,6 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\ReminderSchedules;
 final class ReminderFacts
 {
+    private const HELP='Emails customers before and after a domain expires, on the days shown. The 30-day reminder also needs Renewals on.';
     /** "Reminder emails" row for the account page: On or Off, with the days below. */
     public static function emails(int $server):array
     {
@@ -20,11 +21,11 @@ final class ReminderFacts
         };
         $list=static fn(array $v):string=>count($v)>1?implode(', ',array_slice($v,0,-1)).' and '.end($v):(string)($v[0]??'');
         $before=$days($r?->before_days,[60,30,7,1],true);$after=$days($r?->after_days,[3],false);
-        if($before===null||$after===null){return ['label'=>'Reminder emails','value'=>Missing::LABEL,'tone'=>null,'cause'=>"Saved reminder days can't be read. Ask your site admin to restore them.",'action'=>null,'help'=>null];}
+        if($before===null||$after===null){return ['label'=>'Reminder emails','value'=>Missing::LABEL,'tone'=>null,'cause'=>"Saved reminder days can't be read. Restore them from a backup.",'action'=>null,'help'=>self::HELP];}
         $sub=implode(', ',array_filter([$before?$list($before).' '.(count($before)===1&&$before[0]===1?'day':'days').' before':null,$after?$list($after).' '.(count($after)===1&&$after[0]==1?'day':'days').' after':null]));
         $changed=$r&&$r->account_fingerprint!==$binding;
         return ['label'=>'Reminder emails','value'=>$r&&$r->enabled&&!$changed?'On':'Off','tone'=>$r&&$r->enabled&&!$changed?'success':null,
-            'cause'=>$changed?'Paused: account changed':($sub!==''?$sub:null),'action'=>null,'help'=>null];
+            'cause'=>$changed?'Paused: account changed':($sub!==''?$sub:null),'action'=>null,'help'=>self::HELP,'buttons'=>$changed?[]:[ReminderAction::toggle($server)]];
     }
     public static function schedule(int $server):array
     {

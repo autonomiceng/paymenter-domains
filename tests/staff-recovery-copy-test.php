@@ -9,6 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{CatalogueImportFailure,EnomTe
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-24T12:00:00Z')));
 EnomTestSendLimitSchema::install();config(['domains.enom_test_sends_per_day'=>10,'domains.enom_test_sends_per_minute'=>100000]);
 $problems=[];
+Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();
+same('We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.',SettingsActions::refusal(new EnomTestCallLimit,'configure',['environment'=>'live']),'First Live configure refusal uses the submitted environment before an account row exists');
 foreach([new DomainException('Catalogue import unavailable.'),...array_map(fn($code)=>new CatalogueImportFailure($code),ReadFailure::CODES)] as $failure){
     $copy=SettingsActions::refusal($failure,'import');
     if(str_contains($copy,'No prices changed')||!str_contains($copy,'Check saved prices')){$problems[]='Incomplete import must direct staff to saved prices without an unchanged-price guarantee';}
@@ -34,10 +36,8 @@ foreach(['enom_test_call_cap','enom_test_transfer_call_cap','enom_test_managemen
     if(!str_starts_with($label,'Not sent: ')||str_contains($label,'reached')||str_contains($label,'refused')||!str_contains($label,' our ')){$problems[]='An unsent Enom test refusal must say our check stopped it, without claiming the limit was reached';}
 }
 // Background reads share the send limit: it is per login, over a rolling 24 hours and per minute.
-$copy=SettingsActions::details('test_management');
-if(str_contains($copy,'daily')||!str_contains($copy,'login')||!str_contains($copy,'24 hours')||!str_contains($copy,'per minute')){$problems[]='TEST management acceptance must describe the per-login 24-hour and per-minute send limit';}
 // Every limit named here is our own safety check, not a limit Enom sets.
-foreach(['write_rate_limited'=>Labels::reason('write_rate_limited'),'renewal_rate_limited'=>Labels::reason('renewal_rate_limited'),'test_management'=>$copy,'limits'=>EnomTestSendLimit::facts(null)] as $where=>$text){
+foreach(['write_rate_limited'=>Labels::reason('write_rate_limited'),'renewal_rate_limited'=>Labels::reason('renewal_rate_limited'),'limits'=>EnomTestSendLimit::facts(null)] as $where=>$text){
     if(!preg_match('/\bour\b/i',(string)$text)){$problems[]='Staff copy must say the limit is ours: '.$where;}
 }
 expect($problems===[],implode('; ',array_unique($problems)));

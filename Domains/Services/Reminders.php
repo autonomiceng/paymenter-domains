@@ -30,7 +30,7 @@ final readonly class Reminders
         OperationClaims::outside();$now=$this->clock->now();$seed=Domain::findOrFail($id);
         if(!$seed->billing_managed||$seed->adoptionPending()){return false;}
         $claim=DB::transaction(function()use($seed,$now):?array {
-            $l=HoldingLocks::take($seed);$d=$l['domain'];
+            $l=HoldingLocks::take($seed,released:$seed->reservation_name===null);$d=$l['domain'];
             $schedule=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->lockForUpdate()->first();
             $deliver=$schedule&&$schedule->account_fingerprint===$d->account_fingerprint&&$l['server']->enabled;
             $schedule??=(object)['enabled'=>false,'before_days'=>'[]','after_days'=>'[]'];
@@ -64,18 +64,21 @@ final readonly class Reminders
     {
         $d=$l['domain'];
         foreach($l['operations'] as $op){
-            $r=$op->funding['refund']??null;
+            // A closed order can credit more than once, and each credit gets its own notice.
+            $credits=['refund:'.$op->id=>$op->funding['refund']??null];
+            foreach($op->funding['late_credits']??[] as $i=>$late){$credits['refund:'.$op->id.':'.$i]=$late;}
+            foreach($credits as $identity=>$r){
             if($op->state!=='rejected'||!is_array($r)||($r['to']??null)!=='account_credit'||($r['currency']??null)!=='USD'
                 ||$op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation){continue;}
             $credit=$l['credit'];
             if(!$credit||$credit->id!==($r['credit_id']??null)||$credit->user_id!==$d->user_id||$credit->currency_code!=='USD'){continue;}
-            $identity='refund:'.$op->id;
             if(DB::table('domains_reminder_deliveries')->where('delivery_key',hash('sha256',$d->id.':'.$identity))->exists()){continue;}
             try{$at=new \DateTimeImmutable($r['at']??'invalid');}catch(\Throwable){$at=null;}
             if(!$at||$at>$now||$at<$now->modify('-2 days')){$alerts[]=ObligationAlerts::record($d,'credit_notice_overdue',$now->getTimestamp(),(int)$op->id);continue;}
             return ['identity'=>$identity,'template'=>'domains_domain_order_refunded','data'=>['domain'=>$d->domain,
                 'action'=>match($op->action){'register'=>'registration','transfer'=>'transfer','renew'=>'renewal','privacy_purchase'=>'privacy purchase','privacy_renew'=>'privacy renewal',default=>'domain request'},
                 'amount'=>RenewalReminders::money($r['amount']),'domain_url'=>url('/domains/'.$d->id)]];
+            }
         }
         return null;
     }

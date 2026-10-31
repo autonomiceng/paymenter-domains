@@ -2,6 +2,7 @@
 // Adapted from Enom 444f31c Admin/Support/Labels; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Presentation\TransferNotice;
 final class Labels
 {
     /** The Invoice sub-line on the request page. */
@@ -18,10 +19,11 @@ final class Labels
             default => 'Auto Pay: result missing',
         };
     }
-    /** Request pill and its one reason line. A held request keeps its real cause; internal codes have no line. */
+    /** Saved request status and cause for tables. Current readiness belongs to the request notice and domain status. */
     public static function requestStatus(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): array
     {
         $status=\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::for(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::closed($op->state,$op->safe_code)?'disposed':$op->state);
+        if (($due=\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::early($op))!==null) { $status['reason']=\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::earlyRenewal($due); }
         if ($op->safe_code!==null && isset(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::STATES[$op->state])) { $status['reason']=self::operationReason($op); }
         return $status;
     }
@@ -36,6 +38,7 @@ final class Labels
     }
     public static function operationReason(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): ?string
     {
+        if (($late=\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::lateNote($op))!==null) { return $late; }
         if ($op->safe_code==='management_retired') {
             $actor=$op->attempt['management_terminal']['actor_id']??null;
             return $actor===null ? 'Cancelled' : 'Cancelled by '.((int)$actor===(int)$op->domain->user_id?'customer':'staff');
@@ -48,6 +51,9 @@ final class Labels
         if ($op->safe_code===\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::CODE) {
             if (!RequestFacts::neverPaid($op)) { return 'Order cancelled: payment recorded later'; }
             if (\App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->exists()) { return 'Order cancelled: payment attempted later'; }
+        }
+        if (\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::legacyHold($op)) {
+            return \Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::pending($op) ? 'Not sent: checking this order again' : 'Not sent: reason not saved';
         }
         $reason=self::reason($op->safe_code);
         if ($reason===self::FEATURE_OFF) {
@@ -75,6 +81,13 @@ final class Labels
     {
         $map=['staff_review_required'=>'Put on hold by staff','contact_details_required'=>'Contact details needed','transfer_code_required'=>'Auth code needed',
             'transfer_code_timeout'=>'Auth code deadline passed','transfer_not_registered'=>'Domain not found at registry',
+            'transfer_authority_changed'=>TransferNotice::title($value),
+            'transfer_charge_unexpected'=>TransferNotice::title($value),
+            'transfer_completion_unconfirmed'=>TransferNotice::title($value),
+            'transfer_deadline_passed'=>TransferNotice::title($value),
+            'transfer_pending'=>TransferNotice::title($value),
+            'transfer_read_deferred'=>TransferNotice::title($value),
+            'transfer_status_unavailable'=>TransferNotice::title($value),
             'transfer_needs_action'=>'Old registrar needs approval','transfer_provider_rejected'=>'Registrar rejected the transfer',
             'stale_claim'=>'Registrar has not confirmed the result','poll_limit_reached'=>'Status checks stopped. Use Check status.',
             'read_unavailable'=>'Status check failed','budget_exhausted'=>'Status check failed','superseded'=>'Replaced by a newer request',
@@ -82,17 +95,20 @@ final class Labels
             'renewal_definitely_unsent'=>'Renewal not sent','renewal_confirmation_required'=>'Registrar has not confirmed the result',
             'awaiting_unique_charge'=>'Registrar has not confirmed the charge','refund_approved'=>'Credit approved',
             'authority'=>'Not sent: registrar account changed',
-            'reads'=>'Status check failed','cost'=>'Not sent: cost missing','funding'=>'Not sent: low registrar balance',
-            'processing'=>'Not sent: orders paused','state'=>'Not sent: domain status changed','owner'=>'Not sent: domain not in registrar account',
+            'reads'=>'Status check failed','cost'=>'Not sent: cost missing','funding'=>'Not sent: low registrar balance','renewal_invoice_unpaid'=>'Not sent: renewal invoice not paid. Check the invoice.','renewal_spend_paused'=>'Not sent: orders paused for this domain',
+            'processing'=>'Not sent: Orders off for this account','state'=>'Not sent: domain status changed','owner'=>'Not sent: domain not in registrar account',
             'renewal_admitted'=>null,'renewal_authority_invalid'=>'Not sent: registrar account changed',
             'renewal_anchor_changed'=>'Not sent: expiry date changed','renewal_prior_outcome_unresolved'=>'Registrar has not confirmed the result',
-            'automatic_spend_paused'=>'Not sent: orders paused','renewal_acceptance_required'=>'Not sent: Renewals off for this account',
+            'automatic_spend_paused'=>'Not sent: orders paused for this domain','renewal_acceptance_required'=>'Not sent: Renewals off for this account',
             'renewal_rate_limited'=>'Not sent: our request limit reached. Try later.','renewal_binding_changed'=>'Not sent: registrar account changed',
             'renewal_reads_unavailable'=>'Status check failed','provider_membership_unconfirmed'=>'Not sent: domain not in registrar account',
             'provider_auto_renew_unconfirmed'=>'Not sent: registrar auto-renew may be on','renewal_restore_refused'=>'Not sent: domain in redemption',
             'renewal_state_unconfirmed'=>'Registrar has not confirmed the result','renewal_term_refused'=>'Not sent: term not supported',
-            'grace_capability_unaccepted'=>'Not sent: Renewals off for this account','renewal_cost_unconfirmed'=>'Not sent: cost missing',
+            'grace_capability_unaccepted'=>'Not sent: domain already expired','renewal_cost_unconfirmed'=>'Not sent: cost missing',
             'registrar_balance_insufficient_or_unknown'=>'Not sent: low registrar balance',
+            'balance_retry_funding_changed'=>'Not sent: payment records need review. Check the invoice',
+            'balance_retry_authority_changed'=>'Not sent: order or registrar account changed. Check the order',
+            'balance_retry_setup_changed'=>'Not sent: saved domain details need review. Check the order',
             'reconciliation_required'=>'Registrar has not confirmed the result','prior_attempt'=>'Registrar has not confirmed the result',
             'namesilo_account_guard'=>"Paused: couldn't confirm the NameSilo default contact. Check the API key and contact email.",
             'pre_send_interrupted'=>'Registrar has not confirmed the result','claim_authority_invalid'=>'Not sent: registrar account changed',
@@ -107,11 +123,14 @@ final class Labels
             'enom_test_transfer_call_cap'=>'Not sent: stopped by our test send check','enom_test_call_cap'=>'Not sent: stopped by our test send check','enom_test_management_call_cap'=>'Not sent: stopped by our test send check','enom_test_renewal_call_cap'=>'Not sent: stopped by our test send check',
             'enom_test_reconciliation_call_cap'=>'Registrar has not confirmed the result','enom_test_transfer_reconciliation_call_cap'=>'Registrar has not confirmed the result',
             'enom_test_transfer_setup_required'=>'Not sent: registrar account not set up','enom_test_setup_required'=>'Not sent: registrar account not set up',
-            'enom_test_transfer_usd_balance_required'=>'Not sent: check the registrar balance first','usd_balance_required'=>'Not sent: check the registrar balance first',
+            'enom_test_transfer_usd_balance_required'=>'Not sent: the earlier balance check needs review','usd_balance_required'=>'Not sent: the earlier balance check needs review',
             'configuration_unavailable'=>"Not sent: couldn't load the registrar account's settings",
             'write_rate_limited'=>'Not sent: our request limit reached. Try later.','write_acceptance_required'=>self::FEATURE_OFF,
-            'nameservers_required'=>'Not sent: nameservers missing','registry_details_unsupported'=>'Not sent: registry needs extra details',
-            'renewal_funding_or_authority'=>'Not sent: low registrar balance','renewal_cost_overrun'=>'Not sent: cost above limit',
+            'nameservers_required'=>'Not sent: nameservers missing','name_unavailable'=>'Not sent: name not available. Cancel and add credit.',
+            'premium_name'=>'Not sent: premium names not supported. Cancel and add credit.','order_not_supported'=>'Not sent: registrar does not support this order. Cancel and add credit.',
+            'registrar_price_missing'=>'Not sent: registrar price missing','registrar_read_failed'=>"Not sent: couldn't read from the registrar",
+            'registrar_balance_insufficient'=>'Not sent: registrar balance is too low. Add funds.','registry_details_unsupported'=>'Not sent: registry needs extra details',
+            'renewal_funding_or_authority'=>'Not sent: renewal settings changed. Check the domain.','renewal_cost_overrun'=>'Not sent: cost above limit',
             'target_changed'=>'Not sent: domain status changed','term'=>'Not sent: term not supported','balance'=>'Not sent: low registrar balance',
             'acquisition_cancelled_unpaid'=>'Order cancelled: not paid','registration_adopted'=>'Imported',
             'registration_managed'=>null,'ready'=>null,
@@ -128,7 +147,7 @@ final class Labels
             'resumed'=>'Status checks resumed','transfer_rejection_contradiction'=>'Registrar says rejected, our records disagree.',
             'transfer_status_contradiction'=>'Registrar status differs from our records.','transfer_rejection_unreconciled'=>'Transfer rejection not confirmed',
             'late_retired_payment'=>'Paid after the order closed.','terminal_unsent'=>'Request closed without sending',
-            'processing_off'=>'Orders paused for this account','billing_off'=>'Renewal invoices off for this account','missing_anchor'=>'Expiry missing. Check the domain.',
+            'processing_off'=>'Orders paused for this account','billing_off'=>'Renewals off for this account','missing_anchor'=>'Expiry missing. Check the domain.',
             'offline_provenance'=>'Demo order, no real invoice.','no_invoice_authority'=>'No invoice linked to this request.',
             'outside_billing_calendar'=>'Outside the renewal invoice dates','lifecycle_not_ready'=>'Domain not ready for renewal. Check the domain.',
             'database_failure'=>'Database error. Try again.','native_record_missing'=>'Paymenter record missing. Check the order.',

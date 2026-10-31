@@ -168,6 +168,7 @@
 }
 
 /* Search */
+.domains .domains-searchbar, .domains .domains-endings, .domains .domains-head--search { max-width: 42rem; }
 .domains .domains-searchbar { display: flex; align-items: stretch; gap: .375rem; padding: .375rem; border: 1px solid var(--e-line); border-radius: .875rem;
     background: var(--e-panel); transition: border-color .15s, box-shadow .15s; }
 .domains .domains-searchbar:focus-within { border-color: var(--e-accent); box-shadow: 0 0 0 1px var(--e-accent), 0 0 0 4px hsl(var(--color-primary) / .2); }
@@ -352,6 +353,8 @@
 .domains .domains-records .domains-input { min-width: 5.5rem; }
 .domains .domains-record-card { border: 1px solid var(--e-line); border-radius: .5rem; padding: .75rem 1rem; margin-block: .75rem; }
 .domains .domains-dhead > div { min-width: 0; max-width: 100%; }
+.domains #history td[data-label="Change"] { overflow-wrap: normal; }
+.domains #history td[data-label="Date"] { white-space: nowrap; }
 .domains .domains-record-value { white-space: nowrap; overflow-wrap: normal; overflow-x: auto; max-width: 100%; }
 .domains .domains-inline-token { display: inline-block; max-width: 100%; white-space: nowrap; overflow-wrap: normal; overflow-x: auto; vertical-align: bottom; }
 .domains .domains-wrap { overflow-wrap:anywhere; word-break:normal; white-space:normal; }

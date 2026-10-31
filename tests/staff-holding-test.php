@@ -1,36 +1,27 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+ini_set('memory_limit','256M');
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/renewal-execution.php';
 require __DIR__.'/Support/staff-panel.php';
 require_once __DIR__.'/Support/converted-holding.php';
 use App\Models\ServiceCancellation;
 use Illuminate\Support\Facades\{Auth,DB,View};
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,NativeCancellation,NativeIdentity,NativeIntentSchema,StaffHoldingReview,RetailLine};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,NativeCancellation,NativeIdentity,NativeIntentSchema,StaffHoldingReview};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{HoldingActions,DomainFacts};
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class,$invoiceBinding);
 NativeIntentSchema::install();NativeIdentity::boot();NativeCancellation::boot();
 View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard::class,$guard);
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
-$review=new StaffHoldingReview($guard,$clock);app()->instance(StaffHoldingReview::class,$review);
+$review=new StaffHoldingReview($clock);app()->instance(StaffHoldingReview::class,$review);
 $permissions=['admin.domains.view','admin.domains.manage','admin.domains.fund',...array_map(StaffHoldingReview::permission(...),array_keys(StaffHoldingReview::ACTIONS))];
 $staff=staffUser($permissions);Auth::login($staff);
 $ticket=static fn($d,$action,$actor=null)=>StaffHoldingReview::ticket((int)($actor??$staff)->id,(int)$d->id,$action,StaffHoldingReview::stamp(HoldingLocks::take($d->fresh(),advisory:true)),$clock);
 [$original]=$prepare(placeholderComFixtureName('holding-review-placeholder.com'));same('succeeded',$reconcile->run($original->id)->state,'Holding has original proof');$d=$original->domain->fresh();$s=$d->service;
-DB::table('services')->where('id',$s->id)->update(['price'=>'9.00']);$money=$nativeMoney();$catalogue=serialize(DB::table('domains_prices')->get());
-$key=$ticket($d,'reprice');$review->run($staff,$d->id,'reprice',$key,'Apply published renewal retail');
-same('10.40',RetailLine::decimal($s->fresh()->price),'Owned action applies renewal retail');same(null,$s->fresh()->expires_at,'Owned projection keeps native expiry null');
-same($money,$nativeMoney(),'Reprice preserves all debt and payments');same($catalogue,serialize(DB::table('domains_prices')->get()),'Reprice does not publish catalogue');
-$a=$d->fresh()->renewal_policy['staff_holdings'][0];same($staff->id,$a['actor_id'],'Audit actor');same('9.00',$a['before']['annual_gross'],'Audit before');same('10.40',$a['after']['annual_gross'],'Audit after');same('Apply published renewal retail',$a['reason'],'Audit reason');
-commerceReject(fn()=>$review->run($staff,$d->id,'reprice',$key,'Replay old review key'));
-commerceReject(fn()=>DB::transaction(fn()=>$s->fresh()->update(['price'=>'9.00'])));
-// Catalogue price changes after the preview invalidate the reviewed gross amount.
-$priceRow=DB::table('domains_prices')->where('action','renew')->first();$key=$ticket($d,'reprice');
-DB::table('domains_prices')->where('id',$priceRow->id)->update(['retail'=>'11.00']);
-commerceReject(fn()=>$review->run($staff,$d->id,'reprice',$key,'Stale published price review'));same('10.40',RetailLine::decimal($s->fresh()->price),'Stale price review cannot apply a different amount');
-DB::table('domains_prices')->where('id',$priceRow->id)->update(['retail'=>$priceRow->retail]);
+DB::table('services')->where('id',$s->id)->update(['price'=>'9.00']);$money=$nativeMoney();
+commerceReject(fn()=>DB::transaction(fn()=>$s->fresh()->update(['price'=>'1.23'])));
 // Stale modal, wrong action/actor, expired key and revoked role all fail before writes.
 $key=$ticket($d,'stop');$s->fresh()->forceFill(['label'=>'Concurrent native label'])->save();
 commerceReject(fn()=>$review->run($staff,$d->id,'stop',$key,'Stale review refused'));
@@ -41,7 +32,8 @@ $key=$ticket($d,'stop');$staff->role->update(['permissions'=>['admin.domains.vie
 $staff->role->update(['permissions'=>$permissions]);
 $key=$ticket($d,'stop');commerceReject(fn()=>$review->run($staff,$d->id,'stop',$key,"Bad\nreason"));
 foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>$review->run($staff,$d->id,'stop',$ticket($d,'stop'),$bad));}
-$review->run($staff,$d->id,'stop',$ticket($d,'stop'),str_repeat('🦦',500));same(str_repeat('🦦',500),$d->fresh()->renewal_policy['staff_holdings'][1]['reason'],'Multibyte reason uses characters consistently');
+$key=$ticket($d,'stop');$review->run($staff,$d->id,'stop',$key,str_repeat('🦦',500));$a=$d->fresh()->renewal_policy['staff_holdings'][0];same(str_repeat('🦦',500),$a['reason'],'Multibyte reason uses characters consistently');
+same([$staff->id,'9.00','9.00'],[$a['actor_id'],$a['before']['annual_gross'],$a['after']['annual_gross']],'Audit keeps the actor and leaves the price alone');commerceReject(fn()=>$review->run($staff,$d->id,'stop',$key,'Replay old review key'));
 $review->run($staff,$d->id,'stop',$ticket($d,'stop'),'Customer stops future invoices');same(true,$d->fresh()->renewal_policy['renewals_stopped'],'Stop records future billing policy');
 same(null,$billing->invoice($d->id),'Scheduled stop skips quietly');commerceReject(fn()=>$billing->invoice($d->id,$user));
 commerceReject(fn()=>$cycles->complimentary($d->id,$staff,1,new Paymenter\Extensions\Servers\Domains\Data\Money('8.95','USD'),'stopped_cycle'));
@@ -57,14 +49,14 @@ $review->run($staff,$d->id,'resume',$ticket($d,'resume'),'Resume reviewed native
 $pending=$new(placeholderComFixtureName('holding-intent-placeholder.com'),paid:false);ServiceCancellation::create(['service_id'=>$pending->service_id,'type'=>'end_of_period','reason'=>'Unpaid native cancellation']);
 commerceReject(fn()=>$review->run($staff,$pending->domain_id,'resume',$ticket($pending->domain,'resume'),'Cannot erase retained intent'));
 same(1,DB::table('domains_native_intents')->where('service_id',$pending->service_id)->count(),'Initial intent remains retained');
-// Converter-sealed current anchors support both directions and owned repricing.
+// Converter-sealed current anchors support both directions.
 [$historical]=$prepare(placeholderComFixtureName('holding-converted-placeholder.com'));same('succeeded',$reconcile->run($historical->id)->state,'Historical holding completed');
 [$historical,$convertedDomain]=convertedHoldingFixture($historical);
 DB::table('domains_operations')->where('id',$historical->id)->update(['state'=>'pending']);
 $refused=false;try{ServiceCancellation::create(['service_id'=>$convertedDomain->service_id,'type'=>'end_of_period','reason'=>'Uncompleted converted anchor control']);}catch(Illuminate\Validation\ValidationException){$refused=true;}expect($refused,'Uncompleted converted anchor is refused');
 same(0,ServiceCancellation::where('service_id',$convertedDomain->service_id)->count(),'Uncompleted converted anchor refuses before native row');
 DB::table('domains_operations')->where('id',$historical->id)->update(['state'=>'succeeded']);
-foreach(['stop','resume','reprice']as$action){$review->run($staff,$convertedDomain->id,$action,$ticket($convertedDomain,$action),'Review converted holding action');}
+foreach(['stop','resume']as$action){$review->run($staff,$convertedDomain->id,$action,$ticket($convertedDomain,$action),'Review converted holding action');}
 same(false,$convertedDomain->fresh()->renewal_policy['renewals_stopped'],'Converted stop can be undone');
 $immediate=ServiceCancellation::create(['service_id'=>$convertedDomain->service_id,'type'=>'immediate','reason'=>'Immediate cancellation control']);
 commerceReject(fn()=>$review->run($staff,$convertedDomain->id,'resume',$ticket($convertedDomain,'resume'),'Cannot resume immediate cancellation'));expect($immediate->fresh()!==null,'Immediate cancellation retained');
@@ -108,21 +100,21 @@ $ownerPresenter=new Paymenter\Extensions\Servers\Domains\Services\OwnedDomains($
 same('Off',$ownerPresenter->present($compDomain->fresh(),false)->renewal,'Owned stop is Off on customer page');
 ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Customer renewal display control']);same('Off',$ownerPresenter->present($d->fresh(),false)->renewal,'Native future cancellation is Off on customer page');
 Auth::login($staff);Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();$fact=fn(Paymenter\Extensions\Servers\Domains\Models\Domain $x,string $label)=>array_values(array_intersect_key(DomainFacts::for($x->fresh())[$label],['value'=>1,'sub'=>1]));
-same(['Off','Cancels at period end'],$fact($d,'Auto-renew'),'Staff facts reflect native customer stop');same(['On',null],$fact($d,'Renewal invoices'),'Period-end cancellation leaves issued renewals payable');
+same(['Off','Cancels at period end'],$fact($d,'Auto-renew'),'Staff facts reflect native customer stop');expect(!isset(DomainFacts::for($d->fresh())['Renewal invoices'])&&!isset(DomainFacts::for($d->fresh())['Next invoice']),'Period-end cancellation reads as one state');
 $review->run($staff,$d->id,'resume',$ticket($d,'resume'),'Resume customer display control');same('On',$ownerPresenter->present($d->fresh(),false)->renewal,'Resume is On on customer page');
-same([['On',null],['On',null]],[$fact($d,'Auto-renew'),$fact($d,'Renewal invoices')],'Staff facts reflect resumed state');same(['Off','Service cancellation pending'],$fact($pending->domain,'Renewal invoices'),'Staff facts retain intent review');
+same(['On',null],$fact($d,'Auto-renew'),'Staff facts reflect resumed state');same(['Off','Service cancellation pending'],$fact($pending->domain,'Auto-renew'),'Staff facts retain intent review');
 // Real owned action modals and refusal/success copy, with no sensitive model form fill.
 Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 staffPanel();Auth::login($staff);$pageClass=Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class;
 $page=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->assertSuccessful();
-foreach(['reprice','stop']as$action){$page->assertActionVisible($action)->mountAction($action)->assertActionMounted($action);$page->unmountAction();}
+$page->assertActionDoesNotExist('reprice');$page->assertActionVisible('stop')->mountAction('stop')->assertActionMounted('stop');$page->unmountAction();
 $beforeInvalidReason=$d->fresh()->getRawOriginal();
 $page->callAction('stop',['reason'=>"Reviewed\u{2029}renewal"])->assertHasActionErrors(['reason'=>'regex']);
 same($beforeInvalidReason,$d->fresh()->getRawOriginal(),'Renewal reason field error changes no holding');
 $page->unmountAction();
 $stopPage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('stop');
 same("Stops new renewal invoices. Invoices already sent stay payable, and renewal requests already created may still run. To stop all renewals, also turn off Registrar auto-renew.",$stopPage->instance()->getMountedAction()->getModalDescription(),'Actual stop dialog explains retained debt and issued requests');
-$stopPage->setActionData(['reason'=>'Stop through owned staff modal'])->callMountedAction()->assertNotified('Renewal stopped');same(true,$d->fresh()->renewal_policy['renewals_stopped'],'Actual modal invokes owned action');
+$stopPage->setActionData(['reason'=>'Stop through owned staff modal'])->callMountedAction()->assertNotified('Renewal stopped')->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$d->id]));same(true,$d->fresh()->renewal_policy['renewals_stopped'],'Actual modal invokes owned action');
 $resumePage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('resume')->assertActionMounted('resume');
 $stalePage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('resume');
 $s->fresh()->forceFill(['label'=>'Changed after modal opened'])->save();$stalePage->setActionData(['reason'=>'Stale modal refusal control'])->callMountedAction()->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't update renewal")->body('This domain changed. Reload the page and try again.'))->assertSet('mountedActions',[]);
@@ -131,47 +123,21 @@ $permissionPage->call('callMountedAction')->assertActionDoesNotExist('resume');s
 $policy=$d->fresh()->renewal_policy;$d->fresh()->update(['renewal_policy'=>[...$policy,'staff_holdings'=>array_fill(0,100,$a)]]);
 $fullPage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('resume');$fullPage->setActionData(['reason'=>'Audit retention limit control'])->callMountedAction()->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't update renewal")->body('History for this domain is full. Ask your site admin.'))->assertSet('mountedActions',[]);
 $d->fresh()->update(['renewal_policy'=>$policy]);same(true,$d->fresh()->renewal_policy['renewals_stopped'],'Full history refusal changes no holding policy');
-// A failed quote keeps the standard repricing action visible with a safe repair hint.
-foreach(['missing-price','throwing-clock'] as $fault){
-    $savedPrice=(array)DB::table('domains_prices')->where('id',$priceRow->id)->first();
-    if($fault==='missing-price'){DB::table('domains_prices')->where('id',$priceRow->id)->delete();}
-    else{app()->instance(Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard::class,new Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(
-        new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices),new class implements Paymenter\Extensions\Servers\Domains\Contracts\Clock{
-            public function now():DateTimeImmutable{throw new RuntimeException('Sensitive quote failure');}
-        }));}
-    $beforeQuote=[$d->fresh()->getRawOriginal(),$s->fresh()->getRawOriginal()];
-    $quotePage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->assertActionVisible('reprice')->assertActionDisabled('reprice')->assertActionVisible('resume')->assertActionEnabled('resume');
-    same("Couldn't read the renewal price. Check TLD prices, then reload.",$quotePage->instance()->getAction('reprice')->getTooltip(),'Failed quote has a safe repair hint');
-    $quotePage->assertDontSee('Sensitive quote failure');
-    DB::beginTransaction();
-    $runningPolicy=$d->fresh()->renewal_policy;$runningPolicy['renewals_stopped']=false;$d->fresh()->update(['renewal_policy'=>$runningPolicy]);
-    Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->assertActionVisible('stop')->assertActionEnabled('stop');
-    DB::rollBack();
-    $priceViewer=staffUser(['admin.domains.view','admin.domains.manage',StaffHoldingReview::permission('resume')]);
-    Livewire\Livewire::actingAs($priceViewer)->test($pageClass,['record'=>$d->id])->assertActionHidden('reprice');
-    same($beforeQuote,[$d->fresh()->getRawOriginal(),$s->fresh()->getRawOriginal()],'Failed quote never changes policy or price');
-    if($fault==='missing-price'){DB::table('domains_prices')->insert($savedPrice);}else{app()->instance(Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard::class,$guard);}
-    Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->assertActionVisible('reprice')->assertActionEnabled('reprice');
-}
 Auth::login($staff);
-// Fresh dialogs reach the shared ownership refusal for resume and repricing.
+// Fresh dialogs reach the shared ownership refusal for resume.
 foreach(['missing-anchor','unconfirmed-anchor','immediate-cancellation'] as $fault){
     $savedPolicy=$d->fresh()->renewal_policy;$savedOp=$original->fresh()->getRawOriginal();
     if($fault==='missing-anchor'){$changed=$savedPolicy;unset($changed['billing_anchor']);$d->fresh()->update(['renewal_policy'=>$changed]);}
     elseif($fault==='unconfirmed-anchor'){DB::table('domains_operations')->where('id',$original->id)->update(['state'=>'pending']);}
     else{DB::table('service_cancellations')->insert(['service_id'=>$d->service_id,'type'=>'immediate','reason'=>'Retained cancellation requires review','created_at'=>now(),'updated_at'=>now()]);}
-    foreach(['resume','reprice'] as $action){
-        $policyBefore=$d->fresh()->getRawOriginal('renewal_policy');$priceBefore=$s->fresh()->getRawOriginal('price');
-        Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction($action)->assertActionMounted($action)
-            ->setActionData(['reason'=>'Review confirmed ownership before renewal changes'])->callMountedAction()
-            ->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't update renewal")->body("The service isn't active, the registration isn't confirmed yet, or the service has an immediate cancellation. Check the service, then try again."));
-        same($policyBefore,$d->fresh()->getRawOriginal('renewal_policy'),$fault.' '.$action.' keeps renewal policy');
-        same($priceBefore,$s->fresh()->getRawOriginal('price'),$fault.' '.$action.' keeps service price');
-    }
+    $policyBefore=$d->fresh()->getRawOriginal('renewal_policy');
+    Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('resume')->assertActionMounted('resume')
+        ->setActionData(['reason'=>'Review confirmed ownership before renewal changes'])->callMountedAction()
+        ->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't update renewal")->body("The service isn't active, the registration isn't confirmed yet, or the service has an immediate cancellation. Check the service, then try again."));
+    same($policyBefore,$d->fresh()->getRawOriginal('renewal_policy'),$fault.' keeps renewal policy');
     $d->fresh()->update(['renewal_policy'=>$savedPolicy]);DB::table('domains_operations')->where('id',$original->id)->update($savedOp);
     if($fault==='immediate-cancellation'){DB::table('service_cancellations')->where('service_id',$d->service_id)->delete();}
 }
-DB::table('domains_domains')->where('id',$compDomain->id)->update(['price_mode'=>'complimentary']);Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$compDomain->id])->assertActionDoesNotExist('reprice');DB::table('domains_domains')->where('id',$compDomain->id)->update(['price_mode'=>'standard']);
 $viewOnly=staffUser(['admin.domains.view']);$readonly=Livewire\Livewire::actingAs($viewOnly)->test($pageClass,['record'=>$d->id]);$readonly->assertActionDoesNotExist('stop');
 Auth::login($staff);Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>$pageClass])
     ->assertSee('Renewal stopped')->assertSee('Stop through owned staff modal')->assertSee(trim($staff->first_name.' '.$staff->last_name)?:'Staff');

@@ -80,6 +80,7 @@ $setRights($rights);
 Livewire::actingAs($staff)->test(Page::class)->mountAction('psl_source')->setActionData(['url'=>'http://mirror.example.com/list'])->callMountedAction()->assertHasActionErrors(['url']);
 Livewire::actingAs($staff)->test(Page::class)->mountAction('psl_source')->setActionData(['url'=>'https://mirror.example.com/list'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Source saved');same(0,$count,'Saving source no network');
 Livewire::actingAs($staff)->test(Page::class)->callAction('psl_download')->assertNotified('List updated')->assertActionHidden('psl_download')->assertSee('Next update allowed:');
+same(['psl_details'],array_map(fn($a)=>$a->getName(),Paymenter\Extensions\Servers\Domains\Admin\Support\PslActions::row(fn()=>null)['buttons']),'A healthy list only links to its page; it updates by itself');
 same(1,$count,'Native manual fetched once');same('Current',PslFacts::state($list),'Current state');
 // The page's expiry date must match the day new discovery actually stops.
 Livewire::actingAs($staff)->test(Page::class)->assertSee('Out of date after '.PslFacts::time((int)$list->current()->validated_at+90*86400).'.');

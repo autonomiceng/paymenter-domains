@@ -2,7 +2,7 @@
 <div class="container mt-14 mb-10"><div class="domains">
 @include('domains::partials.styles')
 @php
-    $support = ($summary ?? null)?->urls['support'] ?? (\Illuminate\Support\Facades\Route::has('tickets.create') ? route('tickets.create') : null);
+    $support = ($summary ?? null)?->urls['support'] ?? \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl();
     $notice = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($domain, $support, $summary ?? null);
     $pill = \Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::owned($domain, $summary ?? null);
     $groups = ['DNS' => ['nameservers', 'dns', 'srv', 'glue', 'ds'], 'Security and contacts' => ['lock', 'privacy', 'contacts', 'auth_code_email']];

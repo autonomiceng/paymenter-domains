@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,Storefront};
 use Paymenter\Extensions\Servers\Domains\Services\OwnedDomains;
@@ -14,20 +13,18 @@ final readonly class OwnedDomainController
     public function __construct(private OwnedDomains $owners) {}
     public function index(Request $request)
     {
-        $base=Domain::where('user_id',$request->user()->id)->whereHas('service',fn($q)=>$q->where('user_id',$request->user()->id)->whereHas('order',fn($q)=>$q->where('user_id',$request->user()->id)));
         $raw=$request->query('q');$search=is_string($raw)?trim(substr($raw,0,253)):'';
         $raw=$request->query('status');$filter=is_string($raw)&&isset(DomainStatus::SET[$raw])?$raw:'';
         $sort=in_array($request->query('sort'),['expiry','-expiry','name','-name'],true)?$request->query('sort'):'expiry';
         // One list: registered domains and the domains your hosting uses. Status depends on the order, renewal stops
         // and expiry, not only the status column, so chips, filters and sorting work on resolved rows.
-        $summaries=new DomainSummaries();$now=now('UTC')->getTimestamp();$rows=[];
-        foreach ((clone $base)->pluck('id')->chunk(250) as $ids) { $rows+=$summaries->batch($request->user(),$ids->all(),[],$now); }
-        $watches=WatchName::where('user_id',$request->user()->id)->whereNull('managed_domain_id')->whereIn('state',['active','paused','retired'])->whereNotIn('canonical_name',(clone $base)->select('domain'))->pluck('id');
-        foreach ($watches->chunk(250) as $ids) { $rows+=$summaries->batch($request->user(),[],$ids->all(),$now); }
+        $rows=(new DomainSummaries())->listed($request->user(),now('UTC')->getTimestamp());
         $key=fn($row)=>$row->statusState===null?null:DomainStatus::key($row->statusState);
-        $filterCounts=[''=>count($rows),...array_count_values(array_filter(array_map($key,array_values($rows))))];
+        // Cancelled domains stay out of the way until the Cancelled chip asks for them.
+        $shown=array_filter($rows,fn($row)=>$key($row)!=='cancelled');
+        $filterCounts=[''=>count($shown),...array_count_values(array_filter(array_map($key,array_values($rows))))];
+        $rows=$filter===''?$shown:array_filter($rows,fn($row)=>$key($row)===$filter);
         if ($search!=='') { $rows=array_filter($rows,fn($row)=>str_contains(strtolower($row->name),strtolower($search))); }
-        if ($filter!=='') { $rows=array_filter($rows,fn($row)=>$key($row)===$filter); }
         $desc=$sort[0]==='-';$rows=array_values($rows);
         usort($rows,function($a,$b)use($sort,$desc){
             if (str_contains($sort,'expiry')) { [$x,$y]=[$a->expiry?substr($a->expiry,0,10):null,$b->expiry?substr($b->expiry,0,10):null];

@@ -4,10 +4,11 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{User,Service,ServiceCancellation,Server,Invoice,InvoiceItem};
 use Illuminate\Support\Facades\{DB,Crypt};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts;
 use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName,WatchDnsObservation,ManagedPublicObservation,WatchRegistryObservation,Adoption,Operation,Account};
-use Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary;
+use Paymenter\Extensions\Servers\Domains\Presentation\{DomainSummary,Missing};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Batched local projection. No transport, writes, locks, lazy model relations or actor cache. */
 final class DomainSummaries
@@ -45,6 +46,15 @@ final class DomainSummaries
         $domainIds=array_unique($domainIds);$watchIds=array_unique($watchIds);
         if (count($domainIds)+count($watchIds)>250) { throw new \InvalidArgumentException('At most 250 targets per batch.'); }
         return $this->summaries(new DomainSummaryContext((int)$owner->id,$domainIds,$watchIds),$now??time());
+    }
+    /** The customer's domains: registered ones and the ones their hosting uses, without abandoned orders. Every customer list starts here. */
+    public function listed(User $owner,int $now): array
+    {
+        $base=Domain::where('user_id',$owner->id)->whereHas('service',fn($q)=>$q->where('user_id',$owner->id)->whereHas('order',fn($q)=>$q->where('user_id',$owner->id)));$rows=[];
+        foreach ((clone $base)->pluck('id')->chunk(250) as $ids) { $rows+=$this->batch($owner,$ids->all(),[],$now); }
+        $watches=WatchName::where('user_id',$owner->id)->whereNull('managed_domain_id')->whereIn('state',['active','paused','retired'])->whereNotIn('canonical_name',(clone $base)->select('domain'))->pluck('id');
+        foreach ($watches->chunk(250) as $ids) { $rows+=$this->batch($owner,[],$ids->all(),$now); }
+        return array_filter($rows,fn($row)=>!$row->abandoned);
     }
     /** Staff-only multi-owner watch projection. Customer batch() always retains its owner-scoped context. */
     public function staffWatches(array $watchIds,?int $now=null): array
@@ -126,7 +136,7 @@ final class DomainSummaries
                     if (!$pending) { try { if ($s->currency_code==='USD') { $price=Storefront::money(RetailLine::decimal($s->price)); } } catch (\Throwable) {} }
                     $cycle=($cycles[$id]??collect())->first(fn($o)=>(int)$o->authority_generation===(int)$t->authority_generation && (int)$o->service_id===(int)$t->service_id && (int)$o->server_id===(int)$t->server_id && $o->registrar_key===$t->registrar_key && $o->account_fingerprint===$t->account_fingerprint && $o->base_expires_at?->format('Y-m-d')===$expiry);
                     if (!$off && $expiry) {
-                        if ($cycle) { $inv=$invoices[$cycle->invoice_id]??null;$item=$items[$cycle->invoice_item_id]??null;
+                        if ($cycle && !RenewalCycles::closedEarly($cycle)) { $inv=$invoices[$cycle->invoice_id]??null;$item=$items[$cycle->invoice_item_id]??null;
                             try { if ($inv && $item && (int)$item->invoice_id===(int)$inv->id && in_array($inv->status,['pending','paid'],true) && $inv->currency_code===$cycle->currency && $item->reference_id===null && $item->reference_type===null && (string)$item->quantity==='1' && PricingRule::minor((string)$item->price)===PricingRule::minor((string)$cycle->amount) && $inv->due_at?->format('Y-m-d')===($cycle->policy['calendar']['due']??null)) { $due=$inv->due_at->format('Y-m-d'); } } catch (\Throwable) {}
                             $invoiceMissing=$due===null; }
                         else { try { $projected=true;$timing=BillingCalendar::timing($servers[$t->server_id]->settings);$dates=BillingCalendar::dates($t->provider_expires_at->toDateTimeImmutable(),$timing['issue'],$timing['due']);$due=$dates['due'];$issue=$dates['issue'];$invoiceMissing=$issue<gmdate('Y-m-d',$now); } catch (\Throwable) {} }
@@ -153,8 +163,8 @@ final class DomainSummaries
                 $related=[];$hosts=[];
                 foreach ($c->related($kind,$id) as $s) { if (!$c->validSource($s)) { continue; }$h=$c->services[$s->service_id];$p=$c->products[$h->product_id];
                     $related[]=['id'=>(int)$h->id,'label'=>$p->name,'url'=>route('services.show',$h->id)];$hosts[]=$s->hostname; }
-                $out[$kind.':'.$id]=new DomainSummary($kind==='watch'?$t->canonical_name:$t->domain,$kind==='watch'?$t->display_name:null,$kind,$registration,$keys,$signals['website']['value'],$signals['email']['value'],array_values(array_unique($states)),DomainSummaryStrings::all(),$expiry,$precision,$source,$fresh,$due,$price,$related,array_values(array_unique($hosts)),['detail'=>$url,'preferences'=>($kind==='watch' && $t->state==='active' && $stamp)||($kind==='managed' && !$pending && isset($c->configs[$id]) && $c->services[$t->service_id]->status==='active' && $expiry>gmdate('Y-m-d',$now))?route('domains.checks.show',['kind'=>$kind,'id'=>$id]):null,'invoiceHistory'=>$kind==='managed' && $pending?route('invoices'):null,'compareTransfer'=>config('domains.watch_transfer.enabled',false) && $kind==='watch' && $t->state==='active' && $t->registration==='external' && $factsCurrent && WatchTransferPolicy::window(substr($expiry??'',0,10),$now) && !in_array('watch.redemption',$states,true) && array_filter($transferEndings,fn($ending)=>str_ends_with($t->canonical_name,'.'.$ending))?route('domains.watch.transfer',$id):null,'support'=>route('tickets.create')],$off,$lastKnown,max(0,count($c->related($kind,$id))-3),$noticeKeys,$noticeDates,$reminderOff,$projected,$kind==='managed' && in_array($t->server_id,$testServers),$nameserverFact?->toArray(),$status,$reason,DemoData::is($t),
-                    $expiry?intdiv(strtotime(substr($expiry,0,10).' 00:00:00 UTC')-strtotime(gmdate('Y-m-d',$now).' 00:00:00 UTC'),86400):null,$invoiceMissing,$waits,$invoiceMissing?$issue:null,$order);
+                $out[$kind.':'.$id]=new DomainSummary($kind==='watch'?$t->canonical_name:$t->domain,$kind==='watch'?$t->display_name:null,$kind,$registration,$keys,$signals['website']['value'],$signals['email']['value'],array_values(array_unique($states)),DomainSummaryStrings::all(),$expiry,$precision,$source,$fresh,$due,$price,$related,array_values(array_unique($hosts)),['detail'=>$url,'preferences'=>($kind==='watch' && $t->state==='active' && $stamp)||($kind==='managed' && !$pending && isset($c->configs[$id]) && $c->services[$t->service_id]->status==='active' && $expiry>gmdate('Y-m-d',$now))?route('domains.checks.show',['kind'=>$kind,'id'=>$id]):null,'invoiceHistory'=>$kind==='managed' && $pending?route('invoices'):null,'compareTransfer'=>config('domains.watch_transfer.enabled',false) && $kind==='watch' && $t->state==='active' && $t->registration==='external' && $factsCurrent && WatchTransferPolicy::window(substr($expiry??'',0,10),$now) && !in_array('watch.redemption',$states,true) && array_filter($transferEndings,fn($ending)=>str_ends_with($t->canonical_name,'.'.$ending))?route('domains.watch.transfer',$id):null,'support'=>Missing::supportUrl()],$off,$lastKnown,max(0,count($c->related($kind,$id))-3),$noticeKeys,$noticeDates,$reminderOff,$projected,$kind==='managed' && in_array($t->server_id,$testServers),$nameserverFact?->toArray(),$status,$reason,DemoData::is($t),
+                    $expiry?intdiv(strtotime(substr($expiry,0,10).' 00:00:00 UTC')-strtotime(gmdate('Y-m-d',$now).' 00:00:00 UTC'),86400):null,$invoiceMissing,$waits,$issue,$order,$kind==='managed'&&$op&&UnpaidAcquisitionProof::terminal($op,$t)&&RequestFacts::neverPaid($op));
             }
         }
         return $out;

@@ -24,7 +24,7 @@ class RequestsRelationManager extends RelationManager
     {
         Staff::requireView();
         $domain=$this->getOwnerRecord();
-        $row=fn(Model|array $r): array=>$r instanceof Operation?self::request($r):$r;
+        $row=fn(Model|array $r): array=>$r instanceof Operation?self::request($r,$domain):$r;
         return $table->records(fn(int|string $page,int|string $recordsPerPage)=>self::rows($domain,(int)$page,(int)$recordsPerPage))->columns([
             TextColumn::make('time')->label('Time')->state(fn($record)=>self::utc($row($record)['time']))->default(Missing::LABEL)
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::color(RequestFacts::NO_TIME):null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon(RequestFacts::NO_TIME):null)
@@ -60,11 +60,20 @@ class RequestsRelationManager extends RelationManager
         $perPage=max(1,$perPage); $page=max(1,$page);
         return new LengthAwarePaginator(array_slice($rows,($page-1)*$perPage,$perPage),count($rows),$perPage,$page);
     }
-    private static function request(Operation $op): array
+    private static function request(Operation $op, Domain $domain): array
     {
         return ['time'=>$op->created_at,'event'=>'Request #'.$op->id.' '.Labels::action($op->action),
             'sub'=>Labels::requestStatus($op)['reason'],
-            'status'=>Labels::requestStatus($op),'by'=>'System'];
+            'status'=>Labels::requestStatus($op),'by'=>self::requester($op,$domain)];
+    }
+    /** A management request names who asked for it. Everything else runs on its own. */
+    private static function requester(Operation $op, Domain $domain): string
+    {
+        try { $managed=isset($op->policy['management']); } catch (\Throwable) { return 'System'; }
+        if (!$managed) { return 'System'; }
+        if ((int)$op->authorized_by===(int)$domain->user_id) { return 'Customer'; }
+        $id=(int)$op->authorized_by;
+        return once(fn()=>trim((string)User::query()->whereKey($id)->get(['first_name','last_name'])->first()?->name)?:'Staff');
     }
     private static function utc(?\DateTimeInterface $time): ?string
     { return $time?\DateTimeImmutable::createFromInterface($time)->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC':null; }

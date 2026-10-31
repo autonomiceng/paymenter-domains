@@ -181,7 +181,7 @@ $on=$domain(['renewal'=>'On','actions'=>['show'=>'/domains/1','autoPay'=>'/servi
 expect(str_contains($card(storefrontDom($render($on,$summary($on))),'Auto-renew'),'Auto Pay is off: we send you an invoice and you pay it to renew. Manage Auto Pay'),'Auto Pay off explains the invoice');
 $on=$domain(['renewal'=>'On','autoPay'=>true]);
 expect(str_contains($card(storefrontDom($render($on,$summary($on))),'Auto-renew'),'Auto Pay is on: we charge your saved payment method for each renewal invoice.'),'Auto Pay on says the card is charged');
-$d=$domain();same('Feb 1, 2027',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice date');
+$d=$domain();same('Feb 1, 2027',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-08','renewalIssueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice shows the issue date, as staff see it');
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9']]);$dom=storefrontDom($render($d,$summary($d)));
 same('Due Feb 1, 2027 Pay invoice',$card($dom,'Next invoice'),'Due invoice');
 same(['Due Feb 1, 2027',['Pay invoice']],$split($dom,'Next invoice'),'Pay invoice sits on its own line');
@@ -242,6 +242,8 @@ $test=$domain(['testEnvironment'=>true]);$dom=storefrontDom($render($test));
 same(1,$dom->query('//h1//span[contains(@class,"domains-demo-tag--test")]')->length,'Test tag');
 same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'Test mode adds no banner');
 same(false,DomainPage::notice($domain())!==null,'No notice for an active domain');
+$expired=DomainPage::notice($domain(['statusReason'=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE]),'/tickets/create');
+same(['This domain has expired. Contact support to check whether it can still be renewed.','Contact support','/tickets/create'],[$expired['text'],$expired['action']['label'],$expired['action']['url']],'An expired domain says what to do next, with the way to do it');
 
 // History: changes with dates and renewal invoices.
 $d=$domain(['progress'=>[['label'=>'Nameservers','state'=>'Done','date'=>'2026-10-20']],'history'=>[['number'=>'INV-7','status'=>'Paid','url'=>'/invoices/7','date'=>'2026-09-30']]]);$dom=storefrontDom($render($d));

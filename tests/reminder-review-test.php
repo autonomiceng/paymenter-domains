@@ -33,6 +33,11 @@ same(0,DB::table('domains_reminder_deliveries')->where('domain_id',$d->id)->coun
 [$d,$invoice,$op]=$make(placeholderComFixtureName('retired-unpaid-expiry-placeholder.com'));(new \Paymenter\Extensions\Servers\Domains\Services\RenewalCycles($bindings,$clock))->retireUnpaid($op->id);
 $clock->instant=new DateTimeImmutable('2027-10-21T12:00:00Z');expect($reminders->remind($d->id),'Retired unpaid cycle still gets expiry notice');
 expect(DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','renewal_unpaid')->exists(),'Retired unpaid debt has an accurate label');
+// An early renewal the sweep closed is not a missed renewal: the scheduled invoice is still to come.
+[$d,,$op]=$make(placeholderComFixtureName('early-unpaid-closed-placeholder.com'));$op=$op->fresh();$clock->instant=new DateTimeImmutable('2027-09-20T12:00:00Z');
+DB::table('domains_operations')->where('id',$op->id)->update(['policy'=>encrypt(json_encode([...$op->policy,'calendar'=>['issue'=>'2027-10-01','due'=>'2027-10-11']]),false)]);
+(new \Paymenter\Extensions\Servers\Domains\Services\RenewalCycles($bindings,$clock))->closeEarlyUnpaid($d->id);same('renewal_cancelled_unpaid',$op->fresh()->safe_code,'Early renewal closed');
+$reminders->remind($d->id);same(0,DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','renewal_unpaid')->count(),'A closed early renewal asks nobody to chase payment');
 [$d]=$make(placeholderComFixtureName('overdue-reminder-placeholder.com'));$clock->instant=new DateTimeImmutable('2027-10-17T12:00:00Z');expect($reminders->remind($d->id),'Overdue invoice still has safe notice');
 expect(\Illuminate\Support\Facades\Mail::queued(\Paymenter\Extensions\Servers\Domains\Mail\DomainNotice::class)->last()->data['overdue'],'One-day notice never asks customer to meet a past due date');
 // Future-only stop preserves the existing invoice reminder and its original execution path.

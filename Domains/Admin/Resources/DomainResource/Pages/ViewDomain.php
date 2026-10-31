@@ -2,7 +2,7 @@
 // Adapted from Enom 444f31c ViewDomain, split read-only support; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages;
-use Filament\Actions\{Action, ActionGroup};
+use Filament\Actions\Action;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\{Callout, Grid, Section};
@@ -10,7 +10,7 @@ use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainFacts, HelpHint, HoldingActions, MissingEntry, OperationActions, RegistrarFacts, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainEditActions, DomainFacts, HelpHint, HoldingActions, MissingEntry, NoticeReview, OperationActions, RegistrarFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
@@ -31,24 +31,27 @@ class ViewDomain extends ViewRecord
     public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains',$this->getTitle()]; }
     protected function getHeaderActions(): array
     {
-        $d=$this->getRecord(); $renewal=HoldingActions::make($d);
-        $more=array_values(array_filter($renewal,fn(Action $a)=>$a->getName()==='reprice'));
+        $d=$this->getRecord();
         // Import domain for a pending import sits in the page notice.
-        return [...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),
-            ...array_filter($renewal,fn(Action $a)=>$a->getName()!=='reprice'),
-            ...($more?[ActionGroup::make($more)->label('More')->button()->color('gray')]:[])];
+        return [...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),...HoldingActions::make($d)];
     }
     /** Resume sync sits in the page notice and is mounted as a page action. */
     public function resume_observationAction(): Action
     { return OperationActions::scheduledReads($this->getRecord())[0]??Action::make('resume_observation')->hidden(); }
+    public function notice_reviewAction(): Action
+    { return NoticeReview::action($this->getRecord()); }
     // ViewRecord otherwise fills public form data with the entire model's attributes.
     protected function fillForm(): void { $this->data=[]; }
     public function infolist(Schema $schema): Schema
     {
-        $d=$this->getRecord(); $facts=DomainFacts::for($d); $notice=DomainFacts::notice($d); $components=[];
+        $d=$this->getRecord(); $facts=DomainFacts::for($d); $notice=DomainFacts::notice($d); $edits=DomainEditActions::for($d); $components=[];
+        // Reminder issues sit under Auto-renew, so the button does too; without that row they go to Open alerts.
+        $review=$this->getAction('notice_review',false); $button=$review?->isVisible()?new HtmlString($review->size('sm')->toHtml()):null;
+        $byRow=isset($facts['Auto-renew']);
         if (isset($facts['Open alerts'])) {
             $alert=$facts['Open alerts'];
-            $components[]=Callout::make('Open alerts')->description(implode(' · ',$alert['value']))->status($alert['tone'])->columnSpanFull();
+            $components[]=Callout::make('Open alerts')->description(implode(' · ',$alert['value']))->status($alert['tone'])->columnSpanFull()
+                ->footer($byRow?null:$button);
         }
         if ($notice) {
             $buttons=[];
@@ -60,12 +63,13 @@ class ViewDomain extends ViewRecord
             $components[]=Callout::make($notice['title'])->description($notice['body']??null)->status($notice['tone'])->columnSpanFull()
                 ->footer($buttons?new HtmlString('<div style="display:flex;flex-wrap:wrap;gap:.5rem">'.implode('',array_filter($buttons)).'</div>'):null);
         }
-        $section=fn(string $title,array $labels)=>Section::make($title)->schema(array_map(fn(string $label)=>self::entry($label,$facts[$label]),
-            array_values(array_filter($labels,fn($label)=>isset($facts[$label])))))->columnSpan(1)->extraAttributes(['class'=>'domains-facts']);
+        $section=fn(string $title,array $labels)=>Section::make($title)->schema(array_merge(...array_map(fn(string $label)=>[self::entry($label,$facts[$label],$edits['rows'][$label]??[]),
+            ...($label==='Auto-renew'&&$button?[TextEntry::make('notice_review')->hiddenLabel()->state($button)]:[])],
+            array_values(array_filter($labels,fn($label)=>isset($facts[$label]))))))->columnSpan(1)->extraAttributes(['class'=>'domains-facts']);
         return $schema->components([...$components,Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()
-            ->schema([$section('Registration',DomainFacts::REGISTRATION),$section('Billing',DomainFacts::BILLING)])]);
+            ->schema([$section('Registration',DomainFacts::REGISTRATION)->description($edits['held']),$section('Billing',DomainFacts::BILLING)])]);
     }
-    private static function entry(string $label, array $fact): TextEntry
+    private static function entry(string $label, array $fact, array $edits=[]): TextEntry
     {
         $entry=TextEntry::make('fact_'.md5($label))->label($label)->state($fact['value'])->inlineLabel()
             ->extraAttributes(['style'=>'overflow-wrap:anywhere'])->url($fact['url'])
@@ -73,6 +77,7 @@ class ViewDomain extends ViewRecord
             ->belowContent($fact['value']!==null&&$fact['sub']!==null&&in_array($fact['tone'],['danger','warning'],true)?RegistrarFacts::tone($fact['sub'],$fact['tone']):$fact['sub']);
         if (is_array($fact['value'])) { $entry->listWithLineBreaks(); }
         if ($fact['help']) { $entry->hintAction(HelpHint::make($fact['help'])); }
+        if ($edits) { $entry->hintActions($edits); }
         if ($fact['demo']) { $entry->suffix(DemoData::tag(inline:true)); }
         return MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['tone']);
     }

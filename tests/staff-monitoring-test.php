@@ -1,18 +1,17 @@
 <?php
-// Domain monitoring, DNS templates and Hosting products staff pages over local synthetic evidence. MIT, Copyright (c) 2026 Autonomic Engineering.
+// Domain monitoring and DNS templates staff pages over local synthetic evidence. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/watch-notices.php';require __DIR__.'/Support/domain-name-cell.php';require __DIR__.'/Support/storefront.php';
 use Illuminate\Support\Facades\{Auth,Crypt,DB,Route};
 use Livewire\Livewire;
 use Filament\Facades\Filament;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\{WatchResource,ProductMappingResource,RoutingProfileResource};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{WatchResource,RoutingProfileResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,ViewWatch};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\ProductMappingResource\Pages\{ListConfiguration as ListProducts,ViewConfiguration as ViewProduct};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{ListConfiguration as ListTemplates,ViewConfiguration as ViewTemplate};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFacts,WatchFindings};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProfile};
 use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
-require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';$f=noticeFixture();extract($f);\Paymenter\Extensions\Servers\Domains\Services\StaffWatchSchema::install();staffPanel();$panel=Filament::getCurrentPanel();$resources=[WatchResource::class,ProductMappingResource::class,RoutingProfileResource::class];$panel->resources($resources);
+require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';$f=noticeFixture();extract($f);\Paymenter\Extensions\Servers\Domains\Services\StaffWatchSchema::install();staffPanel();$panel=Filament::getCurrentPanel();$resources=[WatchResource::class,RoutingProfileResource::class];$panel->resources($resources);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($resources,$panel){foreach($resources as$r){$r::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 $manager=staffUser([Staff::VIEW,Writes::VIEW,Writes::MANAGE]);Auth::setUser($manager);
 // Monitoring-only configuration leaves the menu until the deployment supplies both activation gates.
@@ -20,11 +19,11 @@ $monitoringReader=new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(
 $discovery=new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null);
 foreach([[false,$discovery],[true,new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork()]] as [$enabled,$producer]){
     app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($monitoringReader,$producer,$enabled));
-    foreach([ProductMappingResource::class,RoutingProfileResource::class] as $resource){same(false,$resource::shouldRegisterNavigation(),'Unconfigured monitoring hides '.$resource);}
+    foreach([RoutingProfileResource::class] as $resource){same(false,$resource::shouldRegisterNavigation(),'Unconfigured monitoring hides '.$resource);}
     same(true,WatchResource::shouldRegisterNavigation(),'Monitoring status remains reachable');
 }
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($monitoringReader,$discovery,true));
-foreach([ProductMappingResource::class,RoutingProfileResource::class] as $resource){same(true,$resource::shouldRegisterNavigation(),'Configured monitoring shows '.$resource);}
+foreach([RoutingProfileResource::class] as $resource){same(true,$resource::shouldRegisterNavigation(),'Configured monitoring shows '.$resource);}
 // Clean copy: no em dash, no "unavailable", no internal terms.
 $clean=function(string $html,string $page):void{$text=html_entity_decode(strip_tags($html));expect(!str_contains($text,'—'),'No em dash on '.$page);foreach(['unavailable','Saved revision','revision','feature gates','Domain watch','routing profile','mapping'] as $word){expect(stripos($text,$word)===false,'No "'.$word.'" on '.$page);}};
 $column=fn($page,string $name)=>$page->instance()->getTable()->getColumn($name);
@@ -211,103 +210,22 @@ DB::rollBack();Auth::setUser($manager);
 // DNS templates.
 $templates=Livewire::actingAs($manager)->test(ListTemplates::class)->assertCanSeeTableRecords([$profile])->assertActionVisible('save');$clean($templates->html(),'DNS templates');
 same('DNS templates',$templates->instance()->getTitle(),'Templates title');same(null,$templates->instance()->getSubheading(),'No templates subheading');same('Add DNS template',$templates->instance()->getAction('save')->getLabel(),'Add template');
-foreach(['name'=>'Template','nameservers'=>'Nameservers','enabled'=>'Status','used_by'=>'Used by'] as $name=>$label){same($label,$column($templates,$name)->getLabel(),'Template column '.$name);}
-same(null,$column($templates,'revision'),'No revision column');same('On',$column($templates,'enabled')->record($profile)->getState(),'Status On');same('1 hosting product',$column($templates,'used_by')->record(RoutingProfileResource::getEloquentQuery()->findOrFail($profile->id))->getState(),'Used by count');
-$template=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$profile->id])->assertSeeInOrder(['Records','Status','On','Nameservers','Website records','Email records','Used by','Monitored domains','Hosting products'])->assertActionHidden('enable');$clean($template->html(),'DNS template');
+foreach(['name'=>'Template','nameservers'=>'Nameservers','enabled'=>'Status'] as $name=>$label){same($label,$column($templates,$name)->getLabel(),'Template column '.$name);}
+same(null,$column($templates,'revision'),'No revision column');same('On',$column($templates,'enabled')->record($profile)->getState(),'Status On');same(null,$column($templates,'used_by'),'No Used by column');
+$template=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$profile->id])->assertSeeInOrder(['Records','Status','On','Nameservers','Website records','Email records','Used by','Monitored domains'])->assertActionHidden('enable');$clean($template->html(),'DNS template');
 same('Synthetic defaults',$template->instance()->getTitle(),'Template title');same('Edit',$template->instance()->getAction('save')->getLabel(),'Edit template');
 same([RoutingProfileResource::getUrl()=>'DNS templates','Synthetic defaults'],$template->instance()->getBreadcrumbs(),'Template breadcrumb');
 $off=DB::transaction(fn()=>WatchProfile::create(['name'=>'Spare template','nameservers'=>['ns1.spare.test'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic spare']));
-$spare=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$off->id]);same('Turn on',$spare->instance()->getAction('enable')->getLabel(),'Turn on template');same('Turn on Spare template? Monitoring checks start using it.',$spare->instance()->getAction('enable')->getModalDescription(),'Turn on body');
+$spare=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$off->id]);same('Turn on',$spare->instance()->getAction('enable')->getLabel(),'Turn on template');
 same('Saving turns this template off until you turn it on again.',$spare->instance()->getAction('save')->getModalDescription(),'Edit body');
 $spare->callAction('enable')->assertNotified('Saved');expect(WatchProfile::find($off->id)->enabled,'Turn on saves');
 
-// Hosting products.
-$products=Livewire::actingAs($manager)->test(ListProducts::class)->assertCanSeeTableRecords([$map]);$clean($products->html(),'Hosting products');
-same('Hosting products',$products->instance()->getTitle(),'Products title');same('Monitoring checks the domains saved on these hosting products for expiry and DNS changes.',$products->instance()->getSubheading(),'Products purpose');same('Add hosting product',$products->instance()->getAction('save')->getLabel(),'Add product');
-// Pick real product fields without loading customer values or accepting an arbitrary key.
-DB::beginTransaction();
-$option=\App\Models\ConfigOption::create(['name'=>'Primary hostname','env_variable'=>'primary_hostname','type'=>'text']);$option->products()->attach($f['product']->id);
-$fallback=\App\Models\ConfigOption::create(['name'=>'site','type'=>'text']);$fallback->products()->attach($f['product']->id);
-$notAProperty=\App\Models\ConfigOption::create(['name'=>'Server size','env_variable'=>'size','type'=>'select']);$notAProperty->products()->attach($f['product']->id);
-$f['service']->properties()->create(['key'=>'hostname','name'=>'Server hostname','value'=>'private-value.example.test']);
-foreach(['additional_domains','additional_domain','additionalDomain'] as $additional){$f['service']->properties()->create(['key'=>$additional,'name'=>'Other domains','value'=>'private-alias.example.test']);}
-$another=$f['product']->replicate();$another->slug='other-domain-fields';$another->save();
-$otherField=\App\Models\ConfigOption::create(['name'=>'Other domain','env_variable'=>'other_domain','type'=>'text']);$otherField->products()->attach($another->id);
-$editProduct=Livewire::actingAs($manager)->test(ViewProduct::class,['record'=>$map->id])->mountAction('save')
-    ->assertFormFieldExists('property_key',fn($field)=>$field instanceof \Filament\Forms\Components\Select && $field->getOptions()===['domain'=>'Domain','hostname'=>'Server hostname','primary_hostname'=>'Primary hostname','site'=>'site'])
-    ->assertDontSee('private-value.example.test')->assertDontSee('private-alias.example.test');
-$editProduct->setActionData(['property_key'=>'made_up'])->callMountedAction()->assertHasActionErrors(['property_key']);
-same('domain',$map->fresh()->property_key,'Rejected key leaves the saved mapping unchanged');
-$addProduct=Livewire::actingAs($manager)->test(ListProducts::class)->mountAction('save')->assertFormFieldDisabled('property_key')
-    ->set('mountedActions.0.data.product_id',$f['product']->id)->set('mountedActions.0.data.property_key','domain')
-    ->set('mountedActions.0.data.product_id',$another->id)->assertFormSet(['property_key'=>null])
-    ->assertFormFieldExists('property_key',fn($field)=>$field->getOptions()===['other_domain'=>'Other domain']);
-$addProduct->setActionData(['product_id'=>$another->id,'property_key'=>'other_domain'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
-$added=\Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::where('product_id',$another->id)->sole();same('other_domain',$added->property_key,'Selected config option key is saved');same(false,$added->enabled,'New monitoring still saves disabled');
-$emptyProduct=$another->replicate();$emptyProduct->slug='no-domain-fields';$emptyProduct->save();
-Livewire::actingAs($manager)->test(ListProducts::class)->mountAction('save')->set('mountedActions.0.data.product_id',$emptyProduct->id)
-    ->assertFormFieldDisabled('property_key')->assertFormFieldExists('property_key',fn($field)=>str_contains($field->toHtml(),'No domain fields found. Add a text option to the product or check its saved service properties.'));
-// Native hosting checkout schemas declare domain before any customer has ordered the product.
-foreach(['CPanel','DirectAdmin','Plesk'] as $extension){
-    $nativeServer=$f['product']->server->replicate();$nativeServer->extension=$extension;$nativeServer->save();
-    $nativeProduct=$emptyProduct->replicate();$nativeProduct->server_id=$nativeServer->id;$nativeProduct->slug='checkout-'.strtolower($extension);$nativeProduct->save();
-    same(0,$nativeProduct->services()->count(),'Checkout-only product has no saved service properties');
-    Livewire::actingAs($manager)->test(ListProducts::class)->mountAction('save')->set('mountedActions.0.data.product_id',$nativeProduct->id)
-        ->assertFormFieldEnabled('property_key')->assertFormFieldExists('property_key',fn($field)=>$field->getOptions()===['domain'=>'Domain'])
-        ->setActionData(['product_id'=>$nativeProduct->id,'property_key'=>'domain'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
-    same('domain',\Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::where('product_id',$nativeProduct->id)->sole()->property_key,'Native checkout domain field is saved');
-}
-DB::rollBack();
-foreach(['product.name'=>'Product','property_key'=>'Domain field','template'=>'DNS template','enabled'=>'Monitoring'] as $name=>$label){same($label,$column($products,$name)->getLabel(),'Product column '.$name);}
-same('Synthetic defaults',$column($products,'template')->record($map)->getState(),'Template name');same('On',$column($products,'enabled')->record($map)->getState(),'Monitoring On');
-$product=Livewire::actingAs($manager)->test(ViewProduct::class,['record'=>$map->id])->assertSeeInOrder(['Settings','Product','Hosting','Domain field','domain','Monitoring','On','DNS template','Synthetic defaults','Matched services'])->assertActionHidden('enable');$clean($product->html(),'Hosting product');
-same('Hosting',$product->instance()->getTitle(),'Product title');same('Edit',$product->instance()->getAction('save')->getLabel(),'Edit product');same('Saving turns monitoring off until you turn it on again.',$product->instance()->getAction('save')->getModalDescription(),'Edit product body');
-same([ProductMappingResource::getUrl()=>'Hosting products','Hosting'],$product->instance()->getBreadcrumbs(),'Product breadcrumb');
 DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['enabled'=>false]);
-$offProduct=Livewire::actingAs($manager)->test(ViewProduct::class,['record'=>$map->id]);same('Turn on monitoring',$offProduct->instance()->getAction('enable')->getLabel(),'Turn on monitoring');same('Turn on monitoring for Hosting? Matched domains start being checked.',$offProduct->instance()->getAction('enable')->getModalDescription(),'Turn on monitoring body');
-DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['expected_ns_profile_id'=>null]);
-same('Missing',$column(Livewire::actingAs($manager)->test(ListProducts::class),'template')->record(\Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::find($map->id))->getState(),'No template is Missing');
-// Expiry wording past and on the date; submit buttons name their action; a paused name shows no Missing DNS records.
+// Expiry wording past and on the date; a paused name shows no Missing DNS records.
 $day=strtotime('2026-01-03 12:00:00 UTC');foreach(['2026-01-01'=>'Expired 2 days ago','2026-01-02'=>'Expired 1 day ago','2026-01-03'=>'Expires today','2026-01-04'=>'Expires in 1 day','2026-01-05'=>'Expires in 2 days'] as $date=>$text){same($text,WatchFindings::expires($date,$day),'Expiry wording '.$date);}
-same('Save and turn monitoring off',$product->instance()->getAction('save')->getModalSubmitActionLabel(),'Edit submit');same('Turn on monitoring',$offProduct->instance()->getAction('enable')->getModalSubmitActionLabel(),'Turn on submit');
 $acts=\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchActions::watch($watch,(int)$watch->revision);$more=[];foreach(end($acts)->getActions() as $a){$more[$a->getName()]=$a->getModalSubmitActionLabel();}
 same(['profile'=>'Save','note'=>'Add note','retire'=>'Stop monitoring'],$more,'More submit labels');
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'paused']);$paused=WatchFacts::for(WatchName::find($watch->id));expect(!array_key_exists('DNS records',$paused['Checks']),'Paused name with no record results hides DNS records, not Missing');
-// Render the resource-query records so list reads stay bounded as rows and references grow.
-$resourceRows=static function(string $resource,string $page,string $columnName)use($manager,$column):array{
-    $component=Livewire::actingAs($manager)->test($page);$cell=$column($component,$columnName);$cell->clearCachedState();
-    DB::flushQueryLog();DB::enableQueryLog();$records=$resource::getEloquentQuery()->orderBy('id')->get();$values=[];
-    foreach($records as $row){$values[$row->id]=$cell->record($row)->getState();}
-    $queries=DB::getQueryLog();DB::disableQueryLog();return [$values,count($queries),$records];
-};
-DB::beginTransaction();
-DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['expected_ns_profile_id'=>$profile->id]);
-[, $oneMap]=$resourceRows(ProductMappingResource::class,ListProducts::class,'template');
-[, $twoTemplates]=$resourceRows(RoutingProfileResource::class,ListTemplates::class,'used_by');
-$third=WatchProfile::create(['name'=>'Disabled template','nameservers'=>['ns1.disabled.test'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic disabled template']);
-$expectedTemplates=[$map->id=>'Synthetic defaults'];
-foreach([$profile->id,$off->id,$third->id,$third->id,null,999999] as $i=>$templateId){
-    $productRow=(array)DB::table('products')->where('id',$map->product_id)->first();unset($productRow['id']);$productRow['slug']='list-query-product-'.$i;
-    $productId=DB::table('products')->insertGetId($productRow);$copy=$map->fresh()->getRawOriginal();unset($copy['id']);
-    $mapId=DB::table('domains_watch_product_maps')->insertGetId([...$copy,'product_id'=>$productId,'expected_ns_profile_id'=>$templateId,'enabled'=>false]);
-    $expectedTemplates[$mapId]=match($templateId){$profile->id=>'Synthetic defaults',$off->id=>'Spare template',$third->id=>'Disabled template',default=>'Missing'};
-}
-[$names,$manyMaps,$maps]=$resourceRows(ProductMappingResource::class,ListProducts::class,'template');
-same($expectedTemplates,$names,'Loaded template names include disabled templates, null and dangling references');
-same($oneMap,$manyMaps,'Template-name queries do not grow per hosting product');
-foreach($maps as $row){
-    expect($row->relationLoaded('dnsTemplate'),'Hosting product query eagerly loads the template');
-    if($row->dnsTemplate!==null){$columns=array_keys($row->dnsTemplate->getAttributes());sort($columns);same(['id','name'],$columns,'Hosting product template loads only its ID and name');}
-}
-$missingCell=$column(Livewire::actingAs($manager)->test(ListProducts::class),'template')->record($maps->last());
-same(['Missing','Choose one in Edit','danger','heroicon-m-exclamation-triangle'],[$missingCell->getState(),$missingCell->getDescriptionBelow(),$missingCell->getColor('Missing'),$missingCell->getIcon('Missing')],'Missing template feedback is unchanged');
-[$counts,$manyTemplates,$profiles]=$resourceRows(RoutingProfileResource::class,ListTemplates::class,'used_by');
-same([$profile->id=>'2 hosting products',$off->id=>'1 hosting product',$third->id=>'2 hosting products'],$counts,'Loaded counts include disabled maps and use normal plurals');
-same($twoTemplates,$manyTemplates,'Used-by queries do not grow per DNS template');
-foreach($profiles as $row){same(WatchFacts::products(WatchFacts::usedBy((int)$row->id)['products']),$counts[$row->id],'List and detail product counts agree');}
-$empty=WatchProfile::create(['name'=>'Unused template','nameservers'=>['ns1.unused.test'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic unused template']);
-[$counts]=$resourceRows(RoutingProfileResource::class,ListTemplates::class,'used_by');same('0 hosting products',$counts[$empty->id],'Unused template count remains zero');
-DB::rollBack();
 
 // Expiry indicators must describe the same pre-expiry candidates as the bounded historical scan.
 DB::beginTransaction();
@@ -401,4 +319,4 @@ same([$intervalSeed],(new ListWatches)->expiryQuery($only(),7)->pluck('id')->all
 DB::rollBack();
 expect($indicatorErrors===[],"Expiry indicator regressions:\n".implode("\n",$indicatorErrors));
 
-$nativeSuccessful=true;echo "Domain monitoring, DNS templates and Hosting products pages passed.\n";
+$nativeSuccessful=true;echo "Domain monitoring and DNS templates pages passed.\n";

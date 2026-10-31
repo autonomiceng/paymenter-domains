@@ -59,31 +59,8 @@ final readonly class OwnerActionController
                 // The fixed-field draft uses these same raw records after validation errors.
                 $request->request->set('records',$p['records']??[]);
             }
-            $current=in_array($action,['dns','srv'],true)?(\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::forDomain($d)[$action]??throw new \DomainException('Current records required.')):null;
-            $payload=match($action) {
-                'nameservers'=>($p['use_default']??null)==='1' && $d->registrar_key==='enom'
-                    ? ['nameservers'=>[],'use_default'=>true] : ['nameservers'=>OwnerNameservers::parse($p['nameservers']??null,false,$d->registrar_key)],
-                'lock'=>['locked'=>match($p['locked']??null){'1'=>true,'0'=>false,default=>throw new \DomainException}],
-                'contacts','contact_profile'=>['role'=>$p['role']??'all','contact'=>$p['contact']??[]],
-                'dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'=>\Paymenter\Extensions\Servers\Domains\Services\OwnerRecordInput::payload($action,$p,$d->domain),
-                default=>[],
-            };
-            if ($action==='srv') { $payload=\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::restoreSrv($d,$payload); }
-            if ($action==='nameservers') {
-                try { $this->ports->forDomain($d)->validate($action,$payload,$d->domain); }
-                catch (\Throwable) { throw new \Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation(['nameservers']); }
-            }
-            // Actions that can take a site offline or move the domain need the confirm step's field; plain edits do not.
-            $risky=match($action) {
-                'nameservers','auth_code_email','auto_renew_off','ds_delete','glue_delete'=>true,
-                'lock'=>$payload['locked']===false,
-                'dns','srv'=>count($payload['records'])<count($current) || (bool) array_filter($p['records'],
-                    static fn($row,$index)=>isset($current[$index]) && \Paymenter\Extensions\Servers\Domains\Services\OwnerRecordInput::removed($row),ARRAY_FILTER_USE_BOTH),
-                default=>false,
-            };
-            if ($risky&&($p['confirmed']??null)!=='1') { throw new \Paymenter\Extensions\Servers\Domains\Services\OwnerConfirmRequired; }
-            \Paymenter\Extensions\Servers\Domains\Services\Runtime::management($d,$this->management)->request($request->user(),$domain,$action,$payload,$nonce,$this->ports->forDomain($d),recordIdentity:in_array($action,['dns','srv'],true)?\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d):null);
-        },'Change requested. Check History for updates.');
+            (new \Paymenter\Extensions\Servers\Domains\Services\ManagementForms($this->management,$this->ports))->submit($request->user(),$d,$action,$p,$nonce);
+        },\Paymenter\Extensions\Servers\Domains\Services\ManagementForms::REQUESTED);
     }
     private function submit(Request $request,int $domain,string $action,\Closure $work,string $message)
     {
@@ -108,8 +85,7 @@ final readonly class OwnerActionController
             return $this->failed($request,$domain,$action,array_intersect_key([
                 'nameservers'=>$owned->registrar_key==='enom'&&$this->owners->operation($owned)?->action==='transfer'?'Keep your current nameservers during this transfer. You can change them after the transfer finishes.':'These nameservers cannot be used for this order. Contact support.','privacy'=>'WHOIS privacy isn’t available for this domain.'],array_flip($error->fields)));
         } catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation $error) {
-            $fields=array_unique(array_map(static fn($field)=>preg_replace('/^contacts\\.[^.]+\\./','contact.',$field),$error->fields));
-            return $this->failed($request,$domain,$action,(new OwnerFormValidation($fields))->messages($owned->domain,registrar:$owned->registrar_key));
+            return $this->failed($request,$domain,$action,OwnerFormValidation::contact($error)->messages($owned->domain,registrar:$owned->registrar_key));
         } catch (\Throwable) { return $this->failed($request,$domain,$action,['owner_action'=>'We couldn’t save this change. Check the details and try again. If it keeps happening, contact support.']); }
     }
     private function failed(Request $request,int $domain,string $action,array $errors)

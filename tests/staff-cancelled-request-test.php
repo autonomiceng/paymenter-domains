@@ -33,15 +33,21 @@ InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$op->amount,
 $retirement->inspect($op->domain_id);
 $request()->assertSee('Cancelled')->assertSee('Order cancelled: payment recorded later')->assertSee('Record payment review')->assertSee('Open domain')
     ->assertSee('Not charged')->assertDontSee('not paid')->assertDontSee('Missing')->assertActionHidden('credit');
-// A failed attempt is not money: it still needs a review, but nothing was paid or can be refunded.
+// A later failed try cannot hide an earlier real payment or its staff review.
+InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>$op->amount,'fee'=>'0.00','status'=>'failed']);
+$retirement->inspect($op->domain_id);
+$request()->assertSee('Order cancelled: payment recorded later')->assertSee('Record payment review')
+    ->assertDontSee('payment attempted later');
+// A failed attempt stays visible, but is not money and needs no payment review.
 $attempt=$new(placeholderComFixtureName('truth-failed-attempt-placeholder.com'),paid:false);
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$attempt->domain_id])->assertSuccessful()
     ->callAction('retire_unpaid',['reason'=>'Close the order left open by cleanup'])->assertNotified('Order cancelled');
 InvoiceTransaction::create(['invoice_id'=>$attempt->invoice_id,'amount'=>$attempt->amount,'fee'=>'0.00','status'=>'failed']);
 $retirement->inspect($attempt->domain_id);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$attempt->id])->assertSuccessful()
-    ->assertSee('Order cancelled: payment attempted later')->assertSee('Record payment review')->assertSee('Not charged')
+    ->assertSee('Order cancelled: payment attempted later')->assertDontSee('Record payment review')->assertSee('Not charged')
     ->assertDontSee('payment recorded later')->assertDontSee('No credit added')->assertActionHidden('credit');
+same(0,DB::table('domains_obligation_alerts')->where('domain_id',$attempt->domain_id)->whereNull('resolved_at')->count(),'A failed attempt alone needs no staff alert');
 // Money on another invoice for this service means the order is not unpaid.
 $money=$new(placeholderComFixtureName('truth-second-invoice-placeholder.com'),paid:false);
 $second=Invoice::withoutEvents(fn()=>Invoice::create(['user_id'=>$money->domain->user_id,'currency_code'=>'USD','status'=>'paid','due_at'=>$clock->now()]));

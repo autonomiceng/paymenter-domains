@@ -9,8 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 /** Review a single holding. No catalogue publication or issued-debt mutation. */
 final class StaffHoldingReview
 {
-    public const ACTIONS=['reprice'=>'Update renewal price','stop'=>'Stop renewal','resume'=>'Resume renewal'];
-    public function __construct(private readonly NativeDomainGuard $native,private readonly Clock $clock){}
+    public const ACTIONS=['stop'=>'Stop renewal','resume'=>'Resume renewal'];
+    public function __construct(private readonly Clock $clock){}
     public static function permission(string $action): string
     {if(!isset(self::ACTIONS[$action])){throw new \DomainException('Unknown holding action.');}return 'admin.domains.holdings.'.$action;}
     public static function stamp(array $l): string
@@ -48,22 +48,19 @@ final class StaffHoldingReview
             $history=$d->renewal_policy['staff_holdings']??[];
             if(!is_array($history)||!array_is_list($history)||count($history)>=100){throw new \DomainException('Holding audit full or unavailable.');}
             if(array_filter($history,fn($r)=>($r['key']??null)===$t['key'])){throw new \DomainException('Review key used.');}
-            $before=self::state($l);$price=null;
+            $before=self::state($l);
             if($action!=='stop'){
                 $binding=CatalogueAcceptances::binding($l['account']);$acquisitions=$l['operations']->whereIn('action',['register','transfer']);
                 $anchor=$l['operations']->firstWhere('operation_key',$d->renewal_policy['billing_anchor']['operation_key']??null);
                 if($s->status!=='active'||!$anchor||!RenewalAuthority::completed($anchor,$d,$binding)||$acquisitions->contains(fn($op)=>$op->state!=='succeeded'||!RenewalAuthority::resolved($op,$d,$binding))
                     ||$l['cancel']->where('service_id',$s->id)->contains(fn($r)=>!($r instanceof \App\Models\ServiceCancellation)||$r->type!=='end_of_period')){
-                    throw new \DomainException('Review confirmed domain ownership and billing status before resuming or repricing this holding.');}
+                    throw new \DomainException('Review confirmed domain ownership and billing status before resuming this holding.');}
             }
-            if($action==='reprice'){$price=$this->native->project($l);}
-            else{
-                if($action==='resume'){foreach($l['cancel']->where('service_id',$s->id)as$row){$row->delete();}}
-                $d->update(['renewal_policy'=>[...($d->renewal_policy??[]),'renewals_stopped'=>$action==='stop']]);
-                // No native Service write: retain its paid status and already-null expiry.
-            }
+            if($action==='resume'){foreach($l['cancel']->where('service_id',$s->id)as$row){$row->delete();}}
+            $d->update(['renewal_policy'=>[...($d->renewal_policy??[]),'renewals_stopped'=>$action==='stop']]);
+            // No native Service write: retain its paid status and already-null expiry.
             $history[]=['key'=>$t['key'],'actor_id'=>(int)$staff->id,'action'=>$action,'reason'=>$reason,'at'=>$this->clock->now()->format(DATE_ATOM),
-                'before'=>$before,'after'=>self::state($l),'price'=>$price];
+                'before'=>$before,'after'=>self::state($l)];
             $d->update(['renewal_policy'=>[...($d->renewal_policy??[]),'staff_holdings'=>$history]]);
         });
     }

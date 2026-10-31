@@ -34,6 +34,7 @@ final class DomainListRow
     public static function expires(DomainSummary $s): array
     {
         if ($s->expiry === null) {
+            if ($s->statusState === 'cancelled') { return ['missing' => false, 'tone' => null, 'note' => null]; } // Nothing left to fill in.
             if ($order = self::orderExpires($s->order, $s->urls['support'] ?? null)) { return $order; }
             $wait = self::WAITS[$s->expiryWaits ?? ''] ?? null;
             $cause = $s->kind === 'watch' ? 'Check at your registrar' : ($wait ? Missing::fills($wait) : null);
