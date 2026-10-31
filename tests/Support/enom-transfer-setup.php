@@ -18,10 +18,12 @@ $rdapMode=(object)['mode'=>'ok','calls'=>0];$rdap=new \Paymenter\Extensions\Serv
     if($rdapMode->mode==='404'){return ['status'=>404,'body'=>'{"errorCode":404}'];}
     return ['status'=>200,'body'=>json_encode(['objectClassName'=>'domain','ldhName'=>basename(parse_url($url,PHP_URL_PATH)),'status'=>[$rdapMode->mode==='locked'?'client transfer prohibited':'active'],'events'=>[['eventAction'=>'registration','eventDate'=>$rdapMode->mode==='young'?'2026-10-21T00:00:00Z':'2020-01-01T00:00:00Z'],['eventAction'=>'transfer','eventDate'=>in_array($rdapMode->mode,['young','recent'],true)?'2026-10-21T00:00:00Z':'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>'2027-10-21T00:00:00Z']]])];
 });app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Rdap::class,$rdap);
+if($transferEnvironment??false){app()->instance(\Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class,new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck($rdap));}
 $staff=staffUser([...array_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()),'admin.invoices.update']);Auth::setUser($staff);
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
 $server=Server::create(['name'=>'Synthetic TEST transfer','type'=>'server','extension'=>'Domains','enabled'=>true]);(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
-$transferState=(object)['name'=>'setup.example.com','bill'=>'','pending'=>true,'charge'=>true];require __DIR__.'/enom-transfer-wire.php';
+$transferEnvironment??='test';$transferUid=$transferEnvironment==='live'?'live-uid':'test-uid';
+$transferState=(object)['name'=>'setup.example.com','bill'=>'','pending'=>true,'charge'=>true,'environment'=>$transferEnvironment,'uid'=>$transferUid];require __DIR__.'/enom-transfer-wire.php';
 $setupReply=static function(array $p)use($transferReply):string {
     $body=match($p['Command']){
         'GetTLDList'=>'<TLDList><TLD>com</TLD></TLDList>',
@@ -31,11 +33,13 @@ $setupReply=static function(array $p)use($transferReply):string {
 };
 Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire(['reply'=>$setupReply]);config(['domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
 $settings=app(StaffSettingsWrites::class);$write=static function(string $action,array $data=[],?int $tld=null)use($settings,$staff,$server):void{$r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic TEST transfer');$settings->run($r,$data);};
-$write('configure',['registrar'=>'enom','environment'=>'test','uid'=>'test-uid','token'=>'TEST-SECRET-TOKEN']);$a=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($a);$write('probe');
+$write('configure',['registrar'=>'enom','environment'=>$transferEnvironment,'uid'=>$transferUid,'token'=>'TEST-SECRET-TOKEN']);$a=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($a);
+if(isset($transferConfigured)){$transferConfigured();}
+$write('probe');
 $write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>true]]]);
 $write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);$write('import',['ending'=>'com']);$tld=Tld::where('server_id',$server->id)->sole();
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);$write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>true],$tld->id);
-$server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);$transferProduct=app(NativeCatalogue::class)->product($tld,'transfer');
+if($transferEnvironment==='test'){$server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);}$transferProduct=app(NativeCatalogue::class)->product($tld,'transfer');
 Illuminate\Support\Facades\Schema::create('cache',static function($t):void{$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration')->index();});Illuminate\Support\Facades\Schema::create('cache_locks',static function($t):void{$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
 config(['cache.default'=>'database','session.driver'=>'database','queue.default'=>'database','queue.connections.database.retry_after'=>900]);Queue::fake();$write('processing',['enabled'=>true,'confirmed'=>true]);
 $user=commerceUser();$user->update(['email'=>'transfer-owner@example.com']);foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}

@@ -43,7 +43,7 @@ $make=static function($domain)use($clock,$bindings,$user,$server):Operation {
     App\Helpers\ExtensionHelper::addPayment($invoice->id,null,$op->amount,'0.00','annual-'.$op->id);App\Helpers\ExtensionHelper::addPayment($invoice->id,null,$op->amount,'0.00','annual-'.$op->id);same(1,$invoice->transactions()->count(),'Duplicate native callback creates one successful payment');
     same('paid',App\Models\Invoice::find($invoice->id)->status,'Native paid renewal invoice');return $op->fresh();
 };
-config(['settings.credits_auto_use'=>false]);
+App\Models\Setting::updateOrCreate(['key'=>'credits_auto_use','settingable_type'=>null],['value'=>false,'type'=>'boolean']);config(['settings.credits_auto_use'=>false]); // Stored too: a page save reloads settings from the database.
 $billing=new DomainBilling($bindings,app(NativeDomainGuard::class),$clock);
 try{$billing->invoice($holders['success']->id,$user);throw new LogicException('Manual gate stays off');}catch(Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible){}
 $server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
@@ -63,12 +63,13 @@ $start=static function(string $case)use($s,$ops,$clock,$renewReply,$server):void
 $op=$ops['success'];$start('success');
 $stopDomain=$op->domain()->firstOrFail();$stopReview=Paymenter\Extensions\Servers\Domains\Services\StaffHoldingReview::class;
 $stopKey=$stopReview::ticket($staff->id,$stopDomain->id,'stop',$stopReview::stamp(Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($stopDomain,advisory:true)),$clock);
-(new $stopReview(app(NativeDomainGuard::class),$clock))->run($staff,$stopDomain->id,'stop',$stopKey,'Stop future cycles and retain the paid issued renewal');
+(new $stopReview($clock))->run($staff,$stopDomain->id,'stop',$stopKey,'Stop future cycles and retain the paid issued renewal');
 $before=$money();same($op->invoice_id,$billing->invoice($stopDomain->id,$user)->id,'Future stop retains issued paid debt');
 config(['domains.enom_writes.renewal'=>false]);(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same([],$GLOBALS['enomWire']['forms'],'Off sends no requests');
 same(['queued','renewal_acceptance_required',[]],[$op->fresh()->state,$op->fresh()->safe_code,(array)$op->fresh()->attempt],'Read-only recovery keeps disabled renewal queued and unsealed');same($before,$money(),'Disabled renewal preserves paid money');config(['domains.enom_writes.renewal'=>true]);
 $write('test_renewal',['accept'=>false]);Cache::flush();(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same([],$GLOBALS['enomWire']['forms'],'Missing action acceptance refuses before preflight');
-$write('test_renewal',['accept'=>true,'verified'=>true]);
+same([false,false],array_values(array_intersect_key(Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::read($server->id),['scheduled'=>1,'manual'=>1])),'Renewals off stops new invoices too');same('queued',$op->fresh()->state,'A paid renewal waits, it is not lost');
+$write('test_renewal',['accept'=>true,'verified'=>true]);$server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
 $GLOBALS['enomWire']['during']=static function(array $p)use($op,$clock):void {if($p['Command']==='Extend'){(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);}};
 Cache::flush();$used=DB::table(EnomTestSendLimitSchema::SENDS)->count();
 (new RuntimeWork($clock,new RuntimePorts))->operation($op->id);$commands=array_column($GLOBALS['enomWire']['forms'],'Command');
@@ -108,8 +109,20 @@ $start('uncertain');$op=$ops['uncertain'];$before=$money();$GLOBALS['enomWire'][
 (new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same('uncertain',$op->fresh()->state,'Lost write reply stays uncertain');$GLOBALS['enomWire']['timeout']=false;$GLOBALS['enomWire']['during']=null;
 $count=count($GLOBALS['enomWire']['forms']);Cache::flush();(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);same($count,count($GLOBALS['enomWire']['forms']),'Missing captured ID and unaccepted history never reads or resends');same(null,(new Refunds($clock))->creditRejected($op->id),'Uncertain renewal grants no automatic credit');same($before,$money(),'Uncertainty retains native invoice/payment/credit bytes');
 expect(!str_contains(json_encode($op->fresh()->attempt),'TEST-SECRET-TOKEN'),'Credential redaction');
-$write('history',['history_action'=>'renew','accept'=>true,'verified'=>true,'timezone'=>'America/Los_Angeles','lag'=>60,'retention'=>86400]);
 $s->after=true;$s->bill=(new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A');$clock->at=$clock->at->modify('+10 minutes');
+// The held request offers the history read in one click, only where it can clear this hold.
+$request=fn()=>Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id]);
+$recovery=Paymenter\Extensions\Servers\Domains\Admin\Support\HistoryRecovery::class;$rights=$staff->role->permissions;
+$staff->role->update(['permissions'=>array_values(array_diff($rights,['admin.domains.settings.history']))]);$request()->assertActionHidden($recovery::NAME);$staff->role->update(['permissions'=>$rights]);
+$other=$op->fresh();$other->action='register';expect(!$recovery::offered($other),'A registration read needs a captured order, so history cannot clear it');
+DB::table('domains_accounts')->where('server_id',$server->id)->update(['environment'=>'live']);expect(!$recovery::offered($op->fresh()),'Live history values are not confirmed');DB::table('domains_accounts')->where('server_id',$server->id)->update(['environment'=>'test']);
+// Past the read window the hold stays, and the page says what is left instead of offering a read that can't run.
+$sent=new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']);$now=$clock->at;$tooOld='Ask Enom if this renewal went through.';
+$clock->at=$sent->modify('+86399 seconds');$request()->assertActionVisible($recovery::NAME)->assertDontSee($tooOld);
+$clock->at=$sent->modify('+86400 seconds');$request()->assertActionHidden($recovery::NAME)->assertSee($tooOld)->assertDontSee('Check status');$clock->at=$now;
+$request()->assertSee('Enom’s reply was lost.')->assertActionVisible($recovery::NAME)->callAction($recovery::NAME);
+$request()->assertActionHidden($recovery::NAME);
+$clock->at=$sent->modify('+1 day');$request()->assertSee($tooOld);$clock->at=$now;
 foreach([[],['9002','9003'],['9002']] as $ids){
     $s->orders=$ids;Cache::flush();resetWire(['reply'=>$renewReply]);(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
     same(count($ids)===1?'succeeded':'uncertain',$op->fresh()->state,'Accepted history requires exactly one matching renewal charge');

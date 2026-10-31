@@ -37,6 +37,7 @@ foreach([0,1] as $i){
     same(false,$reminders->remind($d->id),'Credit notice deduplicates');
     $last=Mail::queued(DomainNotice::class)->last();same('domains_domain_order_refunded',$last->emailTemplate->key,'Account credit wording');
     expect(!str_contains($last->render(),'registry did not accept'),'No invented registry rejection');
+    $credited=$op->fresh();$credited->update(['funding'=>[...$credited->funding,'late_credits'=>[[...$credited->funding['refund'],'amount'=>'1.00']]]]);expect($reminders->remind($d->id),'A later credit on the same request gets its own notice');same(false,$reminders->remind($d->id),'Later credit notice deduplicates');
 }
 same($renders[0],$renders[1],'Identical customer message for both holders');
 // Native USD formatting belongs to the administrator, including separators and both affixes.
@@ -80,5 +81,11 @@ same(false,$reminders->remind($op->domain_id),'Handoff failure returns safely');
 same(false,(new Reminders($clock,$bindings))->remind($op->domain_id),'Restart never resends uncertain handoff');
 same($before,Mail::queued(DomainNotice::class)->count(),'No replay after handoff failure');
 expect(DB::table('domains_obligation_alerts')->where('domain_id',$op->domain_id)->where('code','delivery_uncertain')->exists(),'Handoff uncertainty visible');
+// Email Logs follows the real send, because native logging skips these mail classes.
+$queued=Mail::queued(DomainNotice::class)->last();$log=EmailLog::findOrFail($queued->email_log_id);same('pending',$log->status,'Queued mail waits in Email Logs');
+try{$queued->send(new class{public function send(...$args){throw new RuntimeException('Synthetic mail server refusal');}});}catch(RuntimeException){}
+same(['failed','Synthetic mail server refusal'],[$log->fresh()->status,$log->fresh()->error],'Refused mail shows failed');
+$queued->send(new class{public function send(...$args){return null;}});
+same(['sent',null,true],[$log->fresh()->status,$log->fresh()->error,$log->fresh()->sent_at!==null],'Delivered mail shows sent');
 same(0,count($state->calls),'No provider writes from reminders');same(0,$state->reads,'No provider reads from reminders');
 echo "Both holders: native paid/code cutoff, actual credit notices, neutral content and uncertain handoff passed.\n";$nativeSuccessful=true;

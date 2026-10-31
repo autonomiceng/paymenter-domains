@@ -81,6 +81,6 @@ final class StorefrontCatalogueCache
         static $release = null;
         $release ??= hash_file('sha256', dirname(__DIR__).'/Domains.php');
         // Bump the projection version when the cached row shape or eligibility implementation changes.
-        return 'domains.storefront:'.hash('sha256', json_encode([(string) config('app.url'), $release, 4], JSON_THROW_ON_ERROR));
+        return 'domains.storefront:'.hash('sha256', json_encode([(string) config('app.url'), $release, 5], JSON_THROW_ON_ERROR));
     }
 }

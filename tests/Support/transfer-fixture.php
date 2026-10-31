@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\{FakeClock, FakeRegistrar};
 if (($transferEnvironment??Environment::Test)===Environment::Live) { config(['app.url'=>'https://domains-tests.invalid']); }
 extract(commerceFixture(true,environment:$transferEnvironment??Environment::Test)); $clock = new FakeClock($now);
 $guard=new Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices),$clock); $guard->boot();
-Carbon\Carbon::setTestNow($now); Carbon\CarbonImmutable::setTestNow($now); ContactProfileSchema::install();
+Carbon\Carbon::setTestNow($now); Carbon\CarbonImmutable::setTestNow($now); ContactProfileSchema::install(); Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'readers'=>[],'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false,'createShape'=>'nested','enomOrigin'=>($transferEnvironment??Environment::Test)===Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'];
 foreach ($tlds as $tld) { App\Models\Server::find($tld->server_id)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']); }
 $rdap = new Rdap(static function ($url) use ($state): array {
@@ -27,7 +27,9 @@ $rdap = new Rdap(static function ($url) use ($state): array {
             ['eventAction'=>'registration','eventDate'=>'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>'2027-01-01T00:00:00Z']]])];
 });
 $admission = new CartAdmission($native,$sellers,new CheckoutEligibility($bindings,$clock,new TransferPrecheck(new Rdap(fn()=>throw new RuntimeException('Synthetic checkout lookup')))),$clock);
-$admission->boot(); (new InvoiceBinding($admission,$native,$prices,$clock))->boot();
+$invoiceBinding = new InvoiceBinding($admission,$native,$prices,$clock);
+app()->instance(CartAdmission::class,$admission); app()->instance(InvoiceBinding::class,$invoiceBinding);
+$admission->boot(); $invoiceBinding->boot();
 $user = commerceUser(); $user->update(['email'=>'transfer-owner@example.com']);
 foreach (['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value) { $user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]); }
 $refunds = new Refunds($clock); $inputs = new TransferInputs($clock,$refunds);
