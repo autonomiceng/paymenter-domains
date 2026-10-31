@@ -11,7 +11,7 @@ use Filament\Schemas\{Schema,Components\Actions,Components\Flex,Components\Group
 use Filament\Support\Enums\FontFamily;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,BalanceCheck,HelpHint,MissingEntry,NameSiloAccountAction,PslActions,RegistrarFacts,ReminderAction,SettingsActions,Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,BalanceCheck,HelpHint,MissingEntry,NameSiloAccountAction,OnOffSwitch,PslActions,RegistrarFacts,ReminderAction,SettingsActions,Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,StaffSettingsReview};
@@ -59,7 +59,7 @@ class RegistrarAccount extends Page
         $id=$this->account;$setup=fn(string $name)=>SettingsActions::setup($id,$this->reviewStamp,$name);
         $actions=[Action::make('check_balance')->label('Check balance')->visible(RegistrarFacts::connected($this->record(),$this->status()))->action(fn()=>$this->checkBalance())];
         if (!$this->record()) { return [...$actions,$setup('configure'),$setup('enroll_sandbox')]; }
-        return [...$actions,$setup('processing'),ActionGroup::make([$setup('configure'),NameSiloAccountAction::make($id),
+        return [...$actions,ActionGroup::make([$setup('configure'),NameSiloAccountAction::make($id),
             Action::make('price_history')->label('View price history')->color('gray')->visible(fn()=>Staff::can(Staff::POLICY))->modalHeading('Price history')
                 ->modalSubmitAction(false)->modalCancelActionLabel('Close')->schema(fn()=>[Html::make(fn()=>TldFacts::historyTable(TldFacts::history($id)))])])
             ->label('More')->button()->color('gray')->icon('heroicon-m-chevron-down')->iconPosition('after')];
@@ -78,18 +78,15 @@ class RegistrarAccount extends Page
             $alerts=AccountChecklist::alerts($a);$system[$alerts['tone']==='success'?'passing':'failing'][]=$alerts;
             $id=(int)$s->id;
             $renewals=$this->rows('renewal',AccountChecklist::renewals($id),false);
-            $renewals[]=Actions::make([SettingsActions::setup($id,$this->reviewStamp,'renewal_billing'),ReminderAction::make($id)]);
-            // Kept for contracts with no other staff path: transaction history, email claims and email checks.
-            $more=Actions::make(SettingsActions::make($id,null,$this->reviewStamp,true,['history','delivery_review','alert_review']));
+            $renewals[]=Actions::make([SettingsActions::setup($id,$this->reviewStamp,'renewal_billing'),SettingsActions::setup($id,$this->reviewStamp,'unpaid_hold'),ReminderAction::make($id)]);
             $sections[]=Group::make([
                 Section::make('Setup checklist')->schema($this->rows('setup',AccountChecklist::setup($a,$this->status())))->columnSpanFull(),
                 Section::make('Renewal invoices and reminders')->schema($renewals)->columnSpanFull(),
                 Section::make('Default pricing')->schema($this->defaultPricing($id))->visible(fn()=>Staff::can(Staff::POLICY))->columnSpanFull(),
-                Section::make('Other settings')->schema([$more])->collapsible()->collapsed()->columnSpanFull(),
             ])->key('account_'.$id)->extraAttributes(['class'=>'domains-account'])->columnSpanFull();
         }
-        $checks=$this->rows('check',$system['failing'],false);
-        if ($system['passing']) { $checks[]=Section::make('Passing checks')->schema($this->rows('pass',$system['passing'],false))->collapsible()->collapsed()->compact(); }
+        $checks=$system['failing']?$this->rows('check',$system['failing'],false):[TextEntry::make('all_good')->hiddenLabel()->state('All good')->icon('heroicon-m-check-circle')->iconColor('success')];
+        if ($system['passing']) { $checks[]=Section::make('Details')->schema($this->rows('pass',$system['passing'],false))->collapsible()->collapsed()->compact(); }
         $sections[]=Section::make('System checks')->schema($checks)->key('system_checks')->extraAttributes(['class'=>'domains-account'])->columnSpanFull();
         return $schema->components($sections);
     }
@@ -101,11 +98,11 @@ class RegistrarAccount extends Page
         $tlds=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::bound(\Paymenter\Extensions\Servers\Domains\Models\Tld::query())->where('server_id',$id)->where('use_default_rule',true)->orderBy('tld')->pluck('tld');
         $used=$tlds->isEmpty()?'No TLDs use it yet.':'Used by '.$tlds->count().' '.($tlds->count()===1?'TLD':'TLDs').': '.$tlds->map(fn($t)=>'.'.$t)->implode(', ').'.';
         $entry=MissingEntry::apply(TextEntry::make('default_pricing')->label('Customer pays')->state($rule)->inlineLabel(),cause:$rule===null?"Saved default pricing can't be read. Use Edit default pricing.":null);
-        if ($rule!==null) { $entry->belowContent($used.' TLDs with their own prices are not affected.'); }
+        if ($rule!==null) { $entry->belowContent($used); }
         try { $feeText=CardFee::describe(CardFee::read($id)).' per payment'; }
         catch (\Throwable) { $feeText=null; }
         $feeEntry=MissingEntry::apply(TextEntry::make('card_fee')->label('Card fee')->state($feeText)->inlineLabel(),cause:$feeText===null?"Saved card fee can't be read. Use Edit card fee.":null);
-        if ($feeText!==null) { $feeEntry->belowContent('Used for estimated profit on the Price list, and by pricing that adds a percentage to cost and card fee.'); }
+        if ($feeText!==null) { $feeEntry->hintAction(HelpHint::make('Used for estimated profit on the Price list, and by pricing that adds a percentage to cost and card fee.')); }
         return [Flex::make([$entry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'default_rule')])->grow(false)])->from('md'),
             Flex::make([$feeEntry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'card_fee')])->grow(false)])->from('md')];
     }
@@ -118,14 +115,21 @@ class RegistrarAccount extends Page
             if ($r['value']!==null&&$r['cause']!==null) { $entry->belowContent($r['tone']==='danger'||$r['tone']==='warning'?RegistrarFacts::tone($r['cause'],$r['tone']):$r['cause']); }
             if ($r['tone']==='success') { $entry->icon('heroicon-m-check-circle')->iconColor('success'); }
             if ($r['help']) { $entry->hintAction(HelpHint::make($r['help'])); }
-            if (!empty($r['buttons'])) { $out[]=Flex::make([$entry,Actions::make($r['buttons'])->grow(false)])->from('md'); }
-            elseif ($buttons&&$r['action']) {
-                $action=SettingsActions::setup($this->account,$this->reviewStamp,$r['action']);
-                if ($r['action']==='renewal_billing') { $action->name('renewal_billing_on_'.$this->account)->label('Turn on'); }
-                $out[]=Flex::make([$entry,Actions::make([$action])->grow(false)])->from('md');
-            } else { $out[]=$entry; }
+            if (in_array($r['value'],['On','Off'],true)) { $out[]=$this->switchRow($prefix.'_'.$i,$r); }
+            elseif (!empty($r['buttons'])) { $out[]=Flex::make([$entry,Actions::make($r['buttons'])->grow(false)])->from('md'); }
+            elseif ($buttons&&$r['action']) { $out[]=Flex::make([$entry,Actions::make([SettingsActions::setup($this->account,$this->reviewStamp,$r['action'])])->grow(false)])->from('md'); }
+            else { $out[]=$entry; }
         }
         return $out;
+    }
+    /** The switch comes first, so a section's switches line up. One that can't be used here shows its state only, and says why. */
+    private function switchRow(string $key,array $r): Flex
+    {
+        $on=$r['value']==='On';$action=$r['buttons'][0]??($r['action']?SettingsActions::setup($this->account,$this->reviewStamp,$r['action']):null);
+        $live=(bool)$action?->isVisible();$help=trim(($r['help']??'').($live?'':' '.$r['cause']));
+        $entry=TextEntry::make($key)->label($r['label'])->state($r['cause'])->color('gray');
+        if ($help!=='') { $entry->hintAction(HelpHint::make($help)); }
+        return Flex::make([$live?Actions::make([OnOffSwitch::apply($action,$on,$r['label'])])->grow(false):Html::make(OnOffSwitch::html($on,$r['label']))->grow(false),$entry]);
     }
     private function accountEntries(Server $s, ?Account $a): array
     {

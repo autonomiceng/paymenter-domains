@@ -13,19 +13,22 @@ The encrypted review binds to the immutable account fingerprint and exact protoc
 Clearing it stops new writes; retained attempts still reconcile while the
 deployment opt-in stays on. Turning off the deployment opt-in pauses confirmation. It never permits resend or automatic credit.
 
-Renewal billing and owner requests remain independent native server settings:
-`domains_billing_enabled` and `domains_manual_renewals_enabled`. Staff set them in
-Registrars → **Review renewal billing** (see below); neither acceptance nor
-processing sets them.
+The **Renewals** switch writes acceptance and `domains_billing_enabled` together, and
+a paid-renewal request refuses without acceptance, so a customer cannot pay for a
+renewal that can't go out. `domains_manual_renewals_enabled` stays its own setting: staff set it
+with **Customer can renew early** on the registrar account (see below). Off clears it too, and any
+half left on reads On. `DomainBilling` refuses a new invoice for any Enom account unless send acceptance
+is current, once the site has an Enom identity. That includes the site flag off and an account from
+the other environment (`renewal-billing-test.php`, `enom-live.php`).
 A manual owner request creates or retrieves the native invoice for the current
 cycle. Scheduled billing uses the saved issue/due calendar. Native payment funds
 one immutable obligation; stopping future renewals preserves already-issued debt.
 
 The worker independently checks accepted annual renewal support, current native
 funding/authority, provider ownership/expiry, ordinary state, nonpremium annual
-price, auto-renew off and sufficient USD balance. Unlike registration's cached
-balance prerequisite, renewal's USD attestation is followed by both fresh balance
-reads inside admission. Grace and redemption remain unavailable.
+price, auto-renew off and sufficient USD balance. Renewal's USD attestation is
+followed by both fresh balance reads inside admission. Registration also reads the
+balance in preflight and has no cached-balance prerequisite. Grace and redemption remain unavailable.
 
 One ordinary renewal performs two complete six-read assessments:
 GetDomainInfo, GetExtendInfo, Check, GetDomainInfo, GetRenew,
@@ -201,6 +204,6 @@ real gateway collection, registrar acceptance or delivered mail.
 | Expiry date or later | No new invoice | Refused; retained payment link hidden |
 
 The owner-Off notice offers Renew now until expiry minus one day, then asks the owner to contact support.
-The existing worker cancels provably unsent, unpaid renewal invoices at expiry, including manual invoices and owner-Off holdings; transactions or uncertain collection prevent cancellation.
+The worker cancels an early renewal invoice nobody paid after 7 days while its issue date is still ahead, and sends nothing (`renewal-cycles-test.php`). The existing worker cancels provably unsent, unpaid renewal invoices at expiry, including manual invoices and owner-Off holdings; transactions or uncertain collection prevent cancellation.
 
 `runtime-worker-test.php` checks both registrars: only the current pending renewal invoice line shows its payment due date. Paid registration, paid or cancelled renewal, and another pending cycle with the same due date hide it.

@@ -26,6 +26,16 @@ final class EnomTestRenewal
             return $s?->encrypted===true && json_decode($s->value,true,8,JSON_THROW_ON_ERROR)===['fingerprint'=>$b->fingerprint,...self::protocol($b)];
         }catch(\Throwable){return false;}
     }
+    /** One switch over the send permission and billing flags. Any half left on shows On, so the first click clears them all. */
+    public static function on(AccountBinding $b): bool
+    {
+        return self::enabled($b)&&(self::accepted($b)||RenewalBillingSettings::anyOn($b->serverId));
+    }
+    /** Once the site has an Enom identity, an account that can't send gets no new invoice: a paid one would sit with no renewal behind it. That includes an account from the other environment, which never sends. NameSilo has its own send rule. */
+    public static function holdsInvoices(AccountBinding $b): bool
+    {
+        return $b->registrarKey==='enom'&&\Paymenter\Extensions\Servers\Domains\Data\Environment::tryFrom((string)config('domains.enom_identity.environment'))!==null&&!self::accepted($b);
+    }
     public static function review(StaffSettingsReview $r,array $data): void
     {
         $r->local(function()use($r,$data):void {
@@ -38,6 +48,7 @@ final class EnomTestRenewal
                 $value=['fingerprint'=>$b->fingerprint,...$protocol];
             }else{$value=null;}
             $s->encrypted=true;$s->type='string';$s->value=json_encode($value,JSON_THROW_ON_ERROR);$s->save();
+            RenewalBillingSettings::setSwitch($b->serverId,$value!==null);
         });
     }
     public static function acceptance(AccountBinding $b): RenewalAcceptance

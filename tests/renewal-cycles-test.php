@@ -7,6 +7,7 @@ use App\Models\{InvoiceTransaction, Role};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, PricingRule, RenewalFunding};
 [$op, $d, $b, $invoice] = $makeRenewal(placeholderComFixtureName('renew-replacement-placeholder.com'), false);
 $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
@@ -161,4 +162,72 @@ foreach (['partial' => 100, 'settled' => 0, 'overpaid' => -1] as $case => $remai
     if ($case === 'partial') { same($remaining, PricingRule::minor($creditPayments->sole()->amount), 'Credit transaction records remaining, not total'); }
 }
 $prepaidRemaining = null;
+// An early renewal nobody pays closes after a week with nothing sent, and the scheduled invoice still comes.
+$at=static fn(string $when)=>new DateTimeImmutable($when);
+$earlyRenewal=static function(string $name,string $when)use($makeRenewal,$clock,$at):array {
+    $made=$makeRenewal(placeholderComFixtureName($name),false,1,false,static function()use($clock,$at,$when):void {$clock->instant=$at($when);});
+    DB::table('domains_operations')->where('id',$made[0]->id)->update(['created_at'=>$at($when)->format('Y-m-d H:i:s')]);return $made;
+};
+[$early,$earlyDomain,,$earlyInvoice]=$earlyRenewal('renew-early-placeholder.com','2027-08-01T12:00:00Z');$sent=[$state->calls,$state->writes];
+$clock->instant=$at('2027-08-08T11:59:00Z');$cycles->closeEarlyUnpaid($earlyDomain->id);same('pending',$earlyInvoice->fresh()->status,'The week is not up yet');
+$clock->instant=$at('2027-08-08T12:00:00Z');$cycles->closeEarlyUnpaid($earlyDomain->id);$early=$early->fresh();
+same(['cancelled','rejected','renewal_cancelled_unpaid','Early renewal not paid'],[$earlyInvoice->fresh()->status,$early->state,$early->safe_code,$early->policy['unpaid_retirement']['reason']],'Unpaid early renewal closes');
+same($sent,[$state->calls,$state->writes],'Closing an early renewal sends nothing to the registrar');
+same(null,\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::renewalCycle($earlyDomain->fresh(),true),'The customer sees no closed invoice and can renew again');
+$clock->instant=$at('2027-08-10T12:00:00Z');$again=$billing->invoice($earlyDomain->id,$user);$againOp=Operation::where('invoice_id',$again->id)->sole();
+expect(str_ends_with($againOp->operation_key,':replacement:1'),'Renew now after closing makes a new invoice');
+DB::table('domains_operations')->where('id',$againOp->id)->update(['created_at'=>'2027-08-10 12:00:00']);$clock->instant=$at('2027-08-17T12:00:00Z');$cycles->closeEarlyUnpaid($earlyDomain->id);same('cancelled',$again->fresh()->status,'A second unpaid early renewal closes too');
+$product->server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'],['value'=>true,'type'=>'boolean']);
+$clock->instant=$at('2027-09-27T12:00:00Z');$scheduled=$billing->invoice($earlyDomain->id);$scheduledOp=Operation::where('invoice_id',$scheduled->id)->sole();
+same(['2027-10-11','pending',true],[$scheduled->due_at->format('Y-m-d'),$scheduled->status,str_ends_with($scheduledOp->operation_key,':replacement:2')],'The scheduled invoice issues on its usual day');
+$clock->instant=$at('2027-10-05T12:00:00Z');$cycles->closeEarlyUnpaid($earlyDomain->id);same('pending',$scheduled->fresh()->status,'The scheduled invoice is never closed as early');
+// Once the billing window opens the invoice is the normal one, and money on the way keeps it open.
+[,$windowDomain,,$windowInvoice]=$earlyRenewal('renew-early-window-placeholder.com','2027-09-25T12:00:00Z');
+$clock->instant=$at('2027-10-03T12:00:00Z');$cycles->closeEarlyUnpaid($windowDomain->id);same('pending',$windowInvoice->fresh()->status,'An invoice that reached the billing window stays');
+[,$payingDomain,,$payingInvoice]=$earlyRenewal('renew-early-paying-placeholder.com','2027-08-01T12:00:00Z');
+InvoiceTransaction::create(['invoice_id'=>$payingInvoice->id,'amount'=>'8.95','fee'=>'0.00','status'=>'processing']);
+$clock->instant=$at('2027-08-09T12:00:00Z');$cycles->closeEarlyUnpaid($payingDomain->id);same('pending',$payingInvoice->fresh()->status,'A payment in progress keeps the invoice');
+// Staff and customer read the same billing date: at the issue date the invoice is the normal one for both.
+[$edge]=$earlyRenewal('renew-early-edge-placeholder.com','2027-09-20T12:00:00Z');app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);$edgeLabel=static fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::requestStatus($edge->fresh())['reason'];
+$clock->instant=$at('2027-09-20T12:00:00Z');same(RequestStatus::earlyRenewal($edge->policy['calendar']['due']),$edgeLabel(),'Before the issue date staff read the early words');
+$clock->instant=$at($edge->policy['calendar']['issue'].'T00:00:00Z');same(null,\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::early($edge->fresh(),$clock->now()),'On the issue date it is the normal invoice');
+expect($edgeLabel()!==RequestStatus::earlyRenewal($edge->policy['calendar']['due']),'Staff stop saying early on the same date');
+// Money can land after the week: Stripe writes no local row until its first webhook, so a closed invoice can still be paid. It all becomes credit.
+config(['settings.credits_auto_use'=>true]);$refunds=new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock);$cash=static fn()=>PricingRule::minor((string)($user->credits()->first()?->amount??'0.00'));$pay=App\Helpers\ExtensionHelper::class;
+$closed=static function(string $name)use($earlyRenewal,$cycles,$clock,$at,$user):array {
+    $user->credits()->update(['amount'=>'0.00']);$made=$earlyRenewal($name,'2027-08-01T12:00:00Z');config(['settings.credits_auto_use'=>true]);$clock->instant=$at('2027-08-08T12:00:00Z');$cycles->closeEarlyUnpaid($made[1]->id);same('cancelled',$made[3]->fresh()->status,'The week closes the invoice');
+    $clock->instant=$at('2027-08-09T12:00:00Z');return $made;
+};
+$notes=static fn($domain)=>Operation::where('domain_id',$domain->id)->get()->map(fn($op)=>\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::lateNote($op))->filter()->values()->all();
+$words=static fn(string $amount)=>'Paid after this invoice closed. We added '.$amount.' to account credit. You can apply it on an invoice.';
+[$late,$lateDomain,,$lateInvoice]=$closed('renew-late-partial-placeholder.com');
+$pay::addPayment($lateInvoice->id,null,'1.00');$refunds->retryPending();
+same(100,$cash(),'A $1 payment on a closed invoice becomes $1 of credit');
+same([$words('$1.00')],$notes($lateDomain),'The closed request shows the amount and where it goes');
+same($words('$1.00'),\Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::requestStatus($late->fresh())['reason'],'Staff read the same words');
+same(0,$refunds->retryPending(),'The next sweep changes nothing');same(100,$cash(),'A payment is credited once');
+same(1,Operation::where('domain_id',$lateDomain->id)->where('action','renew')->count(),'Late money starts no renewal');
+[$twice,$twiceDomain,,$twiceInvoice]=$closed('renew-late-twice-placeholder.com');$amount=PricingRule::minor($twice->amount);
+foreach([1,2] as $n){$pay::addPayment($twiceInvoice->id,null,$twice->amount);$refunds->retryPending();same($n*$amount,$cash(),'Full payment '.$n.' on a closed invoice becomes credit');}
+same([$words(\Paymenter\Extensions\Servers\Domains\Services\RenewalReminders::money(PricingRule::decimal(2*$amount)))],$notes($twiceDomain),'The note adds up what was credited');
+[$frozen,,,$frozenInvoice]=$closed('renew-late-frozen-placeholder.com');$first=$pay::addPayment($frozenInvoice->id,null,$frozen->amount);
+$refund=['amount'=>$frozen->amount,'payments'=>[['id'=>(int)$first->id,'amount_minor'=>PricingRule::minor($frozen->amount)]],'to'=>'account_credit'];$frozen=$frozen->fresh();$frozen->update(['funding'=>[...($frozen->funding??[]),'refund'=>$refund]]);
+$pay::addPayment($frozenInvoice->id,null,'2.00');$refunds->retryPending();
+same([200,$refund],[$cash(),$frozen->fresh()->funding['refund']],'A later payment is credited and the frozen credit stays as it was');
+// A card declined after the close leaves the scheduled renewal free to issue.
+[$declined,$declinedDomain,,$declinedInvoice]=$closed('renew-late-declined-placeholder.com');
+$pay::addFailedPayment($declinedInvoice->id,null,$declined->amount);same('cancelled',$declinedInvoice->fresh()->status,'A failed payment keeps the invoice closed');
+$clock->instant=$at('2027-09-27T12:00:00Z');$next=$billing->invoice($declinedDomain->id);same(['pending',true],[$next->status,str_ends_with(Operation::where('invoice_id',$next->id)->sole()->operation_key,':replacement:1')],'A declined card does not block the scheduled renewal');
+// A declined card is not money, so it does not stop a good payment after it. That credit then pays the scheduled invoice.
+[$good,$goodDomain,,$goodInvoice]=$closed('renew-late-good-placeholder.com');
+$pay::addFailedPayment($goodInvoice->id,null,$good->amount);$pay::addPayment($goodInvoice->id,null,$good->amount);$refunds->retryPending();same(PricingRule::minor($good->amount),$cash(),'The good payment becomes credit');
+$clock->instant=$at('2027-09-27T12:00:00Z');$next=$billing->invoice($goodDomain->id);same(['paid',0],[$next->status,$cash()],'The next renewal invoice uses the credit');
+// The replacement invoice was already open when the money landed. A checkout could be open on it, so the sweep leaves the credit to the customer.
+[$first,$openDomain,,$firstInvoice]=$closed('renew-late-open-placeholder.com');$open=$billing->invoice($openDomain->id,$user);same('pending',$open->status,'The replacement waits for payment');
+$pay::addPayment($firstInvoice->id,null,$first->amount);$refunds->retryPending();$kept=PricingRule::minor($first->amount);same($kept,$cash(),'The late money is credit');
+$billing->invoice($openDomain->id);same(['pending',$kept,0],[$open->fresh()->status,$cash(),$open->transactions()->count()],'A sweep leaves an open invoice and the credit alone');
+Livewire\Livewire::actingAs($user)->test(App\Livewire\Invoices\Show::class,['invoice'=>$open->fresh()])->set('selectedMethod','credit')->call('processPayment');
+same(['paid',0,1],[$open->fresh()->status,$cash(),$open->transactions()->count()],'The customer applies the credit on the invoice');
+// The check the registrar step runs before it sends the renewal.
+Illuminate\Support\Facades\DB::transaction(function()use($open,$openDomain){$l=Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($openDomain->fresh());Paymenter\Extensions\Servers\Domains\Services\RenewalFunding::requireCurrent($l['operations']->firstWhere('invoice_id',$open->id),$l);});
 echo "Unpaid replacement, staff complimentary authority, fixed terms and caps passed\n"; $nativeSuccessful=true;

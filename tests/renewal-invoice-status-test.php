@@ -27,9 +27,9 @@ $replacementOp=$d->operations()->where('invoice_id',$replacement->id)->sole();
 same($old->base_expires_at->format('Y-m-d'),$replacementOp->base_expires_at->format('Y-m-d'),'Replacement is for the cancelled renewal cycle');
 ObligationAlerts::record($d,'operation_review',$clock->now()->getTimestamp());
 $facts=DomainFacts::for($d->fresh());
-same(['On','Awaiting payment: invoice #'.$replacement->id],[$facts['Renewal invoices']['value'],$facts['Renewal invoices']['sub']],'Billing names the current invoice before another reminder check');
+same(['Invoice #'.$replacement->id,'Awaiting payment'],[$facts['Open invoice']['value'],$facts['Open invoice']['sub']],'Billing names the current invoice before another reminder check');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()
-    ->assertSee('Awaiting payment: invoice #'.$replacement->id)->assertDontSee('Unpaid renewal invoice cancelled')
+    ->assertSee('Invoice #'.$replacement->id)->assertDontSee('Unpaid renewal invoice cancelled')
     ->assertSee('Registrar request needs a check');
 $reminders->remind($d->id);
 expect(!$openAlert(),'An open replacement resolves the old cancelled-invoice warning');

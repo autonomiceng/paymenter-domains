@@ -2,7 +2,6 @@
 // Enom 444f31c renewal-admission/observation-integration scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/reconciliation-fixture.php';
-require __DIR__.'/Support/lifecycle-facts.php';
 \Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, CostUnit, DateEvidence, Disposition, DomainSnapshot, DriverResult, Environment, Evidence, ExpiryPrecision, Money, Query, QuoteEvidence, RenewalCode, RenewalRequest, RenewalStatus, ResultReason, SendState};
@@ -118,8 +117,6 @@ $state->during = static fn () => $clock->instant = new DateTimeImmutable('2027-1
 same(RenewalCode::Changed, $check($request(3))->code, 'Multi-year ordinary read crossing expiry cannot bypass grace');
 $state->duringCommand = null;
 $clock->instant = new DateTimeImmutable('2027-10-18T12:00:00Z');
-same(RenewalCode::Grace, $check()->code, 'Grace acceptance without lifecycle evidence refuses');
-storeLifecycleFixture($binding,lifecycleFixture($clock->now()));
 $decision = $check();
 same(RenewalCode::Admitted, $decision->code, 'Exact expiry boundary admits proven one-year grace'); same(RenewalStatus::Grace, $decision->status, 'Grace from provider inventory');
 same([ReadCommand::Info, ReadCommand::RenewalInfo, ReadCommand::Check, ReadCommand::Expired, ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Balance], $state->calls, 'Grace retains inventory and both fresh identities in seven reads');
@@ -132,13 +129,6 @@ foreach (['RGP', 'Extended RGP', 'Redemption', 'RedemptionPeriod', 'Restorable',
     if (in_array($status, ['RGP', 'Extended RGP', 'Redemption', 'RedemptionPeriod', 'Restorable'], true)) { same(RenewalCode::Restore, $decision->code, 'Explicit restoration refusal'); }
 }
 $state->expired = 'Expired';
-// Fresh policy evidence cannot extend a provider's Expired label beyond the verified window.
-$clock->instant = new DateTimeImmutable('2027-10-19T12:00:00Z');
-storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),'grace_days'=>1]);
-same(RenewalCode::Grace,$check()->code,'Expired inventory at provider expiry plus 24 hours refuses fresh one-day grace');
-$clock->instant = new DateTimeImmutable('2027-10-20T12:00:00Z');
-storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),'grace_days'=>1]);
-same(RenewalCode::Grace,$check()->code,'Expired inventory on day two refuses even freshly verified facts');
 // The engine must also reject unsafe Grace evidence from any accepted reader.
 $syntheticGrace = static function (?DateEvidence $expiry) use ($domain,$binding,$verify,$clock,$request) {
     $registry = new RegistrarRegistry;
@@ -155,60 +145,16 @@ $syntheticGrace = static function (?DateEvidence $expiry) use ($domain,$binding,
     Cache::flush(); return $admission->check($request());
 };
 $expiry = new DateEvidence('2027-10-18T00:00:00+00:00',ExpiryPrecision::Instant,'synthetic_expiry','UTC');
-foreach (['2027-10-18T00:00:01Z'=>RenewalCode::Admitted,'2027-10-18T23:59:00Z'=>RenewalCode::Admitted,
-    '2027-10-19T00:00:00Z'=>RenewalCode::Grace,'2027-10-20T00:00:00Z'=>RenewalCode::Grace,
-    '2027-10-17T23:59:59Z'=>RenewalCode::Grace] as $at=>$expected) {
+foreach (['2027-10-18T00:00:01Z'=>RenewalCode::Admitted,'2027-10-17T23:59:59Z'=>RenewalCode::Grace] as $at=>$expected) {
     $clock->instant = new DateTimeImmutable($at);
-    storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),'grace_days'=>1]);
-    same($expected,$syntheticGrace($expiry)->code,'One-day grace interval boundary '.$at);
+    same($expected,$syntheticGrace($expiry)->code,'Grace starts at the provider expiry '.$at);
 }
-$clock->instant = new DateTimeImmutable('2027-10-18T23:59:59Z');
-storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),'grace_days'=>1]);
-same('2027-10-19T00:00:00+00:00',$syntheticGrace($expiry)->validUntil?->format(DATE_ATOM),'Grace validity is capped at its window deadline');
 same(RenewalCode::Grace,$syntheticGrace(null)->code,'Grace with unknown expiry refuses');
 same(RenewalCode::Grace,$syntheticGrace(new DateEvidence('2027-10-18',ExpiryPrecision::Date,'synthetic_expiry'))->code,'Grace without a parseable expiry instant refuses');
 $later = new DateEvidence('2027-10-18T12:00:00+00:00',ExpiryPrecision::Instant,'synthetic_expiry','UTC');
 $clock->instant = new DateTimeImmutable('2027-10-18T06:00:00Z');
-storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),'grace_days'=>1]);
 same(RenewalCode::Grace,$syntheticGrace($later)->code,'Grace cannot begin before the provider expiry even when local date has passed');
-$clock->instant = new DateTimeImmutable('2027-10-19T00:00:00Z');
-storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),'grace_days'=>1]);
-same(RenewalCode::Grace,$syntheticGrace($later)->code,'Earlier local expiry deadline wins over a later provider instant');
-$earlier = new DateEvidence('2027-10-18T01:00:00+14:00',ExpiryPrecision::Instant,'synthetic_expiry','+14:00');
-$clock->instant = new DateTimeImmutable('2027-10-18T10:59:59Z');
-storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),'grace_days'=>1]);
-same('2027-10-18T11:00:00+00:00',$syntheticGrace($earlier)->validUntil?->setTimezone(new DateTimeZone('UTC'))->format(DATE_ATOM),'Earlier provider deadline wins and days are measured in UTC');
-$clock->instant = new DateTimeImmutable('2027-10-18T11:00:00Z');
-storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),'grace_days'=>1]);
-same(RenewalCode::Grace,$syntheticGrace($earlier)->code,'Earlier provider expiry deadline refuses at equality');
-// Exercise the real provider reads and final locked authority check across the local deadline.
-$clock->instant = new DateTimeImmutable('2027-10-18T23:59:59Z');
-storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),'grace_days'=>1]);
-$state->duringCommand = ReadCommand::Balance;
-$state->during = static fn () => $clock->instant = new DateTimeImmutable('2027-10-19T00:00:00Z');
-same(RenewalCode::Changed,$check()->code,'Grace computed before its deadline refuses when finalized at the deadline');
-$clock->instant = new DateTimeImmutable('2027-10-18T23:59:59Z');
-$state->during = static fn () => $clock->instant = new DateTimeImmutable('2027-10-19T00:00:01Z');
-same(RenewalCode::Changed,$check()->code,'Grace computed before its deadline refuses when finalized after the deadline');
-$state->duringCommand = null;
 $clock->instant = new DateTimeImmutable('2027-10-18T12:00:00Z');
-foreach([['conflicting'=>true],['auto_renew_only'=>true],['grace_supported'=>false],['grace_days'=>0],['grace_currency'=>'EUR'],
-    ['verified_at'=>$clock->now()->modify('+1 second')->format(DATE_ATOM)],['grace_verified_at'=>$clock->now()->modify('+1 second')->format(DATE_ATOM)]] as $change){
-    storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),...$change]);
-    same(RenewalCode::Grace,$check()->code,'Unusable lifecycle evidence refuses real admission');
-}
-storeLifecycleFixture($binding,lifecycleFixture($clock->now()));
-$state->duringCommand=ReadCommand::Balance;
-$state->during=static fn()=>storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()),'conflicting'=>true]);
-same(RenewalCode::Changed,$check()->code,'Evidence changed during reads refuses under final locked stamp');
-storeLifecycleFixture($binding,lifecycleFixture($clock->now()));$state->duringCommand=null;
-// Saved lifecycle values stay until staff change them; a year-old save still admits grace renewal.
-storeLifecycleFixture($binding,lifecycleFixture($clock->now()->modify('-400 days')));
-same(RenewalCode::Admitted,$check()->code,'Old lifecycle values do not expire');
-$clock->instant=new DateTimeImmutable('2027-10-18T10:59:59Z');storeLifecycleFixture($binding,[...lifecycleFixture($clock->now()->modify('-400 days')),'grace_days'=>1]);
-same('2027-10-18T11:00:00+00:00',$syntheticGrace($earlier)->validUntil?->setTimezone(new DateTimeZone('UTC'))->format(DATE_ATOM),'Old lifecycle values still end at the grace deadline');
-$clock->instant=new DateTimeImmutable('2027-10-18T12:00:00Z');
-storeLifecycleFixture($binding,lifecycleFixture($clock->now()));
 $state->price = '99.00'; same(RenewalCode::Admitted, $check()->code, 'Grace has no original-retail floor'); $state->price = '8.95';
 $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');
 // Every final authority check uses fresh locked rows after provider I/O.

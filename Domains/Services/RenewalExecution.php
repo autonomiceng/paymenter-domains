@@ -33,7 +33,7 @@ final class RenewalExecution
             if (isset($op->policy['renewal_admission']['until']) && new \DateTimeImmutable($op->policy['renewal_admission']['until']) > $this->clock->now()) { return null; }
             if ($op->funding_basis === 'paid_invoice' && $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'pending') { return null; }
             try { $this->configured($l); } catch (\Throwable) { $this->hold($op, RenewalCode::Acceptance->value, true); return null; }
-            try { $this->current($op, $l); } catch (\Throwable) { $this->hold($op, 'renewal_funding_or_authority'); return null; }
+            try { $this->current($op, $l); } catch (RenewalHold $held) { $this->hold($op, $held->reason); return null; } catch (\Throwable) { $this->hold($op, 'renewal_funding_or_authority'); return null; }
             $claim = bin2hex(random_bytes(16));
             $op->update(['policy' => [...$op->policy, 'renewal_admission' => ['key' => $claim, 'until' => $this->clock->now()->modify('+360 seconds')->format(DATE_ATOM)]]]);
             $d = $l['domain']; return [new RenewalRequest($d->id, $d->authority_generation, $d->confirmed_revision,
@@ -131,8 +131,8 @@ final class RenewalExecution
     private function current(Operation $op, array $l): array
     {
         $this->configured($l);
-        if (($l['domain']->renewal_policy['automatic_spend_paused'] ?? false)
-            || $op->expected_expires_at > $this->clock->now()->modify('+10 years')) { throw new \DomainException('Renewal spending paused.'); }
+        if ($l['domain']->renewal_policy['automatic_spend_paused'] ?? false) { throw new RenewalHold('renewal_spend_paused', 'Renewal spending paused.'); }
+        if ($op->expected_expires_at > $this->clock->now()->modify('+10 years')) { throw new \DomainException('Renewal term too long.'); }
         return RenewalFunding::requireCurrent($op, $l);
     }
     private function configured(array $l): void

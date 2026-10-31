@@ -34,7 +34,7 @@ class DomainRenewalGateway
 class_alias(DomainRenewalGateway::class, 'Paymenter\\Extensions\\Gateways\\RenewalDouble\\RenewalDouble');
 Queue::fake(); Mail::fake();
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot();
-$billing = new DomainBilling($bindings, $guard, $clock);
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);$billing = new DomainBilling($bindings, $guard, $clock);
 $gateway = Gateway::create(['name'=>'Synthetic saved method', 'extension'=>'RenewalDouble', 'type'=>'gateway', 'enabled'=>true]);
 $agreement = BillingAgreement::create(['user_id'=>$user->id, 'gateway_id'=>$gateway->id, 'name'=>'Synthetic card', 'external_reference'=>'synthetic-only']);
 $server = $product->server;

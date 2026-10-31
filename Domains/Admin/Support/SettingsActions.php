@@ -8,16 +8,21 @@ use Filament\Forms\Components\{Checkbox,Hidden,Radio,Select,Textarea,TextInput};
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestSendLimit,CardFee,PriceCatalogue,PricingRule,PricingRules,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestSendLimit,EnomTestTransfer,CardFee,PriceCatalogue,PricingRule,PricingRules,StaffSettingsReview as Review,StaffSettingsWrites};
 final class SettingsActions
 {
-    private const OUTCOME_NEXT='Open the account page before you try again. Orders paused: it saved, so check the label is yours. Not connected and not set up yet: nothing saved. Off in Paymenter: turn it on in Servers first. Anything else: don’t try again here. Ask your site admin. Trying again may send another key check.';
+    private const OUTCOME_NEXT='Open the account page before you try again. Orders paused: it saved, so check the label is yours. Not connected and not set up yet: nothing saved. Off in Paymenter: turn it on in Servers first. Anything else: don’t try again here. Check the site logs. Trying again may send another key check.';
     public const SAVED_OUTCOME_UNKNOWN='NameSilo accepted the key, but we can’t tell if the account saved. '.self::OUTCOME_NEXT;
     public const GENERIC_OUTCOME_UNKNOWN='We can’t tell if a key check was sent or if the account saved. '.self::OUTCOME_NEXT;
-    private const ADMIN_ORDERS='This account can’t take orders on this site yet. Ask your site admin. Nothing was saved.';
+    private const ADMIN_ORDERS='This account can’t take orders on this site yet. See System checks. Nothing was saved.';
     private const NO_KEY_CHECK='No key check was sent and nothing was saved.';
     private const NOT_SENT='Nothing was sent to the registrar.';
-    private const LIFECYCLE_DAYS='Enter whole numbers from 0 to 365 for grace and restore days. Nothing was saved.';
+    /** Each switch clicks straight through; the audit keeps who, when, before and after. Popups: spends money or stops sales. */
+    private const SWITCHES=['processing','renewals','test_renewal','test_management','test_transfer','live_renewal','live_management','live_transfer','renew_early'];
+    private const POPUPS=['processing'=>'orders','renewals'=>'renewals','test_renewal'=>'renewals','live_renewal'=>'renewals','test_transfer'=>'transfers','live_transfer'=>'transfers'];
+    private const SWITCH_REASON='Changed with the on/off switch.';
+    /** Switch names saved by a writer action with a name of its own. */
+    private const SHARED=['renew_early'=>'renewal_billing','renewals'=>'renewal_billing'];
     /** Keep one snapshot per form, including empty arrays and absent rows. */
     private static function cached(\Closure $read): \Closure
     {
@@ -27,21 +32,12 @@ final class SettingsActions
             return $value;
         };
     }
-    private static function missingIdentity(): \Filament\Schemas\Components\Text
-    { return \Filament\Schemas\Components\Text::make('Missing: saved account identity. Restore it before you turn this on.'); }
     /** The one plain sentence a settings dialog opens with. Detail lives in details(). */
     public static function description(string $name): string
     {
         return match($name){
-            'lifecycle'=>'Set how long after expiry a domain can still be renewed or restored, and what the registrar charges.',
-            'live_management'=>'Lets DNS, nameserver and contact changes go to the registrar for this live account.',
-            'live_renewal'=>'Lets paid renewals go to the registrar for this live account.',
-            'test_management'=>'Lets DNS, nameserver and contact changes go to the registrar for this test account.',
-            'test_renewal'=>'Lets paid renewals go to the registrar for this test account.',
-            'alert_review'=>'Mark this as checked. Nothing is sent. If it fails again, the alert comes back.',
-            'delivery_review'=>'Mark this notification as checked. It is not sent again.',
-            'processing'=>'Lets orders and renewals start for this account.',
-            'renewal_billing'=>'Set when renewal invoices go out and if owners can ask for one.',
+            'renewal_billing'=>'Set when renewal invoices go out.',
+            'unpaid_hold'=>'Set how long an unpaid new domain order keeps its name.',
             'card_fee'=>'Sets the estimated card fee for this account. Saving publishes new prices for TLDs whose pricing adds a percentage to cost and card fee. Other prices and issued invoices stay the same.',
             'default_rule'=>'Sets the pricing every TLD on this account uses unless it has its own. Saving publishes new prices for those TLDs at once. Issued invoices keep their prices.',
             'override'=>'Saving publishes these prices at once. Registrations and transfers below cost are not sold; renewals below cost are still billed. Both alert staff. Issued invoices keep their prices.',
@@ -50,7 +46,6 @@ final class SettingsActions
             'tld_settings'=>'Choose the years customers can buy and what is for sale.',
             'seller'=>'Choose the registrar for new orders. Existing domains stay where they are.',
             'import'=>'Gets current costs from the registrar for the TLDs this account sells.',
-            'history'=>'Use this account’s transaction history to match charges. Clear this to stop. Saved records stay.',
             'enroll_sandbox'=>'Checks the key with one balance read, then saves it. A key can only be used once, and you can’t change it later.',
             'configure'=>'Checks these credentials with one read, then saves them. Saving pauses orders until you resume them.',
             'probe'=>'Reads the balance once and shows it on this page.',
@@ -59,68 +54,27 @@ final class SettingsActions
     /** The rest of what staff may want to know, behind the dialog's "?" helper. Null when the sentence says it all. */
     public static function details(string $name): ?string
     {
-        $live=static fn(array $p)=>$p['route'].', the '.\Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::REQUEST_SECONDS.'-second gap between requests';
-        $liveRoute=['route'=>\Paymenter\Extensions\Servers\Domains\Services\EnomLive::route()];
         return match($name){
-            'lifecycle'=>'Check these with the registrar first and note where you checked. They stay until you change them. If a value is missing or your sources disagree, late renewals and restores stay off. Grace renewal is off for TLDs that only renew automatically. Customers pay the registrar charge plus the normal renewal markup. Saving does not turn on owner checkout or restores.',
-            'live_management'=>'Check the commands at '.$live($liveRoute).' and that changes read back correctly. This is separate from test accounts. DNS tools have their own setting. Changes already sent are checked at the registrar, not sent again.',
-            'live_renewal'=>'Check Extend at '.$live($liveRoute).' and that this account’s balance is in USD. This covers normal yearly renewals only. Renewal invoices, owner requests and orders have their own settings.',
-            'test_management'=>'Check '.implode(', ',($p=\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::protocol())['commands']).' at '.$p['route'].' and the '.$p['interval'].'-second gap between requests. A change finishes only when a read confirms it. If no read confirms it, it is not sent again. DNS tools need a setting on this site and a full, current read of the records. Turning this off holds changes not yet sent; they go out if you turn it back on. Turning this on also starts background reads of domains and records. These use our test send limit for this registrar login, shared with Purchase and Extend, which caps sends over any 24 hours and per minute. Changes already sent keep being checked while this site’s setting stays on.',
-            'test_renewal'=>'Check Extend at '.($p=\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol())['route'].', the '.$p['interval'].'-second gap between requests, and that this account’s balance is in USD. When this site allows it, each paid yearly renewal can send one Extend. This does not turn on renewal invoices, owner requests or orders. Turning it off stops new Extend requests. Renewals already sent keep being checked while this site’s setting stays on.',
-            'processing'=>'Check What you sell and System checks on this page first.',
-            'renewal_billing'=>'Scheduled invoices go out from the issue day until the due day for domains with auto-renew on. Owner requests let a customer ask for a renewal invoice for an active domain at any time before the confirmed expiry date. Both need orders on and a confirmed expiry date. Turning either off stops new invoices only. Issued invoices stay payable and keep their dates, term and amount.',
+            'unpaid_hold'=>'After this time the order closes and anyone can buy the name. Orders with a payment in progress stay open.',
+            'renewal_billing'=>'Invoices go out from the issue day until the due day for domains with auto-renew on. They need orders on and a confirmed expiry date.',
             'tld_settings'=>'You can always offer fewer years or turn sales off. More years, or turning sales back on, must match this account’s setup. Change years and sales under What you sell. Renewals stay on while customers own domains with this TLD. On some test accounts, cart items that no longer fit are removed.',
             'seller'=>'Renewals stay with the registrar that holds the domain. If this one can’t sell, no other takes over. On some test accounts, this TLD’s cart items from the old registrar are removed.',
-            'history'=>'Check that the history is complete across all pages and in USD. Use it for this request type only. Clearing this stops new history reads. Saved requests and money records stay.',
             'enroll_sandbox'=>'One read-only balance request goes to the NameSilo test system. The balance is not saved. NameSilo does not confirm who owns the key, so the label is your own note. Orders stay paused and no TLDs are chosen. The next background run may send one scheduled balance read, then at most one a day. If NameSilo refuses that read, it shows as Read failed. Test connection can send one more balance request. To change the key or label, use a different test key on a new registrar account. Domains, What you sell and requests stay with the old one.',
             'configure'=>'Credentials are saved encrypted. Once connected, the account can’t change.',
             'probe'=>'For a NameSilo test account, a good read shows the key still works. It does not show who owns it. This does not turn on orders or sales.',
             default=>null,
         };
     }
-    /** The alerts Mark alert checked can close, newest first. A search reaches past the first 100; $id looks up one choice. @return array<int,string> */
-    public static function openAlerts(int $server,string $search='',?int $id=null): array
-    {
-        $types=array_intersect_key(\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::LABELS,array_flip(['template_failed','reminder_failed']));
-        return self::openNotices('domains_obligation_alerts',$server,'code',$types,$search,$id)->whereIn('n.code',array_keys($types))->whereNull('n.resolved_at')
-            ->whereColumn('d.authority_generation','n.generation')->get(['n.id','n.code','n.first_seen','d.domain'])
-            ->mapWithKeys(fn(object $a)=>[$a->id=>self::noticeLabel($a->domain,$types[$a->code],(int)$a->first_seen,$a->id)])->all();
-    }
-    /** The notifications Mark notification checked can close, as openAlerts. @return array<int,string> */
-    public static function openDeliveries(int $server,string $search='',?int $id=null): array
-    {
-        $types=\Paymenter\Extensions\Servers\Domains\Services\ReminderTemplates::names();
-        return self::openNotices('domains_reminder_deliveries',$server,'template',$types,$search,$id)->whereIn('n.state',['handoff','uncertain'])->get(['n.id','n.template','n.created_at','d.domain'])
-            ->mapWithKeys(fn(object $n)=>[$n->id=>self::noticeLabel($n->domain,$types[$n->template]??'Notification',(int)$n->created_at,$n->id)])->all();
-    }
-    private static function noticeLabel(string $domain,string $type,int $at,int $id): string
-    { return $domain.' · '.$type.' · '.gmdate('M j, Y H:i',$at).' UTC · #'.$id; }
-    /** @param array<string,string> $types Stored value => the words staff see, so those words can be searched. */
-    private static function openNotices(string $table,int $server,string $typeColumn,array $types,string $search,?int $id): \Illuminate\Database\Query\Builder
-    {
-        $query=\Illuminate\Support\Facades\DB::table($table.' as n')->join('domains_domains as d','d.id','=','n.domain_id')->where('d.server_id',$server)
-            ->where('d.account_fingerprint',Account::where('server_id',$server)->value('account_fingerprint'))->orderByDesc('n.id')->limit(100);
-        if($id!==null){$query->where('n.id',$id);}
-        $search=trim($search);if($search===''){return $query;}
-        $reference=ltrim($search,'#');$like='%'.addcslashes($search,'%_\\').'%';
-        $matching=array_keys(array_filter($types,fn(string $words)=>stripos($words,$search)!==false));
-        return $query->where(fn($q)=>$q->where('d.domain','like',$like)->orWhereIn('n.'.$typeColumn,$matching)->when(ctype_digit($reference),fn($q)=>$q->orWhere('n.id',(int)$reference)));
-    }
-    /** Lists from the database, so a choice can sit outside the first 100. Filament also accepts a saved choice only if its label resolves. */
-    private static function noticePicker(string $field,string $label,\Closure $open): Select
-    {
-        return Select::make($field)->label($label)->options(fn()=>$open())->searchable()->optionsLimit(100)->required()
-            ->getSearchResultsUsing(fn(string $search)=>$open($search))->getOptionLabelUsing(fn($value)=>$open('',(int)$value)[(int)$value]??null);
-    }
     /** One account setup action, keyed by its name (e.g. "processing"). */
     public static function setup(int $server,string $stamp,string $name): Action
     { return self::make($server,null,$stamp,true,[$name])[0]; }
     public static function make(int $server,?int $tld,string $stamp,bool $setup=false,?array $only=null): array
     {
-        $out=[];$names=$setup?['enroll_sandbox','configure','probe','history','test_renewal','test_management','live_renewal','live_management','processing','renewal_billing','default_rule','card_fee','delivery_review','alert_review']:['override','tld_settings','lifecycle','seller'];
+        $out=[];$names=$setup?['enroll_sandbox','configure','probe','renewals','test_renewal','test_management','test_transfer','live_renewal','live_management','live_transfer','processing','renew_early','renewal_billing','unpaid_hold','default_rule','card_fee']:['override','tld_settings','seller'];
         if($only!==null){$names=array_values(array_intersect($names,$only));}
         $target=fn()=>\App\Models\Server::find($server)?->name ?? 'Server #'.$server;
-        foreach($names as $name){
+        foreach($names as $id){
+            $name=self::SHARED[$id]??$id;$switch=in_array($id,self::SWITCHES,true);$popup=isset(self::POPUPS[$id]);
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp))];
             if(in_array($name,['default_rule','override'],true)){
                 $rule=self::cached(static function()use($tld,$name,$server){try{return $tld&&$name==='override'?(new PricingRules)->rule(Tld::findOrFail($tld)):(new PricingRules)->defaultRule($server);}catch(\Throwable){return PricingRule::DEFAULT;}});
@@ -184,69 +138,19 @@ final class SettingsActions
                 $fields[]=\Filament\Schemas\Components\Text::make('These switches control new sales here. They do not renew domains at the registrar.');
                 $fields[]=Checkbox::make('verified')->label('I checked these against this account’s setup');
             }
-            if($name==='lifecycle'){
-                $saved=self::cached(static function()use($server,$tld){
-                    try{$a=Account::where('server_id',$server)->firstOrFail();$t=Tld::findOrFail($tld);
-                    return \Paymenter\Extensions\Servers\Domains\Services\LifecyclePolicies::read(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a),$t->tld)??[];}
-                    catch(\Throwable){return [];}
-                });
-                foreach(['grace_days'=>'Grace days','restore_days'=>'Restore days'] as $key=>$label){$fields[]=TextInput::make($key)->label($label)->integer()->minValue(0)->maxValue(365)->validationMessages(['integer'=>self::LIFECYCLE_DAYS,'min'=>self::LIFECYCLE_DAYS,'max'=>self::LIFECYCLE_DAYS])->required()->default(fn()=>$saved()[$key]??null);}
-                foreach(['grace_supported'=>'Grace renewal offered','restore_supported'=>'Restore offered','auto_renew_only'=>'Auto-renew only','conflicting'=>'Sources disagree'] as $key=>$label){$fields[]=Checkbox::make($key)->label($label)->default(fn()=>$saved()[$key]??false);}
-                foreach([''=>'Policy','grace_'=>'Extra grace charge','restore_'=>'Restore fee'] as $prefix=>$label){
-                    if($prefix!==''){
-                        $amount=$prefix==='grace_'?'grace_extra':'restore_fee';
-                        $fields[]=TextInput::make($amount)->label($label.' amount')->required()->maxLength(14)->default(fn()=>$saved()[$amount]??null)->helperText('What the registrar charges. Enter 0 if it’s free.');
-                        $fields[]=TextInput::make($prefix.'currency')->label($label.' currency')->required()->maxLength(3)->default(fn()=>$saved()[$prefix.'currency']??null);
-                    }
-                    $fields[]=TextInput::make($prefix.'verified_at')->label($label.' date checked')->required()->maxLength(25)->default(fn()=>$saved()[$prefix.'verified_at']??null)->helperText('Date you checked this, with a UTC offset. For example, 2026-10-22T12:00:00Z.');
-                    $fields[]=TextInput::make($prefix.'source')->label($label.' source')->required()->minLength(5)->maxLength(500)->default(fn()=>$saved()[$prefix.'source']??null)->helperText('Where you checked this. Do not include credentials.');
-                }
-                $fields[]=Checkbox::make('verified')->label('I checked these with the registrar')->accepted()->required();
-            }
             if($name==='seller'){
                 $policy=self::cached(static fn()=>\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',Tld::findOrFail($tld)->tld)->first());
                 $fields[]=Select::make('seller')->label('Registrar for new orders')->options(fn()=>\App\Models\Server::whereIn('id',Account::pluck('server_id'))->orderBy('id')->pluck('name','id')->all())->placeholder('None')->default(fn()=>$policy()?->server_id);
                 $fields[]=Checkbox::make('register')->label('Allow registrations')->default(fn()=>$policy()?->register_enabled??false);$fields[]=Checkbox::make('transfer')->label('Allow transfers')->default(fn()=>$policy()?->transfer_enabled??false);
             }
-            if(in_array($name,['live_renewal','live_management'],true)){
-                $liveAccount=Account::where('server_id',$server)->first();
-                try{$b=$liveAccount?\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($liveAccount):null;}
-                catch(\Throwable){$b=null;}
-                if($b===null){$fields[]=self::missingIdentity();}
-                else{
-                    $fields[]=Checkbox::make('accept')->label($name==='live_renewal'?'Allow live renewals on this account':'Allow live DNS, nameserver and contact changes')->helperText('Leave this clear to turn it off.');
-                    $fields[]=Checkbox::make('verified')->label('I checked this on the live account');
-                }
-            }
-            if($name==='test_management'){
-                $fields[]=Checkbox::make('accept')->label('Allow test DNS, nameserver and contact changes')->helperText('Leave this clear to turn it off.');
-                $fields[]=Checkbox::make('verified')->label('I checked this on the test account');
-            }
-            if($name==='test_renewal'){
-                $fields[]=Checkbox::make('accept')->label('Allow test renewals')->helperText('Not during grace or redemption. Leave this clear to turn it off.');
-                $fields[]=Checkbox::make('verified')->label('I checked this on the test account');
-            }
-            if($name==='history'){
-                $fields[]=Select::make('history_action')->label('Request type')->options(['register'=>'Registration','renew'=>'Renewal','transfer'=>'Transfer'])->required();
-                $fields[]=Checkbox::make('accept')->label('Use this history');
-                $fields[]=TextInput::make('timezone')->label('History timezone')->maxLength(64);
-                $fields[]=TextInput::make('lag')->label('Longest delay (seconds)')->integer()->minValue(0)->maxValue(86400);
-                $fields[]=TextInput::make('retention')->label('History kept for (seconds)')->integer()->minValue(86400)->maxValue(31536000);
-                $fields[]=Checkbox::make('verified')->label('I checked the history and these limits');
-            }
-            if($name==='alert_review'){$fields[]=self::noticePicker('alert_id','Alert',fn(string $search='',?int $id=null)=>self::openAlerts($server,$search,$id));$fields[]=Checkbox::make('confirmed')->label('I checked this notification failure')->accepted()->required();}
-            if($name==='delivery_review'){$fields[]=self::noticePicker('delivery_id','Notification',fn(string $search='',?int $id=null)=>self::openDeliveries($server,$search,$id));$fields[]=Checkbox::make('confirmed')->label('I checked the outcome. Do not send it again.')->accepted()->required();}
-            if($name==='processing'){
-                $fields[]=Hidden::make('enabled')->default(fn()=>!Account::where('server_id',$server)->value('processing_enabled'));
-                $fields[]=Checkbox::make('confirmed')->label(fn()=>'I checked '.$target())->accepted()->required();
-            }
             if($name==='renewal_billing'){
                 $billing=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::read($server);
-                $fields[]=Checkbox::make('scheduled')->label('Issue scheduled renewal invoices')->default(fn()=>$billing()['scheduled']);
-                $fields[]=Checkbox::make('manual')->label('Let owners request renewal invoices')->default(fn()=>$billing()['manual']);
                 $fields[]=TextInput::make('issue_days')->label('Issue invoices this many days before expiry')->integer()->minValue(2)->maxValue(365)->required()->default(fn()=>$billing()['issue_days']??21)->helperText('Default 21. Must be more than the due days; at most 365.');
                 $fields[]=TextInput::make('due_days')->label('Invoices fall due this many days before expiry')->integer()->minValue(1)->maxValue(364)->required()->default(fn()=>$billing()['due_days']??7)->helperText('Default 7. At least 1.');
-                $fields[]=Checkbox::make('confirmed')->label(fn()=>'I checked renewal invoices for '.$target())->accepted()->required();
+            }
+            if($name==='unpaid_hold'){
+                $hold=\Paymenter\Extensions\Servers\Domains\Services\UnpaidHoldSetting::class;
+                $fields[]=TextInput::make('minutes')->label('Minutes an unpaid order keeps its name')->integer()->minValue($hold::MIN)->maxValue($hold::MAX)->required()->default(fn()=>$hold::minutes($server))->helperText('Default '.$hold::DEFAULT.'. Between '.$hold::MIN.' and '.$hold::MAX.' (7 days).');
             }
             if($name==='enroll_sandbox'){
                 $fields[]=Hidden::make('environment')->default('test');
@@ -268,15 +172,17 @@ final class SettingsActions
             // Setup buttons that can't run are hidden, not disabled (layout.md section 6).
             $blocked=fn()=>$cannotEnable()||($name==='enroll_sandbox'&&(!\Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::enabled()||Account::where('server_id',$server)->exists()))
                 ||($name==='configure'&&!app(StaffSettingsWrites::class)->connectionAvailable($registrar()))||($name==='probe'&&!app(StaffSettingsWrites::class)->connectionAvailable((string)$registrar()));
-            $on=fn()=>self::accepted($server,$name);
-            $label=$setup?fn()=>self::setupLabel($name,$processing(),$registrar()!==null,$on()):Review::ACTIONS[$name];
-            $out[]=Action::make($name.($setup?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
-                ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||Staff::can(Review::permission('publish')))&&($name!=='lifecycle'||Staff::can(Staff::COSTS))&&(!str_starts_with($name,'live_')||(config('domains.enom_live.'.substr($name,5))===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','live')->exists()))&&Staff::can(Staff::POLICY)&&(Staff::can(Review::permission($name))||($name==='override'&&Staff::can(Review::permission('remove_override'))))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
-                ->requiresConfirmation()->modalHeading($setup?fn()=>self::setupHeading($name,$processing(),$registrar()!==null,$on()):$label)
-                ->modalDescription($name==='processing'?fn()=>$processing()?'New registrar requests on this account wait until you resume.':'Registrar requests on this account start sending again.':($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?"NameSilo accounts can't be connected with API credentials.":self::description($name):self::description($name)))
-                ->modalSubmitActionLabel($setup?fn()=>self::submitLabel($name,$processing(),$registrar()!==null,$on()):($name==='override'?'Save and publish':'Confirm'))->schema($fields)
-                ->action(function(#[\SensitiveParameter] array $data,$livewire)use($name,$server,$tld,$setup){
-                    try{$default=$name==='override'&&($data['pricing']??null)==='default';
+            $turn=fn()=>self::switchOn($id,$server)?'Turn off':'Turn on';
+            $label=$setup?fn()=>self::setupLabel($name,$registrar()!==null):Review::ACTIONS[$name];
+            $out[]=Action::make($id.($setup?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
+                ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||Staff::can(Review::permission('publish')))&&(!str_starts_with($name,'live_')||(config('domains.enom_live.'.substr($name,5))===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','live')->exists()))&&Staff::can(Staff::POLICY)&&(Staff::can(Review::permission($name))||($name==='override'&&Staff::can(Review::permission('remove_override'))))&&($name!=='test_transfer'||(EnomTestTransfer::deploymentEnabled()&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
+                ->requiresConfirmation(!$switch||$popup)->modalHidden($switch&&!$popup)->modalHeading($setup?fn()=>$popup?$turn().' '.self::POPUPS[$id].'?':self::setupHeading($name,$registrar()!==null):$label)
+                ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?"NameSilo accounts can't be connected with API credentials.":self::description($name):self::description($name))))
+                ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':'Confirm'))->schema($switch?[]:$fields)
+                ->action(function(#[\SensitiveParameter] array $data,$livewire)use($id,$name,$server,$tld,$setup,$stamp,$switch){
+                    try{$data=[...$data,...self::saved($id,$server)];
+                        if($switch){$data+=['review_key'=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp),'reason'=>self::SWITCH_REASON];}
+                        $default=$name==='override'&&($data['pricing']??null)==='default';
                         $r=new Review((int)Auth::id(),$server,$tld,$default?'remove_override':$name,(string)($data[$default?'default_key':'review_key']??''),trim((string)($data['reason']??'')));
                         $summary=app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
                         Notification::make()->status(($summary['audit_failed']??false)?'warning':'success')->title(match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
@@ -305,7 +211,7 @@ final class SettingsActions
             $accepted=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);$today=\Paymenter\Extensions\Servers\Domains\Services\PriceSync::callsToday($binding);
             // Sync never adds TLDs, so say which ones it covers and where more are added.
             $endings=array_map(fn($e)=>'.'.$e,array_keys($accepted->endings));$count=count($endings);
-            $text=($count===0?'This account sells no TLDs yet, so there is nothing to sync.':'Gets current costs from '.self::seller($account).' for the '.$count.' '.($count===1?'TLD':'TLDs').' this account sells: '.implode(', ',$endings).'.')
+            $text=($count===0?'This account sells no TLDs yet, so there is nothing to sync.':'Gets current costs from '.self::seller($account).' for the '.$count.' '.($count===1?'TLD':'TLDs').' this account sells: '.implode(', ',array_slice($endings,0,10)).($count>10?' and '.($count-10).' more':'').'.')
                 .' To sell more, add them under What you sell.';
             if($count>0&&$today!==null&&$today['limit']>=1){
                 $calls=\Paymenter\Extensions\Servers\Domains\Services\PriceSync::batchedCalls($accepted,array_keys($accepted->endings));
@@ -390,41 +296,66 @@ final class SettingsActions
         $now=now()->toDateTimeImmutable();
         $waiting=$tlds->filter(function(Tld $t)use($now,$prices){try{PriceCatalogue::requireCosts($t,$now,$prices->get($t->tld,collect()));return false;}catch(\Throwable){return true;}});
         $text=$tlds->count().' '.($tlds->count()===1?'TLD uses':'TLDs use').' the account default: '.$tlds->map(fn($t)=>'.'.$t->tld)->implode(', ').'. Saving publishes '.($tlds->count()===1?'its':'their').' new prices.';
-        return $text.($waiting->isEmpty()?'':' Costs are missing for '.$waiting->map(fn($t)=>'.'.$t->tld)->implode(', ').'. '.($waiting->count()===1?'Its prices':'Their prices').' stay the same until you sync prices and save again.');
+        return $text.($waiting->isEmpty()?'':' Costs are missing for '.$waiting->map(fn($t)=>'.'.$t->tld)->implode(', ').'. '.($waiting->count()===1?'Its prices':'Their prices').' stay the same until you sync prices.');
     }
     /** Notification text after a pricing or card fee change. */
     private static function published(array $summary,string $name): string
     {
         $text=$summary['published']===0&&$summary['failed']===[]?($name==='card_fee'?'Card fee saved. No TLDs count the card fee in their prices, so no prices changed.':'No TLDs use the account default.'):'Published new prices for '.$summary['published'].' '.($summary['published']===1?'TLD':'TLDs').'.';
-        return $text.($summary['failed']===[]?'':' Could not publish '.implode(', ',$summary['failed']).'. Use Sync prices on the TLD list, then save again.')
+        return $text.($summary['failed']===[]?'':' Could not publish '.implode(', ',$summary['failed']).'. Use Sync prices on the TLD list.')
             .(($summary['audit_failed']??false)?" Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved.":'');
     }
-    /** Renewals and DNS management are on when their saved acceptance is current. */
+    /** Renewals, DNS management and transfers are on when their saved acceptance is current. */
     private static function accepted(int $server,string $name): bool
     {
-        if(!preg_match('/^(test|live)_(renewal|management)$/',$name,$m)){return false;}
+        if(!preg_match('/^(test|live)_(renewal|management|transfer)$/',$name,$m)){return false;}
         try{$b=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Account::where('server_id',$server)->firstOrFail());
-            return $m[2]==='renewal'?\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::accepted($b):\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::accepted($b);}
+            return match($m[2]){'renewal'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::on($b),'transfer'=>EnomTestTransfer::accepted($b),default=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::accepted($b)};}
         catch(\Throwable){return false;}
     }
-    private static function setupLabel(string $name,bool $processing,bool $connected,bool $on): string
+    private static function switchOn(string $id,int $server): bool
     {
-        return match(true){$name==='processing'=>$processing?'Pause orders':'Resume orders',$name==='configure'=>$connected?'Edit API credentials':'Connect account',
+        return match($id){'processing'=>(bool)Account::where('server_id',$server)->value('processing_enabled'),
+            'renew_early'=>\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::read($server)['manual'],
+            'renewals'=>\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::anyOn($server),default=>self::accepted($server,$id)};
+    }
+    /** What the writer needs beyond the form. A switch sends the opposite of what is saved; its ticket refuses a page that showed something else.
+     * Only a TEST switch vouches for its own check: no real money moves there. A Live switch can turn off, never on. */
+    private static function saved(string $id,int $server): array
+    {
+        $billing=isset(self::SHARED[$id])||$id==='renewal_billing'?\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::read($server):[];
+        return match(true){$id==='processing'=>['enabled'=>!self::switchOn($id,$server),'confirmed'=>true],
+            $id==='renewal_billing'=>['scheduled'=>$billing['scheduled'],'manual'=>$billing['manual'],'confirmed'=>true],
+            $id==='unpaid_hold'=>['confirmed'=>true],
+            $id==='renew_early'=>[...$billing,'manual'=>!$billing['manual'],'confirmed'=>true],
+            $id==='renewals'=>[...$billing,'scheduled'=>!self::switchOn($id,$server),'manual'=>!self::switchOn($id,$server),'confirmed'=>true],
+            in_array($id,self::SWITCHES,true)=>['accept'=>!self::switchOn($id,$server),...(str_starts_with($id,'test_')?['verified'=>true]:[])],default=>[]};
+    }
+    /** The one sentence on a switch that spends money or stops sales. */
+    private static function switchWarning(string $id,int $server): string
+    {
+        $on=self::switchOn($id,$server);
+        return match($id){'processing'=>$on?'New orders and renewals wait until you turn this back on.':'New orders and renewals start going to the registrar.',
+            'test_transfer','live_transfer'=>$on?'New transfers stop. Transfers already sent keep going.':'Customers can order transfers. Paid transfers go to the registrar, which takes the cost from this account’s balance.',
+            'renewals'=>$on?'New renewal invoices stop. Issued invoices stay payable. Paid renewals still go to the registrar.':'Customers start getting renewal invoices and can renew early.',
+            default=>$on?'New renewal invoices stop. Issued invoices stay payable. Paid renewals wait until you turn this back on.':'Customers start getting renewal invoices. Paid renewals go to the registrar, which takes the cost from this account’s balance.'};
+    }
+    private static function setupLabel(string $name,bool $connected): string
+    {
+        return match(true){$name==='processing'=>'Orders',$name==='configure'=>$connected?'Edit API credentials':'Connect account',
             $name==='enroll_sandbox'=>'Connect NameSilo test account',$name==='probe'=>'Test connection',
-            $name==='renewal_billing'=>'Edit invoices',$name==='default_rule'=>'Edit default pricing',$name==='card_fee'=>'Edit card fee',str_ends_with($name,'_renewal')||str_ends_with($name,'_management')=>$on?'Turn off':'Turn on',
-            $name==='history'=>'Set up transaction history',$name==='delivery_review'=>'Mark notification checked',$name==='alert_review'=>'Mark alert checked',default=>Review::ACTIONS[$name]};
+            $name==='renewal_billing'=>'Edit schedule',$name==='unpaid_hold'=>'Edit unpaid hold',$name==='default_rule'=>'Edit default pricing',$name==='card_fee'=>'Edit card fee',default=>Review::ACTIONS[$name]??$name};
     }
     /** Dialog title: what the button does, as a question. */
-    private static function setupHeading(string $name,bool $processing,bool $connected,bool $on): string
+    private static function setupHeading(string $name,bool $connected): string
     {
-        $feature=str_ends_with($name,'_renewal')?'renewals':(str_ends_with($name,'_management')?'DNS, nameservers and contacts':null);
-        return match(true){$feature!==null=>($on?'Turn off ':'Turn on ').$feature.'?',$name==='renewal_billing'=>'Edit renewal invoices?',$name==='default_rule'=>'Edit default pricing?',$name==='card_fee'=>'Edit card fee?',
-            default=>self::setupLabel($name,$processing,$connected,$on).'?'};
+        return match(true){$name==='renewal_billing'=>'Edit renewal schedule?',$name==='default_rule'=>'Edit default pricing?',$name==='card_fee'=>'Edit card fee?',
+            default=>self::setupLabel($name,$connected).'?'};
     }
-    private static function submitLabel(string $name,bool $processing,bool $connected,bool $on): string
+    private static function submitLabel(string $name,bool $connected): string
     {
-        return match(true){$name==='processing'=>$processing?'Pause orders':'Resume orders',$name==='enroll_sandbox'||($name==='configure'&&!$connected)=>'Connect',
-            $name==='probe'=>'Test connection',in_array($name,['default_rule','card_fee'],true)=>'Save and publish',str_ends_with($name,'_renewal')||str_ends_with($name,'_management')=>$on?'Turn off':'Turn on',default=>'Save'};
+        return match(true){$name==='enroll_sandbox'||($name==='configure'&&!$connected)=>'Connect',
+            $name==='probe'=>'Test connection',in_array($name,['default_rule','card_fee'],true)=>'Save and publish',default=>'Save'};
     }
     /** "the Enom test account": where Sync prices reads from. */
     private static function seller(Account $account): string
@@ -467,6 +398,16 @@ final class SettingsActions
             default=>null};
         return $text===null?null:$text.' Nothing was saved.';
     }
+    /** Says what stopped the send. Only over_limit, or no finer reason, is about the count. */
+    private static function testRefusal(EnomTestCallLimit $error,string $name,int $server): string
+    {
+        $earlier=$name==='import'?'Earlier reads in this sync may have been sent and counted. ':'';
+        return match($error->reason){
+            'send_guard'=>'This site does not allow that Enom request, so it was not sent. '.$earlier.'Add it to the send guard list to allow it.',
+            'bad_setting'=>'Our test send limit setting is missing or not valid, so this Enom request was not sent. '.$earlier,
+            'unreadable'=>'We could not read our test send count, so this Enom request was not sent. '.$earlier.'Try again in a minute.',
+            default=>'Our test send check stopped this Enom request before sending. '.$earlier.EnomTestSendLimit::facts(($account=Account::where('server_id',$server)->first())?EnomTestSendLimit::login($account):null)};
+    }
     /** Staff text for a refused settings change; never echoes unrecognized exception text. */
     public static function refusal(\Throwable $error,string $name,array $data=[],int $server=0,?int $tld=null): string
     {
@@ -475,10 +416,8 @@ final class SettingsActions
         if($name==='card_fee'&&$error instanceof \InvalidArgumentException&&!in_array($error->getMessage(),['This percentage cannot cover the card fee. Lower the markup or card fee.','The calculated price is too large.'],true)){
             return 'Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.';
         }
-        if($error instanceof EnomTestCallLimit&&Account::where('server_id',$server)->value('environment')==='live'){return 'We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.';}
-        return $error instanceof EnomTestCallLimit
-                ?'Our test send check stopped this Enom request before sending. '.($name==='import'?'Earlier reads in this sync may have been sent and counted. ':'')
-                    .EnomTestSendLimit::facts(($account=Account::where('server_id',$server)->first())?EnomTestSendLimit::login($account):null)
+        if($error instanceof EnomTestCallLimit&&(Account::where('server_id',$server)->value('environment')??($data['environment']??null))==='live'){return 'We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.';}
+        return $error instanceof EnomTestCallLimit?self::testRefusal($error,$name,$server)
                 :match($error->getMessage()){'The calculated price is too large.'=>'This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.','Processing state unchanged.'=>'Orders are already set that way. Nothing changed.',
                 'This TLD is hidden.'=>"That TLD isn't offered here. Nothing was saved.",'Choose at least one year.'=>'Tick at least one year. Nothing was saved.','Nothing to save.'=>'Nothing changed. Nothing was saved.',
                 'Acceptance exceeds encrypted settings capacity.','Invalid catalogue acceptance.'=>'That is more TLDs than one account can save. Turn some off. Nothing was saved.',
@@ -514,31 +453,15 @@ final class SettingsActions
                 'Review key used.'=>$name==='enroll_sandbox'?'This was already submitted, so no new key check was sent. An earlier try may still be running, and this page can’t show that. Wait for it to finish. '.self::OUTCOME_NEXT:'This was already submitted. Check this page, then try again if you need to.',
                 'This percentage cannot cover the card fee. Lower the markup or card fee.'=>'No price can cover the card fee with this markup. Lower the markup or the card fee. Nothing was changed.',
                 'Costs required before publication.'=>'Costs are missing. Use Sync prices on the TLD list, then save again. Nothing was changed.',
-                'Complete lifecycle facts required.'=>'Fill in every field. Nothing was saved.',
-                'Invalid lifecycle input.'=>'Check the fields and try again. Nothing was saved.',
-                'Invalid lifecycle support.'=>'Check the grace, restore, auto-renew and sources boxes. Nothing was saved.',
-                'Lifecycle days must be between 0 and 365.'=>self::LIFECYCLE_DAYS,
-                'Invalid lifecycle charge.'=>'Enter valid non-negative grace and restore charges with at most four decimal places. Nothing was saved.',
-                'Invalid lifecycle currency.'=>'Enter three uppercase letters for grace and restore currencies, for example USD. Nothing was saved.',
-                'Lifecycle verification requires a date and time with UTC offset.'=>'Include a date, time and UTC offset in each date checked. Nothing was saved.',
-                'Invalid lifecycle verification time.'=>'Enter a valid date and time in each date checked. Nothing was saved.',
-                'Enter a one-line lifecycle source between 5 and 500 characters.'=>'Enter one-line policy, grace and restore sources from 5 to 500 characters. Nothing was saved.',
-                'Conflicting lifecycle settings require repair.'=>'Ask your site admin to fix the duplicate grace and restore settings. Nothing was saved.',
-                'Independent lifecycle verification required.'=>'Check these with the registrar, then tick the box. Nothing was saved.',
-                'Lifecycle verification cannot be in the future.'=>'Enter dates at or before now. Nothing was saved.',
                 'Explicit renewal billing confirmation required.'=>'Tick the box to continue. Nothing was saved.',
                 'Invalid renewal billing input.'=>'Check the fields and try again. Nothing was saved.',
                 'Invalid renewal timing.'=>'Enter whole numbers of days. Nothing was saved.',
                 'Valid billing calendar required.'=>'Issue days must be more than due days. Issue days can be at most 365 and due days at least 1. Nothing was saved.',
                 'Renewal billing unchanged.'=>'Renewal billing is unchanged. Nothing was saved.',
                 'Live Enom Purchase route acceptance is unavailable.'=>self::ADMIN_ORDERS,
-                'Independent Live renewal review required.'=>'Tick the box to show you checked this on the live account. Nothing was saved.',
                 'Live renewal deployment is unavailable.'=>'Live renewals are off for this account or site. Check the Renewals row on the account page. Nothing was saved.',
-                'Independent Live management review required.'=>'Tick the box to show you checked this on the live account. Nothing was saved.',
                 'Live management deployment is unavailable.'=>'Live changes are off for this account or site. Check the DNS, nameservers and contacts row on the account page. Nothing was saved.',
-                'Independent TEST management review required.'=>'Tick the box to show you checked this on the test account. Nothing was saved.',
                 'TEST management deployment is unavailable.'=>'Test changes are off for this account or site. Check the DNS, nameservers and contacts row on the account page. Nothing was saved.',
-                'Independent TEST renewal review required.'=>'Tick the box to show you checked this on the test account. Nothing was saved.',
                 'TEST renewal deployment is unavailable.'=>'Test renewals are off for this account or site. Check the Renewals row on the account page. Nothing was saved.',
                 'Enom TEST acquisition route acceptance is unavailable.'=>self::ADMIN_ORDERS,
                 'Enom TEST Purchase route acceptance is unavailable.'=>self::ADMIN_ORDERS,

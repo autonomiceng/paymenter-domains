@@ -18,15 +18,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceReads,BalanceSchema,CatalogueAcceptances,ContactDetails,EnomTestSendLimit,EnomTestSendLimitSchema,ObservationSchema,RegistrarBalances,ReminderSchedules,ReminderSchema,StaffSettingsReview};
-// Expose the unchanged factories even when the real checklist omits their buttons.
-class RegistrarAccountLiveActionsTestPage extends RegistrarAccount
-{
-    protected function getHeaderActions(): array
-    {
-        return array_map(fn(string $name)=>Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::setup($this->account,$this->reviewStamp,$name),['live_renewal','live_management']);
-    }
-}
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceReads,BalanceSchema,CatalogueAcceptances,ContactDetails,EnomTestSendLimit,EnomTestSendLimitSchema,ObservationSchema,RegistrarBalances,ReminderSchedules,ReminderSchema,RenewalBillingSettings,StaffSettingsReview};
 extract(commerceFixture(true));$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now);
 app()->instance(AccountBindings::class,$bindings);app()->instance(Clock::class,$clock);app()->instance(RegistrarBalances::class,new RegistrarBalances($bindings,$clock,new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock)));BalanceSchema::install();ObservationSchema::install();EnomTestSendLimitSchema::install();
 $enom=Account::where('server_id',$tlds[0]->server_id)->sole();$silo=Account::where('server_id',$tlds[1]->server_id)->sole();
@@ -109,18 +101,26 @@ foreach(['>Time</th>','>Change</th>','>By</th>','Edit what you sell','Reviewed &
     expect(str_contains($historyHtml,$needle),'History modal renders readable escaped rows: '.$needle);
 }
 // Dialog help is a button keyboard users can reach, and a click can't open another action over the dialog.
-$dialog=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->mountAction('processing_'.$enom->server_id);
+$dialog=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->mountAction(setupAction('configure',(int)$enom->server_id));
 expect(preg_match('/<button\b[^>]*x-tooltip[^>]*>/s',$dialog->instance()->getSchema($dialog->instance()->getMountedActionSchemaName())->toHtml(),$help)===1,'Dialog help renders as a button with a tooltip');
-expect(str_contains($help[0],'Check What you sell and System checks on this page first.')&&!str_contains($help[0],'wire:click'),'Help button shows its text and runs nothing');
+expect(!str_contains($help[0],'wire:click'),'Help button runs nothing');
 
 $reminderAction=TestAction::make('reminders_'.$enom->server_id)->schemaComponent('account_'.$enom->server_id,'content');
 $beforeInvalidReason=(array)DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->sole();
 $page->callAction($reminderAction,['reason'=>"Reviewed\u{2029}reminders"])->assertHasActionErrors(['reason'=>'regex']);
 same($beforeInvalidReason,(array)DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->sole(),'Reminder reason field error changes no schedule');
 $page->unmountAction();
+// The switch keeps the reminder revision check: a page left open can't undo a newer change.
+$schedule=static fn()=>DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->sole();$saved=$schedule();
+$switch=TestAction::make('reminders_switch_'.$enom->server_id)->schemaComponent('account_'.$enom->server_id,'content')->arguments(['revision'=>(int)$saved->revision]);
+$stale=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSeeHtml('role="switch"')->assertSeeHtml('aria-label="Reminder emails"');
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction($switch)->assertNotified('Reminders saved');
+same(!(bool)$saved->enabled,(bool)$schedule()->enabled,'One click flips reminders');
+$stale->callAction($switch)->assertNotified("Couldn't save reminders");same(!(bool)$saved->enabled,(bool)$schedule()->enabled,'A stale switch changes nothing');
+DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->update((array)$saved);
 foreach(['Setup checklist','API connection','Connected','Test connection','What you sell','.com','TLD prices','Registrations','Transfers','Renewals','DNS, nameservers and contacts',
-    'Renewal invoices','Turn on','Renewal invoices and reminders','Invoice issued','21 days before expiry','Invoice due','7 days before expiry','Reminder emails',
-    '60, 30, 7 and 1 days before, 3 days after','Customer can renew early','Edit invoices','Edit reminders','Pause orders','More','Edit API credentials','View price history',
+    'Orders','Renewal invoices and reminders','Invoice issued','21 days before expiry','Invoice due','7 days before expiry','Reminder emails',
+    '60, 30, 7 and 1 days before, 3 days after','Customer can renew early','Edit schedule','Edit reminders','More','Edit API credentials','View price history',
     'System checks','Background worker','Not running','Payment events'] as $needle){$page->assertSee($needle);}
 $html=$page->html();
 foreach(['Catalogue acceptance','Account binding','Worker cadence','Native server settings','Registrar setup','(defaults)','Read capacity','Runtime account','Notification safety',
@@ -130,13 +130,33 @@ foreach(['Catalogue acceptance','Account binding','Worker cadence','Native serve
 foreach(['test','live'] as $mode){
     $siloAccount=Account::where('server_id',$silo->server_id)->sole();DB::table('domains_accounts')->where('id',$siloAccount->id)->update(['environment'=>$mode]);$siloAccount->refresh();
     $featureRows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($siloAccount,['label'=>'Active','reason'=>null]),null,'label');
-    foreach(['Renewals','DNS, nameservers and contacts'] as $label){
-        same(['Off','Not offered for NameSilo.',null],[$featureRows[$label]['value'],$featureRows[$label]['cause'],$featureRows[$label]['action']],$mode.' NameSilo Enom-only control');
-    }
-    Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Not offered for NameSilo.')
+    same(['Not available yet',null],[$featureRows['DNS, nameservers and contacts']['value'],$featureRows['DNS, nameservers and contacts']['action']],$mode.' NameSilo Enom-only control');
+    same(['Off','renewals'],[$featureRows['Renewals']['value'],$featureRows['Renewals']['action']],$mode.' NameSilo Renewals has its own switch');
+    Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Not available yet')
         ->assertActionDoesNotExist(setupAction($mode.'_renewal',(int)$silo->server_id))->assertActionDoesNotExist(setupAction($mode.'_management',(int)$silo->server_id));
 }
 DB::table('domains_accounts')->where('id',$siloAccount->id)->update(['environment'=>'test']);
+// NameSilo's one Renewals switch is its two billing flags: one audited click, no Enom send permission.
+$siloServer=(int)$silo->server_id;$siloRenewals=setupAction('renewals',$siloServer);$siloFlags=static fn()=>array_values(array_intersect_key(RenewalBillingSettings::read($siloServer),['scheduled'=>1,'manual'=>1]));
+$siloRows=static fn()=>array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($siloAccount->fresh(),['label'=>'Active','reason'=>null]),null,'label');
+$siloEarly=static fn()=>array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($siloServer),null,'label')['Customer can renew early'];
+$siloClick=static function(string $warning)use($admin,$silo,$siloRenewals):void {
+    $click=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->mountAction($siloRenewals);
+    same($warning,$click->instance()->getMountedAction()->getModalDescription(),'NameSilo Renewals popup says what happens');$click->callMountedAction();
+};
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist(setupAction('renewals',(int)$enom->server_id));
+$siloClick('Customers start getting renewal invoices and can renew early.');
+same([true,true],$siloFlags(),'NameSilo On sets both billing flags');same(['On','renewals'],[$siloRows()['Renewals']['value'],$siloRows()['Renewals']['action']],'NameSilo row shows the saved state');
+same(['On','renew_early'],[$siloEarly()['value'],$siloEarly()['action']],'NameSilo early renewal follows Renewals');
+same(0,App\Models\Server::findOrFail($siloServer)->settings()->whereIn('key',[Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::KEY,'domains_enom_live_renewal'])->count(),'NameSilo writes no Enom send permission');
+$siloAudit=array_values(array_filter(StaffSettingsReview::historyRows(App\Models\Server::findOrFail($siloServer)),fn($r)=>$r['action']==='Edit renewal schedule'))[0];
+same([$admin->id,false,true,true],[$siloAudit['actor_id'],$siloAudit['before']['renewal_billing']['scheduled'],$siloAudit['after']['renewal_billing']['scheduled'],$siloAudit['after']['renewal_billing']['manual']],'One audit entry covers both flags');
+// Either flag alone still reads On, so staff can always stop an account left half on.
+RenewalBillingSettings::save(new StaffSettingsReview($admin->id,$siloServer,null,'renewal_billing',StaffSettingsReview::ticket($admin->id,$siloServer,null,'renewal_billing',StaffSettingsReview::stamp($siloServer,null)),'Leave one flag on for this check'),['scheduled'=>false,'manual'=>true,'issue_days'=>21,'due_days'=>7,'confirmed'=>true]);
+same('On',$siloRows()['Renewals']['value'],'One flag on reads On');
+$siloClick('New renewal invoices stop. Issued invoices stay payable. Paid renewals still go to the registrar.');
+same([false,false],$siloFlags(),'NameSilo Off clears both flags');same(['Off','renewals'],[$siloRows()['Renewals']['value'],$siloRows()['Renewals']['action']],'NameSilo can turn back on');
+same(['Off',null,'Needs Renewals on.'],[$siloEarly()['value'],$siloEarly()['action'],$siloEarly()['cause']],'NameSilo early renewal needs Renewals');
 
 $reminderQuery=DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id);$savedReminder=(array)(clone $reminderQuery)->sole();
 foreach([[[1],'1 day before, 1 day after'],[[0],'0 days before, 0 days after'],[[2],'2 days before, 2 days after'],[[1,2],'2 and 1 days before, 1 and 2 days after'],[[],null]] as [$days,$expected]){
@@ -145,7 +165,7 @@ foreach([[[1],'1 day before, 1 day after'],[[0],'0 days before, 0 days after'],[
     if($expected!==null){Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee($expected);}
 }
 $reminderQuery->update(['before_days'=>'{']);
-same("Saved reminder days can't be read. Ask your site admin to restore them.",Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::emails((int)$enom->server_id)['cause'],'Unreadable reminders retain their cause');
+same("Saved reminder days can't be read. Restore them from a backup.",Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::emails((int)$enom->server_id)['cause'],'Unreadable reminders retain their cause');
 $reminderQuery->update($savedReminder);Auth::setUser($admin);
 
 // A cause shows under a value only when there is a problem: a synced price or a valid invoice day has none.
@@ -154,8 +174,8 @@ $rows=array_column([...Paymenter\Extensions\Servers\Domains\Admin\Support\Accoun
     ...Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals((int)$enom->server_id)],null,'label');
 foreach(['TLD prices','Invoice issued','Invoice due'] as $label){expect($rows[$label]['value']!==null&&$rows[$label]['cause']===null,'No Missing cause under a set value: '.$label);}
 expect(!str_contains($html,'Saved invoice days are invalid'),'Valid invoice days show no invalid-days cause');
-$pause=$page->mountAction('processing_'.$enom->server_id)->assertActionMounted('processing_'.$enom->server_id)->instance()->getMountedAction();
-same('Pause orders?',$pause->getModalHeading(),'Pause orders dialog heading');same('New registrar requests on this account wait until you resume.',$pause->getModalDescription(),'Pause orders dialog says what happens');
+$pause=$page->mountAction(setupAction('processing',(int)$enom->server_id))->instance()->getMountedAction();
+same(['Turn off orders?','New orders and renewals wait until you turn this back on.'],[$pause->getModalHeading(),$pause->getModalDescription()],'Stopping orders says what happens in one sentence');$page->unmountAction();
 // System checks: failing checks first in danger or warning with their cause; passing checks collapse.
 // Service listeners present, invoice-paid listener gone: paid orders wait for the scheduler.
 foreach(['saving','updating','updated'] as $event){Illuminate\Support\Facades\Event::listen('eloquent.'.$event.': '.App\Models\Service::class,static fn()=>null);}
@@ -173,7 +193,7 @@ $short=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$eno
 $worker=array_values(array_filter($short->instance()->content(\Filament\Schemas\Schema::make($short->instance()))->getFlatComponents(),fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry&&$e->getLabel()==='Background worker'))[0];
 same('Queue timeout too short',$worker->getState(),'Short queue timeout shows on the Background worker row');same('danger',$worker->getColor('Queue timeout too short'),'Short queue timeout is danger');
 $text=html_entity_decode(strip_tags($short->html()),ENT_QUOTES);
-same(1,substr_count($text,'Queue timeout too short'),'Queue timeout said once');same(1,substr_count($text,"Monitoring can't run. Ask your site admin to fix the queue. It needs a retry_after of 180 seconds or more."),'Its cause said once');
+same(1,substr_count($text,'Queue timeout too short'),'Queue timeout said once');same(1,substr_count($text,"Monitoring can't run. Ask your site admin to set the queue timeout to 180 seconds or more."),'Its cause said once');
 config(['queue.connections.database.retry_after'=>180]);Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertDontSee('Queue timeout too short')->assertSee('Not running');
 config(['queue'=>$queue]);app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\WatchWork::class);
 // Open domain alerts: a count row per account that links to the Domains list filtered to those domains.
@@ -184,7 +204,7 @@ $alerts=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$en
 $row=array_values(array_filter($alerts->instance()->content(\Filament\Schemas\Schema::make($alerts->instance()))->getFlatComponents(),fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry&&$e->getLabel()==='Domain alerts'))[0];
 same(['1 domain','warning'],[$row->getState(),$row->getColor('1 domain')],'One domain with an open alert is a warning');
 $filtered=Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$enom->server_id],'alerts'=>['isActive'=>true]]]);
-$alerts->assertActionVisible(TestAction::make('domain_alerts')->schemaComponent('system_checks','content'))->assertSee('View domains')->assertSee('Filter the Domains list by Open alerts. Open a domain for more causes.')->assertSeeHtml('href="'.e($filtered).'"');
+$alerts->assertActionVisible(TestAction::make('domain_alerts')->schemaComponent('system_checks','content'))->assertSee('View domains')->assertSeeHtml('href="'.e($filtered).'"');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertDontSee('View domains');
 // The same alert on a domain whose service still exists: the Service row keeps its value and link, with the cause below in danger.
 Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>App\Admin\Resources\ServiceResource::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();
@@ -193,7 +213,7 @@ $fact=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($alert
 same([$alerted->domain.' registration','Service #'.$service->id." · Customer, order or service missing. The name stays reserved. Don't restore records by hand.",'danger',$serviceUrl],[$fact['value'],$fact['sub'],$fact['tone'],$fact['url']],'A live service keeps its value and link under the alert');
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$alerted->id])
     ->assertSeeHtml('href="'.e($serviceUrl).'"')->assertSeeInOrder(['Service',$alerted->domain.' registration','Customer, order or service missing']);
-$passing=array_values(array_filter($flat,fn($e)=>$e instanceof \Filament\Schemas\Components\Section&&$e->getHeading()==='Passing checks'))[0];
+$passing=array_values(array_filter($flat,fn($e)=>$e instanceof \Filament\Schemas\Components\Section&&$e->getHeading()==='Details'))[0];
 expect($passing->isCollapsed(),'Passing checks start collapsed');
 $inside=array_map(fn($e)=>$e->getLabel(),array_filter($passing->getChildSchema()->getFlatComponents(),fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry));
 expect(in_array('Domain editor',$inside,true)&&!in_array('Payment events',$inside,true)&&!in_array('Background worker',$inside,true),'Only passing checks collapse');
@@ -260,16 +280,16 @@ Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->serv
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction('check_balance')->assertNotified('Wait a minute before checking again.');
 // Pause orders, then the Resume orders button and dialog (runtime-worker covers the resume write on a full install).
 Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])
-    ->callAction('processing_'.$enom->server_id,['confirmed'=>true,'reason'=>'Synthetic pause check'])->assertNotified('Orders paused');
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Orders paused')->assertSee('Resume orders')->assertDontSee('Pause orders')
-    ->mountAction('processing_'.$enom->server_id)->assertActionMounted('processing_'.$enom->server_id)
-    ->tap(fn($t)=>same(['Resume orders?','Registrar requests on this account start sending again.'],[$t->instance()->getMountedAction()->getModalHeading(),$t->instance()->getMountedAction()->getModalDescription()],'Resume orders dialog'));
+    ->callAction(setupAction('processing',(int)$enom->server_id))->assertNotified('Orders paused');
+same(false,(bool)Account::findOrFail($enom->id)->processing_enabled,'The switch needs no Reason or tick box');
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Orders paused')
+    ->mountAction(setupAction('processing',(int)$enom->server_id))
+    ->tap(fn($t)=>same(['Turn on orders?','New orders and renewals start going to the registrar.'],[$t->instance()->getMountedAction()->getModalHeading(),$t->instance()->getMountedAction()->getModalDescription()],'Resume orders dialog'));
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>999999])->assertNotFound();
 Livewire::actingAs(staffUser([]))->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertForbidden();
 // Corrupt saved identity must leave both modes and credential repair reachable.
 $savedIdentity=$enom->getRawOriginal('stable_identity');
 $liveBinding=new AccountBinding('enom',(int)$enom->server_id,Environment::Live,$enom->stable_identity);
-$missingIdentity='Missing: saved account identity. Restore it before you turn this on.';
 DB::table('domains_accounts')->where('id',$enom->id)->update(['stable_identity'=>'broken ciphertext']);
 foreach(['test','live'] as $mode){
     DB::table('domains_accounts')->where('id',$enom->id)->update(['environment'=>$mode]);
@@ -279,31 +299,30 @@ foreach(['test','live'] as $mode){
     foreach(['live_renewal','live_management'] as $name){
         $page->assertActionDoesNotExist(setupAction($name,(int)$enom->server_id));
     }
-}
-foreach(['live_renewal','live_management'] as $name){
-    $action=$name.'_'.$enom->server_id;
-    $page=Livewire::actingAs($admin)->test(RegistrarAccountLiveActionsTestPage::class,['account'=>$enom->server_id])->assertSuccessful()
-        ->assertActionVisible($action)->mountAction($action)->assertActionMounted($action);
-    $schema=(new ReflectionMethod(RegistrarAccount::class,'getMountedActionSchema'))->invoke($page->instance());
-    $dialog=html_entity_decode(strip_tags($schema->toHtml()),ENT_QUOTES);
-    same(1,substr_count($dialog,$missingIdentity),'Unreadable binding shows the full warning once: '.$name);
-    $names=array_map(fn($field)=>$field->getName(),$schema->getFlatFields());
-    foreach(['accept','verified'] as $field){expect(!in_array($field,$names,true),'Unreadable binding omits '.$field.': '.$name);}
-    expect(in_array('reason',$names,true),'Unreadable binding keeps the independent reason: '.$name);
+    $page->assertSee('Restore the saved account identity first.');
 }
 // A live fingerprint must match the restored identity and live environment.
 DB::table('domains_accounts')->where('id',$enom->id)->update(['stable_identity'=>$savedIdentity,'account_fingerprint'=>$liveBinding->fingerprint,
     'identity_fingerprint'=>hash('sha256',json_encode(['enom','live',$enom->stable_identity],JSON_THROW_ON_ERROR))]);
 same(Environment::Live,CatalogueAcceptances::binding(Account::findOrFail($enom->id))->environment,'Healthy inverse uses a valid live binding');
 same($liveBinding->fingerprint,CatalogueAcceptances::binding(Account::findOrFail($enom->id))->fingerprint,'Healthy inverse fingerprint matches live identity');
-foreach(['live_renewal','live_management'] as $name){
-    $action=$name.'_'.$enom->server_id;
-    $page=Livewire::actingAs($admin)->test(RegistrarAccountLiveActionsTestPage::class,['account'=>$enom->server_id])->assertSuccessful()
-        ->assertActionVisible($action)->mountAction($action)->assertActionMounted($action);
-    $schema=(new ReflectionMethod(RegistrarAccount::class,'getMountedActionSchema'))->invoke($page->instance());
-    $dialog=html_entity_decode(strip_tags($schema->toHtml()),ENT_QUOTES);
-    same(0,substr_count($dialog,$missingIdentity),'Healthy live binding omits the warning: '.$name);
-    $names=array_map(fn($field)=>$field->getName(),$schema->getFlatFields());
-    foreach(['accept','verified','reason'] as $field){expect(in_array($field,$names,true),'Healthy live binding keeps '.$field.': '.$name);}
-}
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful()->assertDontSee('Restore the saved account identity first.');
+// A row that can't be used says so in plain words. Staff can't edit the site config, so no setting name reaches them.
+$checklist=fn()=>array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup(Account::findOrFail($enom->id),['label'=>'Active','reason'=>null]),null,'label');
+$noKeys=function()use($checklist,$enom){foreach([...array_values($checklist()),...Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals((int)$enom->server_id),...array_merge(...array_values(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system())),Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::runtime(Account::findOrFail($enom->id))] as $row){
+    expect(!preg_match('/domains\.|_[a-z]+_|site config/',($row['cause']??'').' '.($row['help']??'')),'No setting name in '.$row['label'].': '.($row['cause']??'').' '.($row['help']??''));expect(($row['help']??'')!=='','Every row explains itself: '.$row['label']);}};
+$site='https://billing.example.com';config(['app.url'=>$site,'domains.enom_live.site'=>$site,'domains.enom_live.catalogue'=>false,'domains.enom_live.accounts'=>[]]);
+same(['Not available yet',null],[$checklist()['Renewals']['value'],$checklist()['Renewals']['action']],'Live with no opt-in shows no switch');same(['Off',null],[$checklist()['Transfers']['value'],$checklist()['Transfers']['action']],'Live transfers wait for activation');$noKeys();
+config(['domains.enom_live.catalogue'=>true]);$noKeys();
+config(['domains.enom_live.accounts'=>[$enom->stable_identity=>['fingerprint'=>$liveBinding->fingerprint]]]);DB::table('domains_accounts')->where('id',$enom->id)->update(['live_site'=>$site]);
+same(['Off','Turns on when you activate live sales.',null],[$checklist()['Renewals']['value'],$checklist()['Renewals']['cause'],$checklist()['Renewals']['action']],'Live turn-on is not a switch');
+$page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Turns on when you activate live sales.')->assertActionDoesNotExist(setupAction('live_renewal',(int)$enom->server_id));
+Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::setup((int)$enom->server_id,$page->instance()->reviewStamp,'live_renewal')->getActionFunction()([],$page->instance());
+same(0,App\Models\Server::findOrFail($enom->server_id)->settings()->where('key','domains_enom_live_renewal')->count(),'A Live switch with empty form data creates no acceptance');
+DB::table('domains_accounts')->where('id',$enom->id)->update(['environment'=>'test','live_site'=>null,'account_fingerprint'=>(new AccountBinding('enom',(int)$enom->server_id,Environment::Test,$enom->stable_identity))->fingerprint,
+    'identity_fingerprint'=>hash('sha256',json_encode(['enom','test',$enom->stable_identity],JSON_THROW_ON_ERROR))]);
+config(['domains.enom_identity.environment'=>'test','domains.enom_writes.renewal'=>true,'domains.enom_catalogue.enabled'=>false]);$noKeys();
+same('Not available yet',$checklist()['Transfers']['value'],'TEST site off shows no switch');
+config(['domains.enom_catalogue.enabled'=>true,'domains.enom_writes.transfer'=>true]);$noKeys();
+same(['Off','test_transfer'],[$checklist()['Transfers (experimental)']['value'],$checklist()['Transfers (experimental)']['action']],'TEST transfers get a real switch once the site allows them');
 echo "Registrars list and account page passed\n";$nativeSuccessful=true;

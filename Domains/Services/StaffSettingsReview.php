@@ -11,15 +11,15 @@ final class StaffSettingsReview
     public const KEY='domains_staff_settings_audit';
     public const KEYS='domains_staff_review_keys';
     public const HISTORY_LIMIT=50;
-    public const ACTIONS=['lifecycle'=>'Review lifecycle facts','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','renewal_billing'=>'Edit renewal invoices','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
-        'tld_settings'=>'Review TLD availability','seller'=>'Change registrar for new orders','publish'=>'Publish prices','import'=>'Sync TLD prices','acceptance'=>'Edit what you sell','history'=>'Set up transaction history','enroll_sandbox'=>'Connect NameSilo test account','configure'=>'Edit API credentials','probe'=>'Test connection','processing'=>'Pause or resume orders','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
+    public const ACTIONS=['live_transfer'=>'Change live transfers','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','test_transfer'=>'Change test transfers','renewal_billing'=>'Edit renewal schedule','unpaid_hold'=>'Edit unpaid hold','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
+        'tld_settings'=>'Review TLD availability','seller'=>'Change registrar for new orders','publish'=>'Publish prices','import'=>'Sync TLD prices','acceptance'=>'Edit what you sell','history'=>'Check Enom order history','enroll_sandbox'=>'Connect NameSilo test account','configure'=>'Edit API credentials','probe'=>'Test connection','processing'=>'Pause or resume orders','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
     private array $verified=[];
     private array $before=[];
     private array $input=[];
     /** Snapshot after this review's last synced TLD; null until one is written. */
     private ?string $synced=null;
     public function input(array $data): void
-    { $this->input=array_intersect_key($data,array_flip(['ending','endings','changes','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days',...LifecycleFacts::FIELDS])); }
+    { $this->input=array_intersect_key($data,array_flip(['ending','endings','changes','rule','counts','rows','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
         public readonly string $action,private readonly string $ticket,public readonly string $reason) {}
     /** Syncing prices and saving what you sell ask no reason; the audit still records who, when and what. */
@@ -38,8 +38,10 @@ final class StaffSettingsReview
         $prices=$read(Price::where('server_id',$serverId)->when($tldId,fn($q)=>$q->whereIn('tld',$tlds->pluck('tld')))->orderBy('id'));
         $settings=$read(DB::table('settings')->where('settingable_type',$s->getMorphClass())->where('settingable_id',$serverId)
             ->where('key','!=',self::KEY)->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',self::KEY).'.%'])->whereRaw("`key` NOT LIKE ? ESCAPE '!'",['domains!_reminder!_audit.%'])->orderBy('id'))->map(fn($v)=>(array)$v)->all();
+        // What staff set on What you sell rows. Prices a fill writes there do not make a save stale.
+        $sell=$tldId?[]:$read(DB::table(SellTableSchema::ROWS)->where('server_id',$serverId)->where(fn($q)=>$q->whereNotNull('choice')->orWhereNotNull('longest')->orWhereNotNull('transfer'))->orderBy('id')->select(['tld','choice','longest','transfer']))->map(fn($v)=>(array)$v)->all();
         $raw=static fn($rows)=>$rows->map(fn($v)=>$v->getRawOriginal())->all();
-        return hash('sha256',json_encode([$s->getRawOriginal(),$a?->getRawOriginal(),$raw($accounts),$settings,$raw($tlds),$raw($prices),$raw($policies),$tldId],JSON_THROW_ON_ERROR));
+        return hash('sha256',json_encode([$s->getRawOriginal(),$a?->getRawOriginal(),$raw($accounts),$settings,$raw($tlds),$raw($prices),$raw($policies),$tldId,$sell],JSON_THROW_ON_ERROR));
     }
 
     public static function ticket(int $actor,int $server,?int $tld,string $action,string $stamp): string
@@ -48,7 +50,7 @@ final class StaffSettingsReview
     {
         $u=User::whereKey($this->actorId)->lockForUpdate()->firstOrFail();
         $role=$u->role_id?Role::whereKey($u->role_id)->lockForUpdate()->first():null;$u->setRelation('role',$role);
-        foreach(['admin.domains.view','admin.domains.manage-policy',self::permission($this->action),...($this->action==='lifecycle'?['admin.domains.costs']:[]),...(in_array($this->action,self::PUBLISHES,true)?[self::permission('publish')]:[])] as $p){
+        foreach(['admin.domains.view','admin.domains.manage-policy',self::permission($this->action),...(in_array($this->action,self::PUBLISHES,true)?[self::permission('publish')]:[])] as $p){
             if(!$u->hasPermission($p)){throw new \DomainException('Current staff permissions required.');}}
         if(!in_array($this->action,self::NO_REASON,true)){StaffReason::require($this->reason);}
     }
@@ -139,8 +141,8 @@ final class StaffSettingsReview
             'history'=>array_map(function($action)use($a){try{$v=$a?HistoryAcceptances::load(CatalogueAcceptances::binding($a),$action):null;return $v?['timezone'=>$v->timezone,'lag'=>$v->lagSeconds,'retention'=>$v->retentionSeconds,'vocabulary'=>$v->vocabulary]:null;}catch(\Throwable){return 'unavailable';}},[\Paymenter\Extensions\Servers\Domains\Data\Action::Register,\Paymenter\Extensions\Servers\Domains\Data\Action::Renew,\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer]),
             'sellers'=>SalesPolicy::when($t,fn($q)=>$q->where('tld',$t->tld))->limit($t?1:0)->lockForUpdate()->get()->map(fn($p)=>['tld'=>$p->tld,'server'=>$p->server_id,'revision'=>$p->revision,'register'=>$p->register_enabled,'transfer'=>$p->transfer_enabled])->all(),
             'prices'=>Price::where('server_id',$server)->when($t,fn($q)=>$q->where('tld',$t->tld))->orderBy('id')->limit($t?12:0)->lockForUpdate()->get()->map(fn($p)=>['id'=>$p->id,'revision'=>$p->revision,'retail'=>$p->retail,'hold'=>$p->hold_reason])->all(),
-            ...($this->action==='lifecycle'&&$t?['lifecycle'=>LifecyclePolicies::read(CatalogueAcceptances::binding($a),$t->tld)]:[]),
-            ...($this->action==='renewal_billing'?['renewal_billing'=>RenewalBillingSettings::read($server,true)]:[]),
+            ...(in_array($this->action,['renewal_billing','test_renewal','live_renewal'],true)?['renewal_billing'=>RenewalBillingSettings::read($server,true)]:[]),
+            ...($this->action==='unpaid_hold'?['unpaid_hold'=>UnpaidHoldSetting::minutes($server)]:[]),
             'snapshot'=>self::stamp($server,$tld,true)];
     }
     /** Outcome audit grants no authority; retain it even if permissions or the saved state changed during I/O. */

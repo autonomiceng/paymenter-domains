@@ -26,10 +26,13 @@ final class StaffSettingsWrites
             };
         }
         $now??=$clock->now();$r->input($data);
-        if($r->action==='lifecycle'){LifecyclePolicies::save($r,$data,$now);return null;}
+        // Live turns on through Activate only, whatever a caller supplies. It can always turn off.
+        if(in_array($r->action,['live_renewal','live_management','live_transfer'],true)&&($data['accept']??false)===true){throw new \DomainException('Turns on when you activate live sales.');}
         if(in_array($r->action,['test_management','live_management'],true)){EnomTestManagement::review($r,$data);return null;}
         if(in_array($r->action,['test_renewal','live_renewal'],true)){EnomTestRenewal::review($r,$data);return null;}
+        if(in_array($r->action,['test_transfer','live_transfer'],true)){EnomTestTransfer::review($r,$data);return null;}
         if($r->action==='renewal_billing'){RenewalBillingSettings::save($r,$data);return null;}
+        if($r->action==='unpaid_hold'){UnpaidHoldSetting::save($r,$data);return null;}
         if($r->action==='enroll_sandbox'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Sandbox contract confirmation required.');}
             if(!is_string($data['label']??null)||array_diff(array_keys($data),['environment','label','api_key','confirmed','reason','review_key'])){throw new \DomainException('Invalid sandbox enrollment input.');}
@@ -57,6 +60,9 @@ final class StaffSettingsWrites
                     throw new \DomainException('Current notification claim required.');
                 }
                 \Illuminate\Support\Facades\DB::table('domains_reminder_deliveries')->where('id',$delivery->id)->update(['state'=>'reviewed']);
+                if(!\Illuminate\Support\Facades\DB::table('domains_reminder_deliveries')->where('domain_id',$delivery->domain_id)->whereIn('state',['handoff','uncertain'])->exists()){
+                    \Illuminate\Support\Facades\DB::table('domains_obligation_alerts')->where('domain_id',$delivery->domain_id)->where('code','delivery_uncertain')->whereNull('resolved_at')->update(['resolved_at'=>time()]);
+                }
             });return null;
         }
         if($r->action==='processing'){
@@ -172,7 +178,12 @@ final class StaffSettingsWrites
             if($r->action!=='acceptance'){throw new \DomainException('Unsupported settings action.');}
             $binding=CatalogueAcceptances::binding($a);
             try{$old=CatalogueAcceptances::load($binding,true);}catch(\DomainException){$old=null;}
-            $changes=$data['changes']??null;if(!is_array($changes)||$changes===[]){throw new \DomainException('Nothing to save.');}
+            $changes=$data['changes']??null;
+            if(is_array($data['sell']??null)){
+                [$changes,$audit]=SellRule::applyLocked($a,$binding,$old,$data['sell']);$r->input($audit);
+                if($changes===[]){return;}
+            }
+            if(!is_array($changes)||$changes===[]){throw new \DomainException('Nothing to save.');}
             $endings=$old?->endings??[];
             $registrationRoute=$old?->registrationRoute;$registrationInterval=$old?->registrationIntervalSeconds??0;
             if(!$old&&Domain::where('server_id',$s->id)->whereNotNull('reservation_name')->orderBy('id')->lockForUpdate()->get()->isNotEmpty()){throw new \DomainException('Repair must preserve all holder renewal acceptance.');}
@@ -195,7 +206,7 @@ final class StaffSettingsWrites
             // Selling needs a batch route and our request spacing. Both are fixed by the deployment, so record them rather than ask staff.
             $testRegistration=$binding->registrarKey==='enom'&&$binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Test
                 &&(EnomTestRegistration::deploymentEnabled()||EnomTestTransfer::deploymentEnabled());
-            if(array_filter($changes)!==[]&&(EnomLive::enabled($binding,'registration')||$testRegistration)){
+            if(array_filter($changes)!==[]&&(EnomLive::enabled($binding,'registration')||EnomLive::enabled($binding,'transfer')||$testRegistration)){
                 $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
                 if(!$protocol['batch_route']||$protocol['interval_seconds']<25){throw new \DomainException(match(true){!$testRegistration=>'Live Enom Purchase route acceptance is unavailable.',EnomTestTransfer::deploymentEnabled()=>'Enom TEST acquisition route acceptance is unavailable.',default=>'Enom TEST Purchase route acceptance is unavailable.'});}
                 $registrationRoute=$protocol['route'];$registrationInterval=$protocol['interval_seconds'];

@@ -17,7 +17,7 @@ staffPanel(); \Illuminate\Support\Facades\Auth::login($staff);
 $d->update(['observation' => ['adoption_review' => ['inside_issue_window' => true]]]);
 $facts = \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($d->fresh());
 same(['Off', 'Cancels at period end'], [$facts['Auto-renew']['value'], $facts['Auto-renew']['sub']], 'Later stop is the customer cancellation, not the import intent');
-same(['On', null], [$facts['Renewal invoices']['value'], $facts['Renewal invoices']['sub']], 'Later stop never claims issued invoices are stopped');
+expect(!isset($facts['Renewal invoices']), 'Later stop reads as one state');
 $l = DB::transaction(fn () => HoldingLocks::take($d));
 expect(RenewalStop::stopped($l), 'Later native cancellation stops future renewal');
 expect(!RenewalStop::blocksExisting($l), 'End-of-period stop does not disable domain management');
