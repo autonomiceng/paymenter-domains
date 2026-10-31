@@ -21,7 +21,7 @@
 <div role="status">
 <x-filament::section>
     <div class="fi-prose">
-        <p class="flex items-center gap-1"><strong>Price changes can stop domain sales</strong> <x-filament::icon-button icon="heroicon-m-question-mark-circle" color="primary" size="sm" label="About price changes" :tooltip="$help" /></p>
+        <p>{{ \Paymenter\Extensions\Servers\Domains\Admin\Support\HelpHint::beside('<strong>Price changes can stop domain sales</strong>', $help, 'About price changes') }}</p>
         @if ($native)
             <p>Don’t change this product’s server, slug, visibility or quantity setting, or its plans’ type or billing period.</p>
         @endif

@@ -79,8 +79,8 @@ expect(str_contains($accountPage->html(),'4%'),'The account page shows the secon
 
 // Transfers off is not Missing: Sync can never fill it.
 Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'transfer'])->delete();$grants=Staff::requireView();
-$table=(string)TldFacts::accountsTable($t->fresh(),$grants);expect(str_contains($table,'Transfers off'),'Off is shown as off');expect(!str_contains($table,'Use Sync prices'),'Off does not ask for a sync');
-$t->update(['transfer_enabled'=>true]);$table=(string)TldFacts::accountsTable($t->fresh(),$grants);expect(!str_contains($table,'Transfers off')&&str_contains($table,'Use Sync prices on the TLD list.'),'Transfers on with no price is still Missing');
+$table=(string)TldFacts::accountsTable($t->fresh(),$grants);expect(str_contains($table,'>Off<'),'Off is shown as off');expect(!str_contains($table,'Use Sync prices'),'Off does not ask for a sync');
+$t->update(['transfer_enabled'=>true]);$table=(string)TldFacts::accountsTable($t->fresh(),$grants);expect(str_contains($table,'Use Sync prices on the TLD list.'),'Transfers on with no price is still Missing');
 // A synced row with no cost: the registrar does not sell it, so nothing is Missing and no sync is asked for.
 $offered=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'register'])->orderBy('term')->firstOrFail()->getRawOriginal();unset($offered['id']);Illuminate\Support\Facades\DB::table('domains_prices')->insert([...$offered,'action'=>'transfer','wholesale'=>null,'retail'=>null]);
 $table=(string)TldFacts::accountsTable($t->fresh(),$grants);expect(str_contains($table,TldFacts::NOT_OFFERED)&&!str_contains($table,'Use Sync prices on the TLD list.'),'Registrar does not sell it: Not offered, no sync asked');

@@ -265,6 +265,14 @@ final class PriceCatalogue
             ->sortBy(fn (Price $price): int => $order[$price->action] * 100 + $price->term)->values();
     }
 
+    /** A saved price is on an older rule, and every cost needed to redo it is here. */
+    public function behindRule(Tld $tld, \DateTimeImmutable $now): bool
+    {
+        $hash = self::ruleHash($this->rules->rule($tld));
+        if (!self::sold($tld)->contains(fn (Price $price): bool => ($price->eligibility['rule_hash'] ?? null) !== $hash)) { return false; }
+        try { self::requireCosts($tld, $now); return true; } catch (\DomainException) { return false; }
+    }
+
     /** What saving a rule would publish: cost, current and new term retail, without writing. */
     public static function preview(Tld $tld, array $rule, \DateTimeImmutable $now): array
     {

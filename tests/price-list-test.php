@@ -117,7 +117,7 @@ same(null,$service->read(1,'all',$t->server_id)['rows'][0]['prices']['transfer']
 same('Missing',$service->read(1,'all',$t->server_id)['rows'][0]['prices']['transfer']['status'],'With transfers on, no price is Missing');
 // Transfers off is not Missing: Sync can never fill it. CSV and screen say the same.
 DB::table('domains_tlds')->where('id',$t->id)->update(['transfer_enabled'=>false]);DB::table('domains_prices')->where(['server_id'=>$t->server_id,'action'=>'transfer','term'=>1])->update(['wholesale'=>null]);
-$off=$service->read(1,'all',$t->server_id)['rows'][0];same('Transfers off',$off['prices']['transfer']['status'],'Off says so');same(['Off','Off','Off','Transfers off'],array_slice($service->values($off),13,4),'No Missing in the transfer cells');
+$off=$service->read(1,'all',$t->server_id)['rows'][0];same('Transfers off',$off['prices']['transfer']['status'],'Off says so');same(['Off','Off','Off',''],array_slice($service->values($off),13,4),'No Missing in the transfer cells');
 expect(!str_contains(Livewire::actingAs($u)->test(PriceListPage::class)->set('serverId',(string)$t->server_id)->html(),'class="missing">Off'),'Off is not painted as Missing');
 DB::rollBack();
 // Account labels cannot execute spreadsheet formulas.

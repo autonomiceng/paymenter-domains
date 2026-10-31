@@ -67,9 +67,9 @@ foreach([
     [['changes'=>[]],'Nothing to save.','An empty save is refused'],
 ] as [$data,$message,$why]){tldRefusal(fn()=>$write('acceptance',$data),$message);same($revision,CatalogueAcceptances::load($binding)->revision,$why);}
 foreach(['This TLD is hidden.'=>"That TLD isn't offered here. Nothing was saved.",'Choose at least one year.'=>'Tick at least one year. Nothing was saved.','Nothing to save.'=>'Nothing changed. Nothing was saved.',
-    'Enom TEST Purchase route acceptance is unavailable.'=>'This account can’t take orders on this site yet. Ask your site admin. Nothing was saved.',
-    'Enom TEST acquisition route acceptance is unavailable.'=>'This account can’t take orders on this site yet. Ask your site admin. Nothing was saved.',
-    'Live Enom Purchase route acceptance is unavailable.'=>'This account can’t take orders on this site yet. Ask your site admin. Nothing was saved.',
+    'Enom TEST Purchase route acceptance is unavailable.'=>'This account can’t take orders on this site yet. See System checks. Nothing was saved.',
+    'Enom TEST acquisition route acceptance is unavailable.'=>'This account can’t take orders on this site yet. See System checks. Nothing was saved.',
+    'Live Enom Purchase route acceptance is unavailable.'=>'This account can’t take orders on this site yet. See System checks. Nothing was saved.',
     'Acceptance exceeds encrypted settings capacity.'=>'That is more TLDs than one account can save. Turn some off. Nothing was saved.'] as $error=>$text){
     same($text,SettingsActions::refusal(new DomainException($error),'acceptance'),'Plain refusal: '.$error);
 }

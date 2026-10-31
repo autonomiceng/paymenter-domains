@@ -7,7 +7,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Price};
-use Paymenter\Extensions\Servers\Domains\Services\{LifecyclePolicies,ObservationSchema,PriceCatalogue,StaffSettingsReview as Review};
+use Paymenter\Extensions\Servers\Domains\Services\{ObservationSchema,PriceCatalogue,StaffSettingsReview as Review};
 $f=commerceFixture();extract($f);tldPanel();ObservationSchema::install();Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');Carbon\Carbon::setTestNow($now);
 [$enom,$silo]=$tlds;
 DB::table('extensions')->where('id',$enom->server_id)->update(['name'=>'Enom TEST identity check']);
@@ -79,10 +79,10 @@ foreach([
 Auth::setUser($u);
 same('.com',$page->instance()->getTitle(),'TLD page title is the TLD');
 foreach(['For sale','Change registrar','More','Sales','Registrar for new orders','Existing domains stay with their registrar','Terms','1 to 3 years',
-    'Renewal grace period','Redemption period','Not set','Late renewals are off for this TLD.','Restoring expired domains is off for this TLD.','Price sync','Prices last synced','Oct 18, 2026','Sales use the last synced cost. They stop only if there is no cost or the price is below cost.',
+    'Price sync','Prices last synced','Oct 18, 2026','Sales use the last synced cost. They stop only if there is no cost or the price is below cost.',
     'Prices by registrar account','Edit prices','Account','Pricing','Registration','Renewal','Transfer','Default pricing','New orders','History','No changes yet'] as $see){$page->assertSee($see);}
 $plain=$text($page->html());
-expect(!str_contains($plain,'No lifecycle policy saved'),'Unset grace and redemption are not a fault');
+expect(!str_contains($plain,'grace')&&!str_contains($plain,'Redemption'),'The TLD page asks staff nothing about grace or redemption');
 expect(str_contains($plain,'OFFLINE DEMO NameSilo (synthetic) Demo'),'Prices table: Demo tag after the demo account');
 expect(str_contains($plain,'Enom TEST identity check New orders'),'Prices table: the account for new orders is marked');
 $accountLinks=static fn(string $html,int $server):int=>substr_count($html,'href="'.e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$server])).'"');
@@ -163,18 +163,6 @@ $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertS
 expect(!str_contains($text($list->html()),'new orders'),'List: no account takes new orders');
 $clean($list->html(),'List no registrar');
 DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>$enom->server_id]);
-
-// Saved grace and redemption policy.
-$server=App\Models\Server::findOrFail($enom->server_id);$at='2026-10-17T09:00:00Z';
-$server->settings()->create(['key'=>LifecyclePolicies::key('com'),'type'=>'string','encrypted'=>true,'value'=>json_encode(['binding'=>$enom->account_fingerprint,'tld'=>'com','facts'=>[
-    'grace_days'=>30,'restore_days'=>30,'grace_supported'=>true,'restore_supported'=>true,'auto_renew_only'=>false,'conflicting'=>false,
-    'verified_at'=>$at,'source'=>'https://registry.example.test/policy','grace_extra'=>'0.0000','grace_currency'=>'USD','grace_verified_at'=>$at,'grace_source'=>'Registrar price list',
-    'restore_fee'=>'80.0000','restore_currency'=>'USD','restore_verified_at'=>$at,'restore_source'=>'Registrar price list']],JSON_THROW_ON_ERROR)]);
-DB::table('settings')->where('key',LifecyclePolicies::key('com'))->update(['updated_at'=>'2026-10-17 09:00:00']);
-$page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()
-    ->assertSee('30 days')->assertSee('Last saved Oct 17, 2026')->assertSee('Restore fee')->assertSee('USD 80.00')->assertDontSee('Late renewal fee')
-    ->assertDontSee('Late renewals are off for this TLD.')->assertDontSee('Registry auto-renew only');
-$clean($page->html(),'TLD page lifecycle');
 
 // Below cost: red Cost with its reason, and the TLD is not for sale.
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;

@@ -146,6 +146,12 @@ final class PriceSync
         $context = ['server_id' => (int) $account->server_id];
         $needed = self::batchedCalls($accepted, $endings, $this->batchCalls);
         $left = self::callsLeft($binding);
+        if ($left !== null && $left < $needed) {
+            // A long list must not stop the TLDs already on sale from staying fresh; new ones wait for a day the cap covers.
+            $priced = Price::where('server_id', $account->server_id)->whereIn('tld', $endings)->distinct()->pluck('tld')->all();
+            $kept = array_values(array_intersect($endings, $priced));
+            if ($kept !== [] && ($fits = self::batchedCalls($accepted, $kept, $this->batchCalls)) <= $left) { $endings = $kept; $needed = $fits; }
+        }
         if ($left === null || $left < $needed) {
             Log::info('Domains daily price sync skipped.', [...$context, 'reason' => 'call_cap', 'needed' => $needed, 'left' => $left]);
             return;

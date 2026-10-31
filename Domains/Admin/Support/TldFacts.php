@@ -130,8 +130,8 @@ final class TldFacts
         $head=['Account','Pricing','Registration','Renewal','Transfer',...($grants->costs?['Cost']:[]),'Domains'];
         $html='<div style="max-width:100%;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.875rem"><thead><tr>';
         foreach($head as $label){
-            $help=$label==='Cost'?' <span title="Registrations and transfers below cost are held. Renewals are billed." style="cursor:help;opacity:.6">?</span>':'';
-            $html.='<th scope="col" style="padding:8px 12px;text-align:left;white-space:nowrap;font-weight:500">'.e($label).$help.'</th>';
+            $cell=$label==='Cost'?HelpHint::beside(e($label),'Registrations and transfers below cost are held. Renewals are billed.','About cost')->toHtml():e($label);
+            $html.='<th scope="col" style="padding:8px 12px;text-align:left;white-space:nowrap;font-weight:500">'.$cell.'</th>';
         }
         $html.='</tr></thead><tbody>';
         foreach($rows as $row){
@@ -144,7 +144,7 @@ final class TldFacts
                 default=>self::missing('Use Edit prices.'),
             };
             // Sync never fills a price for sales that are off.
-            $transfer=$first('transfer');$transfer=!$row->transfer_enabled&&($transfer['retail']??null)===null?'Transfers off':$price($transfer);
+            $transfer=$first('transfer');$transfer=!$row->transfer_enabled&&($transfer['retail']??null)===null?'Off':$price($transfer);
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
                 .($fact['seller']===(int)$row->server_id?' <span style="margin-inline-start:6px;padding:1px 6px;border-radius:4px;border:1px solid currentColor;font-size:11px;opacity:.8;white-space:nowrap">New orders</span>':'');
@@ -185,6 +185,8 @@ final class TldFacts
         $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($accepted->binding);
         return $accepted->registrationRoute!==$protocol['route']||$accepted->registrationIntervalSeconds!==$protocol['interval_seconds'];
     }
+    /** The one fix for each reason a TLD with a saved price is not for sale. */
+    public const FIXES=['Cost missing'=>'Use Sync prices.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.'];
     /** For sale or Not for sale, with the reason it is not for sale. */
     public static function salesState(Tld $t, ?StaffGrants $grants = null): array
     {return self::snapshot($t,$grants)['sales'];}
@@ -210,9 +212,9 @@ final class TldFacts
             return ['label'=>'For sale','tone'=>'success','reason'=>null];
         }catch(\Throwable){
             if(!$published){return $off(self::NEEDS_SYNC);}
-            // Saving prices publishes them; a TLD still on an older rule missed a default change because its costs were missing.
-            if($flagged('unpublished')){return $off('Prices not published');}
             if($flagged('cost_missing')||collect($rows)->contains(fn($r)=>!$r['synced'])){return $off('Cost missing');}
+            // Runtime republishes an older rule once costs are in, so this shows only until its next turn.
+            if($flagged('unpublished')){return $off('Prices not published');}
             return $off($flagged('below_cost')?'Below cost':'Price missing');
         }
     }
@@ -240,7 +242,7 @@ final class TldFacts
                 $phase=(string)$r['phase'];
                 if(str_ends_with($phase,'_requested')){$change.=': started';}elseif(str_ends_with($phase,'_refused')){$change.=': refused';}elseif($phase==='publication_completed'){$change.=': publishing finished';}
                 try{$at=\Carbon\CarbonImmutable::parse((string)$r['at'])->utc()->format('M j, Y H:i').' UTC';}catch(\Throwable){$at=(string)$r['at'];}
-                return ['time'=>$at,'change'=>$change,'reason'=>(string)$r['reason'],'by'=>$names[$r['actor_id']]??'Staff #'.$r['actor_id']];
+                return ['time'=>$at,'change'=>$change,'reason'=>(string)$r['reason'],'by'=>$r['actor_id']===null?'System':($names[$r['actor_id']]??'Staff #'.$r['actor_id'])];
             },array_reverse(array_values($rows)));
         }catch(\Throwable){return null;}
     }

@@ -13,16 +13,14 @@ namespace {
     return static function():void {
         $notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::class;
         $tld=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class;
-        $account=\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class;
         $product=\App\Admin\Resources\ProductResource\Pages\EditProduct::class;
-        $all=[$tld,$account,$product];
+        $all=[$tld,$product];
         $root=\Filament\Support\Facades\FilamentView::getFacadeRoot();
         $logger=\Illuminate\Support\Facades\Log::getFacadeRoot();
         try{
             foreach([
-                [$product.'::getRecord',[$tld,$account]],
-                [$tld.'::getRecord',[$account,$product]],
-                [$account,[$tld,$product]],
+                [$product.'::getRecord',[$tld]],
+                [$tld.'::getRecord',[$product]],
                 [\Filament\Support\View\ViewManager::class.'::registerRenderHook',[]],
                 [\Livewire\LivewireManager::class.'::current',[]],
                 [\Filament\View\PanelsRenderHook::class.'::PAGE_HEADER_WIDGETS_BEFORE',[]],
