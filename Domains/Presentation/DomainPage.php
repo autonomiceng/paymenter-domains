@@ -22,6 +22,7 @@ final class DomainPage
             $d->syncPaused => ['tone' => 'warn', 'text' => 'Sync paused: the demo registrar is off. Nameservers show when it resumes.', 'action' => $contact],
             $d->setupPending => ['tone' => 'info', 'text' => 'We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know.', 'action' => $contact],
             $order === 'unpaid' => ['tone' => 'warn', 'text' => 'This order isn’t paid yet. Pay the invoice to start the '.$word.'.', 'action' => ['label' => 'Pay invoice', 'url' => $d->order['invoice'], 'button' => true]],
+            $order === 'cancelled' && isset($d->order['credit']) => ['tone' => 'warn', 'text' => 'This order was cancelled. We added what you paid to account credit. You can apply it on an invoice.', 'action' => $contact],
             $order === 'cancelled' => ['tone' => 'warn', 'text' => 'This order was cancelled. Ask us to start it again.', 'action' => $contact],
             $order === 'failed' => ['tone' => 'bad', 'text' => 'This '.$word.' did not finish. Ask us to start it again.', 'action' => $contact],
             in_array('watch.ns_changed', $s?->stateKeys ?? [], true) => ['tone' => 'warn', 'text' => $d->name.' stopped using '.DnsSignalLabels::nameservers().$movedAt.'.',
@@ -32,6 +33,7 @@ final class DomainPage
             isset($d->actions['code']) && ($d->transfer['open'] ?? false) && !($d->transfer['received'] ?? false) => ['tone' => 'warn', 'text' => 'Enter the auth code from your current registrar.', 'action' => ['label' => 'Enter auth code', 'url' => $d->actions['code']]],
             $order === 'paid' && !isset($d->order['next']) => ['tone' => 'info', 'text' => 'Paid. We’re finishing the '.$word.'. There’s nothing you need to do.', 'action' => $contact],
             self::checkHeld($d) => ['tone' => 'warn', 'text' => 'We can’t read this domain’s details right now. Our team needs to check it.', 'action' => $contact],
+            $d->statusReason === DomainStatus::LATE => ['tone' => 'bad', 'text' => 'This domain has expired. '.DomainStatus::LATE.'.', 'action' => $contact],
             $d->changesUnavailable => ['tone' => 'info', 'text' => 'Changes to this domain are on hold right now. Try again later.', 'action' => $contact],
             default => null,
         };
@@ -40,6 +42,7 @@ final class DomainPage
     public static function expires(OwnedDomain $d, ?DomainSummary $s, ?string $support): array
     {
         if ($d->expiry === null) {
+            if ($s?->abandoned) { return ['missing' => false, 'tone' => null, 'note' => null]; }
             if ($order = DomainListRow::orderExpires($d->order, $support)) { return $order; }
             if (self::checkHeld($d)) { return ['missing' => true, 'cause' => self::TEAM_CHECK, 'fix' => null]; }
             $list = $s ? DomainListRow::expires($s) : null;
@@ -54,7 +57,7 @@ final class DomainPage
         };
         return ['missing' => false, 'tone' => $days <= 0 ? 'bad' : ($days <= 30 ? 'warn' : null), 'note' => $note];
     }
-    /** Next invoice: the current renewal invoice's state (Due + Pay invoice, Paid, or Missing with its cause and fix), else the planned date for a domain that renews. Null when it does not apply. */
+    /** Next invoice: the current renewal invoice's state (Due + Pay invoice, Paid, or Missing with its cause and fix), else the day the next invoice goes out, the same date staff see. Null when it does not apply. */
     public static function nextInvoice(OwnedDomain $d, ?DomainSummary $s, ?string $support): ?array
     {
         $state = $d->renewNow['status'] ?? (isset($d->renewNow['invoice']) ? 'pending' : null) ?? $d->renewalInvoice['state'] ?? null;
@@ -62,13 +65,13 @@ final class DomainPage
         $due = $d->renewalDue ?? $d->renewalInvoice['due'] ?? null;
         if ($state === null && ($d->renewal !== 'On' || $d->setupPending)) { return null; }
         return match (true) {
-            $state === 'pending' => ['value' => $due ? 'Due '.self::date($due) : 'Due', 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
+            $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due', 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
             $state === 'paid' => ['value' => 'Paid'],
             $state === 'cancelled' => ['missing' => true, 'cause' => 'Invoice cancelled', 'fix' => $contact],
             $state !== null => ['missing' => true, 'cause' => 'Renewal being checked', 'fix' => $contact],
-            $d->plannedRenewalDue !== null => ['value' => self::date($d->plannedRenewalDue)],
-            $s?->renewalDueAt !== null => ['value' => self::date($s->renewalDueAt)],
             (bool) $s?->renewalInvoiceMissing => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
+            $s?->renewalIssueAt !== null => ['value' => self::date($s->renewalIssueAt)],
+            ($d->plannedRenewalDue ?? $s?->renewalDueAt) !== null => ['value' => 'Due '.self::date($d->plannedRenewalDue ?? $s->renewalDueAt)],
             $d->expiry === null => ['missing' => true, 'cause' => self::checkHeld($d) ? self::TEAM_CHECK : Missing::fills('after the next sync'), 'fix' => null],
             default => null,
         };

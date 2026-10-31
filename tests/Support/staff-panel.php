@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 function staffPanel(): void
 {
+    if (!app()->bound(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)) { app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$GLOBALS['clock']??new Paymenter\Extensions\Servers\Domains\Data\SystemClock); }
     PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),
         PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());
     $panel=Filament::getPanel('admin'); $panel->resources([DomainResource::class,OperationResource::class]);
@@ -27,7 +28,7 @@ function staffUser(array $permissions): App\Models\User
 }
 function staffData(bool $ordinaryCompleted = false): array
 {
-    \Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();
+    \Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::install();
     \Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
     \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
     require_once __DIR__.'/accounts.php';
@@ -57,6 +58,6 @@ function staffData(bool $ordinaryCompleted = false): array
 /** A registrar account setup action: header actions by name, the rest inside the account's sections. */
 function setupAction(string $action,int $server): string|\Filament\Actions\Testing\TestAction
 {
-    return in_array($action,['processing','configure','enroll_sandbox'],true)?$action.'_'.$server
+    return in_array($action,['configure','enroll_sandbox'],true)?$action.'_'.$server
         :\Filament\Actions\Testing\TestAction::make($action.'_'.$server)->schemaComponent('account_'.$server,'content');
 }

@@ -26,6 +26,8 @@ final class NativeDomainGuard
                 if (Operation::whereIn('invoice_id', [$payment->invoice_id, $payment->getRawOriginal('invoice_id')])->exists()) {
                     // Native gateways settle an existing processing row; signed financial fields stay fixed.
                     $dirty = array_diff(array_keys($payment->getDirty()), ['status', 'fee', 'updated_at', 'is_credit_transaction']);
+                    // The staff form saves the gateway in a second write on the row it just created.
+                    if ($event === 'updating' && $payment->wasRecentlyCreated && array_values($dirty) === ['gateway_id'] && $payment->getRawOriginal('gateway_id') === null) { return; }
                     if ($event === 'updating' && $dirty === [] && (int) $payment->is_credit_transaction === (int) $payment->getRawOriginal('is_credit_transaction')
                         && ($payment->status->value === $payment->getRawOriginal('status') || ($payment->getRawOriginal('status') !== 'succeeded'
                             && in_array($payment->status->value, ['processing', 'succeeded', 'failed'], true)))) { return; }

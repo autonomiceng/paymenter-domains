@@ -13,6 +13,8 @@ final class DomainStatus
         'action_required' => ['Action required', 'warning'], 'under_review' => ['Under review', 'warning'], 'expired' => ['Expired', 'danger'],
         'redemption' => ['Redemption', 'danger'], 'failed' => ['Failed', 'danger'], 'cancelled' => ['Cancelled', 'gray'],
     ];
+    /** The next step for a managed domain past expiry: late renewal and restore are off, so people decide. */
+    public const LATE = 'Contact support to check whether it can still be renewed';
     /** Internal state => [status key, default reason line]. Domain status column values, request states seen on a domain,
      * watch findings, and derived states: renewal_off_expiring (auto-renew off, expiry within 30 days),
      * active_no_expiry (active without a confirmed expiry) and setup_required (held until the customer finishes setup). */
@@ -23,8 +25,8 @@ final class DomainStatus
         'setup_required' => ['action_required', 'Finish setup'], 'watch.not_registered' => ['action_required', 'Not registered'],
         'needs_review' => ['under_review', null], 'adoption_pending' => ['under_review', 'Import not confirmed'],
         'held' => ['under_review', null], 'uncertain' => ['under_review', null], 'active_no_expiry' => ['under_review', 'Expiry missing'],
-        'expired' => ['expired', null], 'grace' => ['expired', 'In grace period'], 'watch.expired' => ['expired', 'Renew at your registrar'],
-        'redemption' => ['redemption', null], 'watch.redemption' => ['redemption', null],
+        'expired' => ['expired', self::LATE], 'grace' => ['expired', self::LATE], 'watch.expired' => ['expired', 'Renew at your registrar'],
+        'redemption' => ['redemption', self::LATE], 'watch.redemption' => ['redemption', 'Restore at your registrar'],
         'registration_rejected' => ['failed', 'Registration did not finish'], 'transfer_rejected' => ['failed', 'Transfer did not finish'],
         'cancelled' => ['cancelled', null],
     ];

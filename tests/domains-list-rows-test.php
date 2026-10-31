@@ -18,6 +18,10 @@ $render=static function()use($controller,$request):array{
     return [storefrontDom($html),$n];
 };
 
+// A page past the end doesn't claim only cancelled domains exist.
+$far=Request::create('/domains','GET',['page'=>9]);$far->setUserResolver(fn()=>$user);$far->setLaravelSession($session);
+expect(!str_contains($controller->index($far)->render(),'Only cancelled domains here.'),'Out-of-range page keeps the plain empty message');
+
 // Auto-renew applies to every domain state (status-model.md 3, rules 1 and 4), so pending and under-review rows show it.
 $cases=['registration pending'=>['registration_pending','register','queued',null],'transfer pending'=>['transfer_pending','transfer','queued',null],
     'awaiting payment'=>['registration_pending','register','awaiting_payment',null],'held request'=>['transfer_pending','transfer','held','transfer_needs_action'],

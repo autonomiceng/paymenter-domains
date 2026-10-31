@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\{DB,Route};
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList as Page;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{PublicSuffixList as Lists,PslFailure,PslRebaseline,PslTransport};
-/** The System checks row "Public suffix list": Download now, Review new list and Change source, plus a link to the full list page. */
+/** The System checks row "Public suffix list": Download now, Review new list and Change source when it needs attention, plus a link to the full list page. */
 final class PslActions
 {
     public const VIEW=Page::VIEW;
@@ -40,7 +40,8 @@ final class PslActions
         if ((int)$status->consecutive_failures>0&&$status->last_attempt_at!==null&&$review===null) { $tone??='warning';$subs[]='Last download failed '.self::date((int)$status->last_attempt_at); }
         if ($review===null&&($at=self::limitedUntil($list))!==null) { $subs[]='Next download allowed '.self::date($at); }
         return ['label'=>'Public suffix list','value'=>$value,'tone'=>$tone??'success','cause'=>$subs?implode(' · ',$subs):null,'action'=>null,'help'=>self::HELP,
-            'buttons'=>[self::download($refresh),self::accept($refresh),self::source($refresh),
+            // The list updates itself, so a healthy row only links to the list page, which keeps both buttons.
+            'buttons'=>[...($tone===null?[]:[self::download($refresh),self::accept($refresh),self::source($refresh)]),
                 Action::make('psl_details')->label('View details')->link()->size('sm')->url(fn()=>Page::getUrl())->visible(fn()=>Route::has(Page::getRouteName()))]];
     }
     public static function download(callable $refresh): Action
@@ -118,8 +119,8 @@ final class PslActions
             'sentinel_missing'=>"Couldn't download: the list is missing rules.",
             'rules_lost_icann','rules_lost_private'=>'Many rules were removed. Review them before using this list.',
             'unexpected_304'=>"Couldn't download. Try again tomorrow.",
-            'internal_error'=>"Couldn't download. Ask your site admin.",
-            'parser_unavailable'=>"Couldn't download. Ask your site admin to add the PHP intl extension.",
+            'internal_error'=>"Couldn't download. Check the site logs.",
+            'parser_unavailable'=>"Couldn't download. Add the PHP intl extension.",
             default=>"Couldn't download. Try again later.",
         };
     }

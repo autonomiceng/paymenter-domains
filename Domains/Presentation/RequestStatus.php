@@ -22,9 +22,15 @@ final class RequestStatus
         'succeeded' => ['completed', null], 'rejected' => ['failed', null], 'disposed' => ['cancelled', null], 'cancelled' => ['cancelled', null],
     ];
     /** Rejected requests that ended on purpose: closed unpaid, cancelled by staff, or cancelled with account credit. They read Cancelled, not Failed. */
-    public const CLOSED_CODES = ['acquisition_cancelled_unpaid', 'renewal_cancelled_unpaid', 'refund_approved', 'management_retired'];
+    public const CLOSED_CODES = ['acquisition_cancelled_unpaid', 'renewal_cancelled_unpaid', 'refund_approved', 'management_retired', 'name_unavailable', 'premium_name', 'order_not_supported'];
     public static function closed(?string $state, ?string $code): bool
     { return $state === 'rejected' && in_array($code, self::CLOSED_CODES, true); }
+    /** One sentence for an unpaid early renewal, on both sides. */
+    /** Money that reached an early renewal after it closed. Customers and staff read the same words. */
+    public static function lateCredit(string $amount): string
+    { return 'Paid after this invoice closed. We added '.$amount.' to account credit. You can apply it on an invoice.'; }
+    public static function earlyRenewal(string $due): string
+    { return 'Early renewal not paid. Nothing is due until '.gmdate('M j, Y', strtotime($due.' 00:00:00 UTC')).'.'; }
     /** @return array{label:string,tone:string,reason:?string} */
     public static function for(?string $state, ?string $cause = null): array
     {

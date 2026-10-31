@@ -9,12 +9,12 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,NativeDomainGuard,RenewalStop,StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,RenewalStop,StaffHoldingReview};
 /** Owned holding actions only; native service controls remain upstream. */
 final class HoldingActions
 {
-    public const LABELS=['reprice'=>'Edit renewal price','stop'=>'Stop renewal','resume'=>'Resume renewal'];
-    private const DONE=['reprice'=>'Renewal price updated','stop'=>'Renewal stopped','resume'=>'Renewal resumed'];
+    public const LABELS=['stop'=>'Stop renewal','resume'=>'Resume renewal'];
+    private const DONE=['stop'=>'Renewal stopped','resume'=>'Renewal resumed'];
     private const CHANGED='This domain changed. Reload the page and try again.';
     /** Service refusals => the dialog's failure line. Unknown refusals get the generic line. */
     private const FAILURES=[
@@ -25,7 +25,7 @@ final class HoldingActions
         'Invalid review key. Reload this page.'=>self::CHANGED,'Holding changed. Reload this page and review it again.'=>self::CHANGED,
         'Review key used.'=>self::CHANGED,'Holding native authority changed.'=>self::CHANGED,
         'Holding audit full or unavailable.'=>'History for this domain is full. Ask your site admin.',
-        'Review confirmed domain ownership and billing status before resuming or repricing this holding.'=>"The service isn't active, the registration isn't confirmed yet, or the service has an immediate cancellation. Check the service, then try again.",
+        'Review confirmed domain ownership and billing status before resuming this holding.'=>"The service isn't active, the registration isn't confirmed yet, or the service has an immediate cancellation. Check the service, then try again.",
     ];
     public static function make(Domain $d): array
     {
@@ -34,16 +34,10 @@ final class HoldingActions
         $stopped=RenewalStop::blocked($l);
         $out=[];
         foreach(StaffHoldingReview::ACTIONS as$name=>$unused){
-            if($name==='reprice'&&$d->price_mode!=='standard'){continue;}
-            $label=self::LABELS[$name];$description=self::description($name);$quoteFailed=false;
-            if($name==='reprice'){
-                try{$price=app(NativeDomainGuard::class)->quote($l);$description='New price: USD '.$price['annual_gross'].' / year, from TLD prices. '.$description;}
-                catch(\Throwable){$quoteFailed=true;}
-            }
+            $label=self::LABELS[$name];
             $out[]=Action::make($name)->label($label)->color($name==='stop'?'danger':'gray')
-                ->disabled($quoteFailed)->tooltip($quoteFailed?"Couldn't read the renewal price. Check TLD prices, then reload.":null)
-                ->visible(fn()=>Staff::can(StaffHoldingReview::permission($name))&&($name==='reprice'||($name==='stop'?!$stopped:$stopped)))
-                ->requiresConfirmation()->modalHeading($name==='stop'?'Stop renewal?':$label)->modalDescription($description)->modalSubmitActionLabel($label)->modalWidth('lg')
+                ->visible(fn()=>Staff::can(StaffHoldingReview::permission($name))&&($name==='stop'?!$stopped:$stopped))
+                ->requiresConfirmation()->modalHeading($name==='stop'?'Stop renewal?':$label)->modalDescription(self::description($name))->modalSubmitActionLabel($label)->modalWidth('lg')
                 ->schema([Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,$name,$stamp,app(Clock::class))),
                     Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(3)
                         ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex'=>'Use one line.'])])
@@ -52,6 +46,7 @@ final class HoldingActions
                         $actor=Auth::user();if(!$actor instanceof \App\Models\User){throw new \DomainException('Current staff permissions required.');}
                         app(StaffHoldingReview::class)->run($actor,(int)$d->id,$name,(string)($data['review_key']??''),trim((string)($data['reason']??'')));
                         Notification::make()->success()->title(self::DONE[$name])->send();
+                        $livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$d->id]));
                     }catch(\Throwable $error){
                         $message=$error instanceof \DomainException?(self::FAILURES[$error->getMessage()]??null):null;
                         if($message===null){Log::warning('Domains holding change failed.',['domain_id'=>$d->id,'action'=>$name,'exception_class'=>$error::class]);
@@ -65,7 +60,6 @@ final class HoldingActions
     public static function description(string $action): string
     {
         return match($action){
-            'reprice'=>'Future renewal invoices use the price on their issue date.',
             'stop'=>"Stops new renewal invoices. Invoices already sent stay payable, and renewal requests already created may still run. To stop all renewals, also turn off Registrar auto-renew.",
             'resume'=>'Restarts renewal invoices and removes any pending service cancellation.',
         };

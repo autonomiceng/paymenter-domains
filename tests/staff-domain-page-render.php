@@ -34,7 +34,7 @@ $review=$copy('import-review.example.com',[]); DB::table('domains_domains')->whe
 $order=$copy('new-order.example.com',['status'=>'registration_pending','authority_generation'=>1,'provider_expires_at'=>null,'last_synced_at'=>null]);
 $op=$active->operations()->sole()->replicate(); $op->fill(['domain_id'=>$order->id,'service_id'=>$order->service_id,'operation_key'=>'render-order',
     'action'=>'register','state'=>'queued','safe_code'=>null,'authority_generation'=>1]); $op->save();
-// Open alerts on the rows they concern: Missing records on a Service with no service, review alerts on Renewal invoices and Last sync,
+// Open alerts on the rows they concern: Missing records on a Service with no service, review alerts on Auto-renew and Last sync,
 // and a missing renewal invoice under the Next invoice date.
 $alerted=$copy('alerts.example.com',[]);
 foreach(['native_identity_missing','renewal_unpaid','observation_review','missing_obligation'] as $code){Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($alerted,$code,time());}

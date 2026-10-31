@@ -146,6 +146,8 @@ final class DomainBilling
         if (!self::enabled($settings->get($manual ? 'domains_manual_renewals_enabled' : 'domains_billing_enabled', false))) {
             throw new RuntimeIneligible(RuntimeReason::BillingOff);
         }
+        // No new Enom invoice for a renewal that can't go out, site gate and the other environment included. Issued invoices stay payable; paid renewals wait with their reason.
+        if (EnomTestRenewal::holdsInvoices(CatalogueAcceptances::binding($l['account']))) { throw new RuntimeIneligible(RuntimeReason::BillingOff); }
         $today = $this->clock->now()->format('Y-m-d');
         if (($manual && self::expired($l['domain'], $this->clock->now())) || (!$manual && ($today >= $calendar['due'] || $today < $calendar['issue']))) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
         $terms = self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now());

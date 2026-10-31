@@ -296,6 +296,8 @@ $excluded=[
     'NativeCatalogue.php'=>['registration','transfer'], // Product slug suffixes.
     'RenewalStop.php'=>['cancellation','staff','adopted'], // Renewal intent source, presented separately.
     'ObservationWork.php'=>['holding'], // Work phase identity.
+    'SellRule.php'=>['limit','sell','skipped','waiting'], // Row decisions, shown by What you sell.
+    'EnomTestCalls.php'=>['send_check'],'EnomTestCallLimit.php'=>['send_check'], // Refusal reasons, shown by SettingsActions::testRefusal.
 ];
 // Auto Pay uses its own explicit labels in this class.
 preg_match_all("/'([a-z][a-z0-9_]*)'\\s*=>/",explode('public static function statuses()', $labelsSource, 2)[0],$autoPay);

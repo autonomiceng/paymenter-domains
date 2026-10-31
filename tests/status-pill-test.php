@@ -24,10 +24,10 @@ $cases=[
     'expiring'=>[['domain.active','adopt.renewal_off'],['expiry'=>$soon,'renewalOff'=>true],'renewal_off_expiring','Action required','Auto-renew off'],
     'auto-renew-on-soon'=>[['domain.active'],['expiry'=>$soon],'active','Active',null],
     'no-expiry'=>[['domain.review'],['expiry'=>null],'active_no_expiry','Under review','Expiry missing'],
-    'expired'=>[['domain.expired'],['expiry'=>$today],'expired','Expired',null],
-    'grace'=>[['domain.expired'],['expiry'=>$today],'grace','Expired','In grace period'],
-    'redemption'=>[['domain.redemption'],[],'redemption','Redemption',null],
-    'registry-expiry'=>[['watch.expired','adopt.provenance'],['expiry'=>$today],'expired','Expired',null],
+    'expired'=>[['domain.expired'],['expiry'=>$today],'expired','Expired',DomainStatus::LATE],
+    'grace'=>[['domain.expired'],['expiry'=>$today],'grace','Expired',DomainStatus::LATE],
+    'redemption'=>[['domain.redemption'],[],'redemption','Redemption',DomainStatus::LATE],
+    'registry-expiry'=>[['watch.expired','adopt.provenance'],['expiry'=>$today],'expired','Expired',DomainStatus::LATE],
     'pending'=>[['domain.pending'],[],'registration_pending','Pending registration',null],
     'transfer'=>[['domain.transfer'],[],'transfer_pending','Pending transfer',null],
     'adoption'=>[['adopt.pending'],[],'adoption_pending','Under review','Import not confirmed'],
@@ -38,7 +38,7 @@ $cases=[
     'failed'=>[['domain.review'],[],'registration_rejected','Failed','Registration did not finish'],
     // A managed domain's nameserver change is a notice on its page, not its status.
     'moved'=>[['domain.active','watch.ns_changed'],['noticeDates'=>['dns'=>time()]],'active','Active',null],
-    'expired-and-moved'=>[['domain.expired','watch.ns_changed'],[],'expired','Expired',null],
+    'expired-and-moved'=>[['domain.expired','watch.ns_changed'],[],'expired','Expired',DomainStatus::LATE],
     'cancelled'=>[['domain.cancelled'],[],'cancelled','Cancelled',null],
 ];
 $pills=static fn($dom,$context=null)=>array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('.//*[contains(concat(" ",normalize-space(@class)," ")," domains-badge ")]',$context??$dom->document->documentElement)));
@@ -78,7 +78,7 @@ same(null,StatusPill::summary($watch(['watch.stale'],['freshness'=>array_map(fn(
 same(null,StatusPill::summary($watch([],['expiry'=>null])),'Unknown expiry has no pill');
 same(null,StatusPill::summary($watch(['watch.paused'],['freshness'=>array_map(fn($f)=>[...$f,'stale'=>true],$fresh)])),'Paused checks show no pill; the page says checks are paused');
 same(['label'=>'Action required','tone'=>'warn','reason'=>'Not registered'],StatusPill::summary($watch(['watch.not_registered'])),'Not registered asks the customer to act');
-same(['label'=>'Redemption','tone'=>'bad','reason'=>null],StatusPill::summary($watch(['watch.redemption','watch.expired'])),'Redemption outranks expiry');
+same(['label'=>'Redemption','tone'=>'bad','reason'=>'Restore at your registrar'],StatusPill::summary($watch(['watch.redemption','watch.expired'])),'Redemption outranks expiry');
 same(['label'=>'Expired','tone'=>'bad','reason'=>'Renew at your registrar'],StatusPill::summary($watch(['watch.expired','watch.ns_changed'])),'Expiry outranks a nameserver change');
 same('Action required',StatusPill::summary($watch(['watch.ns_changed']))['label'],'A monitored domain off our nameservers asks the customer to act');
 // Detail pages carry no other pills: management sections, notices and check details are plain text.

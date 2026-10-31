@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, Clock, OperationPreflight, SealPreflight, WriteGate};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, AccountBinding, AdmittedOperation, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 
@@ -47,6 +47,7 @@ final class DomainOperations
         $entry = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
         OperationClaims::outside();
         $route = Operation::findOrFail($id);
+        if(BalanceRetries::pending($route)){if(!$this->claims->readmitBalance($id)){return $route->fresh();}$route=$route->fresh();}
         if ($route->action === 'transfer' && !TransferInputs::validCode($route->payload['epp'] ?? null)) { return $route; }
         if ($this->writer instanceof RegistrationBridge) { $this->writer->checkComposition($this->preflight); }
         if ($this->writer instanceof WriteGate) {
@@ -56,17 +57,20 @@ final class DomainOperations
                 if ($this->writer instanceof RegistrationBridge && !AcquisitionSetup::ready($route)) { return $route; }
                 if (in_array($route->state, ['queued', 'awaiting_payment', 'awaiting_code'], true)) { $this->writer->reserve(); }
             }
-            catch (WriteHeld $held) { return $held->reason==='write_rate_limited'?$route:$this->claims->holdUnclaimed($id, $route->action==='transfer'&&$route->registrar_key==='enom'&&$held->reason==='usd_balance_required'?'enom_test_transfer_usd_balance_required':$held->reason); }
+            catch (WriteHeld $held) {
+                if($held->reason==='write_rate_limited'&&!BalanceRetry::from($route)?->window){return $route;}
+                return $this->claims->holdUnclaimed($id,$held->reason);
+            }
         }
         if (EnomTestRegistration::applies($route)||EnomTestTransfer::applies($route)) {
             try {
                 $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$route->server_id)->first();
                 if(!$account) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
                 $binding = CatalogueAcceptances::binding($account);
-                if(!($route->action==='transfer'?EnomTestTransfer::enabled($binding):EnomTestRegistration::enabled($binding))) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
+                if(!($route->action==='transfer'?EnomTestTransfer::accepted($binding):EnomTestRegistration::enabled($binding))) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
                 if(($reason=EnomTestRegistration::localHoldReason($binding,$route))!==null){return $this->claims->holdUnclaimed($id,$reason);}
-                return EnomTestCalls::withPurchase($binding,fn()=> $this->executeClaimed($id,$entry,$binding),(int)$route->id);
-            } catch (EnomTestCallLimit) { return $this->claims->holdUnclaimed($id,$route->action==='transfer'?'enom_test_transfer_call_cap':'enom_test_call_cap'); }
+                return EnomTestCalls::withPurchase($binding,fn()=> $this->executeClaimed($id,$entry,$binding),(int)$route->id,$route->action==='transfer'?'transfer':'registration');
+            } catch (EnomTestCallLimit) { if(BalanceRetry::from($route)?->window){return $this->claims->holdUnclaimed($id,'write_rate_limited');} return $this->claims->holdUnclaimed($id,$route->action==='transfer'?'enom_test_transfer_call_cap':'enom_test_call_cap'); }
             catch (ReadDeferred) { return $route->fresh(); }
             catch (WriteHeld $held) { return $this->claims->holdUnclaimed($id,$held->reason); }
             catch (\Throwable) { return $this->claims->holdUnclaimed($id,$route->action==='transfer'?'enom_test_transfer_setup_required':'enom_test_setup_required'); }
@@ -77,7 +81,8 @@ final class DomainOperations
     private function executeClaimed(int $id, \DateTimeImmutable $entry, ?AccountBinding $testPurchase=null): Operation
     {
         $route=Operation::findOrFail($id);
-        if($this->writer instanceof RegistrationBridge&&in_array($route->state,['queued','awaiting_payment','awaiting_code'],true)){
+        $balanceRetry=BalanceRetry::from($route)?->window!==null;
+        if(!$balanceRetry&&$this->writer instanceof RegistrationBridge&&in_array($route->state,['queued','awaiting_payment','awaiting_code'],true)){
             try{$this->writer->guardAccount($this->clock,$entry->modify('+'.(ExecuteOperation::EXECUTION_SECONDS-ExecuteOperation::FINISH_SECONDS).' seconds'));}
             catch(ReadDeferred){return $route->fresh();}
             catch(WriteHeld $held){return $this->claims->holdUnclaimed($id,$held->reason);}
@@ -94,6 +99,8 @@ final class DomainOperations
             if ($this->preflight instanceof TransferPreflight) {
                 $ready = $this->preflight->inspect($op, $domain, $context);
             }
+            // A balance retry stops cheaply before account/profile reads. The account guard still precedes every seal.
+            if($balanceRetry&&$this->writer instanceof RegistrationBridge){$this->writer->guardAccount($this->clock,$deadline);}
             if($testPurchase!==null){EnomTestCalls::assertPurchaseCurrent($binding);EnomTestCalls::reservePurchase($binding,$ready->cost);}
             if ($context->budget->remaining() < 1) { throw new \DomainException('No dispatch request budget remains.'); }
             $dispatchDeadline = min($deadline, $ready->validUntil, $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds'));
@@ -118,7 +125,7 @@ final class DomainOperations
         } catch (ReadDeferred) {
             return $this->claims->defer($op);
         } catch (WriteHeld $held) {
-            return $this->claims->finish($op, $result, holdReason: $held->reason);
+            return $this->claims->finish($op, $result, holdReason: $held->reason, holdCost: $held->cost);
         } catch (\Throwable) {
             // Never chain a provider/input exception or expose raw evidence through diagnostic traces.
             return $this->claims->finish($op, $result); // One completion retry retains the original result; never resend.
