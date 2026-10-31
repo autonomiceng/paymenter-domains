@@ -4,10 +4,10 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/commerce.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
-use Paymenter\Extensions\Servers\Domains\Models\Price;
+use Paymenter\Extensions\Servers\Domains\Models\{Price,SellRow};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client,Driver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport,TransportResponse};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,AccountReadBudget,CatalogueSync,DomainObservation,ObservationSchema,ObservationWork,RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,AccountReadBudget,CatalogueSync,DomainObservation,ObservationSchema,ObservationWork,PriceFill,RegistrarRegistry,SellTableSchema};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 extract(commerceFixture());ObservationSchema::install();$clock=new FakeClock($now);$enom=$tlds[0]->server_id;$ns=$tlds[1]->server_id;
 $state=(object)['calls'=>0,'fail'=>false,'during'=>null,'quarantine'=>false];
@@ -37,6 +37,10 @@ same(3,Price::where('server_id',$ns)->where('tld','net')->whereNull('wholesale')
 same(null,DB::table('domains_observation_queues')->where('server_id',$ns)->value('catalogue_hold'),'Persisted quarantine never holds healthy account refresh');
 same(2,DB::table('domains_observation_queues')->where('server_id',$ns)->value('catalogue_cursor'),'Quarantine advances durable cursor');
 $clock->instant=$now->modify('+1200 seconds');$work->tick(2);expect(Price::where('server_id',$ns)->where('tld','org')->exists(),'Tail suffix drains within cadence');
+// What you sell reads NameSilo's one price list into the same table, yearly prices only.
+SellTableSchema::install();DB::table(SellTableSchema::ROWS)->insert(['server_id'=>$ns,'account_fingerprint'=>$b->fingerprint,'tld'=>'net','register_cost'=>'7.0000']);$calls=$state->calls;(new PriceFill($reads,$clock))->run(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$ns)->sole());same($calls+1,$state->calls,'One NameSilo read');
+same('7.0000',SellRow::where(['server_id'=>$ns,'tld'=>'net'])->sole()->register_cost,'A broken row keeps its last good price and does not stop the rest');
+$sold=SellRow::where(['server_id'=>$ns,'tld'=>'com'])->sole();same(['8.0000','9.0000','8.0000','9.0000',[1]],[$sold->register_cost,$sold->renew_cost,$sold->transfer_cost,$sold->high_cost,array_keys($sold->prices)],'NameSilo costs land in the table');
 $prior=DB::table('domains_prices')->where('server_id',$ns)->orderBy('id')->get()->toJson();$state->fail=true;
 $clock->instant=$now->modify('+1800 seconds');$work->tick(2);same($prior,DB::table('domains_prices')->where('server_id',$ns)->orderBy('id')->get()->toJson(),'Failed refresh preserves price bytes/freshness');
 $failedQueue=DB::table('domains_observation_queues')->where('server_id',$ns)->sole();

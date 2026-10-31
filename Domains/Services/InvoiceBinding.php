@@ -146,7 +146,7 @@ final class InvoiceBinding
             || (int) $domain->user_id !== (int) $service->user_id || (int) $invoice->user_id !== (int) $service->user_id
             || (int) $op->invoice_id !== (int) $invoice->id || (int) $op->invoice_item_id !== (int) $item->id || (int) $item->invoice_id !== (int) $invoice->id
             || $item->reference_type !== $service->getMorphClass() || (int) $item->reference_id !== (int) $service->id
-            || (string) $item->quantity !== '1' || (string) $service->quantity !== '1' || $c['name'] !== $domain->domain || $domain->reservation_name !== $domain->domain
+            || (string) $item->quantity !== '1' || (string) $service->quantity !== '1' || $c['name'] !== $domain->domain || ($domain->reservation_name !== $domain->domain && ($domain->reservation_name !== null || $op->safe_code !== UnpaidAcquisitionProof::CODE))
             || $c['term'] !== (int) $op->term || $c['action'] !== $op->action || $c['currency'] !== $op->currency
             || $service->currency_code !== 'USD' || $invoice->currency_code !== 'USD' || $op->currency !== 'USD'
             || $op->authority_generation !== $domain->authority_generation || $domain->authority_generation < 1

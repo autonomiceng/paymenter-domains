@@ -15,6 +15,9 @@ final class OperationReconciliation
         OperationClaims::outside();
         $capture = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account): ?array {
             if (!$this->eligible($op)) { return null; }
+            $watch=TransferPolling::applies($op);$now=$this->clock->now()->getTimestamp();
+            $manual=$watch&&($op->policy['reconciliation']['manual_check']??false);
+            if($watch&&!TransferPolling::due($op,$now)){return null;}
             $this->unresolved($op);
             // Eloquent's UPDATE can advance updated_at beyond the model's timestamp.
             // Capture persisted values under these locks before reading the provider.
@@ -22,22 +25,32 @@ final class OperationReconciliation
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
                 $attempt = ReconciliationEvidence::attempt($op, $domain, $binding);
-                if ($op->action !== 'transfer' && (!$attempt->executionFacts || $attempt->providerReference === null) && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
-                if (($op->policy['reconciliation']['polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
+                if ($op->action !== 'transfer' && $attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
+                if (($op->policy['reconciliation']['polls'] ?? 0) >= self::POLL_LIMIT && !TransferPolling::expected($op) && !$manual && !($watch&&TransferPolling::expired($op,$now))) { return null; }
+                if($watch){TransferPolling::reserve($op,$now);$op->refresh();}
                 $requestedNameservers = null;
                 if ($op->action === 'transfer' && $op->registrar_key === 'namesilo' && ($op->payload['nameservers'] ?? [])) {
                     try { $requestedNameservers = NameserverEvidence::requested($op->payload['nameservers'], 'transfer_request', new \DateTimeImmutable($op->attempt['dispatch_attempted_at'])); }
                     catch (\Throwable) { /* Invalid submitted data is not a nameserver fact. */ }
                 }
-                return [$attempt, self::stamp($op, $domain), self::contract($attempt), $requestedNameservers];
-            } catch (\Throwable) { return null; }
+                return [$attempt, self::stamp($op, $domain), self::contract($attempt), $requestedNameservers, $watch, $watch&&TransferPolling::light($op,$now)];
+            } catch (\Throwable) {
+                if($watch){$p=$op->policy;$p['reconciliation']['staff_alert']=true;$p['reconciliation']['reason']='transfer_authority_changed';if(TransferPolling::expired($op,$now)){$p['reconciliation']['final_check']='done';}$op->update(['policy'=>$p]);}
+                return null;
+            }
         });
         if (!$capture) { return Operation::findOrFail($id); }
-        [$attempt, $stamp, $contract, $requestedNameservers] = $capture; $proof = null; $nameservers = null; $covered = false; $transferConflict = false; $chargeChecked = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
-        $callCapBlocked = false;
+        [$attempt, $stamp, $contract, $requestedNameservers, $watch, $light] = $capture; $proof = null; $nameservers = null; $covered = false; $transferConflict = false; $chargeChecked = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
+        $callCapBlocked = false; $pendingAnomaly = false;
+        $limiter=$watch?new TransferReadBudget($this->clock,Runtime::limiter()):null;
         try {
-            $context = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock, Runtime::limiter());
-            $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $context);
+            $context = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock, $limiter ?? Runtime::limiter());
+            $read=function()use($attempt,$context,$light){
+                $reader=$this->bindings->reader($attempt->binding->serverId);
+                return $light&&$reader instanceof \Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller
+                    ?$reader->pollTransfer($attempt,$context):$reader->reconcile($attempt,$context);
+            };
+            $result=$limiter?$limiter->run($attempt->binding,$read):$read();
             $result->requireAttempt($attempt);
             if ($this->clock->now() < $context->deadline) {
                 $facts = $result->result()->evidence();
@@ -45,6 +58,9 @@ final class OperationReconciliation
                 $covered = $facts->domain?->owned === true && $facts->domain->expiry !== null
                     && ($facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null && count($facts->candidates) > 0));
                 $transfer = $facts->transfer;
+                $pendingAnomaly=count($facts->candidates)>1 || ($attempt->expectedCharge!==null && count($facts->candidates)===1
+                    && $facts->candidates[0]->charge!==null && ($facts->candidates[0]->charge->currency!==$attempt->expectedCharge->currency
+                        || self::decimal($facts->candidates[0]->charge->amount)!==self::decimal($attempt->expectedCharge->amount)));
                 $transferConflict = in_array($transfer, [\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected, \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::NeedsAction], true)
                     && ($facts->domain?->owned === true || count($facts->candidates) > 0);
                 // A rejection is final only when charges were actually read; otherwise "no candidates" proves nothing.
@@ -52,15 +68,23 @@ final class OperationReconciliation
                 if ($attempt->query->action->value === 'transfer' && $transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown) { $covered = true; }
                 $proof = ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
             }
+        } catch (ReadDeferred) {
+            return $watch?$this->deferred($id,$stamp,$limiter->admissions()===0):Operation::findOrFail($id);
         } catch (EnomTestCallLimit) {
+            // Enom’s daily guard runs after limiter admission, before the physical exchange.
+            if($watch){return $this->deferred($id,$stamp,$limiter->admissions()<=1);}
             $callCapBlocked = true;
         } catch (\Throwable) {} // Safe retained alert; transport/contract failures do not manufacture facts.
+        $readStarted=!$watch||$limiter->admissions()>0;
         if (!$covered) {
             if (!$callCapBlocked) {
-                return $this->claims->locked($id,function($op,$domain)use($stamp):Operation {
-                    if(!self::eligible($op)||self::stamp($op,$domain)!==$stamp||!in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)){return $op;}
-                    $policy=$op->policy;$policy['reconciliation']['reason']='reconciliation_required';
-                    $op->update(['safe_code'=>'reconciliation_required','policy'=>$policy]);return $op;
+                return $this->claims->locked($id,function($op,$domain)use($stamp,$watch,$readStarted):Operation {
+                    if(!$this->eligible($op)||self::stamp($op,$domain)!==$stamp){return $op;}
+                    $policy=TransferPolling::finished($op->policy,$readStarted);
+                    if($watch){$policy['reconciliation']['staff_alert']=true;$policy['reconciliation']['reason']=($policy['reconciliation']['final_check']??null)==='done'?'transfer_deadline_passed':'transfer_status_unavailable';}
+                    elseif(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)){$policy['reconciliation']['reason']='reconciliation_required';$op->safe_code='reconciliation_required';}
+                    if($op->action==='transfer'){$policy['reconciliation']['read_failed']=true;}
+                    $op->update(['policy'=>$policy]);return $op;
                 });
             }
             return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($stamp): Operation {
@@ -72,24 +96,28 @@ final class OperationReconciliation
                 return $op;
             });
         }
-        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $chargeChecked): Operation {
+        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $chargeChecked, $pendingAnomaly, $readStarted): Operation {
             if (!$this->eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
                 if (self::contract(ReconciliationEvidence::attempt($op, $domain, $binding)) !== $contract) { return $op; }
                 $binding->requireMatch($attempt->binding);
-            } catch (\Throwable) { return $op; }
-            $policy = $op->policy; $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1;
+            } catch (\Throwable) {
+                if(TransferPolling::applies($op)){$p=TransferPolling::finished($op->policy,$readStarted);$p['reconciliation']['staff_alert']=true;$p['reconciliation']['reason']='transfer_authority_changed';$op->update(['policy'=>$p]);}
+                return $op;
+            }
+            $policy = TransferPolling::finished($op->policy,$readStarted); $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1;
+            $policy['reconciliation']['staff_alert']=true;
             if ($op->action === 'transfer') {
                 if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)){$op->safe_code='reconciliation_required';}
-                $policy['reconciliation']['transfer_status'] = $transfer->value;
+                $policy['reconciliation']['transfer_status'] = $transfer->value; $policy['reconciliation']['read_at'] = $this->clock->now()->getTimestamp(); unset($policy['reconciliation']['read_failed']);
                 if ($op->state === 'held') { $op->update(['state' => 'uncertain', 'safe_code' => 'reconciliation_required']); }
                 if ($transferConflict) {
                     $policy['reconciliation']['reason'] = $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected ? 'transfer_rejection_contradiction' : 'transfer_status_contradiction';
                     $op->update(['policy' => $policy]); return $op;
                 }
                 if ($transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::NeedsAction) {
-                    $policy['reconciliation']['reason'] = 'transfer_needs_action';
+                    $policy['reconciliation']['reason'] = TransferPolling::expired($op,$this->clock->now()->getTimestamp()) ? 'transfer_deadline_passed' : 'transfer_needs_action';
                     $op->update(['state' => 'held', 'safe_code' => 'transfer_needs_action', 'policy' => $policy]); return $op;
                 }
                 if ($transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected && !$chargeChecked) {
@@ -102,8 +130,15 @@ final class OperationReconciliation
                     $domain->update(['status' => 'transfer_rejected']); return $op; // Sent rejection never grants a negative proof or credit.
                 }
             }
+            if (!$proof && !$pendingAnomaly && $op->action==='transfer' && $transfer===\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Pending) {
+                $expired=TransferPolling::expired($op,$this->clock->now()->getTimestamp());
+                $policy['reconciliation']['reason']=$expired?'transfer_deadline_passed':'transfer_pending';
+                $policy['reconciliation']['staff_alert']=$expired;
+                $op->update(['policy'=>$policy]);return $op;
+            }
             if (!$proof) {
-                $policy['reconciliation']['reason'] = $policy['reconciliation']['polls'] >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved';
+                $policy['reconciliation']['reason'] = $op->action==='transfer' ? ($pendingAnomaly?'transfer_charge_unexpected':($transfer===\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown?'transfer_status_unavailable':'transfer_completion_unconfirmed'))
+                    : ($policy['reconciliation']['polls'] >= self::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved');
                 $op->update(['policy' => $policy]); return $op;
             }
             $funding->completeInitial($op, $domain); // Persistence failures roll back the whole native/domain decision.
@@ -138,11 +173,30 @@ final class OperationReconciliation
             if (!$this->eligible($op)) { throw new \DomainException('No unresolved attempt.'); }
             $this->authority($op, $domain, $all, $funding, $server, $account);
             $policy = $op->policy; $history = $policy['reconciliation_resumptions'] ?? [];
+            if(TransferPolling::applies($op)&&($policy['reconciliation']['manual_check']??false)){return $op;}
             if (count($history) >= 20) { throw new \DomainException('Resume audit is full.'); }
-            $policy['reconciliation_resumptions'] = [...$history, ['reason' => $reason, 'at' => $this->clock->now()->format(DATE_ATOM), 'prior_polls' => $policy['reconciliation']['polls'] ?? 0]];
+            $resumption=['reason' => $reason, 'at' => $this->clock->now()->format(DATE_ATOM), 'prior_polls' => $policy['reconciliation']['polls'] ?? 0];
+            if(TransferPolling::applies($op)){$policy['reconciliation']['manual_check']=true;$policy['reconciliation']['manual_resumption']=$resumption;$policy['reconciliation']['next_at']=0;}
+            else{$policy['reconciliation_resumptions']=[...$history,$resumption];}
             $policy['reconciliation']['polls'] = 0; $policy['reconciliation']['reason'] = 'resumed';
             $op->update(['policy' => $policy]); $review?->record($l); return $op;
         }, $review?->actorId);
+    }
+    /** Retry zero-wire capacity refusals promptly; preserve pacing after a read and any existing anomaly. */
+    private function deferred(int $id,string $stamp,bool $noWire): Operation
+    {
+        return $this->claims->locked($id,function($op,$domain)use($stamp,$noWire):Operation {
+            if(!$this->eligible($op)||self::stamp($op,$domain)!==$stamp){return $op;}
+            $p=TransferPolling::defer($op->policy,$this->clock->now()->getTimestamp(),$noWire);$r=$p['reconciliation']??[];
+            $ordinary=($r['reason']??null)==='transfer_read_deferred'
+                || (($r['reason']??null)==='original_attempt_unresolved'&&($r['polls']??0)===0)
+                || (TransferPolling::expected($op)&&($r['transfer_status']??null)==='pending');
+            $overdue=TransferPolling::expired($op,$this->clock->now()->getTimestamp());
+            if($ordinary||$overdue&&in_array($r['reason']??null,['transfer_deadline_passed','resumed'],true)){
+                $p['reconciliation']['staff_alert']=$overdue;$p['reconciliation']['reason']=$overdue?'transfer_deadline_passed':'transfer_read_deferred';
+            }
+            $op->update(['policy'=>$p]);return $op; // Preserve an existing anomaly or old-registrar action notice.
+        });
     }
     private function eligible(Operation $op): bool
     {
@@ -154,6 +208,10 @@ final class OperationReconciliation
     private function unresolved(Operation $op): void
     {
         $policy = $op->policy ?? [];
+        if(TransferPolling::applies($op)&&isset($policy['reconciliation'])){
+            if($op->state==='running'){$op->update(['state'=>'uncertain','lease_expires_at'=>null,'safe_code'=>'stale_claim']);}
+            return;
+        }
         $policy['reconciliation'] = [...($policy['reconciliation'] ?? []), 'polls' => $policy['reconciliation']['polls'] ?? 0,
             'staff_alert' => true, 'reason' => $op->state === 'held' && $op->safe_code === 'transfer_needs_action' ? 'transfer_needs_action'
                 : (($policy['reconciliation']['polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved')];

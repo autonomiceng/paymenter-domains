@@ -9,7 +9,7 @@ use Filament\Schemas\Components\{Callout, Section};
 use Filament\Schemas\Schema;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, OperationResource};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{BalanceCheck, Labels, MissingEntry, OperationActions, RegistrarFacts, RequestFacts, Staff, StaffReviewHistory};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{HistoryRecovery, Labels, MissingEntry, OperationActions, RegistrarFacts, RequestFacts, Staff, StaffReviewHistory};
 use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewOperation extends ViewRecord
@@ -72,13 +72,7 @@ class ViewOperation extends ViewRecord
     public function recheckAction(): Action { return $this->pageAction('recheck'); }
     public function resume_readsAction(): Action { return $this->pageAction('resume_reads'); }
     public function releaseAction(): Action { return $this->pageAction('release'); }
-    public function check_balanceAction(): Action
-    {
-        $op=$this->getRecord(); $account=RequestFacts::account($op)['account'];
-        return Action::make('check_balance')->label('Check balance')->color('gray')
-            ->visible(fn()=>(RequestFacts::notice($op)['link_label']??null)==='Check balance'&&RegistrarFacts::connected($account,RegistrarFacts::status(\App\Models\Server::findOrFail($op->server_id),$account)))
-            ->action(fn()=>BalanceCheck::run((int)$op->server_id));
-    }
+    public function history_recoveryAction(): Action { return HistoryRecovery::action($this->getRecord()); }
     private function pageAction(string $name): Action
     { return array_values(array_filter($this->actions(),fn(Action $a)=>$a->getName()===$name))[0]; }
     private function actions(): array { return OperationActions::make($this->getRecord(),$this->reviewStamp); }
@@ -122,19 +116,16 @@ class ViewOperation extends ViewRecord
     }
     private function notice(array $notice): Callout
     {
-        // The cause's link comes first, then the action that retries: "Resume orders", then "Release hold".
+        // The cause's link comes first, then the action that retries: "Go to Orders switch", then "Release hold".
         $buttons=[];
         $action=isset($notice['action'])?$this->getAction($notice['action'],false):null;
         $op=$this->getRecord();
-        // Check balance is a button when the account can take it, else the way to the account.
-        $balance=($notice['link_label']??null)==='Check balance' ? $this->getAction('check_balance',false) : null;
         $link=match($notice['link']??null) {
-            'registrars'=>['Open account',self::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id))],
+            'registrars'=>[$notice['link_label']??'Open account',self::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id))],
             'invoice'=>['Open invoice',$op->invoice_id?self::invoiceUrl((int)$op->invoice_id):null],
             'domain'=>['Open domain',$op->domain?self::url(fn()=>DomainResource::getUrl('view',['record'=>$op->domain_id])):null],
             default=>null};
         $acts=(bool)$action?->isVisible();
-        if ($balance?->isVisible()) { $link=null; $buttons[]=$balance->color($acts?'gray':'primary')->size('sm')->toHtml(); }
         if ($link&&$link[1]) { $buttons[]=view('filament::components.button.index',['tag'=>'a','href'=>$link[1],'color'=>$acts?'gray':'primary','size'=>'sm','slot'=>new HtmlString(e($link[0]))])->render(); }
         if ($acts) { $buttons[]=$action->color('primary')->size('sm')->toHtml(); }
         return Callout::make($notice['title'])->description($notice['body']??null)->status($notice['tone'])->columnSpanFull()

@@ -127,7 +127,9 @@ class Operation extends Model
                     &&$validDeferrals&&!array_diff(array_keys($old),$allowed)
                     &&!array_intersect(array_keys($old),['execution','evidence','charge','order_candidates','provider_reference','registration','corrections','reconciliation','terminal']);
             }
-            $safeAttemptReset=$safeCapReset||$safeTestRetry;
+            $balanceCap=\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::capReset($operation);
+            $safeAttemptReset=$safeCapReset||$safeTestRetry||$balanceCap;
+            \Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::guard($operation,$balanceCap);
             if($newRefusals!==$oldRefusals&&!$safeCapReset) { throw new \DomainException('TEST call refusal history requires a proven-unsent cap reset.'); }
             if (!array_key_exists('registration_admission', $old) && array_key_exists('registration_admission', $new)
                 && (($old['seal'] ?? null) !== 'absent' || ($new['seal'] ?? null) !== 'sealed' || $operation->action !== 'register')) {

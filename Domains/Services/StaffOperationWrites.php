@@ -27,7 +27,7 @@ final class StaffOperationWrites
     }
     public static function canRelease(Operation $op,\DateTimeImmutable $now): bool
     {
-        if($op->state!=='held'||!in_array($op->action,['register','transfer','renew'],true)){return false;}
+        if($op->state!=='held'||!in_array($op->action,['register','transfer','renew'],true)||BalanceRetries::pending($op)){return false;}
         try {
             $l=self::releaseFacts($op);$op=$l['operations']->firstWhere('id',$op->id)??throw new \DomainException('Missing request.');$op->setRelation('domain',$l['domain']);
             StaffOperationReview::requirePermission($l['staff'],'release',$op);StaffOperationReview::requireHistory($op,'release');
@@ -40,14 +40,16 @@ final class StaffOperationWrites
     /** The offer and locked writer execute this same preflight over complete native facts. */
     public static function requireRelease(Operation $op,array $l,\DateTimeImmutable $now): void
     {
-        if($op->state!=='held'||!in_array($op->action,['register','transfer','renew'],true)||$op->safe_code==='contact_details_required'){
+        if($op->state!=='held'||!in_array($op->action,['register','transfer','renew'],true)||$op->safe_code==='contact_details_required'||BalanceRetries::pending($op)){
             throw new \DomainException('This hold requires its original recovery or evidence path.');
         }
         $op->setRelation('domain',$l['domain']);$account=$l['account'];
+        if(in_array($op->safe_code,BalanceRetries::REVIEW_CODES,true)&&OperationClaims::balanceAdmissionReason($op,$l)!==null){throw new \DomainException('Original purchase proof still needs review.');}
         $ordinary=['namesilo_account_guard','staff_review_required','funding','processing','write_disabled','write_acceptance_required',
-            'configuration_unavailable','balance','renewal_funding_or_authority','renewal_authority_invalid','transfer_setup_review_required'];
-        $retry=false;
-        if(!in_array($op->safe_code,$ordinary,true)&&!self::renewalAdmissionHold($op)){
+            'configuration_unavailable','balance','renewal_funding_or_authority','renewal_invoice_unpaid','renewal_spend_paused','renewal_authority_invalid','transfer_setup_review_required',
+            'registrar_price_missing','registrar_read_failed','registrar_balance_insufficient'];
+        $retry=false;$balanceRetry=OperationClaims::balanceRefusalRetryable($op);
+        if(!$balanceRetry&&!in_array($op->safe_code,$ordinary,true)&&!self::renewalAdmissionHold($op)){
             $testRegistration=in_array($op->action,['register','transfer'],true)&&$op->registrar_key==='enom'&&in_array($account?->environment,['test','live'],true)
                 &&($op->action==='transfer'?EnomTestTransfer::deploymentEnabled():EnomTestRegistration::deploymentEnabled());
             $testOnly=['pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required','write_rate_limited',
@@ -56,20 +58,21 @@ final class StaffOperationWrites
             $renewalCap=$op->action==='renew'&&$op->registrar_key==='enom'&&$op->safe_code==='enom_test_renewal_call_cap'
                 &&$account&&in_array($account->environment,['test','live'],true)&&EnomTestRenewal::enabled(CatalogueAcceptances::binding($account));
             if(!$retry&&!($testRegistration&&in_array($op->safe_code,$testOnly,true))&&!$renewalCap){throw new \DomainException('This hold requires its original recovery or evidence path.');}
-        } elseif(OperationClaims::testCallRefusalRetryable($op)) {
+        } elseif(!$balanceRetry&&OperationClaims::testCallRefusalRetryable($op)) {
             $retry=$op->action==='transfer'?EnomTestTransfer::deploymentEnabled():EnomTestRegistration::deploymentEnabled();
             if(!$retry||!in_array($account?->environment,['test','live'],true)){throw new \DomainException('This hold requires its original recovery or evidence path.');}
         }
         $testRetry=OperationClaims::testCallRefusalRetryable($op);
-        if($testRetry||OperationClaims::accountGuardRetryable($op)) { RefundProof::requireUnsent($op,$l['domain']); }
-        else { self::virgin($op,$l); }
+        // The balance predicate already validates strict unsent proof under its original shortfall reason.
+        if(!$balanceRetry){
+            if($testRetry||OperationClaims::accountGuardRetryable($op)) { RefundProof::requireUnsent($op,$l['domain']); }
+            else { self::virgin($op,$l); }
+        }
         if(($op->action==='renew'?RenewalStop::blocksRenewal($l):$l['cancel']->contains('service_id',$op->service_id))||!in_array($l['service']->status,['pending','active'],true)) { throw new \DomainException('Service lifecycle changed.'); }
         if($op->action==='renew'){RenewalFunding::requireCurrent($op,$l);}
         else { RefundPayment::requireCurrent($op,$l);ContactSetup::validate($op);
             if($op->action==='transfer'&&(!TransferInputs::validCode($op->payload['epp']??null)||!($deadline=TransferInputs::deadline($op,$now))||$now>=$deadline)) {
                 throw new \DomainException('Verified transfer payment and saved code required.'); } }
-        // The worker would hold it straight back, so this release would do nothing.
-        if(EnomTestRegistration::releaseNeedsBalance($op,$account)){throw new \DomainException('A balance check under an hour old is required.');}
     }
     /** Selected pre-dispatch refusals; identity, spend-pause and prior-outcome codes remain excluded. */
     public static function renewalAdmissionHold(Operation $op): bool

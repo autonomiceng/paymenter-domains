@@ -12,9 +12,10 @@ final class ReconciliationEvidence
         $a = $op->attempt ?? []; $query = OperationClaims::query($op, $domain);
         if (!$op->started_at || !$op->request_fingerprint || !isset($a['claim_key'], $a['dispatch_attempted_at'])
             || ($a['seal'] ?? null) !== 'sealed') { throw new \DomainException('No sealed original attempt.'); }
-        $end = $op->started_at->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
+        $start = ExecutionWindow::start($op)??throw new \DomainException('Missing execution window.');
+        $end = $start->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
         $dispatch = new \DateTimeImmutable($a['dispatch_attempted_at']);
-        if ($dispatch < $op->started_at || $dispatch > $end) { throw new \DomainException('Invalid original window.'); }
+        if ($dispatch < $start || $dispatch > $end) { throw new \DomainException('Invalid original window.'); }
         $record = !array_key_exists('execution', $a) ? ExecutionRecord::Absent : ($a['execution'] === null ? ExecutionRecord::RecordedNull : ExecutionRecord::Recorded);
         $registration = $op->action === 'renew' ? ($a['renewal'] ?? null) : ($a['registration'] ?? null);
         $raw = $op->action === 'renew' ? $registration : ($a['evidence']['registration'] ?? null);

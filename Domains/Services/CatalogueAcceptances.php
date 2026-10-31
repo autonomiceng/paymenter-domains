@@ -11,6 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 final class CatalogueAcceptances
 {
     public const KEY = 'domains_catalogue_acceptance';
+    /** Long lists are packed, short ones stay plain JSON. */
+    private const PACKED = 'z:';
+    private const CAPACITY = 32768;
     public static function load(AccountBinding $binding, bool $lock = false): CatalogueAcceptance
     {
         if ($lock && DB::transactionLevel() === 0) { throw new \LogicException('Acceptance lock requires a transaction.'); }
@@ -19,7 +22,8 @@ final class CatalogueAcceptances
         try {
             $setting = $query->firstOrFail();
             if (!$setting->encrypted || !is_string($setting->value)) { throw new \DomainException; }
-            $data = json_decode($setting->value, true, 16, JSON_THROW_ON_ERROR);
+            $value = str_starts_with($setting->value, self::PACKED) ? gzinflate(base64_decode(substr($setting->value, strlen(self::PACKED)), true), 1048576) : $setting->value;
+            $data = json_decode($value, true, 16, JSON_THROW_ON_ERROR);
             if (($data['fingerprint'] ?? null) !== $binding->fingerprint || ($data['currency'] ?? null) !== 'USD' || ($data['unit'] ?? null) !== 'exact_term_annual') { throw new \DomainException; }
             return new CatalogueAcceptance($binding, $data['revision'], EndingChoices::closeHidden($data['endings']),
                 $data['registration_route'] ?? null, $data['registration_interval_seconds'] ?? 0);
@@ -58,7 +62,8 @@ final class CatalogueAcceptances
             $data['registration_interval_seconds'] = $next->registrationIntervalSeconds;
         }
         $encoded = json_encode($data, JSON_THROW_ON_ERROR);
-        if (strlen($encoded) > 32768) { throw new \DomainException('Acceptance exceeds encrypted settings capacity.'); }
+        if (strlen($encoded) > self::CAPACITY) { $encoded = self::PACKED.base64_encode(gzdeflate($encoded, 9)); }
+        if (strlen($encoded) > self::CAPACITY) { throw new \DomainException('Acceptance exceeds encrypted settings capacity.'); }
         $setting = $server->settings()->where('key', self::KEY)->lockForUpdate()->first() ?? $server->settings()->make(['key' => self::KEY]);
         $setting->encrypted = true; $setting->type = 'string'; $setting->value = $encoded; $setting->save();
         StorefrontCatalogueCache::invalidateAfterCommit();

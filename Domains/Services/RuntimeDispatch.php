@@ -18,14 +18,21 @@ final readonly class RuntimeDispatch
     }
     public function enqueue(int $id,bool $force=false): void
     {
-        $op=Operation::findOrFail($id);if(!$this->current($op)){return;}$now=$this->clock->now()->getTimestamp();
-        $due=DB::transaction(function()use($id,$op,$now,$force):bool {
-            DB::table('domains_runtime_operations')->insertOrIgnore(['operation_id'=>$id]);
+        $op=Operation::findOrFail($id);$balance=BalanceRetries::pending($op);
+        if(!$this->current($op)){if($balance){app(OperationClaims::class)->readmitBalance($id);}return;}
+        if($op->state==='held'&&!TransferPolling::applies($op)&&(!$balance||!Account::where('server_id',$op->server_id)->value('processing_enabled'))){return;}
+        $now=$this->clock->now()->getTimestamp();
+        if(!TransferPolling::due($op,$now)){return;}
+        $due=DB::transaction(function()use($id,$op,$now,$force,$balance):bool {
+            DB::table('domains_runtime_operations')->insertOrIgnore(['operation_id'=>$id,...($balance?['due_at'=>$now+900]:[])]);
             $q=DB::table('domains_runtime_operations')->where('operation_id',$id);$row=(clone $q)->lockForUpdate()->first();
-            if(!$force&&(int)$row->due_at>$now){return false;}
-            $poll=in_array($op->state,['pending','uncertain','running'],true);$attempts=$poll?(int)$row->attempts+1:0;
+            // TransferPolling owns transfer pacing; balance readmission retains its own due entry.
+            if(($balance||!$force&&!TransferPolling::applies($op))&&(int)$row->due_at>$now){return false;}
+            if($balance){return true;} // The locked readmission consumes due_at, never a queued notification.
+            $poll=in_array($op->state,['pending','uncertain','running'],true)||TransferPolling::applies($op);$attempts=$poll?(int)$row->attempts+1:0;
             $waiting=$op->state==='awaiting_payment'&&\App\Models\Invoice::whereKey($op->invoice_id)->value('status')!=='paid'||$op->state==='awaiting_code'&&!TransferInputs::validCode($op->payload['epp']??null);
             $delay=$poll?min(21600,300*(2**min(7,$attempts-1))):($waiting?900:60);
+            if(TransferPolling::applies($op)){$delay=60;}
             $q->update(['attempts'=>$attempts,'due_at'=>$now+$delay]);return true;
         });
         if($due){\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::dispatch($id)->afterCommit();}

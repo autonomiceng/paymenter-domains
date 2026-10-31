@@ -60,7 +60,7 @@ python3 scripts/test.py --jobs 2 --only \
   tests/fixture-policy-test.php tests/glossary-sweep-test.php \
   tests/holding-adoption-test.php tests/holding-identity-lock-test.php \
   tests/holding-identity-writers-test.php tests/holding-provenance-test.php \
-  tests/invoice-binding-test.php tests/lifecycle-policy-test.php \
+  tests/invoice-binding-test.php \
   tests/managed-public-confirmation-test.php tests/managed-public-observer-test.php \
   tests/managed-public-overflow-test.php tests/managed-public-quota-test.php \
   tests/managed-public-reconciliation-test.php tests/managed-public-relink-test.php \

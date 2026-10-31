@@ -106,6 +106,10 @@ final class ObservationWork
             $rows=Domain::where('server_id',$a->server_id)->where('id','>',$current->cursor)->orderBy('id')->limit(25)->get();
             foreach ($rows as $d) {
                 if ($d->adoptionPending() || !in_array($d->status,['active','registration_pending','transfer_pending'],true)||$d->account_fingerprint!==$a->account_fingerprint) { continue; }
+                // Financial transfer reconciliation already reads status, history and ownership. Avoid a second automatic poller.
+                if(TransferPolling::ownsObservation($d)){
+                    self::current($d)->where('lease_until','<=',$this->clock->now()->getTimestamp())->delete();continue;
+                }
                 if (self::discardUnsent($d,$this->clock->now())) { continue; }
                 DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
                     'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$this->clock->now()->getTimestamp()]);
@@ -121,6 +125,7 @@ final class ObservationWork
                 ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',self::STOPPED);});
             $job=$q->orderBy('due_at')->orderBy('id')->lockForUpdate()->first(); if (!$job) { return null; }
             $d=Domain::find($job->domain_id);
+            if($d&&TransferPolling::ownsObservation($d)){DB::table('domains_observation_work')->where('id',$job->id)->delete();return null;}
             if ($d && ($d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
                 DB::table('domains_observation_work')->where('id',$job->id)->update(['safe_code'=>'superseded']); return null;
             }

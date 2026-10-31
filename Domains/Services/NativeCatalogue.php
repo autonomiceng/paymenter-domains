@@ -119,6 +119,19 @@ final class NativeCatalogue
         $this->publication(Tld::findOrFail($tldId), $now, $review, $change);
     }
 
+    /** The sweep's publication. A rule change that missed this TLD goes on sale by itself once its costs are in, and the audit log says so.
+     * A catalogue account's first publication stays with staff, who choose what to sell. */
+    public function keepCurrent(Tld $tld, \DateTimeImmutable $now, bool $catalogue): void
+    {
+        if ($catalogue && !$this->products($tld)->exists()) { return; }
+        $behind = $this->prices->behindRule($tld, $now);
+        if (!$behind && $catalogue) { return; }
+        $this->publish((int) $tld->id, $now, null, $behind ? static function (Tld $locked) use ($now): void {
+            StaffSettingsReview::append(Server::findOrFail($locked->server_id), ['key' => bin2hex(random_bytes(16)), 'actor_id' => null, 'at' => $now->format(DATE_ATOM),
+                'action' => StaffSettingsReview::ACTIONS['publish'], 'reason' => 'Saved prices brought up to date.', 'phase' => 'completed', 'input' => [], 'tld_id' => (int) $locked->id, 'before' => [], 'after' => []]);
+        } : null);
+    }
+
     /** Import saved costs and refresh existing publication in the same native-first transaction.
      * An ending without native products remains unpublished. All provider reads have already finished. */
     public function refresh(Tld $seed, \DateTimeImmutable $now, \Closure $import, ?StaffSettingsReview $review = null): void

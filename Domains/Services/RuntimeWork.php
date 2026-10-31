@@ -25,7 +25,8 @@ final readonly class RuntimeWork
         $op=Operation::findOrFail($id);try{$a=Account::where('server_id',$op->server_id)->first();$pausedTest=$a&&!$a->processing_enabled&&$op->action==='register'&&$op->state==='awaiting_payment'
             &&\App\Models\Invoice::whereKey($op->invoice_id)->value('status')==='paid'&&self::testRegistrationEnabled($a);
             if($pausedTest){if(app(RuntimeDispatch::class)->current($op)){app(OperationClaims::class)->holdUnclaimed((int)$op->id,'processing');}return;}
-            if($a&&($a->processing_enabled||in_array($op->state,['pending','uncertain','running'],true))&&$this->ports->accepted($a)){if(app(RuntimeDispatch::class)->current($op)){$this->ports->operation($op);}}}finally{$this->notice((int)$op->domain_id);}
+            if($a&&$a->processing_enabled&&BalanceRetries::pending($op)){app(OperationClaims::class)->readmitBalance($id);$op=$op->fresh();if($op->state==='held'){return;}}
+            if($a&&($a->processing_enabled||in_array($op->state,['pending','uncertain','running'],true)||TransferPolling::applies($op))&&$this->ports->accepted($a)){if(app(RuntimeDispatch::class)->current($op)){$this->ports->operation($op);}}}finally{$this->notice((int)$op->domain_id);}
     }
     private static function testRegistrationEnabled(Account $account): bool
     {try{return EnomTestRegistration::enabled(CatalogueAcceptances::binding($account));}catch(\Throwable){return false;}}
@@ -42,6 +43,7 @@ final readonly class RuntimeWork
     private function bill(Domain $d): void
     {
         $this->attempt('renewal_expiry',fn()=>app(RenewalCycles::class)->expireUnpaid((int)$d->id),(int)$d->id);
+        $this->attempt('renewal_early',fn()=>app(RenewalCycles::class)->closeEarlyUnpaid((int)$d->id),(int)$d->id);
         $this->attempt('billing',function()use($d):void {
             if($reason=RuntimeCandidates::billingReason($d)){throw new RuntimeIneligible($reason);}
             app(DomainBilling::class)->invoice((int)$d->id);
@@ -76,8 +78,15 @@ final readonly class RuntimeWork
             if(!$a||$a->account_fingerprint!==$row->account_fingerprint){continue;}
             if(!$operationsOnly){$balanceAccounts[]=$a;}
             $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->where('id','>',$row->operation_cursor)
-                ->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])->orderBy('id')->limit(25)->get();
-            foreach($ops as $op){if($op->action==='transfer'){$this->transferPayment($op);}$this->attempt('operation',fn()=>$this->enqueue((int)$op->id),(int)$op->id);}
+                ->where(fn($q)=>$q->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])
+                    ->orWhere(fn($held)=>$held->where('state','held')->whereIn('safe_code',[...BalanceRetries::CODES,BalanceRetries::LEGACY_CODE]))
+                    ->orWhere(fn($q)=>$q->where('action','transfer')->where('state','held')->where('safe_code','transfer_needs_action')))->orderBy('id')->limit(25)->get();
+            foreach($ops->sortBy(fn($op)=>TransferPolling::priority($op)) as $op){if($op->action==='transfer'){$this->transferPayment($op);}$this->attempt('operation',fn()=>$this->enqueue((int)$op->id),(int)$op->id);}
+            $this->attempt('producer',fn()=>app(AcquisitionRetirement::class)->expireUnpaid($a),(int)$a->server_id);
+            $this->attempt('producer',fn()=>app(Refunds::class)->closeRefused($a),(int)$a->server_id);
+            $this->attempt('producer',function()use($a):void {
+                foreach(app(Refunds::class)->creditRetired($a) as $id){ReminderSchedules::enroll((int)$a->server_id);$this->notice($id);}
+            },(int)$a->server_id);
             if($operationsOnly){
                 DB::table('domains_runtime_turns')->where('id',$row->id)->update(['operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
                 continue;
@@ -87,9 +96,8 @@ final readonly class RuntimeWork
             $tlds=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->where('id','>',$row->tld_cursor)->orderBy('id')->limit(25)->get();
             $tldCursor=(int)$row->tld_cursor;
             $this->attempt('publication',function()use($a,$tlds,&$tldCursor):void {
-                if(!TestCatalogue::enabled(CatalogueAcceptances::binding($a))){
-                    foreach($tlds as $t){$this->attempt('publication',fn()=>app(NativeCatalogue::class)->publish((int)$t->id,$this->clock->now()),(int)$t->id);}
-                }
+                $catalogue=TestCatalogue::enabled(CatalogueAcceptances::binding($a));
+                foreach($tlds as $t){$this->attempt('publication',fn()=>app(NativeCatalogue::class)->keepCurrent($t,$this->clock->now(),$catalogue),(int)$t->id);}
                 // Complete the scan despite individual failures; wrapping retries every retained TLD.
                 $tldCursor=$tlds->count()===25?$tlds->last()->id:0;
             },(int)$a->server_id);
@@ -109,6 +117,7 @@ final readonly class RuntimeWork
                 if(!$test){app(RegistrarBalances::class)->daily($a);}
             },(int)$a->server_id);
             $this->attempt('price_sync',fn()=>app(PriceSync::class)->daily($a),(int)$a->server_id);
+            $this->attempt('price_fill',fn()=>app(PriceFill::class)->daily($a),(int)$a->server_id);
         }
     }
 }
