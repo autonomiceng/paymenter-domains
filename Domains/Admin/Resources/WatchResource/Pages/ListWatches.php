@@ -36,7 +36,7 @@ class ListWatches extends ListRecords
         $dnsFailure=($notice['action']??null)==='settings';
         $url=$dnsFailure&&MonitoringSettings::canAccess()?WatchResource::getUrl('settings'):null;
         $count=ManagedDnsSetup::affected(time())->count();
-        $setup=$count?Callout::make('DNS monitoring is not set up for '.$count.' domains. Choose their DNS template.')->status('info')
+        $setup=$count?Callout::make('DNS monitoring is not set up for '.$count.' '.($count===1?'domain. Choose its':'domains. Choose their').' DNS template.')->status('info')
             ->footer(new HtmlString(view('filament::components.button.index',['tag'=>'a','href'=>WatchResource::getUrl('dns-setup'),'color'=>'gray','size'=>'sm','slot'=>'Choose DNS template'])->render()))->columnSpanFull():null;
         $button=$url?view('filament::components.button.index',['tag'=>'a','href'=>$url,'color'=>'gray','size'=>'sm','slot'=>'Resolver settings'])->render():null;
         if($dnsFailure){$button.=view('filament::components.button.index',['tag'=>'a','href'=>WatchResource::getUrl('dns-failures'),'color'=>'gray','size'=>'sm','slot'=>'Affected checks'])->render();}

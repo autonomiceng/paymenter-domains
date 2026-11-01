@@ -38,10 +38,18 @@ DB::table('services')->where('id',$service->id)->update(['status'=>'cancelled'])
 DB::table('services')->where('id',$service->id)->update(['status'=>'active']);
 $summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$now);
 expect(in_array('domain.dns.not_configured',$summary->stateKeys,true),'Customer sees comparison setup state');same($d->provider_expires_at->format('Y-m-d'),$summary->expiry,'Expiry retained without DNS checks');
+// Customer setup notices follow the staff list's eligibility, including pending adoption.
+foreach([['active',null,true],['grace',null,true],['cancelled',null,false],['expired',null,false],['redemption',null,false],['registration_pending',null,false],['transfer_pending',null,false],['adoption_pending',null,false],['active','adoption_pending',false]]as[$status,$provenance,$eligible]){
+    DB::table('domains_domains')->where('id',$id)->update(['status'=>$status,'provenance'=>$provenance]);
+    $state=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$now);
+    same($eligible,ManagedDnsSetup::eligible($now)->whereKey($id)->exists(),'Setup list eligibility for '.$status.' / '.$provenance);
+    same($eligible,in_array('domain.dns.not_configured',$state->stateKeys,true),'Customer setup notice follows eligibility for '.$status.' / '.$provenance);
+}
+DB::table('domains_domains')->where('id',$id)->update(['status'=>$d->status,'provenance'=>$d->provenance]);
 Livewire::actingAs($owner)->test(ListManagedDns::class)->assertForbidden();
 Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->assertTableActionHidden('assignTemplate',$d);
 app()->instance(WatchWork::class,new WatchWork($fake,new WatchDiscoveryWork(fn()=>0),true,fn()=>$time->now));
-$noticePage=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domains. Choose their DNS template.');
+$noticePage=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Choose its DNS template.');
 $setupPage=Livewire::actingAs($manager)->test(ListManagedDns::class);
 $mounted=Livewire::actingAs($manager)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->mountTableAction('assignTemplate',$d);
 $assignmentHtml=$mounted->html();
