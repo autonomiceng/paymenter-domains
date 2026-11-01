@@ -209,6 +209,9 @@ same(null,\Paymenter\Extensions\Servers\Domains\Services\CorrectionWork::produce
 same(1,count(array_filter($correctionCalls,fn($c)=>$c==='ModifyNS')),'Only one correction write');
 $alerts=\Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::retained(\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d),$clock->now()->getTimestamp()));
 same([],$alerts,'Refused ancillary nameserver correction raises no staff alert');
+same(['title'=>'Domain registered. Chosen nameservers not confirmed.','body'=>'The customer can set up DNS with their provider, then change nameservers.','tone'=>'info'],
+    \Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($result,['reason'=>\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::reason($result)]),
+    'The real staff request notice keeps the expected fallback quiet, without a staff task');
 $owned=$owners->present($d);$notice=\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($owned,null);
 same('info',$notice['tone'],'Fallback is a quiet customer information note');
 expect(str_contains($notice['text'],'Your domain is registered')&&str_contains($notice['text'],'Set up DNS'),'Customer sees what happened and how to proceed');
