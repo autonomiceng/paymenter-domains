@@ -160,7 +160,8 @@ final class EnomLiveActivation
             // Display snapshot only. Activate still takes the original independent locking reads below.
             if(!$lock){
                 $policies=SalesPolicy::where('server_id',$a->server_id)->where('account_fingerprint',$b->fingerprint)->get()->keyBy('tld');
-                $saved=Price::where('server_id',$a->server_id)->where('account_fingerprint',$b->fingerprint)->where('currency','USD')->get()->groupBy('tld');
+                $saved=Price::where('server_id',$a->server_id)->where('account_fingerprint',$b->fingerprint)->where('currency','USD')
+                    ->whereIn('tld',Tld::where('server_id',$a->server_id)->where('account_fingerprint',$b->fingerprint)->where('enabled',true)->select('tld'))->get()->groupBy('tld');
                 $default=$fee=null;
             }
             $evidence=collect();$hash=null;

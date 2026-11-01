@@ -7,18 +7,22 @@
         </ul>
     @endif
     @if ($summary['failures'])
-        <ul aria-label="Prices needing attention" style="max-height:8rem;overflow:auto;margin-top:.75rem;list-style:disc;padding-inline-start:1.25rem">
-            @foreach ($summary['failures'] as $failure)<li>.{{ $failure['tld'] }} {{ $failure['action'] }} ({{ $failure['term'] }} {{ $failure['term'] === 1 ? 'year' : 'years' }}): {{ $failure['note'] }}</li>@endforeach
-        </ul>
+        <div tabindex="0" role="region" aria-label="Prices needing attention" style="max-height:8rem;overflow:auto;margin-top:.75rem">
+            <ul style="list-style:disc;padding-inline-start:1.25rem">
+                @foreach ($summary['failures'] as $failure)<li>.{{ $failure['tld'] }} {{ $failure['action'] }} ({{ $failure['term'] }} {{ $failure['term'] === 1 ? 'year' : 'years' }}): {{ $failure['note'] }}</li>@endforeach
+            </ul>
+        </div>
     @endif
     @if ($summary['costs'])
         <p style="margin-top:.75rem">{{ $summary['tlds'] }} TLDs with readable costs: {{ $summary['counts']['register'] }} registration terms, {{ $summary['counts']['transfer'] }} transfers, {{ $summary['counts']['renew'] }} renewals.</p>
         <p>Cost per term: {{ $summary['range'][0] }} to {{ $summary['range'][1] }} USD.</p>
         <p>Exceptions: {{ $summary['exceptions'] ? count($summary['exceptions']).' TLDs with price warnings. See the notes below.' : 'None.' }}</p>
         @if ($summary['exceptions'])
-            <ul aria-label="Price exceptions" style="max-height:8rem;overflow:auto;list-style:disc;padding-inline-start:1.25rem">
-                @foreach ($summary['exceptions'] as $exception)<li>.{{ $exception['tld'] }}: {{ $exception['note'] }}</li>@endforeach
-            </ul>
+            <div tabindex="0" role="region" aria-label="Price exceptions" style="max-height:8rem;overflow:auto">
+                <ul style="list-style:disc;padding-inline-start:1.25rem">
+                    @foreach ($summary['exceptions'] as $exception)<li>.{{ $exception['tld'] }}: {{ $exception['note'] }}</li>@endforeach
+                </ul>
+            </div>
         @endif
         <details style="margin-top:.75rem">
             <summary style="cursor:pointer">Costs and prices by TLD</summary>

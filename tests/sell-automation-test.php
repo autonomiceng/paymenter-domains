@@ -272,17 +272,24 @@ foreach($scaleNames as $ending){$scaleEndings[$ending]=$accepted->endings['xyz']
 $accepted=CatalogueAcceptances::save($lb,$accepted->revision,$scaleEndings);
 $templates=Price::where('server_id',$live->id)->get();
 foreach($templates as $price){$price->eligibility=[...$price->eligibility,'catalogue_revision'=>$accepted->revision];$price->revision++;$price->save();}
-$activationQueries=0;$activationMeasuring=false;$priceReads=0;
+$retired=$lt->replicate();$retired->tld='retired';$retired->enabled=false;$retired->save();
+foreach($templates as $price){$copyPrice=$price->replicate();$copyPrice->tld='retired';$copyPrice->save();}
+$activationQueries=0;$activationMeasuring=false;$priceReads=0;$snapshotTlds=[];
+Price::retrieved(static function(Price $price)use(&$activationMeasuring,&$snapshotTlds):void{
+    if($activationMeasuring){$snapshotTlds[]=$price->tld;}
+});
 DB::listen(static function($query)use(&$activationQueries,&$activationMeasuring,&$priceReads):void{
     if($activationMeasuring){$activationQueries++;if(str_contains($query->sql,'"domains_prices"')){$priceReads++;}}
 });
-$measureActivation=static function(int $size)use($activationClass,$la,&$activationQueries,&$activationMeasuring,&$priceReads):int{
-    $activationQueries=$priceReads=0;$activationMeasuring=true;
+$measureActivation=static function(int $size)use($activationClass,$la,&$activationQueries,&$activationMeasuring,&$priceReads,&$snapshotTlds):int{
+    $activationQueries=$priceReads=0;$snapshotTlds=[];$activationMeasuring=true;
     try{$summary=$activationClass::summary($la->fresh(),['registration'=>true,'renewal'=>false,'management'=>false,'transfer'=>false]);}
     finally{$activationMeasuring=false;}
     same($size,$summary['tlds'],'Every enabled TLD appears in the cost review');
     same($size,$summary['counts']['register'],'Registration term count follows the catalogue');
     same(1,$priceReads,'Summary and readiness share one batched price read');
+    expect(!in_array('retired',$snapshotTlds,true),'The display never loads retained prices for a disabled TLD');
+    same($size,count(array_unique($snapshotTlds)),'The display loads prices for every enabled TLD');
     expect(!str_contains(implode(' ',$summary['missing']),'Costs and prices Missing'),'Batched evidence still validates');
     echo 'Activation '.$size.' TLDs: '.$activationQueries.' queries'."\n";
     return $activationQueries;
@@ -323,6 +330,9 @@ expect($priceMissing($mixed['missing']),'A partial display does not report price
 $mixedHtml=view('domains::admin.live-activation',['summary'=>$mixed])->render();
 foreach(['.scaleaa','.xyz: Below cost','.scaleab register (1 year)','.scaleab renew (1 year)','Sync prices if costs are missing.'] as $text){
     expect(str_contains($mixedHtml,$text),'Mixed cost review renders '.$text);
+}
+foreach(['Prices needing attention','Price exceptions'] as $label){
+    expect(str_contains($mixedHtml,'<div tabindex="0" role="region" aria-label="'.$label.'" style="max-height:8rem;overflow:auto'),'Cost review list has a labeled keyboard-scrollable region: '.$label);
 }
 expect($priceMissing(DB::transaction(fn()=>$activationClass::problems($la->fresh(),$mixedFeatures))),'Activate independently refuses the missing cost after a partial display');
 
