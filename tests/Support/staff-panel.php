@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 function staffPanel(): void
 {
+    Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__,2).'/Domains/resources/views');
     if (!app()->bound(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)) { app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$GLOBALS['clock']??new Paymenter\Extensions\Servers\Domains\Data\SystemClock); }
     PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),
         PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());
