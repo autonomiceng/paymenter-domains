@@ -5,7 +5,7 @@
     $support = ($summary ?? null)?->urls['support'] ?? \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl();
     $notice = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($domain, $support, $summary ?? null);
     $pill = \Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::owned($domain, $summary ?? null);
-    $settings = array_values(array_filter(['lock', 'privacy', 'auth_code_email', 'contacts', 'nameservers', 'dns', 'srv', 'glue', 'ds'], fn ($cap) => isset($domain->management[$cap]) || ($cap === 'nameservers' && $domain->syncPaused)));
+    $settings = array_values(array_filter(['lock', 'privacy', 'auth_code_email', 'contacts', 'nameservers', 'dns', 'srv', 'glue', 'ds'], fn ($cap) => ($cap !== 'privacy' || \Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) && (isset($domain->management[$cap]) || ($cap === 'nameservers' && $domain->syncPaused))));
 @endphp
 <nav class="domains-crumb" aria-label="Breadcrumb"><a href="{{ route('domains.domains.index') }}">Domains</a> / {{ $domain->name }}</nav>
 <div class="domains-ph"><h1 class="domains-mono">{{ $domain->name }}{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($domain->demo, $domain->testEnvironment) }}</h1>@if ($pill)<span class="domains-pill">@include('domains::partials.status-pill', ['pill' => $pill])</span>@endif</div>

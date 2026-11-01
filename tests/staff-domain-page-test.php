@@ -126,6 +126,13 @@ ObservationProjection::save($active->fresh(),new DomainSnapshot($binding,$active
 ObservationProjection::save($active->fresh(),new DomainSnapshot($binding,$active->domain,owned:true,providerAutoRenew:false),TransferStatus::Unknown,$snapshotAt->modify('+1 minute'));
 same($snapshotNs,$value($active,'Nameservers'),'Later save preserves the latest snapshot nameservers');
 $active->fresh()->update(['observation'=>$beforeDns,'last_synced_at'=>null]);$dnsSetting->delete();
+// Privacy is presentation-only: both registrars hide it without changing stored facts.
+foreach (['enom','namesilo'] as $registrar) {
+    DB::table('domains_domains')->where('id',$active->id)->update(['registrar_key'=>$registrar]);
+    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('WHOIS privacy');
+}
+same('Off',DomainFacts::for($active->fresh())['WHOIS privacy']['value'],'Hidden privacy remains in local facts');
+DB::table('domains_domains')->where('id',$active->id)->update(['registrar_key'=>'enom']);
 // Registrar facts and ownership holds belong to the current assignment only.
 $factObservation=$active->fresh()->observation;
 $stable=DomainFacts::for($active->fresh());
@@ -194,7 +201,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=
 
 // Page: no internal facts, one notice, breadcrumb uses the name.
 $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->assertSet('data',[]);
-$page->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing')->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
+$page->assertDontSee('WHOIS privacy')->assertSee('Renewal invoices')->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing')->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
 foreach(['Saved facts','Assignment generation','Observation drift','Follow-up','Data retention','Server #','Domain #','Account spending holds','Preview adoption','Scheduled reads'] as $old){$page->assertDontSee($old);}
 same([DomainResource::getUrl('index')=>'Domains','active.example.com'],$page->instance()->getBreadcrumbs(),'Breadcrumb names the domain');
 // One head line: no box on the page, and green can't sit over rows that need work.

@@ -68,7 +68,9 @@ same(['2 records',['Edit']],[$text('dns'),$action('dns')],'DNS records row');
 same(['No glue records',['Add']],[$text('glue'),$action('glue')],'Glue row');
 same(['Off',['Add DS record']],[$text('ds'),$action('ds')],'DNSSEC row');
 same(['On',['Turn off']],[$text('lock'),$action('lock')],'Transfer lock row');
-same(['Off',['Add · $8.00/yr']],[$text('privacy'),$action('privacy')],'WHOIS privacy row, paid');
+same([null,[]],[$text('privacy'),$action('privacy')],'Paid privacy is hidden while its DTO data stays intact');
+same(false,$d->management['privacy']['state'],'Hiding privacy does not change stored state');
+expect(!str_contains(strip_tags($html),'WHOIS privacy')&&!str_contains($html,'/manage/privacy_'),'No privacy text, help or action leaks onto the customer page');
 same(['Jane Doe jane@example.com',['Edit']],[$text('contacts'),$action('contacts')],'Owner row: registrant name and email');
 same('Contacts',$norm($dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__l")]/text()')->item(0)),'Contacts row label');
 same('Contacts',$norm($dom->query('//dialog[@id="edit-contacts"]//h3')->item(0)),'Contacts dialog title');
@@ -81,7 +83,7 @@ $actionHover=strpos($html,'.domains .domains-row__a .domains-a:hover, .domains .
 expect($inlineHover!==false&&$actionHover!==false&&$actionHover>$inlineHover,'Action hover exceptions follow the inline rule so equal-specificity link buttons keep no underline');
 same(['We email it to the owner',['Email code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
 same(0,$dom->query('//li[@id="auto_renew_off"]')->length,'Registrar auto-renew row is staff only');
-foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records','ds'=>'dnssec','lock'=>'transfer-lock','privacy'=>'privacy','auth_code_email'=>'transfer-code']as$id=>$anchor){
+foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records','ds'=>'dnssec','lock'=>'transfer-lock','auth_code_email'=>'transfer-code']as$id=>$anchor){
     same(1,$dom->query('//li[@id="'.$id.'"]//a[@href="'.route('domains.help').'#'.$anchor.'"]')->length,'Help popover links to help: '.$id);
 }
 // Editors open in a dialog; without script the link opens it on the server.
@@ -169,7 +171,7 @@ expect(str_starts_with($card($dom,'Renewal invoices'),'On Turn off'),'Renewal in
 same(['On',['Turn off']],$split($dom,'Renewal invoices'),'Renewal invoices action sits on its own line');
 same('$14.99/yr',$card($dom,'Renewal price'),'Renewal price');
 same(1,$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"]')->length,'Renew now button');
-foreach(['Renew '.$name,'>Years<','You can renew online until <time datetime="2027-02-28">Feb 28, 2027</time>.','Create invoice','Turn off auto-renew?',$name.' expires on Mar 1, 2027 unless you renew it.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
+foreach(['Renew '.$name,'>Years<','You can renew online until <time datetime="2027-02-28">Feb 28, 2027</time>.','Create invoice','Turn off renewal invoices?',$name.' expires on Mar 1, 2027 unless you renew it.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
 same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'An active domain has no notice');
 same('No changes yet.',$norm($dom->query('//section[@id="history"]//p')->item(0)),'Empty history');
 
@@ -250,7 +252,7 @@ same(1,$dom->query('//div[contains(@class,"domains-notice")]')->length,'One noti
 same('Sync paused: the demo registrar is off. Nameservers show when it resumes. Contact support',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Demo sync paused notice');
 same('Missing Fills in by itself when sync resumes',$norm($dom->query('//li[@id="nameservers"]/span[contains(@class,"domains-row__v")]')->item(0)),'Paused nameservers are Missing and say when they fill in');
 $paused=$domain(['demo'=>true,'syncPaused'=>true,'management'=>$management(['dns'=>['records'=>null],'ds'=>['records'=>null],'lock'=>['state'=>null],'privacy'=>['state'=>null]])]);$html=$render($paused,$summary($paused,['demo'=>true]));$dom=storefrontDom($html);
-foreach(['nameservers','dns','glue','ds','lock','privacy']as$id){same(['Missing Fills in by itself when sync resumes',[]],$row($dom,$id),'Paused '.$id.' is Missing with no action');}
+foreach(['nameservers','dns','glue','ds','lock']as$id){same(['Missing Fills in by itself when sync resumes',[]],$row($dom,$id),'Paused '.$id.' is Missing with no action');}
 same(0,substr_count(strip_tags($html),'Fills in by itself within a day'),'Paused rows wait for the sync to resume');
 same(1,$dom->query('//h1//span[contains(@class,"domains-demo-tag")][not(contains(@class,"domains-demo-tag--test"))]')->length,'Demo tag');
 $test=$domain(['testEnvironment'=>true]);$dom=storefrontDom($render($test));

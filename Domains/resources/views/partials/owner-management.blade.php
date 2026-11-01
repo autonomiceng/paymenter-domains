@@ -3,6 +3,7 @@
 @php $fills = \Paymenter\Extensions\Servers\Domains\Presentation\Missing::fills(...); @endphp
 @php $caps ??= array_values(array_diff(array_keys($domain->management), ['auto_renew_off'])); @endphp
 @foreach ($caps as $cap)
+@continue($cap === 'privacy' && !\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN)
 @php
     $section = $domain->management[$cap] ?? null;
     $retry = $section['retry'] ?? null;

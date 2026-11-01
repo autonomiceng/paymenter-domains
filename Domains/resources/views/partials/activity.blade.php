@@ -1,7 +1,8 @@
 {{-- History as a trace: newest work first, the mark and the word say how each step ended. --}}
 @php
     $tone = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::stepTone(...);
-    $steps = [...array_map(fn ($row) => [...$row, 'moment' => true], $domain->progress), ...$domain->history];
+    $progress = array_filter($domain->progress, fn ($row) => $row['label'] !== 'WHOIS privacy' || \Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN);
+    $steps = [...array_map(fn ($row) => [...$row, 'moment' => true], $progress), ...$domain->history];
     $all = request()->query('history') === 'all';
 @endphp
 <section class="domains-panel" id="history" aria-labelledby="heading-history"><div class="domains-panel__h"><h2 id="heading-history" class="domains-h2">History</h2>@if (count($steps) > 5 && !$all)<a class="domains-a" href="{{ $domain->actions['show'] }}?history=all#history">View all {{ count($steps) }}</a>@endif</div>

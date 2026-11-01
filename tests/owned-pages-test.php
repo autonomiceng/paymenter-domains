@@ -73,6 +73,17 @@ $html=$entry->show($r)->render();expect(str_contains($html,'Before you start')&&
 same($before,count($state->calls),'Transfer entry GET has no provider I/O');expect(!str_contains($html,'name="action"'),'Unchecked transfer entry has no order form');
 $r->query->set('name','sub.example.com');expect($entry->show($r)->getData()['error']!==null,'Transfer entry rejects unoffered/subdomain endings');
 $r->query->set('name',['bad']);same([],$entry->show($r)->getData()['results'],'Malformed transfer name creates no intent');
+// A visible transfer entry must give a support path without creating a search or purchase when sales are off.
+DB::table('domains_sales_policies')->update(['transfer_enabled'=>false]);
+Illuminate\Support\Facades\Cache::flush();
+config(['settings.tickets_disabled'=>false]);
+$r->query->set('name','transfer-placeholder.com');$before=count($state->calls);
+$closed=storefrontDom($entry->show($r)->render());
+same(1,$closed->query('//a[@href="'.route('tickets.create').'"]')->length,'Closed transfers give an open-ticket path');
+same(0,$closed->query('//form[@role="search"] | //input[@name="action"] | //*[@data-domains-results]')->length,'Closed transfers have no search, results or checkout');
+same($before,count($state->calls),'Closed transfer entry performs no provider I/O');
+DB::table('domains_sales_policies')->update(['transfer_enabled'=>true]);
+Illuminate\Support\Facades\Cache::flush();
 $unchecked=$newTransfer(placeholderComFixtureName('owner-unchecked-placeholder.com'));$makeTransfer();$state->rdapUnknown=true;$sealed=$engine->execute($unchecked->id);$state->rdapUnknown=false;
 same(true,$sealed->attempt['transfer_admission']['rdap_unchecked'],'Real sealed attempt retains unchecked provenance');
 $dto=$owners->present($sealed->domain);expect($dto->transfer['unchecked']&&!$dto->transfer['open'],'Sealed provenance survives the closed editor');

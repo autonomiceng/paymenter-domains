@@ -78,7 +78,7 @@ foreach([0,1]as$i){
         $html=(new OwnedDomainController($owners))->setup($r,$registration->domain_id)->render();
         same(1,storefrontDom($html)->query('//textarea[@name="nameservers"][@aria-invalid="true"]')->length,'Real Blade identifies setup error');
         same(implode("\n",$invalid),storefrontDom($html)->query('//textarea[@name="nameservers"]')->item(0)->textContent,'Setup redisplays submitted nameservers');
-        same(1,storefrontDom($html)->query('//input[@name="privacy"][@checked]')->length,'Setup retains the privacy choice');
+        same(0,storefrontDom($html)->query('//input[@name="privacy"]')->length,'Setup errors do not expose the hidden privacy choice');
         app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
     }
     // Exercise the actual POST grammar: blank nameservers use the account template on either registrar.
