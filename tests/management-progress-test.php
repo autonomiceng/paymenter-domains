@@ -31,6 +31,12 @@ same($op->id,$submit($d,$driver,'lock',['locked'=>true])->id,'A different desire
 same(1,count(array_filter($state->calls,fn($call)=>$call[0]==='SetRegLock'&&$call[1]['UnlockRegistrar']===1)),'No repeated unlock');
 $actor=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,'admin.domains.manage']);
 same($op->id,$management->request($actor,$d->id,'lock',['locked'=>false],$key(),$driver)->id,'Staff and customer share the existing request');
+// A legacy newer unsent row must neither outrank nor mask the older sealed request.
+$legacy=$op->replicate();$legacy->fill(['operation_key'=>'manage:'.$d->id.':'.$key(),'state'=>'queued','attempt'=>[],
+    'safe_code'=>null,'started_at'=>null,'completed_at'=>null,'lease_expires_at'=>null,'payload'=>['locked'=>true],
+    'policy'=>['management'=>[...$op->policy['management'],'input'=>['locked'=>true]]]]);$legacy->save();
+same($op->id,$submit($d,$driver,'lock',['locked'=>true])->id,'The sealed legacy request retains the setting');
+same('management_retired',$legacy->fresh()->safe_code,'Newer unsent legacy debt is retired behind a sealed request');
 $ports=new OwnerPorts(fn($b)=>$driver);$owners=new OwnedDomains($clock,$ports,$management);$controller=new OwnedDomainController($owners);
 storefrontViews();$request=Request::create('/domains/'.$d->id);$request->setUserResolver(fn()=>$user);$request->setLaravelSession(app('request')->session());
 $response=$controller->status($request,$d->id);$rows=$response->getData(true);
