@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Illuminate\View\ComponentAttributeBag;
 /** Status marks for staff pages. A skin may draw them from data-beco-tone. Without one the attribute does nothing and the badge and words stay plain Filament.
@@ -22,6 +23,12 @@ final class StatusMark
     {
         $badge=view('filament::components.badge',['color'=>$color,'size'=>'lg','slot'=>new HtmlString(e($label))])->render();
         return new HtmlString('<span class="domains-head-state" '.new ComponentAttributeBag(self::attributes($color,$record)).'>'.$badge.'</span>');
+    }
+    /** The one status line under a page title: mark, state, then the step or link if there is one. */
+    public static function line(string $color,string $label,string $record,string|Htmlable|null $step=null): HtmlString
+    {
+        $step=$step instanceof Htmlable?$step->toHtml():e((string)$step);
+        return new HtmlString('<span class="domains-head-line">'.self::head($color,$label,$record)->toHtml().($step!==''?' <span class="domains-head-step">'.$step.'</span>':'').'</span>');
     }
     /** A line of $html that names a job for staff. */
     public static function act(HtmlString $html): HtmlString
