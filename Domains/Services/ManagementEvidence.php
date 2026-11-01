@@ -7,7 +7,7 @@ final class ManagementEvidence
 {
     public static function resolved(Operation $op,Domain $d): bool
     {
-        $p=$op->policy['management']??null;$reads=$op->attempt['management_reads']??[];$r=$reads?end($reads):[];
+        $p=$op->policy['management']??null;$r=ManagementReadRecovery::latest($op);
         if(!$p||$op->domain_id!==$d->id||$op->service_id!==$d->service_id||$op->server_id!==$d->server_id||$op->registrar_key!==$d->registrar_key
             ||$op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation){return false;}
         if(self::idle($op)){return true;}
@@ -33,12 +33,17 @@ final class ManagementEvidence
             &&($a===[]||(($a['seal']??null)==='absent'&&($a['send_state']??null)==='definitely_unsent'
                 &&!array_diff(array_keys($a),['seal','send_state','management_claim','management_terminal','management_deferrals'])));
     }
+    public static function recoverable(Operation $op): bool
+    {return $op->state==='held'&&$op->safe_code==='management_unconfirmed'&&self::idle($op)
+        &&($op->attempt['seal']??null)==='absent'&&isset($op->attempt['management_claim'])
+        &&count($op->attempt['management_deferrals']??[])<5&&!isset($op->funding['refund']);}
     public static function deferrals(array $a): bool
     { $h=array_key_exists('management_deferrals',$a)?$a['management_deferrals']:[];return is_array($h)&&array_is_list($h)&&count($h)<=5&&!array_filter($h,fn($v)=>!is_string($v)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$/D',$v)); }
     public static function retryable(Operation $op): bool
     { return $op->state==='queued'&&$op->safe_code==='management_deferred'&&self::idle($op)&&isset($op->attempt['management_claim'])&&count($op->attempt['management_deferrals']??[])>0&&count($op->attempt['management_deferrals'])<=5; }
     public static function guard(Operation $op): void
     {
+        ManagementReadRecovery::guard($op);
         $old=$op->getOriginal('attempt')??[];$new=$op->attempt??[];
         if(array_key_exists('management_test_unsent',$old)&&($new['management_test_unsent']??null)!==$old['management_test_unsent']){throw new \DomainException('Unsent management proof frozen.');}
         if(!array_key_exists('management_test_unsent',$old)&&array_key_exists('management_test_unsent',$new)){
@@ -48,7 +53,7 @@ final class ManagementEvidence
         }
         $x=$old['management_deferrals']??[];$y=$new['management_deferrals']??[];if(!self::deferrals($new)||count($y)<count($x)||array_slice($y,0,count($x))!==$x){throw new \DomainException('Management deferrals frozen.');}
         if(isset($old['management_refusal'])&&($new['management_refusal']??null)!==$old['management_refusal']){throw new \DomainException('Management refusal frozen.');}
-        // A sealed operation owns a lifetime observation count. Never reconstruct
+        // A sealed operation owns its first twenty observation attempts. Never reconstruct
         // unknown usage from completed reads: failed reads did not leave history.
         $count = $new['management_observation_attempts'] ?? null;
         if (array_key_exists('management_observation_attempts', $new)) {
@@ -79,6 +84,6 @@ final class ManagementEvidence
         if(array_key_exists('management_terminal',$old)&&($new['management_terminal']??null)!==$old['management_terminal']){throw new \DomainException('Management retirement frozen.');}
         if(array_key_exists('management_claim',$old)&&($new['management_claim']??null)!==$old['management_claim']){throw new \DomainException('Management claim frozen.');}
         if(array_key_exists('management_ack',$old)&&($new['management_ack']??null)!==$old['management_ack']){throw new \DomainException('Management acknowledgement frozen.');}
-        if(isset($old['management_reads'])&&$op->getOriginal('state')==='succeeded'&&$op->isDirty(['state','completed_at'])){throw new \DomainException('Management completion frozen.');}
+        if((isset($old['management_reads'])||isset($old['management_recovery_read']))&&$op->getOriginal('state')==='succeeded'&&$op->isDirty(['state','completed_at'])){throw new \DomainException('Management completion frozen.');}
     }
 }

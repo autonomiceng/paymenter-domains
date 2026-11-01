@@ -133,6 +133,22 @@ Schema::swap(DB::connection()->getSchemaBuilder());
 try {
     FoundationSchema::install();
     FoundationSchema::verify();
+    // Upgrade populated old storage without changing its evidence or ordinary debt uniqueness.
+    $legacyRow=$operationRow;unset($legacyRow['retry_number']);
+    DB::table('domains_operations')->insert($legacyRow);
+    $legacyBefore=(array)DB::table('domains_operations')->first();
+    \Paymenter\Extensions\Servers\Domains\Services\RenewalRetrySchema::install();
+    $upgraded=(array)DB::table('domains_operations')->first();
+    same(0,$upgraded['retry_number'],'Retained attempts start at retry zero');unset($upgraded['retry_number']);
+    same($legacyBefore,$upgraded,'Retry upgrade preserves every original column');
+    \Paymenter\Extensions\Servers\Domains\Services\RenewalRetrySchema::install();
+    $rejectDuplicate('domains_operations',array_replace($legacyRow,['operation_key'=>'other-key']));
+    $retryIndexes=array_values(array_filter(Schema::getIndexes('domains_operations'),fn($i)=>$i['columns']===['invoice_item_id','action','retry_number']&&$i['unique']));
+    same(1,count($retryIndexes),'One exact retry identity index');
+    Schema::table('domains_operations',static fn(Blueprint $t)=>$t->dropUnique($retryIndexes[0]['name']));
+    try{\Paymenter\Extensions\Servers\Domains\Services\RenewalRetrySchema::install();expect(false,'Missing retry uniqueness accepted');}
+    catch(RuntimeException $e){expect(str_contains($e->getMessage(),'schema mismatch'),'Retained retry drift refuses');}
+    Schema::table('domains_operations',static fn(Blueprint $t)=>$t->unique(['invoice_item_id','action','retry_number'],$t->getTable().'_debt_retry_u'));
     Schema::table('domains_domains', static fn (Blueprint $t) => $t->dropUnique(['reservation_name']));
     try { FoundationSchema::verify(); expect(false, 'Prefixed missing reservation index accepted'); }
     catch (RuntimeException $e) { same('Retained Domains schema mismatch: domains_domains', $e->getMessage(), 'Prefixed missing index refusal'); }

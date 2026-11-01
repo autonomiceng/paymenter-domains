@@ -70,7 +70,8 @@ final class WatchNoticeDelivery
                     DB::table('domains_watch_deliveries')->where('id',$prior->id)->update(['notice_id'=>$n->id,'state'=>$on?'reserved':'suppressed','safe_code'=>$on?null:'preference_off']);
                     return $on?(int)$prior->id:null;
                 }
-                if ($prior->notice_id==$n->id && $prior->state==='suppressed' && $prior->safe_code==='preference_off' && $on) {
+                if ($prior->notice_id==$n->id && $prior->state==='suppressed' && in_array($prior->safe_code,['preference_off','target_or_preference_changed'],true)
+                    && $prior->native_id===null && $prior->accepted_at===null && $on) {
                     DB::table('domains_watch_deliveries')->where('id',$prior->id)->update(['state'=>'reserved','safe_code'=>null]);
                     return (int)$prior->id;
                 }

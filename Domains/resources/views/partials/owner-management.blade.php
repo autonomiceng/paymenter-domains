@@ -41,7 +41,7 @@
 </div>
 @include('domains::partials.owner-confirm', ['id' => 'nameservers', 'open' => $confirmStep === 'nameservers', 'cancel' => $show.'?edit=nameservers#edit-nameservers', 'title' => 'Change nameservers?', 'tone' => 'primary', 'button' => 'Change nameservers',
     'facts' => [['label' => 'Current', 'value' => $section['current'] ?? []], ['label' => 'New', 'slot' => 'nameservers', 'value' => preg_split('/\R/', trim($nsValue), -1, PREG_SPLIT_NO_EMPTY)]],
-    'risk' => 'If the new nameservers aren’t set up, your website and email stop working.'])
+    'risk' => \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::NAMESERVERS_RISK])
 </form>
 @endcomponent
 @endif
@@ -68,7 +68,7 @@
 <label for="domains-lock" class="domains-label">Transfer lock</label><select id="domains-lock" name="locked" class="domains-input"><option value="1">On</option><option value="0" @selected($lockOff)>Off</option></select>
 <div class="domains-buttons"><button class="domains-btn domains-btn--primary" type="submit">Save</button></div>
 @include('domains::partials.owner-confirm', ['id' => 'lock', 'open' => $confirmStep === 'lock', 'cancel' => $show, 'title' => 'Turn off transfer lock?', 'button' => 'Turn off',
-    'risk' => 'Anyone with the auth code can then move '.$domain->name.' to another registrar.'])
+    'risk' => \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::lockRisk($domain->name)])
 </form>
 @endcomponent
 @else
@@ -77,7 +77,7 @@
 @include('domains::partials.form-key', ['action' => 'lock'])
 <input type="hidden" name="locked" value="{{ $state ? '0' : '1' }}">
 @if ($state)@include('domains::partials.owner-confirm', ['id' => 'lock', 'open' => $confirmStep === 'lock', 'cancel' => $show, 'title' => 'Turn off transfer lock?', 'button' => 'Turn off',
-    'risk' => 'Anyone with the auth code can then move '.$domain->name.' to another registrar.'])@endif
+    'risk' => \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::lockRisk($domain->name)])@endif
 </form>
 @endif
 @elseif ($cap === 'privacy')
@@ -117,7 +117,7 @@
 @if (!$section['saved'])<p class="domains-hint">Enter the full details. We replace what's saved.</p>@endif
 <p class="domains-hint">We use these details for every contact on this domain.</p>
 @include('domains::partials.contact', ['prefix' => 'contact', 'values' => $section['saved'], 'useOld' => $contactFailed, 'errors' => $contactFailed ? $errors : new \Illuminate\Support\ViewErrorBag, 'idPrefix' => $action, 'section' => 'owner-'.$action, 'stateRequired' => $section['staged'], 'limits' => $section['limits'] ?? null])
-<p class="domains-hint">Changing the owner’s name, organization or email can block transfers for 60 days.</p>
+<p class="domains-hint">{{ \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::CONTACTS_RISK }}</p>
 <div class="domains-buttons"><button type="submit" class="domains-btn domains-btn--primary">{{ $section['staged'] ? 'Send for approval' : 'Save' }}</button></div>
 @endif
 </form>

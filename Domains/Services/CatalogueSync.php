@@ -19,27 +19,30 @@ final class CatalogueSync
         if (!$reader instanceof CatalogueReader) { throw new \DomainException('Catalogue reader unavailable.'); }
         $reader->binding()->requireMatch($context->binding);
         $accepted = CatalogueAcceptances::load($reader->binding());
+        $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $serverId)->sole();
+        $automatic = $scheduled && $review === null && SellAutomation::enabled($account);
+        $reading = $automatic ? SellAutomation::priceReads($account, $accepted, $context->now()) : $accepted;
         if ($suffixes !== null) {
-            if (!array_is_list($suffixes) || array_diff($suffixes, array_keys($accepted->endings))) { throw new \DomainException('Unaccepted refresh subset.'); }
-            $accepted = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance($accepted->binding, $accepted->revision,
-                array_intersect_key($accepted->endings, array_fill_keys($suffixes, true)));
-        } elseif ($accepted->binding->registrarKey === 'enom' && $accepted->endings) {
+            if (!array_is_list($suffixes) || array_diff($suffixes, array_keys($reading->endings))) { throw new \DomainException('Unaccepted refresh subset.'); }
+            $reading = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance($reading->binding, $reading->revision,
+                array_intersect_key($reading->endings, array_fill_keys($suffixes, true)));
+        } elseif ($reading->binding->registrarKey === 'enom' && $reading->endings) {
             // Rotate the default starting ending each cadence; schedulers drain explicit bounded subsets.
-            $keys = array_keys($accepted->endings); $offset = intdiv($context->now()->getTimestamp(), $freshness->intervalSeconds) % count($keys);
+            $keys = array_keys($reading->endings); $offset = intdiv($context->now()->getTimestamp(), $freshness->intervalSeconds) % count($keys);
             $keys = [...array_slice($keys, $offset), ...array_slice($keys, 0, $offset)];
-            $accepted = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance($accepted->binding, $accepted->revision,
-                array_replace(array_fill_keys($keys, null), $accepted->endings));
+            $reading = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance($reading->binding, $reading->revision,
+                array_replace(array_fill_keys($keys, null), $reading->endings));
         }
         $summary = ['synced' => 0, 'failed' => []];
-        if ($accepted->endings === []) { return $summary; }
-        try { $batch = $reader->catalogueBatch($accepted, $freshness, $context); }
+        if ($reading->endings === []) { return $summary; }
+        try { $batch = $reader->catalogueBatch($reading, $freshness, $context); }
         catch (EnomTestCallLimit $error) { throw $error; }
         catch (ReadDeferred $error) { throw $error; }
         catch (\Throwable $error) {
-            $failed = array_map(static fn (string $tld): string => '.'.$tld, array_keys($accepted->endings));
+            $failed = array_map(static fn (string $tld): string => '.'.$tld, array_keys($reading->endings));
             return ['synced' => 0, 'failed' => $failed, 'failure_codes' => array_fill_keys($failed, ReadFailure::code($error))];
         }
-        foreach ($accepted->endings as $tld => $_) {
+        foreach ($reading->endings as $tld => $_) {
             try {
                 $entry = $batch[$tld] ?? null;
                 if ($entry instanceof CatalogueFailure) {
@@ -47,25 +50,29 @@ final class CatalogueSync
                     $summary['failure_codes']['.'.$tld] = $entry->code;
                     continue;
                 }
+                if ((!$entry instanceof CatalogueEntry && !$entry instanceof CatalogueUnavailable) || $entry->tld !== $tld) { throw new \DomainException('No catalogue evidence.'); }
+                foreach ($entry instanceof CatalogueEntry ? $entry->rates : [] as $rate) {
+                    if ($rate->observedAt > $context->now() || !$rate->freshUntil || $rate->freshUntil <= $context->now()
+                        || $rate->freshUntil > $rate->observedAt->modify('+'.$freshness->maxAge().' seconds')
+                        || !in_array($rate->term, $reading->endings[$tld][$rate->action], true)) {
+                        throw new \DomainException('Unaccepted catalogue evidence.');
+                    }
+                }
+                if ($automatic && $entry instanceof CatalogueEntry) {
+                    SellAutomation::accept($account, $context->now(), $entry, $accepted->revision);
+                    $accepted = CatalogueAcceptances::load($reader->binding());
+                }
                 $recheck = function ($server, $account) use ($accepted): void {
                     $this->bindings->requireReadableLocked($server, $account);
                     if (CatalogueAcceptances::load($accepted->binding, true)->revision !== $accepted->revision) {
                         throw new \DomainException('Acceptance changed during refresh.');
                     }
                 };
-                if ($entry instanceof CatalogueUnavailable && $entry->tld === $tld) {
+                if ($entry instanceof CatalogueUnavailable) {
                     $this->prices->unavailable($entry, $accepted, $recheck, $context->now());
                     $summary['quarantined'][] = '.'.$tld; continue;
                 }
-                if (!$entry instanceof CatalogueEntry || $entry->tld !== $tld) { throw new \DomainException('No catalogue evidence.'); }
-                foreach ($entry->rates as $rate) {
-                    if ($rate->observedAt > $context->now() || !$rate->freshUntil || $rate->freshUntil <= $context->now()
-                        || $rate->freshUntil > $rate->observedAt->modify('+'.$freshness->maxAge().' seconds')
-                        || !in_array($rate->term, $accepted->endings[$tld][$rate->action], true)) {
-                        throw new \DomainException('Unaccepted catalogue evidence.');
-                    }
-                }
-                $this->prices->import($entry, $accepted, $recheck, $context->now(), $review, $scheduled);
+                $this->prices->import($entry, $accepted, $recheck, $context->now(), $review, $scheduled, $automatic);
                 $summary['synced']++;
             } catch (ReadDeferred|EnomTestCallLimit $error) { throw $error; }
             catch (\Throwable $error) {

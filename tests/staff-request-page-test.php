@@ -34,7 +34,7 @@ foreach ([(int)$held->user_id=>'customer',(int)$viewer->id=>'staff'] as $actor=>
     $retired->setRelation('domain',$held);
     same('Cancelled by '.$who,Labels::requestStatus($retired)['reason'],'Request history names the retirement actor');
 }
-same(['Put on hold by staff','Not sent: orders paused','Not sent: low registrar balance','Old registrar needs approval','Missing. Check the request history.'],
+same(['Put on hold by staff','Not sent: Orders off for this account','Not sent: low registrar balance','Old registrar needs approval','Missing. Check the request history.'],
     [Labels::reason('staff_review_required'),Labels::reason('processing'),Labels::reason('balance'),Labels::reason('transfer_needs_action'),Labels::reason(null)],'Reason lines');
 same('Not sent: stopped by our test send check',Labels::reason('enom_test_call_cap'),'Enom test limit is one short line');
 same(null,Labels::reason('refreshed'),'Internal codes have no reason line');
@@ -42,7 +42,7 @@ same(['Transfer lock','Auth code email','DNS records','Other'],[Labels::action('
 same(['Auto Pay: charged','Auto Pay skipped: no saved payment method','Auto Pay: result missing'],
     [Labels::autoPay(['status'=>'charged']),Labels::autoPay(['status'=>'skipped','reason'=>'no_agreement']),Labels::autoPay(null)],'Auto Pay lines');
 same(['recheck'=>'Check status','resume_reads'=>'Check status','resume_observation'=>'Resume sync','hold'=>'Put on hold','release'=>'Release hold',
-    'disposition'=>'Close request','refund'=>'Cancel and add credit','credit'=>'Retry credit','replacement'=>'Reissue renewal invoice'],StaffOperationReview::ACTIONS,'Action names');
+    'disposition'=>'Close request','refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'],StaffOperationReview::ACTIONS,'Action names');
 
 // List: Request, Domain, Type, Status with reason, Created, Registrar account; Status, Type and Registrar account filters.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['created_at'=>'2026-10-20 15:05:00']);
@@ -79,29 +79,48 @@ foreach(['configuration_unavailable','processing','balance','usd_balance_require
     DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
     $n=RequestFacts::notice($heldOp->fresh()); $links[$code]=[$n['link']??null,$n['link_label']??null,$n['action']??null];
 }
-same(['configuration_unavailable'=>['registrars','Open account',null],'processing'=>['registrars','Resume orders',null],
-    'balance'=>['registrars','Check balance',null],'usd_balance_required'=>['registrars','Check balance',null],
-    'write_disabled'=>['registrars','Turn on',null],'staff_review_required'=>[null,null,null]],$links,'Notice link per cause');
+same(['configuration_unavailable'=>['registrars','Open account',null],'processing'=>['registrars','Go to Orders switch',null],
+    'balance'=>['registrars','Go to balance',null],'usd_balance_required'=>[null,null,null],
+    'write_disabled'=>['registrars','Go to Setup checklist',null],'staff_review_required'=>[null,null,null]],$links,'Notice link per cause');
 // Repair links depend on retained safe codes even if display copy changes.
 $accountCodes=[
     'authority'=>'Open account','renewal_authority_invalid'=>'Open account','renewal_binding_changed'=>'Open account',
     'claim_authority_invalid'=>'Open account','seal_authority_invalid'=>'Open account','registration_authority_changed'=>'Open account',
     'configuration_unavailable'=>'Open account','transfer_setup_review_required'=>'Open account','enom_test_transfer_setup_required'=>'Open account','enom_test_setup_required'=>'Open account',
-    'processing'=>'Resume orders','automatic_spend_paused'=>'Resume orders','balance'=>'Check balance','funding'=>'Check balance',
-    'renewal_funding_or_authority'=>'Check balance','registrar_balance_insufficient_or_unknown'=>'Check balance',
-    'usd_balance_required'=>'Check balance','enom_test_transfer_usd_balance_required'=>'Check balance',
-    'awaiting_acceptance'=>'Turn on','write_disabled'=>'Turn on','write_acceptance_required'=>'Turn on','renewal_acceptance_required'=>'Turn on','grace_capability_unaccepted'=>'Turn on'];
-foreach([...$accountCodes,'staff_review_required'=>null,'enom_test_call_cap'=>null,'nameservers_required'=>null] as $code=>$label){
+    'processing'=>'Go to Orders switch','balance'=>'Go to balance','funding'=>'Go to balance',
+    'registrar_balance_insufficient_or_unknown'=>'Go to balance','registrar_balance_insufficient'=>'Go to balance',
+    'usd_balance_required'=>null,'enom_test_transfer_usd_balance_required'=>null,
+    'awaiting_acceptance'=>'Go to Setup checklist','write_disabled'=>'Go to Setup checklist','write_acceptance_required'=>'Go to Setup checklist','renewal_acceptance_required'=>'Go to Setup checklist','grace_capability_unaccepted'=>null];
+foreach([...$accountCodes,'staff_review_required'=>null,'enom_test_call_cap'=>null,'nameservers_required'=>null,
+    'name_unavailable'=>null,'premium_name'=>null,'order_not_supported'=>null,'registrar_price_missing'=>null,'registrar_read_failed'=>null] as $code=>$label){
     DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
     $copy=RequestFacts::for($heldOp->fresh());$copy['reason']='Reviewed cause with different wording';
     $notice=RequestFacts::notice($heldOp->fresh(),$copy);
     same([$label?'registrars':null,$label],[$notice['link']??null,$notice['link_label']??null],'Account link uses safe code '.$code);
+}
+// Customer payment and renewal settings are not registrar balance problems, so they open their own record.
+foreach(['renewal_invoice_unpaid'=>'invoice','renewal_funding_or_authority'=>'domain','automatic_spend_paused'=>'domain','renewal_spend_paused'=>'domain'] as $code=>$link){
+    DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
+    $notice=RequestFacts::notice($heldOp->fresh());same([$link,null],[$notice['link'],$notice['link_label']??null],'Own record for '.$code);
+}
+// Release cannot change these answers, so the way out is the one offered.
+foreach(['name_unavailable','premium_name','order_not_supported'] as $code){
+    DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
+    same('refund',RequestFacts::notice($heldOp->fresh())['action'],'Cancel is offered for '.$code);
 }
 
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>'configuration_unavailable']);
 $facts=RequestFacts::for($heldOp->fresh());
 same(null,$facts['invoice']??null,'No invoice is Missing');
 same('No invoice linked. No action needed.',$facts['invoice_sub']??null,'Missing invoice names its cause');
+// A free change has no money rows, finished or not.
+DB::table('domains_operations')->where('id',$heldOp->id)->update(['action'=>'nameservers','state'=>'rejected','funding_basis'=>'none']);
+same([],array_intersect_key(RequestFacts::for($heldOp->fresh()),['invoice'=>1,'cost'=>1,'refund'=>1]),'No money rows on a free change');
+$queued=$heldOp->fresh()->forceFill(['state'=>'queued','attempt'=>[],'started_at'=>null,'provider_order_id'=>null,'cost'=>[]]);
+Auth::setUser(staffUser([Staff::VIEW,Staff::COSTS]));
+same([],array_intersect_key(RequestFacts::for($queued),['invoice'=>1,'cost'=>1,'refund'=>1]),'No money rows on a free change before it is sent');
+Auth::setUser($manager);
+DB::table('domains_operations')->where('id',$heldOp->id)->update(['action'=>'transfer','state'=>'held','funding_basis'=>$heldOp->funding_basis]);
 
 // Pending: no notice, no Sent to registrar row.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'pending','safe_code'=>null,'started_at'=>'2026-10-20 15:06:00']);
@@ -110,7 +129,7 @@ Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])
 // Paid and unconfirmed: the notice names the registrar and how long new orders have been paused.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'uncertain','funding_basis'=>'paid_invoice','started_at'=>now()->subHours(73)]);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('NameSilo has not confirmed this transfer.')
-    ->assertSee('New orders on this NameSilo account are paused until the result is known (73 hours so far).')->assertSee('Check status')
+    ->assertSee('Paid domain changes on this NameSilo account wait until the result is known (73 hours so far).')->assertSee('Check status')
     ->assertDontSee('Release hold')->assertDontSee('Account spending holds')->assertDontSee('Paid outcome review');
 
 // Completed: Completed pill, no notice and no More menu.
@@ -119,6 +138,7 @@ expect(str_contains((string)$done->instance()->getHeading(),'Completed'),'Comple
 $done->assertDontSee('More')->assertDontSee('Registrar completion confirmed');
 
 // Cancelled with credit: History names staff actions in plain words; Credit row says Credit added.
+$manager->role->update(['permissions'=>[...$manager->role->permissions,Staff::COSTS]]);
 $policy=['staff_actions'=>[['key'=>'k1','action'=>'hold','phase'=>'completed','actor_id'=>1,'actor_name'=>'Ada Admin','reason'=>'Customer asked to wait','at'=>'2026-10-21T09:00:00+00:00'],
     ['key'=>'k2','action'=>'refund','phase'=>'completed','actor_id'=>1,'reason'=>'Customer cancelled','at'=>'2026-10-21T10:00:00+00:00'],['broken']]];
 DB::table('domains_operations')->where('id',$longOp->id)->update(['state'=>'rejected','funding_basis'=>'paid_invoice','safe_code'=>'terminal_unsent']);
@@ -131,6 +151,15 @@ same(null,$rows[2]['time'],'Unreadable entry time is Missing');
 same('Credit added',RequestFacts::for(Operation::find($longOp->id))['refund'],'Credit marker reads Credit added');
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee('Failed')->assertSee('Put on hold')->assertSee('Ada Admin')
     ->assertSee('Cancelled')->assertSee('Credit added')->assertDontSee('older staff review');
+
+// Gateway return facts keep their title but direct staff to the invoice/gateway, never to support.
+foreach(['review'=>'Refund needs a check','pending'=>'Refund processing','refunded'=>'Refunded'] as $result=>$title){
+    $row=Operation::find($longOp->id);$row->forceFill(['funding'=>[
+        'refund'=>['to'=>'original_payment','bridge_minor'=>0,'allocations'=>[['key'=>'staff-return','amount_minor'=>100]]],
+        'receipt_return_results'=>['staff-return'=>['state'=>$result]]]])->saveQuietly();
+    $facts=RequestFacts::for($row);same($title,$facts['refund'],'Staff keeps the gateway return title');
+    expect(!str_contains($facts['refund_sub'],'Contact support')&&!str_contains($facts['refund_sub'],'We are returning'),'Staff guidance does not address the customer');
+}
 
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);

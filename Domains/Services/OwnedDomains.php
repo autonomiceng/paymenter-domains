@@ -33,14 +33,16 @@ final readonly class OwnedDomains
     }
     public static function acquisition($operations, Domain $d): ?Operation
     { return $operations->filter(fn($op)=>in_array($op->action,['register','transfer'],true)&&$op->authority_generation===$d->authority_generation&&$op->account_fingerprint===$d->account_fingerprint)->sortByDesc('id')->first(); }
-    /** Where a pending order stands for its owner: unpaid with the invoice link, paid, cancelled ('credit' once credit is approved), or failed. Empty otherwise. Paid says what's still the owner's in next: setup_required, awaiting_code, or null for nothing.
+    /** Where a pending order stands for its owner: unpaid with the invoice link, paid, cancelled ('credit' once the money is credited), or failed. Empty otherwise. Paid says what's still the owner's in next: setup_required, awaiting_code, or null for nothing.
      * $closed: the service is cancelled, so payment can no longer start an order that hasn't been sent (InvoiceFunding::requireInitialFacts). */
     public static function order(Domain $d, ?Operation $op, ?Invoice $invoice, bool $closed=false): array
     {
         if (!$op) { return []; }
         $kind=$op->action==='transfer'?'transfer':'registration';
-        // Applying the credit closes the domain row too. The order still reads Cancelled, as its request does.
-        if ($op->state==='rejected'&&$op->safe_code==='refund_approved'&&in_array($d->status,['registration_pending','transfer_pending',$kind.'_rejected'],true)) { return ['state'=>'cancelled','kind'=>$kind,'credit'=>true]; }
+        if($op->state==='rejected'&&($return=ReceiptReturns::summary($op))){return ['state'=>'cancelled','kind'=>$kind,'return'=>$return[1],'returned'=>ReceiptReturns::outstanding($op)===0];}
+        // Applying the credit closes the domain row too. The order still reads Cancelled, as its request does. Approval alone adds no money: the credit can fail and retry.
+        if ($op->state==='rejected'&&($op->safe_code==='refund_approved'||isset($op->funding['refund'])&&in_array($op->safe_code,[...WriteHeld::FINAL_REFUSALS,TransferRejections::CODE],true))&&in_array($d->status,['registration_pending','transfer_pending',$kind.'_rejected'],true)) { return ['state'=>'cancelled','kind'=>$kind,...(isset($op->funding['refund'])?['credit'=>true]:[])]; }
+        if ($op->safe_code===UnpaidAcquisitionProof::CODE&&isset($op->funding['late_credits'])) { return ['state'=>'cancelled','kind'=>$kind,'credit'=>true]; }
         if (!in_array($d->status,['registration_pending','transfer_pending'],true)) { return []; }
         if ($op->state==='rejected') { return RequestStatus::closed($op->state,$op->safe_code)?[]:['state'=>'failed','kind'=>$kind]; }
         if ($closed && in_array($op->state,['awaiting_payment','awaiting_code','queued'],true)) { return ['state'=>'cancelled','kind'=>$kind]; }
@@ -52,7 +54,7 @@ final readonly class OwnedDomains
             $d->registrar_key!=='enom'&&!isset($op->policy['owner_setup'])&&in_array($op->state,['awaiting_payment','queued'],true)&&($op->attempt??[])===[] => 'setup_required',
             default => null,
         };
-        return $invoice?->status==='paid'&&in_array($op->state,['awaiting_payment','awaiting_code','queued','running','pending','held','uncertain'],true)?['state'=>'paid','kind'=>$kind,'next'=>$next]:[];
+        return $invoice?->status==='paid'&&in_array($op->state,['awaiting_payment','awaiting_code','queued','running','pending','held','uncertain'],true)?['state'=>'paid','kind'=>$kind,'next'=>$next,...(isset($op->policy['status_check'])&&!isset($op->policy['status_check']['next_at'])?['check'=>RegistrarCheck::for($op)]:[])]:[];
     }
     /** The service is gone, or a cancellation or native intent stops it. */
     public static function closed(?string $serviceStatus, bool $stopped): bool
@@ -61,7 +63,7 @@ final readonly class OwnedDomains
     public static function orderStatus(array $state, Domain $d, array $order): array
     {
         return match (true) {
-            ($order['state']??null)==='cancelled' => [isset($order['credit'])?'cancelled':'needs_review','Order cancelled'],
+            ($order['state']??null)==='cancelled' => [isset($order['credit'])||($order['returned']??false)?'cancelled':'needs_review','Order cancelled'],
             ($order['state']??null)==='failed' => [$order['kind']==='transfer'?'transfer_rejected':'registration_rejected',null],
             ($order['state']??null)==='paid'&&$state[0]==='awaiting_payment' => [$order['next']??$d->status,null],
             default => $state,
@@ -85,13 +87,13 @@ final readonly class OwnedDomains
                 Account::where('server_id',$d->server_id)->value('environment')==='test', setupPending:true, statusReason:$pill['reason'], demo:DemoData::is($d));
         }
         $op=$this->operation($d); $obs=$d->observation??[]; $service=$d->service;
-        $renewalState=RenewalStop::read($d);
+        $renewalState=RenewalStop::read($d);$policy=$renewalState['policy'];
         $actions=['show'=>route('domains.domains.show',$d->id),'setupSave'=>route('domains.domains.setup-save',$d->id),'contactsSave'=>route('domains.domains.contacts-save',$d->id),'codeSave'=>route('domains.domains.code-save',$d->id)]; $management=[]; $caps=null;
         try { $caps=$this->ports->forDomain($d)->capabilities(); } catch (\Throwable) {}
         $closed=self::closed($service?->status,$service&&($service->cancellation||NativeIntent::where('service_id',$service->id)->exists()));
         $order=$op?self::order($d,$op,Invoice::whereKey($op->invoice_id)->where('user_id',$d->user_id)->first(),$closed):[];
         $state=self::orderStatus(DomainStates::managed($d,$op,$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),RenewalStop::stopped($renewalState)),$d,$order);
-        $pill=StatusPill::of(...$state);
+        $pill=StatusPill::of(...($policy===null?['needs_review',null]:$state));
         $setup=['contacts'=>false,'required'=>false,'nameservers'=>false,'privacy'=>false,'defaults'=>$d->registrar_key==='enom'];
         if ($caps && $op && ($op->state!=='held'||in_array($op->safe_code,['contact_details_required','transfer_setup_review_required','nameservers_required'],true))
             && in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true) && ($op->attempt??[])===[]
@@ -108,6 +110,7 @@ final readonly class OwnedDomains
         if ($setup['required']||$setup['contacts']) { $actions['setup']=route('domains.domains.setup',$d->id); }
         $transfer=['open'=>false,'received'=>false,'paid'=>false,'deadline'=>null,'held'=>false,'unchecked'=>false,'phase'=>'held'];
         if ($op?->action==='transfer' && $d->status==='transfer_pending') {
+            $transfer['notice']=\Paymenter\Extensions\Servers\Domains\Presentation\TransferNotice::for($op,$this->clock->now()->getTimestamp());
             $transfer['received']=TransferInputs::validCode($op->payload['epp']??null);
             $transfer['paid']=Invoice::whereKey($op->invoice_id)->where('user_id',$d->user_id)->value('status')==='paid';
             $deadline=TransferInputs::deadline($op,$this->clock->now());
@@ -131,8 +134,9 @@ final readonly class OwnedDomains
             $actions['code']=route('domains.domains.code',$d->id);
         }
         $progress=$d->provenance === 'adopted' ? [['label' => 'Imported', 'state' => 'Completed']] : [];
-        $entries=$d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(100)->get();
+        $entries=$d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('updated_at')->orderByDesc('id')->limit(100)->get();
         foreach ($entries as $entry) {
+            if (($late=RenewalCycles::lateNote($entry))!==null) { $progress[]=['label'=>'Renewal','state'=>'Cancelled','date'=>$entry->updated_at?->toIso8601String(),'note'=>$late]; continue; }
             if (!isset($entry->policy['management']) || isset($entry->policy['management']['correction'])) { continue; }
             $label=self::CHANGES[$entry->action]??null;
             if (!$label) { continue; }
@@ -143,19 +147,20 @@ final readonly class OwnedDomains
                 $entry->state==='held' && $entry->safe_code==='enom_test_management_call_cap' && $resolved => 'Failed',
                 default => RequestStatus::for(RequestStatus::closed($entry->state,$entry->safe_code)?'disposed':$entry->state)['label'],
             };
-            $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->format('Y-m-d'),'note'=>$state==='Failed'?self::failure($entry):null];
+            $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->toIso8601String(),'note'=>$state==='Failed'?self::failure($entry):null,
+                'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null];
         }
         foreach (array_slice($obs['corrections']??[],0,100) as $row) {
             $label=['contacts'=>'Contacts','nameservers'=>'Nameservers','privacy'=>'WHOIS privacy','auto_renew'=>'Auto-renew'][$row['section']??'']??null;
-            if ($label) { $progress[]=['label'=>$label,'state'=>'Under review','date'=>$entries->firstWhere('operation_key',$row['operation_key']??null)?->updated_at?->format('Y-m-d')]; }
+            if ($label) { $progress[]=['label'=>$label,'state'=>'Under review','date'=>$entries->firstWhere('operation_key',$row['operation_key']??null)?->updated_at?->toIso8601String()]; }
         }
         if ($caps) { $setup['maxNameservers']=$d->registrar_key==='enom'?12:13; }
-        try { $contacts=$forms?self::contacts($d):[]; } catch (\Throwable) { $contacts=[]; }
+        try { $contacts=$forms?self::contacts($d):[]; } catch (\Throwable) { $contacts=null; }
         if ($forms) {
             $labels=['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Auth code'];
             if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Glue records']; }
             foreach ($labels as $cap=>$label) {
-                if ($d->status==='active' && $service?->status==='active' && !RenewalStop::blocksExisting($renewalState) && !($d->renewal_policy['automatic_spend_paused']??false) && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
+                if ($policy!==null && ($cap!=='contacts'||$contacts!==null) && $d->status==='active' && $service?->status==='active' && !RenewalStop::blocksExisting($renewalState) && !($policy['automatic_spend_paused']??false) && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
             }
             if (isset($management['privacy'])) { $management['privacy']['free']=$caps->privacy===PrivacyMode::Free;
                 $retail=\App\Models\Server::find($d->server_id)?->settings()->where('key','domains_privacy_price')->value('value');
@@ -165,7 +170,7 @@ final readonly class OwnedDomains
                     $management['nameservers']['defaultServers']=$d->registrar_key==='enom'?self::DEFAULT_NAMESERVERS:[];
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
                     $management['nameservers']['current']=self::storedNameservers($d); }
-                if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts); }
+                if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>hash('sha256',json_encode($contacts,JSON_THROW_ON_ERROR))]; }
                 if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'admin contact':'owner'; }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
@@ -178,7 +183,7 @@ final readonly class OwnedDomains
                 if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
             }
         }
-        $renewal=$d->status==='active'?(RenewalStop::stopped($renewalState)?'Off':'On'):''; $price=null;
+        $renewal=$policy!==null&&$d->status==='active'?(RenewalStop::stopped($renewalState)?'Off':'On'):''; $price=null;
         try { if($service?->currency_code==='USD'){$price=Storefront::money(RetailLine::decimal($service->price));} } catch(\Throwable){}
         foreach ($management as $key=>&$section) {
             $section['url']=route('domains.domains.manage',[$d->id,$key]); $section['actions']=[];
@@ -195,14 +200,14 @@ final readonly class OwnedDomains
             $unavailable=$management===[];
         }
         // Only the exact retained issued renewal invoice supplies a due date.
-        $renewalDue=null;
+        $renewalDue=null; $earlyRenewal=false;
         $debt=$d->operations()->where('action','renew')->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->whereIn('state',['awaiting_payment','queued','pending','uncertain'])->orderByDesc('id')->first();
         if ($debt) {
             $ids = [$debt->invoice_id];
             try {
                 $invoice = DomainBilling::existingInvoice($debt, ['domain' => $d, 'invoices' => Invoice::whereIn('id', $ids)->get(),
                     'items' => \App\Models\InvoiceItem::whereIn('invoice_id', $ids)->get()]);
-                if ($invoice->status === 'pending') { $renewalDue = $invoice->due_at->format('Y-m-d'); }
+                if ($invoice->status === 'pending') { $renewalDue = $invoice->due_at->format('Y-m-d'); $earlyRenewal = RenewalCycles::early($debt, $this->clock->now()) !== null; }
             } catch (\Throwable) {}
         }
         $adopted = $d->provenance === 'adopted'; $plannedDue = null; $history = []; $renewalInvoice = [];
@@ -230,10 +235,10 @@ final readonly class OwnedDomains
         if ($service) { $actions['autoPay']=route('services.show',$service->id).'#auto-pay'; }
         return new OwnedDomain($d->domain,$pill['label'],$pill['tone'],$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
             $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
-            order:$order, autoPay:RenewalAutoPay::ready($service), renewNow:$renewNow,
+            order:$order, autoPay:$policy!==null&&RenewalAutoPay::ready($service), renewNow:$policy===null?[]:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
-            statusReason:$pill['reason'], demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:self::owner($contacts),
+            statusReason:$pill['reason'], earlyRenewal:$earlyRenewal, demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:self::owner($contacts??[]),
             daysLeft:$d->provider_expires_at?(int)\Carbon\CarbonImmutable::parse($this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),'UTC')->diffInDays(\Carbon\CarbonImmutable::parse($d->provider_expires_at->format('Y-m-d'),'UTC'),false):null);
     }
     /** Details by role as last stored: the registration request, then confirmed contact changes in order. Throws on unreadable data. Shared by the customer and staff domain pages. */
@@ -314,7 +319,7 @@ final readonly class OwnedDomains
             $invoice = $l['invoices']->firstWhere('id', $cycle->invoice_id);
             if ($invoice?->status === 'cancelled' && (int) $invoice->user_id === (int) $d->user_id) { return ['status' => 'cancelled']; }
             try { $invoice = DomainBilling::existingInvoice($cycle, $l); } catch (\Throwable) { return ['status' => 'review']; }
-            if ($invoice->status === 'pending' && DomainBilling::expired($d, $now ?? app(Clock::class)->now())) {
+            if ($invoice->status === 'pending' && RenewalCycles::expiredInvoice($cycle, $now ?? app(Clock::class)->now())) {
                 return ['status' => RenewalCycles::canRetireUnpaid($cycle, $l) ? 'cancelled' : 'review'];
             }
             return match (true) {
@@ -331,7 +336,7 @@ final readonly class OwnedDomains
                     RenewalCycles::next(self::renewalLedger($d, $ops));
                 });
         } catch (\Throwable) { return ['status' => 'review']; }
-        return $retained ? ['status' => $cycle->safe_code === 'renewal_cancelled_unpaid' ? 'cancelled' : 'review'] : null;
+        return $retained && !RenewalCycles::closedEarly($cycle) ? ['status' => $cycle->safe_code === 'renewal_cancelled_unpaid' ? 'cancelled' : 'review'] : null;
     }
     private static function renewalLedger(Domain $d, \Illuminate\Support\Collection $ops): array
     {

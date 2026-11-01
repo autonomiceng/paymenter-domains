@@ -37,7 +37,8 @@ One word list for every page. Customers and staff see the same word for the same
 | Auto-renew | renewal on, renewal authority |
 | Auto Pay | automatic payment, billing agreement, saved card agreement |
 | Account credit | refund (when money goes to credit), wallet |
-| Cancel and add credit | cancel and refund |
+| Cancel and refund (original payment first) | Cancel and add credit for this action |
+| Cancel and add credit (credit only) | Cancel and refund for credit-only actions |
 | Request | operation, intent, attempt |
 | Check at the registrar | verify with provider, reconcile |
 | Expires | expiry date (as a label), anchor |
@@ -58,7 +59,7 @@ Missing.
 
 ## Statuses
 
-Domain: Active, Pending registration, Pending transfer, Action required, Under review, Expired, Redemption, Failed,
+Domain: Active, Pending registration, Pending transfer, Awaiting payment, Action required, Under review, Expired, Redemption, Failed,
 Cancelled.
 
 Request: see `Domains/Presentation/RequestStatus.php`. Failed means it did not work. An unpaid order that was closed is

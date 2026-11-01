@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, Environment, SaleSelection};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, SalesPolicy, Tld};
 
 final class SellerPolicies
@@ -67,6 +67,7 @@ final class SellerPolicies
         $policy = SalesPolicy::where('tld', $tld)->firstOrFail();
         $this->requireAction($policy, $action, $term);
         $account = $this->account($policy->server_id, false);
+        self::requireSale(CatalogueAcceptances::binding($account), $action);
         $catalogue = $this->tld($account, $tld, false);
         $this->requireTld($catalogue, $action, $term);
         PublicationEligibility::require($catalogue, $action, $term);
@@ -76,17 +77,28 @@ final class SellerPolicies
             $policy->revision, $action, $term, 'USD', $price->id, $price->revision);
     }
 
-    /** Fresh display inputs only; not an admitted selection or a cached checkout authority. */
-    public function displayCatalogue(string $ending): array
+    /** One display invocation only. Account validation is shared across its selected endings, never admission. */
+    public function displayCatalogues(array $endings): array
     {
-        $policy = SalesPolicy::where('tld', $ending)->firstOrFail();
-        if (!$policy->server_id || (!$policy->register_enabled && !$policy->transfer_enabled)) { throw new \DomainException('This acquisition is unavailable.'); }
-        $account = $this->account($policy->server_id, false);
-        $catalogue = $this->tld($account, $ending, false);
-        if ($policy->account_fingerprint !== $account->account_fingerprint || $policy->registrar_key !== $account->registrar_key) {
-            throw new \DomainException('Seller selection changed; refresh checkout.');
+        $policies = SalesPolicy::whereIn('tld', $endings)->get();
+        $tlds = Tld::whereIn('server_id', $policies->pluck('server_id')->filter()->unique())
+            ->whereIn('tld', $endings)->get()->keyBy(static fn (Tld $t) => $t->server_id.':'.$t->tld);
+        $accounts = []; $rows = [];
+        foreach ($policies as $policy) {
+            if (!$policy->server_id || (!$policy->register_enabled && !$policy->transfer_enabled)) { continue; }
+            $id = $policy->server_id;
+            if (!array_key_exists($id, $accounts)) {
+                $accounts[$id] = null;
+                try { $accounts[$id] = $this->account($id, false); }
+                catch (\Throwable) { /* An unavailable account cannot hide another seller. */ }
+            }
+            $account = $accounts[$id]; $tld = $tlds->get($id.':'.$policy->tld);
+            if (!$account || !$tld || $tld->account_fingerprint !== $account->account_fingerprint
+                || $tld->registrar_key !== $account->registrar_key || $policy->account_fingerprint !== $account->account_fingerprint
+                || $policy->registrar_key !== $account->registrar_key) { continue; }
+            $rows[$policy->tld] = [$policy, $account, $tld];
         }
-        return [$policy, $account, $catalogue];
+        return $rows;
     }
 
     /** Join native checkout AFTER user/coupon/product locks. No nested transaction or per-line commit.
@@ -104,8 +116,9 @@ final class SellerPolicies
         foreach ($ids as $id) { $accounts[$id] = Account::where('server_id', $id)->lockForUpdate()->firstOrFail(); }
         foreach ($ids as $id) {
             $binding = CatalogueAcceptances::binding($accounts[$id]);
+            foreach ($lines as $line) { if ($line->serverId === $id) { self::requireSale($binding, $line->action); } }
             $hasNonRegistration = array_filter($lines, static fn (SaleSelection $line): bool => $line->serverId === $id && $line->action !== 'register');
-            if (EnomTestRegistration::enabled($binding) && !$hasNonRegistration) {
+            if (EnomTestRegistration::sellable($binding) && !$hasNonRegistration) {
                 $this->bindings->requireReadableLocked($servers[$id], $accounts[$id]);
             } else {
                 $this->bindings->requireProcessingLocked($servers[$id], $accounts[$id]);
@@ -152,6 +165,15 @@ final class SellerPolicies
             $prices[] = $price;
         }
         return $prices;
+    }
+
+    /** Staff can curate a seller before Activate; customer selection and locked admission cannot sell yet. */
+    private static function requireSale(AccountBinding $binding, string $action): void
+    {
+        if ($binding->registrarKey === 'enom' && $binding->environment === Environment::Live
+            && !($action === 'transfer' ? EnomTestTransfer::accepted($binding) : EnomTestRegistration::sellable($binding))) {
+            throw new \App\Exceptions\DisplayException('Domains can’t be ordered right now. Remove them to check out.');
+        }
     }
 
     private function account(int $serverId, bool $lock): Account

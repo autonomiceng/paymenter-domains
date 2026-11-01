@@ -23,7 +23,7 @@ $precheck=new TransferPrecheck(new Rdap(static fn($url)=>['status'=>200,'body'=>
 $registry=new RegistrarRegistry;
 $verify=new class implements AccountVerifier {public function verify(Environment $e,array $c):string{return $c['uid'];}};
 $reader=static function($b)use($clock,$state){
-    $state->reads++;$quote=new QuoteEvidence($state->query,new Money('99.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
+    $state->reads++;$quote=new QuoteEvidence($state->query,new Money($state->query->action===\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer?'7.00':'6.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
     return new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence(quote:$quote,balance:new Money('100.00','USD'),available:true,premium:false)));
 };
 $registry->register('enom',['uid','token'],$verify,$reader,null,false,$reader);

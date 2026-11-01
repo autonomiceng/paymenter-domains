@@ -15,7 +15,7 @@ $request=static function($actor,array $data=[],string $method='GET')use($session
 foreach([$id,999999] as $foreign){try{$controller->show($request($other),'watch',$foreign);expect(false,'Foreign locator refuses');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(404,$e->getStatusCode(),'Cross-owner and missing target');}}
 $html=$controller->show($request($owner),'watch',$id)->render();$dom=storefrontDom($html);same(1,$dom->query('//form[@method="POST"]')->length,'One preference POST');
 same(1,$dom->query('//input[@name="_token"]')->length,'Native CSRF token');same(1,$dom->query('//input[@name="_request_key"]')->length,'Session-bound request key');
-$payload=['account_revision'=>1,'target_revision'=>1,'email'=>0,'notices'=>1,'_request_key'=>FormKeys::issue($request($owner),'watch-preferences:watch:'.$id)];
+$initial=Pref::read($uid,'example.com');$payload=['account_revision'=>$initial['account']['revision'],'target_revision'=>$initial['target']['revision'],'email'=>0,'notices'=>1,'_request_key'=>FormKeys::issue($request($owner),'watch-preferences:watch:'.$id)];
 try{$controller->save($request($other,$payload,'POST'),'watch',$id);expect(false,'Cross-owner preference write refuses');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(404,$e->getStatusCode(),'Cross-owner POST');}
 same(true,Pref::read($uid,'example.com')['account']['enabled'],'Foreign POST cannot change preference');
 $payload['_request_key']=FormKeys::issue($request($owner),'watch-preferences:watch:'.$id);$controller->save($request($owner,$payload,'POST'),'watch',$id);
@@ -67,6 +67,7 @@ foreach(['Latest notices','Domain check notifications','Public domain checks','S
 same(['Monitoring alerts','Off',['Turn on']],$li($page([],[],[],[],true,[...$on,'target'=>['enabled'=>false,'revision'=>4]]),'alerts'),'Alerts off for this domain: Turn on');
 $off=$page([],[],[],[],true,[...$on,'account'=>['enabled'=>false,'revision'=>3]]);
 same(['Monitoring alerts','Off for all domains',['Notification settings']],$li($off,'alerts'),'Off for all domains links its settings');same(0,storefrontDom($off)->query('//form[@method="POST"]')->length,'No toggle while alerts are off for all domains');
+same(['Monitoring alerts','Off',['Turn on']],$li($page([],[],[],[],true,['account'=>['enabled'=>false,'revision'=>1],'target'=>['enabled'=>false,'revision'=>1]]),'alerts'),'Unconfigured notices offer explicit opt-in');
 same(null,$li($page([],[],[],[],false),'alerts')[0],'No alerts row when the domain cannot be edited');
 same([null,['Monitoring paused.']],[$li($page(['watch.paused']),'alerts')[0],$notice($page(['watch.paused']))],'Paused monitoring: one notice, no alerts row');
 $ns=$page(['watch.ns_changed'],$row('ns_changed'),['ns_changed'],['urls'=>['support'=>'/tickets/create']]);

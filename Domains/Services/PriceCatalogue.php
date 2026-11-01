@@ -10,6 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, Tld};
 
 final class PriceCatalogue
 {
+    /** Daily sync plus one missed run. This is our sales policy, never a registrar price lock. */
+    public const MAX_COST_AGE_SECONDS = 172800;
     public function __construct(private readonly PricingRules $rules) {}
 
     /** Cost-only legacy import: deliberately drops publication proof on touched rows. Reads finish before locking. Non-selling TLDs retain holder cost data; native-disabled servers are read-only.
@@ -46,27 +48,50 @@ final class PriceCatalogue
 
     /** Shared batch import and existing native publication commit together, in native lock order. */
     public function import(\Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry $entry,
-        \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, \Closure $recheck, \DateTimeImmutable $now, ?StaffSettingsReview $review = null, bool $keepStaffSettings = false): void
+        \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, \Closure $recheck, \DateTimeImmutable $now, ?StaffSettingsReview $review = null, bool $keepStaffSettings = false, bool $readUnsold = false): void
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Import owns its locks.'); }
         $accepted->binding->requireMatch($entry->binding);
         $tld = new Tld(['server_id' => $entry->binding->serverId, 'registrar_key' => $entry->binding->registrarKey,
             'account_fingerprint' => $entry->binding->fingerprint, 'tld' => $entry->tld]);
-        app(NativeCatalogue::class)->refresh($tld, $now, function (Tld $locked, Server $server, Account $account) use ($entry, $accepted, $recheck, $now, $review, $keepStaffSettings): void {
+        app(NativeCatalogue::class)->refresh($tld, $now, function (Tld $locked, Server $server, Account $account) use ($entry, $accepted, $recheck, $now, $review, $keepStaffSettings, $readUnsold): void {
             $prior = ($review || $keepStaffSettings) && !$locked->wasRecentlyCreated ? [$locked->register_enabled, $locked->transfer_enabled, $locked->renew_enabled] : null;
-            $recheck($server, $account); $row = $accepted->endings[$entry->tld];
-            $rates = array_filter($entry->rates, static fn (CatalogueRate $rate): bool => $rate->action !== 'register'
+            $recheck($server, $account); $row = $accepted->endings[$entry->tld] ?? ['register' => [], 'renew' => [], 'transfer' => [], 'registry' => false, 'renewal_safe' => false];
+            $retail = $review === null ? Price::where(['server_id' => $locked->server_id, 'tld' => $locked->tld,
+                'account_fingerprint' => $locked->account_fingerprint])->orderBy('id')->lockForUpdate()->pluck('retail', 'id')->all() : [];
+            $before = $after = [];
+            if ($locked->wasRecentlyCreated && SellAutomation::enabled($account) && SellAutomation::row($accepted->binding, $entry->tld, $now) !== null) {
+                $locked->enabled = true;
+                SellAutomation::audit($server, $now, 'publish', (int) $locked->id, ['enabled' => false], ['enabled' => true]);
+            }
+            $rates = array_filter($entry->rates, static fn (CatalogueRate $rate): bool => $readUnsold || $rate->action !== 'register'
                 || ($rate->term >= $locked->min_years && $rate->term <= $locked->max_years));
             $terms = array_values(array_intersect($entry->terms, $row['register']));
             $terms = array_values(array_filter($terms, static fn (int $term): bool => $term >= $locked->min_years && $term <= $locked->max_years));
-            $renewal = $row['renewal_safe'] && $entry->renewalSupported && in_array(1, $row['renew'], true);
+            // An unsold row still records provider renewal support for later recovery; acceptance/proof stays separate.
+            $renewal = $entry->renewalSupported && (($row['renewal_safe'] && in_array(1, $row['renew'], true)) || ($readUnsold && $row['renew'] === []));
             $registry = $row['registry'] && $entry->registrySupported;
+            // The detailed read can be newer than the bulk table used to expand the rule.
+            $sellRule = SellRule::saved($accepted->binding);
+            if ($sellRule !== null && $sellRule['max_cost'] !== null) {
+                foreach ($rates as $rate) {
+                    if (in_array($rate->action, ['register', 'renew'], true) && in_array($rate->term, $row[$rate->action], true) && $rate->perYear !== null
+                        && PricingRule::units($rate->perYear) > PricingRule::units($sellRule['max_cost'])) { $registry = false; }
+                }
+            }
             $proof = ['catalogue_revision' => $accepted->revision, 'accepted_terms' => $terms, 'registry' => $registry, 'renewal_safe' => $renewal];
             $rule = $hash = null;
             foreach ($rates as $rate) {
-                if (!in_array($rate->term, $row[$rate->action], true)) { throw new \DomainException('Unaccepted action term.'); }
+                $sold = in_array($rate->term, $row[$rate->action], true) && ($rate->action !== 'register'
+                    || ($rate->term >= $locked->min_years && $rate->term <= $locked->max_years));
+                if (!$sold && !$readUnsold) { throw new \DomainException('Unaccepted action term.'); }
                 $rule ??= $this->rules->rule($locked, true); $hash ??= self::ruleHash($rule);
-                $this->write($locked, $rate, $rule, $hash, $proof);
+                // Costs for a withdrawn term remain readable, but never get publication proof.
+                $price = $this->write($locked, $rate, $rule, $hash, $sold ? $proof : [], !$sold);
+                if ($review === null && array_key_exists($price->id, $retail) && $retail[$price->id] !== $price->retail) {
+                    $key = $price->action.':'.$price->term.':'.$price->currency;
+                    $before[$key] = $retail[$price->id] ?? null; $after[$key] = $price->retail;
+                }
             }
             // Initialize new TLDs only; acceptance/provider changes must not erase saved bounds.
             if ($locked->wasRecentlyCreated && $terms) { $locked->min_years = min($terms); $locked->max_years = max($terms); }
@@ -86,6 +111,7 @@ final class PriceCatalogue
             $locked->transfer_enabled = $registry && $annual && in_array(1, $row['transfer'], true) && $eligible('transfer', 1);
             if ($prior !== null) { $locked->register_enabled = $locked->register_enabled && $prior[0]; $locked->transfer_enabled = $locked->transfer_enabled && $prior[1]; $locked->renew_enabled = $locked->renew_enabled && $prior[2]; }
             $locked->save();
+            if ($after !== []) { SellAutomation::audit($server, $now, 'publish', (int) $locked->id, ['retail' => $before], ['retail' => $after], ['prices_refreshed' => true]); }
         }, $review);
     }
 
@@ -193,11 +219,12 @@ final class PriceCatalogue
     }
 
     /** Pure saved-price validation for render snapshots; callers qualify the row's binding and action.
-     * A synced cost has no time limit: sales keep the last synced cost until the next sync. */
+     * Saved costs stop authorizing new sales after the daily sync and one missed run. */
     public static function currentEvidence(?Price $price, ?string $ruleHash, \DateTimeImmutable $now): PriceSnapshot
     {
         if (!$price || $price->wholesale === null || $price->retail === null || $price->hold_reason !== null
-            || $price->unit !== 'term_total' || !$price->fresh_until || $price->observed_at > $now) {
+            || $price->unit !== 'term_total' || !$price->fresh_until || $price->observed_at > $now
+            || $price->observed_at->getTimestamp() <= $now->getTimestamp() - self::MAX_COST_AGE_SECONDS) {
             throw new \DomainException('No current eligible price.');
         }
         if ($ruleHash === null || ($price->eligibility['rule_hash'] ?? null) !== $ruleHash) { throw new \DomainException('Price rule changed; republication required.'); }
@@ -224,9 +251,9 @@ final class PriceCatalogue
         });
     }
 
-    private function write(Tld $tld, CatalogueRate $rate, array $rule, string $hash, array $publication = []): void
+    private function write(Tld $tld, CatalogueRate $rate, array $rule, string $hash, array $publication = [], bool $costOnly = false): Price
     {
-        if ($rate->action === 'register' && ($rate->term < $tld->min_years || $rate->term > $tld->max_years)) {
+        if (!$costOnly && $rate->action === 'register' && ($rate->term < $tld->min_years || $rate->term > $tld->max_years)) {
             throw new \DomainException('Unsupported registration term.');
         }
         $price = Price::where(['server_id' => $tld->server_id, 'tld' => $tld->tld, 'action' => $rate->action,
@@ -241,6 +268,7 @@ final class PriceCatalogue
             'observed_at' => $rate->observedAt, 'fresh_until' => $rate->freshUntil, 'revision' => $price->revision + 1,
             'eligibility' => [...$publication, 'source_unit' => $rate->action === 'register' ? 'exact_term_annual_rate' : 'annual', 'staff_alert' => $margin->staffAlert, 'rule_hash' => $hash],
             'hold_reason' => $margin->hold])->save();
+        return $price;
     }
 
     /** Term retail for one rule and its margin decision. Publication and the staff preview share it.
@@ -263,6 +291,14 @@ final class PriceCatalogue
             ->reject(fn (Price $price): bool => ($price->eligibility['price_unavailable'] ?? false)
                 || ($price->action === 'register' && ($price->term < $tld->min_years || $price->term > $tld->max_years)))
             ->sortBy(fn (Price $price): int => $order[$price->action] * 100 + $price->term)->values();
+    }
+
+    /** A saved price is on an older rule, and every cost needed to redo it is here. */
+    public function behindRule(Tld $tld, \DateTimeImmutable $now): bool
+    {
+        $hash = self::ruleHash($this->rules->rule($tld));
+        if (!self::sold($tld)->contains(fn (Price $price): bool => ($price->eligibility['rule_hash'] ?? null) !== $hash)) { return false; }
+        try { self::requireCosts($tld, $now); return true; } catch (\DomainException) { return false; }
     }
 
     /** What saving a rule would publish: cost, current and new term retail, without writing. */

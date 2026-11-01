@@ -103,8 +103,8 @@ The native form still requires expiry for Active recurring services
 a typed date can pass validation and is discarded on update. This is an accepted reduced
 editing capability, not a promise of normal native lifecycle editing. Native Recalculate Price
 still derives an acquisition-plan price (`P/app/Admin/Resources/ServiceResource.php:124–150`),
-so use owned audited **reprice holding**, **stop/resume renewal** and **retire unpaid acquisition**
-actions. Update renewal price, stop/resume renewal and unpaid acquisition retirement are implemented.
+so use owned audited **stop/resume renewal** and **retire unpaid acquisition** actions. Both are
+implemented. Renewal prices follow TLD prices: each renewal invoice uses the price on its issue date.
 See [acquisition retirement](acquisition-retirement.md) for its separate proof and audit.
 There is no owner-change action.
 Since slice 2, every ordinary native price change requires an owned audited transition, even
@@ -196,7 +196,7 @@ no core edits, global interception or runtime version gate.
 - **2:** replace broad projection bypasses with exact-object field/value/expected-state authority
   for initial, pricing and refund writers; preserve funding/terminal checks and native status writes.
 - **3a:** qualify scoped updating expiry, reduced-editor notice, unsafe mutation/cancellation
-  refusals and owned audited reprice/stop/resume controls. No removal-only cleanup here.
+  refusals and owned audited stop/resume controls. No removal-only cleanup here.
 - **3b:** migrate all stock to null; qualify publication/admission, unpaid/shared-invoice cron,
   bounded unpaid retirement/release, late-money discrepancy and durable sweep. Preserve uncertainty.
 - **4:** qualify the untouched native paid path and wake-only hooks together with both 3 parts:
@@ -245,15 +245,13 @@ completion. A terminal label or invalid conversion MAC cannot authorize cancella
 
 ## Owned holding controls
 
-Domains staff with Manage domain operations and the specific holding permission can reprice,
+Domains staff with Manage domain operations and the specific holding permission can
 stop or resume one holding. Each reviewed action requires a one-line reason, checks a 15-minute
 actor/domain/action snapshot under the ordered holding locks and appends encrypted before/after
 evidence. A stale, replayed or revoked review refuses; 100 retained entries pause further changes
 until a reviewed retention mechanism is available. No audit entry or cancellation intent is erased.
 
-Reprice applies the current published annual renewal retail, including applicable tax, through
-the exact-object projection capability. It does not publish prices or rewrite issued invoices.
-Future invoices still use retail current at issuance, including the existing retained-price rules.
+Future invoices use retail current at issuance, including the existing retained-price rules.
 Stop prevents new paid and complimentary renewal obligations; issued debts remain payable and
 issued paid and complimentary obligations keep their existing evidence-based execution path,
 including registrar spending. Hold an unsent request before stopping to prevent that spending.
@@ -305,7 +303,7 @@ the guard continues to refuse unsafe writes.
 
 Recalculate Price keeps the native draft-only behavior and its native success notice.
 It changes no stored price. Saving a changed recalculated price is refused with the
-same Update renewal price guidance as a manual price edit. The native Active expiry
+same guidance as a manual price edit. The native Active expiry
 validation limitation above remains unchanged. Native service deletion does not pause
 account processing; native server deletion retains its separately reported pause.
 

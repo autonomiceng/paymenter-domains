@@ -44,6 +44,13 @@ final class RuntimePorts
     { $a=Account::where('server_id',$binding->serverId)->firstOrFail();$binding->requireMatch(CatalogueAcceptances::binding($a));return $this->composition($a)['management_protocol']; }
     public function managementEngine(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): DomainManagement
     {$a=Account::where('server_id',$binding->serverId)->firstOrFail();$binding->requireMatch(CatalogueAcceptances::binding($a));return $this->composition($a)['management'];}
+    public function corrections(Domain $domain): void
+    {
+        $a=Account::where('server_id',$domain->server_id)->firstOrFail();
+        if(!$a->processing_enabled||$a->account_fingerprint!==$domain->account_fingerprint){return;}
+        $ports=$this->composition($a);$op=CorrectionWork::produce($domain,$ports['management'],$ports['management_protocol']);
+        if($op){app(RuntimeDispatch::class)->enqueue((int)$op->id);}
+    }
     public function operation(Operation $op): void
     {
         if($op->state==='awaiting_payment'&&\App\Models\Invoice::whereKey($op->invoice_id)->value('status')!=='paid'){return;}
@@ -52,17 +59,17 @@ final class RuntimePorts
         if($a->account_fingerprint!==$op->account_fingerprint||$d->authority_generation!==$op->authority_generation){throw new \DomainException('Runtime authority changed.');}
         $ports=$this->composition($a);
         if(isset($op->policy['management'])){
-            if(in_array($op->state,['queued','awaiting_payment'],true)){$ports['management']->run((int)$op->id,$ports['management_protocol'],\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);}
+            if(in_array($op->state,['queued','awaiting_payment'],true)||ManagementEvidence::recoverable($op)){$ports['management']->run((int)$op->id,$ports['management_protocol'],\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);}
             elseif(in_array($op->state,['pending','uncertain','running'],true)){$ports['management']->reconcile((int)$op->id,$ports['management_protocol']);}
         }elseif($op->action==='renew'){
             if(in_array($op->state,['queued','awaiting_payment'],true)){$ports['renewal']->run((int)$op->id,$ports['renewal_writer']);}
             elseif(in_array($op->state,['pending','uncertain','running'],true)){$ports['renewal_completion']->run((int)$op->id);}
         }elseif(in_array($op->action,['register','transfer'],true)){
-            if(in_array($op->state,['queued','awaiting_payment','awaiting_code'],true)){
+            if(in_array($op->state,['queued','awaiting_payment','awaiting_code'],true)||BalanceRetries::candidate($op)){
                 if($missing=NativePaidHooks::serviceMissing()){HookDiagnostics::deferred((int)$op->id,$missing);return;}
                 $ports['acquisition']->execute((int)$op->id);
             }
-            elseif(in_array($op->state,['pending','uncertain','running'],true)){$ports['reconciliation']->run((int)$op->id);}
+            elseif(in_array($op->state,['pending','uncertain','running'],true)||TransferPolling::applies($op)){$ports['reconciliation']->run((int)$op->id);}
         }
     }
     /** The sole named attachment point for initial managed-record work; registration itself grants no account authority. */

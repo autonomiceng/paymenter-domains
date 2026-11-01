@@ -10,7 +10,7 @@ final readonly class CatalogueAcceptance
     public function __construct(public AccountBinding $binding, public int $revision, array $endings,
         public ?string $registrationRoute = null, public int $registrationIntervalSeconds = 0)
     {
-        if ($revision < 1 || count($endings) > 500) { throw new \InvalidArgumentException('Invalid catalogue acceptance.'); }
+        if ($revision < 1 || count($endings) > 1000) { throw new \InvalidArgumentException('Invalid catalogue acceptance.'); }
         if (($registrationRoute === null && $registrationIntervalSeconds !== 0)
             || ($registrationRoute !== null && ($binding->registrarKey !== 'enom'
                 || $registrationRoute !== ($binding->environment === Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp')

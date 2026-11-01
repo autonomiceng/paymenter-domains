@@ -23,9 +23,9 @@ final class DomainListRow
             'paid' => ['missing' => true, ...match ($order['next'] ?? null) {
                 'awaiting_code' => ['cause' => 'Paid. Add the auth code to start the transfer.', 'fix' => null],
                 'setup_required' => ['cause' => 'Paid. Finish setup to start the '.$word.'.', 'fix' => null],
-                default => ['cause' => 'Paid. We’re finishing the '.$word.'. '.Missing::NO_ACTION, 'fix' => Missing::support($support)],
+                default => ['cause' => Missing::fills(self::WAITS[$word]), 'fix' => null],
             }],
-            'cancelled' => ['missing' => true, 'cause' => 'Order cancelled', 'fix' => Missing::support($support)],
+            'cancelled' => isset($order['credit']) ? ['missing' => false, 'tone' => null, 'note' => null] : ['missing' => true, 'cause' => 'Order cancelled', 'fix' => Missing::support($support)],
             'failed' => ['missing' => true, 'cause' => ucfirst($word).' did not finish', 'fix' => Missing::support($support)],
             default => null,
         };
@@ -34,6 +34,7 @@ final class DomainListRow
     public static function expires(DomainSummary $s): array
     {
         if ($s->expiry === null) {
+            if ($s->statusState === 'cancelled') { return ['missing' => false, 'tone' => null, 'note' => null]; } // Nothing left to fill in.
             if ($order = self::orderExpires($s->order, $s->urls['support'] ?? null)) { return $order; }
             $wait = self::WAITS[$s->expiryWaits ?? ''] ?? null;
             $cause = $s->kind === 'watch' ? 'Check at your registrar' : ($wait ? Missing::fills($wait) : null);

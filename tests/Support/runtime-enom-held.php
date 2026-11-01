@@ -67,6 +67,8 @@ same('succeeded',$fresh['management']->reconcile($late->id,$fresh['management_pr
 $heldBindings->setProcessing($binding->serverId,true,static fn()=>null);$s->renewal=true;
 // Genuine retained native invoice, fresh renewal admission and one-use writer share this same factory.
 $clock->at=new DateTimeImmutable('2027-09-27T12:00:00Z');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+config(['domains.enom_writes.renewal'=>true]);
+App\Models\Server::find($binding->serverId)->settings()->updateOrCreate(['key'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::KEY],['value'=>json_encode(['fingerprint'=>$binding->fingerprint,...\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol($binding)],JSON_THROW_ON_ERROR),'type'=>'string','encrypted'=>true]);
 App\Models\Server::find($binding->serverId)->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
 config(['settings.credits_auto_use'=>false]);$billing=new DomainBilling($heldBindings,app(NativeDomainGuard::class),$clock);$invoice=$billing->invoice($d->id,$user);
 $renew=Operation::where('invoice_id',$invoice->id)->sole();DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);

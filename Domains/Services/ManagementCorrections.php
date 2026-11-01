@@ -16,9 +16,15 @@ final class ManagementCorrections
         $op = $key === null ? null : $l['operations']->firstWhere('operation_key', $key); $d = $l['domain'];
         if (!$op || !in_array($action, ['nameservers','contacts','contact_profile','privacy_enable','privacy_disable','auto_renew_off'], true)
             || !in_array($d->status, ['registration_pending','transfer_pending','active'], true) || !in_array($l['service']->status, ['pending','active'], true)
-            || !in_array($op->action, ['register','transfer'], true) || !in_array($op->state, ['pending','uncertain','succeeded'], true)
+            || (!in_array($op->action, ['register','transfer'], true)&&!($op->action==='renew'&&$action==='auto_renew_off')) || !in_array($op->state, ['pending','uncertain','succeeded'], true)
             || $op->account_fingerprint !== $d->account_fingerprint || $op->authority_generation !== $d->authority_generation
             || ($op->attempt['seal'] ?? null) !== 'sealed' || isset($op->funding['refund']) || isset($op->attempt['transfer_terminal'])) { return false; }
+        foreach($l['operations'] as $peer){
+            if($peer->id>$op->id&&isset($peer->policy['management'])&&!isset($peer->policy['management']['correction'])
+                &&DomainManagement::capability($peer->action)===DomainManagement::capability($action)){
+                return false;
+            }
+        }
         try { RefundPayment::requireCurrent($op, $l); return true; } catch (\Throwable) { return false; }
     }
     public static function require(array $l, string $action, #[\SensitiveParameter] array $input, string $key): void

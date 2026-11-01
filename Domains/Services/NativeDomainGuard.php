@@ -21,11 +21,14 @@ final class NativeDomainGuard
         Domain::updating(static function (Domain $d): void {
             if ($d->isDirty('price_mode') || (!$d->attachingAdoption() && $d->isDirty('billing_managed'))) { throw new \DomainException('Managed pricing authority requires a dedicated audited transition.'); }
         });
+        InvoiceTransaction::creating(fn (InvoiceTransaction $payment) => RenewalCycles::beforePayment((int) $payment->invoice_id, $this->clock));
         foreach (['updating', 'deleting'] as $event) {
             InvoiceTransaction::$event(static function (InvoiceTransaction $payment) use ($event): void {
                 if (Operation::whereIn('invoice_id', [$payment->invoice_id, $payment->getRawOriginal('invoice_id')])->exists()) {
                     // Native gateways settle an existing processing row; signed financial fields stay fixed.
                     $dirty = array_diff(array_keys($payment->getDirty()), ['status', 'fee', 'updated_at', 'is_credit_transaction']);
+                    // The staff form saves the gateway in a second write on the row it just created.
+                    if ($event === 'updating' && $payment->wasRecentlyCreated && array_values($dirty) === ['gateway_id'] && $payment->getRawOriginal('gateway_id') === null) { return; }
                     if ($event === 'updating' && $dirty === [] && (int) $payment->is_credit_transaction === (int) $payment->getRawOriginal('is_credit_transaction')
                         && ($payment->status->value === $payment->getRawOriginal('status') || ($payment->getRawOriginal('status') !== 'succeeded'
                             && in_array($payment->status->value, ['processing', 'succeeded', 'failed'], true)))) { return; }
@@ -33,6 +36,8 @@ final class NativeDomainGuard
                 }
             });
         }
+        // Immutable receipt routing is checked first; settlement must not close a different invoice.
+        InvoiceTransaction::updating(fn (InvoiceTransaction $payment) => RenewalCycles::beforePayment((int) $payment->invoice_id, $this->clock, (int) $payment->id));
         Service::updating(fn (Service $s) => $this->saving($s));
         Service::deleting(static function (Service $s): void {
             if (Domain::whereIn('service_id', self::ids($s))->exists()) { NativeServiceRefusal::notify($s,'delete'); throw new \DomainException('Managed holding services are retained.'); }
@@ -181,12 +186,12 @@ final class NativeDomainGuard
         self::persist($service, ['status' => Service::STATUS_ACTIVE, 'expires_at' => null]);
     }
 
-    /** Existing unsent and full-funding checks remain mandatory for owned terminal projections. */
+    /** Proven failed order and full-funding checks remain mandatory for owned terminal projections. */
     public static function terminal(array $locked, Operation $op): void
     {
         if (($locked['advisory'] ?? true) || $op->state !== 'rejected' || !in_array($op->action, ['register', 'transfer'], true)
             || !$locked['operations']->contains(static fn ($row) => $row === $op)) { throw new \DomainException('No retained refund disposition.'); }
-        RefundProof::requireUnsent($op, $locked['domain']); RefundPayment::requireCurrent($op, $locked);
+        RefundProof::requireReturnable($op, $locked['domain']); RefundPayment::requireCurrent($op, $locked);
         $service = $locked['service'];
         self::persist($service, ['status' => Service::STATUS_CANCELLED, 'expires_at' => null]);
     }

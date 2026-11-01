@@ -34,15 +34,24 @@ final class HistoryAcceptances
             $account = Account::where('server_id', $binding->serverId)->lockForUpdate()->firstOrFail();
             $binding->requireMatch(CatalogueAcceptances::binding($account));
             if (!$server->enabled || $server->extension !== 'Domains') { throw new \DomainException('Unavailable server.'); }
-            $key = self::KEY.(str_ends_with($acceptance->vocabulary, '_renewal_v1') ? '_renewal' : (str_ends_with($acceptance->vocabulary, '_transfer_v1') ? '_transfer' : ''));
-            $setting = $server->settings()->where('key', $key)->lockForUpdate()->first()
-                ?? $server->settings()->make(['key' => $key]);
-            $setting->encrypted = true; $setting->type = 'string';
-            $setting->value = json_encode(['fingerprint' => $binding->fingerprint, 'complete' => true, 'currency' => 'USD',
-                'timezone' => $acceptance->timezone, 'lag' => $acceptance->lagSeconds, 'retention' => $acceptance->retentionSeconds,
-                'vocabulary' => $acceptance->vocabulary], JSON_THROW_ON_ERROR);
-            $setting->save(); $review?->record();
+            self::saveLocked($acceptance); $review?->record();
         });
+    }
+    /** Caller owns the same account/settings mutex; used by Activate after checking dated Live evidence. */
+    public static function saveLocked(HistoryAcceptance $acceptance): void
+    {
+        if(DB::transactionLevel()!==1){throw new \LogicException('Outer history transaction required.');}
+        $binding=$acceptance->binding;EnomLiveActivation::requireHistory($acceptance);
+        $server=Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
+        $binding->requireMatch(CatalogueAcceptances::binding(Account::where('server_id',$binding->serverId)->lockForUpdate()->sole()));
+        $key = self::KEY.(str_ends_with($acceptance->vocabulary, '_renewal_v1') ? '_renewal' : (str_ends_with($acceptance->vocabulary, '_transfer_v1') ? '_transfer' : ''));
+        $setting = $server->settings()->where('key', $key)->lockForUpdate()->first()
+            ?? $server->settings()->make(['key' => $key]);
+        $setting->encrypted = true; $setting->type = 'string';
+        $setting->value = json_encode(['fingerprint' => $binding->fingerprint, 'complete' => true, 'currency' => 'USD',
+            'timezone' => $acceptance->timezone, 'lag' => $acceptance->lagSeconds, 'retention' => $acceptance->retentionSeconds,
+            'vocabulary' => $acceptance->vocabulary], JSON_THROW_ON_ERROR);
+        $setting->save();
     }
     public static function revokeLocked(AccountBinding $binding, Action $action): void
     {

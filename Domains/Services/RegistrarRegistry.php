@@ -54,7 +54,7 @@ final class RegistrarRegistry
         $refusals=EnomTestCalls::refusalGeneration();
         try { $identity = AccountBinding::canonicalIdentity($key, $this->entry($key)[1]->verify($environment, $credentials)); }
         catch (IdentityRefused $error) {
-            if(EnomTestCalls::refusedSince($refusals)){throw new EnomTestCallLimit;}
+            if(EnomTestCalls::refusedSince($refusals)){throw new EnomTestCallLimit(EnomTestCalls::refusalReason());}
             throw new IdentityRefused($error->reason);
         }
         catch (\Throwable) { throw new \RuntimeException('Registrar account ownership could not be verified.'); }

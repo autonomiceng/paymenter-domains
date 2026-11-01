@@ -10,7 +10,7 @@
     @include('domains::partials.test-banner', ['test' => $testEnvironment])
     <div>
         @if (!$guest && \Illuminate\Support\Facades\Route::has('domains.domains.index'))<a class="domains-back" href="{{ route('domains.domains.index') }}"><x-ri-arrow-left-s-line class="domains-i" aria-hidden="true" />Domains</a>@endif
-        <div class="domains-head">
+        <div class="domains-head domains-head--search">
             <div>
                 <h1 class="domains-title">{{ $guest ? 'Find a domain' : 'Register a domain' }}</h1>
                 <p class="domains-lede">Type the name you want. We check it across every TLD we sell.</p>
@@ -20,6 +20,7 @@
         </div>
     </div>
     @include('domains::partials.notices', ['fieldKeys' => ['domain'], 'summary' => false])
+    @include('domains::partials.order-closed')
     @if ($replace ?? null)
         <div class="domains-notice" role="status" data-domains-replacing><p>Replacing {{ $replace['name'] }}.</p> <a class="domains-a" href="{{ route('cart') }}">Cancel</a></div>
     @endif

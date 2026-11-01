@@ -107,6 +107,23 @@ same([$policy['paid_at'],$policy['code_saved_at'],$code],[$late->fresh()->policy
 same($money,nativeFinancialSnapshot($late),'Late correction preserves native money and reservation');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$late->id])->assertActionHidden('release')->assertDontSee('Release hold');
 commerceReject(fn()=>$run($late->fresh(),'release'));
+// Orders off held these paid requests before any attempt. Orders on takes them back with no staff step.
+\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$tlds[0]->server_id)->update(['observed_at'=>$clock->now()]);
+$held=static function(string $name)use($new):\Paymenter\Extensions\Servers\Domains\Models\Operation {$op=$new(placeholderComFixtureName($name),true,true);DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'held','safe_code'=>'processing']);return $op->fresh();};
+\Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();$dispatch=app(\Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class);
+$ready=$held('staff-orders-ready-placeholder.com');\Illuminate\Support\Facades\Auth::setUser($staff);
+same('Not sent. It will retry automatically.',\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::reason($ready),'Orders on: the reason is what happens next');
+$notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($ready);
+expect(!isset($notice['link_label'])&&!str_contains((string)($notice['body']??''),'Release hold'),'No Orders switch and no Release wording while the system takes it back');
+$dispatch->enqueue($ready->id);same(['queued',null],[$ready->fresh()->state,$ready->fresh()->safe_code],'Orders on readmits a paid request stopped by Orders off');
+$suspended=$held('staff-orders-suspended-placeholder.com');\Illuminate\Support\Facades\Auth::setUser($staff);\App\Models\Service::findOrFail($suspended->service_id)->update(['status'=>'suspended']);
+same('Not sent. This hold can’t be released. Cancel and refund it.',\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::reason($suspended),'A suspended service cannot return, so staff are not told to wait');
+$dispatch->enqueue($suspended->id);same(['held','processing'],[$suspended->fresh()->state,$suspended->fresh()->safe_code],'The tick agrees with the words');
+$run($suspended->fresh(),'refund');same('rejected',$suspended->fresh()->state,'Cancel and refund works, so the line is a real way out');
+$user->properties()->where('key','phone')->update(['value'=>'']);
+$blocked=$held('staff-orders-contact-placeholder.com');$dispatch->enqueue($blocked->id);
+same(['held','contact_details_required'],[$blocked->fresh()->state,$blocked->fresh()->safe_code],'Incomplete details reach the hold with Finish setup, not a dead end');
+$user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);
 same(0,$state->writes,'Contact recovery never sends');
 echo "Staff contact recovery passed\n";
 $nativeSuccessful=true;

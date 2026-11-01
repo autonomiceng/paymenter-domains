@@ -4,11 +4,11 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Models\{Invoice, User};
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 
-/** Native renewal debts and payment collection; no registrar admission, grants or dispatch. */
+/** Native renewal debts and collection. Late debt requires fresh reads; only execution can dispatch. */
 final class DomainBilling
 {
     public function __construct(private readonly AccountBindings $bindings, private readonly NativeDomainGuard $native, private readonly Clock $clock) {}
@@ -23,7 +23,9 @@ final class DomainBilling
     public function invoice(int $domainId, ?User $actor = null, ?int $years = null): ?Invoice
     {
         OperationClaims::outside(); $seed = Domain::findOrFail($domainId);
-        return DB::transaction(function () use ($seed, $actor, $years): ?Invoice {
+        if ($actor && (int)$actor->id !== (int)$seed->user_id) { throw new \DomainException('Domain renewal is unavailable.'); }
+        $late = $this->lateQuote($seed, $actor !== null, $years);
+        return DB::transaction(function () use ($seed, $actor, $years, $late): ?Invoice {
             $l = HoldingLocks::take($seed); $d = $l['domain']; $s = $l['service'];
             if ($l['identity_source']['kind'] === 'adoption') { HoldingAnchor::resolve($l); }
             if ($actor && (int) $actor->id !== (int) $l['user']->id) { throw new \DomainException('Domain renewal is unavailable.'); }
@@ -34,29 +36,35 @@ final class DomainBilling
             // A native cancellation disables scheduled billing without touching retained debts.
             if ($actor === null && RenewalStop::stopped($l)) { return null; }
             if (!$d->provider_expires_at) { throw new RuntimeIneligible(RuntimeReason::MissingAnchor); }
-            if ($actor && self::expired($d, $this->clock->now())) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
             $key = RenewalCycles::key($d);
             // Issued debt keeps its calendar, term and amount through later configuration changes.
             $existing = $l['operations']->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
-            if ($existing && $existing->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($existing,$d)) { return self::existingInvoice($existing, $l, $years); }
+            if($existing){RenewalReplacements::recover($existing,$l,$this->clock);}
+            if ($existing && $existing->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($existing,$d)) {
+                if ($actor && self::expired($d, $this->clock->now()) && (!isset($existing->policy['renewal']['late']) || RenewalCycles::expiredInvoice($existing, $this->clock->now()))) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
+                return self::existingInvoice($existing, $l, $years);
+            }
             $key = RenewalCycles::next($l);
-            $years ??= 1; $calendar = $this->requireRequest($l, $actor !== null, $years);
+            $years ??= 1; $calendar = $this->requireRequest($l, $actor !== null, $years, $late !== null);
+            if ($late !== null && ($l['stamp'] !== $late['stamp'] || $late['valid_until'] <= $this->clock->now()->modify('+25 seconds') || !EnomLateRenewal::accepted(CatalogueAcceptances::binding($l['account'])))) { throw new \DomainException('Renewal quote changed. Try again.'); }
             // Holding retail is independent of current seller, sales/renew flags and provider cost.
             $price = $this->native->project($l);
+            if ($late !== null) { $price = LateRenewalQuote::price($l, $late, $price); }
             $amount = PricingRule::total($price['annual_gross'], $years);
             $invoice = new Invoice(['user_id' => $d->user_id, 'currency_code' => 'USD', 'status' => Invoice::STATUS_PENDING, 'due_at' => $calendar['due']]);
             $invoice->send_create_email = false; $invoice->save();
             $item = $invoice->items()->create(['reference_type' => null, 'reference_id' => null, 'quantity' => 1, 'price' => $amount,
                 'description' => InvoiceDescription::renewal($d->domain, $d->provider_expires_at, $years)]);
-            $rate = $l['prices']->where('term', 1)->where('currency', 'USD')->where('account_fingerprint', $d->account_fingerprint)->first();
+            $rate = $l['prices']->where('action', 'renew')->where('term', 1)->where('currency', 'USD')->where('account_fingerprint', $d->account_fingerprint)->first();
             $cap = $rate?->wholesale !== null ? ['amount' => PricingRule::decimal(PricingRule::units(PriceCatalogue::cost($rate->wholesale)) * $years, 4), 'currency' => 'USD'] : null;
+            if ($late !== null) { $cap = $late['cost']; }
             $operation = Operation::create(['domain_id' => $d->id, 'service_id' => $s->id, 'server_id' => $d->server_id,
                 'registrar_key' => $d->registrar_key, 'account_fingerprint' => $d->account_fingerprint, 'authority_generation' => $d->authority_generation,
                 'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id, 'operation_key' => $key, 'action' => 'renew', 'term' => $years,
                 'funding_basis' => 'paid_invoice', 'state' => 'awaiting_payment', 'amount' => $amount, 'currency' => 'USD',
                 'base_expires_at' => $calendar['expiry'], 'expected_expires_at' => $d->provider_expires_at->addYearsNoOverflow($years)->format('Y-m-d'),
                 'policy' => ['calendar' => $calendar, 'price' => $price, 'renewal' => ['confirmed_revision' => $d->confirmed_revision,
-                    'provider_domain_id' => $d->provider_domain_id, 'cost_cap' => $cap, 'term' => $years, 'product_id' => (int) $s->product_id, 'annual_plan_id' => (int) $s->plan_id,
+                    'provider_domain_id' => $d->provider_domain_id, 'cost_cap' => $cap, ...($late !== null ? ['late' => ['expiry' => $late['expiry'], 'deadline' => $late['deadline']]] : []), 'term' => $years, 'product_id' => (int) $s->product_id, 'annual_plan_id' => (int) $s->plan_id,
                     'user_id' => (int) $s->user_id, 'order_id' => (int) $s->order_id]], 'payload' => []]);
             if ($price['staff_alert'] !== null || $price['retained']) {
                 $d->update(['observation' => [...($d->observation ?? []), 'renewal_price_alert' => ['operation_key' => $key,
@@ -75,6 +83,35 @@ final class DomainBilling
         });
     }
 
+
+    /** Fetch late evidence outside invoice locks, then recheck its stamp before issuing existing native debt. */
+    private function lateQuote(Domain $d,bool $manual,?int $years): ?array
+    {
+        if(!DomainBilling::expired($d,$this->clock->now())){return null;}
+        $captured=DB::transaction(function()use($d,$manual,$years):?array{
+            $l=HoldingLocks::take($d);$d=$l['domain'];
+            if(!$manual&&RenewalStop::stopped($l)){return null;}
+            // Existing payable debt keeps its frozen terms, even when the feature is switched off.
+            if($l['operations']->contains(fn($op)=>$op->action==='renew'&&$op->base_expires_at==$d->provider_expires_at&&$op->safe_code!=='renewal_cancelled_unpaid'&&!RenewalReplacements::reviewed($op,$d))){return null;}
+            $b=CatalogueAcceptances::binding($l['account']);
+            if(!EnomLateRenewal::accepted($b)||($years!==null&&$years!==1)){throw new RuntimeIneligible(RuntimeReason::OutsideCalendar);}
+            $this->requireRequest($l,$manual,1,true);
+            return [$b,$l['stamp'],new \Paymenter\Extensions\Servers\Domains\Data\RenewalRequest($d->id,$d->authority_generation,$d->confirmed_revision,$d->provider_expires_at->format('Y-m-d'),$d->provider_domain_id,manual:$manual)];
+        });
+        if($captured===null){return null;}
+        [$b,$stamp,$request]=$captured;
+        // The billing cursor wraps every tick. Reserve a short retry window before optional scheduled reads.
+        $retry='domains.late-quote.'.hash('sha256',$d->id.':'.$b->fingerprint.':'.$d->authority_generation.':'.$d->confirmed_revision.':'.$d->provider_expires_at->format('Y-m-d'));$now=$this->clock->now()->getTimestamp();
+        if(!$manual){
+            if((int)Cache::get($retry,0)>$now){throw new RuntimeIneligible(RuntimeReason::OutsideCalendar);}
+            Cache::put($retry,$now+900,900);
+        }
+        $a=EnomTestRenewal::acceptance($b);
+        $decision=(new RenewalAdmission(new RenewalAuthority($this->bindings,$this->clock),$this->bindings,$a,$this->clock))->check($request);
+        if(!$decision->allowed()||$decision->status!==\Paymenter\Extensions\Servers\Domains\Data\RenewalStatus::Grace||!$decision->cost||!$decision->renewalUntil||!$decision->providerExpiry){throw new RuntimeIneligible(RuntimeReason::OutsideCalendar);}
+        return ['stamp'=>$stamp,'valid_until'=>$decision->validUntil,'expiry'=>$decision->providerExpiry,'deadline'=>$decision->renewalUntil->format(DATE_ATOM),
+            'cost'=>['amount'=>$decision->cost->amount,'currency'=>'USD']];
+    }
 
     /** Renewal terms of 1 to 10 years whose new expiry stays within ten years of now. */
     public static function terms(\DateTimeImmutable $expiry, \DateTimeImmutable $now): array
@@ -131,7 +168,9 @@ final class DomainBilling
             // Replacement proof needs all invoice members, including unexpected retained items.
             $l['items'] = \App\Models\InvoiceItem::whereIn('invoice_id', $l['invoices']->pluck('id'))->orderBy('id')->get();
             RenewalCycles::next($l);
-            $calendar = $this->requireRequest($l, true);
+            $late = self::expired($l['domain'], $this->clock->now()) && EnomLateRenewal::accepted(CatalogueAcceptances::binding($l['account']));
+            $calendar = $this->requireRequest($l, true, $late ? 1 : null, $late);
+            if ($late) { return ['terms' => [1], 'order_by' => null, 'late' => true]; }
             $this->native->quote($l);
             return ['terms' => self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now()),
                 'order_by' => (new \DateTimeImmutable($calendar['expiry']))->modify('-1 day')->format('Y-m-d')];
@@ -139,20 +178,26 @@ final class DomainBilling
     }
 
     /** New-debt eligibility only. Existing invoices keep their own dates and terms. */
-    private function requireRequest(array $l, bool $manual, ?int $years = null): array
+    private function requireRequest(array $l, bool $manual, ?int $years = null, bool $late = false): array
     {
         self::requireAuthority($l, $this->bindings, $manual);
         $calendar = self::calendarFor($l); $settings = $l['settings']->pluck('value', 'key');
         if (!self::enabled($settings->get($manual ? 'domains_manual_renewals_enabled' : 'domains_billing_enabled', false))) {
             throw new RuntimeIneligible(RuntimeReason::BillingOff);
         }
+        // No new Enom invoice for a renewal that can't go out, site gate and the other environment included. Issued invoices stay payable; paid renewals wait with their reason.
+        if (EnomTestRenewal::holdsInvoices(CatalogueAcceptances::binding($l['account']))) { throw new RuntimeIneligible(RuntimeReason::BillingOff); }
         $today = $this->clock->now()->format('Y-m-d');
-        if (($manual && self::expired($l['domain'], $this->clock->now())) || (!$manual && ($today >= $calendar['due'] || $today < $calendar['issue']))) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
+        if (!$late && (($manual && self::expired($l['domain'], $this->clock->now())) || (!$manual && ($today >= $calendar['due'] || $today < $calendar['issue'])))) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
         $terms = self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now());
         if ($terms === [] || ($years !== null && !in_array($years, $terms, true))) {
             throw new \DomainException('Renewal term exceeds the registry horizon.');
         }
-        if ($manual) { $calendar['due'] = min($calendar['expiry'], max($calendar['due'], $today)); }
+        // Expiry must not turn a prior scheduled debit into another attempt on a new invoice.
+        if ($late && !$manual && $l['operations']->contains(fn ($op) => $op->action === 'renew' && $op->authority_generation === $l['domain']->authority_generation && $op->base_expires_at == $l['domain']->provider_expires_at && isset($op->funding['auto_pay']) && ($op->funding['auto_pay']['status'] ?? null) !== 'skipped')) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
+        if ($late && $l['operations']->contains(fn ($op) => $op->action === 'renew' && $op->base_expires_at == $l['domain']->provider_expires_at && isset($op->policy['renewal']['late']))) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
+        if ($late) { $calendar['issue'] = $today; $calendar['due'] = $today; }
+        elseif ($manual) { $calendar['due'] = min($calendar['expiry'], max($calendar['due'], $today)); }
         return $calendar;
     }
 

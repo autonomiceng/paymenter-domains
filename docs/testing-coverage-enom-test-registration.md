@@ -21,12 +21,13 @@ own count, which includes failed or timed-out requests as well as successful one
 
 Saving What you sell records the fixed TEST route and worker request interval alongside the TLD terms; neither is a
 staff tick box. A later protocol or interval change no longer matches that
-record and holds registration. The USD requirement is checked against a recent, successful, fingerprint-bound manual
-or preflight balance read. These checks do not establish Enom account/provider acceptance; no provider request is
+record and holds registration. Preflight reads the fingerprint-bound USD balance immediately before sending;
+a cached balance never blocks entry to preflight. These checks do not establish Enom account/provider acceptance; no provider request is
 made by these fixtures.
 
-After correcting a never-claimed local hold such as missing USD evidence or route acceptance, staff use Release unsent
-hold to admit a fresh worker attempt. A send limit refusal after a worker claim can be released only when its retained
+Old cached-balance holds remain held until staff press Release hold. Route acceptance holds also need explicit release.
+A real preflight shortfall says the registrar balance is too low. After adding funds, staff press Release hold once;
+the worker rechecks the current funding, authority and balance using the original unsent claim. A send limit refusal after a worker claim can be released only when its retained
 definitely-unsent refusal evidence validates; uncertain or possibly sent Purchases stay closed to release.
 
 `tests/test_installed_package_enom_test.py` exercises the opt-in and call budget from a fresh

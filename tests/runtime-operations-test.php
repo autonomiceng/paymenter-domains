@@ -47,5 +47,9 @@ $clock->instant=$clock->now()->modify('+61 seconds');
 $runtime->tick();
 same(1,DB::table('domains_reminder_schedules')->where('server_id',$domain->server_id)->count(),'Full runtime repairs missing reminder enrollment after operations-only mode');
 same(1,DB::table('domains_observation_queues')->where('server_id',$domain->server_id)->count(),'Full runtime repairs missing observation enrollment after operations-only mode');
+$heldId=DB::table('domains_operations')->insertGetId([...$original,'invoice_item_id'=>null,
+    'operation_key'=>'held-renewal-dispatch','action'=>'renew','state'=>'held','safe_code'=>'renewal_definitely_unsent']);
+app(\Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class)->enqueue($heldId);
+same($clock->now()->getTimestamp()+900,(int)DB::table('domains_runtime_operations')->where('operation_id',$heldId)->value('due_at'),'Held recovery candidates use fifteen-minute dispatch backoff');
 echo "Bounded operations-only dispatch, durable backoff and producer isolation passed.\n";
 $nativeSuccessful=true;

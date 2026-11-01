@@ -11,8 +11,8 @@ $reviewAction=static function(string $action)use($op,$staff,$clock):void {
     (new StaffOperations($clock))->run($staff,$domain->id,$op->id,$action,$ticket,'Review unsent renewal settlement and replacement');
 };
 $expiry=$op->domain->provider_expires_at->format('Y-m-d');$reviewAction('refund');same('rejected',$op->fresh()->state,'Audited unsent refund closes the old obligation');
-same($op->invoice_id,$billing->invoice($op->domain_id,$user)->id,'Without replacement review billing retains the settled old debt');
-$reviewAction('replacement');$old=$op->fresh()->getRawOriginal();$replacement=$make($op->domain);
+$replacement=$make($op->domain);$old=$op->fresh()->getRawOriginal();
+same(null,$op->fresh()->policy['renewal_replacement']['actor_id'],'Exact old credit automatically authorizes ordinary replacement');
 same($op->operation_key.':replacement:1',$replacement->operation_key,'One independently authorized replacement');same($expiry,$replacement->domain->provider_expires_at->format('Y-m-d'),'Credit and replacement retain expiry');
 $clock->at=new DateTimeImmutable('2027-10-20T12:00:00Z');Cache::flush();DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire(['reply'=>$renewReply]);
 (new RuntimeWork($clock,new RuntimePorts))->operation($replacement->id);same('pending',$replacement->fresh()->state,'Replacement paid obligation sends once');

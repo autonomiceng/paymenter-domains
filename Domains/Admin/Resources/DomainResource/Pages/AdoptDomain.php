@@ -169,7 +169,7 @@ class AdoptDomain extends Page
         self::permission(); $sections = []; $enabled = config('domains.adoption.enabled', false) === true;
         $readiness = Section::make($enabled ? 'Before you import' : 'Import is off on this site')
             ->description($enabled ? 'Nothing is charged now. Import does not buy, transfer or renew a domain. Past invoices stay the same.'
-                : 'You can check a domain here, but nothing is imported. Ask your site admin to turn it on.')->schema([]);
+                : 'You can check a domain here, but nothing is imported. Set domains.adoption.enabled to true in the site config to allow imports.')->schema([]);
         if (!$enabled) { $readiness->icon('heroicon-o-exclamation-triangle')->iconColor('warning'); }
         $sections[] = $readiness;
         $sections[] = Section::make('1. Customer, service and account')->columns(2)->schema([

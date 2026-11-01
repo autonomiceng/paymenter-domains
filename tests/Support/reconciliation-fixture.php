@@ -12,6 +12,8 @@ $wire = new class($observation) implements Transport {
     public function __construct(private $state) {}
     public function send(Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
         same(0, Illuminate\Support\Facades\DB::transactionLevel(), 'Provider reads outside financial locks');
+        if ($this->state->fault === 'transport') { throw new RuntimeException('Synthetic transport unavailable'); }
+        if ($this->state->fault === 'send_guard') { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit('send_guard'); }
         expect($timeoutMs > 0 && $timeoutMs <= 25000, 'Bounded read timeout'); $s = $this->state; $s->calls[] = $command;
         if ($s->during) { $hook = $s->during; $s->during = null; $hook(); }
         $expiry = (2026 + ($s->expiryYears ?? $s->years)).'-10-18'; if ($s->fault === 'term') { $expiry = '2026-10-18'; }
@@ -26,6 +28,21 @@ $wire = new class($observation) implements Transport {
                     .($s->fault === 'history-multiple' ? '<Order><OrderID>9002</OrderID></Order>' : '').'</OrderList>',
             default => '',
         };
+        if ($command === ReadCommand::Order) {
+            $data = match ($s->fault) {
+                'wrong-id' => str_replace('<OrderID>'.$s->reference.'</OrderID>', '<OrderID>9999</OrderID>', $data),
+                'wrong-name' => str_replace('<Description>'.$s->name.'</Description>', '<Description>other.example.com</Description>', $data),
+                'open' => str_replace('<OrderStatus>Closed</OrderStatus>', '<OrderStatus>Open</OrderStatus>', $data),
+                'failed' => str_replace('<Status>Successful</Status>', '<Status>Failed</Status>', $data),
+                'wrong-action' => str_replace('<ProductType>Register</ProductType>', '<ProductType>Renew</ProductType>', $data),
+                'wrong-years' => str_replace('<Quantity>'.$s->years.'</Quantity>', '<Quantity>2</Quantity>', $data),
+                'wrong-charge' => str_replace('8.95', '8.96', $data),
+                'wrong-currency' => str_replace('<Result>', '<Currency>EUR</Currency><Result>', $data),
+                'wrong-expiry' => str_replace('<ExpiryDateTime>'.$expiry.'</ExpiryDateTime>', '<ExpiryDateTime>2027-10-19</ExpiryDateTime>', $data),
+                default => $data,
+            };
+        }
+        if ($s->fault === 'captured-charge') { $data = str_replace('8.95', '6.00', $data); }
         if ($s->fault === 'zero' && $command === ReadCommand::Order) { $data = ''; }
         if (($s->fault === 'info_missing' && $command === ReadCommand::Info) || ($s->fault === 'expiry_missing' && $command === ReadCommand::Expiry)) { $data = ''; }
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$data.'</interface-response>';
@@ -43,8 +60,8 @@ $prepare = static function (string $name, string $mode = 'accepted', ?\Paymenter
     $sealed = $claims->seal($claimed, $preflight->inspect($claimed, $domain, $ctx), $clock->now()); expect($sealed !== null, 'Original attempt sealed');
     if ($mode === 'late') { $clock->instant = $clock->now()->modify('+361 seconds'); }
     if (!in_array($mode, ['absent', 'preseal'], true)) {
-        $result = $mode === 'null' ? null : new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
-            new Evidence(registration: new RegistrationEvidence(OperationClaims::query($sealed, $domain), '9001', new DateEvidence('2027-10-17', ExpiryPrecision::Date, 'synthetic_purchase'), null, $nameservers?->state === 'observed' ? [] : ['nameservers'], $nameservers)));
+        $result = $mode === 'null' ? null : new DriverResult($binding, $mode === 'captured' ? Disposition::Unknown : Disposition::Accepted, SendState::Sent, $mode === 'captured' ? ResultReason::Unresolved : ResultReason::Acknowledged,
+            new Evidence(registration: new RegistrationEvidence(OperationClaims::query($sealed, $domain), '9001', $mode === 'captured' ? null : new DateEvidence('2027-10-17', ExpiryPrecision::Date, 'synthetic_purchase'), null, $nameservers?->state === 'observed' ? [] : ['nameservers'], $nameservers)));
         $claims->finish($sealed, $result);
     }
     $observation->name = $name; $observation->years = $op->term; $observation->expiryYears = null; $observation->reference = '9001';

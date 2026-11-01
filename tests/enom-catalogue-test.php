@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/price-sync.php';
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/enom-catalogue-wire.php';
 require __DIR__.'/Support/enom-catalogue.php';
@@ -90,8 +91,7 @@ foreach (['daily','staff'] as $syncEntry) {
                 DB::table('domains_observation_queues')->where('server_id',$server->id)->update(['catalogue_due'=>0,'catalogue_cursor'=>0]);
                 app(PriceSync::class)->daily($a->fresh());
             } else {
-                Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)
-                    ->mountAction('sync_prices_'.$server->id)->callMountedAction()->assertHasNoActionErrors()->assertNotified("Couldn't sync prices");
+                queuedPriceSync(fn()=>Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)->mountAction('sync_prices_'.$server->id)->callMountedAction(),"Couldn't sync prices");
             }
             same(['GetTLDList'],$guards,$syncEntry.' sync reaches the send guard exactly once');
             same($wireBefore,count($GLOBALS['catalogueCalls']),$syncEntry.' sync '.$refusalKind.' refusal occurs before any physical send');
@@ -102,5 +102,68 @@ foreach (['daily','staff'] as $syncEntry) {
         }
     }
 }
+// A list our cap cannot cover keeps the priced TLDs fresh. A new one waits for a day the cap covers.
+$binding=Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a->fresh());$accepted=Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);
+$priced=array_keys(array_filter($accepted->endings,static fn(array $row)=>$row['register']!==[]));$before=count($GLOBALS['catalogueCalls']);
+Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::save($binding,$accepted->revision,$accepted->endings+['info'=>['register'=>[1],'renew'=>[1],'transfer'=>[],'registry'=>true,'renewal_safe'=>true]]);
+config(['domains.enom_test_sends_per_day'=>EnomTestSendLimit::usage('catalogue-uid')['day']+PriceSync::batchedCalls($accepted,$priced)]);
+DB::table('domains_read_budgets')->where('server_id',$server->id)->update(['window_at'=>0]);DB::table('domains_observation_queues')->where('server_id',$server->id)->update(['catalogue_due'=>0,'catalogue_cursor'=>0]);
+app(PriceSync::class)->daily($a->fresh());config(['domains.enom_test_sends_per_day'=>500]);
+$read=array_values(array_unique(array_filter(array_column(array_slice($GLOBALS['catalogueCalls'],$before),'TLD'))));sort($read);sort($priced);
+same($priced,$read,'Only the priced TLDs are read when the cap cannot cover the list');
 echo "Price sync: daily and staff limits and provider guard refuse before the first physical send.\n";
+
+// Whole-run failures must get one automatic scheduled retry before asking staff.
+$syncClock=new class implements Paymenter\Extensions\Servers\Domains\Contracts\Clock {
+    public DateTimeImmutable $at;
+    public function __construct() {$this->at=new DateTimeImmutable;}
+    public function now():DateTimeImmutable{return $this->at;}
+};
+$scheduled=new PriceSync($bindings,app(Paymenter\Extensions\Servers\Domains\Services\CatalogueSync::class),$syncClock);
+$queue=DB::table('domains_observation_queues')->where('server_id',$server->id);
+$GLOBALS['catalogueList']=['com','net','org','info'];
+foreach(['list','capacity'] as $failureKind){
+    $syncClock->at=$syncClock->at->modify('+1 hour');
+    $queue->update(['catalogue_due'=>0,'catalogue_cursor'=>0,'catalogue_audit'=>'[]']);
+    $noticeCount=App\Models\Notification::where('user_id',$staff->id)->where('title','Price sync keeps failing')->count();
+    $GLOBALS['catalogueListFailed']=$failureKind==='list';
+    config(['domains.enom_test_sends_per_day'=>$failureKind==='capacity'?EnomTestSendLimit::usage('catalogue-uid')['day']:100000]);
+    DB::table('domains_read_budgets')->where('server_id',$server->id)->update(['window_at'=>0]);
+    // A slow first list failure and a faster daily retry must still alert on the next scheduled day.
+    if($failureKind==='list'){$GLOBALS['catalogueDuring']=static function()use($syncClock):void{$syncClock->at=$syncClock->at->modify('+25 seconds');};}
+    $scheduled->daily($a->fresh());
+    same(null,Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure($server->id),'First failure waits for automatic retry');
+    same($noticeCount,App\Models\Notification::where('user_id',$staff->id)->where('title','Price sync keeps failing')->count(),'First failure does not ask staff');
+    $syncClock->at=$syncClock->at->modify($failureKind==='list'?'+86380 seconds':'+1 day');
+    $scheduled->daily($a->fresh());
+    expect(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure($server->id)!==null,'Repeated '.$failureKind.' failure reaches the staff surface');
+    same($noticeCount+1,App\Models\Notification::where('user_id',$staff->id)->where('title','Price sync keeps failing')->count(),'Repeated failure delivers a staff inbox alert');
+    $alert=App\Models\Notification::where('user_id',$staff->id)->where('title','Price sync keeps failing')->latest('id')->firstOrFail();
+    same(route('filament.admin.resources.domain-tlds.index'),$alert->url,'Sync failure alert opens the real TLD list');
+    DB::table('domains_prices')->where('server_id',$server->id)->where('tld','com')->update(['observed_at'=>$syncClock->now()->format('Y-m-d H:i:s')]);
+    expect(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure($server->id)!==null,'Updating one TLD cannot hide an incomplete account sync');
+    $syncClock->at=$syncClock->at->modify('+1 day');$scheduled->daily($a->fresh());
+    same($noticeCount+1,App\Models\Notification::where('user_id',$staff->id)->where('title','Price sync keeps failing')->count(),'Continuing failure does not repeat the staff alert');
+    $GLOBALS['catalogueListFailed']=false;config(['domains.enom_test_sends_per_day'=>100000]);
+    DB::table('domains_read_budgets')->where('server_id',$server->id)->update(['window_at'=>0]);
+    if($failureKind==='capacity'){
+        // Reuse native publication and review fixtures: a smaller batch exercises the same multi-run account path.
+        app()->instance(PriceSync::class,new PriceSync($bindings,app(Paymenter\Extensions\Servers\Domains\Services\CatalogueSync::class),$syncClock,8));
+        try{
+            // A deferred TLD's invalid saved rule must not turn already-written batch prices into a failed action.
+            $savedRule=DB::table('domains_tlds')->where('id',$tld->id)->first(['use_default_rule','pricing_mode']);
+            DB::table('domains_tlds')->where('id',$tld->id)->update(['use_default_rule'=>false,'pricing_mode'=>'invalid']);
+            try{$first=$settings->run($review('import'),[],$syncClock->now());}
+            finally{DB::table('domains_tlds')->where('id',$tld->id)->update((array)$savedRule);}
+
+            expect($first['deferred']!==[],'Account exceeds one manual batch');
+            expect(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure($server->id)!==null,'Incomplete current costs retain the failure');
+            DB::table('domains_read_budgets')->where('server_id',$server->id)->update(['window_at'=>0]);
+            $second=$settings->run($review('import'),[],$syncClock->now());
+            expect($second['deferred']!==[],'The final recovery batch still defers previously refreshed endings');
+        }finally{app()->forgetInstance(PriceSync::class);}
+    }
+    else{$syncClock->at=$syncClock->at->modify('+1 day');$scheduled->daily($a->fresh());}
+    same(null,Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure($server->id),'A complete automatic or manual sync clears the active failure');
+}
 $nativeSuccessful=true;

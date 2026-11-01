@@ -11,6 +11,12 @@ use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,RuntimeP
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 $entry=new Domains([]);$entry->installed();
 foreach(Installation::SCHEMAS as $schema){$schema::verify();}
+// An interrupted two-table install repairs only the missing table and retains the other table's rows.
+$sell=Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::class;
+DB::table($sell::ROWS)->insert(['server_id'=>999,'account_fingerprint'=>str_repeat('a',64),'tld'=>'com']);
+Schema::drop($sell::FILLS);$sell::install();
+same(1,DB::table($sell::ROWS)->where('server_id',999)->count(),'Recovering fills retains sell rows');
+Schema::drop($sell::ROWS);$sell::install();$sell::verify();
 $pointerMigration = DB::table('migrations')->where('migration', '2026_10_19_000014_add_holding_adoption')->sole();
 DB::table('migrations')->where('id', $pointerMigration->id)->delete();
 $pointerRefused = false;

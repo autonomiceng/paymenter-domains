@@ -15,5 +15,5 @@
 @if ($errors->has('privacy'))<p id="setup-privacy-error" class="domains-error">{{ $errors->first('privacy') }}</p>@endif
 <button type="submit" class="domains-btn domains-btn--primary">{{ $domain->setup['defaults'] ? 'Save nameservers' : 'Save domain setup' }}</button></form>
 @else
-<p>@include('domains::partials.status-pill', ['pill' => \Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::of('held')]) Your order is on hold. @include('domains::partials.contact-support') and we’ll sort it out.</p>
+<p>@include('domains::partials.status-pill', ['pill' => \Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::of('held')]) Your order is on hold. @include('domains::partials.contact-support', ['after' => ' and we’ll sort it out.'])</p>
 @endif

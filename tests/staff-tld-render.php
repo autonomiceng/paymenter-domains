@@ -40,8 +40,8 @@ $render($view,'tld-more-menu','.fi-ac .fi-dropdown-panel{display:block!important
 $render(Livewire::actingAs($u)->test(RegistrarSetup::class),'setup-both');$render(Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]),'setup-account');$strings=[];
 // TLD page actions, then the account actions this Enom TEST fixture shows. Live and test renewal or DNS changes
 // and NameSilo enrollment do not appear for it: their server config is off.
-$tldActions=['lifecycle','override','tld_settings','seller'];
-$hiddenAccountActions=['live_management','live_renewal','test_management','test_renewal','enroll_sandbox'];
+$tldActions=['override','tld_settings','seller'];
+$hiddenAccountActions=['live_management','live_renewal','test_management','test_renewal','test_transfer','enroll_sandbox'];
 $accountActions=array_values(array_diff(staffSetupActions(),$hiddenAccountActions));
 same([],array_values(array_diff(array_keys(Review::ACTIONS),$tldActions,$accountActions,$hiddenAccountActions,staffNoButtonActions())),'Every settings action is placed');
 foreach(array_intersect_key(Review::ACTIONS,array_flip([...$tldActions,...$accountActions])) as $action=>$label){

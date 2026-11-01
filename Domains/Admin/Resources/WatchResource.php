@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Presentation\{DomainName,Missing};
 use Filament\Navigation\NavigationItem;
 use Filament\Pages\Enums\SubNavigationPosition;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,MonitoringSettings,ViewWatch};
-use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProductMap};
+use Paymenter\Extensions\Servers\Domains\Models\WatchName;
 class WatchResource extends WatchReadResource
 {
     protected static ?string $model=WatchName::class;
@@ -27,7 +27,7 @@ class WatchResource extends WatchReadResource
     public static function tabs(string $active): array
     {
         return [NavigationItem::make('Domains')->url(static::getUrl('index'))->isActiveWhen(fn()=>$active==='index'),
-            ...(MonitoringSettings::canAccess()?[NavigationItem::make('Settings')->url(static::getUrl('settings'))->isActiveWhen(fn()=>$active==='settings')]:[])];
+            ...($active==='settings'&&MonitoringSettings::canAccess()?[NavigationItem::make('Settings')->url(static::getUrl('settings'))->isActiveWhen(fn()=>$active==='settings')]:[])];
     }
     public static function getEloquentQuery(): Builder{return parent::getEloquentQuery()->with(['delegation','registry','work']);}
     /** Missing in danger with its cause below; present values show $sub below. */
@@ -42,7 +42,6 @@ class WatchResource extends WatchReadResource
     private static function capped(string $label): string{return WatchName::where('state','active')->count()>WatchFindings::CAP?$label.' (first 1,000 active domains)':$label;}
     public static function table(Table $table): Table
     {
-        $who=['platform'=>WatchFindings::company(),'external'=>'Other'];
         return $table->columns([
             DemoTag::apply(TextColumn::make('canonical_name')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
                 ->description(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['label'])->extraAttributes(['style'=>DomainName::CELL])),
@@ -57,10 +56,6 @@ class WatchResource extends WatchReadResource
                 ->indicateUsing(fn(array $data)=>isset(WatchFindings::STATUSES[$data['value']??''])?(in_array($data['value'],['monitoring','problem'],true)?self::capped('Status: '.WatchFindings::STATUSES[$data['value']]):'Status: '.WatchFindings::STATUSES[$data['value']]):null),
             Filter::make('customer')->label('Customer')->schema([TextInput::make('customer')->label('Customer')])->query(fn(Builder $query,array $data)=>WatchFindings::customer($query,$data['customer']??null))
                 ->indicateUsing(fn(array $data)=>trim((string)($data['customer']??''))!==''?'Customer: '.trim((string)$data['customer']):null),
-            SelectFilter::make('registration')->label('Registrar')->options($who),
-            SelectFilter::make('expected_dns')->label('Expected nameservers')->options($who),
-            SelectFilter::make('observed')->label('Nameservers')->options($who)->query(fn(Builder $query,array $data)=>isset($data['value'])?$query->whereHas('delegation',fn($query)=>$query->where('dns',$data['value'])):$query),
-            SelectFilter::make('product')->label('Hosting product')->options(fn()=>WatchProductMap::with('product')->get()->mapWithKeys(fn($m)=>[$m->product_id=>$m->product?->name??'Product #'.$m->product_id])->all())->query(fn(Builder $query,array $data)=>isset($data['value'])?$query->whereHas('sources',fn($query)=>$query->whereIn('map_id',WatchProductMap::where('product_id',$data['value'])->select('id'))):$query),
             SelectFilter::make('expiry')->label('Expires within')->options(['7'=>'7 days','30'=>'30 days','90'=>'90 days'])->query(fn(Builder $query,array $data,$livewire)=>$livewire->expiryQuery($query,(int)($data['value']??0)))
                 ->indicateUsing(fn(array $data,$livewire)=>in_array($data['value']??null,['7','30','90'],true)?'Expires within '.$data['value'].' days'.($livewire->expiryScanCapped()?' (first 1,000 domains)':''):null),
         ])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->defaultSort('canonical_name')->paginated([25,50])->defaultPaginationPageOption(25)->emptyStateHeading('No monitored domains')->emptyStateDescription('Turn on monitoring on a hosting product.');

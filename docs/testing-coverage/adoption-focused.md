@@ -38,7 +38,7 @@ python3 scripts/test.py --jobs 1 --only \
   tests/adoption-preview-test.php tests/adoption-renewal-intent-test.php \
   tests/contact-setup-test.php tests/domain-summary-managed-test.php \
   tests/enom-catalogue-test.php tests/enom-identity-test.php \
-  tests/holding-adoption-test.php tests/lifecycle-policy-test.php \
+  tests/holding-adoption-test.php \
   tests/managed-public-confirmation-test.php tests/managed-public-observer-test.php \
   tests/managed-public-overflow-test.php tests/managed-public-quota-test.php \
   tests/managed-public-reconciliation-test.php tests/managed-public-relink-test.php \

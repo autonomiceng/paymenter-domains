@@ -48,7 +48,7 @@ same('10.40', $freshPrice->retail, 'Native matching-price scenario uses current 
 expect(!$freshPrice->retained, 'Matching-price scenario starts with a fresh quote');
 $refuseSave(['price' => '10.40'], $priceRefusal);
 $priorInstant = $clock->instant; $clock->instant = $clock->now()->modify('+2 days');
-expect(!(new HolderPricing($prices))->renewal($d, 'USD', $clock->now())->retained, 'Old synced cost remains usable in the locked price-save scenario');
+expect((new HolderPricing($prices))->renewal($d, 'USD', $clock->now())->retained, 'Expired cost uses retained retail in the locked price-save scenario');
 $refuseSave(['price' => '10.40'], $priceRefusal);
 $clock->instant = $priorInstant;
 DB::table('services')->where('id', $service->id)->update(['price' => '10.40']);

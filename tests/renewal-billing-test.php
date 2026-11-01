@@ -65,8 +65,8 @@ same($issuedBefore,serialize([DB::table('invoices')->get(),DB::table('invoice_it
 DB::table('service_cancellations')->where('id',$issuedCancel->id)->delete();
 
 same('31.20', $op->amount, 'Saved retail bills the same exact three-year total after a year');
-same(false, $op->policy['price']['retained'], 'Saved costs remain current until the next sync');
-same(null, $d->fresh()->observation['renewal_price_alert'] ?? null, 'Age alone does not create a renewal margin alert');
+same(true, $op->policy['price']['retained'], 'Expired costs retain the existing holder retail');
+same('stale', $d->fresh()->observation['renewal_price_alert']['code'] ?? null, 'Expired cost uses the existing retained-price notice');
 same(3, (int) $op->term, 'Obligation fixes requested term independently of annual plan');
 same('2030-10-18', $op->expected_expires_at->format('Y-m-d'), 'Exact expected term expiry recorded');
 same('Domain renewal: billing-held-placeholder.com (3 years, Oct 18, 2027 to Oct 18, 2030)', $renewal->items->sole()->description, 'Renewal dates use frozen registrar expiry and requested years');
@@ -130,7 +130,19 @@ $clock->instant = new DateTimeImmutable('2027-09-26T12:00:00Z'); $setting('domai
 commerceReject(fn () => $billing->invoice($next->domain_id));
 $lowPrice = Price::where(['server_id' => $server->id, 'action' => 'renew'])->sole();
 $lowPrice->update(['revision' => $lowPrice->revision + 1, 'observed_at' => '2027-09-26 12:00:00', 'fresh_until' => '2027-09-28 12:00:00']);
-$clock->instant = new DateTimeImmutable('2027-09-27T00:00:00Z'); $bill = $billing->invoice($next->domain_id);
+$clock->instant = new DateTimeImmutable('2027-09-27T00:00:00Z');
+// The site's own TEST account: no new debt while it can't send, whether the site flag or the send permission is what's missing.
+$billingOff = static function (?App\Models\User $owner = null) use ($billing, $next): void {
+    try { $billing->invoice($next->domain_id, $owner); throw new LogicException('New invoice must refuse'); }
+    catch (Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e) { same(Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::BillingOff, $e->reason, 'Site account that cannot send gets no new invoice'); }
+};
+config(['domains.enom_identity.environment' => 'test', 'domains.enom_writes.renewal' => false, 'domains.enom_catalogue.enabled' => true]); $billingOff();
+config(['domains.enom_writes.renewal' => true]); $billingOff();
+// A TEST holding on a Live site never sends, so neither billing path may start a new invoice.
+config(['domains.enom_identity.environment' => 'live']); $setting('domains_manual_renewals_enabled', true); $billingOff(); $billingOff($user); $setting('domains_manual_renewals_enabled', false);
+config(['domains.enom_identity.environment' => null, 'domains.enom_writes.renewal' => false, 'domains.enom_catalogue.enabled' => false]);
+$bill = $billing->invoice($next->domain_id);
+config(['domains.enom_identity.environment' => 'test']); same($bill->id, $billing->invoice($next->domain_id)->id, 'An issued invoice stays payable with the site flag off'); config(['domains.enom_identity.environment' => null]);
 $low = Operation::where('invoice_id', $bill->id)->sole();
 same('Domain renewal: billing-below-placeholder.com (1 year, Oct 18, 2027 to Oct 18, 2028)', $bill->items->sole()->description, 'Annual renewal dates');
 same('1.00', $low->amount, 'Below-cost renewal invoices without floor, subsidy or hold');

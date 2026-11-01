@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 /**
  * Optional policy immediately before a physical registrar send. CONTRACT 1 callback arguments:
  * registrar: 'enom' or 'namesilo'; environment: 'test' or 'live' (NameSilo OTE is 'test').
- * Enom commands: GetBalance, GetTLDList, PE_GetProductPrice, GetTLDDetails, GetExtAttributes,
+ * Enom commands: GetBalance, GetTLDList, PE_GetProductPrice, PE_GetRetailPricing, PE_GetDomainPricing, GetTLDDetails, GetExtAttributes,
  * Check, GetDomainInfo, GetDomainExp, GetExtendInfo, GetContacts, GetRegLock, GetWPPSInfo,
  * GetRenew, GetExpiredDomains, GetOrderDetail, TP_GetOrder, GetOrderList, GetDNS, GetHosts,
  * GetDomainSRVHosts, GetDnsSec, CheckNSStatus, Purchase, TP_CreateOrder, Extend,
@@ -38,7 +38,7 @@ final class ProviderSendGuard
                 catch(\Throwable) {}
             }
             // Preserve the existing definitely-unsent path without exposing deployment exceptions.
-            if($registrar==='enom'){EnomTestCalls::refuse();}
+            if($registrar==='enom'){EnomTestCalls::refuse($reason==='guard_threw'?'send_guard':'send_check');}
             throw new \RuntimeException('Registrar request refused before sending.');
         }
     }

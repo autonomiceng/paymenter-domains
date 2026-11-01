@@ -111,6 +111,10 @@ same(0,$dom->query('//input[@name="confirmed"]')->length,'No confirm checkbox: t
 expect(str_contains($plain($setup),'Turn on WHOIS privacy (free)'),'Setup privacy option');
 $held=$plain(view('domains::setup',['domain'=>$owned(['required'=>false],[])])->render());
 expect(str_contains($held,'Under review Your order is on hold. Contact support and we’ll sort it out.'),'Held setup: pill and one line, no reason line');
+config(['settings.tickets_disabled'=>true]);
+$held=$plain(view('domains::setup',['domain'=>$owned(['required'=>false],[])])->render());
+expect(str_contains($held,'Your order is on hold.')&&!str_contains($held,'sort it out')&&!str_contains($held,'Contact support'),'Held setup with no contact says only what is true');
+config(['settings.tickets_disabled'=>false]);
 $transferDto=['open'=>true,'received'=>true,'paid'=>true,'deadline'=>'Nov 17, 2026, 12:00 UTC','held'=>false,'unchecked'=>true,'phase'=>'pending'];
 $code=view('domains::code',['domain'=>$owned(['required'=>false],$transferDto)])->render();$dom=storefrontDom($code);$codeText=$plain($code);
 same(['Auth code'],array_map(fn($n)=>$n->textContent,iterator_to_array($dom->query('//h1'))),'Code page title');
@@ -125,13 +129,14 @@ expect(str_contains($cutoff,'The time to enter or change this auth code has pass
 // Controllers and services: renamed terms, "can't / couldn't" voice.
 same('Auth code saved.',OwnerActionController::CODE_SAVED,'One saved string for page and flash');
 $owner=$source(OwnerActionController::class);
-expect(str_contains($owner,"'Enter a valid auth code.'")&&str_contains($owner,"'Change requested. Check History for updates.'")&&str_contains($owner,"'WHOIS privacy isn’t available for this domain.'"),'Owner action messages');
+expect(str_contains($owner,"'Enter a valid auth code.'")&&str_contains($owner,"'WHOIS privacy isn’t available for this domain.'"),'Owner action messages');
+same('Change requested. Check History for updates.',Paymenter\Extensions\Servers\Domains\Services\ManagementForms::REQUESTED,'One requested string for owners and staff');
 $none($owner,['transfer code','Check Activity','Domain privacy','is not available',"get('confirmed')!=='1'"],'Owner action controller');
 $renewal=$source(OwnerRenewalController::class);
 expect(str_contains($renewal,"'You can’t renew online right now. Contact support to renew this domain.'")&&str_contains($renewal,"'Auto-renew is off for this domain. Contact support if you want to renew it.'"),'Renewal refusals');
 $none($renewal,['is not available','Renewal is turned off'],'Owner renewal controller');
 $cart=$source(\Paymenter\Extensions\Servers\Domains\Services\CartAdmission::class);
-foreach(["'Enter the auth code after checkout.'","'Registrar changed. Search again.'","'Test domains can’t be ordered. Remove them to check out.'","'Transfers can’t be ordered yet. Remove them to check out.'","'Domains can’t be ordered right now. Remove them to check out.'"] as $s){expect(str_contains($cart,$s),'Cart message '.$s);}
+foreach(["'Enter the auth code after checkout.'","'Registrar changed. Search again.'","'Test domains can’t be ordered. Remove them to check out.'","'Test transfers can’t be ordered yet. Remove them to check out.'","'Domains can’t be ordered right now. Remove them to check out.'"] as $s){expect(str_contains($cart,$s),'Cart message '.$s);}
 $none($cart,['Seller changed','TEST domains','TEST transfer','unavailable','transfer code after'],'Cart admission');
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Services\NativeCancellation::class),"'Can’t cancel this domain right now. Contact support.'"),'Native cancellation refusal');
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController::class),"'Choose a TLD from the list.'"),'Transfer TLD error');

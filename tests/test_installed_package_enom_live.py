@@ -1,5 +1,5 @@
 # MIT, Copyright (c) 2026 Autonomic Engineering.
-"""Offline live deployment composition through the installed ZIP."""
+"""Offline installed ZIP: Support/enom-live.php, Support/enom-live-activation.php and Support/enom-live-balances.php."""
 from test_installed_package import main
 
 if __name__ == '__main__':

@@ -19,6 +19,7 @@ $open($unpaid)->assertActionHidden('hold');
 [$renewal]=$makeRenewal(placeholderComFixtureName('truth-renewal-placeholder.com'),paid:false);
 same('awaiting_payment',$renewal->fresh()->state,'Unpaid renewal waits on the customer');
 $open($renewal)->assertActionHidden('hold');
+Paymenter\Extensions\Servers\Domains\Models\Price::query()->update(['observed_at'=>$clock->now(),'fresh_until'=>$clock->now()->modify('+1 day')]);
 $paid=$new(placeholderComFixtureName('truth-paid-placeholder.com'));
 same('awaiting_payment',$paid->state,'A paid order can still sit in this state until the worker runs');
 $open($paid)->assertActionVisible('hold');

@@ -649,23 +649,19 @@ is an advisory margin alert only; billing 24 must use the validated holding rene
 positive retail, term-total unit) and emit a staff alert when retail/margin is unknown.
 
 
-Slice 23b narrows NameSilo's refusal above: ordinary annual renewal may pass exact account-scoped
-`Active`, date-only expiry at least two UTC calendar days ahead and an exact accepted account quote.
-Validity ends when that UTC margin ceases. Grace/redemption remain unknown. NameSilo request and
-snapshot provider domain IDs must both be null. Enom saved-ID behavior is unchanged.
-Sealing now retains write-once encrypted `attempt.registration_admission` (premium=false, exact name,
-term and authorized cost) after DispatchReadiness validation. No schema changes. A uniquely completed
-registration anchor whose actual USD charge equals the authorized cost (normalized decimals) must match this proof before NameSilo's premium gate
-can pass. Older holdings without that evidence retain Cost refusal; no flag is backfilled from
-Active or a catalogue price. Slice 28 must establish independent nonpremium proof for transfer-ins.
-All 23 auto-renew, balance, authority/generation, account acceptance and margin checks still apply.
-The model permits adding this proof only in the original absent-to-sealed registration update.
-Execution 25 must honour validUntil and repeat Active plus the two-day margin immediately before send;
-wiring 39 must independently confirm restores disabled in API Manager. Acceptance tooling 37/39 must
-recheck per-TLD renewal-safe acceptance, including revocation, beyond today's account-wide quote acceptance.
-Only annual NameSilo costs are accepted; other terms currently refuse State rather than Term.
-When 24/25 advance the anchor to a completed renewal, retain or resolve the original registration's
-nonpremium proof; never backfill registration_admission onto renewal operation rows.
+Slice 23b narrows NameSilo's refusal above: ordinary annual renewal may pass exact account-scoped `Active`, date-only expiry at least two UTC
+calendar days ahead and an exact accepted account quote. Validity ends when that UTC margin ceases. Grace/redemption remain unknown. NameSilo
+request and snapshot provider domain IDs must both be null. Enom saved-ID behavior is unchanged. Sealing now retains write-once encrypted
+`attempt.registration_admission` (premium=false, exact name, term and authorized cost) after DispatchReadiness validation. No schema changes. A
+uniquely completed registration anchor whose actual USD charge equals the authorized cost (normalized decimals) must match this proof before
+NameSilo's premium gate can pass. Older holdings without that evidence retain Cost refusal; no flag is backfilled from Active or a catalogue
+price. Slice 28 must establish independent nonpremium proof for transfer-ins. All 23 auto-renew, balance, authority/generation, account
+acceptance and margin checks still apply. The model permits adding this proof only in the original absent-to-sealed registration update.
+Execution 25 must honour validUntil and repeat Active plus the two-day margin immediately before send; wiring 39 must independently confirm
+restores disabled in API Manager. Acceptance tooling 37/39 must recheck per-TLD renewal-safe acceptance, including revocation, beyond today's
+account-wide quote acceptance. Only annual NameSilo costs are accepted; other terms currently refuse State rather than Term. When 24/25 advance
+the anchor to a completed renewal, retain or resolve the original registration's nonpremium proof; never backfill registration_admission onto
+renewal operation rows.
 
 ## Renewal invoices and native lifecycle (slice 24)
 
@@ -782,19 +778,22 @@ held readmission and audited policy workflows; 36/37 staff acceptance/history re
 39 installed singleton hooks, fresh binding-scoped policy, restores-disabled acceptance, native
 financial transition integration, queue/deadline/shared-cache and paired MariaDB lock acceptance.
 
-Slice 26 `Refunds` locks the owner, USD credit, native ledger and holding before interpreting
-unsent proof and the exact issued positive line. The whole invoice needs positive net succeeded
-native funding; processing/failed payments and status labels grant nothing. Only exact typed 25
-prewire refusals can override a sealed renewal's possibly-sent marker. Unknown/fallback facts,
-even null-valued keys, refuse credit. Refunding retains invoice/payment history and reservations.
-Held disposition records fresh domain-manage + invoice-update rights, bounded reason and actor;
-contact holds use their recovery seam. The rejected decision survives credit failure. Credit and
-immutable funding.refund commit together, once; bounded retries recheck current evidence.
-FinancialAdjustments appends signed native transactions and bounded immutable audits under the
-same locks plus native transaction-create rights; cumulative corrections cannot add net funds.
-Original payments stay immutable. Installed native action routing remains 35/39.
-Unsuitable paid renewals and late payments to retired cancelled debt use the same proof. Late
-retired payments unblock replacement only when an exact full refund still covers every retained
-transaction; later activity blocks again. Notifications 38, scheduling 31 and MariaDB races 39 remain.
-Refunded unsuitable paid renewals still own their cycle; safe replacement authority remains 35/36.
-Correction-only history remains unattempted; current native rows are rechecked and seals retain audits. See [adoption and invoice-history storage](storage-adoptions.md). CR30: RenewalAuthority now rechecks current per-TLD renewal-safe and annual-term acceptance at capture and recheck, including revocation, using CanonicalName and the settings locks already held by HoldingLocks.
+Slice 26 `Refunds` locks the owner, USD credit, native ledger and holding before interpreting unsent proof and the exact issued
+positive line. The whole invoice needs positive net succeeded native funding; processing/failed payments and status labels grant
+nothing. Only exact typed 25 prewire refusals can override a sealed renewal's possibly-sent marker. Unknown/fallback facts, even
+null-valued keys, refuse credit. Refunding retains invoice/payment history and reservations. Held disposition records fresh
+domain-manage + invoice-update rights, bounded reason and actor; contact holds use their recovery seam. The rejected decision
+survives credit failure. Credit and immutable funding.refund commit together, once; bounded retries recheck current evidence.
+FinancialAdjustments appends signed native transactions and bounded immutable audits under the same locks plus native
+transaction-create rights; cumulative corrections cannot add net funds. Original payments stay immutable. Installed native action
+routing remains 35/39. Unsuitable paid renewals and late payments to retired cancelled debt use the same proof. Late retired
+payments unblock replacement only when an exact full refund still covers every retained transaction; later activity blocks again.
+Money on an early renewal or unpaid acquisition the runtime closed itself becomes credit at its actual net, once per transaction,
+in `funding.late_credits`; a closed acquisition's invoice stays cancelled, so no paid event starts its services; a frozen `refund`
+is never rewritten, a failed card row is not money and an invoice already Paid goes to staff. Renewal billing spends credit only at issue, before a checkout can exist;
+on an open invoice the customer applies it, because an open card form leaves no local trace to guard a spend. Notifications 38,
+scheduling 31 and MariaDB races 39 remain. Refunded unsuitable paid renewals still own their cycle; safe replacement authority
+remains 35/36. Correction-only history remains unattempted; current native rows are rechecked and seals retain audits. See
+[adoption and invoice-history storage](storage-adoptions.md). CR30: RenewalAuthority now rechecks current per-TLD renewal-safe and
+annual-term acceptance at capture and recheck, including revocation, using CanonicalName and the settings locks already held by
+HoldingLocks.

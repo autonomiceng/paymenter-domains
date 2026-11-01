@@ -52,7 +52,7 @@ final class WatchMaintenance
             if ($state['pending'] && $since>0 && $now>=max($since+86400,($state['expected']??0)+600)) { $failed[$family]=$since; }
         }
         $local=json_decode($dispatch->data??'{}',true)['local_failures']??[];
-        if ($local && $now>=min($local)+86400) { $failed['local']=min($local); }
+        foreach($local as $stage=>$since){if($now>=$since+86400){$family=$stage==='products'?'products':'local';$failed[$family]=min($failed[$family]??$since,$since);}}
         if ($failed) { return ['outage'=>true,'reason'=>'checks_unsuccessful','family'=>array_key_first($failed),'families'=>array_keys($failed),'since'=>min($failed)]; }
         return ['outage'=>false,'reason'=>'current','since'=>$progress?:null];
     }
@@ -64,10 +64,10 @@ final class WatchMaintenance
         $since=self::date($health['since']??null);
         if ($health['reason']==='checks_unsuccessful') {
             $families=$health['families']??[$health['family']??'local'];
-            $names=array_values(array_unique(array_map(static fn($f)=>['registry'=>'Expiry checks','watch_dns'=>'DNS checks','managed_dns'=>'DNS checks'][$f]??'Domain discovery',$families)));
-            $local=in_array('local',$families,true);
-            $action=!$local&&array_intersect(['watch_dns','managed_dns'],$families)?'settings':null;
-            $next=$local?'fix domain discovery':($action==='settings'?'check the DNS resolver':'check the registry connection');
+            $names=array_values(array_unique(array_map(static fn($f)=>['registry'=>'Expiry checks','watch_dns'=>'DNS checks','managed_dns'=>'DNS checks','products'=>'Domain products'][$f]??'Domain discovery',$families)));
+            $products=in_array('products',$families,true);$local=in_array('local',$families,true);
+            $action=!$local&&!$products&&array_intersect(['watch_dns','managed_dns'],$families)?'settings':null;
+            $next=$products?'fix domain products'.($local?' and discovery':''):($local?'fix domain discovery':($action==='settings'?'check the DNS resolver':'check the registry connection'));
             return ['text'=>implode(' and ',$names).(count($names)>1||$names[0]!=='Domain discovery'?' have':' has').' failed since '.$since.'. Ask your site admin to '.$next.'.','tone'=>'danger','action'=>$action];
         }
         return match($health['reason']) {

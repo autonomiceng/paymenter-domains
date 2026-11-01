@@ -45,6 +45,7 @@ foreach (['paid', 'cap-exact-unknown', 'cap-over'] as $cycle => $case) {
         same(null, $op->invoice_id, 'Complimentary cycle creates no replacement debt');
     }
     $clock->instant = new DateTimeImmutable($year.'-10-16T12:00:00Z'); Cache::flush();
+    Price::query()->update(['observed_at' => $clock->now(), 'fresh_until' => $clock->now()->modify('+1 year')]);
     $loseResponse = $case === 'cap-exact-unknown'; $before = $writes; $money = scenarioMoney();
     $switchesBefore = $sendSwitches;
     $duringSend = static function () use (&$sendSwitches, $sellers, $clock, $tlds): void {

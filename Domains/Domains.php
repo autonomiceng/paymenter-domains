@@ -14,6 +14,9 @@ class Domains extends Server
     public function installed(): void { Runtime::register(); app(Installation::class)->install(); }
     public function upgraded($oldVersion = null): void { $this->installed(); }
     public function uninstalled(): void {} // Retain all ownership, billing and operation evidence.
+    /** Optional gateway seam. Domains alone decides current renewal authority. */
+    public function renewalAutoPayContext(int $invoiceId): ?array
+    {Runtime::register();return app(Services\RenewalAutoPay::class)->renewalAutoPayContext($invoiceId);}
     public function getConfig($values = []): array
     {
         Runtime::register();app(Services\NativeServerGuard::class)->boot();

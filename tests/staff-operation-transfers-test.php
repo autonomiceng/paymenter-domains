@@ -15,6 +15,22 @@ foreach(array_keys(StaffOperationReview::ACTIONS)as$action){$perms[]=StaffOperat
 $staff=staffUser($perms);$service=new StaffOperations($clock);
 $run=static function($op,$action)use($service,$staff,$clock){$op=$op->fresh();$key=StaffOperationReview::ticket($staff->id,$op->domain_id,$op->id,$action,StaffOperationReview::stamp($op,$op->domain),$clock);
     $service->run($staff,$op->domain_id,$op->id,$action,$key,'Reviewed exact transfer evidence');};
+// A ready NameSilo transfer needs its own setup checks, without an Enom-only refusal.
+Illuminate\Support\Facades\Auth::setUser($staff);
+$ready=$newTransfer(placeholderComFixtureName('staff-ready-namesilo-placeholder.com'),1);
+Illuminate\Support\Facades\DB::table('domains_accounts')->where('server_id',$ready->server_id)->update(['processing_enabled'=>false]);
+(new \Paymenter\Extensions\Servers\Domains\Services\OperationClaims($bindings,$clock))->claim((int)$ready->id);
+$ready=$ready->fresh();same('processing',$ready->safe_code,'Orders off holds the paid saved-code transfer');
+same('Ready to send. Orders are off for this account.',RequestFacts::readyMessage($ready),'Ready NameSilo transfer names only the Orders switch');
+$payload=$ready->getRawOriginal('payload');
+\Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$ready->id)->update(['payload'=>'unreadable']);
+\Illuminate\Support\Facades\Auth::setUser($staff);
+$notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($ready->domain->fresh());
+expect(str_contains($notice['title'],'not sent'),'Unreadable ready payload falls back to the held domain notice');
+same('Open request #'.$ready->id,$notice['action']['label'],'Unreadable ready payload retains the request recovery link');
+\Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$ready->id)->update(['payload'=>$payload]);
+
+Illuminate\Support\Facades\DB::table('domains_accounts')->where('server_id',$ready->server_id)->update(['processing_enabled'=>true]);
 $op=$newTransfer(placeholderComFixtureName('staff-saved-transfer-placeholder.com'));$op->update(['state'=>'held','safe_code'=>'staff_review_required']);
 // Obvious state/action refusals do not load a holding snapshot. The locked writer still refuses them.
 foreach([['queued','register'],['rejected','transfer'],['succeeded','renew'],['held','contacts']] as [$savedState,$savedAction]){
@@ -27,7 +43,7 @@ foreach([['queued','register'],['rejected','transfer'],['succeeded','renew'],['h
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('release')->assertNotified('Hold released');
 same('queued',$op->fresh()->state,'Saved-code held transfer may queue only before cutoff');
 $run($op,'hold');$clock->instant=$now->modify('+30 days');commerceReject(fn()=>$run($op,'release'));
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>'Close proven unsent saved-code transfer'])->assertNotified('Cancelled, credit added');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>'Close proven unsent saved-code transfer'])->assertNotified('Request cancelled');
 same('account_credit',$op->fresh()->funding['refund']['to'],'Exact saved-code credit');same('definitely_unsent',$op->fresh()->attempt['send_state'],'Only virgin evidence creates local negative proof');
 $clock->instant=$now;
 foreach(['transfer_not_registered','staff_review_required']as$reason){

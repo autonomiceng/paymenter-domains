@@ -87,7 +87,9 @@ for ($i = 0; $i < 500; $i++) {
 CatalogueAcceptances::save($bound[1], 1, $fit);
 $stored = DB::table('settings')->where('key', CatalogueAcceptances::KEY)->where('settingable_id', 1)->value('value');
 expect(strlen($stored) < 65535, 'Boundary acceptance ciphertext fits native TEXT');
-$reject(fn () => CatalogueAcceptances::save($bound[1], 2, $large), 'Acceptance exceeds encrypted settings capacity.');
+// Packing fits ordinary long lists, so only names that do not compress reach the limit.
+$huge = []; for ($i = 0; $i < 1000; $i++) { $huge['x'.strtr(substr(hash('sha512', (string) $i), 0, 60), '0123456789', 'ghijklmnop')] = $row; }
+$reject(fn () => CatalogueAcceptances::save($bound[1], 2, $huge), 'Acceptance exceeds encrypted settings capacity.');
 same($stored, DB::table('settings')->where('key', CatalogueAcceptances::KEY)->where('settingable_id', 1)->value('value'), 'Oversize cannot corrupt existing acceptance');
 CatalogueAcceptances::save($bound[1], 2, ['com' => [...$row, 'register' => [1, 3]]]);
 DB::flushQueryLog(); DB::enableQueryLog();

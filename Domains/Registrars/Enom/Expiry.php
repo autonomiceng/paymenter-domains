@@ -8,8 +8,9 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ProtocolResult;
 
 final class Expiry
 {
-    public static function read(ProtocolResult $reply): ?DateEvidence
+    public static function read(ProtocolResult $reply, ?string &$issue = null): ?DateEvidence
     {
+        $issue = 'missing';
         if ($reply->status !== 'success') { return null; }
         $confirmed = null; $missing = new \stdClass;
         foreach (['registryexpdate', 'domaininfo.registryexpdate', 'expirationdate', 'getdomaininfo.status.expiration',
@@ -19,19 +20,21 @@ final class Expiry
             $zone = new \DateTimeZone('America/Los_Angeles');
             if (is_array($value)) {
                 $attributes = $value['@attributes'] ?? [];
-                if (!is_array($attributes)) { return null; }
+                if (!is_array($attributes)) { $issue = 'invalid'; return null; }
                 if (array_key_exists('utc', $attributes)) { $value = $attributes['utc']; $zone = new \DateTimeZone('UTC'); }
                 else { $value = $value['#text'] ?? null; }
             }
-            if (!is_string($value) || ($date = self::date($value, $zone)) === null) { return null; }
+            if ($value === '') { return null; }
+            if (!is_string($value) || ($date = self::date($value, $zone)) === null) { $issue = 'invalid'; return null; }
             if ($confirmed !== null) {
-                if (substr($confirmed->value, 0, 10) !== substr($date->value, 0, 10)) { return null; }
+                if (substr($confirmed->value, 0, 10) !== substr($date->value, 0, 10)) { $issue = 'conflicting'; return null; }
                 if ($confirmed->value !== $date->value || $confirmed->precision !== $date->precision) {
                     $date = new DateEvidence(substr($date->value, 0, 10), ExpiryPrecision::Date, 'enom_expiry');
                 }
             }
             $confirmed = $date;
         }
+        if ($confirmed !== null) { $issue = null; }
         return $confirmed;
     }
     public static function reconcile(ProtocolResult $extend, ?DateEvidence $authenticated, ProtocolResult $authenticatedInfo): ?DateEvidence

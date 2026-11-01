@@ -14,7 +14,7 @@ final class ObservationWork
     public static function stopped(Domain $d): bool
     {
         if (!Schema::hasTable('domains_observation_work')) { return false; }
-        return self::current($d)->whereIn('safe_code',self::STOPPED)->exists() && ObservationEligibility::allows($d);
+        return self::current($d,true)->whereIn('safe_code',self::STOPPED)->exists() && ObservationEligibility::allows($d);
     }
     /** Batched stopped() for a page of domains: the ids, as keys, of those whose current work stopped. */
     public static function stoppedIds(\Illuminate\Support\Collection $domains): array
@@ -23,7 +23,7 @@ final class ObservationWork
         $rows=DB::table('domains_observation_work')->whereIn('domain_id',$domains->pluck('id'))->whereIn('safe_code',self::STOPPED)
             ->get(['domain_id','server_id','account_fingerprint','generation','phase']);
         $stopped=$domains->filter(fn(Domain $d)=>$rows->contains(fn($r)=>(int)$r->domain_id===(int)$d->id&&(int)$r->server_id===(int)$d->server_id
-            &&$r->account_fingerprint===$d->account_fingerprint&&(int)$r->generation===(int)$d->authority_generation&&$r->phase===self::phase($d)))
+            &&$r->account_fingerprint===$d->account_fingerprint&&(int)$r->generation===(int)$d->authority_generation&&$r->phase===self::readPhase($d)))
             ->values();
         $pending=$stopped->whereIn('status',['registration_pending','transfer_pending']);
         $operations=$pending->isEmpty()?collect():Operation::whereIn('domain_id',$pending->pluck('id'))->whereIn('action',['register','transfer'])->get()->groupBy('domain_id');
@@ -32,14 +32,16 @@ final class ObservationWork
     /** Advisory selection only; resume revalidates the locked holding and job. */
     public static function currentId(Domain $d): ?int
     {
-        $id=self::current($d)->orderByDesc('id')->value('id');
+        $id=self::current($d,true)->orderByDesc('id')->value('id');
         return $id===null?null:(int)$id;
     }
-    private static function current(Domain $d): \Illuminate\Database\Query\Builder
+    private static function readPhase(Domain $d): ?string
+    {try{return self::phase($d);}catch(\Illuminate\Contracts\Encryption\DecryptException){return null;}}
+    private static function current(Domain $d,bool $advisory=false): \Illuminate\Database\Query\Builder
     {
         return DB::table('domains_observation_work')->where('domain_id',$d->id)->where('server_id',$d->server_id)
             ->where('account_fingerprint',$d->account_fingerprint)->where('generation',$d->authority_generation)
-            ->where('phase',self::phase($d));
+            ->where('phase',$advisory?self::readPhase($d):self::phase($d));
     }
     /** Under the account lock, retire obsolete idle work before unsent proof can be lost. Returns true if unsent. */
     public static function discardUnsent(Domain $d, \DateTimeImmutable $now, ?\Illuminate\Support\Collection $operations=null): bool
@@ -106,6 +108,10 @@ final class ObservationWork
             $rows=Domain::where('server_id',$a->server_id)->where('id','>',$current->cursor)->orderBy('id')->limit(25)->get();
             foreach ($rows as $d) {
                 if ($d->adoptionPending() || !in_array($d->status,['active','registration_pending','transfer_pending'],true)||$d->account_fingerprint!==$a->account_fingerprint) { continue; }
+                // Financial transfer reconciliation already reads status, history and ownership. Avoid a second automatic poller.
+                if(TransferPolling::ownsObservation($d)){
+                    self::current($d)->where('lease_until','<=',$this->clock->now()->getTimestamp())->delete();continue;
+                }
                 if (self::discardUnsent($d,$this->clock->now())) { continue; }
                 DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
                     'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$this->clock->now()->getTimestamp()]);
@@ -121,6 +127,7 @@ final class ObservationWork
                 ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',self::STOPPED);});
             $job=$q->orderBy('due_at')->orderBy('id')->lockForUpdate()->first(); if (!$job) { return null; }
             $d=Domain::find($job->domain_id);
+            if($d&&TransferPolling::ownsObservation($d)){DB::table('domains_observation_work')->where('id',$job->id)->delete();return null;}
             if ($d && ($d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
                 DB::table('domains_observation_work')->where('id',$job->id)->update(['safe_code'=>'superseded']); return null;
             }

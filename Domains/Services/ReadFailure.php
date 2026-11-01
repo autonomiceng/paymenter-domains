@@ -8,7 +8,7 @@ final class ReadFailure
     public const CODES=['read_failed','read_exception','read_deadline','read_no_evidence','read_identity_changed',
         'account_unavailable','binding_mismatch','configuration_unverified','encryption_unavailable','storage_unavailable',
         'catalogue_reader_unavailable','catalogue_acceptance_unavailable','catalogue_acceptance_changed',
-        'catalogue_evidence_missing','catalogue_evidence_invalid','catalogue_import_failed','catalogue_interrupted'];
+        'catalogue_call_capacity','catalogue_evidence_missing','catalogue_evidence_invalid','catalogue_import_failed','catalogue_interrupted'];
     public static function safe(mixed $code): string
     { return in_array($code,self::CODES,true)?$code:'read_exception'; }
     public static function code(\Throwable $error, string $fallback='read_exception'): string

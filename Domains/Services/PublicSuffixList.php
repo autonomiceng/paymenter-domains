@@ -42,7 +42,16 @@ final class PublicSuffixList
             && ($s->last_network_fetch_at === null || $now >= (int) $s->last_network_fetch_at + 86400);
     }
     public function tick(): void
-    { if ($this->scheduledAttemptDue()) { $this->update(true); } }
+    {
+        if(!$this->scheduledAttemptDue()){return;}
+        $result=$this->update(true);
+        if(in_array($result,['updated','identical','not_modified','rate_limited'],true)){return;}
+        $registrars=\App\Models\Server::where('extension','Domains')->exists();
+        \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Public suffix list update failed',
+            \Paymenter\Extensions\Servers\Domains\Admin\Support\PslActions::result($result).' The saved list is kept. Updates retry weekly. Open '.($registrars?'Registrars → System checks':'Public suffix list').' for the next step.',
+            $registrars?'filament.admin.pages.registrar-setup':'filament.admin.pages.public-suffix-list',
+            $registrars?\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW:\Paymenter\Extensions\Servers\Domains\Admin\Support\PslActions::VIEW,'psl:'.(string)$this->status()->last_attempt_at);
+    }
     public function update(bool $scheduled = false): string
     {
         OperationClaims::outside(); $now = $this->clock->now()->getTimestamp();

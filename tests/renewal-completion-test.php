@@ -2,19 +2,36 @@
 // Enom d1392a8 grace and covered renewal observation; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
-require __DIR__.'/Support/lifecycle-facts.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Data\{RenewalCode, RenewalRequest};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
-use Paymenter\Extensions\Servers\Domains\Services\RenewalRefused;
-[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-grace-placeholder.com')); [$engine,$writer,$completion]=$compose($b);
+use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, EnomLateRenewal, EnomTestRenewal, EnomTestSendLimitSchema, RenewalRefused};
+// Grace requires the current account opt-in and a paid native late quote, not the old constructor flag.
+[$old,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-grace-placeholder.com'),false);
 $clock->instant=new DateTimeImmutable('2027-10-18T12:00:01Z');
-storeLifecycleFixture($b,lifecycleFixture($clock->now()));
+$cycles->expireUnpaid($d->id);
+same('renewal_cancelled_unpaid',$old->fresh()->safe_code,'Unpaid ordinary debt closes before the late quote');
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);EnomTestSendLimitSchema::install();
+$deployment=[];foreach(['domains.enom_identity.environment','domains.enom_catalogue.enabled','domains.enom_writes.renewal','domains.enom_test_sends_per_day','domains.enom_test_sends_per_minute'] as $key){$deployment[$key]=config($key);}
+config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.renewal'=>true,'domains.enom_test_sends_per_day'=>10000,'domains.enom_test_sends_per_minute'=>10000]);
+$server=$product->server;
+$server->settings()->create(['key'=>EnomTestRenewal::KEY,'type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$b->fingerprint,...EnomTestRenewal::protocol($b)])]);
+$server->settings()->create(['key'=>EnomLateRenewal::KEY,'type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$b->fingerprint,'contract'=>EnomLateRenewal::CONTRACT])]);
+Cache::flush();$invoice=(new DomainBilling($renewBindings,$guard,$clock))->invoice($d->id,$user,1);
+$op=Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$invoice->id)->sole();
+\App\Helpers\ExtensionHelper::addPayment($invoice,null,$op->amount);Cache::flush();[$engine,$writer,$completion]=$compose($b);
+$writes=$state->writes;$state->fail=ReadCommand::Expired;
+same('queued',$engine->run($op->id,$writer)->state,'Grace expiry read outage stays retryable');
+same('renewal_reads_unavailable',$op->fresh()->safe_code,'Grace expiry outage retains its typed read reason');
+same($writes,$state->writes,'Grace expiry outage sends nothing');
+$state->fail=null;Cache::flush();
 same('pending',$engine->run($op->id,$writer)->state,'Accepted grace shape retains the original nested order');
+same($writes+1,$state->writes,'Grace expiry read recovery sends the paid late obligation once');
 same(['UpdateExpiredDomains',['DomainName'=>$d->domain,'NumYears'=>1,'UseCreditCard'=>'no']],$state->lastWrite,'Explicit one-year grace account-balance command');
 same('9002',$op->fresh()->provider_order_id,'Grace original order retained without inventing completion');
 $state->expiry='2028-10-18'; $state->charge='8.00';
 same('succeeded',$completion->run($op->id)->state,'Grace completes only with unique actual charge and matching full-term expiry');
+config($deployment);
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-local-clock-placeholder.com')); [$engine,$writer,$completion]=$compose($b);
 $engine->run($op->id,$writer); $state->expiry='2028-10-18'; $state->charge='8.00'; $state->billTime='6:02:00 AM';
 $completed=$completion->run($op->id);
@@ -59,6 +76,20 @@ $engine->run($op->id,$writer); same($writes,$state->writes,'Sealed prewire refus
 App\Models\ServiceCancellation::create(['service_id'=>$d->service_id,'type'=>'end_of_period','reason'=>'Synthetic']);
 $state->expiry='2028-10-18'; $state->charge='8.00'; same('succeeded',$completion->run($op->id)->state,'Future-only cancellation does not strand original paid reconciliation');
 same('2028-10-18',$d->fresh()->provider_expires_at->format('Y-m-d'),'Original registrar proof advances owned expiry');same('active',$d->service->fresh()->status,'Registrar reconciliation preserves native paid status');
+// An old lost renewal reply can use an audited support order, followed by exact independent readback.
+[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-support-answer-placeholder.com'));[$engine,$writer,$completion]=$compose($b);
+$state->lost=true;$writes=$state->writes;same('uncertain',$engine->run($op->id,$writer)->state,'Missing reply remains uncertain');$attempt=$op->fresh()->attempt;
+$clock->instant=$clock->now()->modify('+25 hours');$state->lost=false;$state->expiry='2028-10-18';$state->charge='8.00';
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
+$staff=commerceUser();$role=\App\Models\Role::create(['name'=>'Renewal support answer','permissions'=>['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer']]);$staff->update(['role_id'=>$role->id]);
+$reviewClass=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::class;
+$review=new $reviewClass($staff->id,$op->server_id,null,'enom_answer',$reviewClass::ticket($staff->id,$op->server_id,null,'enom_answer',$reviewClass::stamp($op->server_id,null)),'Record exact synthetic renewal answer');
+(new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites($native,$sellers,$renewBindings))->run($review,['operation_id'=>$op->id,
+    'attempt_hash'=>\Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::identity($op->fresh()),'outcome'=>'accepted','order_reference'=>'9002','case_reference'=>'synthetic-renewal-case','evidence'=>'Exact account and sealed renewal attempt were processed as order 9002.','confirmed'=>true],$clock->now());
+same('succeeded',$completion->run($op->id)->state,'Supported renewal settles only through exact charge and expiry proof');
+same($attempt,array_diff_key($op->fresh()->attempt,['reconciliation'=>true]),'Original sealed renewal evidence remains unchanged');
+expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($op->fresh(),$d->fresh(),$b),'Staff-supported renewal proof anchors the next cycle');
+same($writes+1,$state->writes,'Support answer and reconciliation never send another renewal');
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-below-cost-placeholder.com'),true,1,false,static function($d)use($clock){
     $price=Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$d->server_id,'action'=>'renew'])->sole();
     $price->update(['retail'=>'1.00','revision'=>$price->revision+1,'observed_at'=>$clock->now(),'fresh_until'=>$clock->now()->modify('+1 day')]);

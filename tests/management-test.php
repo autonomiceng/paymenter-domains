@@ -24,7 +24,14 @@ foreach([array_diff_key($op->fresh()->attempt,['management_reads'=>true]),[...$o
 $r=new ManagementRequest($driver->capabilities()->binding,'forged',$d->domain,'lock',['locked'=>true],'456');$ctx=new RequestContext($r->binding,RequestOrigin::Interactive,$clock->now()->modify('+100 seconds'),new RequestBudget(10),$clock);
 commerceReject(fn()=>$driver->perform($r,$ctx,$management));same($before,count($state->calls),'Forged descriptor no wire authority');
 Cache::flush();$ns=$submit($d,$driver,'nameservers',['nameservers'=>['NS3.Example.com.','ns4.example.com']]);same('succeeded',$management->run($ns->id,$driver)->state,'Canonical nameservers read back');
+// A new-sales stop must leave the holder's renewal price and transfer-out tools usable.
+$stopped=Paymenter\Extensions\Servers\Domains\Models\Tld::where(['server_id'=>$d->server_id,'tld'=>$d->tld])->sole();
+$holderPrice=(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices))->renewal($d,'USD',$clock->now())->retail;
+$acquisition=$stopped->only(['register_enabled','transfer_enabled']);$stopped->update(['register_enabled'=>false,'transfer_enabled'=>false]);
+$native->publish($stopped->id,$clock->now());
+same($holderPrice,(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices))->renewal($d,'USD',$clock->now())->retail,'New-sales stop keeps the holder renewal price');
 Cache::flush();$email=$submit($d,$driver,'auth_code_email');same('auth_email_accepted',$management->run($email->id,$driver)->safe_code,'Email accepted distinct from delivery');commerceReject(fn()=>$submit($d,$driver,'auth_code_email'));
+$stopped->update($acquisition);$native->publish($stopped->id,$clock->now());
 [$d,$driver]=$holding(placeholderComFixtureName('manage-unknown-placeholder.com'));$state->fault='SetRegLock';$op=$submit($d,$driver,'lock',['locked'=>false]);same('uncertain',$management->run($op->id,$driver)->state,'Malformed write and unmatched readback uncertain');$nativeBeforeReplay=nativeFinancialSnapshot($op);
 $calls=count($state->calls);$management->run($op->id,$driver);same($calls,count($state->calls),'Unknown send never replayed');
 same($nativeBeforeReplay,nativeFinancialSnapshot($op),'Unknown management replay preserves native/financial state');
@@ -72,6 +79,8 @@ try{\Paymenter\Extensions\Servers\Domains\Registrars\Enom\ManagementInput::valid
 [$d,$driver]=$holding('example.com');$op=$submit($d,$driver,'lock',['locked'=>false]);
 foreach ([['running','sealed',0,360],['running','absent',0,-1],['uncertain','sealed',20,-1],['pending','sealed',0,-1],['succeeded','sealed',0,-1]] as [$pollState,$seal,$reads,$lease]) {
     $attempt=['seal'=>$seal,'management_reads'=>array_fill(0,$reads,['confirmed'=>false])];
+    // Exhaustion is ineligible only until the slow read interval has elapsed.
+    if($reads===20){$attempt['management_read_at']=$clock->now()->format(DATE_ATOM);}
     Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$op->id)->update(['state'=>$pollState,'attempt'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($attempt)), 'lease_expires_at'=>$clock->now()->modify(($lease>=0?'+':'').$lease.' seconds')]);
     $before=$op->fresh()->getAttributes();$calls=count($state->calls);
     for($i=0;$i<2;$i++){same($before,$management->reconcile($op->id,$driver)->getAttributes(),'Ineligible poll preserves every operation field');}
@@ -80,5 +89,23 @@ foreach ([['running','sealed',0,360],['running','absent',0,-1],['uncertain','sea
 Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$op->id)->update(['authority_generation'=>$d->authority_generation+1]);
 try{$management->reconcile($op->id,$driver);expect(false,'Changed authority must still fail');}
 catch(DomainException $e){same('Management binding changed.',$e->getMessage(),'Real binding failure remains visible');}
+// Frozen corrections have a deterministic producer and exact readback, including provider auto renew off.
+[$d,$driver,$original]=$holding(placeholderComFixtureName('manage-auto-correct-placeholder.com'));
+$state->renew=true;$original->update(['policy'=>[...$original->policy,'reconciliation'=>[...($original->policy['reconciliation']??[]),'observed_corrections'=>['auto_renew']]]]);
+for($round=0;$round<3;$round++){Cache::flush();$correction=\Paymenter\Extensions\Servers\Domains\Services\CorrectionWork::produce($d,$management,$driver);if($correction){($correction->attempt['seal']??null)==='sealed'?$management->reconcile($correction->id,$driver):$management->run($correction->id,$driver);}}
+$corrections=$d->operations()->whereNotNull('authorized_by')->where('funding_basis','non_billable_management')->get();
+expect($corrections->contains('action','auto_renew_off'),'Producer creates the missing automatic renewal correction');
+same(1,count(array_filter($state->calls,fn($v)=>$v[0]==='SetRenew')),'Repeated producer cannot repeat the provider write');
+$offCorrection=$corrections->firstWhere('action','auto_renew_off');same('succeeded',$offCorrection->state,'Exact false readback completes correction');
+same($original->operation_key,$offCorrection->policy['management']['correction'],'Correction remains bound to original authorization');
+// Sealed uncertainty is read only; an expired unsealed claim can prepare again within our bounded retry budget.
+[$d,$driver]=$holding(placeholderComFixtureName('manage-unsent-auto-placeholder.com'));$op=$submit($d,$driver,'lock',['locked'=>false]);$state->fault='GetDomainInfo';
+same('held',$management->run($op->id,$driver)->state,'Preflight loss proves no management send');
+for($round=0;$round<5;$round++){$clock->instant=$clock->now()->modify('+16 minutes');Cache::flush();$management->run($op->id,$driver);}
+$clock->instant=$clock->now()->modify('+16 minutes');$calls=count($state->calls);$management->run($op->id,$driver);
+same(5,count($op->fresh()->attempt['management_deferrals']),'Our unsent management recovery budget is bounded');same($calls,count($state->calls),'Exhaustion leaves visible request without more reads or writes');
+[$d,$driver]=$holding(placeholderComFixtureName('manage-unsent-restored-placeholder.com'));$op=$submit($d,$driver,'lock',['locked'=>false]);$state->fault='GetDomainInfo';$management->run($op->id,$driver);
+$state->fault='';$clock->instant=$clock->now()->modify('+16 minutes');Cache::flush();same('succeeded',$management->run($op->id,$driver)->state,'Unsent preparation recovers automatically when reads return');
+same(1,count(array_filter($state->calls,fn($v)=>$v[0]==='SetRegLock')),'Recovered management request sends once');
 $nativeSuccessful=true;
 echo "management boundary passed\n";

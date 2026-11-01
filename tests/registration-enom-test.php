@@ -157,4 +157,18 @@ same(['pending', 'registration_evidence_required', 'original_attempt_unresolved'
         $result->cost['actual'] ?? null, $result->domain->reservation_name], 'M8 one-year readback cannot confirm three years or release the name');
 $calls = [$registration->reads, $registration->calls, $observation->calls]; $engine->execute($op->id);
 same([$calls, $money], [[$registration->reads, $registration->calls, $observation->calls], $nativeMoney()], 'M8 unresolved short term cannot replay or change native finance');
+// The real Purchase retained an ID but no expiry: later reads must settle without another Purchase.
+$registration->mode = 'missingexpiry'; $registration->calls = []; $makeEngine($binding, $exchange);
+$op = $new('captured-missing-expiry.example.com'); $result = $runRegistration($op);
+same('missing', $result->attempt['evidence']['registration']['expiryIssue'], 'Missing expiry stores only its bounded reason');
+$original = $result->attempt; $purchases = count($registration->purchases);
+$observation->name = $op->domain->domain; $observation->years = 1; $observation->expiryYears = null; $observation->reference = '1234';
+// Registration preflight authorized USD 6.00; later order proof must match it exactly.
+$observation->fault = 'captured-charge';
+$result = $reconcile->run($op->id);
+same('succeeded', $result->state, 'Captured unknown/sent Purchase recovers from its exact full order proof');
+same('unknown', $result->attempt['execution']['disposition'], 'Recovery preserves the original classification');
+same($original, array_diff_key($result->attempt, ['reconciliation' => true]), 'Recovery preserves the seal and original reply facts');
+$engine->execute($op->id); $reconcile->run($op->id);
+same($purchases, count($registration->purchases), 'Captured recovery never repeats Purchase');
 echo "Enom registration, correction, guard and policy composition checks passed\n"; $nativeSuccessful = true;

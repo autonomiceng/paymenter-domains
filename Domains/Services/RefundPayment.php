@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Enums\InvoiceTransactionStatus;
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Exact issued line and complete signed native funding, under HoldingLocks. No lifecycle/price inference. */
 final class RefundPayment
@@ -41,20 +42,59 @@ final class RefundPayment
     {
         try {
             if (!RefundProof::retired($op, $l['domain'])) { return false; }
-            RefundProof::requireUnsent($op, $l['domain']); $current = self::requireCurrent($op, $l);
-            $refund = $op->funding['refund'] ?? [];
-            if (($refund['to'] ?? null) !== 'account_credit' || ($refund['credit_id'] ?? null) !== $l['credit']?->id
-                || !$l['credit'] || $current['invoice_total_minor'] !== PricingRule::minor($op->amount)
-                || $current['succeeded_net_minor'] !== $current['invoice_total_minor']
-                || count($current['payments']) !== $l['transactions']->where('invoice_id', $op->invoice_id)->count()) { return false; }
-            foreach ($current as $key => $value) { if (!array_key_exists($key, $refund) || $refund[$key] !== $value) { return false; } }
-            return true;
+            RefundProof::requireUnsent($op, $l['domain']);
+            self::requireLine($op, $l);
+            // Incremental returns do not grant replacement authority or resolve an unseen Auto Pay attempt.
+            $net=$l['transactions']->where('invoice_id',$op->invoice_id)->where('status',InvoiceTransactionStatus::Succeeded)->sum(fn($row)=>PricingRule::minor($row->amount));
+            if(!RenewalCycles::closedEarly($op)&&$net+ReceiptReturns::completedMinor($op,$l)!==PricingRule::minor($op->amount)){return false;}
+            return ReceiptReturns::outstanding($op) === 0 && self::lateUncredited($op, $l) === []
+                && !$l['transactions']->where('invoice_id', $op->invoice_id)->contains('status', InvoiceTransactionStatus::Processing);
         } catch (\Throwable) { return false; }
+    }
+    /** A closed new order shares its invoice's payments with other orders, maybe on another account, so it reads what any of them credited.
+     * @return array<int,int> Payment id => minor amount already credited from a closed order. */
+    public static function lateCredited(Operation $op): array
+    {
+        $ops = $op->safe_code === UnpaidAcquisitionProof::CODE
+            ? Operation::where('invoice_id', $op->invoice_id)->orderBy('id')->when(DB::transactionLevel() > 0, fn ($q) => $q->lockForUpdate())->get() : [$op];
+        $done = [];
+        foreach ($ops as $row) {
+            $f = $row->funding ?? [];
+            foreach ([...(isset($f['refund']) ? [$f['refund']] : []), ...($f['late_credits'] ?? [])] as $credit) {
+                foreach ($credit['payments'] as $payment) { $done[$payment['id']] = ($done[$payment['id']] ?? 0) + $payment['amount_minor']; }
+            }
+        }
+        return $done;
+    }
+    /** Succeeded payments not credited yet. A failed row is not money; a processing row counts once it succeeds. */
+    public static function lateUncredited(Operation $op, array $l): array
+    {
+        $done = self::lateCredited($op); $new = [];
+        $rows = $l['transactions']->where('invoice_id', $op->invoice_id)->where('status', InvoiceTransactionStatus::Succeeded);
+        $net = $rows->sum(fn ($row) => PricingRule::minor($row->amount));
+        $local=0;
+        $peers=$op->safe_code===UnpaidAcquisitionProof::CODE?Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->lockForUpdate()->get():[$op];
+        $outstanding=0;
+        foreach($peers as $peer){
+            $outstanding+=ReceiptReturns::outstanding($peer);
+            foreach([...(isset($peer->funding['refund'])?[$peer->funding['refund']]:[]),...($peer->funding['late_credits']??[])] as $p){
+                $local+=($p['to']??null)==='original_payment'?($p['bridge_minor']??0):PricingRule::minor($p['amount']);
+            }
+        }
+        $left = $net - $local - $outstanding;
+        // A reversal after credit needs finance repair; never guess a debit, especially if credit was spent.
+        if ($left < 0) { throw new \DomainException('Returned credit exceeds current settled funds. Review the reversal.'); }
+        foreach ($rows as $row) {
+            $minor = min($left, max(0, PricingRule::minor($row->amount) - ($done[$row->id] ?? 0)));
+            if ($minor > 0) { $new[] = ['id' => (int) $row->id, 'amount_minor' => $minor]; $left -= $minor; }
+        }
+        if($left!==0){throw new \DomainException('Settled money lacks an unreturned receipt. Review the native return rows.');}
+        return $new;
     }
     public static function requireCurrent(Operation $op, array $l): array
     {
         [$invoice, $item] = self::requireLine($op, $l);
-        if ($invoice->status !== 'paid' && !($invoice->status === 'cancelled' && (RefundProof::retired($op, $l['domain']) || PrivacyRetirement::safe($op, $l['domain'])))) {
+        if ($invoice->status !== 'paid' && !($invoice->status === 'cancelled' && (RefundProof::retired($op, $l['domain']) || FundsWaits::closedRenewal($op,$l['domain']) || PrivacyRetirement::safe($op, $l['domain'])))) {
             throw new \DomainException('Native invoice must be paid or proven retired.');
         }
         $total = $net = 0; $payments = [];
@@ -68,7 +108,9 @@ final class RefundPayment
                 $payments[] = ['id' => (int) $row->id, 'amount_minor' => $minor];
             }
         }
-        if ($total <= 0 || $net <= 0 || $net < $total) { throw new \DomainException('Full net succeeded native funding required.'); }
+        $returned=0;
+        foreach(Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->lockForUpdate()->get() as $peer){$returned+=ReceiptReturns::completedMinor($peer,$l);}
+        if ($total <= 0 || $net <= 0 || $net+$returned < $total) { throw new \DomainException('Full net succeeded native funding required.'); }
         return ['invoice_id' => (int) $invoice->id, 'invoice_item_id' => (int) $item->id, 'amount' => $op->amount, 'currency' => 'USD',
             'invoice_total_minor' => $total, 'succeeded_net_minor' => $net, 'payments' => $payments];
     }

@@ -78,7 +78,10 @@ final class FoundationSchema
             $table->timestamp('lease_expires_at')->nullable();
             $table->timestamp('completed_at')->nullable();
             $table->timestamps();
-            $table->unique(['invoice_item_id', 'action']);
+            if(Schema::hasColumn('domains_operations','retry_number')){
+                $table->unsignedTinyInteger('retry_number')->default(0);
+                $table->unique(['invoice_item_id','action','retry_number'],$table->getTable().'_debt_retry_u');
+            }else{$table->unique(['invoice_item_id', 'action']);}
         });
         self::table('domains_tlds', function (Blueprint $table) {
             $table->id();
