@@ -20,7 +20,7 @@ final class ManagementProgress
         $retained=(clone $scope)->where(fn($q)=>$q->whereNull('safe_code')->orWhere('safe_code','!=','management_retired'))->selectRaw('MAX(id)')->groupBy('action');
         // Prefer retained work, pending then finished; newer retired history must not hide its real result.
         $candidates=(clone $scope)->where(fn($q)=>$q->whereIn('id',$latest)->orWhereIn('id',$retained)->orWhereIn('state',['queued','awaiting_payment','running','pending','uncertain','held']))
-            ->orderByDesc('id')->get()->sortByDesc(fn($op)=>self::pending($op,$d)?2:($op->safe_code==='management_retired'?0:1));
+            ->orderByDesc('id')->limit(100)->get()->sortByDesc(fn($op)=>self::pending($op,$d)?2:($op->safe_code==='management_retired'?0:1));
         foreach($candidates as $op){
             if(!isset($op->policy['management']) || !in_array($op->action,['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'],true)){continue;}
             $key=self::setting($op->action); if(isset($rows[$key])){continue;}
