@@ -38,6 +38,13 @@ DB::table('services')->where('id',$service->id)->update(['status'=>'cancelled'])
 DB::table('services')->where('id',$service->id)->update(['status'=>'active']);
 $summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$now);
 expect(in_array('domain.dns.not_configured',$summary->stateKeys,true),'Customer sees comparison setup state');same($d->provider_expires_at->format('Y-m-d'),$summary->expiry,'Expiry retained without DNS checks');
+// Empty nameserver evidence must describe whether a complete, current check exists.
+foreach([[null,true,true,'after the first check'],[$now-90000,true,false,'after the next check'],[$now,false,true,'after the next check'],[$now,false,false,'None observed']]as[$checkedAt,$stale,$partial,$copy]){
+    $renderSummary=new \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(...array_replace(get_object_vars($summary),['freshness'=>array_replace($summary->freshness,['delegation'=>compact('checkedAt','stale','partial')])]));
+    $html=view('domains::partials.summary',['summary'=>$renderSummary,'summaryOnManaged'=>true])->render();
+    expect(preg_match('~<dt>Nameservers</dt><dd>(.*?)</dd>~s',$html,$nameserverRow)===1,'Nameserver row rendered');
+    expect(str_contains($nameserverRow[1],$copy) && ($copy==='None observed' || !str_contains($nameserverRow[1],'None observed')),'Empty nameserver evidence: '.$copy.' / stale='.($stale?'yes':'no').' / partial='.($partial?'yes':'no'));
+}
 // Customer setup notices follow the staff list's eligibility, including pending adoption.
 foreach([['active',null,true],['grace',null,true],['cancelled',null,false],['expired',null,false],['redemption',null,false],['registration_pending',null,false],['transfer_pending',null,false],['adoption_pending',null,false],['active','adoption_pending',false]]as[$status,$provenance,$eligible]){
     DB::table('domains_domains')->where('id',$id)->update(['status'=>$status,'provenance'=>$provenance]);
@@ -50,6 +57,9 @@ Livewire::actingAs($owner)->test(ListManagedDns::class)->assertForbidden();
 Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->assertTableActionHidden('assignTemplate',$d);
 app()->instance(WatchWork::class,new WatchWork($fake,new WatchDiscoveryWork(fn()=>0),true,fn()=>$time->now));
 $noticePage=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Choose its DNS template.');
+Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain.')
+    ->assertDontSee('Choose its DNS template')->assertDontSee('Choose DNS template');
+
 $setupPage=Livewire::actingAs($manager)->test(ListManagedDns::class);
 $mounted=Livewire::actingAs($manager)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->mountTableAction('assignTemplate',$d);
 $assignmentHtml=$mounted->html();
@@ -63,6 +73,17 @@ Livewire::actingAs($manager)->test(ListManagedDns::class)->callTableAction('assi
 same((int)$profile->id,(int)ManagedPublicConfig::find($id)->profile_id,'Staff action uses tested writer');
 expect(!$m->health($now)['outage'],'Assignment does not inherit an old setup-only outage clock');
 same(0,ManagedDnsSetup::affected($now)->count(),'Assigned domain leaves the filtered list');same(2,count((new ManagedPublicReconciliation($signals))->due($now)),'Assigning a template queues both comparison checks');
+// A retained enabled template can be unreadable even though the editor refuses that data.
+$storedNameservers=DB::table('domains_watch_profiles')->where('id',$profile->id)->value('nameservers');
+DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameservers'=>'null']);
+expect($profile->fresh()->enabled && $profile->fresh()->readProfile()===null,'Retained enabled template is unreadable');
+same(1,ManagedDnsSetup::affected($now)->count(),'Unreadable template returns to setup count');
+Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d]);
+Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Choose its DNS template.');
+$unreadableSummary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$now);
+expect(in_array('domain.dns.not_configured',$unreadableSummary->stateKeys,true),'Customer sees unreadable template as not configured');
+same([], (new ManagedPublicReconciliation($signals))->due($now),'Unreadable template has no configured runnable work');
+DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameservers'=>$storedNameservers]);
 $audit=WatchAudit::where('event','dns_template_assigned')->latest('id')->firstOrFail();same((int)$manager->id,(int)$audit->actor_id,'Assignment audit credits staff');same('staff',$audit->data['source'],'Assignment audit records source');
 setupRefused(fn()=>$writes->assign($manager,$id,$ticket,$profile->id,null));
 // Repair an existing null assignment from a current predecessor, independently of the ignored global default.
@@ -119,7 +140,12 @@ $health=$m->health($now+90000);expect($health['outage'],'Configured resolver fai
 expect(str_contains(WatchMaintenance::notice($health)['text'],"DNS checks can't reach the resolver."),'Resolver alert identifies actual transport failure');
 config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>180]);
 $time->now=$now+90000;
-$failureNotice=Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('Resolver settings')->assertSee('Affected checks')->assertSee("DNS checks can't reach the resolver.");
+foreach(['resolver_failed'=>'The resolver request failed.','deadline'=>'The resolver did not reply in time.']as$code=>$cause){
+    DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->update(['safe_code'=>$code]);
+    $failureNotice=Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('Resolver settings')->assertSee('Affected checks')
+        ->assertSee("DNS checks can't reach the resolver. Recent error: ".$cause.' Retrying automatically.')->assertDontSee('Last error:');
+}
+DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->update(['safe_code'=>'resolver_failed']);
 $failurePage=Livewire::actingAs($manager)->test(ListDnsFailures::class)->assertCanSeeTableRecords([$d])->assertTableActionHidden('assignTemplate',$d);
 // The staff monitoring page must name local/product failures beside a resolver outage.
 DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['data'=>json_encode(['local_failures'=>['products'=>$now,'discovery'=>$now]])]);
