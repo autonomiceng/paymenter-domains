@@ -169,7 +169,7 @@ Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->asse
 $heldRequest=$held->operations()->sole()->id;
 Livewire::actingAs($viewer)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$heldRequest])->assertSeeHtml('data-beco-record="request-'.$heldRequest.'"');
 $note=DomainFacts::note(DomainFacts::status($held),null)['text'];
-same(e(substr($note,0,-strlen('Check request #'.$heldRequest.'.'))).'<span class="domains-link">Check request #'.$heldRequest.'.</span>',(string)DomainFacts::noteStep($note,DomainFacts::status($held)),'A Note step looks like a link');
+same(e(substr($note,0,-strlen('Check request #'.$heldRequest.'.'))).'<span class="domains-link">Check request #'.$heldRequest.'</span>.',(string)DomainFacts::noteStep($note,DomainFacts::status($held)),'A Note step looks like a link');
 same('Sync failed. Sync again from the domain.',DomainFacts::noteStep('Sync failed. Sync again from the domain.',DomainFacts::status($held)),'A Note with no request step stays plain');
 
 // An old sweep failure must not conceal a definitely-unsent order's actual staff reason.
@@ -235,7 +235,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=
 WatchAudit::create(['subject_type'=>'domain','subject_id'=>$active->id,'user_id'=>$customer->id,'actor_id'=>$customer->id,'event'=>'owner_auto_renew',
     'before_revision'=>'on','after_revision'=>'off','data'=>['enabled'=>false],'created_at'=>new DateTimeImmutable('2026-10-22T08:00:00Z')]);
 $history=Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active->fresh(),'pageClass'=>ViewDomain::class]);
-$history->assertSeeInOrder(['Oct 22, 2026 08:00 UTC','Auto-renew turned off','Ada Lovelace','Oct 21, 2026 09:30 UTC','Renewal stopped','Customer asked by phone','Synthetic Staff']);
+$history->assertSeeInOrder(['Oct 22, 2026, 8:00 AM UTC','Auto-renew turned off','Ada Lovelace','Oct 21, 2026, 9:30 AM UTC','Renewal stopped','Customer asked by phone','Synthetic Staff']);
 DB::table('domains_operations')->where('domain_id',$demo->id)->delete();
 Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$demo,'pageClass'=>ViewDomain::class])->assertSee('No history yet');
 
@@ -303,7 +303,7 @@ foreach($moneyAlerts as $code=>$row){$moneyPage->assertSee(DomainFacts::alertCau
 DB::table('domains_obligation_alerts')->where('domain_id',$active->id)->whereIn('code',array_keys($moneyAlerts))->update(['resolved_at'=>time()]);
 same(['acquisition_late_money'],array_values(array_diff(array_keys(ObligationAlerts::LABELS),array_keys(DomainFacts::ALERTS))),'Every alert kind has a row; late payment shows in the status and notice');
 ObligationAlerts::record($active->fresh(),'native_identity_missing',time());
-same([null,'Service #'.$active->service_id." not found. Check the Services page. · Customer, order or service missing. The name stays reserved. Don't restore records by hand.",'danger'],[$value($active,'Service'),$sub($active,'Service'),DomainFacts::for($active->fresh())['Service']['tone']],'Missing records alert on the Service row');
+same([null,'Service #'.$active->service_id." not found. Check the Services page. Customer, order or service missing. The name stays reserved. Don't restore records by hand.",'danger'],[$value($active,'Service'),$sub($active,'Service'),DomainFacts::for($active->fresh())['Service']['tone']],'Missing records alert on the Service row');
 ObligationAlerts::record($active->fresh(),'missing_obligation',time());
 same([today()->addDays(120-21)->format('M j, Y'),'Renewal invoice missing. Check billing before expiry.','danger'],[$value($active,'Next invoice'),$sub($active,'Next invoice'),DomainFacts::for($active->fresh())['Next invoice']['tone']],'A Next invoice date stays, with the missing invoice below in danger');
 ObligationAlerts::record($active->fresh(),'renewal_unpaid',time());
@@ -312,7 +312,7 @@ ObligationAlerts::record($active->fresh(),'observation_review',time());
 same(['Oct 20, 2026 15:05 UTC',null],[$value($active,'Last sync'),$sub($active,'Last sync')],'A sync that is not stopped has nothing to resume');
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,
     'domain_id'=>$active->id,'generation'=>$active->authority_generation,'due_at'=>0,'safe_code'=>'read_failed','tries'=>1]);
-same('1 attempt. Stopped until resumed. · Sync stopped. Use Resume sync.',$sub($active,'Last sync'),'Sync review alert on Last sync');
+same('1 attempt. Stopped until resumed. Sync stopped. Use Resume sync.',$sub($active,'Last sync'),'Sync review alert on Last sync');
 DB::table('domains_observation_work')->where('id',$work)->delete();
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Service','Missing','Customer, order or service missing'])->assertSee('Unpaid renewal invoice cancelled');
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'alerts',true)->assertCanSeeTableRecords([$active])->assertCanNotSeeTableRecords([$held,$long]);

@@ -88,7 +88,7 @@ final class RegistrarFacts
         if ($uid===null||$u['day_limit']===null||$u['minute_limit']===null||$u['day']===null) { return ['value'=>null,'tone'=>null,'sub'=>EnomTestSendLimit::facts($uid),'help'=>null]; }
         $full=$u['day']>=$u['day_limit']||$u['minute']>=$u['minute_limit'];
         $off=$u['day_limit']===0||$u['minute_limit']===0;
-        return ['value'=>$u['day'].' of '.$u['day_limit'],'tone'=>$full?'danger':null,'sub'=>$off?EnomTestSendLimit::facts($uid):($full?'Limit reached. Try again later.':null),
+        return ['value'=>number_format($u['day']).' of '.number_format($u['day_limit']),'tone'=>$full?'danger':null,'sub'=>$off?EnomTestSendLimit::facts($uid):($full?'Limit reached. Try again later.':null),
             'help'=>'Our test send limit allows '.$u['day_limit'].' requests per login in any 24 hours and '.$u['minute_limit'].' per minute. Failed requests count too. Transfer checks stop at '.intdiv($u['day_limit'],2).' total requests to leave room for checkout and other work. This is our own guard against a runaway job.'];
     }
     /** When the registrar's prices were last read, as a timestamp. */

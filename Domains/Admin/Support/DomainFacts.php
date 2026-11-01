@@ -111,6 +111,9 @@ final class DomainFacts
             }
             $locked=OwnedDomains::storedFlag($d,'lock','locked');
             $f['Transfer lock']=self::fact(self::flag($locked),sub:$locked!==null?null:$unread,help:self::help()['Transfer lock']);
+            // Enom's privacy is not sold, so its row shows only on a domain that already has it. Other registrars keep theirs.
+            $privacy=OwnedDomains::storedFlag($d,'privacy','privacy');
+            if ($d->registrar_key!=='enom'||$privacy===true) { $f['WHOIS privacy']=self::fact(self::flag($privacy),sub:$privacy!==null?null:$unread); }
             $renews=$facts['auto_renew']??null;
             $f['Registrar auto-renew']=self::fact(self::flag($renews),sub:match($renews) {null=>$unread,false=>self::registrarRenewOff(),default=>null},help:$renews?self::help()['Registrar auto-renew']:null);
         }

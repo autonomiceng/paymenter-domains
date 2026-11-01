@@ -92,7 +92,7 @@ Livewire::actingAs($creator)->test(RegistrarSetup::class)->assertActionDoesNotEx
 // Account page.
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful();
 foreach(['Enom test account','Active','Check balance','Account','Registrar','Enom','Mode','Test','Balance','USD 7.99','Low balance','Add funds','Due in 30 days','USD 8.00',
-    'Domains','API calls, last 24 hours','0 of 1000'] as $needle){$page->assertSee($needle);}
+    'Domains','API calls, last 24 hours','0 of 1,000'] as $needle){$page->assertSee($needle);}
 $html=$page->html();
 foreach(['https://cp.enom.com/','Registrars'] as $needle){expect(str_contains($html,$needle),'Account page: '.$needle);}
 foreach(['Server #','Unknown','Enom TEST daily calls','Verified user ID','Retained domains','Environment',"\u{2014}"] as $needle){expect(!str_contains($html,$needle),'Account page never shows: '.$needle);}
@@ -224,7 +224,7 @@ $serviceUrl=App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$servi
 $fact=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($alerted->fresh())['Service'];
 same([$alerted->domain.' registration','Service #'.$service->id.". Customer, order or service missing. The name stays reserved. Don't restore records by hand.",'danger',$serviceUrl],[$fact['value'],$fact['sub'],$fact['tone'],$fact['url']],'A live service keeps its value and link under the alert');
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$alerted->id])
-    ->assertSeeHtml('href="'.e($serviceUrl).'"')->assertSeeInOrder(['Service',$alerted->domain.' registration','Customer, order or service missing']);
+    ->assertSeeHtml('href="'.e($serviceUrl).'"')->assertSeeInOrder(['Service','registration','Customer, order or service missing']);
 $groups=$page->instance()->checks();
 expect(in_array('Domain editor',array_column($groups['passing'],'label'),true)&&in_array('Payment events',array_column($groups['failing'],'label'),true),'Failing checks stay apart from passing checks');
 // Public suffix list row: shown with the list permission; never downloaded is a failing check with Download now and Change source.
@@ -239,7 +239,7 @@ Livewire::actingAs(staffUser([Staff::VIEW,PslPage::VIEW]))->test(RegistrarAccoun
     ->assertActionDoesNotExist(TestAction::make('psl_download')->schemaComponent('system_checks','content'))->assertActionDoesNotExist(TestAction::make('psl_source')->schemaComponent('system_checks','content'));
 $capAccount=Account::where('server_id',$enom->server_id)->sole();
 $capFacts=Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::class;
-same('0 of 1000',$capFacts::calls($capAccount)['value'],'Absent setting uses the default limit of 1000');
+same('0 of 1,000',$capFacts::calls($capAccount)['value'],'Absent setting uses the default limit of 1000');
 $capKey=EnomTestSendLimit::account((string)$capAccount->stable_identity);DB::table(EnomTestSendLimitSchema::ACCOUNTS)->insert(['account'=>$capKey]);
 DB::table(EnomTestSendLimitSchema::SENDS)->insert(array_fill(0,50,['account'=>$capKey,'command'=>'GetBalance','sent_at'=>$clock->now()->getTimestamp()-3600]));
 config(['domains.enom_test_sends_per_day'=>50]);

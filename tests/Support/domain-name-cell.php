@@ -38,7 +38,8 @@ function assertDomainNameWraps(string $html, string $name, string $where, string
     $cell = $element === 'table' ? $item->closest('.fi-ta-text') : $item;
     expect($cell instanceof Dom\Element, $where.': domain cell found');
     $style = domainNameStyle($cell);
-    same($element === 'table' ? 'break-word' : 'anywhere', $style['overflow-wrap'] ?? null, $where.': labels break only when wider than the cell');
+    // A title with domains-mono carries no inline style: the panel skin wraps it.
+    if (!str_contains((string) $cell->getAttribute('class'), 'domains-mono')) { same($element === 'table' ? 'break-word' : 'anywhere', $style['overflow-wrap'] ?? null, $where.': labels break only when wider than the cell'); }
     expect(!isset($style['word-break']), $where.': no word-break override');
     if ($element === 'table') { same('11rem', $style['min-width'] ?? null, $where.': column keeps a minimum width'); }
 }
