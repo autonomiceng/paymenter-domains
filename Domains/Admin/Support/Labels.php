@@ -39,6 +39,9 @@ final class Labels
     public static function operationReason(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): ?string
     {
         if (($late=\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::lateNote($op))!==null) { return $late; }
+        if(RequestFacts::quietRegistrationDns($op)){
+            return \Paymenter\Extensions\Servers\Domains\Services\RegistrationDns::pending($op,$op->domain)?'Domain registered. Chosen nameservers not confirmed':null;
+        }
         if ($op->safe_code==='management_retired') {
             $actor=$op->attempt['management_terminal']['actor_id']??null;
             return $actor===null ? 'Cancelled' : 'Cancelled by '.((int)$actor===(int)$op->domain->user_id?'customer':'staff');
